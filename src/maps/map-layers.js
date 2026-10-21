@@ -120,14 +120,8 @@ export function installMapLayers(win = window) {
     const unbind = () => {
         if (!binding) return;
         binding.map.off('moveend', refresh);
-        binding.win.document.removeEventListener('pointerdown', dismiss, true);
-        binding.win.document.removeEventListener('keydown', escape, true);
         binding.observer?.disconnect(); binding.sentinel.dispose(); binding.engine.dispose();
         binding = null;
-    };
-    const dismiss = event => { if (!control.element.contains(event.target)) control.close(); };
-    const escape = event => {
-        if (event.key === 'Escape' && control.isOpen()) { event.preventDefault(); event.stopImmediatePropagation(); control.close({ focus: true }); }
     };
     const bind = () => {
         if (!active || disposed) return false;
@@ -157,7 +151,6 @@ export function installMapLayers(win = window) {
                 });
                 binding = { ...candidate, map, engine, sentinel };
                 map.on('moveend', refresh);
-                if (owner !== win) { owner.document.addEventListener('pointerdown', dismiss, true); owner.document.addEventListener('keydown', escape, true); }
                 if (win.ResizeObserver) { binding.observer = new win.ResizeObserver(position); binding.observer.observe(candidate.frame || map.getContainer()); }
                 apply(); refresh(); return true;
             } catch (error) { console.warn('Better Peakbagger: map layers could not bind', error); unbind(); }
@@ -231,14 +224,14 @@ export function installMapLayers(win = window) {
             capture = sentinelTarget(data.target); relay(); post({ type: 'handoffState', snapshot: snapshot() });
         } else if (data.dir === 'toPage' && data.type === 'layerView' && frameMode) {
             const bounds = overlayBounds(data.bounds); if (bounds) { terrainView = { bounds, zoom: data.zoom }; clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300); }
-        } else if (data.dir === 'toPage' && data.type === 'layerDismiss' && frameMode) control.close({ focus: data.focus === true });
+        }
     };
     win.addEventListener('message', handle);
     win.addEventListener('scroll', position, { passive: true, capture: true }); win.addEventListener('resize', position);
     const themeObserver = new win.MutationObserver(paint); themeObserver.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-bpb-theme', 'data-theme'] });
     frameLifecycle.subscribe(start); frameLifecycle.start(); start(); post({ type: 'preferences' }); snowCard({ type: 'availability' });
     const lifecycle = createPageLifecycle({ ownerWindow: win,
-        onSuspend() { active = false; stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); control.close(); },
+        onSuspend() { active = false; stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
         onResume() { active = true; start(); post({ type: 'preferences' }); },
         onDispose() { disposed = true; active = false; stopPolling(); clearTimeout(stationTimer); if (relayFrame !== null) win.cancelAnimationFrame(relayFrame);
             post({ type: 'cancel' }); unbind(); frameLifecycle.dispose(); themeObserver.disconnect(); control.dispose();

@@ -312,8 +312,10 @@ map holds focus is visible only inside the frame — the frame handles that pres
 itself and relays it as `exit`. Inside the frame an open popup is the nearer
 layer and is dismissed first; a modified Escape is left to the browser, and an
 Escape with 3D closed is left to the page.
-The shared Layers popover closes before map popups or 3D and returns focus to
-its trigger. Editable controls keep their ordinary browser interactions.
+The shared Layers disclosure remains expanded through map interaction and
+renderer changes; only its button toggles it. Escape retains the map's existing
+popup/3D behavior without collapsing Layers. Editable controls in the frame
+keep their ordinary browser interactions.
 Modified Escape remains available
 to the browser in both the page coordinator and the renderer frame.
 

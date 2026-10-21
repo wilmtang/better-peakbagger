@@ -234,10 +234,11 @@ try {
                 await frame.locator('#bpb-terrain-map').evaluate(control => { control.style.fontSize = ''; });
                 await page.locator('.bpb-map-layers').evaluate(control => { control.style.fontSize = ''; });
                 await page.locator('.bpb-layers-trigger').click();
-                await page.locator('[data-layer="slope"] button').focus();
+                await frame.locator('[aria-label="Base map"]').click();
                 await page.keyboard.press('Escape');
-                assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, `${label}: Escape collapses the overlay menu`);
-                assert.equal(await page.locator('.bpb-layers-trigger').evaluate(element=>document.activeElement===element), true, `${label}: collapse returns focus to Layers`);
+                assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true, `${label}: basemap interaction preserves the overlay menu`);
+                await page.locator('.bpb-layers-trigger').click();
+                assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, `${label}: only the Layers button collapses the menu`);
             }
             const group = await frame.locator('.maplibregl-ctrl-group').boundingBox();
             const button = (await read()).button;

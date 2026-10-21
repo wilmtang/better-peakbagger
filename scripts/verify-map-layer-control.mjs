@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window */
+/* global document, window, getComputedStyle */
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
@@ -50,7 +50,14 @@ try {
         await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${12 * scale}px`; }, scale);
         const trigger = page.getByRole('button', { name: /^Layers/ });
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
+        const collapsedTrigger = await trigger.boundingBox();
+        const caret = trigger.locator('.bpb-layers-caret');
+        assert.equal(await caret.isVisible(), true);
+        assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'none');
         await trigger.click();
+        assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
+        assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'matrix(-1, 0, 0, -1, 0, 0)');
+        assert.deepEqual(await trigger.boundingBox(), collapsedTrigger, 'caret rotation does not move or resize the trigger');
         const box = await page.locator('.bpb-layers-panel').boundingBox();
         assert.ok(box.width <= 233 && box.height <= (scale === 1 ? 135 : 285), `compact overview ${JSON.stringify(box)}`);
         const mapBox = await page.locator('#map').boundingBox(), triggerBox = await trigger.boundingBox();
@@ -71,11 +78,19 @@ try {
             await page.evaluate(status => { window.fixture.statuses.slope = status; window.fixture.paint(); }, status); await stable();
         }
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-detail.png`) });
-        await slider.press('Escape'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
-        assert.equal(await page.evaluate(() => document.activeElement === window.fixture.control.trigger), true);
+        await slider.press('Escape'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true);
+        assert.equal(await slider.evaluate(element => document.activeElement === element), true, 'Escape keeps focus with the current control');
         assert.equal(await page.evaluate(() => window.fixture.state.slope.enabled), true);
-        await trigger.click(); assert.equal(await page.locator('.bpb-layers-details').isVisible(), false);
-        await page.mouse.click(width - 15, 320); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
+        await page.mouse.click(width - 15, 320); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true);
+        await page.locator('#map').click({ position: { x: mapBox.width - 10, y: 10 } });
+        assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true); await stable();
+        await trigger.click(); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
+        assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'none');
+        assert.deepEqual(await trigger.boundingBox(), collapsedTrigger, 'collapse leaves the trigger anchored');
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-collapsed.png`) });
+        await trigger.press('Enter'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true);
+        assert.equal(await page.locator('.bpb-layers-details').isVisible(), false, 'reopen starts with the compact overview');
+        await trigger.press('Space'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true });
     }
     assert.equal(errors.length, 0, errors.join('\n'));

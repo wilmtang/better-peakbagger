@@ -119,6 +119,14 @@ try {
         assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0, 'overlay menu contains no basemap selector');
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, 'starts collapsed');
         await page.getByRole('button', { name: /^Layers/ }).click();
+        await native.locator('#map').click({ position: { x: mapBox.width - 50, y: 80 } });
+        assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true, 'native map clicks preserve the open overlay menu');
+        await native.locator('#selmap').click(); await page.keyboard.press('Escape');
+        assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true, 'native basemap and Escape preserve the open overlay menu');
+        if (pathname.includes('layersFixture')) {
+            await page.getByRole('heading', { name: 'Following native content', exact: true }).click();
+            assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true, 'clicking other page content preserves the open overlay menu');
+        }
         await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).check();
         await page.getByRole('button', { name: /^Adjust Sentinel/ }).click();
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: 'Coverage' }).waitFor();
@@ -191,9 +199,8 @@ try {
     const terrain = page.frameLocator('#bpb-terrain-frame');
     await terrain.locator('canvas.maplibregl-canvas').waitFor();
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
-    await page.getByRole('button',{name:/^Layers/}).click();
-    await page.getByRole('button',{name:/^Adjust Sentinel/}).click();
-    await wait(() => document.querySelector('.bpb-layers-detail:not([hidden])')?.textContent.includes('Coverage'),'3D catalog metadata');
+    assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'switching to 3D preserves the expanded menu');
+    await wait(() => document.querySelector('.bpb-layers-detail:not([hidden])')?.textContent.includes('Coverage'),'preserved Sentinel detail in 3D');
     const renderer = await terrain.locator('canvas.maplibregl-canvas').evaluate(canvas => {const gl=canvas.getContext('webgl2');const info=gl.getExtension('WEBGL_debug_renderer_info');return info?gl.getParameter(info.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);});
     assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware renderer required: ${renderer}`);
     const coloredPixels = async color => {
@@ -211,8 +218,15 @@ try {
     await terrain.getByRole('combobox',{name:'Base map',exact:true}).selectOption('terrain');
     await waitForCondition(bluePixels,{description:'Sentinel remains painted over terrain-only base',timeoutMs:30000,isReady:count=>count>1000});
     assert.equal(await page.getByRole('checkbox',{name:'Sentinel-2 (experimental)',exact:true}).isChecked(),true);
-    await toggle.click();
+    await terrain.getByRole('combobox',{name:'Base map',exact:true}).click(); await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'3D basemap interaction preserves the expanded menu');
+    const canvas = terrain.locator('canvas.maplibregl-canvas');
+    const canvasBox = await canvas.boundingBox();
+    await canvas.click({position:{x:canvasBox.width*.7,y:canvasBox.height*.7}});
+    assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'3D map click preserves the expanded menu');
+    await canvas.press('Escape');
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'false');
+    assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'Escape leaves 3D without collapsing Layers');
     assert.equal(await page.locator('[aria-label="Sentinel-2 capture"]').inputValue(),older);
     await toggle.click();
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
@@ -220,9 +234,9 @@ try {
     assert.equal(await terrain.locator('.bpb-sentinel').count(),0,'overlay settings remain in the outer menu');
     assert.equal(await terrain.getByRole('combobox',{name:'Base map',exact:true}).inputValue(),'terrain','resuming preserves the independent basemap selector');
     assert.ok(await terrain.locator('[aria-label="Base map"] option').count()>=2);
-    if(output){await page.locator('.bpb-layers-trigger').click();await page.locator('[data-layer="sentinel"] button').click();await wait(()=>document.querySelector('.bpb-layers-detail:not([hidden])')?.textContent.includes('Coverage'),'settled capture detail for visual inspection');await page.screenshot({path:path.join(output,'3d.png')});}
+    if(output){await wait(()=>document.querySelector('.bpb-layers-detail:not([hidden])')?.textContent.includes('Coverage'),'settled capture detail for visual inspection');await page.screenshot({path:path.join(output,'3d.png')});}
     await toggle.click();await page.waitForFunction(()=>document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed')==='false');
-    await page.locator('.bpb-layers-trigger').click();await page.locator('[data-layer="sentinel"] input').uncheck();
+    await page.locator('[data-layer="sentinel"] input').uncheck();
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));forbidCatalog=true;
     await toggle.click();await page.waitForFunction(()=>document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed')==='true');
     assert.equal(await page.locator('[data-layer="sentinel"] input').isChecked(),false,'2D off wins over the parked renderer snapshot');

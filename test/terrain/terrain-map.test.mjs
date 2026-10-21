@@ -2270,7 +2270,7 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
     const time = Date.now() - 2 * 86400000;
     const catalog = [0, 1].map(index => ({ id: `scene_${index}`, collection: 'sentinel-2-l2a', properties: { datetime: new Date(time - index * 86400000).toISOString(), platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 41 }, geometry: { type: 'Polygon', coordinates: [[[-122,46],[-121,46],[-121,47],[-122,47],[-122,46]]] } }));
     const answer = async index => { pending[index].resolve({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify({ features: catalog }) }); await new Promise(resolve => setImmediate(resolve)); };
-    const snapshot = { revision: 1, state: { sentinel: { enabled: true, opacity: 50 } }, capture: { time: time - 86400000, platform: 'Sentinel-2B', orbit: '13' } };
+    const snapshot = { revision: 1, state: { sentinel: { enabled: true, opacity: 50 } }, capture: { time: time - 86400000, platform: 'Sentinel-2B', orbit: '13' }, menuOpen: true };
     try {
         dispatch({ type: 'init', ...payload }); map.loadCallback();
         assert.equal(pending.length, 0, 'providers stay idle until a validated overlay snapshot');
@@ -2281,6 +2281,11 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
         assert.ok(map.getSource('basemap'), 'imagery keeps the native drape');
         assert.equal(dom.window.document.querySelector('.bpb-sentinel'), null, 'overlay settings stay in the outer shared menu');
         assert.ok(framePicker(dom.window), 'basemap has its separate frame-owned picker');
+        const beforeInteraction = messages.length;
+        dom.window.document.getElementById('bpb-terrain-map').dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }));
+        dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        assert.equal(messages.at(-1).type, 'exit', 'map Escape retains its normal exit behavior while Layers stays open');
+        assert.equal(messages.slice(beforeInteraction).some(message => message.type === 'layerDismiss'), false, '3D interaction never dismisses Layers');
         const status = () => messages.filter(message => message.type === 'layerStatus').at(-1);
         assert.match(status().message, /Coverage 100% · Clouds 41%/); assert.notEqual(status().capture, 'latest');
         dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 2, state: { sentinel: { enabled: true, opacity: 75 } } } });

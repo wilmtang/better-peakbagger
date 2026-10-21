@@ -557,8 +557,6 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         } else if (data.type === 'layerView') {
             const bounds = overlayBounds(data.bounds);
             if (!suspended && frameLoaded && bounds && Number.isFinite(data.zoom) && data.zoom >= 0 && data.zoom <= 25) postToPage('layerView', { bounds, zoom: data.zoom });
-        } else if (data.type === 'layerDismiss') {
-            if (!suspended && frameLoaded) postToPage('layerDismiss', { focus: data.focus === true });
         } else if (data.type === 'camera') {
             const camera = terrainCamera.clean(data.camera);
             if (camera) postToPage('camera', {

@@ -1819,7 +1819,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         mapElement.setAttribute('aria-label', 'Interactive 3D terrain map');
         const weatherRoot = mapElement;
         const dismissWeatherMenu = () => { if (mapElement === weatherRoot && focusPeakFeature) post('weatherDismiss'); };
-        weatherRoot.addEventListener('pointerdown', () => { dismissWeatherMenu(); post('layerDismiss'); }, { capture: true, passive: true });
+        weatherRoot.addEventListener('pointerdown', dismissWeatherMenu, { capture: true, passive: true });
         weatherRoot.addEventListener('wheel', dismissWeatherMenu, { capture: true, passive: true });
 
         const canvas = document.createElement('div');
@@ -2322,7 +2322,6 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // Native pickers and editable controls own their Escape interaction.
         // Closing a layer list must not also leave the terrain view.
         if (event.target?.closest?.('select, input, textarea, [contenteditable]:not([contenteditable="false" i]), [role="combobox"], [role="slider"]')) return;
-        if (overlays?.menuOpen()) { event.preventDefault(); post('layerDismiss', { focus: true }); return; }
         if (snowMarkers.closePopup()) { event.preventDefault(); return; }
         if (peakPopup || routePopup) {
             event.preventDefault();

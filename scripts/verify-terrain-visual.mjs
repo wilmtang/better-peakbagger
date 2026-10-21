@@ -2016,8 +2016,10 @@ try {
         win.__apiLimitOriginalFetch = win.fetch;
         win.fetch = (url, init) => String(url).startsWith('https://planetarycomputer.microsoft.com/')
             ? Promise.resolve(new win.Response('unreadable', { status: 429, headers: { 'retry-after': '120' } })) : win.__apiLimitOriginalFetch(url, init);
-        document.querySelector('.bpb-layers-trigger').click();
-        document.querySelector('[data-layer="sentinel"] button').click();
+        const trigger = document.querySelector('.bpb-layers-trigger');
+        if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+        const disclosure = document.querySelector('[data-layer="sentinel"] button');
+        if (disclosure.getAttribute('aria-expanded') !== 'true') disclosure.click();
         const checkbox = document.querySelector('[data-layer="sentinel"] input');
         checkbox.checked = true; checkbox.dispatchEvent(new Event('change'));
     })()`);

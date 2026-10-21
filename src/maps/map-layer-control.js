@@ -21,6 +21,14 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const trigger = node('button', 'bpb-layers-trigger', 'Layers'); trigger.type = 'button';
     trigger.setAttribute('aria-expanded', 'false');
     const indicator = node('span', 'bpb-layers-indicator'); indicator.setAttribute('aria-hidden', 'true'); trigger.append(indicator);
+    const caret = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    caret.setAttribute('class', 'bpb-layers-caret'); caret.setAttribute('viewBox', '0 0 12 12');
+    caret.setAttribute('aria-hidden', 'true'); caret.setAttribute('focusable', 'false');
+    const caretPath = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+    caretPath.setAttribute('d', 'm2 4 4 4 4-4'); caretPath.setAttribute('fill', 'none');
+    caretPath.setAttribute('stroke', 'currentColor'); caretPath.setAttribute('stroke-width', '1.5');
+    caretPath.setAttribute('stroke-linecap', 'round'); caretPath.setAttribute('stroke-linejoin', 'round');
+    caret.append(caretPath); trigger.append(caret);
     const panel = node('div', 'bpb-layers-panel'); panel.hidden = true;
     const id = `bpb-layers-${Math.random().toString(36).slice(2)}`;
     panel.id = id; trigger.setAttribute('aria-controls', id);
@@ -143,20 +151,13 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         paint(); onOpen(open);
     };
     trigger.addEventListener('click', () => setOpen(!open));
-    const dismiss = event => { if (open && !element.contains(event.target)) setOpen(false); };
-    const escape = event => {
-        if (event.key !== 'Escape' || !open) return;
-        event.preventDefault(); event.stopImmediatePropagation(); setOpen(false); trigger.focus({ preventScroll: true });
-    };
-    doc.addEventListener('pointerdown', dismiss, true); doc.addEventListener('keydown', escape, true);
     paint();
     return {
         element, trigger,
         render(next) { model = next; paint(); },
         position(next) { rect = next; position(); },
         isOpen: () => open,
-        close({ focus = false } = {}) { setOpen(false); if (focus) trigger.focus({ preventScroll: true }); },
         announce(message) { live.textContent = message; },
-        dispose() { disposed = true; win.clearTimeout(cooldownTimer); doc.removeEventListener('pointerdown', dismiss, true); doc.removeEventListener('keydown', escape, true); element.remove(); },
+        dispose() { disposed = true; win.clearTimeout(cooldownTimer); element.remove(); },
     };
 }

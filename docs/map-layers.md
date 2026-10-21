@@ -5,6 +5,10 @@ standalone native maps opens one compact overlay menu. The basemap selector
 stays at the upper-right in both 2D and 3D. Enable any combination of overlays;
 closing the menu leaves them visible. Each row's disclosure
 opens its settings below the rows; only one detail is open at a time.
+The caret points down when collapsed and up when expanded. Only activating the
+**Layers** button toggles the menu, including Enter or Space while it has focus.
+Map/page clicks, basemap changes and Escape leave it expanded. Switching between
+2D and 3D also preserves the open menu and selected detail.
 
 | Overlay | Default opacity | Coverage and meaning |
 | --- | --- | --- |
@@ -16,7 +20,8 @@ opens its settings below the rows; only one detail is open at a time.
 Opacity updates immediately. Only opacity preferences are saved on this device;
 unrelated map sessions start with overlays off. A native Full Screen link carries
 the current selection once, for 30 seconds, to its matching destination tab.
-The handoff closes the menu and contains no GPX, route, scene catalog or account
+The destination starts with the menu collapsed. The handoff contains no GPX,
+route, scene catalog or account
 data. Reloading the destination starts a new session with overlays off.
 
 The same menu controls supported 3D maps. Existing 3D consent and subject gates

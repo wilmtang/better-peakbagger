@@ -683,7 +683,7 @@ async function main() {
         await settle('latest');await capturePicker.selectOption(dateKey);await settle(dateKey);
         await toggle.click();await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
         await toggle.click();await settle(dateKey);
-        await page.locator('.bpb-layers-trigger').click();await page.locator('[data-layer="sentinel"] button').click();
+        assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'renderer changes preserve the expanded Layers menu');
         await capturePicker.selectOption('latest');await settle('latest');
         const output = process.env.BPB_VERIFY_FIREFOX_SENTINEL_SCREENSHOT_DIR;
         if(output)await mkdir(output,{recursive:true});

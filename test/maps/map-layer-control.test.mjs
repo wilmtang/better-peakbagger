@@ -38,6 +38,34 @@ test('compact Layers control separates collapse, enablement and one detail selec
     control.trigger.click(); assert.equal(well.hidden, true, 'reopen is the compact overview');
     assert.equal(panel.querySelector('[aria-label="Base map"]'), null, 'basemap stays outside the overlay menu');
     control.trigger.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    assert.equal(panel.hidden, true); assert.equal(document.activeElement, control.trigger);
+    assert.equal(panel.hidden, false, 'Escape does not collapse the disclosure');
     control.dispose(); assert.equal(document.querySelector('.bpb-map-layers'), null); dom.window.close();
+});
+
+test('Layers stays expanded through outside interaction and only its button collapses it', () => {
+    const dom = new JSDOM('<body><button id="outside">Map action</button></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    control.trigger.click(); document.querySelector('[data-layer="slope"] button').click();
+    const outside = document.getElementById('outside'); outside.focus();
+    outside.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true })); outside.click();
+    assert.equal(control.isOpen(), true, 'outside clicks preserve the open menu');
+    const escape = new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    outside.dispatchEvent(escape); assert.equal(escape.defaultPrevented, false);
+    assert.equal(control.isOpen(), true); assert.equal(document.activeElement, outside, 'focus stays with the external action');
+    control.render({ state: Schema.mapOverlayState() });
+    assert.equal(document.querySelector('.bpb-layers-details').hidden, false, 'the selected detail remains open');
+    control.trigger.click(); assert.equal(control.isOpen(), false);
+    control.trigger.click(); assert.equal(control.isOpen(), true);
+    control.dispose(); dom.window.close();
+});
+
+test('Layers includes a decorative caret beside its accessible disclosure state', () => {
+    const dom = new JSDOM('<body></body>'), control = createMapLayerControl({ document: dom.window.document });
+    const caret = control.trigger.querySelector('.bpb-layers-caret');
+    assert.ok(caret, 'a visible caret indicates that Layers is collapsible');
+    assert.equal(caret.getAttribute('aria-hidden'), 'true');
+    assert.equal(control.trigger.getAttribute('aria-expanded'), 'false');
+    control.trigger.click(); assert.equal(control.trigger.getAttribute('aria-expanded'), 'true');
+    control.trigger.click(); assert.equal(control.trigger.getAttribute('aria-expanded'), 'false');
+    control.dispose(); dom.window.close();
 });

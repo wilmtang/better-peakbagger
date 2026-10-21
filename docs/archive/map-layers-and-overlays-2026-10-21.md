@@ -552,3 +552,33 @@ capture persistence, SNOTEL behavior, and existing 3D consent/eligibility gates.
 live authenticated Peakbagger page, native browser menus, physical touch,
 screen-reader speech, or OS focus/window placement. The broader pre-existing
 verification gaps recorded above remain separate.
+
+## Follow-up: persistent Layers disclosure
+
+The user's next interaction correction supersedes the earlier Escape/outside-
+click dismissal behavior. Layers has a decorative caret pointing down when
+collapsed and up when expanded. Only its button toggles the whole menu, through
+pointer or Enter/Space activation. Map clicks, page controls, native/3D basemap
+interaction and Escape preserve its open state and selected detail; Escape
+retains the map's normal popup/3D behavior. Automatic dismissal was removed
+from the component, native-frame owner, terrain frame and isolated relay.
+
+**Fixed and verified:** new tests first reproduced outside-click collapse and
+the missing caret. All 3,048 tests passed after the change. Hidden Chrome 156
+component checks passed eight 736/320 by 800 cases across both themes and normal/
+double text, including caret direction, anchored trigger geometry, persistent
+disclosures, opacity/status changes, and Enter/Space toggling. Chrome 156 and
+Firefox 157 hardware-Metal fixtures passed 10 map-control cases each at
+1280/375 by 1000. The real unpacked Chrome integration passed sticky native
+menus on all four surfaces, basemap/page clicks, 3D map clicks, Escape returning
+to 2D, pinned captures and renderer changes at 1000 by 700. Rendered caret and
+menu states were visually inspected.
+The real-manifest Chrome startup/BFCache check, scoped ESLint and web-ext lint
+(eight owned warnings) also passed.
+
+**Intentionally not changed:** overlay enablement/opacity, provider work,
+basemap ownership, one-use Full Screen state handoff and 3D eligibility.
+
+**Changed but not fully proven:** fixture results do not establish live-site
+compatibility, native browser menus/OS focus, physical touch or screen-reader
+speech. The earlier broad verification gaps remain separate.
