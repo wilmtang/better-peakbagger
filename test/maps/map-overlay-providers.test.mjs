@@ -1,0 +1,35 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { SLOPE_BANDS, SLOPE_RULE, LAND_RENDERER, overlayTileUrl, tileBounds, overlayBounds, viewportStations } from '../../src/maps/map-overlay-providers.js';
+
+test('slope classification uses the service degree template with exact inclusive lower boundaries', () => {
+    const remap = SLOPE_RULE.rasterFunctionArguments.Raster.rasterFunctionArguments;
+    assert.equal(remap.Raster.rasterFunction, 'Slope Degrees');
+    assert.equal(remap.AllowUnmatched, false);
+    assert.deepEqual(remap.InputRanges, [20, 30, 30, 35, 35, 40, 40, 45, 45, 91]);
+    for (const [value, expected] of [[0, -1], [19.99, -1], [20, 0], [29.99, 0], [30, 1], [35, 2], [40, 3], [45, 4], [90, 4]]) {
+        assert.equal(SLOPE_BANDS.findIndex(band => value >= band.from && value < band.to), expected);
+    }
+    assert.deepEqual(SLOPE_RULE.rasterFunctionArguments.Colormap, SLOPE_BANDS.map((band, i) => [i + 1, ...band.color]));
+});
+test('ownership colors only explicit fee ownership, leaving all unclassified areas transparent', () => {
+    assert.equal(LAND_RENDERER.field1, 'Own_Type');
+    assert.equal(LAND_RENDERER.defaultSymbol.style, 'esriSFSNull');
+    assert.deepEqual(LAND_RENDERER.uniqueValueInfos.map(item => item.value), ['FED', 'STAT', 'LOC', 'DIST', 'TRIB']);
+    const url = new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 }));
+    assert.equal(url.hostname, 'edits.nationalmap.gov');
+    assert.equal(url.searchParams.get('transparent'), 'true');
+    assert.deepEqual(JSON.parse(url.searchParams.get('dynamicLayers'))[0].drawingInfo.renderer, LAND_RENDERER);
+    assert.throws(() => overlayTileUrl('private', { z: 1, x: 0, y: 0 }));
+});
+test('tiles wrap at the dateline and viewport station selection does not silently truncate', () => {
+    assert.deepEqual(tileBounds({ z: 3, x: -1, y: 1 }), tileBounds({ z: 3, x: 7, y: 1 }));
+    assert.throws(() => tileBounds({ z: 3, x: 0, y: 8 }));
+    assert.equal(overlayBounds([-180, -90, 180, 90]), null);
+    assert.equal(overlayBounds([-2000, 0, -1990, 10]), null);
+    const stations = Array.from({ length: 51 }, (_, i) => ({ id: i, longitude: -179, latitude: 51 }));
+    assert.equal(viewportStations(stations, [170, 50, 190, 60]).length, 51);
+    assert.equal(viewportStations(stations, [170, 52, 190, 60]).length, 0);
+});
