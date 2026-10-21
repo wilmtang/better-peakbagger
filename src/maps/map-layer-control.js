@@ -135,10 +135,10 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
             const shown = current.enabled && (key === 'snotel' || current.opacity > 0);
-            const kind = !shown ? '' : status.pending ? 'loading' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
+            const kind = !shown ? '' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
             const cooldown = status.retryAt > Date.now();
             const summary = kind === 'loading' ? status.permission ? 'Waiting for access' : 'Loading'
-                : kind === 'permission' ? status.partial ? 'Partly loaded' : 'Needs access'
+                : kind === 'saved' ? 'Refresh failed' : kind === 'zoom' ? 'Zoom in' : kind === 'permission' ? status.partial ? 'Partly loaded' : 'Needs access'
                     : kind === 'coverage' ? 'No coverage' : kind === 'error' ? cooldown ? 'Service busy' : status.captureError ? 'Search failed' : status.partial ? 'Partly loaded' : 'Couldn’t load' : '';
             const heldRecovery = shown && detail.recovering && doc.activeElement === detail.retry && !status.permission;
             const recovered = heldRecovery && !status.pending && !status.error;
@@ -163,7 +163,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
             detail.status.textContent = !current.enabled ? status.unavailable ? status.message : 'Turn on to show this layer.'
-                : !shown ? 'Increase opacity to show this layer.' : cooldown ? `Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Layer refreshed.' : '');
+                : !shown ? 'Increase opacity to show this layer.' : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Layer refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
                 const signature = JSON.stringify(keys);

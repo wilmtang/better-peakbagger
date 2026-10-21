@@ -86,6 +86,31 @@ test('public catalog alone persists; measurement requests omit coordinates, cred
     assert.deepEqual(await cachedClient.stations(), stations);
 });
 
+test('station metadata recovers one temporary failure and reuses the validated catalog', async () => {
+    let calls = 0;
+    const client = createSnotelClient({ now: () => NOW, retryDelayMs: 0, fetchFn: async () => ++calls === 1 ? new Response('', { status: 503 }) : response(snotelStations()) });
+    try {
+        const catalog = await client.stations(); assert.equal(calls, 2); assert.equal(catalog.length, 2);
+        await client.stations(); assert.equal(calls, 2, 'panning reuses station metadata instead of repeating the network work');
+    } finally { client.clear(); }
+});
+
+test('station metadata recovery never retries invalid data or permanent HTTP errors', async () => {
+    for (const body of [new Response('', { status: 404 }), response([{ stationTriplet: 'bad' }])]) {
+        let calls = 0;
+        const client = createSnotelClient({ retryDelayMs: 0, fetchFn: async () => { calls++; return body; } });
+        try { await assert.rejects(client.stations()); assert.equal(calls, 1); } finally { client.clear(); }
+    }
+});
+
+test('the final metadata subscriber cancels automatic recovery before another NRCS request', async () => {
+    let calls = 0, started; const ready = new Promise(resolve => { started = resolve; });
+    const client = createSnotelClient({ retryDelayMs: 60000, fetchFn: async () => { calls++; started(); return new Response('', { status: 503 }); } });
+    const controller = new AbortController(), loading = client.stations({ signal: controller.signal });
+    await ready; await new Promise(resolve => setImmediate(resolve)); controller.abort();
+    await assert.rejects(loading, { name: 'AbortError' }); assert.equal(calls, 1); client.clear();
+});
+
 test('concurrent catalog readers share one validated cache/network flight', async () => {
     let reads = 0, requests = 0;
     const client = createSnotelClient({ now: () => NOW,

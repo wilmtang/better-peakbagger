@@ -4,6 +4,7 @@
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { rateLimitError } from '../net/rate-limit.js';
+import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.js';
 import { validateSnotelStations, validateSnotelData } from './snotel-data.js';
 
 const BASE = 'https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/';
@@ -11,7 +12,7 @@ export const SNOTEL_CATALOG_KEY = 'bpbSnotelCatalogV1';
 const CATALOG_TTL = 7 * 86400_000, DATA_TTL = 30 * 60_000;
 const aborted = () => Object.assign(new Error('Cancelled.'), { name: 'AbortError' });
 
-export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000, storage } = {}) {
+export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000, retryDelayMs = 350, storage } = {}) {
     let catalog = null, limited = null, catalogFlight = null;
     const cache = new Map();
     const request = async (path, params, signal, maxBytes) => {
@@ -34,7 +35,7 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
                 limited.retryAt ??= now() + 5 * 60_000;
                 throw limited;
             }
-            if (!response.ok) throw new Error('NRCS is unavailable. Try again in a few minutes.');
+            if (!response.ok) throw Object.assign(new Error('NRCS is unavailable. Try again in a few minutes.'), { transient: temporaryHttpStatus(response.status) });
             const text = await run(readBoundedResponseText(response, { maxBytes, maxChars: maxBytes, signal: deadline.signal, label: 'NRCS response' }));
             return JSON.parse(text);
         } finally {
@@ -61,7 +62,8 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
             }
         } catch (error) { if (signal?.aborted) throw error; /* Invalid/unavailable cache falls back to the official API. */ }
         finally { cacheDeadline.clear(); signal?.removeEventListener('abort', cancelCache); }
-        const body = await request('stations', { stationTriplets: '*:*:SNTL', elements: 'SNWD,WTEQ', durations: 'DAILY', activeOnly: 'true' }, signal, 2_000_000);
+        const body = await retryTransient(() => request('stations', { stationTriplets: '*:*:SNTL', elements: 'SNWD,WTEQ', durations: 'DAILY', activeOnly: 'true' }, signal, 2_000_000),
+            { signal, delayMs: retryDelayMs });
         const validated = validateSnotelStations(body);
         if (signal?.aborted) throw aborted();
         catalog = { stations: validated, expires: now() + CATALOG_TTL };

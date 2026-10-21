@@ -163,8 +163,11 @@ try {
             { attributes: { objectid: 3, crownclass: 'Private' }, geometry: { rings: [ring(.85,0,1,1)] } },
         ] }) });
     });
+    let snotelCatalogAttempts = 0;
     await context.route('https://wcc.sc.egov.usda.gov/**', route => {
         const url = new URL(route.request().url());
+        if (url.pathname.endsWith('/stations') && ++snotelCatalogAttempts === 1)
+            return route.fulfill({ status: 503, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'Temporarily unavailable' });
         return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
             body: JSON.stringify(url.pathname.endsWith('/stations') ? snotelStations() : snotelFixture(url.searchParams.get('stationTriplets'), url.searchParams.get('duration'), Date.now())) });
     });
@@ -267,6 +270,7 @@ try {
         assert.equal(await page.locator('[data-layer="snotel"]').getAttribute('data-selected'), 'true', 'SNOTEL activation selects its own details');
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: /stations? in view/ }).waitFor();
         assert.ok(await native.locator('.bpb-snotel-marker').count() > 0, 'viewport stations rendered');
+        assert.equal(snotelCatalogAttempts, 2, 'station metadata recovered once, then reused the device-local catalog');
         assert.equal(await native.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles) && mapsPlaceholder.hasLayer(nativeRoute)), true, 'native layers preserved');
         const before = searches;
         await slider.count();

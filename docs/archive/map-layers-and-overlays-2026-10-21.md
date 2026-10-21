@@ -971,3 +971,46 @@ are stubbed in browser fixtures. Live provider failure distributions, native
 permission prompts, screen-reader speech, physical touch and OS focus remain
 unproven. Prior partial Canadian coverage and full Firefox map-integration gaps
 remain separate.
+
+## Follow-up: SNOTEL metadata recovery and retained locations
+
+**Fixed and verified:** station catalog requests share the bounded transient
+retry helper. Temporary network/timeout and HTTP 408/500/502/503/504 failures
+retry once after 350 ms; cancellation stops the wait. Invalid catalogs,
+permanent errors and rate limits are not automatically replayed. A failed
+viewport refresh retains loaded markers and reports **Refresh failed** with
+**Showing loaded locations** only when known stations remain in the current
+view. An unknown view is not reported as an empty result. Overflow reports
+**Zoom in**. Turning the layer off clears retained-location feedback, including
+during a service cooldown. Successful passive refresh and Retry do not repeat
+the activation-only reveal.
+
+All 3,112 tests passed, along with scoped ESLint and web-ext lint (eight owned
+warnings). The metadata recovery and native/3D retained-location assertions
+first failed against the unfixed implementation for the intended defects. The
+off/on cooldown assertion likewise failed before its fix. New coverage also
+checks cancellation, permanent/invalid responses and overflow.
+
+Hidden Chrome 156.0.8078.4 and Firefox 157 each passed eight menu cases at
+736/320 by 800, both themes and normal/double text. The SNOTEL description stays
+present through failure, pending and success; Retry/Reload, the panel, overview,
+following content and scroll stay anchored. Focus and duplicate keyboard
+activation guards passed. Narrow dark and doubled-text light failure states
+were visually inspected. Hidden real-extension Chrome at 1000 by 700 passed
+all four native map surfaces after an initial NRCS 503, exactly one automatic
+retry and later local catalog reuse. The hardware 3D and existing raster
+recovery, Canadian coverage, capture/cloud metadata, opacity and handoff checks
+also passed on ANGLE/Metal Apple M3 Pro. Native SNOTEL and terrain captures were
+visually inspected. The final real-manifest startup/BFCache check passed in
+hidden Chrome at 1000 by 760. All browser verifiers reported teardown; process
+command lines and disposable profile paths were checked and absent.
+
+**Intentionally not changed:** observation-request retry policy, cache TTLs,
+catalog persistence limits, station limits, one-time activation zoom and map
+privacy. No map coordinates are sent to NRCS, no new permission or setting was
+added, and observation freshness is not implied by retained station locations.
+
+**Changed but not fully proven:** NRCS responses are stubbed in browser fixtures;
+live availability and service recovery timing remain unproven. Full Firefox
+map integration, physical touch, screen-reader speech and native OS focus
+remain outside these hidden checks. Existing Canadian coverage gaps remain.

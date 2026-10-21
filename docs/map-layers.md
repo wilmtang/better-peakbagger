@@ -77,7 +77,13 @@ summary; imagery errors do not disable ready capture choices or change dates.
 
 SNOTEL shares the snow card's isolated metadata client and seven-day public
 catalog cache. Viewport filtering happens locally; NRCS receives no map bounds
-or summit coordinates. Explicit activation reveals the nearest three stations
+or summit coordinates. Catalog requests use one bounded transient retry; invalid
+data, permanent failures and rate limits are not automatically replayed. Snow
+observation requests keep their existing behavior. A failed refresh preserves
+loaded markers, says **Refresh failed** with **Showing loaded locations**, and
+recounts only known locations still in view. This is distinct from a confirmed
+empty result. An overflow says **Zoom in**, rather than claiming zero stations.
+Explicit activation reveals the nearest three stations
 within 50 km when none are visible, using the original one-time zoom-out and
 reduced-motion behavior. Later pans and renderer changes do not repeat it;
 moving the map while the catalog loads cancels pending auto-zoom.

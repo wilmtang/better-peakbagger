@@ -9,12 +9,13 @@ const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longi
 const bounds = [-121.77, 46.84, -121.75, 46.86];
 function setup(terrain = false) {
     const dom = new JSDOM('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
-    const win = dom.window, messages = [], moves = [], events = new Map();
+    const win = dom.window, messages = [], moves = [], removed = [], events = new Map(); let currentBounds = bounds;
     const container = win.document.getElementById('map');
     container.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
-    const map = { getBounds: () => ({ getWest: () => bounds[0], getSouth: () => bounds[1], getEast: () => bounds[2], getNorth: () => bounds[3] }),
+    const map = { getBounds: () => ({ getWest: () => currentBounds[0], getSouth: () => currentBounds[1], getEast: () => currentBounds[2], getNorth: () => currentBounds[3] }),
         getCenter: () => ({ lat: 46.85, lng: -121.76 }), getZoom: () => 17, getSize: () => ({ x: 800, y: 400 }),
-        getContainer: () => container, eachLayer() {}, removeLayer() {}, latLngToContainerPoint: () => ({ x: -1000, y: -1000 }),
+        getContainer: () => container, eachLayer() {}, removeLayer: layer => removed.push(layer),
+        latLngToContainerPoint: ([lat, lon]) => ({ x: lon >= currentBounds[0] && lon <= currentBounds[2] && lat >= currentBounds[1] && lat <= currentBounds[3] ? 400 : -1000, y: 200 }),
         on(name, handler) { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(handler); },
         off(name, handler) { events.get(name)?.delete(handler); }, flyToBounds: (...args) => moves.push(args), stop() {} };
     win.mapsPlaceholder = map; win.fetch = async () => { throw new Error('Unexpected provider request'); };
@@ -28,7 +29,9 @@ function setup(terrain = false) {
     if (terrain) { send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input').click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
-    return { win, messages, moves, send, toggle, request, pan: () => { for (const handler of events.get('moveend') || []) handler({ target: map }); },
+    const pan = () => { for (const handler of events.get('moveend') || []) handler({ target: map }); };
+    return { win, messages, moves, removed, send, toggle, request, pan,
+        view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner.dispose(); win.close(); } };
 }
 
@@ -40,6 +43,54 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL a
         env.send({ type: 'preferences', snotel: true });
         if (terrain) assert.equal(env.messages.filter(message => message.type === 'snowStations' && message.reveal === true).length, 1);
         else assert.equal(env.moves.length, 1);
+    } finally { env.close(); }
+});
+
+for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL refresh failures keep loaded markers without claiming an empty view or repeating auto-zoom`, t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const env = setup(terrain), visibleStation = { ...station, latitude: 46.85, longitude: -121.76 };
+    try {
+        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [visibleStation] });
+        env.win.document.querySelector('.bpb-layers-trigger').click();
+        env.view(bounds); t.mock.timers.tick(300);
+        env.send({ type: 'stations', requestId: env.request().requestId, error: true });
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Refresh failed');
+        assert.match(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Showing loaded locations/);
+        assert.equal(env.removed.length, 0, 'the existing marker group remains intact');
+        env.win.document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry').click();
+        assert.equal(env.request().reveal, false, 'retry cannot repeat the activation auto-zoom');
+        env.send({ type: 'stations', requestId: env.request().requestId, stations: [visibleStation] });
+        assert.equal(env.moves.length, 0);
+        env.view([-122,45,-121,46]); t.mock.timers.tick(300);
+        env.send({ type: 'stations', requestId: env.request().requestId, error: true });
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Couldn’t load');
+        assert.doesNotMatch(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /No SNOTEL stations/);
+    } finally { env.close(); }
+});
+
+test('SNOTEL overflow asks for a closer view instead of claiming zero stations', () => {
+    const env = setup();
+    try {
+        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [], overflow: true });
+        env.win.document.querySelector('.bpb-layers-trigger').click();
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Zoom in');
+        assert.match(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /More than 50 stations/);
+        assert.equal(env.moves.length, 0);
+    } finally { env.close(); }
+});
+
+test('turning SNOTEL off clears loaded-location feedback even during a provider cooldown', t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const env = setup(), visibleStation = { ...station, latitude: 46.85, longitude: -121.76 };
+    try {
+        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [visibleStation] });
+        env.win.document.querySelector('.bpb-layers-trigger').click();
+        env.pan(); t.mock.timers.tick(300);
+        env.send({ type: 'stations', requestId: env.request().requestId, error: true, retryAt: Date.now() + 120000 });
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Refresh failed');
+        env.toggle(); env.toggle();
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Service busy');
+        assert.doesNotMatch(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Showing loaded locations/);
     } finally { env.close(); }
 });
 

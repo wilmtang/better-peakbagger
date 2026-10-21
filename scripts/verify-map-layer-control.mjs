@@ -39,12 +39,12 @@ try {
             {id:'latest',label:'Latest · 10-07 18:27 · ☁ 3%',title:'Latest · 2026-10-07 18:27 PDT · Clouds 3%'},
             {id:'older',label:'2026-10-06 18:27 · ☁ 100%',title:'2026-10-06 18:27 PDT · Clouds 100%'},
             {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]},
-            land:publicLandInfo(null)};
+            land:publicLandInfo(null),snotel:{legend:'NRCS active stations in the visible map. Station observations may differ from route conditions.'}};
         const control=createMapLayerControl({document,
             onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
             onCapture:value=>{const status=statuses.sentinel;status.capture=value;status.message='Coverage 100% · Clouds '+status.captures.find(choice=>choice.id===value).title.split(' · Clouds ')[1];paint()},
-            onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:'Loading map tiles'};paint()}});
+            onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:id==='snotel'?'Loading stations':'Loading map tiles'};paint()}});
         document.body.append(control.element);
         function paint(){control.render({state,statuses,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
         window.fixture={control,state,statuses,paint,landInfo:publicLandInfo};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
@@ -207,6 +207,27 @@ try {
             assert.equal(metadata.title, metadata.accessible); await stable();
         }
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-sentinel.png`) });
+        await page.locator('[data-layer="snotel"] button').click();
+        await page.evaluate(() => { window.fixture.state.snotel.enabled = true; window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, error: true, saved: true, retry: true, count: 3, message: 'Showing loaded locations.' }; window.fixture.paint(); });
+        const stationRetry = page.getByRole('button', { name: /^(Retry|Reload)$/ }); await stationRetry.scrollIntoViewIfNeeded(); await stationRetry.focus();
+        const stationBox = await stationRetry.boundingBox(), stationPanel = await page.locator('.bpb-layers-panel').boundingBox();
+        const stationScroll = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
+        assert.equal(await page.locator('[data-layer="snotel"] .bpb-layers-row-status').textContent(), 'Refresh failed');
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-snotel-refresh.png`) });
+        await stationRetry.click(); await stable();
+        assert.deepEqual(await stationRetry.boundingBox(), stationBox);
+        assert.deepEqual(await page.locator('.bpb-layers-panel').boundingBox(), stationPanel, 'station recovery preserves the compact panel dimensions');
+        const stationRequests = await page.evaluate(() => window.fixture.retryRequests);
+        await stationRetry.press('Enter'); assert.equal(await page.evaluate(() => window.fixture.retryRequests), stationRequests);
+        await page.evaluate(() => { window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, pending: false, error: false, saved: false, retry: false, count: 3, message: '3 stations in view.' }; window.fixture.paint(); }); await stable();
+        assert.equal(await stationRetry.textContent(), 'Reload');
+        assert.deepEqual(await stationRetry.boundingBox(), stationBox);
+        assert.deepEqual(await page.locator('.bpb-layers-panel').boundingBox(), stationPanel);
+        assert.equal(await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop), stationScroll);
+        assert.equal(await stationRetry.evaluate(element => document.activeElement === element), true);
+        await page.locator('[data-layer="snotel"] input').focus();
+        await page.evaluate(() => { window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, count: 0, overflow: true, message: 'More than 50 stations. Zoom in.' }; window.fixture.paint(); }); await stable();
+        assert.equal(await page.locator('[data-layer="snotel"] .bpb-layers-row-status').textContent(), 'Zoom in');
         cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true });
     }
     const setupAssets = new Set(['bc-land/access.html', 'bc-land/access-head.js', 'bc-land/access.js', 'css/panel.css', 'css/gaia-access.css', 'css/bc-land-access.css', 'icons/icon-48.png']);

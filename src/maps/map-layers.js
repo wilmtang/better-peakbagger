@@ -6,7 +6,7 @@ import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { sentinelTarget } from './sentinel-core.js';
-import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus } from './map-overlay-providers.js';
+import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -108,6 +108,7 @@ export function installMapLayers(win = window) {
             if (id === 'snotel') {
                 cancelReveal(); revealPending = enabled;
                 requestId++; post({ type: 'cancel' }); stations = [];
+                statuses.snotel.saved = false; statuses.snotel.overflow = false; statuses.snotel.count = 0;
                 if (!enabled) { nearbyPending = false; nearbyRequest++; snowCard({ type: 'cancel' }); statuses.snotel.pending = false; }
             }
             changed(); if (id === 'snotel' && enabled) loadStations();
@@ -243,11 +244,15 @@ export function installMapLayers(win = window) {
             } else if (data.type === 'stations' && data.requestId === requestId && state.snotel.enabled && snotelAllowed) {
                 const next = readSnotelMapStations(data.stations);
                 let reveal = false;
-                if (data.error === true || !next) statuses.snotel = { ...statuses.snotel, pending: false, error: true, retry: true,
-                    message: 'Stations unavailable. Retry.', retryAt: Number.isFinite(data.retryAt) ? data.retryAt : 0 };
+                if (data.error === true || !next) {
+                    const visible = viewportStations(stations, stationView());
+                    statuses.snotel = { ...statuses.snotel, pending: false, error: true, retry: true, saved: visible.length > 0, overflow: false, count: visible.length,
+                        message: visible.length ? 'Showing loaded locations.' : 'Couldn’t load station locations. Try again.',
+                        retryAt: Number.isFinite(data.retryAt) ? data.retryAt : 0 };
+                }
                 else {
                     stations = next; reveal = revealPending; revealPending = false;
-                    statuses.snotel = { ...statuses.snotel, pending: false, error: false, retry: false, count: next.length,
+                    statuses.snotel = { ...statuses.snotel, pending: false, error: false, retry: false, saved: false, overflow: data.overflow === true, count: next.length,
                         message: data.overflow === true ? 'More than 50 stations. Zoom in.'
                             : data.nearby === true ? next.length ? `${next.length} nearby stations.` : 'No SNOTEL stations within 50 km.'
                                 : next.length ? `${next.length} stations in view.` : 'No SNOTEL stations in view.' };
