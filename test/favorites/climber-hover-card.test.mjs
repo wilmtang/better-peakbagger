@@ -124,7 +124,13 @@ test('own profile links stay undecorated in headings, lists, report rows, and la
         assert.equal(link.nextElementSibling?.matches('.bpb-climber-actions-trigger') || false, false);
         assert.equal(link.tabIndex, 0);
     };
-    for (const link of [doc.getElementById('owner'), ...doc.querySelectorAll('[data-self]')]) assertBare(link);
+    for (const link of [doc.getElementById('owner'), ...doc.querySelectorAll('[data-self]')]) {
+        assertBare(link);
+        pointer(dom, link, 'pointerover'); link.focus();
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(card.hidden, true, 'hover and keyboard focus must not open a self card');
+        pointer(dom, link, 'pointerout'); link.blur();
+    }
     assert.equal(doc.getElementById('same-name').nextElementSibling.matches('.bpb-climber-actions-trigger'), true,
         'identity comes from the climber ID, not the displayed name');
     doc.querySelector('main').insertAdjacentHTML('beforeend',
@@ -149,12 +155,13 @@ test('card keeps name links intact and exposes only eligible, visible people', a
         dom.window.document.querySelector('main').insertAdjacentHTML('beforeend',
             '<a id="ambiguous" href="/climber/climber.aspx?cid=900002&cid=900003">No</a>'
             + '<div hidden><a id="hidden-person" href="/climber/climber.aspx?cid=900002">Hidden</a></div>'
+            + '<div><a id="home-page" href="/climber/climber.aspx?cid=900002">Home Page</a></div>'
             + '<nav><a id="navigation" href="/climber/climber.aspx?cid=900002">Casey</a></nav>');
     } }); t.after(() => dom.window.close());
     const link = dom.window.document.getElementById('casey');
     assert.equal(link.getAttribute('href'), '/climber/climber.aspx?cid=900002');
-    for (const id of ['ambiguous', 'hidden-person', 'navigation', 'owner']) {
-        assert.equal(dom.window.document.getElementById(id).nextElementSibling?.classList.contains('bpb-climber-actions-trigger') || false, false);
+    for (const id of ['ambiguous', 'hidden-person', 'home-page', 'navigation', 'owner']) {
+        assert.equal(dom.window.document.getElementById(id).nextElementSibling?.classList.contains('bpb-climber-actions-trigger') || false, false, id);
     }
     const activation = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
     link.addEventListener('click', event => event.preventDefault(), { once: true });

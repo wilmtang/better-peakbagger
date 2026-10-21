@@ -41,8 +41,8 @@ test('card targets accept real profile links and reject ambiguous or non-person 
         '/climber/climber.aspx?cid=9007199254740993', '/climber/ClimbListC.aspx?cid=900002']) {
         assert.equal(climberCardTarget(href, 'Casey Alpine', 'https://www.peakbagger.com/'), null, href);
     }
-    for (const label of ['', ' My Home Page ', 'View profile']) {
-        assert.equal(climberCardTarget('/climber/climber.aspx?cid=900002', label, 'https://www.peakbagger.com/'), null);
+    for (const label of ['', ' My Home Page ', 'Home Page', ' HOME\n PAGE ', 'Home', 'Profile', 'View profile', 'Climber page']) {
+        assert.equal(climberCardTarget('/climber/climber.aspx?cid=900002', label, 'https://www.peakbagger.com/'), null, label);
     }
 });
 

@@ -857,6 +857,8 @@ export async function createBrowserFixtureServer({
             const html = renderOtherClimber();
             return send('text/html; charset=utf-8', url.searchParams.has('hover') ? html.replace('</body>',
                 '<section id="hover-card-fixture" style="margin:24px;max-width:440px;text-align:left">'
+                + '<div><a id="hover-home" href="/climber/climber.aspx?cid=900002">Home Page</a> · '
+                + '<a href="/climber/ClimbListC.aspx?cid=900002">Peak List</a></div>'
                 + '<h2>Recent ascents</h2><p><a id="hover-climber" href="/climber/climber.aspx?cid=900002">Morgan Longlastname</a></p>'
                 + '<p><a id="hover-other" href="/climber/climber.aspx?cid=900003">Casey Summit</a></p>'
                 + '<p><a id="hover-self" href="/climber/climber.aspx?cid=900001">Alex Doe</a></p></section></body>') : html);

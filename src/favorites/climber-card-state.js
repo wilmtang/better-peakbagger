@@ -8,7 +8,7 @@ import * as I from './ignored-climbers.js';
 export const climberCardTarget = (href, label, base) => {
     const cid = I.profileId(href, base);
     const name = String(label || '').replace(/\s+/g, ' ').trim();
-    if (!cid || !name || /^(?:my home page|home|profile|view profile|climber page)$/i.test(name)) return null;
+    if (!cid || !name || /^(?:(?:my )?home page|home|profile|view profile|climber page)$/i.test(name)) return null;
     return { cid, name: name.slice(0, F.NAME_LIMIT), url: F.climberPageUrl(cid) };
 };
 

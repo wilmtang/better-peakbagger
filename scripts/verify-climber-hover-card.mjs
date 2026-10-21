@@ -114,6 +114,7 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
                             scroll: node.scrollWidth, client: node.clientWidth }));
                     return { width: innerWidth, topLayer: card.matches(':popover-open'),
                         selfWrapped: document.getElementById('hover-self').closest('.bpb-climber-link') != null,
+                        homeWrapped: document.getElementById('hover-home').closest('.bpb-climber-link') != null,
                         card: { left: rect.left, right: rect.right, bottom: rect.bottom }, controls,
                         horizontalOverflow: card.scrollWidth > card.clientWidth + 1,
                         secondaryActions: ['bpb-climber-card-favorite', 'bpb-climber-card-ignore'].map(id => {
@@ -130,6 +131,7 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
                 assert.equal(geometry.topLayer, true, 'card is not in the browser top layer');
                 assert.equal(geometry.width, width, 'browser did not apply the requested content viewport');
                 assert.equal(geometry.selfWrapped, false, 'own profile links must never get climber actions');
+                assert.equal(geometry.homeWrapped, false, 'Home Page navigation must never get climber actions');
                 assert.equal(geometry.horizontalOverflow, false, JSON.stringify(geometry));
                 assert.deepEqual(geometry.secondaryActions[1], geometry.secondaryActions[0],
                     `Ignore must match the favorite button: ${JSON.stringify(geometry)}`);
@@ -145,6 +147,14 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
         }
     };
     await wait(() => document.querySelector('#hover-climber + .bpb-climber-actions-trigger'));
+    const excludedLinks = await evaluate(() => ['hover-home', 'hover-self'].map(id => {
+        const anchor = document.getElementById(id);
+        return { id, wrapped: anchor.closest('.bpb-climber-link') != null,
+            trigger: anchor.nextElementSibling?.matches('.bpb-climber-actions-trigger') || false, tabIndex: anchor.tabIndex };
+    }));
+    for (const { id, ...link } of excludedLinks) {
+        assert.deepEqual(link, { wrapped: false, trigger: false, tabIndex: 0 }, `${id} must stay a plain navigation link`);
+    }
     const normalLink = await evaluate(() => ({ href: document.getElementById('hover-climber').getAttribute('href'),
         tabIndex: document.getElementById('hover-climber').tabIndex }));
     assert.deepEqual(normalLink, { href: '/climber/climber.aspx?cid=900002', tabIndex: 0 });
