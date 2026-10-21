@@ -3,8 +3,14 @@
 The **Layers** button at the upper-left of ascent, peak, Full Screen and
 standalone native maps opens one compact overlay menu. The basemap selector
 stays at the upper-right in both 2D and 3D. Enable any combination of overlays;
-closing the menu leaves them visible. Each row's disclosure
-opens its settings below the rows; only one detail is open at a time.
+closing the menu leaves them visible. Toggling a layer selects its matching
+settings below the rows, with a tinted row and downward chevron identifying the
+selected detail. Each row's disclosure also opens or closes those settings
+without changing enablement; only one detail is open at a time.
+Raster percentages are explicitly labelled **Opacity**. The slider runs from
+**Clear** (see the base map) to **Solid** (show the overlay at full strength).
+Turning a layer off leaves its own disabled settings selected. Provider updates
+do not change the selected detail or move keyboard focus.
 The caret points down when collapsed and up when expanded. Only activating the
 **Layers** button toggles the menu, including Enter or Space while it has focus.
 Map/page clicks, basemap changes and Escape leave it expanded. Switching between

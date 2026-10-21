@@ -153,6 +153,7 @@ try {
     });
     const wait = (fn, description) => waitForCondition(() => page.evaluate(fn), { description, timeoutMs: 20000 });
     const verifyCaptureMetadata = async () => {
+        await wait(() => document.querySelector('[aria-label="Sentinel-2 capture"]')?.options.length > 1, 'dated Sentinel capture choices have loaded');
         const metadata = await page.getByRole('combobox', { name: 'Sentinel-2 capture' }).evaluate(element => ({
             title: element.title, selected: element.selectedOptions[0]?.title,
             options: Array.from(element.options, option => ({ label: option.textContent, title: option.title, accessible: option.getAttribute('aria-label') })) }));
@@ -195,7 +196,7 @@ try {
             assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true, 'clicking other page content preserves the open overlay menu');
         }
         await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).check();
-        await page.getByRole('button', { name: /^Adjust Sentinel/ }).click();
+        assert.equal(await page.getByRole('slider', { name: 'Sentinel-2 (experimental) opacity' }).isVisible(), true, 'enabling Sentinel selects its opacity detail');
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: 'Coverage' }).waitFor();
         await verifyCaptureMetadata();
         await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).some(layer => layer.options?.bpbOverlay && Object.values(layer._tiles || {}).some(({el}) => el.width && el.getContext?.('2d').getImageData(128,128,1,1).data[3] === 255))), { description: 'decoded opaque Sentinel mosaic tile' });
@@ -246,7 +247,7 @@ try {
         await page.getByRole('checkbox', { name: 'SNOTEL stations', exact: true }).check();
         await waitForCondition(() => native.evaluate(() => window.__snotelRevealMoves > 0 && mapsPlaceholder.getZoom() < 17
             && mapsPlaceholder.getBounds().contains([46.78266, -121.74767])), { description: `SNOTEL activation auto-zoom on ${pathname}` });
-        await page.getByRole('button', { name: /^Adjust SNOTEL/ }).click();
+        assert.equal(await page.locator('[data-layer="snotel"]').getAttribute('data-selected'), 'true', 'SNOTEL activation selects its own details');
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: /stations? in view/ }).waitFor();
         assert.ok(await native.locator('.bpb-snotel-marker').count() > 0, 'viewport stations rendered');
         assert.equal(await native.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles) && mapsPlaceholder.hasLayer(nativeRoute)), true, 'native layers preserved');
@@ -293,7 +294,7 @@ try {
         await native.evaluate(() => { mapsPlaceholder.setView([54,-124],12,{animate:false}); });
         await page.getByRole('button', { name: /^Layers/ }).click();
         await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
-        await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
+        assert.equal(await page.getByRole('slider', { name: 'Public lands opacity' }).isVisible(), true, 'enabling Canadian public lands selects its matching opacity detail');
         const opacity = page.getByRole('slider', { name: 'Public lands opacity' });
         await opacity.fill('100'); await opacity.dispatchEvent('input');
         await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).waitFor();
@@ -350,7 +351,7 @@ try {
     await page.goto(`${origin}/map/BigMap.aspx?t=A&d=1&c=900001`);
     await page.getByRole('button',{name:/^Layers/}).click();
     await page.getByRole('checkbox',{name:'Sentinel-2 (experimental)',exact:true}).check();
-    await page.getByRole('button',{name:/^Adjust Sentinel/}).click();
+    assert.equal(await page.getByRole('slider',{name:'Sentinel-2 (experimental) opacity'}).isVisible(),true);
     const capturePicker = page.getByRole('combobox',{name:'Sentinel-2 capture'});
     await wait(() => document.querySelector('[aria-label="Sentinel-2 capture"]')?.options.length > 1,'native capture choices');
     const older = await capturePicker.locator('option').nth(1).getAttribute('value');
@@ -407,7 +408,7 @@ try {
     assert.equal(await page.locator('[data-layer="sentinel"] input').isChecked(),false,'2D off wins over the parked renderer snapshot');
     await terrain.locator('canvas.maplibregl-canvas').screenshot();
     await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
-    await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
+    assert.equal(await page.getByRole('slider', { name: 'Public lands opacity' }).isVisible(), true, 'terrain layer activation selects its own opacity detail');
     assert.equal(await page.getByRole('link', { name: 'BLM camping rules', exact: true }).isVisible(), true);
     const landOpacity = page.getByRole('slider', { name: 'Public lands opacity' });
     await landOpacity.fill('100'); await landOpacity.dispatchEvent('input');

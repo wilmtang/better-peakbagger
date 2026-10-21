@@ -50,7 +50,10 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const disclosure = node('button', 'bpb-layers-disclosure'); disclosure.type = 'button';
         disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}`); disclosure.setAttribute('aria-expanded', 'false');
         disclosure.setAttribute('aria-controls', well.id);
-        const value = node('span', 'bpb-layers-value'), chevron = node('span', '', '›'); chevron.setAttribute('aria-hidden', 'true');
+        const value = node('span', 'bpb-layers-value'), amount = node('span', 'bpb-layers-value-number');
+        if (key !== 'snotel') value.append(node('span', 'bpb-layers-value-label', 'Opacity'));
+        value.append(amount);
+        const chevron = node('span', 'bpb-layers-chevron', '›'); chevron.setAttribute('aria-hidden', 'true');
         disclosure.append(value, chevron); row.append(label, disclosure); panel.append(row);
         const detail = node('section', 'bpb-layers-detail'); detail.hidden = true;
         detail.setAttribute('aria-label', `${NAMES[key]} settings`); detail.append(node('div', 'bpb-layers-detail-title', NAMES[key]));
@@ -60,7 +63,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             output = node('output'); caption.append(output);
             slider = node('input'); slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '1';
             slider.id = `${id}-${key}`; slider.setAttribute('aria-label', `${NAMES[key]} opacity`); caption.htmlFor = slider.id;
-            detail.append(caption, slider);
+            const ends = node('div', 'bpb-layers-opacity-ends'); ends.setAttribute('aria-hidden', 'true');
+            ends.append(node('span', '', 'Clear'), node('span', '', 'Solid'));
+            detail.append(caption, slider, ends);
             slider.addEventListener('input', () => onOpacity(key, Number(slider.value)));
             slider.addEventListener('change', () => onCommit());
         }
@@ -83,12 +88,16 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             onRetry(key);
         });
         action.append(retry); feedback.append(status, action); detail.append(feedback); well.append(detail);
-        checkbox.addEventListener('change', () => onToggle(key, checkbox.checked));
+        checkbox.addEventListener('change', () => {
+            expanded = key;
+            onToggle(key, checkbox.checked);
+            paint();
+        });
         disclosure.addEventListener('click', () => {
             expanded = expanded === key ? null : key;
             paint();
         });
-        rows.set(key, { row, checkbox, disclosure, value });
+        rows.set(key, { row, checkbox, disclosure, value: amount });
         details.set(key, { detail, slider, output, capture, legend, guidance, status, retry, captureKey: '', guidanceKey: '' });
     }
     panel.append(well); element.append(trigger, panel, live);
@@ -123,13 +132,14 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             row.row.hidden = model.available && !model.available.includes(key);
             row.checkbox.checked = current.enabled; row.checkbox.disabled = status.unavailable === true;
             row.disclosure.setAttribute('aria-expanded', String(open && expanded === key));
-            row.disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}${status.message ? `: ${status.message}` : ''}`);
+            row.row.dataset.selected = String(open && expanded === key);
+            row.disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}${key === 'snotel' ? '' : ` opacity, ${current.opacity} percent`}${status.message ? `: ${status.message}` : ''}`);
             row.value.textContent = key === 'snotel' ? (Number.isInteger(status.count) ? String(status.count) : '') : `${current.opacity}%`;
             row.row.dataset.status = status.error ? 'error' : status.pending ? 'pending' : '';
             detail.detail.hidden = !open || expanded !== key || row.row.hidden;
             if (detail.slider) {
                 detail.slider.value = String(current.opacity); detail.slider.disabled = !current.enabled;
-                detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent`); detail.output.value = `${current.opacity}%`;
+                detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent opacity`); detail.output.value = `${current.opacity}%`;
             }
             detail.legend.replaceChildren(...(status.legendEntries || []).map(entry => {
                 const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');

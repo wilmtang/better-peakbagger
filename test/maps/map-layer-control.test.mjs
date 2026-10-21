@@ -25,7 +25,7 @@ test('compact Layers control separates collapse, enablement and one detail selec
     assert.equal(panel.hidden, true);
     control.trigger.click(); assert.equal(panel.hidden, false); assert.equal(well.hidden, true);
     const row = id => document.querySelector(`[data-layer='${id}']`);
-    row('land').querySelector('input').click(); assert.deepEqual(changes, [['land', true]]); assert.equal(well.hidden, true);
+    row('land').querySelector('input').click(); assert.deepEqual(changes, [['land', true]]); assert.equal(well.hidden, false);
     row('slope').querySelector('button').click(); assert.equal(well.hidden, false);
     assert.equal(document.querySelectorAll('.bpb-layers-detail:not([hidden])').length, 1);
     const slider = document.querySelector('input[aria-label="Slope angle opacity"]');
@@ -40,6 +40,42 @@ test('compact Layers control separates collapse, enablement and one detail selec
     control.trigger.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert.equal(panel.hidden, false, 'Escape does not collapse the disclosure');
     control.dispose(); assert.equal(document.querySelector('.bpb-map-layers'), null); dom.window.close();
+});
+
+test('toggling a layer selects its matching details without changing other layers or following async updates', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
+    const state = Schema.mapOverlayState({ slope: { enabled: true } }); let statuses = {};
+    const control = createMapLayerControl({ document: doc, onToggle(id, enabled) { state[id].enabled = enabled; control.render({ state, statuses }); } });
+    doc.body.append(control.element); control.render({ state, statuses }); control.trigger.click();
+    doc.querySelector('[data-layer="slope"] button').click();
+    const selected = name => {
+        const detail = doc.querySelector('.bpb-layers-detail:not([hidden])');
+        assert.equal(detail?.getAttribute('aria-label'), `${name} settings`, 'visible settings must match the layer the user just toggled');
+    };
+    doc.querySelector('[data-layer="land"] input').click(); selected('Public lands');
+    assert.equal(state.slope.enabled, true, 'multiple overlays stay enabled independently');
+    const land = doc.querySelector('[data-layer="land"]');
+    assert.equal(land.dataset.selected, 'true'); assert.equal(land.querySelector('button').getAttribute('aria-expanded'), 'true');
+    const slider = doc.querySelector('[aria-label="Public lands opacity"]'); slider.focus();
+    statuses = { slope: { pending: true, message: 'Loading slope…' } }; control.render({ state, statuses }); selected('Public lands');
+    assert.equal(doc.activeElement, slider, 'an unrelated provider reply cannot steal the selected detail or focus');
+    land.querySelector('input').click(); selected('Public lands'); assert.equal(slider.disabled, true, 'turning a layer off keeps its own disabled settings visible');
+    doc.querySelector('[data-layer="snotel"] input').click(); selected('SNOTEL stations');
+    assert.equal(land.dataset.selected, 'false');
+    control.trigger.click(); control.trigger.click(); assert.equal(doc.querySelector('.bpb-layers-details').hidden, true, 'reopening still starts compact');
+    control.dispose(); dom.window.close();
+});
+
+test('opacity summaries name the property and sliders explain their direction', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
+    const control = createMapLayerControl({ document: doc }); doc.body.append(control.element);
+    control.render({ state: Schema.mapOverlayState({ land: { opacity: 35 } }) }); control.trigger.click();
+    for (const id of ['sentinel', 'slope', 'land']) assert.equal(doc.querySelector(`[data-layer="${id}"] .bpb-layers-value-label`)?.textContent, 'Opacity');
+    assert.equal(doc.querySelector('[data-layer="snotel"] .bpb-layers-value-label'), null, 'station counts are not called opacity');
+    doc.querySelector('[data-layer="land"] button').click();
+    assert.deepEqual([...doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-opacity-ends').children].map(element => element.textContent), ['Clear', 'Solid']);
+    assert.equal(doc.querySelector('[aria-label="Public lands opacity"]').getAttribute('aria-valuetext'), '35 percent opacity');
+    control.dispose(); dom.window.close();
 });
 
 test('Layers stays expanded through outside interaction and only its button collapses it', () => {

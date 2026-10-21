@@ -776,3 +776,43 @@ Canadian-specific BFCache recovery, physical touch, screen-reader speech and OS
 focus/window placement remain unproven. Partial provincial coverage, parcel
 currency, roads, closures and camping permissions remain source/product limits;
 the earlier broad verification gaps remain separate.
+
+## Follow-up: match layer selection and clarify opacity
+
+The checkbox changed enablement while only the disclosure changed the selected
+detail. Enabling Public lands could therefore leave Slope angle's slider open.
+Toggling any layer now selects its matching settings, including a disabled
+slider when turning it off. A tinted row and downward chevron identify which
+settings are open. Multiple overlays remain independent; async provider replies
+cannot select another detail or move focus. Each raster summary names Opacity,
+and the slider has Clear/Solid ends and a spoken opacity value.
+
+**Fixed and verified:** the new regression first failed on the unfixed module
+with visible `Slope angle settings` instead of `Public lands settings`, then
+passed after the change. All 3,081 tests passed, as did scoped ESLint and web-ext
+lint (eight owned warnings). Chrome 156.0.8078.4 and Firefox 157 each passed
+eight hidden component cases at 736/320 by 800, both themes and normal/double
+text. Checks cover keyboard toggles, matching settings, one selected row,
+unrelated async updates, focus, caption containment, and anchored rows/map/
+following content through detail and feedback states. The overview remains
+232 by 134 normally and approximately 232 by 283 at double text. An initial
+caption width made double-text rows taller; the final widths preserve the
+original compact dimensions without clipping the labels.
+
+Hidden real-extension Chrome fixtures at 1000 by 700 passed all native map
+surfaces, auto-selected Sentinel/SNOTEL/Canadian land details, opacity pixels,
+Full Screen handoff and renderer transitions. Hardware 3D used ANGLE/Metal on
+Apple M3 Pro. Immediate detail opening exposed a fixture assumption that dates
+had already loaded; metadata checks now wait for the dated choices themselves.
+The real-manifest startup/BFCache check passed at 1000 by 760. Native, terrain,
+narrow/dark and doubled-text results were visually inspected. Disposable browser
+processes/profiles and task artifacts were checked and cleaned up.
+
+**Intentionally not changed:** compact reopen, persistent Layers disclosure,
+separate basemap corners, overlay ordering, device-local opacity, provider
+requests, permissions, agency colors, Sentinel metadata and SNOTEL auto-reveal.
+
+**Changed but not fully proven:** browser providers/permission decisions remain
+stubbed. Live authenticated Peakbagger, native browser/OS focus behavior,
+physical touch and screen-reader speech remain outside the hidden checks.
+The prior Canadian coverage and Firefox integration gaps remain separate.

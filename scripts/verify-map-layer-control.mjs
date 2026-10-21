@@ -77,6 +77,14 @@ try {
         const before = await geometry();
         const stable = async () => { const after = await geometry(); before.forEach((rect, i) => rect.forEach((value, j) => assert.ok(Math.abs(value - after[i][j]) <= 1, `stable control ${i}/${j}`))); };
         if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-overview.png`) }); }
+        for (const id of ['sentinel', 'slope', 'land']) {
+            const caption = page.locator(`[data-layer="${id}"] .bpb-layers-value-label`);
+            assert.equal(await caption.textContent(), 'Opacity');
+            assert.equal(await caption.evaluate(element => {
+                const label = element.getBoundingClientRect(), button = element.closest('button').getBoundingClientRect();
+                return label.left >= button.left && label.right <= button.right && label.top >= button.top && label.bottom <= button.bottom;
+            }), true, 'opacity caption fits its compact action');
+        }
         for (const id of ['sentinel', 'slope', 'land', 'snotel', 'slope']) {
             await page.locator(`[data-layer="${id}"] button`).click(); await stable();
             assert.equal(await page.locator('.bpb-layers-detail:not([hidden])').count(), 1);
@@ -110,6 +118,18 @@ try {
                 await page.locator('.bpb-layers-panel').evaluate(element => { element.scrollTop = 0; });
             }
         }
+        for (const id of ['land', 'sentinel', 'snotel', 'slope']) {
+            const checkbox = page.locator(`[data-layer="${id}"] input`);
+            await checkbox.focus(); await checkbox.press('Space'); await stable();
+            assert.equal(await page.locator(`[data-layer="${id}"] button`).getAttribute('aria-expanded'), 'true', 'keyboard toggles select their matching detail');
+            assert.equal(await page.locator(`[data-layer="${id}"]`).getAttribute('data-selected'), 'true');
+            assert.equal(await page.locator('.bpb-layers-row[data-selected="true"]').count(), 1);
+            assert.equal(await page.locator('.bpb-layers-detail:not([hidden])').getAttribute('aria-label'), `${await checkbox.getAttribute('aria-label')} settings`);
+            await page.evaluate(() => { window.fixture.statuses.sentinel.pending = true; window.fixture.paint(); });
+            assert.equal(await checkbox.evaluate(element => element === document.activeElement), true, 'async feedback preserves the toggle focus');
+            assert.equal(await page.locator(`[data-layer="${id}"] button`).getAttribute('aria-expanded'), 'true'); await stable();
+        }
+        await page.evaluate(() => { window.fixture.state.slope.enabled = true; window.fixture.statuses.sentinel.pending = false; window.fixture.paint(); });
         const slider = page.getByRole('slider', { name: 'Slope angle opacity' });
         await slider.focus(); await slider.press('Home'); assert.equal(await slider.inputValue(), '0');
         await slider.press('End'); assert.equal(await slider.inputValue(), '100');
@@ -131,7 +151,7 @@ try {
         assert.equal(await page.locator('.bpb-layers-details').isVisible(), false, 'reopen starts with the compact overview');
         await trigger.press('Space'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         await trigger.click(); await page.locator('[data-layer="sentinel"] input').check();
-        await page.locator('[data-layer="sentinel"] button').click();
+        if (await page.locator('[data-layer="sentinel"] button').getAttribute('aria-expanded') !== 'true') await page.locator('[data-layer="sentinel"] button').click();
         const capture = page.getByRole('combobox', { name: 'Sentinel-2 capture' });
         for (const id of ['latest', 'older', 'unknown']) {
             await capture.selectOption(id);
