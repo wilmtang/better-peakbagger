@@ -17,6 +17,10 @@ Each row has a short secondary line: opacity or station count when ready,
 **Needs access** for BC permission. Detailed explanations and **Retry**/**Allow**
 stay in that layer's settings. Turning a layer off hides stale loading/errors.
 Spinner motion stops when reduced motion is requested.
+Below their zoom limits, Sentinel, slope and public lands say **Zoom in** instead
+of showing stale loading/errors or an ineffective Retry. Sentinel uses its
+existing capture-search limit; slope and land use the raster tile limit. Zooming
+back in restores provider feedback. Both renderers use equivalent tile zoom.
 
 Raster tiles get one automatic retry for a temporary network failure, timeout or
 HTTP 408/500/502/503/504. Other errors and provider rate limits need explicit
@@ -91,6 +95,12 @@ moving the map while the catalog loads cancels pending auto-zoom.
 by the current peak's Nearby snow card, within its existing 50 km membership.
 Other stations have an official NRCS link. **Settings → General → Show SNOTEL**
 controls the card and every station layer independently of weather.
+Startup waits for the stored setting before reporting availability, preserving
+an enabled Full Screen handoff while the read is pending. A later settings change
+takes precedence over that startup read. Delayed Nearby snow availability updates
+the conditions actions immediately without requiring a pan. When the station
+list is unchanged, membership updates preserve open popups and focused NRCS
+links; removing a focused **Show conditions** action returns focus to that link.
 
 Public lands puts BLM (gold, `#e69f00`) and USFS (blue, `#0072b2`) first in the
 legend. Other federal land is gray, state land purple, local/district land rose,
@@ -223,3 +233,5 @@ remain separate. Hidden fixtures do not establish live Peakbagger/provider
 compatibility, native browser menus, OS focus, physical touch or screen-reader
 speech. The [archived implementation ledger](archive/map-layers-and-overlays-2026-10-21.md)
 retains the exact evidence and open proof gaps.
+The [October 21 follow-up audit](archive/map-overlays-audit-2026-10-21.md)
+records the label, zoom feedback, settings races and popup-membership fixes.

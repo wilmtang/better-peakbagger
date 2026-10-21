@@ -25,12 +25,17 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
-The [shared map Layers implementation](../archive/map-layers-and-overlays-2026-10-21.md)
-is complete locally: one collapsed basemap/overlay menu, independent opacity,
+The [shared map Overlays implementation](../archive/map-layers-and-overlays-2026-10-21.md)
+is complete locally: a collapsed overlay menu, a separate basemap selector, independent opacity,
 Sentinel mosaics, viewport SNOTEL, USGS slope and public lands across native and
 supported 3D maps. Its ledger records browser/pixel/geometry evidence and the
 unchanged broader Chrome spacing assertion. [Map layers](../map-layers.md)
 owns the runtime contract.
+The [October 21 overlay audit](../archive/map-overlays-audit-2026-10-21.md)
+adds truthful zoom feedback, preserves SNOTEL startup intent and updates popup
+actions without closing an unchanged station's popup. Its closure ledger records
+regression, Chrome/Firefox focus/layout and real-extension hardware evidence,
+with live-provider and native accessibility proof gaps retained.
 
 The [SNOTEL timeout and recovery UX audit](../archive/snotel-timeout-ux-audit-2026-10-20.md)
 adds explicit timeout feedback and verifies stable, immediately available Refresh

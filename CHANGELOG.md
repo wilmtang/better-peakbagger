@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Make map overlays clearer.** The shared menu is named **Overlays**. Sentinel,
+  slope and public lands explain when a closer zoom is needed. SNOTEL preserves Full
+  Screen selections through settings startup, follows newer opt-outs, and updates
+  available conditions actions without closing an unchanged station's popup.
+
 - **Make snow-request timeouts clear.** Nearby snow names a timed-out request
   and leaves Refresh available immediately. Retained readings, keyboard focus,
   controls and surrounding content stay in place through timeout and retry.
