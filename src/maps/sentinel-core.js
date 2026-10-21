@@ -6,6 +6,7 @@ import { rateLimitError } from '../net/rate-limit.js';
 
 export const SENTINEL_NAME = 'Sentinel-2 (experimental)';
 export const SENTINEL_CODE = 'BPB_SENTINEL';
+export const SENTINEL_MIN_ZOOM = 9;
 export const SENTINEL_ATTRIBUTION = '<a href="https://planetarycomputer.microsoft.com/dataset/sentinel-2-l2a" target="_blank" rel="noopener noreferrer">Copernicus Sentinel-2 / Microsoft Planetary Computer</a>';
 const SEARCH_URL = 'https://planetarycomputer.microsoft.com/api/stac/v1/search';
 const DAY = 86400000;
@@ -33,7 +34,7 @@ export const sentinelView = (bounds, zoom) => {
         || south >= north || south < -85.0511287 || north > 85.0511287) throw new Error('This map area is outside satellite coverage.');
     let width = east - west;
     if (width < 0) width += 360;
-    if (zoom < 9 || width <= 0 || width > 5 || north - south > 5) throw new Error('Zoom in to load Sentinel-2 imagery.');
+    if (zoom < SENTINEL_MIN_ZOOM || width <= 0 || width > 5 || north - south > 5) throw new Error('Zoom in to load Sentinel-2 imagery.');
     const left = longitude(west);
     return { west: left, east: left + width, south, north };
 };

@@ -229,6 +229,20 @@ test('zoomed-out rasters request a closer view instead of showing stale errors, 
     control.dispose(); dom.window.close();
 });
 
+test('Sentinel uses its catalog zoom limit instead of reporting an unattempted search failure', () => {
+    const dom = new JSDOM('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    control.trigger.click(); document.querySelector('[data-layer="sentinel"] button').click();
+    const state = Schema.mapOverlayState({ sentinel: { enabled: true } });
+    const statuses = { sentinel: { error: true, captureError: true, retry: true, message: 'Zoom in to load Sentinel-2 imagery.' } };
+    control.render({ state, statuses, zoom: 8.75 });
+    assert.equal(document.querySelector('[data-layer="sentinel"] .bpb-layers-row-status').textContent, 'Zoom in');
+    assert.equal(document.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry').hidden, true);
+    control.render({ state, statuses, zoom: 9 });
+    assert.equal(document.querySelector('[data-layer="sentinel"] .bpb-layers-row-status').textContent, 'Search failed', 'actual catalog failures remain visible at a supported zoom');
+    control.dispose(); dom.window.close();
+});
+
 test('Canadian land guidance keeps focus through permission states and Allow cannot replay a tile retry', () => {
     const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
     const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);

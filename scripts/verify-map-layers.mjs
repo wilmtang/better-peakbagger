@@ -264,6 +264,8 @@ try {
         if (output && cases.length === 0) { await mkdir(output, { recursive: true }); await page.screenshot({ path: path.join(output, 'native-land-25.png') }); }
         await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
         await native.evaluate(() => mapsPlaceholder.setZoom(7, { animate: false }));
+        await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-row-status')?.textContent === 'Zoom in', 'zoomed-out Sentinel explains its catalog limit');
+        if (output && cases.length === 0) await page.screenshot({ path: path.join(output, 'native-zoom.png') });
         for (const id of ['slope', 'land']) {
             await wait(() => ['slope', 'land'].every(id => document.querySelector(`[data-layer="${id}"] .bpb-layers-row-status`)?.textContent === 'Zoom in'), 'zoomed-out native rasters request a closer view');
             assert.equal(await page.locator(`[data-layer="${id}"] .bpb-layers-spinner`).isVisible(), false);

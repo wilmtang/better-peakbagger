@@ -3,6 +3,7 @@
 
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
+import { SENTINEL_MIN_ZOOM } from './sentinel-core.js';
 
 const LABELS = { sentinel: 'Sentinel-2 β', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations' };
 const NAMES = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
@@ -129,7 +130,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         panel.hidden = !open; well.hidden = !open || !expanded;
         trigger.setAttribute('aria-expanded', String(open));
         const state = Schema.mapOverlayState(model.state);
-        const needsZoom = key => (key === 'slope' || key === 'land') && Number.isFinite(model.zoom) && Math.round(model.zoom) < OVERLAY_MIN_ZOOM;
+        const needsZoom = key => Number.isFinite(model.zoom) && (key === 'sentinel' ? model.zoom < SENTINEL_MIN_ZOOM
+            : (key === 'slope' || key === 'land') && Math.round(model.zoom) < OVERLAY_MIN_ZOOM);
         const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled);
         const failed = active.some(key => !needsZoom(key) && (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
@@ -166,7 +168,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
             detail.status.textContent = !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
-                : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in to show ${key === 'land' ? 'public lands' : 'slope shading'}.`
+                : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in to show ${key === 'sentinel' ? 'Sentinel-2 imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
                     : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];

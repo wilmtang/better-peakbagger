@@ -192,6 +192,7 @@ try {
         for (const zoom of [7, 8, 7, 8]) {
             await page.evaluate(zoom => { window.fixture.zoom = zoom; window.fixture.statuses.slope = { pending: true, retry: true, message: 'Loading slope shading' }; window.fixture.paint(); }, zoom);
             assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), zoom < 8 ? 'Zoom in' : 'Loading');
+            assert.equal(await page.locator('[data-layer="sentinel"] .bpb-layers-row-status').textContent(), 'Zoom in', 'Sentinel requires catalog zoom 9, even when other rasters reach their zoom limit');
             assert.equal(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-retry').isVisible(), zoom >= 8);
             assert.deepEqual(await geometry(), zoomGeometry, 'zoom feedback keeps the overview, map and following content anchored');
             assert.deepEqual(await page.locator('.bpb-layers-panel').boundingBox(), zoomPanel, 'zoom feedback preserves the panel dimensions');
