@@ -34,7 +34,7 @@ export function installMapLayers(win = window) {
         sentinel: { legend: 'Copernicus Sentinel-2 · Microsoft Planetary Computer. Scene clouds can obscure coverage.' },
         slope: { legend: 'USGS 3DEP · Below 20° and no data are clear. Ground slope; resolution varies. Not an avalanche forecast.',
             legendEntries: SLOPE_BANDS.map(band => ({ label: band.to === 91 ? '≥45°' : `${band.from}–${band.to}°`, color: `rgb(${band.color.join(',')})` })) },
-        land: { legend: 'USGS PAD-US 4.1 fee ownership. Clear areas are unknown. Ownership does not grant access.',
+        land: { legend: 'USGS PAD-US 4.1 fee ownership; BLM-managed federal land in gold. Clear areas are unknown. Check local access and camping restrictions.',
             legendEntries: LAND_CLASSES.filter(item => item.value !== 'DIST').map(item => ({ label: item.label, color: `rgb(${item.color.join(',')})` })) },
         snotel: { legend: 'NRCS active stations in the visible map. Station observations may differ from route conditions.' },
     };

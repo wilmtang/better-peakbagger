@@ -618,3 +618,47 @@ basemap ownership. Offscreen discovery is requested only for activation/retry.
 in browser checks; live authenticated Peakbagger, physical touch, native select
 menus, screen-reader speech and OS focus/window placement remain unproven.
 The earlier broad verifier gaps remain separate.
+
+## Follow-up: distinguish BLM for camping research
+
+The Public lands overlay now paints BLM-managed federal fee land gold and other
+federal fee land green. It retains state/local/district/tribal colors and the
+transparent default for unknown and other ownership. The same filtered PAD-US
+export drives native maps and terrain, with opacity applied once after service
+composition. Classification requires both `Own_Type = FED` and `Mang_Name = BLM`:
+live fee samples included BLM-owned parcels managed by other entities, so owner
+name alone would misidentify current management. Designation boundaries are not
+used. The existing detail adds an official BLM camping-rules link; the four-row
+overview remains 232 by 134 pixels at normal text size.
+
+Sources: [USGS PAD-US fee schema](https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US_4_1/MapServer/0?f=pjson),
+[Esri export order/filter contract](https://developers.arcgis.com/rest/services-reference/enterprise/export-map/),
+and [BLM camping guidance](https://www.blm.gov/programs/recreation/camping).
+BLM describes dispersed camping as generally available subject to local closures
+and restrictions. The overlay indicates land classification, not current camping
+permission, road access, fire restrictions or suitable campsite locations.
+
+**Fixed and verified:** new tests first failed on the missing BLM class and
+camping link. All 3,059 tests passed, as did scoped ESLint and web-ext lint
+(eight existing warnings). Three bounded live USGS attribute/export probes
+matched gold BLM pixels at Alabama Hills, green federal pixels at Mount Rainier
+National Park, and transparent unclassified ocean. Native fixtures checked
+0/50/100% BLM pixels on ascent, peak, BigMap and standalone MasterMap; hardware
+MapLibre checked gold rendering and zero-alpha removal. These real-extension
+checks ran hidden in Chrome 156.0.8078.4 at 1000 by 700, ANGLE/Metal Apple M3 Pro.
+Chrome 156 and Firefox 157 each passed eight component cases at 736/320 by 800,
+both themes and normal/double text, including the guidance link, legend, anchored
+rows/map/following content and pending/error/recovery transitions. Native, terrain,
+narrow/dark and doubled-text land details were visually inspected. The hidden
+real-manifest Chrome startup/BFCache check passed at 1000 by 760; unknown
+component-verifier selections were rejected before launch.
+
+**Intentionally not changed:** default 25% land opacity, the compact overview,
+basemap ownership, other overlay behavior, device-local persistence, existing
+provider hosts and privacy boundaries. No new camping settings or provider exist.
+
+**Changed but not fully proven:** the three live probes do not establish nationwide
+boundary completeness or current camping permissions. Browser map tiles are
+synthetic outside those probes. Live authenticated Peakbagger, physical touch,
+screen-reader speech, native menus and OS focus/window placement remain unproven.
+The earlier broad verifier gaps remain separate.

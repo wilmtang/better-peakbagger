@@ -94,3 +94,20 @@ test('Sentinel capture choices retain cloud labels and full selected metadata', 
     assert.equal(picker.title, captures[1].title, 'renderer updates retain the same full metadata');
     control.dispose(); dom.window.close();
 });
+
+test('Public lands details offer official camping guidance without enlarging the overview', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
+    const control = createMapLayerControl({ document: doc }); doc.body.append(control.element);
+    control.trigger.click();
+    const guidance = doc.querySelector('a[href="https://www.blm.gov/programs/recreation/camping"]');
+    assert.ok(guidance, 'BLM ownership is not a camping-permission map');
+    assert.equal(guidance.textContent, 'BLM camping rules');
+    assert.equal(guidance.closest('section').hidden, true, 'guidance stays in the collapsed detail');
+    doc.querySelector('[data-layer="land"] button').click();
+    assert.equal(guidance.closest('section').hidden, false);
+    assert.equal(guidance.target, '_blank');
+    assert.equal(guidance.rel, 'noopener noreferrer');
+    doc.querySelector('[data-layer="slope"] button').click();
+    assert.equal(guidance.closest('section').hidden, true);
+    control.dispose(); dom.window.close();
+});

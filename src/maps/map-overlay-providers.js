@@ -20,7 +20,8 @@ export const SLOPE_RULE = {
     },
 };
 export const LAND_CLASSES = Object.freeze([
-    { value: 'FED', label: 'Federal', color: [77, 152, 92] },
+    { value: 'BLM', label: 'BLM', color: [242, 199, 83] },
+    { value: 'FED', label: 'Other federal', color: [77, 152, 92] },
     { value: 'STAT', label: 'State', color: [97, 153, 210] },
     { value: 'LOC', label: 'Local', color: [181, 134, 203] },
     { value: 'DIST', label: 'District', color: [181, 134, 203] },
@@ -30,7 +31,7 @@ const symbol = color => ({ type: 'esriSFS', style: 'esriSFSSolid', color: [...co
     outline: { type: 'esriSLS', style: 'esriSLSSolid', color: [...color, 255], width: 0.6 } });
 export const LAND_RENDERER = { type: 'uniqueValue', field1: 'Own_Type',
     defaultSymbol: { type: 'esriSFS', style: 'esriSFSNull', outline: null },
-    uniqueValueInfos: LAND_CLASSES.map(category => ({ value: category.value, label: category.label, symbol: symbol(category.color) })) };
+    uniqueValueInfos: LAND_CLASSES.filter(category => category.value !== 'BLM').map(category => ({ value: category.value, label: category.label, symbol: symbol(category.color) })) };
 
 export const OVERLAY_ATTRIBUTION = {
     slope: '<a href="https://www.usgs.gov/3d-elevation-program">USGS 3DEP</a>',
@@ -53,7 +54,15 @@ export function overlayTileUrl(id, coordinates) {
     } else if (id === 'land') {
         url = new URL('https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US_4_1/MapServer/export');
         params.transparent = 'true';
-        params.dynamicLayers = JSON.stringify([{ id: 0, source: { type: 'mapLayer', mapLayerId: 0 }, drawingInfo: { renderer: LAND_RENDERER } }]);
+        // ArcGIS draws the first layer on top. Both passes are one opaque image;
+        // the map engine applies the user's opacity once, after composition.
+        // Fee ownership plus manager avoids treating designation boundaries or
+        // BLM holdings managed by another agency as BLM-managed land.
+        params.dynamicLayers = JSON.stringify([
+            { id: 1, source: { type: 'mapLayer', mapLayerId: 0 }, definitionExpression: "Own_Type = 'FED' AND Mang_Name = 'BLM'",
+                drawingInfo: { renderer: { type: 'simple', symbol: symbol(LAND_CLASSES[0].color) } } },
+            { id: 0, source: { type: 'mapLayer', mapLayerId: 0 }, drawingInfo: { renderer: LAND_RENDERER } },
+        ]);
     } else throw new Error('Unknown overlay.');
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
     return url.href;

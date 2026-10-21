@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SLOPE_BANDS, SLOPE_RULE, LAND_RENDERER, overlayTileUrl, tileBounds, overlayBounds, viewportStations } from '../../src/maps/map-overlay-providers.js';
+import { SLOPE_BANDS, SLOPE_RULE, LAND_CLASSES, LAND_RENDERER, overlayTileUrl, tileBounds, overlayBounds, viewportStations } from '../../src/maps/map-overlay-providers.js';
 
 test('slope classification uses the service degree template with exact inclusive lower boundaries', () => {
     const remap = SLOPE_RULE.rasterFunctionArguments.Raster.rasterFunctionArguments;
@@ -21,7 +21,7 @@ test('ownership colors only explicit fee ownership, leaving all unclassified are
     const url = new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 }));
     assert.equal(url.hostname, 'edits.nationalmap.gov');
     assert.equal(url.searchParams.get('transparent'), 'true');
-    assert.deepEqual(JSON.parse(url.searchParams.get('dynamicLayers'))[0].drawingInfo.renderer, LAND_RENDERER);
+    assert.deepEqual(JSON.parse(url.searchParams.get('dynamicLayers')).find(layer => layer.id === 0).drawingInfo.renderer, LAND_RENDERER);
     assert.throws(() => overlayTileUrl('private', { z: 1, x: 0, y: 0 }));
 });
 test('tiles wrap at the dateline and viewport station selection does not silently truncate', () => {
@@ -33,4 +33,21 @@ test('tiles wrap at the dateline and viewport station selection does not silentl
     const stations = Array.from({ length: 51 }, (_, i) => ({ id: i, longitude: -179, latitude: 51 }));
     assert.equal(viewportStations(stations, [170, 50, 190, 60]).length, 51);
     assert.equal(viewportStations(stations, [170, 52, 190, 60]).length, 0);
+});
+
+test('BLM-managed federal fee land has its own color without marking unknown land public', () => {
+    const classes = new Map(LAND_CLASSES.map(category => [category.value, category]));
+    assert.equal(classes.get('BLM')?.label, 'BLM');
+    assert.notDeepEqual(classes.get('BLM').color, classes.get('FED').color);
+    assert.equal(classes.get('FED').label, 'Other federal');
+    const layers = JSON.parse(new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 })).searchParams.get('dynamicLayers'));
+    const blm = layers.find(layer => layer.definitionExpression === "Own_Type = 'FED' AND Mang_Name = 'BLM'");
+    assert.ok(blm, 'management is explicit; ownership alone does not establish current BLM management');
+    assert.equal(blm.source.mapLayerId, 0, 'fee polygons, never proclamation boundaries');
+    assert.deepEqual(blm.drawingInfo.renderer.symbol.color, [...classes.get('BLM').color, 255]);
+    assert.equal(layers.indexOf(blm), 0, 'ArcGIS draws the first dynamic layer on top');
+    const other = layers.find(layer => layer !== blm);
+    assert.deepEqual(other.drawingInfo.renderer, LAND_RENDERER);
+    assert.equal(LAND_RENDERER.defaultSymbol.style, 'esriSFSNull');
+    assert.ok(!LAND_RENDERER.uniqueValueInfos.some(item => ['PVT', 'UNK', 'BLM'].includes(item.value)));
 });

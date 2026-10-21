@@ -67,6 +67,11 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }); detail.append(capture);
         }
         const legend = node('div', 'bpb-layers-legend'); detail.append(legend);
+        if (key === 'land') {
+            const guidance = node('a', 'bpb-layers-guidance', 'BLM camping rules');
+            guidance.href = 'https://www.blm.gov/programs/recreation/camping';
+            guidance.target = '_blank'; guidance.rel = 'noopener noreferrer'; detail.append(guidance);
+        }
         const feedback = node('div', 'bpb-layers-feedback');
         const status = node('span'), action = node('span', 'bpb-layers-recovery');
         const retry = node('button', 'bpb-layers-retry', 'Retry'); retry.type = 'button'; retry.hidden = true;

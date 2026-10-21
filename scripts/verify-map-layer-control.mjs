@@ -7,13 +7,15 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-if (process.argv.length > 2) throw new Error('Usage: node scripts/verify-map-layer-control.mjs');
+const args = process.argv.slice(2);
+if (args.length > 1 || args.some(arg => arg !== '--firefox')) throw new Error('Usage: node scripts/verify-map-layer-control.mjs [--firefox]');
+const firefoxMode = args.includes('--firefox');
 const resources = createResourceStack(), screenshots = process.env.BPB_LAYER_SCREENSHOT_DIR;
 let primaryError, summary;
 try {
@@ -21,19 +23,24 @@ try {
     resources.defer('layer control temporary files', () => rm(temporaryRoot, { recursive: true, force: true }));
     const fixture = await createBrowserFixtureServer({ temporaryRoot });
     resources.defer('layer control HTTPS fixture', () => fixture.close());
-    assertChromeLaunchAllowed();
-    const context = await chromium.launchPersistentContext(temporaryRoot, {
+    if (!firefoxMode) assertChromeLaunchAllowed();
+    const context = await (firefoxMode ? firefox : chromium).launchPersistentContext(temporaryRoot, firefoxMode ? {
+        headless: true, ignoreHTTPSErrors: true, firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' },
+    } : {
         channel: 'chromium', headless: true, args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
     });
     resources.defer('layer control browser', () => context.close());
     const bundle = await build({ stdin: { contents: `
         import {createMapLayerControl} from './src/maps/map-layer-control.js';
         import {settingsSchema as schema} from './src/settings/settings-schema.js';
+        import {LAND_CLASSES} from './src/maps/map-overlay-providers.js';
         const state=schema.mapOverlayState({slope:{enabled:true,opacity:60}});
         const statuses={sentinel:{capture:'latest',message:'Coverage 100% · Clouds 3%',captures:[
             {id:'latest',label:'Latest · 10-07 18:27 · ☁ 3%',title:'Latest · 2026-10-07 18:27 PDT · Clouds 3%'},
             {id:'older',label:'2026-10-06 18:27 · ☁ 100%',title:'2026-10-06 18:27 PDT · Clouds 100%'},
-            {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]}};
+            {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]},
+            land:{legend:'USGS PAD-US 4.1 fee ownership; BLM-managed federal land in gold. Clear areas are unknown. Check local access and camping restrictions.',
+                legendEntries:LAND_CLASSES.filter(item=>item.value!=='DIST').map(item=>({label:item.label,color:'rgb('+item.color.join(',')+')'}))}};
         const control=createMapLayerControl({document,
             onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
@@ -74,6 +81,16 @@ try {
         for (const id of ['sentinel', 'slope', 'land', 'snotel', 'slope']) {
             await page.locator(`[data-layer="${id}"] button`).click(); await stable();
             assert.equal(await page.locator('.bpb-layers-detail:not([hidden])').count(), 1);
+            if (id === 'land') {
+                const guidance = page.getByRole('link', { name: 'BLM camping rules', exact: true });
+                assert.equal(await guidance.isVisible(), true);
+                await guidance.focus(); assert.equal(await guidance.evaluate(element => document.activeElement === element), true);
+                assert.equal(await guidance.getAttribute('href'), 'https://www.blm.gov/programs/recreation/camping');
+                assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'Other federal', 'State', 'Local', 'Tribal']);
+                const detailBox = await page.locator('.bpb-layers-detail:not([hidden])').boundingBox();
+                assert.ok(detailBox.x >= box.x && detailBox.x + detailBox.width <= box.x + box.width, 'land detail stays within compact width');
+                if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-land.png`) });
+            }
         }
         const slider = page.getByRole('slider', { name: 'Slope angle opacity' });
         await slider.focus(); await slider.press('Home'); assert.equal(await slider.inputValue(), '0');
@@ -109,7 +126,8 @@ try {
         cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true });
     }
     assert.equal(errors.length, 0, errors.join('\n'));
-    summary = { check: 'map layer control', browser: context.browser().version(), hidden: true, cases };
+    assert.equal(cases.length, 8, 'all component selections executed');
+    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser().version(), hidden: true, cases };
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);
 console.log(JSON.stringify({ ...summary, teardown: 'passed' }));
