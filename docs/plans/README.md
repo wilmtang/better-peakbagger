@@ -5,11 +5,6 @@
   anchored review panel, and leased extraction tabs with explicit privacy,
   lifecycle, layout-stability, and live-provider verification gates.
 
-- [Shared map Layers menu and overlays](map-layers-and-overlays.md) — proposed;
-  one compact, collapsible ascent/peak/BigMap control for independent Sentinel-2
-  imagery, viewport SNOTEL stations, slope angle and public lands, with raster
-  opacity, validated renderer handoffs and explicit provider/rendering proof gates.
-
 - [Repository bugs, engineering, and UX audit — October 19](codebase-audit-2026-10-19.md)
   — all seven fixes and both engineering improvements implemented; local
   verification and independent commits recorded, with terrain warming,
@@ -29,6 +24,13 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [shared map Layers implementation](../archive/map-layers-and-overlays-2026-10-21.md)
+is complete locally: one collapsed basemap/overlay menu, independent opacity,
+Sentinel mosaics, viewport SNOTEL, USGS slope and public lands across native and
+supported 3D maps. Its ledger records browser/pixel/geometry evidence and the
+unchanged broader Chrome spacing assertion. [Map layers](../map-layers.md)
+owns the runtime contract.
 
 The [SNOTEL timeout and recovery UX audit](../archive/snotel-timeout-ux-audit-2026-10-20.md)
 adds explicit timeout feedback and verifies stable, immediately available Refresh

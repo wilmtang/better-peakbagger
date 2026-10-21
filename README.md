@@ -45,7 +45,9 @@ data from [Mapterhorn](https://mapterhorn.com/). For a more recent view, try
 from the last 30 days and check its date, estimated coverage, and full-image
 cloud cover. Microsoft Planetary Computer supplies the imagery; clouds and
 gaps may still obscure the terrain.
-[3D map guide](docs/3d-map.md)
+The same collapsed **Layers** menu combines a basemap choice, Sentinel imagery,
+slope angle, public lands and SNOTEL, with independent raster opacity.
+[Map layers](docs/map-layers.md) · [3D map guide](docs/3d-map.md)
 
 ### Put weather and daylight in context
 
@@ -69,8 +71,8 @@ across peak pages.
 
 On western US and Alaska peaks, **Nearby snow** adds public NRCS SNOTEL snow
 depth and water-equivalent observations, station distance/elevation, and a
-seven-day trend. A compact **SNOTEL** toggle adds distinct station markers and
-NRCS data links to the peak's 2D or 3D map. Nearby stations describe their own location; route and summit
+seven-day trend. The compact **Layers** menu adds station markers and NRCS links to ascent,
+peak and Full Screen maps in 2D or supported 3D. Nearby stations describe their own location; route and summit
 conditions can differ. **Settings → General → Show SNOTEL** disables the whole
 feature independently of weather. [Nearby snow guide](docs/nearby-snow.md).
 

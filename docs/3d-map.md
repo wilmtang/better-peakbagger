@@ -6,10 +6,11 @@ change must preserve. Historical investigations and completed audits under
 `docs/archive/` explain how individual decisions were reached, but they are
 not runtime specifications.
 
-The **Sentinel-2 (experimental)** imagery option is offered both by the native
-Leaflet map (`src/maps/sentinel-map.js`, injected into MasterMap) and the 3D
-picker. Both use the bounded catalog and pass-selection logic in
-`src/maps/sentinel-core.js` and the capture/status UI in `sentinel-layer.js`.
+The shared [Layers menu](map-layers.md) owns one basemap choice and independent
+Sentinel, slope, public-land and SNOTEL overlays across native and 3D maps.
+`src/maps/map-layers.js` owns the outer session; `sentinel-session.js` owns each
+active renderer's capture catalog and status. The frame has no floating picker.
+Both engines use `src/maps/sentinel-core.js` for bounded capture validation.
 Microsoft Planetary Computer serves natural-color imagery directly over CORS;
 no account, proxy, new host permission, or persistent imagery cache is needed.
 Only a selected layer starts requests. Searches cover the last 30 days, split
@@ -33,7 +34,7 @@ and never presented as viewport cloud cover or clear-pixel coverage. Tiles are
 limited to native zoom 14, with overzoom allowed; Sentinel-2 visible bands have
 10-metre resolution. Switching away, suspension, and teardown cancel searches
 and remove only extension-owned imagery. The Leaflet layer leaves the native
-basemap underneath and never passes its custom code to Peakbagger's handler.
+basemap underneath and never changes the selected native basemap.
 
 The short mental model is:
 
@@ -143,7 +144,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
 | `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
-| `src/terrain/terrain-frame-runtime.js` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
+| `src/terrain/terrain-frame-runtime.js` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
 | `src/terrain/terrain-basemap.js` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
@@ -310,8 +311,9 @@ map holds focus is visible only inside the frame — the frame handles that pres
 itself and relays it as `exit`. Inside the frame an open popup is the nearer
 layer and is dismissed first; a modified Escape is left to the browser, and an
 Escape with 3D closed is left to the page.
-Native layer pickers and editable controls own Escape locally, so canceling a
-control interaction does not also leave 3D. Modified Escape remains available
+The shared Layers popover closes before map popups or 3D and returns focus to
+its trigger. Editable controls keep their ordinary browser interactions.
+Modified Escape remains available
 to the browser in both the page coordinator and the renderer frame.
 
 When 3D is active, a `2D` click does not immediately discard the user's map
@@ -391,8 +393,8 @@ The constructor therefore receives only:
 
 After `load`, the frame adds route casing, route, peak rings, chart highlight,
 and then the selected imagery. Terrain can become interactive while raster
-tiles stream progressively. A picker selection made during the short pre-load
-window is queued and applied immediately after the base style loads.
+tiles stream progressively. The outer basemap selector is disabled during
+boot and becomes available when the authorized renderer publishes its choices.
 
 ### Drape sources
 
@@ -401,13 +403,14 @@ single raster `{z}/{x}/{y}` template. It omits WMS, dynamic image exports,
 unsupported projections, Google/Bing integrations, non-zero zoom offsets, and
 other shapes that do not map safely to a raster source.
 
-The 3D picker contains:
+The shared menu's 3D basemap selector contains:
 
 - terrain relief with no imagery;
 - the extension-provided experimental OpenFreeMap vector style;
-- the extension-provided experimental Sentinel-2 imagery and capture picker;
 - compatible known choices from Peakbagger's current layer menu;
 - the active live Leaflet layer when it can be converted safely.
+
+Sentinel, slope, public lands and SNOTEL remain separate overlay rows.
 
 The frame validates each drape again. Remote URLs must be bounded, credential-
 free, fragment-free HTTPS URLs on public hosts, except that the current

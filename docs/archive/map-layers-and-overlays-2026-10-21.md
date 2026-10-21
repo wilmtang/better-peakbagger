@@ -1,8 +1,11 @@
 # Shared map Layers menu and overlays
 
-Status: implementation in progress, October 20, 2026.
+Status: implemented locally, October 21, 2026.
+Runtime guide: [Map layers](../map-layers.md).
 Source baseline: `ad48f51d8810` on `main`, with a clean working tree before
-this plan. Runtime evidence below refers to that tree, not to the mockup.
+this plan. Initial findings below refer to that tree. The closure ledger records
+implementation evidence; the maintained runtime guide supersedes proposed file
+names and intermediate designs in this execution record.
 
 Requested outcome: one Layers menu on ascent maps, peak maps and BigMap, in
 2D and supported 3D contexts. Move Sentinel-2 and SNOTEL into it, alongside
@@ -322,7 +325,7 @@ These probes establish candidate endpoints, not production browser compatibility
 visual calibration, update guarantees, service capacity or worldwide coverage.
 Worldwide Mapterhorn-derived slope and licensed private-parcel coverage remain
 separate follow-ups. Do not add a placeholder private-land layer in this release.
-The existing [avalanche plan](avalanche-forecast-links-and-layer.md) remains
+The existing [avalanche plan](../plans/avalanche-forecast-links-and-layer.md) remains
 separate; slope shading does not imply a forecast overlay.
 
 ## Independent implementation units
@@ -410,30 +413,105 @@ separately identified evidence. Hidden fixture/GPU checks do not establish them.
 Take minimal read-only live checks after fixture readiness; do not automate a
 CAPTCHA or turn planning into provider load testing.
 
-## Current verification and closure ledger
+## Implementation and closure ledger — October 21
 
-**Fixed and verified:** the presentation component and shared opacity/state
-normalization have focused coverage (23 tests). Hidden Chrome component checks
-at 736 and 320 CSS pixels in light and dark themes measured a 232 by 170 pixel
-overview, with anchored rows through pending/error/success updates and keyboard
-opacity/collapse behavior. These checks use stub data, not live map engines.
+The compact presentation/schema foundation is `2297bb51`; the pure calibrated
+USGS provider contract is `510fd400`; shared host, transports, both renderers,
+Sentinel/SNOTEL relocation and regressions are `b900d73b`. The renderer and host
+integration shipped as one coherent unit so an intermediate build never lost
+its control owner. `795c900f` replaces raw destination URLs in handoff records
+with fingerprints while preserving serialized prepare/consume ordering. Documentation is maintained in [Map layers](../map-layers.md).
 
-**Intentionally not changed:** 3D subject and
-consent gates; the analyzer settings-write allowlist; the observation card's
-science, timeout/Refresh and nearby membership contracts; paid private parcels,
-worldwide ownership and regional avalanche overlays.
+**Fixed and verified:**
 
-**Changed but not fully proven:** the component is not yet wired into the
-extension. Provider, bridge and renderer integration remains open. The earlier
-larger two-row preview is superseded by the owner's
-compact/collapsible requirement, and is not rendered proof of the revised UI.
-That preview and the HTTP provider samples do not prove the four-layer menu,
-real extension messaging, uniform
-Sentinel mosaic opacity, viewport SNOTEL, degree calibration or 3D behavior.
-Keep these proof gaps open until their acceptance cases actually pass.
+- One collapsed Layers button and a 232 by 170 pixel fine-pointer overview,
+  including the native basemap selector and four rows. One detail well keeps
+  rows anchored. Escape returns focus to Layers, and changing renderer does
+  not replace the control. Controls support enlarged text and color schemes.
+- Native choices use their existing handler. Sentinel and SNOTEL floating
+  controls are removed from shipped surfaces. New native ownership works on
+  ascent, peak, BigMap outside its 3D allowlist and standalone MasterMap; an
+  embedded map has one outer owner.
+- Raster opacity is independent and device-local. Sentinel mosaics apply alpha
+  once; real pixels at 0/50/100% passed, including overlapping scenes and a
+  naive per-scene-alpha negative control that fails the same pixel assertion.
+  Unchanged passes retain their source. Provider work is bounded and cancels
+  on off, renderer suspension, frame replacement and BFCache freeze.
+- Latest/pinned capture state crosses 2D/3D and real one-use Full Screen
+  handoffs. Frame choices/status are republished on accepted snapshots so a
+  response racing an opacity change cannot leave feedback pending. Resuming a
+  preserved user-selected base republishes its selector. Off while parked
+  prevents a catalog replay. Stale revisions and catalog responses are rejected.
+- Viewport SNOTEL uses one isolated client with the valid peak card, locally
+  filters the national catalog, explicitly rejects the 51-station overflow,
+  and preserves nearby-card authorization. Enabling it does not auto-frame the
+  camera. Native and terrain popup/card actions and the master opt-out passed.
+- USGS slope remapping and its legend share inclusive-lower degree classes.
+  Live identify samples of 24, 29 and 37 degrees returned classes 1, 1 and 3;
+  the composed rendering returned a PNG with the advertised palette. Both
+  production USGS tile URLs returned direct HTTP 200 CORS-enabled PNGs.
+  PAD-US classifies fee ownership, with an invisible unmatched symbol.
 
-Planning checks: `node --test test/project/documentation.test.mjs` passed all
-three tests (document links, repository paths and heading targets included).
-`git diff --check` and `git diff --cached --check` passed.
-No runtime suite or new four-layer browser check ran for this documentation-only
-change.
+Verification evidence:
+
+- `npm test`: all 3,033 passed, including the five new headless Sentinel session
+  cases. The focused session/transport/bridge/terrain group passed 42 tests.
+  The handoff fingerprint follow-up passed its four focused tests and the real
+  Chrome Layers/Full Screen integration again.
+- ESLint and `web-ext lint` passed; six existing owned warnings remained.
+- Hidden real extension startup passed in Chrome 156.0.8078.4 and Firefox
+  158.0.1 at 1000 by 760, with BFCache restoration.
+- Compact component checks passed in hidden Chrome at 736/320 by 800, both
+  themes. Native integration used pinned Leaflet 1.9.4 and Chrome 156 at
+  1000 by 700. Actual expanded overview, SNOTEL, slope, land and 3D capture
+  renders were inspected. Provider imagery/data are deterministic fixtures.
+- Real SNOTEL checks passed in Chrome 156 and Firefox 158: 1440/375 by 1100,
+  both themes, pending/off/ready, keyboard popups, live theme, cached toggles,
+  frame replacement, errors/retry, rate limits, 200% zoom, nearby-card selection,
+  renderer switching/resume and independent weather/SNOTEL opt-outs.
+- Map controls passed 10 cases each in Chrome 156 and Playwright Firefox 157:
+  peak/ascent/BigMap/peak-BigMap, 1280/375 by 1000, light/dark, 1x/2x text,
+  keyboard focus, Escape and stable controls/map/following content/scroll.
+- Hardware rendering used ANGLE Metal on Apple M3 Pro. The full Firefox 157
+  terrain fixture passed at 1000 by 760 plus narrow/resize checks, including
+  authorization negatives, terrain/base/route/peaks, gestures, Sun/Moon bearing,
+  capture selection/suspend/resume and warning geometry. Hidden rendering does
+  not establish native OS focus or window placement.
+
+**Intentionally not changed:** paid private parcels, worldwide ownership,
+regional avalanche overlays, existing 3D eligibility/consent, native basemap
+handlers, raw GPX/privacy boundaries, analyzer settings-write allowlist, and the
+card's observations/timeout/Refresh/50 km contract. A failed station replacement
+restores the prior station; Refresh refreshes that displayed station. Retrying
+the replacement requires explicitly selecting it again.
+
+The pre-existing 3D-toggle spacing assertion is also outside this change. The
+unmodified Chrome terrain verifier stops at an ascent gap of 41 pixels against
+its 40-pixel upper bound. A read-only run with the original parent/native
+fixtures and zero Layers controls reproduced exactly 41 pixels (Chrome
+156.0.8078.48, 1000 by 900). No product spacing was changed to silence it.
+
+**Changed but not fully proven:**
+
+- The unmodified full Chrome terrain verifier is not green because of that
+  baseline assertion. A disposable copy allowing only the initial 41-pixel
+  ascent gap passed WebGL2-unavailable, coverage-gap, held-drape and 12-resize /
+  zero-blank-frame probes, then stopped at the same 41-versus-40 BigMap native
+  gap. Later cases in that broad Chrome verifier were not established by that
+  run; the dedicated Layers hardware check and full Firefox terrain check passed.
+- The separate saved-GPX provider-handoff verifier stopped at its existing
+  "send controls sit beside the download" assertion. Its captured 450-pixel
+  GPX region wraps the four send controls below the link. Those controls and
+  their placement code were not changed; later provider cases in that command
+  did not run. Native Full Screen overlay-state/pass handoff is a separate path
+  and passed in the dedicated Layers verifier.
+- Real natural-color Sentinel performance/representative download benchmarks,
+  live authenticated Peakbagger compatibility, current provider data accuracy,
+  physical touch, screen-reader speech, native menus, OS focus/window placement,
+  hosted CI and store/release acceptance remain separate proof limits. Provider
+  HTTP/degree samples and synthetic fixture pixels do not prove these.
+- Tile work uses bounded asynchronous main-world composition, with engine-owned
+  coalescing/cache lifetimes; no cross-origin module-worker transport or new
+  persistent satellite cache was introduced. Existing legacy Sentinel/SNOTEL UI
+  modules remain as unshipped regression helpers; the shared session and actual
+  shipped menu have their own focused and browser coverage.

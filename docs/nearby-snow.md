@@ -123,30 +123,20 @@ Historical ascent observations are outside this version.
 
 ## Station map layer
 
-On supported peak pages with a Dynamic Map, the compact **SNOTEL** button in the
-upper-right corner, below the map layer picker, toggles an independent station
-overlay in both 2D and 3D.
-The layer starts off on each page load. Blue hexagonal snowflakes distinguish
-stations from Peakbagger's summit dots. Selecting a station opens its name,
-elevation, a **Show conditions** action, and an official NRCS data link.
-**Show conditions** brings the Nearby snow card into view, focuses its station
-picker and loads that station's readings. The map popup itself requests no
-observations until this action is used.
+The shared [Layers menu](map-layers.md) offers SNOTEL on ascent, peak and
+Full Screen maps in native 2D and supported 3D. It starts off, and closing the
+menu leaves enabled stations visible. Blue hexagonal snowflakes distinguish
+stations from summit dots. The layer filters the national public catalog
+locally to the visible map. More than 50 visible stations asks the user to zoom
+in; enabling the layer does not move the camera. Opening an edge popup may pan
+just enough to keep it readable.
 
-The layer shows up to 50 active stations within 50 km of the peak, including
-across state borders. Its coverage stays centered on that peak when panning;
-it does not fetch stations for a changing map viewport. The card continues to
-offer the three closest stations, plus a station explicitly chosen from the map
-when needed. A failed replacement preserves the previous readings and station
-identity, and map selections respect the same NRCS cooldown as the picker.
-The toggle's accessible name and tooltip
-state the coverage. Native map layers stay intact. When enabled with no station
-visible, the active 2D or 3D map briefly zooms out to frame up to three nearby
-stations together with the current map center. An already visible station keeps
-the camera unchanged. The reveal lasts about 450 ms, respects reduced motion,
-and does not repeat on iframe reload or mode handoff. Turning the layer off
-cancels its reveal. Opening a station popup near an edge may pan enough to keep
-it readable.
+Station popups show name, elevation and an official NRCS link. **Show conditions**
+exists only for a station in the current peak card's authorized nearby set.
+It reveals the card, focuses its station picker and loads readings. The card
+retains its three nearest choices plus an explicitly selected nearby station;
+its 50 km contract and failed-replacement behavior remain unchanged. Ascent,
+Full Screen and distant stations have an NRCS link without a card action.
 
 The layer shares the card's metadata client and public local catalog cache.
 Toggling cached stations does not request measurements. Only validated public
@@ -163,33 +153,24 @@ distinct from a catalog failure.
 `npm run verify -- snow-map` loads the real unpacked extension in hidden Chrome
 and Firefox against the masked peak page, pinned Leaflet 1.9.4, deterministic
 NRCS JSON and non-flat synthetic DEM tiles. It checks loading, cancellation,
-retry, cached toggling, keyboard station popups, iframe reloads, settings,
-2D/3D switching and parked-frame reuse. Close-zoom cases verify that enabling
-the layer reveals offscreen stations, paints intermediate animation frames,
-keeps the hidden native camera still in 3D, and preserves controls and document
-scroll. They also check reduced motion and no recentering for visible stations.
-It exercises the conditions action in
-both renderers, including a fourth-nearest station, loading, failure, retry,
-distinct station readings, focus transfer and card geometry through recovery.
-It compares control, map, heading,
-following native content and scroll geometry at 375 and 1440 pixels in light
-and dark, plus 200% browser zoom. Selected dark styling is challenged with the
-original generic button override; the dark 3D source-link assertion was also
-run against the unfixed, low-contrast blue link. The 3D check requires a hardware WebGL
-renderer. The 320 by 240 minimum map size also checks that SNOTEL cannot cover
-the existing navigation controls and that a long station popup stays clear of
-SNOTEL. Both assertions detected the original overlaps. In 3D, station details
-stay anchored to their marker with a visible arrow. Opening an edge popup pans
-only enough to keep it below the top controls and clear of navigation; unusually
-long content can scroll inside the popup at the minimum size. The SNOTEL button
-shares the map controls' right inset; on the shortest map the compass sits beside
-the 2D button to preserve both targets.
-The same check exercises the real General setting through off/on, save and
-reload, and compares its control, row, heading, following content and scroll
-geometry. Options are inspected at 1000 pixels wide plus 375 in Chrome and
-500 in Firefox (its minimum headless window width for extension pages), in both
-themes. Fresh-page checks prove that disabled SNOTEL makes no NRCS requests
-while forecasts remain usable, and that SNOTEL can run with forecasts disabled.
-Set `BPB_VERIFY_SNOW_MAP_SCREENSHOT_DIR` to retain screenshots.
-This fixture proof does not establish live Peakbagger compatibility or native
-browser menus, OS focus/placement, or screen-reader speech.
+retry, cached toggling, keyboard station popups, live popup themes, frame
+replacement, settings, 2D/3D switching and parked-frame reuse. The camera starts
+with an explicit view containing the fixture stations: enabling viewport
+stations does not auto-frame the map.
+
+Both renderers exercise the authorized conditions action, including a fourth
+nearby station, loading, failure, explicit reselection, distinct readings,
+focus transfer and card geometry through recovery. Native popup colors and
+3D geographic anchoring are checked; a disposable detached-popup style must
+fail the anchor assertion. Control, map, heading, following native content and
+scroll geometry are compared at 375 and 1440 pixels in both themes, plus a
+200% zoom case. Hardware WebGL is required for 3D. The General preference is
+also exercised independently of weather, including a fresh opted-out page
+that makes no NRCS request.
+
+The shared control's component/integration checks separately cover compact
+rows, one detail disclosure, whole-menu collapse, opacity, keyboard navigation,
+light/dark, enlarged text and stable map/row positions. Set
+`BPB_VERIFY_SNOW_MAP_SCREENSHOT_DIR` to retain station-check screenshots.
+These fixtures do not establish live Peakbagger/provider compatibility, native
+browser menus, OS focus/placement, physical touch or screen-reader speech.
