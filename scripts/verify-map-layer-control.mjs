@@ -36,26 +36,30 @@ try {
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
             onRetry:id=>{statuses[id]={message:'Loaded'};paint()}});
         document.body.append(control.element);
-        function paint(){control.render({state,statuses,basemaps:[{id:'topo',label:'Topographic map'},{id:'imagery',label:'Satellite imagery'}],basemap:'topo',theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
+        function paint(){control.render({state,statuses,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
         window.fixture={control,state,statuses,paint};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
     const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/layer-control.aspx', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>body{margin:16px;font:14px system-ui}#map{height:240px;margin-top:36px;background:#c4cdc3}</style><div id="map"></div><h2>Following native content</h2>' }));
     const cases = [];
-    for (const width of [736, 320]) for (const theme of ['light', 'dark']) {
+    for (const width of [736, 320]) for (const theme of ['light', 'dark']) for (const scale of [1, 2]) {
         await page.setViewportSize({ width, height: 800 }); await page.emulateMedia({ colorScheme: theme });
         await page.goto(`https://www.peakbagger.com:${fixture.port}/layer-control.aspx`);
         await page.addStyleTag({ content: css }); await page.addScriptTag({ content: bundle.outputFiles[0].text });
+        await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${12 * scale}px`; }, scale);
         const trigger = page.getByRole('button', { name: /^Layers/ });
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         await trigger.click();
         const box = await page.locator('.bpb-layers-panel').boundingBox();
-        assert.ok(box.width <= 233 && box.height <= 190, `compact overview ${JSON.stringify(box)}`);
+        assert.ok(box.width <= 233 && box.height <= (scale === 1 ? 135 : 285), `compact overview ${JSON.stringify(box)}`);
+        const mapBox = await page.locator('#map').boundingBox(), triggerBox = await trigger.boundingBox();
+        assert.ok(Math.abs(triggerBox.x - mapBox.x - 10) <= 1 && Math.abs(box.x - triggerBox.x) <= 1, 'trigger and menu share the map left inset');
+        assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0);
         const geometry = () => page.evaluate(() => ['.bpb-layers-trigger', ...Array.from(document.querySelectorAll('.bpb-layers-row')).map(row => `[data-layer="${row.dataset.layer}"]`), '#map', 'h2'].map(selector => { const r = document.querySelector(selector).getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }));
         const before = await geometry();
         const stable = async () => { const after = await geometry(); before.forEach((rect, i) => rect.forEach((value, j) => assert.ok(Math.abs(value - after[i][j]) <= 1, `stable control ${i}/${j}`))); };
-        if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-overview.png`) }); }
+        if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-overview.png`) }); }
         for (const id of ['sentinel', 'slope', 'land', 'snotel', 'slope']) {
             await page.locator(`[data-layer="${id}"] button`).click(); await stable();
             assert.equal(await page.locator('.bpb-layers-detail:not([hidden])').count(), 1);
@@ -66,13 +70,13 @@ try {
         for (const status of [{ pending: true, message: 'Loading slope…', retry: true }, { error: true, message: 'Slope is unavailable. Try again.', retry: true }, { message: 'Loaded' }]) {
             await page.evaluate(status => { window.fixture.statuses.slope = status; window.fixture.paint(); }, status); await stable();
         }
-        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-detail.png`) });
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-detail.png`) });
         await slider.press('Escape'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         assert.equal(await page.evaluate(() => document.activeElement === window.fixture.control.trigger), true);
         assert.equal(await page.evaluate(() => window.fixture.state.slope.enabled), true);
         await trigger.click(); assert.equal(await page.locator('.bpb-layers-details').isVisible(), false);
         await page.mouse.click(width - 15, 320); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
-        cases.push({ width, theme, overview: { width: box.width, height: box.height }, anchored: true });
+        cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true });
     }
     assert.equal(errors.length, 0, errors.join('\n'));
     summary = { check: 'map layer control', browser: context.browser().version(), hidden: true, cases };

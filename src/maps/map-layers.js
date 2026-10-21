@@ -7,7 +7,7 @@ import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { sentinelTarget } from './sentinel-core.js';
 import { SLOPE_BANDS, LAND_CLASSES, overlayBounds } from './map-overlay-providers.js';
-import { readLayerSnapshot, readLayerStatus, readBasemapChoices } from './map-layer-protocol.js';
+import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
@@ -22,7 +22,7 @@ export function installMapLayers(win = window) {
     const state = Schema.mapOverlayState();
     let touched = false, revision = 1, capture = null;
     let binding = null, polling = null, frameMode = false, booting = false, active = true, disposed = false;
-    let terrainView = null, terrainBases = null, snotelAllowed = false, requestId = 0, stations = [];
+    let terrainView = null, snotelAllowed = false, requestId = 0, stations = [];
     let stationTimer = null, relayFrame = null;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
     const selectable = new Set();
@@ -38,13 +38,9 @@ export function installMapLayers(win = window) {
     const terrain = (type, detail = {}) => win.postMessage({ __bpbTerrain: true, dir: 'toCS', type, ...detail }, win.location.origin);
     const snowCard = detail => win.postMessage({ __bpbPeakSnow: true, dir: 'toCS', ...detail }, win.location.origin);
     const frameLifecycle = createMapFrameLifecycle({ document: doc, MutationObserver: win.MutationObserver, selector: FRAME_SELECTOR });
-    const nativeChoices = () => Array.from(binding?.select?.options || []).filter(option => option.value !== 'BPB_SENTINEL')
-        .map(option => ({ id: option.value, label: option.textContent, disabled: option.disabled }));
     const theme = () => doc.documentElement.dataset.bpbTheme === 'dark' || doc.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     const paint = () => {
-        control.render({ state, statuses, theme: theme(), basemaps: frameMode ? terrainBases?.choices : nativeChoices(),
-            basemapDisabled: booting,
-            basemap: frameMode ? terrainBases?.selection : binding?.select?.value });
+        control.render({ state, statuses, theme: theme() });
         position();
     };
     const snapshot = () => ({ revision, state, capture, menuOpen: control.isOpen(),
@@ -101,12 +97,6 @@ export function installMapLayers(win = window) {
             changed(); if (id === 'snotel' && enabled) loadStations();
         },
         onOpacity(id, opacity) { state[id].opacity = opacity; changed(); }, onCommit: save,
-        onBasemap(id) {
-            if (frameMode) terrain('layerAction', { action: 'basemap', selection: id });
-            else if (binding?.select && nativeChoices().some(choice => choice.id === id && !choice.disabled)) {
-                binding.select.value = id; binding.select.dispatchEvent(new binding.win.Event('change', { bubbles: true })); paint();
-            }
-        },
         onCapture(value) {
             if (frameMode) terrain('layerAction', { action: 'capture', id: 'sentinel', capture: value });
             else binding?.sentinel.select(value);
@@ -121,18 +111,18 @@ export function installMapLayers(win = window) {
     });
     control.element.hidden = true; doc.body.append(control.element);
     const position = () => {
-        const target = binding?.frame || binding?.map.getContainer?.() || (frameMode ? frameLifecycle.current() : null);
+        const target = (frameMode && doc.getElementById('bpb-terrain-frame'))
+            || binding?.frame || binding?.map.getContainer?.();
         if (!target) { control.element.hidden = true; return; }
         const rect = target.getBoundingClientRect();
-        control.position({ left: rect.left + 50, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height });
+        control.position(rect);
     };
     const unbind = () => {
         if (!binding) return;
-        binding.map.off('moveend', refresh); binding.select?.removeEventListener('change', paint);
+        binding.map.off('moveend', refresh);
         binding.win.document.removeEventListener('pointerdown', dismiss, true);
         binding.win.document.removeEventListener('keydown', escape, true);
         binding.observer?.disconnect(); binding.sentinel.dispose(); binding.engine.dispose();
-        if (binding.select) { binding.select.style.setProperty('display', binding.display, binding.priority); binding.select.hidden = binding.hidden; }
         binding = null;
     };
     const dismiss = event => { if (!control.element.contains(event.target)) control.close(); };
@@ -151,7 +141,6 @@ export function installMapLayers(win = window) {
                 if (!map || !owner.L?.GridLayer || !owner.L?.marker) continue;
                 if (binding?.map === map && binding.win.document === owner.document) { position(); return true; }
                 unbind();
-                const select = owner.document.getElementById('selmap');
                 const engine = createLeafletOverlays({ win: owner, map, onError(id, error) {
                     if (id === 'sentinel') binding?.sentinel.tileError(error);
                     else { statuses[id] = { ...statuses[id], error: true, retry: true, retryAt: error?.retryAt || 0, message: 'Some map tiles are unavailable. Retry.' }; paint();
@@ -166,9 +155,7 @@ export function installMapLayers(win = window) {
                     },
                     onCapture: target => { capture = target; revision++; relay(); post({ type: 'handoffState', snapshot: snapshot() }); },
                 });
-                binding = { ...candidate, map, select, engine, sentinel, display: select?.style.getPropertyValue('display') || '',
-                    priority: select?.style.getPropertyPriority('display') || '', hidden: select?.hidden || false };
-                if (select) { select.hidden = true; select.style.setProperty('display', 'none', 'important'); select.addEventListener('change', paint); }
+                binding = { ...candidate, map, engine, sentinel };
                 map.on('moveend', refresh);
                 if (owner !== win) { owner.document.addEventListener('pointerdown', dismiss, true); owner.document.addEventListener('keydown', escape, true); }
                 if (win.ResizeObserver) { binding.observer = new win.ResizeObserver(position); binding.observer.observe(candidate.frame || map.getContainer()); }
@@ -231,9 +218,7 @@ export function installMapLayers(win = window) {
         } else if (data.dir === 'toPage' && data.type === 'loaded') {
             frameMode = true; booting = false; revision++; apply(); loadStations();
         } else if (data.dir === 'toPage' && ['destroyed', 'error'].includes(data.type)) {
-            frameMode = booting = false; terrainView = terrainBases = null; revision++; apply(); refresh();
-        } else if (data.dir === 'toPage' && data.type === 'layerBasemaps') {
-            terrainBases = { choices: readBasemapChoices(data.choices), selection: data.selection }; paint();
+            frameMode = booting = false; terrainView = null; revision++; apply(); refresh();
         } else if (data.dir === 'toPage' && data.type === 'layerStatus' && frameMode) {
             const status = readLayerStatus(data); if (status && status.revision === revision) {
                 const previous = statuses[status.id].retryAt;

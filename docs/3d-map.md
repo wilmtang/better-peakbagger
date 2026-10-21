@@ -6,10 +6,11 @@ change must preserve. Historical investigations and completed audits under
 `docs/archive/` explain how individual decisions were reached, but they are
 not runtime specifications.
 
-The shared [Layers menu](map-layers.md) owns one basemap choice and independent
+The shared [Layers menu](map-layers.md) at the upper-left owns independent
 Sentinel, slope, public-land and SNOTEL overlays across native and 3D maps.
 `src/maps/map-layers.js` owns the outer session; `sentinel-session.js` owns each
-active renderer's capture catalog and status. The frame has no floating picker.
+active renderer's capture catalog and status. The frame's basemap picker stays
+at the upper-right, matching the native map's separate basemap selector.
 Both engines use `src/maps/sentinel-core.js` for bounded capture validation.
 Microsoft Planetary Computer serves natural-color imagery directly over CORS;
 no account, proxy, new host permission, or persistent imagery cache is needed.
@@ -393,8 +394,8 @@ The constructor therefore receives only:
 
 After `load`, the frame adds route casing, route, peak rings, chart highlight,
 and then the selected imagery. Terrain can become interactive while raster
-tiles stream progressively. The outer basemap selector is disabled during
-boot and becomes available when the authorized renderer publishes its choices.
+tiles stream progressively. The frame's basemap picker can queue a choice
+during boot and applies it once the renderer's base style is ready.
 
 ### Drape sources
 
@@ -403,7 +404,7 @@ single raster `{z}/{x}/{y}` template. It omits WMS, dynamic image exports,
 unsupported projections, Google/Bing integrations, non-zero zoom offsets, and
 other shapes that do not map safely to a raster source.
 
-The shared menu's 3D basemap selector contains:
+The upper-right 3D basemap selector contains:
 
 - terrain relief with no imagery;
 - the extension-provided experimental OpenFreeMap vector style;

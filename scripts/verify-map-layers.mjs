@@ -59,9 +59,10 @@ try {
     await context.route(`${origin}/leaflet.*`, route => route.fulfill({ body: assets[route.request().url().endsWith('.js') ? 0 : 1],
         contentType: route.request().url().endsWith('.js') ? 'text/javascript' : 'text/css' }));
     await context.route(`${origin}/map/MasterMap.aspx*`, route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head>
-        <link rel="stylesheet" href="/leaflet.css"><style>html,body,#map{height:100%;margin:0}#selmap{position:absolute;top:10px;left:60px;z-index:1000}</style>
-        </head><body><div id="map"></div><select id="selmap"><option value="L_FIX">Base map</option></select><script src="/leaflet.js"></script><script>
-        window.mapsPlaceholder=L.map('map',{inertia:false}).setView([46.78,-121.74],13);
+        <link rel="stylesheet" href="/leaflet.css"><style>html,body,#map{height:100%;margin:0}#selmap{position:absolute;top:10px;right:10px;z-index:1000}</style>
+        </head><body><div id="map"></div><select id="selmap" aria-label="Base map"><option value="L_FIX">Base map</option></select><script src="/leaflet.js"></script><script>
+        window.mapsPlaceholder=L.map('map',{inertia:false,zoomControl:false}).setView([46.78,-121.74],13);
+        L.control.zoom({position:'bottomright'}).addTo(mapsPlaceholder);
         window.nativeTiles=L.tileLayer('/native/{z}/{x}/{y}.png').addTo(mapsPlaceholder);
         window.nativeRoute=L.polyline([[46.48,-121.51],[46.52,-121.49]],{color:'#e55',weight:5}).addTo(mapsPlaceholder);
         </script></body></html>` }));
@@ -110,7 +111,12 @@ try {
         await wait(() => document.querySelector('.bpb-layers-trigger') && !document.querySelector('.bpb-map-layers').hidden, 'real extension Layers control');
         const native = pathname.includes('MasterMap') ? page : page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
         assert.equal(await native.locator('.bpb-map-layers').count(), pathname.includes('MasterMap') ? 1 : 0, 'one outer owner');
-        assert.equal(await native.locator('#selmap').isVisible(), false, 'native picker replaced');
+        assert.equal(await native.locator('#selmap').isVisible(), true, 'native basemap picker stays visible in its original corner');
+        const mapBox = await (pathname.includes('MasterMap') ? page.locator('#map') : page.locator('iframe#if')).boundingBox();
+        const overlayBox = await page.locator('.bpb-layers-trigger').boundingBox(), baseBox = await native.locator('#selmap').boundingBox();
+        assert.ok(Math.abs(overlayBox.x - mapBox.x - 10) <= 1, 'overlay trigger is 10px from the actual map left edge');
+        assert.ok(Math.abs(mapBox.x + mapBox.width - baseBox.x - baseBox.width - 10) <= 1, 'native basemap stays 10px from the map right edge');
+        assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0, 'overlay menu contains no basemap selector');
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, 'starts collapsed');
         await page.getByRole('button', { name: /^Layers/ }).click();
         await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).check();
@@ -166,6 +172,9 @@ try {
     }
     const dem = Buffer.from('UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef', 'base64');
     await context.route('https://tiles.mapterhorn.com/**', route => route.fulfill({contentType:'image/webp',headers:{'access-control-allow-origin':'*'},body:dem}));
+    // Full Screen uses the viewport, rather than an unstyled iframe's 300x150
+    // HTML default, so corner and navigation measurements match the live shell.
+    await context.route(`${origin}/map/BigMap.aspx?t=A&d=1&c=900001`, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>html,body,iframe{width:100%;height:100%;margin:0;border:0;display:block}</style><iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001"></iframe>' }));
     await page.goto(`${origin}/map/BigMap.aspx?t=A&d=1&c=900001`);
     await page.getByRole('button',{name:/^Layers/}).click();
     await page.getByRole('checkbox',{name:'Sentinel-2 (experimental)',exact:true}).check();
@@ -199,7 +208,7 @@ try {
     await page.locator('[data-layer="sentinel"] button').click();await page.locator('[data-layer="sentinel"] button').click();
     assert.equal(await capturePicker.inputValue(),'latest','frame acknowledgement preserves its matching capture status');
     await capturePicker.selectOption(older);await waitForCondition(bluePixels,{description:'explicit pinned capture repainted in 3D',timeoutMs:30000,isReady:count=>count>1000});
-    await page.getByRole('combobox',{name:'Base map',exact:true}).selectOption('terrain');
+    await terrain.getByRole('combobox',{name:'Base map',exact:true}).selectOption('terrain');
     await waitForCondition(bluePixels,{description:'Sentinel remains painted over terrain-only base',timeoutMs:30000,isReady:count=>count>1000});
     assert.equal(await page.getByRole('checkbox',{name:'Sentinel-2 (experimental)',exact:true}).isChecked(),true);
     await toggle.click();
@@ -208,9 +217,9 @@ try {
     await toggle.click();
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
     await waitForCondition(bluePixels,{description:'parked renderer resumes selected overlay',timeoutMs:30000,isReady:count=>count>1000});
-    assert.equal(await terrain.locator('.bpb-terrain-picker,.bpb-sentinel').count(),0,'one outer menu replaces floating controls');
-    assert.equal(await page.locator('[aria-label="Base map"]').inputValue(),'terrain','resuming a user-selected base republishes its selector');
-    assert.ok(await page.locator('[aria-label="Base map"] option').count()>=2);
+    assert.equal(await terrain.locator('.bpb-sentinel').count(),0,'overlay settings remain in the outer menu');
+    assert.equal(await terrain.getByRole('combobox',{name:'Base map',exact:true}).inputValue(),'terrain','resuming preserves the independent basemap selector');
+    assert.ok(await terrain.locator('[aria-label="Base map"] option').count()>=2);
     if(output){await page.locator('.bpb-layers-trigger').click();await page.locator('[data-layer="sentinel"] button').click();await wait(()=>document.querySelector('.bpb-layers-detail:not([hidden])')?.textContent.includes('Coverage'),'settled capture detail for visual inspection');await page.screenshot({path:path.join(output,'3d.png')});}
     await toggle.click();await page.waitForFunction(()=>document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed')==='false');
     await page.locator('.bpb-layers-trigger').click();await page.locator('[data-layer="sentinel"] input').uncheck();

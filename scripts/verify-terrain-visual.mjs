@@ -1174,7 +1174,7 @@ try {
             message: message && message.textContent,
             compassGap: toggleRect && compassRect ? Math.round(toggleRect.top - compassRect.bottom) : null,
             badge: (() => {
-                const select = document.querySelector('[aria-label="Base map"]');
+                const select = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('[aria-label="Base map"]');
                 return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
             })(),
             canvas: surface && surface.querySelector('canvas') && {
@@ -1207,7 +1207,7 @@ try {
     const activeBadge = () => evaluate(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
-        const select = document.querySelector('[aria-label="Base map"]');
+        const select = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('[aria-label="Base map"]');
         return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
     })()`);
     await waitForCondition(() => {
@@ -1985,7 +1985,7 @@ try {
     // Provider warnings use the real rendered controls on the hardware map.
     // Engine status events are injected; transport classification is covered
     // separately. The catalog uses the runtime's fetch path with a 429 stub.
-    const savedPicker = await evaluate(cdp, 'document.querySelector(\'[aria-label="Base map"]\').value');
+    const savedPicker = await evaluate(cdp, 'document.getElementById(\'bpb-terrain-frame\').contentDocument.querySelector(\'[aria-label="Base map"]\').value');
     for (const width of [820, 375]) {
         await cdp.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await evaluate(cdp, 'document.getElementById(\'bpb-map-viewport\').scrollIntoView({ block: \'start\' })');
@@ -2031,7 +2031,7 @@ try {
         win.fetch = win.__apiLimitOriginalFetch; delete win.__apiLimitOriginalFetch;
         win.document.getElementById('bpb-terrain-map').dataset.theme = 'light';
         const checkbox = document.querySelector('[data-layer="sentinel"] input'); checkbox.checked = false; checkbox.dispatchEvent(new Event('change'));
-        const picker = document.querySelector('[aria-label="Base map"]');
+        const picker = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('[aria-label="Base map"]');
         picker.value = ${JSON.stringify(savedPicker)}; picker.dispatchEvent(new Event('change'));
     })()`);
 

@@ -15,11 +15,11 @@ test('overlay schema bounds device-local alpha and fails closed on enablement', 
 
 test('compact Layers control separates collapse, enablement and one detail selection', () => {
     const dom = new JSDOM('<body></body>'), document = dom.window.document;
-    const changes = [], opacity = [], bases = [];
-    const control = createMapLayerControl({ document, onToggle: (...args) => changes.push(args), onOpacity: (...args) => opacity.push(args), onBasemap: id => bases.push(id) });
+    const changes = [], opacity = [];
+    const control = createMapLayerControl({ document, onToggle: (...args) => changes.push(args), onOpacity: (...args) => opacity.push(args) });
     document.body.append(control.element);
     const state = Schema.mapOverlayState({ slope: { enabled: true, opacity: 60 } });
-    const model = { state, basemaps: [{ id: 'topo', label: 'Topographic' }, { id: 'image', label: 'Imagery' }], basemap: 'topo' };
+    const model = { state };
     control.render(model);
     const panel = document.querySelector('.bpb-layers-panel'), well = document.querySelector('.bpb-layers-details');
     assert.equal(panel.hidden, true);
@@ -36,7 +36,7 @@ test('compact Layers control separates collapse, enablement and one detail selec
     assert.equal(slider.closest('section').hidden, true);
     control.trigger.click(); assert.equal(panel.hidden, true); assert.equal(state.slope.enabled, true);
     control.trigger.click(); assert.equal(well.hidden, true, 'reopen is the compact overview');
-    const base = document.querySelector('select[aria-label="Base map"]'); base.value = 'image'; base.dispatchEvent(new dom.window.Event('change')); assert.deepEqual(bases, ['image']);
+    assert.equal(panel.querySelector('[aria-label="Base map"]'), null, 'basemap stays outside the overlay menu');
     control.trigger.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert.equal(panel.hidden, true); assert.equal(document.activeElement, control.trigger);
     control.dispose(); assert.equal(document.querySelector('.bpb-map-layers'), null); dom.window.close();

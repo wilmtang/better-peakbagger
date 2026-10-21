@@ -1,8 +1,9 @@
 # Map layers
 
-The **Layers** button on ascent, peak, Full Screen and standalone native maps
-opens one compact menu. Choose one base map, then enable any combination of
-overlays. Closing the menu leaves enabled layers visible. Each row's disclosure
+The **Layers** button at the upper-left of ascent, peak, Full Screen and
+standalone native maps opens one compact overlay menu. The basemap selector
+stays at the upper-right in both 2D and 3D. Enable any combination of overlays;
+closing the menu leaves them visible. Each row's disclosure
 opens its settings below the rows; only one detail is open at a time.
 
 | Overlay | Default opacity | Coverage and meaning |
@@ -40,8 +41,9 @@ controls the card and every station layer independently of weather.
 
 `src/maps/map-layers.js` owns the page session and outer control. Embedded
 MasterMap documents defer to a recognized parent, so one map has one menu.
-Native basemap changes dispatch the site's own handler once; the original
-selector is hidden only after its replacement binds, and restored on disposal.
+The native basemap selector and its existing handler remain untouched. The
+terrain frame owns its separate upper-right basemap picker. The overlay control
+aligns 10 pixels inside the visible map's left edge in either renderer.
 The overlay bootstrap does not depend on GPX readiness or 3D eligibility.
 
 The presentation lives in `src/maps/map-layer-control.js`. State and opacity

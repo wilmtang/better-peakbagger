@@ -64,22 +64,8 @@ startTerrainFrame(globalThis.maplibregl, { authorize: request => globalThis.auth
 });
 const frameBundle = frameHarnessBuild.outputFiles[0].text;
 
-const pickerModels = new WeakMap();
-// Exercise the outer menu's typed basemap protocol, rather than the removed
-// frame-owned select. Keep the legacy assertions about availability and swaps.
 function framePicker(window) {
-    if (!pickerModels.has(window)) {
-        let requested = null;
-        pickerModels.set(window, {
-            get options() { return (window.__testLayerBasemaps?.choices || []).map(choice => ({ value: choice.id, textContent: choice.label, disabled: choice.disabled })); },
-            get value() { return window.__testLayerBasemaps?.selection || ''; },
-            set value(value) { requested = value; },
-            get selectedIndex() { return this.options.findIndex(option => option.value === this.value); },
-            dispatchEvent() { window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin,
-                data: { __bpbTerrainFrame: true, dir: 'toFrame', type: 'layerAction', action: 'basemap', selection: requested } })); },
-        });
-    }
-    return pickerModels.get(window);
+    return window.document.querySelector('.bpb-terrain-controls select[aria-label="Base map"]');
 }
 
 const terrainCss = await readFile(path.join(root, 'src', 'terrain', 'terrain-map.css'), 'utf8');
@@ -2293,7 +2279,8 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
         const currentSource = () => map.getSource([...map.sources.keys()].find(id => id.startsWith('bpb-overlay-sentinel-')));
         const source = currentSource(); assert.ok(source); assert.equal(source.maxzoom, 14);
         assert.ok(map.getSource('basemap'), 'imagery keeps the native drape');
-        assert.equal(dom.window.document.querySelector('.bpb-sentinel,.bpb-terrain-picker'), null, 'only the outer shared menu owns presentation');
+        assert.equal(dom.window.document.querySelector('.bpb-sentinel'), null, 'overlay settings stay in the outer shared menu');
+        assert.ok(framePicker(dom.window), 'basemap has its separate frame-owned picker');
         const status = () => messages.filter(message => message.type === 'layerStatus').at(-1);
         assert.match(status().message, /Coverage 100% · Clouds 41%/); assert.notEqual(status().capture, 'latest');
         dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 2, state: { sentinel: { enabled: true, opacity: 75 } } } });

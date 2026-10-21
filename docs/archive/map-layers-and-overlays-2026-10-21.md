@@ -521,3 +521,34 @@ fixtures and zero Layers controls reproduced exactly 41 pixels (Chrome
   persistent satellite cache was introduced. Existing legacy Sentinel/SNOTEL UI
   modules remain as unshipped regression helpers; the shared session and actual
   shipped menu have their own focused and browser coverage.
+
+## Follow-up: separate basemap and overlay corners
+
+The user's layout correction supersedes the combined-selector design above.
+The native basemap selector remains untouched at the upper-right; the terrain
+frame again owns its own upper-right picker. The collapsed Layers control now
+contains only overlays, aligned 10 pixels inside the visible map's left edge,
+including Full Screen 3D. Its fine-pointer overview is 232 by 134 pixels.
+
+**Fixed and verified:** the new test first failed against the combined menu,
+and the real-extension fixture first failed on the hidden native selector.
+The corrected native corners passed on ascent, peak, BigMap and standalone
+MasterMap. Hidden Chrome 156 and Firefox 157 hardware-Metal fixtures passed
+10 map-control cases each at 1280/375 by 1000, including light/dark themes,
+enlarged picker/trigger text, focus, Escape, pending/cancel, active/return and
+renderer-error/retry. The overlay component passed eight 736/320 by 800 cases
+at normal/double text, including opacity, disclosures, collapse, and stable
+rows/map/following content through loading/error/recovery. Enlarged-text status
+indicators reserve their footprint to prevent an observed row-height shift.
+The real unpacked Chrome integration passed native corners, independent
+basemap/overlay selection, opacity pixels, pinned captures, Full Screen handoff
+and parked-renderer resume. The real-manifest Chrome startup/BFCache check,
+3,046 tests, scoped ESLint and web-ext lint (eight owned warnings) also passed.
+
+**Intentionally not changed:** basemap handlers, provider work, opacity and
+capture persistence, SNOTEL behavior, and existing 3D consent/eligibility gates.
+
+**Changed but not fully proven:** these fixture checks do not reproduce the
+live authenticated Peakbagger page, native browser menus, physical touch,
+screen-reader speech, or OS focus/window placement. The broader pre-existing
+verification gaps recorded above remain separate.

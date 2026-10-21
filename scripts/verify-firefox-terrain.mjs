@@ -695,7 +695,8 @@ async function main() {
             assert.ok(geometry.width<=233&&geometry.right<=geometry.viewport,JSON.stringify(geometry));
             if(output)await page.locator('.bpb-map-layers').screenshot({path:`${output}/sentinel-${width}-${theme}.png`});
         }
-        assert.equal(await sentinelFrame.locator('.bpb-sentinel,.bpb-terrain-picker').count(),0);
+        assert.equal(await sentinelFrame.locator('.bpb-sentinel').count(),0);
+        assert.equal(await sentinelFrame.locator('.bpb-terrain-picker').count(),1);
         if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
 
         console.log('Firefox terrain verification passed:');

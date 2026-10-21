@@ -45,8 +45,9 @@ data from [Mapterhorn](https://mapterhorn.com/). For a more recent view, try
 from the last 30 days and check its date, estimated coverage, and full-image
 cloud cover. Microsoft Planetary Computer supplies the imagery; clouds and
 gaps may still obscure the terrain.
-The same collapsed **Layers** menu combines a basemap choice, Sentinel imagery,
+The compact **Layers** menu at the upper-left combines Sentinel imagery,
 slope angle, public lands and SNOTEL, with independent raster opacity.
+The basemap selector stays at the upper-right in both 2D and 3D.
 [Map layers](docs/map-layers.md) · [3D map guide](docs/3d-map.md)
 
 ### Put weather and daylight in context

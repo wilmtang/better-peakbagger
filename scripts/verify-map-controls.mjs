@@ -181,9 +181,21 @@ try {
             if (process.platform === 'darwin') assert.match(renderer, /ANGLE Metal Renderer/, 'macOS verification requires Metal');
             console.log(`${label}: ${renderer}`);
             stable(before, await read(), `${label}/active`);
+            const checkCorners = async () => {
+                const map = await frame.locator('#bpb-terrain-map').boundingBox();
+                const overlay = await page.locator('.bpb-layers-trigger').boundingBox();
+                const base = await frame.locator('[aria-label="Base map"]').boundingBox();
+                assert.ok(Math.abs(overlay.x - map.x - 10) <= 1, `${label}: overlays align to the visible map's left edge`);
+                assert.ok(Math.abs(overlay.y - map.y - 10) <= 1, `${label}: overlays align to the map's top edge`);
+                assert.ok(base.x + base.width > map.x + map.width / 2, `${label}: basemap stays in the right corner`);
+                assert.ok(map.x + map.width - base.x - base.width <= 26, `${label}: basemap stays against the right inset`);
+                assert.ok(overlay.x + overlay.width + 6 <= base.x, `${label}: corner controls overlap`);
+                assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0);
+            };
+            await checkCorners();
             if (surface === 'peak') {
                 stage = 'layer picker focus';
-                const picker = page.locator('[aria-label="Base map"]');
+                const picker = frame.locator('[aria-label="Base map"]');
                 const pickerState = () => picker.evaluate(element => {
                     const style = getComputedStyle(element), r = element.getBoundingClientRect();
                     // Firefox retains the frame's last activeElement when
@@ -196,30 +208,36 @@ try {
                 for (const scale of [1, 2]) {
                     // Enlarged text also exercises the picker's constrained
                     // width without changing the renderer's camera or canvas.
+                    await frame.locator('#bpb-terrain-map').evaluate((control, scale) => { control.style.fontSize = `${12 * scale}px`; }, scale);
                     await page.locator('.bpb-map-layers').evaluate((control, scale) => { control.style.fontSize = `${12 * scale}px`; }, scale);
-                    await page.locator('.bpb-layers-trigger').click();
+                    await checkCorners();
                     const idle = await pickerState();
                     await page.keyboard.press('Tab');
                     await picker.focus();
                     const focused = await pickerState();
                     await screenshot(`${surface}-${width}-${theme}-picker-focus-${scale}x`);
-                    assert.equal(focused.focused && focused.visible, true, `${label}: keyboard focus is visible`);
+                    assert.equal(focused.focused && focused.visible, true, `${label}: keyboard focus is visible: ${JSON.stringify(focused)}`);
                     assert.equal(focused.outline, 'solid', `${label}: native focus halo must be replaced`);
                     assert.equal(focused.scheme, theme, `${label}: native menu must follow the map theme`);
                     assert.equal(focused.width, '2px', `${label}: use the compact map-control focus ring`);
-                    assert.equal(focused.offset, '2px', `${label}: padded popover leaves room for the focus ring`);
+                    assert.equal(focused.offset, '-2px', `${label}: focus ring stays inside the scrollable corner control`);
                     assert.equal(focused.color, theme === 'dark' ? 'rgb(121, 184, 255)' : 'rgb(47, 111, 208)');
                     assert.deepEqual(focused.rect, idle.rect, `${label}: focus moved or resized the layer picker`);
+                    await picker.press('Escape');
+                    assert.equal((await pickerState()).focused, true, `${label}: native picker Escape preserves focus`);
+                    assert.equal(await frame.locator('#bpb-terrain-map').count(), 1, `${label}: native picker Escape must not exit 3D`);
                     await picker.press('Tab');
                     await waitForCondition(pickerState, { description: `${label}: keyboard can leave the picker`, isReady: state => !state.focused });
                     assert.deepEqual((await pickerState()).rect, idle.rect, `${label}: blur moved or resized the layer picker`);
-                    await picker.focus();await picker.press('Escape');
-                    assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, `${label}: Escape collapses the common menu`);
-                    assert.equal(await page.locator('.bpb-layers-trigger').evaluate(element=>document.activeElement===element), true, `${label}: collapse returns focus to Layers`);
-                    assert.equal(await frame.locator('#bpb-terrain-map').count(), 1, `${label}: menu Escape must not exit 3D`);
                     stable(before, await read(), `${label}/picker-${scale}x`);
                 }
+                await frame.locator('#bpb-terrain-map').evaluate(control => { control.style.fontSize = ''; });
                 await page.locator('.bpb-map-layers').evaluate(control => { control.style.fontSize = ''; });
+                await page.locator('.bpb-layers-trigger').click();
+                await page.locator('[data-layer="slope"] button').focus();
+                await page.keyboard.press('Escape');
+                assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, `${label}: Escape collapses the overlay menu`);
+                assert.equal(await page.locator('.bpb-layers-trigger').evaluate(element=>document.activeElement===element), true, `${label}: collapse returns focus to Layers`);
             }
             const group = await frame.locator('.maplibregl-ctrl-group').boundingBox();
             const button = (await read()).button;

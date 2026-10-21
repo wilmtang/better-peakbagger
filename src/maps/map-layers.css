@@ -39,18 +39,18 @@
     background: var(--bpb-layer-paper); border: 1px solid var(--bpb-layer-border);
     border-radius: 7px; box-shadow: 0 3px 12px #0003;
 }
-.bpb-layers-base { display: flex; align-items: center; gap: 8px; min-height: 32px; border-bottom: 1px solid var(--bpb-layer-border); padding-bottom: 5px; margin-bottom: 3px; }
-.bpb-layers-base select { min-width: 0; flex: 1; max-width: 100%; }
 .bpb-map-layers select { min-height: 27px; background: var(--bpb-layer-paper); border: 1px solid var(--bpb-layer-border); border-radius: 4px; padding: 2px 3px; }
 .bpb-layers-row { display: flex; align-items: center; min-height: 30px; gap: 5px; }
 .bpb-layers-choice { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; margin: 0; cursor: pointer; }
 .bpb-layers-choice input { margin: 0; width: 15px; height: 15px; flex: none; }
-.bpb-layers-choice span { overflow-wrap: anywhere; }
+.bpb-layers-choice span { position: relative; min-width: 0; padding-right: 1ch; overflow-wrap: anywhere; }
 .bpb-layers-disclosure { display: flex; align-items: center; justify-content: flex-end; gap: 7px; width: 55px; min-height: 28px; padding: 3px 0 3px 3px; border: 0; background: transparent; cursor: pointer; flex: none; }
 .bpb-layers-value, .bpb-layers-opacity output { font-variant-numeric: tabular-nums; }
 .bpb-layers-disclosure[aria-expanded='true'] { color: var(--bpb-layer-accent); }
-.bpb-layers-row[data-status='error'] .bpb-layers-choice span::after { content: ' !'; color: #c87528; }
-.bpb-layers-row[data-status='pending'] .bpb-layers-choice span::after { content: ' …'; }
+/* Reserve the same indicator width in every state, including enlarged text. */
+.bpb-layers-choice span::after { content: '…'; position: absolute; top: 0; right: 0; width: 1ch; text-align: center; visibility: hidden; }
+.bpb-layers-row[data-status='error'] .bpb-layers-choice span::after { content: '!'; color: #c87528; visibility: visible; }
+.bpb-layers-row[data-status='pending'] .bpb-layers-choice span::after { visibility: visible; }
 .bpb-layers-details { border-top: 1px solid var(--bpb-layer-border); margin-top: 4px; padding-top: 8px; }
 .bpb-layers-detail-title { font-weight: 600; margin-bottom: 7px; }
 .bpb-layers-opacity { display: flex; align-items: center; justify-content: space-between; margin: 0; }

@@ -8,7 +8,7 @@ const NAMES = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
 
 // Presentation only. The owner supplies validated state and performs all I/O.
 export function createMapLayerControl({ document: doc, onToggle = () => {}, onOpacity = () => {},
-    onCommit = () => {}, onBasemap = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {} }) {
+    onCommit = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {} }) {
     const win = doc.defaultView;
     const node = (tag, className, text) => {
         const element = doc.createElement(tag);
@@ -24,13 +24,11 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const panel = node('div', 'bpb-layers-panel'); panel.hidden = true;
     const id = `bpb-layers-${Math.random().toString(36).slice(2)}`;
     panel.id = id; trigger.setAttribute('aria-controls', id);
-    const baseRow = node('label', 'bpb-layers-base'); baseRow.append(node('span', '', 'Map'));
-    const basemap = node('select'); basemap.setAttribute('aria-label', 'Base map'); baseRow.append(basemap); panel.append(baseRow);
     const rows = new Map(), details = new Map();
     const well = node('div', 'bpb-layers-details'); well.hidden = true;
     well.id = `${id}-details`;
     const live = node('span', 'bpb-layers-live'); live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
-    let open = false, expanded = null, rect = null, model = {}, baseKey = '', disposed = false, cooldownTimer = null;
+    let open = false, expanded = null, rect = null, model = {}, disposed = false, cooldownTimer = null;
     for (const key of Schema.MAP_OVERLAY_IDS) {
         const row = node('div', 'bpb-layers-row'); row.dataset.layer = key;
         const label = node('label', 'bpb-layers-choice');
@@ -102,17 +100,6 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const failed = active.some(key => model.statuses?.[key]?.error);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
         trigger.setAttribute('aria-label', `Layers${active.length ? `, ${active.length} active` : ''}${failed ? ', layer unavailable' : ''}`);
-        const choices = Array.isArray(model.basemaps) ? model.basemaps : [];
-        const nextBaseKey = JSON.stringify(choices);
-        if (baseKey !== nextBaseKey) {
-            baseKey = nextBaseKey;
-            basemap.replaceChildren(...choices.map(choice => {
-                const option = node('option', '', choice.label); option.value = choice.id; option.disabled = choice.disabled === true; return option;
-            }));
-        }
-        if (typeof model.basemap === 'string') basemap.value = model.basemap;
-        basemap.disabled = model.basemapDisabled === true;
-        baseRow.hidden = !choices.length;
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
             row.row.hidden = model.available && !model.available.includes(key);
@@ -156,7 +143,6 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         paint(); onOpen(open);
     };
     trigger.addEventListener('click', () => setOpen(!open));
-    basemap.addEventListener('change', () => onBasemap(basemap.value));
     const dismiss = event => { if (open && !element.contains(event.target)) setOpen(false); };
     const escape = event => {
         if (event.key !== 'Escape' || !open) return;

@@ -223,6 +223,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // apply it as soon as the base style is ready instead of marking a swap that
     // never happened.
     let pendingBasemapSelection = null;
+    let pickerElement = null;
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
@@ -455,6 +456,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         basemapChecked = false;
         userPickedBasemap = false;
         pendingBasemapSelection = null;
+        pickerElement = null;
         noticeElement = null;
         loaded = false;
     };
@@ -863,10 +865,28 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const renderPicker = () => {
-        post('layerBasemaps', { choices: [
+        const choices = [
             ...availableBasemaps.map((basemap, index) => ({ id: String(index), label: basemap.name || `Map ${index + 1}`, disabled: failedBasemaps.has(index) })),
             { id: 'vector', label: VECTOR_BASEMAP.name }, { id: 'terrain', label: 'Terrain only' },
-        ], selection: vectorActive ? 'vector' : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain' });
+        ];
+        const selection = vectorActive ? 'vector' : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
+        if (pickerElement) {
+            pickerElement.replaceChildren(...choices.map(choice => {
+                const option = document.createElement('option');
+                option.value = choice.id; option.textContent = choice.label; option.disabled = choice.disabled === true;
+                return option;
+            }));
+            pickerElement.value = selection;
+        }
+        post('layerBasemaps', { choices, selection });
+    };
+
+    const selectBasemap = selection => {
+        const choice = selection === 'terrain' ? -1 : selection === 'vector' ? 'vector'
+            : /^\d{1,3}$/.test(selection) ? Number(selection) : null;
+        if (choice === null) return;
+        if (!loaded) pendingBasemapSelection = choice;
+        else if (swapBasemap(choice)) userPickedBasemap = true;
     };
 
     const showNotice = text => {
@@ -1808,12 +1828,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
         const controls = document.createElement('div');
         controls.className = 'bpb-terrain-controls';
+        const picker = document.createElement('select');
+        picker.className = 'bpb-terrain-picker';
+        picker.setAttribute('aria-label', 'Base map');
+        picker.addEventListener('change', () => selectBasemap(picker.value));
+        pickerElement = picker;
         const notice = document.createElement('p');
         notice.className = 'bpb-terrain-notice';
         notice.setAttribute('role', 'status');
         notice.hidden = true;
         noticeElement = notice;
-        controls.append(notice);
+        controls.append(picker, notice);
         renderPicker();
 
         // Scroll zooms directly, matching the native 2D map. Pan and tilt are
@@ -2255,12 +2280,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (loaded && snapshot && overlays?.update(snapshot)) postOverlayView();
         } else if (data.type === 'layerAction') {
             if (data.action === 'basemap') {
-                const choice = data.selection === 'terrain' ? -1 : data.selection === 'vector' ? 'vector'
-                    : /^\d{1,3}$/.test(data.selection) ? Number(data.selection) : null;
-                if (choice !== null) {
-                    if (!loaded) pendingBasemapSelection = choice;
-                    else if (swapBasemap(choice)) userPickedBasemap = true;
-                }
+                selectBasemap(data.selection);
             } else overlays?.action(data);
         } else if (data.type === 'suspend') suspendTerrain();
         else if (data.type === 'cameraRequest') {
