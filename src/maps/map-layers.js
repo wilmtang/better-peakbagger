@@ -21,7 +21,7 @@ export function installMapLayers(win = window) {
     // loaded. Standalone MasterMap and other native map shells own themselves.
     try { if (win.parent !== win && MAP_PAGES.test(win.parent.location.pathname)) return null; } catch { /* Standalone owner. */ }
     const state = Schema.mapOverlayState();
-    let touched = false, revision = 1, capture = null;
+    let touched = false, preferencesReady = false, revision = 1, capture = null;
     let binding = null, polling = null, frameMode = false, booting = false, active = true, disposed = false;
     let terrainView = null, snotelAllowed = false, requestId = 0, stations = [], coverage = null;
     let stationTimer = null, relayFrame = null;
@@ -162,6 +162,10 @@ export function installMapLayers(win = window) {
     });
     control.element.hidden = true; doc.body.append(control.element);
     const position = () => {
+        // A visible control could mark defaults as user-owned before the
+        // isolated bridge delivers saved opacity. Its fixed overlay occupies
+        // no native layout space while the initial read is pending.
+        if (!preferencesReady) { control.element.hidden = true; return; }
         const target = (frameMode && doc.getElementById('bpb-terrain-frame'))
             || binding?.frame || binding?.map.getContainer?.();
         if (!target) { control.element.hidden = true; return; }
@@ -268,6 +272,7 @@ export function installMapLayers(win = window) {
                     changed(); loadStations();
                 }
             } else if (data.type === 'preferences') {
+                preferencesReady = true;
                 if (!touched) { const preferences = Schema.mapOverlayPreferences(data.preferences); for (const id of Schema.MAP_OVERLAY_IDS) state[id].opacity = preferences[id]; }
                 const wasAllowed = snotelAllowed; snotelAllowed = data.snotel === true;
                 statuses.snotel.unavailable = !snotelAllowed;

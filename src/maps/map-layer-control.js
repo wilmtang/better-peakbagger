@@ -98,7 +98,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             // activation clamps that scroll and moves the focused action. Hold
             // its current space only for this focused recovery transaction.
             const height = recovery.feedback.getBoundingClientRect().height;
-            if (height > 0) recovery.feedback.style.minHeight = `${Math.ceil(height)}px`;
+            if (height > 0) recovery.feedback.style.minHeight = `${height}px`;
             onRetry(key);
         });
         retry.addEventListener('blur', () => { const recovery = details.get(key); recovery.recovering = false; recovery.reloading = false; recovery.feedback.style.minHeight = ''; paint(); });

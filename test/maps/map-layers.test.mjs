@@ -7,7 +7,7 @@ import { installMapLayers } from '../../src/maps/map-layers.js';
 
 const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longitude: -121.74767, elevation: 1570 };
 const bounds = [-121.77, 46.84, -121.75, 46.86];
-function setup(terrain = false) {
+function setup(terrain = false, { preferences = true } = {}) {
     const dom = new JSDOM('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
     const win = dom.window, messages = [], moves = [], removed = [], popups = [], rasterPaints = [], events = new Map(); let currentBounds = bounds;
     const container = win.document.getElementById('map');
@@ -29,7 +29,7 @@ function setup(terrain = false) {
     const owner = installMapLayers(win);
     const send = (detail, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
         source: win, origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
-    send({ type: 'preferences', snotel: true });
+    if (preferences) send({ type: 'preferences', snotel: true });
     if (terrain) { send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input').click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
@@ -38,6 +38,20 @@ function setup(terrain = false) {
         view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner.dispose(); win.close(); } };
 }
+
+for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} controls wait for opacity preferences before accepting interaction`, () => {
+    const env = setup(terrain, { preferences: false }), doc = env.win.document;
+    try {
+        assert.equal(doc.querySelector('.bpb-map-layers').hidden, true, 'unknown preferences cannot expose editable defaults');
+        env.send({ type: 'preferences', snotel: true, preferences: { sentinel: 31, slope: 42, land: 73 } });
+        assert.equal(doc.querySelector('.bpb-map-layers').hidden, false);
+        assert.equal(doc.querySelector('[data-layer="land"] .bpb-layers-value-number').textContent, '73%');
+        doc.querySelector('[data-layer="land"] input').click();
+        const saved = env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.state.land;
+        assert.equal(saved.enabled, true); assert.equal(saved.opacity, 73);
+        if (!terrain) assert.equal(env.rasterPaints.at(-1)[1], .73);
+    } finally { env.close(); }
+});
 for (const id of ['slope', 'sentinel']) test(`3D ${id} status updates cannot shorten the cooldown relayed to 2D`, () => {
     const env = setup(true), retryAt = Date.now() + 600000;
     try {

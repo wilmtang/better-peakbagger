@@ -738,12 +738,17 @@ async function mapCase(page, origin, variant) {
     });
     await page.addScriptTag({ content: (await asset('content/map-layers.js')).toString() });
     await page.evaluate(() => {
-        window.postMessage({ __bpbMapLayers: true, dir: 'toPage', type: 'preferences', snotel: true }, location.origin);
         window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'loaded' }, location.origin);
         window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'layerView', bounds: [-122,46,-121,47], zoom: 16 }, location.origin);
     });
+    await page.waitForFunction(() => Boolean(globalThis.__layoutSnapshot));
+    assert.equal(await page.locator('.bpb-map-layers').isVisible(), false, 'pending preferences cannot expose editable defaults');
+    const nativeBeforePreferences = await geometry(page, '#map-following');
+    await page.evaluate(() => window.postMessage({ __bpbMapLayers: true, dir: 'toPage', type: 'preferences', snotel: true,
+        preferences: { sentinel: 31, slope: 42, land: 73 } }, location.origin));
     const trigger = '.bpb-layers-trigger';
     await page.locator(trigger).waitFor();
+    stable(nativeBeforePreferences, await geometry(page, '#map-following'), 'preference readiness preserves native reading position');
     const triggerBefore = await geometry(page, trigger);
     await page.locator(trigger).focus(); await page.keyboard.press('Enter');
     await page.locator('.bpb-layers-panel').waitFor();
