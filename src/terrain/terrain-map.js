@@ -26,6 +26,9 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
     let frame = null;
     let pendingInit = null;
+    // Capture updates before the worker has even issued the frame capability;
+    // pendingInit owns the later iframe handshake and authorization window.
+    let pendingLaunch = null;
     // Keep-alive: after a 'destroy' the loaded frame stays in the DOM at opacity
     // 0 for a TTL so a quick 2D→3D re-entry resumes MapLibre instead of rebuilding
     // it. frameLoaded gates whether there is anything worth suspending.
@@ -111,6 +114,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
     const removeFrame = () => {
         clearSuspendTimer();
+        pendingLaunch = null;
         suspended = false;
         frameLoaded = false;
         awaitingFrameReady = false;
@@ -396,15 +400,17 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
     const createFrame = async data => {
         const revision = ++launchRevision;
+        const payload = buildInitPayload(data);
+        pendingLaunch = payload;
         const activation = await activationFor('init');
-        if (!activation || revision !== launchRevision) return;
+        if (!activation || revision !== launchRevision) { if (pendingLaunch === payload) pendingLaunch = null; return; }
         await settingsReady;
-        if (revision !== launchRevision) return;
+        if (revision !== launchRevision) { if (pendingLaunch === payload) pendingLaunch = null; return; }
+        pendingLaunch = null;
         if (!terrainEnabled) {
             fail('unavailable');
             return;
         }
-        const payload = buildInitPayload(data);
         // Resume the suspended frame with the fresh route/camera/theme instead of
         // building a new iframe + MapLibre + CSP worker. The frame re-applies the
         // payload to its live map and replies with a normal 'loaded'.
@@ -460,6 +466,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             } else if (data.type === 'init') createFrame(data);
             else if (data.type === 'destroy') {
                 launchRevision++;
+                pendingLaunch = null;
                 if (suspended) {
                     // Already parked at opacity 0; nothing more to do.
                 } else if (frame && frameLoaded) {
@@ -515,16 +522,18 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 if (!snowStations) return;
                 const reveal = data.reveal === true && !suspended;
                 const conditions = Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : undefined;
-                if (pendingInit) {
-                    pendingInit.snowStations = snowStations; pendingInit.revealSnowStations = reveal;
-                    pendingInit.conditions = (conditions || pendingInit.conditions).filter(id => snowStations.some(station => station.id === id));
+                const pending = pendingLaunch || pendingInit;
+                if (pending) {
+                    pending.snowStations = snowStations; pending.revealSnowStations = reveal;
+                    pending.conditions = (conditions || pending.conditions).filter(id => snowStations.some(station => station.id === id));
                 }
                 postToFrame('snowStations', { snowStations, reveal, conditions });
             } else if (data.type === 'update') {
-                if (pendingInit) {
-                    if (data.routeStyle !== undefined) pendingInit.routeStyle = data.routeStyle;
-                    if (data.theme !== undefined) pendingInit.theme = data.theme;
-                    pendingInit.updatePending = true;
+                const pending = pendingLaunch || pendingInit;
+                if (pending) {
+                    if (data.routeStyle !== undefined) pending.routeStyle = data.routeStyle;
+                    if (data.theme !== undefined) pending.theme = data.theme;
+                    pending.updatePending = true;
                 }
                 postToFrame('update', { routeStyle: data.routeStyle, theme: data.theme });
             }

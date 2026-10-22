@@ -392,6 +392,33 @@ for (const action of ['init', 'resume']) test(`terrain ${action} replays style, 
     } finally { window.close(); }
 });
 
+for (const action of ['init', 'resume']) test(`terrain ${action} retains updates while the worker issues its activation`, async () => {
+    const env = await bootLoadedFrame();
+    const { window, dispatchPage, frameMessages, initData, timers, realSetTimeout } = env;
+    const pending = [], station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
+    try {
+        dispatchPage({ type: 'destroy' });
+        if (action === 'init') timers[0]();
+        frameMessages.length = 0;
+        Object.defineProperty(window.chrome.runtime, 'sendMessage', { value: () => new Promise(resolve => pending.push(resolve)) });
+        armTerrain(window); dispatchPage(initData);
+        dispatchPage({ type: 'update', routeStyle: { color: '#347a3f' }, theme: 'dark' });
+        dispatchPage({ type: 'snowStations', snowStations: [station], conditions: [station.id] });
+        pending.shift()({ ok: true, token: 'deferred-activation', expiresAt: Date.now() + 10000 });
+        await new Promise(resolve => realSetTimeout(resolve, 0));
+        if (action === 'init') {
+            const frame = window.document.getElementById('bpb-terrain-frame');
+            frame.contentWindow.postMessage = message => frameMessages.push(structuredClone(message));
+            window.dispatchEvent(new window.MessageEvent('message', { source: frame.contentWindow, origin: 'chrome-extension://test-id',
+                data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' } }));
+        }
+        const payload = frameMessages.find(message => message.type === action);
+        assert.equal(payload?.theme, 'dark', 'the issued capability must carry the latest theme');
+        assert.equal(payload.routeStyle.color, '#347a3f');
+        assert.deepEqual(Array.from(payload.conditions || []), [station.id]);
+    } finally { dispatchPage({ type: 'destroy' }); window.close(); }
+});
+
 test('terrain station actions require explicit membership, preserve omitted updates and reset on resume', async () => {
     const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=1', runScripts: 'outside-only', pretendToBeVisual: true });
     const popups = [], messages = []; let map;
