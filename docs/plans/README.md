@@ -1,8 +1,5 @@
 # Active plans
 
-- [UX audit — October 22](ux-audit-2026-10-22.md) — in progress; keyboard focus,
-  asynchronous action recovery and cross-surface interaction verification.
-
 - [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)
   — four runtime findings fixed and verified locally in focused commits:
   capture cooldown, keyboard focus, metadata stability and chart efficiency.
@@ -33,6 +30,12 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [October 22 UX audit](../archive/ux-audit-2026-10-22.md)
+records seven confirmed findings fixed in six focused runtime commits: capture
+state and focus, map permission/transfer focus, Settings recovery, photo backup
+and sticky-header readability. Its ledger retains native/live accessibility
+limits and an intermittent existing climber-card verifier timeout.
 
 The [October 22 Gemini code audit and script review](../archive/codebase-audit-2026-10-22.md)
 records six validated fixes, an additional long-feedback Retry shift, obsolete

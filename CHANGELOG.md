@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Keep keyboard actions steady.** Capture, map access, GPX transfers, Settings
+  and photo backup retain focus through progress, failures and retries. Repeated
+  activation cannot start duplicate work, and completion respects focus moved
+  elsewhere. Capture choices lock immediately while opening or deleting, and
+  failed deletion preserves the current selection.
+
+- **Keep Photo Topos navigation readable.** The sticky header now has an opaque
+  theme background so scrolled content cannot show through its title.
+
 - **Respect Peakbagger request limits across captures.** When a rate-limit
   response has no usable reset time, captures wait five minutes before trying
   again. The wait applies across tabs, worker restarts and forced retries.

@@ -1263,6 +1263,11 @@ values; failed writes roll back to that latest confirmed state.
 `options/options-utils.js` supplies keyed row/action focus restoration shared
 with the report-draft manager. Refresh, sorting, and Undo expiry retain a
 meaningful nearby control without redirecting focus from unrelated fields.
+It also supplies `setButtonBusy` for temporary action unavailability: the button
+keeps focus through `aria-disabled` and `aria-busy`, while each owning operation
+must guard repeated activation. Restore confirmation only takes or returns
+focus when its initiating control or closing panel still owns focus. Permanent
+unavailability, such as a disconnected backup, continues to use native disabling.
 
 Both content scripts use the default isolated extension world, not Peakbagger's
 MAIN world. They can read the rendered DOM and extension storage without exposing
