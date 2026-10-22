@@ -9,12 +9,13 @@ import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 // Shared Chrome/Firefox cases exercise the real manifest and isolated bundle.
 // Only provider responses and native fixture pages are substituted.
-export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage,
+export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, press, movePointer, clickPoint, resize, screenshot, screenshotPage,
     setSettings, setZoom, wait, writeLocal, setMode, release, snowEvidence, networkErrors, firefoxMode }) {
     const output = process.env.BPB_VERIFY_SNOW_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const browser = firefoxMode ? 'firefox' : 'chrome', cases = [];
-    const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015' }[name] : name;
+    const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015', ArrowLeft: '\uE012',
+        ArrowRight: '\uE014', Home: '\uE011', End: '\uE010', Escape: '\uE00C' }[name] : name;
     const ready = () => wait(() => document.querySelector('#bpb-peak-snow')?.getAttribute('aria-busy') === 'false'
         && document.querySelector('.bpb-snow-status')?.textContent.includes('Hourly readings'), 'visible snow observations');
     const geometry = () => evaluate(() => {
@@ -22,8 +23,8 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         const rect = node => {
             const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
         };
-        const table = card.closest('table'); let following = table.nextElementSibling;
-        while (following && following.tagName !== 'H2') following = following.nextElementSibling;
+        const table = card.closest('table');
+        const following = [...document.querySelectorAll('h2')].find(node => node.textContent.trim() === 'Other Photos');
         const bounds = card.getBoundingClientRect();
         const overflow = [...card.querySelectorAll('header, h2, button, select, p, strong, table, summary, footer')].filter(node => {
             const closed = node.closest('details:not([open])');
@@ -66,6 +67,59 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         if (firefoxMode) await screenshotPage(path.join(output, `${browser}-${name}.png`));
         else { await screenshot(path.join(output, `${browser}-${name}.png`)); await screenshotPage(path.join(output, `${browser}-${name}-page.png`)); }
     };
+    const inspectChart = async (name, zoomed = false) => {
+        await evaluate(() => {
+            const chart = document.querySelector('.bpb-snow-graph');
+            chart.scrollIntoView({ block: 'center', behavior: 'instant' }); chart.focus({ preventScroll: true });
+            window.__snowChartFrames = [];
+            window.__snowChartTrace = true;
+            const trace = () => {
+                if (!window.__snowChartTrace) return;
+                window.__snowChartFrames.push([...document.querySelectorAll('#bpb-peak-snow, .bpb-snow-range, .bpb-snow-graph, .bpb-snow-dates')].map(node => {
+                    const r = node.getBoundingClientRect(); return [r.x, r.y, r.width, r.height];
+                }));
+                window.requestAnimationFrame(trace);
+            };
+            window.requestAnimationFrame(trace);
+        });
+        await movePointer(1, 1);
+        const before = await geometry(), requests = snowEvidence.length;
+        assert.equal(await evaluate(() => document.querySelector('.bpb-snow-graph').tabIndex), 0);
+        for (const direction of ['Home', 'ArrowRight', 'End', 'ArrowLeft']) {
+            await press(key(direction));
+            assert.equal(await evaluate(() => Boolean(document.querySelector('.bpb-snow-selected'))), true);
+            stable(before, await geometry(), `${name}: chart ${direction}`);
+        }
+        const reading = () => evaluate(() => document.querySelector('.bpb-snow-range > span').textContent);
+        const pinned = await reading();
+        const points = await evaluate(() => {
+            const chart = document.querySelector('.bpb-snow-graph svg'), r = chart.getBoundingClientRect();
+            return [...chart.querySelectorAll('circle:not(.bpb-snow-selected)')].map(dot => ({
+                x: r.left + Number(dot.getAttribute('cx')), y: r.top + Number(dot.getAttribute('cy')),
+            }));
+        });
+        await movePointer(points[0].x, points[0].y);
+        assert.notEqual(await reading(), pinned, 'hover previews another day');
+        stable(before, await geometry(), `${name}: hover preview`);
+        await movePointer(1, 1); assert.equal(await reading(), pinned, 'leaving restores the pinned day');
+        await clickPoint(points[2].x, points[2].y); const clicked = await reading();
+        await movePointer(1, 1); assert.equal(await reading(), clicked, 'a pointer click pins a daily reading');
+        stable(before, await geometry(), `${name}: pinned pointer reading`);
+        // Chromium's element screenshot scrolls the page at tab zoom. Keep
+        // the compositor viewport unchanged while the geometry trace is live.
+        if (zoomed && output) await screenshotPage(path.join(output, `${browser}-${name}-interactive-chart.png`));
+        else await image(`${name}-interactive-chart`);
+        await press(key('Escape'));
+        assert.match(await reading(), /Hover, tap or use ← →/);
+        assert.equal(await evaluate(() => Boolean(document.querySelector('.bpb-snow-cursor'))), false);
+        stable(before, await geometry(), `${name}: cleared reading`);
+        assert.equal(snowEvidence.length, requests, 'inspecting readings never fetches observations');
+        const frames = await evaluate(() => { window.__snowChartTrace = false; return window.__snowChartFrames; });
+        assert.ok(frames.length > 0, 'chart stability trace must execute frames');
+        for (const frame of frames) frame.forEach((box, i) => box.forEach((value, j) =>
+            assert.ok(Math.abs(value - frames[0][i][j]) <= 1, `${name}: chart changed geometry during interaction`)));
+        cases.push(`${name}-chart-hover-click-keyboard-stability`);
+    };
 
     for (const width of [1440, 681, 375]) for (const theme of ['light', 'dark']) {
         const name = `${width}-${theme}`;
@@ -106,6 +160,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         assert.match(axis.title, new RegExp(`${axis.dates[0]}.*${theme === 'dark' ? 'cm' : 'in'}`));
         assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-row').previousElementSibling.id), 'bpb-peak-weather-row');
         await image(`${name}-ready`);
+        await inspectChart(name);
         await click('#bpb-peak-snow summary'); await focusRefresh();
         const expanded = await geometry();
         setMode('loading'); const count = snowEvidence.length;
@@ -212,6 +267,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     setMode('missing'); await click('.bpb-snow-refresh'); await ready();
     assert.equal(await evaluate(() => document.querySelector('.bpb-snow-metric strong').textContent), '—');
     assert.equal(await evaluate(() => document.querySelector('.bpb-snow-graph p').hidden), false);
+    assert.equal(await evaluate(() => document.querySelector('.bpb-snow-graph').tabIndex), -1, 'a chart with no readings is not a dead Tab stop');
     await image('375-missing'); cases.push('missing-sensor');
     setMode('error'); await click('.bpb-snow-refresh');
     await wait(() => document.querySelector('.bpb-snow-status')?.textContent.includes('NRCS request limit'), 'NRCS rate-limit feedback');
@@ -243,6 +299,8 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     await focusRefresh();
     await evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
     assert.deepEqual((await geometry()).overflow, []);
+    await inspectChart('1440-200-percent-zoom', true);
+    await focusRefresh();
     // A viewport capture also avoids Chromium element-clip coordinates at zoom.
     if (output) await screenshotPage(path.join(output, `${browser}-1440-200-percent-zoom.png`));
     const enlarged = await geometry(); setMode('loading');

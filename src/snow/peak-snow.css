@@ -17,7 +17,7 @@ html[data-bpb-theme="dark"] #bpb-peak-snow {
 #bpb-peak-snow .bpb-snow-icon { flex: none; width: 1.35rem; height: 1.35rem; }
 #bpb-peak-snow button { flex: 0 0 auto; font: inherit; color: var(--snow-accent); background: var(--snow-bg); border: 1px solid var(--snow-border); border-radius: 7px; padding: 6px 10px; cursor: pointer; }
 #bpb-peak-snow button[aria-disabled="true"] { opacity: .65; cursor: default; }
-#bpb-peak-snow :is(button, select, summary, a):focus-visible { outline: 2px solid var(--snow-accent); outline-offset: 3px; }
+#bpb-peak-snow :is(button, select, summary, a, .bpb-snow-interactive):focus-visible { outline: 2px solid var(--snow-accent); outline-offset: 3px; }
 #bpb-peak-snow select { display: block; width: 100%; min-width: 0; max-width: 100%; border: 1px solid var(--snow-border); border-radius: 7px; padding: 8px; font: inherit; color: var(--snow-text); background: var(--snow-bg); }
 #bpb-peak-snow select:disabled, #bpb-peak-snow select[aria-disabled="true"] { opacity: .65; }
 #bpb-peak-snow .bpb-snow-station-controls { margin-top: 4px; }
@@ -32,11 +32,15 @@ html[data-bpb-theme="dark"] #bpb-peak-snow {
 #bpb-peak-snow .bpb-snow-time { display: block; font-size: 11px; color: var(--snow-sub); margin-top: 4px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 #bpb-peak-snow .bpb-snow-range { margin-bottom: 0; font-variant-numeric: tabular-nums; }
 #bpb-peak-snow .bpb-snow-graph { display: grid; position: relative; min-width: 0; margin: 4px 0 8px; }
+#bpb-peak-snow .bpb-snow-interactive { cursor: crosshair; border-radius: 4px; touch-action: manipulation; }
 #bpb-peak-snow .bpb-snow-graph > * { grid-area: 1 / 1; }
 #bpb-peak-snow .bpb-snow-graph svg { display: block; width: 100%; height: 6em; }
 #bpb-peak-snow .bpb-snow-graph path { fill: none; stroke: var(--snow-accent); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 #bpb-peak-snow .bpb-snow-graph path.bpb-snow-baseline { stroke: var(--snow-border); stroke-width: 1; }
 #bpb-peak-snow .bpb-snow-graph circle { fill: var(--snow-accent); }
+#bpb-peak-snow .bpb-snow-graph .bpb-snow-cursor { stroke: var(--snow-sub); stroke-width: 1; stroke-dasharray: 4 3; }
+#bpb-peak-snow .bpb-snow-graph .bpb-snow-selected { fill: var(--snow-bg); stroke: var(--snow-accent); stroke-width: 2; }
+#bpb-peak-snow .bpb-snow-chart-status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 #bpb-peak-snow :is(.bpb-snow-graph-max, .bpb-snow-graph-zero) { position: absolute; font-size: 10px; color: var(--snow-sub); pointer-events: none; }
 #bpb-peak-snow .bpb-snow-graph-max { top: 0; right: 0; }
 #bpb-peak-snow .bpb-snow-graph-zero { bottom: 0; left: 0; }

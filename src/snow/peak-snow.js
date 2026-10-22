@@ -14,6 +14,7 @@ import { readPeakNations } from '../avalanche/avalanche-location.js';
 import { createSnotelClient } from './snotel-client.js';
 import { createSnotelMapSource } from './snotel-map-source.js';
 import { snotelSymbol } from './snotel-map-marker.js';
+import { createSnotelChart } from './snotel-chart.js';
 import { nearbySnotelStations, latestSnotelReading, snotelReportUrl, SNOTEL_RADIUS_METERS } from './snotel-data.js';
 
 const ID = 'bpb-peak-snow', element = dom.element;
@@ -78,7 +79,6 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
     const graphDates = element('div', { class: 'bpb-snow-dates', 'aria-label': 'Daily observation dates' }, dateTicks);
     const range = element('p', { class: 'bpb-snow-range', text: 'Past 7 days · Snow depth' });
     const stableRange = createStableText(range);
-    stableRange.reserve(['Sep 30 – Sep 30 · Snow depth', 'Past 7 days · Snow depth']);
     const tbody = element('tbody');
     const details = element('details', { class: 'bpb-snow-details' }, [element('summary', { text: 'Daily readings and source details' }),
         element('div', { class: 'bpb-snow-table-wrap' }, [element('table', {}, [element('caption', { text: 'Daily observations · NRCS end-of-day dates' }),
@@ -126,6 +126,8 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
     const system = measurement => units.resolveUnits(preference, () => readPeakUnitSystem(document), measurement);
     const depthText = mm => mm === null ? '—' : system('precipitation') === 'metric' ? `${(mm / 10).toFixed(1)} cm` : `${(mm / 25.4).toFixed(1)} in`;
     const waterText = mm => units.formatWeather(mm, 'precipitation', system('precipitation'));
+    const chart = createSnotelChart({ frame: graphFrame, graph, empty: emptyGraph, maximum: graphMax, zero: graphZero,
+        ticks: dateTicks, caption: stableRange, dateLabel, depthText });
     const availability = () => {
         refresh.setAttribute('aria-disabled', String(pending || cooldown.active() || noStations));
         select.setAttribute('aria-disabled', String(cooldown.active()));
@@ -173,33 +175,8 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
                 createStableText(flags).reserve(['QC V · QA P', 'Unavailable']);
                 return element('td', {}, [value, flags]);
             })])));
-        const values = dates.map(date => snow.get(date)?.value ?? null);
-        const max = Math.max(1, ...values.filter(value => value !== null));
-        let path = '', connected = false;
-        values.forEach((value, index) => {
-            if (value === null) { connected = false; return; }
-            const x = 8 + index * 304 / 7, y = 68 - value / max * 44;
-            path += `${connected ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`; connected = true;
-        });
-        graph.replaceChildren();
-        if (values.some(value => value !== null)) {
-            const baseline = document.createElementNS(graph.namespaceURI, 'path');
-            baseline.setAttribute('d', 'M8,68H312'); baseline.setAttribute('class', 'bpb-snow-baseline'); graph.append(baseline);
-        }
-        const line = document.createElementNS(graph.namespaceURI, 'path'); line.setAttribute('d', path); graph.append(line);
-        values.forEach((value, index) => {
-            if (value === null) return;
-            const dot = document.createElementNS(graph.namespaceURI, 'circle');
-            dot.setAttribute('cx', String(8 + index * 304 / 7)); dot.setAttribute('cy', String(68 - value / max * 44)); dot.setAttribute('r', '2');
-            const title = document.createElementNS(graph.namespaceURI, 'title');
-            title.textContent = `${dateLabel(dates[index])} · ${depthText(value)}`; dot.append(title); graph.append(dot);
-        });
-        dateTicks.forEach(tick => { tick.textContent = view ? dateLabel(dates[Number(tick.dataset.day)]) : ''; });
-        emptyGraph.hidden = values.some(value => value !== null);
-        graphMax.hidden = graphZero.hidden = !emptyGraph.hidden;
-        graphMax.textContent = depthText(Math.max(0, ...values.filter(value => value !== null)));
-        emptyGraph.textContent = view ? 'No daily snow-depth readings' : 'Daily snow-depth trend';
-        stableRange.set(view ? `${dateLabel(dates[0])} – ${dateLabel(dates.at(-1))} · Snow depth` : 'Past 7 days · Snow depth');
+        chart.update({ station: shownStation?.id ?? null, dates,
+            values: dates.map(date => snow.get(date)?.value ?? null), loaded: Boolean(view) });
     };
     const cancel = () => {
         generation++; controller?.abort(); controller = null; pending = false;
@@ -269,15 +246,16 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
     const visibility = () => {
         if (enabled() && document.visibilityState === 'visible' && !pending && !notice && current && Date.now() - current.data.loadedAt >= 30 * 60_000) beginVisible();
     };
-    const stop = () => { cancel(); mapSource.suspend(); observer?.disconnect(); observer = null; cooldown.suspend(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { chart.setEnabled(false); cancel(); mapSource.suspend(); observer?.disconnect(); observer = null; cooldown.suspend(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
-        onResume: () => { mapSource.resume(); document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); beginVisible(); } },
-        onDispose: () => { stop(); mapSource.dispose(); cooldown.dispose(); unsubscribe(); if (!sharedClient) client.clear(); },
+        onResume: () => { chart.setEnabled(enabled()); mapSource.resume(); document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); beginVisible(); } },
+        onDispose: () => { stop(); chart.dispose(); mapSource.dispose(); cooldown.dispose(); unsubscribe(); if (!sharedClient) client.clear(); },
     });
     const applyPreference = next => {
         if (lifecycle.state === 'disposed') return;
         const wasEnabled = enabled(); preference = next; settingsReady = true;
         mapSource.setEnabled(preference.showSnotel);
+        chart.setEnabled(enabled());
         card.hidden = row.hidden = !preference.showSnotel;
         if (!enabled()) { cancel(); observer?.disconnect(); observer = null; cooldown.suspend(); }
         else { cooldown.resume(); render(pending && requested?.id !== current?.station.id ? null : current); if (!wasEnabled) beginVisible(); }

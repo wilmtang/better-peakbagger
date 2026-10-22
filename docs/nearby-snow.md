@@ -32,7 +32,14 @@ uses inches, and water equivalent follows the existing precipitation units
 (millimeters or inches). Unit changes make no request.
 
 The compact graph spans seven days of daily snow depth, including both endpoint
-dates. Missing values break the line. **Daily readings and source details**
+dates. Hover previews a day; clicking or tapping pins its date and depth in the
+existing caption. With the chart focused, Left/Right moves one day, Home/End
+selects an endpoint, and Escape clears the selection. Leaving a hover restores
+the pinned reading. Refresh and unit changes preserve the selected date for the
+same station; changing stations clears it. Missing days remain selectable as
+unavailable and break the line; a wholly unavailable chart has no dead Tab stop.
+The chart and caption reserve their space through these interactions.
+**Daily readings and source details**
 opens the accessible table for both measurements and their original QC/QA
 flags. Dates follow NRCS's end-of-day convention; they are not relabelled as
 summit-local dates. Hourly timestamps use the station metadata's fixed UTC
@@ -108,6 +115,9 @@ states at 200% browser zoom in the desktop viewport. The native fixture keeps
 its existing minimum page width; the card must fit its column without widening
 the host layout. The assertion is
 also challenged with a deliberately shifted disposable page.
+Pointer preview, click-to-pin, keyboard readings and Escape are exercised in
+each viewport/theme and at 200% zoom, with animation-frame geometry traces of
+the card, caption, plot and date labels. Inspecting readings makes no requests.
 The timeout cases hold actual network responses past the production deadline,
 check full-opacity, focused Refresh and retained measurements, then immediately
 retry in desktop and narrow layouts in both themes, and at 200% browser zoom.

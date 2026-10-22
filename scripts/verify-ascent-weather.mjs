@@ -528,7 +528,7 @@ try {
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };
     } else if (snowMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
-            ...await verifyPeakSnowCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, setZoom, wait, writeLocal,
+            ...await verifyPeakSnowCases({ origin, evaluate, navigate, click, press, movePointer, clickPoint, resize, screenshot, screenshotPage, setSettings, setZoom, wait, writeLocal,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };
     } else if (peakMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
