@@ -5,6 +5,7 @@
 // Pending writes remain ordered by request id, and every write has a bounded
 // acknowledgement lifetime so a lost bridge reply cannot pin stale UI state.
 
+import { storageValue } from '../storage/storage-value.js';
 import { settingsSchema as Schema } from './settings-schema.js';
 
 const DEFAULT_READY_TIMEOUT_MS = 800;
@@ -37,8 +38,7 @@ export const createPageSettingsClient = ({
     const failureMessage = value => (typeof value === 'string' && value.trim() && value.length <= 200
         ? value.trim()
         : WRITE_FAILED_FALLBACK);
-    const sameValue = (left, right) => left === right || (Array.isArray(left) && Array.isArray(right)
-        && left.length === right.length && left.every((value, index) => value === right[index]));
+    const sameValue = storageValue.same;
     const sameSettings = (left, right) => {
         if (!left || !right) return left === right;
         const keys = new Set([...Object.keys(left), ...Object.keys(right)]);

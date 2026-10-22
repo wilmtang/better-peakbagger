@@ -420,3 +420,16 @@ test('equal array preferences do not notify subscribers again', async () => {
     assert.equal(fixture.notifications.length, count);
     fixture.client.dispose();
 });
+
+
+test('equal column maps do not replay settings notifications and a changed column notifies once', async () => {
+    const fixture = await setup();
+    const settings = { ...fixture.client.get(), peakCardColumns: { sun: 'map', snow: 'map', weather: 'details' } };
+    fixture.dispatch({ kind: 'push', settings, snapshotRevision: 2, throughRequestId: 0 });
+    const count = fixture.notifications.length;
+    fixture.dispatch({ kind: 'push', settings: structuredClone(settings), snapshotRevision: 3, throughRequestId: 0 });
+    assert.equal(fixture.notifications.length, count);
+    fixture.dispatch({ kind: 'push', settings: { ...settings, peakCardColumns: { ...settings.peakCardColumns, snow: 'details' } }, snapshotRevision: 4, throughRequestId: 0 });
+    assert.equal(fixture.notifications.length, count + 1);
+    fixture.client.dispose();
+});

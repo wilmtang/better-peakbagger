@@ -69,3 +69,10 @@ html.bpb-peak-card-dragging, html.bpb-peak-card-dragging * { cursor: grabbing !i
     #bpb-peak-table-split { display: block; max-width: calc(100vw - 48px); }
     #bpb-peak-details-column { margin-bottom: 12px; }
 }
+
+#bpb-peak-details-cards { width: 100%; border: 0; border-spacing: 0; table-layout: fixed; }
+#bpb-peak-details-cards[hidden] { display: none !important; }
+#bpb-peak-details-cards .bpb-peak-card-cell { padding: 0; }
+@media (pointer: coarse) {
+    :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip { width: 44px; height: 44px; top: 2px; right: 6px; }
+}

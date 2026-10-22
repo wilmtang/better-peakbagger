@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createLayoutMenu } from './layout-menu.js';
 import { mountPeakTableSplit } from './peak-table-split.js';
 import { createPageLifecycle } from './page-lifecycle.js';
 
@@ -19,7 +20,7 @@ export function createPeakCardLayout({ document: doc, settings }) {
     const make = (tag, className, text = '') => {
         const node = doc.createElement(tag); node.className = className; node.textContent = text; return node;
     };
-    const help = make('span', 'bpb-peak-card-sr', 'Drag to reorder, or use Up and Down, Home and End. Escape cancels a drag.');
+    const help = make('span', 'bpb-peak-card-sr', 'Drag to move, or click for move options. Use arrow keys to change position or column; Home and End move within a column. Escape cancels a drag.');
     help.id = 'bpb-peak-card-help';
     const status = make('div', 'bpb-peak-card-status bpb-peak-card-sr'); status.setAttribute('role', 'status');
     const message = make('span', ''), dismiss = make('button', 'bpb-peak-card-dismiss', '×');
@@ -31,7 +32,17 @@ export function createPeakCardLayout({ document: doc, settings }) {
     doc.body.append(help, status, ghost, indicator);
     let preference = settings.clean(settings.DEFAULTS), received = false, revision = 0, writeRevision = 0;
     const pendingWrites = new Map(), failedFields = new Set();
-    let anchor = null, drag = null, frame = null, scanning = false;
+    let anchor = null, detailsAnchor = null, drag = null, frame = null, scanning = false, suppressClick = false;
+    const columnOf = key => doc.getElementById('bpb-peak-table-split') ? preference.peakCardColumns[key] : 'map';
+    const anchors = () => {
+        const details = doc.getElementById('bpb-peak-details-column');
+        if (details && !detailsAnchor) {
+            const table = doc.createElement('table'); table.id = 'bpb-peak-details-cards'; table.setAttribute('role', 'presentation');
+            const body = doc.createElement('tbody'); detailsAnchor = doc.createComment('Better Peakbagger left cards');
+            body.append(detailsAnchor); table.append(body); details.prepend(table);
+        }
+        return { details: detailsAnchor, map: anchor };
+    };
     const visible = () => preference.peakCardOrder.map(key => cards.get(key)).filter(item => item && !item.card.hidden && !item.row.hidden);
     const save = patch => {
         revision++;
@@ -57,12 +68,12 @@ export function createPeakCardLayout({ document: doc, settings }) {
     const applyOrder = () => {
         if (!anchor?.isConnected) return;
         const active = doc.activeElement;
-        let previous = anchor;
+        const previous = { ...anchors() };
         for (const key of preference.peakCardOrder) {
-            const item = cards.get(key);
-            if (!item) continue;
-            if (previous.nextSibling !== item.row) previous.after(item.row);
-            previous = item.row;
+            const item = cards.get(key), column = columnOf(key);
+            if (!item || !previous[column]) continue;
+            if (previous[column].nextSibling !== item.row) previous[column].after(item.row);
+            previous[column] = item.row;
         }
         if (active?.isConnected && doc.activeElement !== active) active.focus({ preventScroll: true });
     };
@@ -82,21 +93,34 @@ export function createPeakCardLayout({ document: doc, settings }) {
         }
         item.card.setAttribute('data-bpb-card-collapsed', String(collapsed));
     };
-    const move = (item, index) => {
-        const list = visible(), from = list.indexOf(item);
-        if (from < 0 || index < 0 || index >= list.length || from === index) return;
-        const next = list.filter(card => card !== item); next.splice(index, 0, item);
-        const ids = next.map(card => card.key), present = new Set(ids);
-        const order = preference.peakCardOrder.map(key => present.has(key) ? ids.shift() : key);
-        save({ peakCardOrder: order }); applyOrder(); focus(item);
+    const inColumn = column => visible().filter(item => columnOf(item.key) === column);
+    const move = (item, index, column = columnOf(item.key)) => {
+        if (!anchors()[column]) return;
+        const list = inColumn(column), from = list.indexOf(item), others = list.filter(card => card !== item);
+        if (index < 0 || index > others.length || from === index) return;
+        let order;
+        if (columnOf(item.key) === column) {
+            const next = [...others]; next.splice(index, 0, item);
+            const ids = next.map(card => card.key), present = new Set(ids);
+            order = preference.peakCardOrder.map(key => present.has(key) ? ids.shift() : key);
+        } else {
+            order = preference.peakCardOrder.filter(key => key !== item.key);
+            const before = others[index]?.key, after = others.at(-1)?.key;
+            const at = before ? order.indexOf(before) : after ? order.indexOf(after) + 1 : order.length;
+            order.splice(at, 0, item.key);
+        }
+        save({ peakCardOrder: order, peakCardColumns: { ...preference.peakCardColumns, [item.key]: column } });
+        applyOrder(); focus(item);
         item.handle.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-        announce(`${item.definition.name} moved to position ${index + 1} of ${list.length}.`);
+        announce(`${item.definition.name} moved to position ${index + 1} in the ${column === 'details' ? 'left' : 'right'} column.`);
     };
     const stopFrame = () => { if (frame !== null) view.cancelAnimationFrame(frame); frame = null; };
     const cancel = () => {
         stopFrame();
+        for (const item of cards.values()) item.menu?.close();
         if (!drag) return;
         const current = drag; drag = null;
+        if (current.active) suppressClick = true;
         ghost.hidden = indicator.hidden = true;
         current.item.card.removeAttribute('data-bpb-card-lifted');
         doc.documentElement.classList.remove('bpb-peak-card-dragging');
@@ -104,14 +128,23 @@ export function createPeakCardLayout({ document: doc, settings }) {
     };
     const locate = () => {
         if (!drag?.active) return;
-        const rect = drag.item.row.getBoundingClientRect();
-        if (drag.x < rect.left - 24 || drag.x > rect.right + 24) { indicator.hidden = true; drag.target = null; return; }
-        const list = visible().filter(item => item !== drag.item);
+        const split = doc.getElementById('bpb-peak-table-split');
+        let column = 'map', area = drag.item.row.getBoundingClientRect();
+        if (split) {
+            column = ['details', 'map'].find(id => {
+                const rect = doc.getElementById(`bpb-peak-${id}-column`).getBoundingClientRect();
+                return drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top
+                    && drag.y <= (view.getComputedStyle(split).display === 'grid' ? split.getBoundingClientRect().bottom : rect.bottom);
+            });
+            if (column) area = doc.getElementById(`bpb-peak-${column}-column`).getBoundingClientRect();
+        }
+        if (!column || drag.x < area.left - 24 || drag.x > area.right + 24) { indicator.hidden = true; drag.target = null; return; }
+        const list = inColumn(column).filter(item => item !== drag.item);
         const index = list.filter(item => { const r = item.card.getBoundingClientRect(); return drag.y > r.top + r.height / 2; }).length;
-        drag.target = index;
-        const target = list[index] || list.at(-1);
-        if (!target) return;
-        const bounds = target.card.getBoundingClientRect(), y = list[index] ? bounds.top : bounds.bottom;
+        drag.target = { index, column };
+        const target = list[index] || list.at(-1), bounds = target?.card.getBoundingClientRect() || area;
+        const y = Math.max(8, Math.min(view.innerHeight - 8, target ? (list[index] ? bounds.top : bounds.bottom) : bounds.top));
+        ghost.textContent = `${drag.item.definition.name} · ${column === 'details' ? 'Left' : 'Right'} column`;
         indicator.hidden = false;
         Object.assign(indicator.style, { left: `${bounds.left}px`, top: `${y}px`, width: `${bounds.width}px` });
     };
@@ -140,7 +173,8 @@ export function createPeakCardLayout({ document: doc, settings }) {
     const pointerUp = event => {
         if (!drag || event.pointerId !== drag.pointerId) return;
         const current = drag; current.x = event.clientX; current.y = event.clientY; locate(); cancel();
-        if (current.active && current.target !== null) move(current.item, current.target);
+        if (current.active) suppressClick = true;
+        if (current.active && current.target !== null) move(current.item, current.target.index, current.target.column);
     };
     const pointerCancel = event => { if (drag?.pointerId === event.pointerId) cancel(); };
     const escape = event => {
@@ -166,7 +200,8 @@ export function createPeakCardLayout({ document: doc, settings }) {
         if (row.parentNode !== anchor.parentNode) return;
         const handle = make('button', 'bpb-peak-card-grip'); handle.type = 'button';
         handle.setAttribute('aria-label', `Reorder ${definition.name}`); handle.setAttribute('aria-describedby', help.id);
-        handle.title = 'Drag to reorder · ↑ / ↓ to move'; handle.append(make('span', 'bpb-peak-card-dots'));
+        handle.title = 'Drag to move · Click for options · Arrow keys to move';
+        handle.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown ArrowLeft ArrowRight Home End'); handle.append(make('span', 'bpb-peak-card-dots'));
         let header, toggle, body;
         if (key === 'sun') {
             toggle = card.querySelector('.bpb-sun-calculator__toggle');
@@ -217,15 +252,30 @@ export function createPeakCardLayout({ document: doc, settings }) {
             save({ [definition.collapsed]: false }); applyCollapse(item);
         };
         const down = event => {
-            if (lifecycle.state !== 'active' || drag || visible().length < 2 || event.button !== 0 || event.isPrimary === false) return;
+            if (lifecycle.state !== 'active' || drag || (visible().length < 2 && !doc.getElementById('bpb-peak-table-split')) || event.button !== 0 || event.isPrimary === false) return;
             if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
-            focus(item);
+            menu.close(); suppressClick = false; focus(item);
             drag = { item, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, active: false, target: null };
             try { handle.setPointerCapture?.(event.pointerId); } catch { /* Window listeners finish the gesture. */ }
         };
+        const menu = createLayoutMenu({ handle, label: `Move ${definition.name}`, actions: () => {
+            const column = columnOf(key), list = inColumn(column), index = list.indexOf(item), other = column === 'map' ? 'details' : 'map';
+            return [
+                { label: 'Move up', disabled: index <= 0, run: () => move(item, index - 1) },
+                { label: 'Move down', disabled: index >= list.length - 1, run: () => move(item, index + 1) },
+                { label: `Move to ${other === 'details' ? 'left' : 'right'} column`, disabled: !anchors()[other], run: () => move(item, inColumn(other).length, other) },
+            ];
+        } });
+        item.menu = menu;
+        const click = event => {
+            if (suppressClick && event.detail !== 0) { suppressClick = false; return; }
+            suppressClick = false; menu.toggle();
+        };
         const keydown = event => {
             if (drag || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-            const list = visible(), from = list.indexOf(item);
+            const list = inColumn(columnOf(key)), from = list.indexOf(item);
+            const other = event.key === 'ArrowLeft' ? 'details' : event.key === 'ArrowRight' ? 'map' : null;
+            if (other) { event.preventDefault(); if (other !== columnOf(key)) move(item, inColumn(other).length, other); return; }
             const index = event.key === 'ArrowUp' ? from - 1 : event.key === 'ArrowDown' ? from + 1
                 : event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : null;
             if (index === null) return;
@@ -233,8 +283,10 @@ export function createPeakCardLayout({ document: doc, settings }) {
         };
         toggle.addEventListener('click', collapse, key === 'sun'); handle.addEventListener('pointerdown', down);
         card.addEventListener('bpb:reveal-card', reveal);
+        handle.addEventListener('click', click);
         handle.addEventListener('keydown', keydown); handle.addEventListener('lostpointercapture', pointerCancel);
         disposers.push(() => {
+            menu.dispose(); handle.removeEventListener('click', click);
             view.clearTimeout(item.toggleTimer);
             toggle.removeEventListener('click', collapse, key === 'sun'); handle.removeEventListener('pointerdown', down);
             card.removeEventListener('bpb:reveal-card', reveal);
@@ -257,9 +309,11 @@ export function createPeakCardLayout({ document: doc, settings }) {
             applyOrder();
             for (const item of cards.values()) {
                 applyCollapse(item);
-                const hidden = visible().length < 2 || item.card.hidden || item.row.hidden;
+                const hidden = (!doc.getElementById('bpb-peak-table-split') && visible().length < 2) || item.card.hidden || item.row.hidden;
                 if (item.handle.hidden !== hidden) item.handle.hidden = hidden;
             }
+            const host = doc.getElementById('bpb-peak-details-cards');
+            if (host && host.hidden !== (inColumn('details').length === 0)) host.hidden = inColumn('details').length === 0;
             if (drag && !visible().includes(drag.item)) cancel();
         } finally { scanning = false; }
     };
@@ -273,6 +327,7 @@ export function createPeakCardLayout({ document: doc, settings }) {
         // still being saved. Keep the newest intent for each independent field.
         for (const [key, pending] of pendingWrites) cleaned[key] = pending.value;
         if (preference.peakCardOrder.join() !== cleaned.peakCardOrder.join()
+            || JSON.stringify(preference.peakCardColumns) !== JSON.stringify(cleaned.peakCardColumns)
             || Object.values(definitions).some(definition => preference[definition.collapsed] !== cleaned[definition.collapsed])) cancel();
         preference = cleaned; scan();
     };

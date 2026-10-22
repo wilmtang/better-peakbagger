@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document, window, getComputedStyle, localStorage, MouseEvent */
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
@@ -11,10 +12,10 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     const output = process.env.BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR, cases = [];
     if (output) await mkdir(output, { recursive: true });
     const browser = firefoxMode ? 'firefox' : 'chrome';
-    const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowUp: '\uE013', ArrowDown: '\uE015', Home: '\uE011', End: '\uE010', Escape: '\uE00C', Tab: '\uE004' }[name] : name;
+    const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowUp: '\uE013', ArrowDown: '\uE015', ArrowLeft: '\uE012', ArrowRight: '\uE014', Home: '\uE011', End: '\uE010', Escape: '\uE00C', Tab: '\uE004' }[name] : name;
     const order = () => evaluate(() => [...document.querySelectorAll('[data-bpb-peak-card]')].map(card => card.dataset.bpbPeakCard));
     const saved = (field, value) => waitForCondition(readSettings, { description: `saved ${field}`, timeoutMs: 7000,
-        isReady: settings => JSON.stringify(settings[field]) === JSON.stringify(value) });
+        isReady: settings => isDeepStrictEqual(settings[field], value) });
     const image = async name => { if (output) await screenshotPage(path.join(output, `${browser}-${name}.png`)); };
     const geometry = () => evaluate(() => {
         const rect = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
@@ -127,7 +128,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             assert.ok(await evaluate(() => JSON.parse(localStorage.getItem('pbPeakTableSplit.v1')).leftPercent > 50));
             const columnsFit = await evaluate(() => ['details', 'map'].map(id => {
                 const column = document.getElementById(`bpb-peak-${id}-column`), r = column.getBoundingClientRect();
-                return [...column.children].every(node => { const b = node.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1; });
+                return [...column.children].filter(node => !node.hidden).every(node => { const b = node.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1; });
             }));
             assert.deepEqual(columnsFit, [true, true], 'resized native tables fit their columns');
             await image(`${width}-${theme}-divider`);
@@ -287,6 +288,46 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         await setSettings({ ...current, showSnotel: true }); await ready(); assert.deepEqual(await order(), ['snow', 'weather', 'sun']);
         cases.push({ width, theme, states: ['automatic-units', 'header-hit-area', 'collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'weather-refresh-error-retry', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
     }
+    for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
+        await resize(width, 1100);
+        await setSettings({ ...await readSettings(), theme, peakCardColumns: { sun: 'map', weather: 'map', snow: 'map' },
+            peakSunCollapsed: true, peakWeatherCollapsed: true, peakSnowCollapsed: true });
+        await open();
+        await focus('weather', '.bpb-peak-card-grip'); await press(key('ArrowLeft'));
+        await saved('peakCardColumns', { sun: 'map', weather: 'details', snow: 'map' });
+        await focus('snow', '.bpb-peak-card-grip'); await press(key('ArrowLeft'));
+        await saved('peakCardColumns', { sun: 'map', weather: 'details', snow: 'details' });
+        const leftOrder = () => evaluate(() => [...document.querySelectorAll('#bpb-peak-details-column [data-bpb-peak-card]')].map(card => card.dataset.bpbPeakCard));
+        assert.deepEqual(await leftOrder(), ['weather', 'snow']);
+        await focus('snow', '.bpb-peak-card-grip'); await press(key('ArrowUp'));
+        assert.deepEqual(await leftOrder(), ['snow', 'weather']);
+        await image(`${width}-${theme}-left-column`);
+        await click('[data-bpb-peak-card="snow"] .bpb-peak-card-grip');
+        await wait(() => [...document.querySelectorAll('.bpb-layout-menu')].some(menu => !menu.hidden), 'single-pointer move menu');
+        await image(`${width}-${theme}-move-menu`);
+        await click('.bpb-layout-menu:not([hidden]) button:last-child');
+        await saved('peakCardColumns', { sun: 'map', weather: 'details', snow: 'map' });
+        assert.equal(await evaluate(() => document.activeElement === document.querySelector('[data-bpb-peak-card="snow"] .bpb-peak-card-grip')), true);
+        if (width > 680) {
+            await evaluate(() => { document.getElementById('bpb-peak-table-split').scrollIntoView({ block: 'start' }); window.scrollBy(0, -120); });
+            const points = await evaluate(() => {
+                const r = document.querySelector('[data-bpb-peak-card="snow"] .bpb-peak-card-grip').getBoundingClientRect();
+                const target = document.querySelector('[data-bpb-peak-card="weather"]').getBoundingClientRect();
+                return { x: r.left + r.width / 2, y: r.top + r.height / 2, toX: target.left + target.width / 2, toY: target.top + 8 };
+            });
+            const before = await geometry();
+            await pointerDown(points.x, points.y); await movePointer(points.toX, points.toY);
+            await wait(() => !document.querySelector('.bpb-peak-card-insertion').hidden, 'cross-column insertion preview');
+            stable(before, await geometry(), 'cross-column preview preserves the page and reading position');
+            await image(`${width}-${theme}-cross-column-drag`);
+            await pointerUp(); await saved('peakCardColumns', { sun: 'map', weather: 'details', snow: 'details' });
+            assert.deepEqual(await leftOrder(), ['snow', 'weather']);
+        }
+        await open();
+        assert.equal(await evaluate(() => document.querySelector('[data-bpb-peak-card="weather"]').closest('#bpb-peak-details-column') !== null), true);
+        cases.push({ width, theme, states: ['column-keyboard', 'column-reorder', 'move-menu', 'column-reload', ...(width > 680 ? ['cross-column-pointer', 'stable-preview'] : [])] });
+    }
+    await setSettings({ ...await readSettings(), peakSnowCollapsed: false, peakCardOrder: ['snow', 'weather', 'sun'], peakCardColumns: { sun: 'map', weather: 'map', snow: 'map' } });
     setMode('long-station'); await writeLocal({ bpbSnotelCatalogV1: null }); await open();
     await focus('snow', '.bpb-peak-card-toggle'); await compactSnow('375/dark/long-station');
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-snow-station').selectedOptions[0].textContent.includes('Experimental Mountain')), true,

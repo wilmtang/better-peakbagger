@@ -296,3 +296,11 @@ test('planning link order removes unknown and duplicate IDs and fills missing sl
     assert.deepEqual(Schema.clean({ peakLinkOrder: 'windy' }).peakLinkOrder, Schema.PEAK_LINK_ORDER);
     assert.notEqual(Schema.clean({}).peakLinkOrder, Schema.DEFAULTS.peakLinkOrder);
 });
+
+
+test('peak-card columns reject unknown destinations and return independent validated maps', () => {
+    const cleaned = Schema.clean({ peakCardColumns: { sun: 'details', weather: 'unknown', snow: null, unknown: 'details' } });
+    assert.deepEqual(cleaned.peakCardColumns, { sun: 'details', weather: 'map', snow: 'map' });
+    assert.deepEqual(Schema.clean(cleaned), cleaned);
+    assert.notEqual(Schema.clean({}).peakCardColumns, Schema.DEFAULTS.peakCardColumns);
+});

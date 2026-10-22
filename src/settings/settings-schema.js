@@ -71,6 +71,7 @@ const DEFAULTS = {
     showWeather: true,
     showSnotel: true,
     peakCardOrder: PEAK_CARD_ORDER,
+    peakCardColumns: Object.freeze(Object.fromEntries(PEAK_CARD_ORDER.map(id => [id, 'map']))),
     peakSunCollapsed: false,
     peakWeatherCollapsed: false,
     peakSnowCollapsed: false,
@@ -259,6 +260,7 @@ const clean = raw => {
     s.mapProviderOrder = orderedIds(s.mapProviderOrder, MAP_PROVIDERS);
     s.peakLinkOrder = orderedIds(s.peakLinkOrder, PEAK_LINK_ORDER);
     s.peakCardOrder = orderedIds(s.peakCardOrder, PEAK_CARD_ORDER);
+    s.peakCardColumns = Object.fromEntries(PEAK_CARD_ORDER.map(id => [id, raw?.peakCardColumns?.[id] === 'details' ? 'details' : 'map']));
     s.mapProvidersEnabled = Array.isArray(s.mapProvidersEnabled)
         ? [...new Set(s.mapProvidersEnabled.filter(id => MAP_PROVIDERS.includes(id)))] : [...MAP_PROVIDERS];
     s.betaPeakFilterOrder = s.betaPeakFilterOrder == null ? null : orderedIds(s.betaPeakFilterOrder, PEAK_FILTER_ORDER);

@@ -9,12 +9,17 @@ import { settingsSchema as schema } from '../../src/settings/settings-schema.js'
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-function setup({ saved = {}, read, fail = false, snow = true, lateSunListener = false, holdWrites = false } = {}) {
+function setup({ saved = {}, read, fail = false, snow = true, lateSunListener = false, holdWrites = false, columns = false } = {}) {
     const dom = new JSDOM(`<form><table><tbody><tr id="map"><td colspan="2"><iframe id="Gmap"></iframe><a id="legend">Native legend</a>
         <section class="bpb-sun-calculator--peak"><button type="button" class="bpb-sun-calculator__toggle" aria-expanded="true">Sun & Moon</button><div class="bpb-sun-calculator__panel"><input></div></section></td></tr>
         <tr id="bpb-peak-weather-row"><td colspan="2"><section id="bpb-peak-weather"><header><div class="bpb-week-heading"><h2>Summit weather</h2><span class="bpb-week-location-name">At the summit</span><span class="bpb-week-map-hint">Right-click the map for weather at any point.</span></div><div class="bpb-week-actions"><button type="button">Refresh</button></div></header><p>Forecast</p></section></td></tr>
         ${snow ? '<tr id="bpb-peak-snow-row"><td colspan="2"><section id="bpb-peak-snow"><header><h2>Nearby snow</h2></header><div class="bpb-snow-station-controls"><label for="station">SNOTEL station</label><div class="bpb-snow-station-row"><select id="station"><option>Paradise</option></select><button type="button">Refresh</button></div></div><p>Snow readings</p></section></td></tr>' : ''}
         <tr id="native"><td>Native details</td></tr></tbody></table></form>`, { pretendToBeVisual: true });
+    if (columns) {
+        const details = dom.window.document.createElement('table');
+        details.innerHTML = '<tr><td>Latitude/Longitude (WGS84)</td><td>46, -121</td></tr>';
+        dom.window.document.querySelector('table').before(details);
+    }
     const win = dom.window, doc = win.document, listeners = new Set(), writes = [], commits = [];
     let state = schema.clean(saved), failing = fail;
     const settings = { DEFAULTS: schema.DEFAULTS, clean: schema.clean, requireCurrent: read || (async () => state),
@@ -30,6 +35,9 @@ function setup({ saved = {}, read, fail = false, snow = true, lateSunListener = 
     if (!lateSunListener) sun.addEventListener('click', nativeToggle);
     const layout = createPeakCardLayout({ document: doc, settings });
     if (lateSunListener) sun.addEventListener('click', nativeToggle);
+    if (columns) for (const [id, left] of [['details', 0], ['map', 320]]) {
+        doc.getElementById(`bpb-peak-${id}-column`).getBoundingClientRect = () => ({ left, right: left + 300, top: 0, bottom: 700, width: 300, height: 700 });
+    }
     const order = () => [...doc.querySelectorAll('[data-bpb-peak-card]')].map(node => node.dataset.bpbPeakCard);
     const card = key => doc.querySelector(`[data-bpb-peak-card="${key}"]`);
     const handle = key => card(key).querySelector('.bpb-peak-card-grip');
@@ -225,4 +233,47 @@ test('native peak columns expose a keyboard-resizable divider without moving unr
         handle.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
         assert.equal(handle.getAttribute('aria-valuenow'), '49');
     } finally { layout.lifecycle.dispose(); dom.window.close(); }
+});
+
+
+test('column movement preserves node identity, disclosures, persistence and vertical order', async () => {
+    const env = setup({ columns: true, saved: { peakSnowCollapsed: true } });
+    try {
+        await tick();
+        const snow = env.card('snow'), weather = env.card('weather');
+        env.key('snow', 'ArrowLeft'); env.key('weather', 'ArrowLeft'); await tick();
+        const left = () => [...env.doc.querySelectorAll('#bpb-peak-details-column [data-bpb-peak-card]')].map(card => card.dataset.bpbPeakCard);
+        assert.deepEqual(left(), ['snow', 'weather']);
+        assert.equal(env.card('snow'), snow); assert.equal(env.card('weather'), weather);
+        assert.equal(snow.querySelector('.bpb-peak-card-body').hidden, true);
+        env.key('weather', 'ArrowUp'); await tick(); assert.deepEqual(left(), ['weather', 'snow']);
+        assert.equal(env.doc.activeElement, env.handle('weather'));
+        assert.deepEqual(env.state.peakCardColumns, { sun: 'map', weather: 'details', snow: 'details' });
+        const next = setup({ columns: true, saved: env.state });
+        try { await tick(); assert.deepEqual(next.order(), env.order()); } finally { next.close(); }
+        env.key('weather', 'ArrowRight'); await tick();
+        assert.equal(env.card('weather').closest('#bpb-peak-map-column')?.id, 'bpb-peak-map-column');
+        assert.equal(env.doc.querySelector('#Gmap').closest('tr').id, 'map');
+    } finally { env.close(); }
+});
+
+test('an empty opposite column accepts a pointer drop only on release and the grip offers move buttons', async () => {
+    const env = setup({ columns: true });
+    try {
+        await tick();
+        env.pointer('pointerdown', 360, env.handle('snow'), 370); env.pointer('pointermove', 110, env.win, 50);
+        assert.equal(env.state.peakCardColumns.snow, 'map'); assert.equal(env.writes.length, 0);
+        env.pointer('pointerup', 110, env.win, 50); await tick();
+        assert.equal(env.state.peakCardColumns.snow, 'details');
+        env.handle('weather').click();
+        const menu = [...env.doc.querySelectorAll('.bpb-layout-menu')].find(node => !node.hidden);
+        assert.ok(menu); [...menu.querySelectorAll('button')].find(button => button.textContent === 'Move to left column').click(); await tick();
+        assert.equal(env.state.peakCardColumns.weather, 'details');
+        assert.equal(env.doc.activeElement, env.handle('weather'));
+        const before = env.order();
+        env.pointer('pointerdown', 360, env.handle('snow'), 50); env.pointer('pointermove', 110, env.win, 370);
+        env.win.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        env.pointer('pointerup', 110, env.win, 370); await tick();
+        assert.deepEqual(env.order(), before); assert.equal(env.state.peakCardColumns.snow, 'details');
+    } finally { env.close(); }
 });
