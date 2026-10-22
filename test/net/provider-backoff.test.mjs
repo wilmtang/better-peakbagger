@@ -73,12 +73,15 @@ for (const name of ['weather', 'metadata', 'snow', 'dem']) {
         await new Promise(resolve => setImmediate(resolve));
         assert.equal(held.length, 2, 'both provider requests started before any refusal');
         held[0](new Response('', { status: 429, headers: { 'retry-after': '600' } }));
-        await first;
+        const original = await first;
         held[1](new Response('', { status: 429, headers: { 'retry-after': '1' } }));
         await second;
         time += 2000;
         const result = await refusal(client, 2);
         assert.equal(calls, 2, 'a shorter response must not open a new provider request');
-        if (name !== 'metadata') assert.equal(result.retryAt, time - 2000 + 600000);
+        if (name !== 'metadata') {
+            assert.equal(result.retryAt, time - 2000 + 600000);
+            assert.equal(result.message, original.message, 'the explanation must retain the same longer deadline');
+        }
     });
 }

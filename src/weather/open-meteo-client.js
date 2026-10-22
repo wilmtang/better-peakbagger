@@ -157,8 +157,8 @@ function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 
                     redirect: 'error', cache: 'no-store', signal: deadline.signal }));
                 if (response.status === 429) {
                     const next = rateLimitError('Open-Meteo', response, now());
-                    next.retryAt = Math.max(limited?.retryAt || 0, next.retryAt ?? now() + 300000);
-                    limited = next;
+                    next.retryAt ??= now() + 300000;
+                    limited = limited?.retryAt > next.retryAt ? limited : next;
                     throw limited;
                 }
                 if ([400, 404].includes(response.status)) throw fail('unavailable', Array.isArray(model)

@@ -532,8 +532,8 @@ const create = ({
             }));
             if (response?.status === 429) {
                 const next = rateLimitError('Mapterhorn', response, now());
-                next.retryAt = Math.max(limited?.retryAt || 0, next.retryAt ?? now() + 300000);
-                limited = next;
+                next.retryAt ??= now() + 300000;
+                limited = limited?.retryAt > next.retryAt ? limited : next;
                 throw limited;
             }
             if (!response || !response.ok) {

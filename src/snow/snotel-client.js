@@ -33,8 +33,8 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
             if (response.status === 429) {
                 const next = rateLimitError('NRCS', response, now());
                 // Back off even if Retry-After is absent or hidden by CORS.
-                next.retryAt = Math.max(limited?.retryAt || 0, next.retryAt ?? now() + 5 * 60_000);
-                limited = next;
+                next.retryAt ??= now() + 5 * 60_000;
+                limited = limited?.retryAt > next.retryAt ? limited : next;
                 throw limited;
             }
             if (!response.ok) throw Object.assign(new Error('NRCS is unavailable. Try again in a few minutes.'), { transient: temporaryHttpStatus(response.status) });
