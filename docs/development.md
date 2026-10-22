@@ -457,9 +457,11 @@ exactly by `package-lock.json`. The build sources them from `node_modules` into
 
 - **marked and Chart.js** ship browser builds that are copied verbatim.
 - **MapLibre 6** ships ESM only. The build copies its main module, module worker,
-  shared module, stylesheet, and license verbatim. The native terrain-frame entry
-  imports the main module directly; the frame sets the local worker URL before
-  constructing a map.
+  shared module, stylesheet, and license from npm. The main module receives the
+  guarded 6.13.0 terrain LOD correction in
+  `scripts/maplibre-terrain-lod-patch.mjs`; worker/shared code stays verbatim.
+  Dependency upgrades must review or remove that patch. The native terrain-frame
+  entry imports the main module directly and sets the packaged worker URL.
 - **tz-lookup** ships only CommonJS, so esbuild bundles it directly into the GPX
   analyzer and ascent-editor bundles that import it.
 

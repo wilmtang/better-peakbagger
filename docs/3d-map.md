@@ -128,9 +128,10 @@ flowchart LR
 
 The renderer is not placed in the page's MAIN world. MapLibre needs a stable
 origin, packaged module worker, WebGL2 context, and extension-origin
-CacheStorage. Its ESM main module is build-wrapped as a separately loaded
-classic `maplibregl` global; the worker and shared worker module stay as local,
-unmodified package artifacts. The extension-owned iframe provides those
+CacheStorage. Its ESM main module is imported directly by the native terrain
+frame. A guarded build patch makes MapLibre 6.13.0's terrain texture grid use
+the same LOD callback as its DEM downloads; the worker and shared module stay
+as local, unmodified package artifacts. The extension-owned iframe provides those
 consistently in Chrome and Firefox without giving the host page extension APIs.
 
 ## Which module owns what?

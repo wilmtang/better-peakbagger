@@ -247,8 +247,8 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
         resources: ['terrain/terrain.html', 'photos/guide.html'],
         matches: ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']
     }]);
-    // The extension-owned frame is a native module that imports the unmodified
-    // local MapLibre ESM distribution. There is no page global or script-order
+    // The extension-owned frame imports the local MapLibre ESM distribution
+    // with its guarded terrain LOD patch. There is no page global or script-order
     // dependency for renderer startup.
     const terrainFrame = await fs.readFile(new URL('../../terrain/terrain.html', import.meta.url), 'utf8');
     assert.match(terrainFrame, /<script\s+type=["']module["']\s+src=["']terrain-frame\.js["']/);

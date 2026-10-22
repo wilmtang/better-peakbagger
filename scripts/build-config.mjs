@@ -213,8 +213,9 @@ export const nodeModule = f => path.join(root, 'node_modules', f);
 
 // Vendor browser builds sourced from npm into dist/vendor. marked and Chart.js
 // ship browser-ready UMD/global builds. MapLibre 6's main module, module worker,
-// and shared module remain byte-identical local copies; terrain-frame.js imports
-// the main module directly instead of depending on a generated page global.
+// and shared module are local copies; the main module receives the guarded
+// terrain LOD correction in maplibre-terrain-lod-patch.mjs. Worker/shared code
+// stays byte-identical. terrain-frame.js imports the main module directly.
 // [from (node_modules), to (dist)].
 export const VENDOR_COPY = [
     ['marked/lib/marked.umd.js', 'vendor/marked.umd.js'],

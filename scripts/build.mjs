@@ -20,6 +20,7 @@
 //   node scripts/build.mjs --watch    rebuild on source/asset change
 
 import { build, context } from 'esbuild';
+import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mjs';
 import {
     access,
     copyFile,
@@ -86,7 +87,11 @@ async function copyAssets(outputDir) {
     for (const [from, to] of VENDOR_COPY) {
         const dest = path.join(outputDir, to);
         await mkdir(path.dirname(dest), { recursive: true });
-        await copyFile(nodeModule(from), dest);
+        if (from === 'maplibre-gl/dist/maplibre-gl.mjs') {
+            const source = await readFile(nodeModule(from), 'utf8');
+            const { version } = JSON.parse(await readFile(nodeModule('maplibre-gl/package.json'), 'utf8'));
+            await writeFile(dest, patchMapLibreTerrainLod(source, version));
+        } else await copyFile(nodeModule(from), dest);
     }
 }
 
