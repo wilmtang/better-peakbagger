@@ -386,6 +386,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         focusZoom: data.focusZoom,
         focusPeak: data.focusPeak,
         snowStations: readSnotelMapStations(data.snowStations) || [],
+        conditions: [],
         routeStyle: data.routeStyle,
         theme: data.theme,
         basemap: data.basemap,
@@ -513,13 +514,17 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 const snowStations = readSnotelMapStations(data.snowStations);
                 if (!snowStations) return;
                 const reveal = data.reveal === true && !suspended;
-                if (pendingInit) { pendingInit.snowStations = snowStations; pendingInit.revealSnowStations = reveal; }
                 const conditions = Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : undefined;
+                if (pendingInit) {
+                    pendingInit.snowStations = snowStations; pendingInit.revealSnowStations = reveal;
+                    pendingInit.conditions = (conditions || pendingInit.conditions).filter(id => snowStations.some(station => station.id === id));
+                }
                 postToFrame('snowStations', { snowStations, reveal, conditions });
             } else if (data.type === 'update') {
                 if (pendingInit) {
-                    pendingInit.routeStyle = data.routeStyle;
-                    pendingInit.theme = data.theme;
+                    if (data.routeStyle !== undefined) pendingInit.routeStyle = data.routeStyle;
+                    if (data.theme !== undefined) pendingInit.theme = data.theme;
+                    pendingInit.updatePending = true;
                 }
                 postToFrame('update', { routeStyle: data.routeStyle, theme: data.theme });
             }
@@ -543,7 +548,10 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             // An overlay can change after init was posted but before the
             // frame's asynchronous authorization completed. Replay the latest
             // snapshot once it can accept updates, including a toggle-off.
-            if (pendingInit) postToFrame('snowStations', { snowStations: pendingInit.snowStations, reveal: pendingInit.revealSnowStations === true });
+            if (pendingInit) {
+                if (pendingInit.updatePending) postToFrame('update', { routeStyle: pendingInit.routeStyle, theme: pendingInit.theme });
+                postToFrame('snowStations', { snowStations: pendingInit.snowStations, reveal: pendingInit.revealSnowStations === true, conditions: pendingInit.conditions });
+            }
             pendingInit = null;
             frameLoaded = true;
             if (latestLayers) postToFrame('layers', { snapshot: latestLayers });

@@ -39,9 +39,9 @@ const authorizeThroughWorker = async ({ token, action }) => {
 // consumes activation through the worker. Tests inject a narrow MapLibre stub
 // and an explicit authorization decision so jsdom never allocates WebGL.
 export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker } = {}) => {
-    let snowConditions = null;
+    let snowConditions = new Set();
     const snowMarkers = createTerrainSnotelMarkers({ maplibre, document,
-        canSelect: id => snowConditions === null || snowConditions.has(id),
+        canSelect: id => snowConditions.has(id),
         onSelect: stationId => post('snowSelect', { stationId }) });
     let snowStations = [];
     const snowReveal = createSnotelMapReveal({ window, terrain: true, getMap: () => map });
@@ -1801,6 +1801,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const createTerrain = data => {
         if (map || mapElement) return;
         snowStations = readSnotelMapStations(data.snowStations) || [];
+        snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : []);
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
         const requestedCamera = terrainCamera.toMapLibre(data.camera);
@@ -2169,6 +2170,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (!map || !loaded) return false;
         suspended = false;
         snowStations = readSnotelMapStations(data.snowStations) || [];
+        snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : []);
         if (!snowMarkers.replace(map, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
@@ -2320,8 +2322,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             else if (loaded && data.reveal === true) snowReveal.show(stations);
         } else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
-            setRoutePaint(data.routeStyle);
-            setTheme(data.theme);
+            if (data.routeStyle !== undefined) setRoutePaint(data.routeStyle);
+            if (data.theme !== undefined) setTheme(data.theme);
         }
     });
 

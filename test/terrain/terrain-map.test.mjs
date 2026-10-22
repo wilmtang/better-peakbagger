@@ -306,7 +306,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
 // Boot the bridge and drive one frame to 'loaded'. The bridge's only keep-alive
 // setTimeout is the keep-alive TTL, so intercept it (by its delay) into `timers`
 // for deterministic firing; every other timeout runs for real.
-const bootLoadedFrame = async (initOverrides = {}) => {
+const bootLoadedFrame = async (initOverrides = {}, { deferLoaded = false } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
@@ -346,7 +346,7 @@ const bootLoadedFrame = async (initOverrides = {}) => {
     dispatchPage(initData);
     await new Promise(resolve => realSetTimeout(resolve, 0));
     const frame = window.document.getElementById('bpb-terrain-frame');
-    frame.contentWindow.postMessage = message => { frameMessages.push(message); };
+    frame.contentWindow.postMessage = message => { frameMessages.push(structuredClone(message)); };
 
     const dispatchFrame = data => {
         const outboundGeneration = [...frameMessages].reverse()
@@ -362,10 +362,70 @@ const bootLoadedFrame = async (initOverrides = {}) => {
         }));
     };
     dispatchFrame({ type: 'ready' });
-    dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
+    if (!deferLoaded) dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
 
     return { dom, window, frame, initData, dispatchPage, dispatchFrame, pageMessages, frameMessages, timers, realSetTimeout };
 };
+
+for (const action of ['init', 'resume']) test(`terrain ${action} replays style, theme and station membership changed during authorization`, async () => {
+    const env = await bootLoadedFrame({}, { deferLoaded: action === 'init' });
+    const { window, dispatchPage, dispatchFrame, frameMessages, initData, realSetTimeout } = env;
+    const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
+    try {
+        if (action === 'resume') {
+            dispatchPage({ type: 'destroy' }); armTerrain(window); dispatchPage(initData);
+            await new Promise(resolve => realSetTimeout(resolve, 0));
+        }
+        const original = frameMessages.filter(message => message.type === action).at(-1);
+        assert.equal(original.theme, 'light');
+        dispatchPage({ type: 'update', routeStyle: { color: '#347a3f', width: 6 } });
+        dispatchPage({ type: 'update', theme: 'dark' });
+        dispatchPage({ type: 'snowStations', snowStations: [station], conditions: [station.id, 'not-a-station'], reveal: true });
+        const beforeLoaded = frameMessages.length;
+        dispatchFrame({ type: 'loaded' });
+        const replay = frameMessages.slice(beforeLoaded);
+        assert.equal(replay.find(message => message.type === 'update')?.theme, 'dark', 'authorization must not drop the new theme');
+        assert.equal(replay.find(message => message.type === 'update')?.routeStyle.color, '#347a3f');
+        assert.deepEqual(Array.from(replay.find(message => message.type === 'snowStations').conditions || []), [station.id], 'membership crosses the ready replay');
+        assert.equal(replay.find(message => message.type === 'snowStations').reveal, true);
+        assert.equal(original.theme, 'light', 'the fixture models structured message serialization');
+    } finally { window.close(); }
+});
+
+test('terrain station actions require explicit membership, preserve omitted updates and reset on resume', async () => {
+    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=1', runScripts: 'outside-only', pretendToBeVisual: true });
+    const popups = [], messages = []; let map;
+    class MapStub {
+        constructor(options) { map = this; this.layers = options.style.layers; this.sources = new Map(); }
+        addControl() {} once(type, callback) { if (type === 'load') this.load = callback; } on() {}
+        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
+        getSource(id) { return this.sources.get(id); } removeSource(id) { this.sources.delete(id); }
+        addLayer(layer) { this.layers.push(layer); } getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        setPaintProperty() {} fitBounds() {} resize() {} remove() {}
+        getZoom() { return 12; } getCenter() { return { lng: -121.74, lat: 46.78 }; }
+    }
+    class Marker { setLngLat() { return this; } addTo() { return this; } remove() {} }
+    class Popup {
+        constructor() { popups.push(this); } setDOMContent(node) { this.node = node; return this; }
+        on() { return this; } remove() {}
+    }
+    const dispatch = bootTerrainFrame(dom.window, MapStub, { messages, maplibre: { Marker, Popup } });
+    const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
+    const payload = { focus: [46.78, -121.74], snowStations: [station] };
+    const action = () => popups.at(-1).node.querySelector('.bpb-snotel-show-conditions');
+    try {
+        dispatch({ type: 'init', ...payload }); map.load();
+        assert.ok(messages.some(message => message.type === 'loaded'), 'the renderer stub reached the loaded state');
+        assert.equal(action(), null, 'unknown membership must not offer an unavailable weather action');
+        dispatch({ type: 'snowStations', snowStations: [station], conditions: [station.id] }); assert.ok(action());
+        dispatch({ type: 'snowStations', snowStations: [station] }); assert.ok(action(), 'an omitted membership update preserves known conditions');
+        dispatch({ type: 'snowStations', snowStations: [station], conditions: [] }); assert.equal(action(), null);
+        dispatch({ type: 'snowStations', snowStations: [station], conditions: [station.id] });
+        dispatch({ type: 'suspend' }); dispatch({ type: 'resume', ...payload });
+        assert.equal(action(), null, 'a fresh activation cannot inherit stale weather-card membership');
+    } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
+});
 
 test('a parked terrain frame cannot reveal stations and resume does not replay that request', async () => {
     const harness = await bootLoadedFrame();
