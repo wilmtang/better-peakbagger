@@ -995,6 +995,36 @@ test('independent hourly disclosures retain local DST folds and change units wit
     } finally { env.close(); }
 });
 
+test('unchanged hourly pointer samples do not replace cursor or reading nodes', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('[data-metric="temperature"]'));
+        day.querySelector('[data-metric="temperature"]').click();
+        const frame = day.querySelector('.bpb-week-chart'), readout = day.querySelector('.bpb-week-readout');
+        frame.dispatchEvent(new env.win.MouseEvent('pointermove', { clientX: 250 }));
+        const text = readout.textContent, cursor = day.querySelector('.bpb-week-cursor');
+        const observer = new env.win.MutationObserver(() => {});
+        observer.observe(frame.parentElement, { childList: true, subtree: true });
+        for (let index = 0; index < 120; index++) frame.dispatchEvent(new env.win.MouseEvent('pointermove', { clientX: 250 }));
+        assert.equal(observer.takeRecords().length, 0, 'unchanged samples must not churn the cursor or readout');
+        assert.equal(day.querySelector('.bpb-week-cursor'), cursor);
+        assert.equal(readout.textContent, text);
+        frame.dispatchEvent(new env.win.MouseEvent('pointermove', { clientX: 500 }));
+        assert.notEqual(readout.textContent, text);
+        assert.ok(observer.takeRecords().length > 0, 'a changed sample still paints');
+        const priorViewBox = frame.querySelector('svg').getAttribute('viewBox');
+        env.resize(400);
+        assert.notEqual(frame.querySelector('svg').getAttribute('viewBox'), priorViewBox, 'resize invalidates geometry');
+        frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+        assert.equal(readout.getAttribute('aria-live'), 'polite');
+        observer.disconnect();
+        day.open = false; await waitFor(() => !day.querySelector('.bpb-week-chart'));
+        assert.equal(frame.onpointermove, null, 'disposed charts cannot repaint');
+    } finally { env.close(); }
+});
+
 test('hourly tabs, keyboard sampling, hover and pinned readings reuse data and resize inside the card', async () => {
     const env = setup();
     try {

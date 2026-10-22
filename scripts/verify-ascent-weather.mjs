@@ -540,7 +540,7 @@ try {
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), elevationEvidence, evidence, origin, screenshotPage, output, firefoxMode }) };
     } else if (interactionsMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
-            ...await verifyPeakWeatherInteractions({ origin, evaluate, navigate, clickPoint, press, resize, setZoom, setSettings, wait,
+            ...await verifyPeakWeatherInteractions({ origin, evaluate, navigate, click, clickPoint, movePointer, press, resize, setZoom, setSettings, wait,
                 setMode: next => { mode = next; }, heldCount: () => held.length, release: () => held.splice(0).forEach(resolve => resolve()),
                 releaseOne: () => held.shift()?.(), evidence, networkErrors, firefoxMode, screenshotPage, writeLocal, verificationLocale }) };
     } else if (cardsMode) {

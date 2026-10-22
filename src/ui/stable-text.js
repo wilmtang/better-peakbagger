@@ -18,7 +18,7 @@ export function createStableText(target) {
     target.replaceChildren(label);
     let signature;
     return {
-        set: text => { label.textContent = text; },
+        set: text => { if (label.textContent !== text) label.textContent = text; },
         reserve: alternatives => {
             const labels = [...new Set(alternatives.filter(text => typeof text === 'string'))];
             const next = JSON.stringify(labels);

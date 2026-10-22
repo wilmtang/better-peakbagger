@@ -1,16 +1,16 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, Event */
+/* global document, window, Event, MutationObserver, PointerEvent */
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
-export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate, clickPoint, press, resize, setZoom,
+export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate, click, clickPoint, movePointer, press, resize, setZoom,
     setSettings, wait, setMode, heldCount, release, releaseOne, evidence, networkErrors, firefoxMode, screenshotPage, writeLocal, verificationLocale }) {
-    const cases = [], output = process.env.BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR;
+    const cases = [], chartCases = [], output = process.env.BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
-    const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015', Tab: '\uE004' }[name] : name;
+    const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015', ArrowRight: '\uE014', Tab: '\uE004' }[name] : name;
     const focus = selector => evaluate(selector => {
         const node = document.querySelector(selector); node.scrollIntoView({ block: 'center' }); node.focus({ preventScroll: true });
     }, selector);
@@ -76,6 +76,37 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         if (output && width === 375 && zoom === 1) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-metadata-ready.png`));
         await press(key('Enter')); await wait(() => !document.querySelector('.bpb-week-source').open, 'source closed');
         setMode('complete');
+        if (width === 1440 && zoom === 1) {
+            const firstDay = '#bpb-peak-weather .bpb-week-day:first-child';
+            await click(`${firstDay} > summary`); await click(`${firstDay} [data-metric="temperature"]`);
+            await wait(() => !!document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'hourly temperature graph');
+            const points = await evaluate(() => {
+                const frame = document.querySelector('.bpb-week-day[open] .bpb-week-chart'); frame.scrollIntoView({ block: 'center' });
+                const r = frame.querySelector('svg').getBoundingClientRect(); return [.3, .7].map(f => ({ x: r.x + r.width * f, y: r.y + r.height / 2 }));
+            });
+            await movePointer(points[0].x, points[0].y);
+            await wait(() => !!document.querySelector('.bpb-week-cursor'), 'physical hover cursor');
+            const churn = await evaluate(point => {
+                const frame = document.querySelector('.bpb-week-day[open] .bpb-week-chart');
+                const readout = frame.previousElementSibling, cursor = frame.querySelector('.bpb-week-cursor'), text = readout.textContent;
+                const observer = new MutationObserver(() => {}); observer.observe(frame.parentElement, { childList: true, subtree: true });
+                for (let i = 0; i < 120; i++) frame.dispatchEvent(new PointerEvent('pointermove', { clientX: point.x, clientY: point.y }));
+                const records = observer.takeRecords().length; observer.disconnect();
+                return { records, cursorRetained: frame.querySelector('.bpb-week-cursor') === cursor, textRetained: readout.textContent === text, text };
+            }, points[0]);
+            assert.equal(churn.records, 0, '120 identical hourly samples produce no child-list mutations');
+            assert.equal(churn.cursorRetained, true); assert.equal(churn.textRetained, true);
+            await movePointer(points[1].x, points[1].y);
+            assert.notEqual(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-readout').textContent), churn.text);
+            await clickPoint(points[1].x, points[1].y); await movePointer(1, 1);
+            const pinned = await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-readout').textContent);
+            await focus('.bpb-week-day[open] .bpb-week-chart'); await press(key('ArrowRight'));
+            assert.notEqual(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-readout').textContent), pinned);
+            assert.equal(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-readout').getAttribute('aria-live')), 'polite');
+            await click(`${firstDay} > summary`);
+            chartCases.push({ width, theme, zoom, repeatedEvents: 120, childListMutations: churn.records,
+                states: ['physical-hover', 'same-sample', 'changed-sample', 'pointer-selection', 'keyboard-selection'] });
+        }
         await focus('.bpb-week-refresh');
         const before = await geometry(), count = evidence.length;
         setMode('loading'); await press(key('Enter'));
@@ -119,6 +150,7 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         cases.push({ width, theme, zoom, states: ['metadata-pending', 'staggered-clock', 'delayed-clock', 'metadata-error', 'pending', 'duplicate-input', 'service-error', 'Space-retry', 'focus-moved', 'success', 'model-cooldown'] });
     }
     assert.equal(cases.length, 8, 'the complete interaction matrix executed');
+    assert.equal(chartCases.length, 2, 'both desktop chart input cases executed');
     assert.deepEqual(networkErrors, []);
-    return { cases, locale: verificationLocale, screenshots: output || null };
+    return { cases, chartCases, locale: verificationLocale, screenshots: output || null };
 }

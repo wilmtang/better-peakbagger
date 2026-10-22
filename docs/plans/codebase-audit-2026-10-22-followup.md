@@ -1,6 +1,6 @@
 # Repository bugs, performance, engineering, and UX audit — October 22 follow-up
 
-Status: **remediation in progress; F1–F3 fixed locally, F4 open.** This is separate from the earlier
+Status: **F1–F4 implemented and verified locally; dependency follow-up D1 remains open.** This is separate from the earlier
 [October 22 Gemini audit](../archive/codebase-audit-2026-10-22.md) and
 [terrain audit](../archive/3d-map-audit-2026-10-22.md).
 
@@ -279,6 +279,17 @@ fixes. Preserve this ledger when the plan is eventually archived.
 
 ### Fixed and verified
 
+- F4: unchanged pointer sample indices no longer repaint, and the shared stable
+  text helper skips identical text. No animation queue was added. New regression
+  checks failed on baseline with 360 chart mutations / 120 identical text
+  mutations and pass at zero after the fix. All 81 focused weather/hourly/text
+  tests passed, including changed readings, resize, missing data, keyboard live
+  announcements and disposal. Hidden Chromium 156.0.8078.4 and Firefox 158.0.1
+  passed real hover → changed sample → pointer selection → keyboard sampling
+  at 1440 × 1100 in light/dark; both browsers recorded zero child-list mutations
+  for the same 120-event burst. The complete eight-case focus/metadata matrix
+  also passed in each browser. Focused lint and diff checks passed. This is a
+  mutation-count result, not a CPU/FPS or physical-touch performance claim.
 - F3: metadata cells use noninteractive, accessibility-hidden localized clock
   and cadence reservations, preserving readable wrapping without a fixed box.
   Last usable per-domain clocks survive refresh and failed rechecks (with a
@@ -324,11 +335,13 @@ fixes. Preserve this ledger when the plan is eventually archived.
 
 ### Intentionally not changed
 
-- F4 remains open. Manifest, settings schema, privacy boundaries and native
+- Manifest, settings schema, privacy boundaries and native
   Save ownership are unchanged.
 - Concurrent weather work and the earlier audits' implemented fixes and
   explicit live/native verification gaps.
 - The exact dependency exception and its expiry. It remains an owner decision.
+- The broad card-layout observer and drag controllers. Once unchanged chart
+  paints are skipped, this audit supplies no measured reason to redesign them.
 - No chart-data correctness bug or response-size failure was established by
   this review; those early hypotheses are not promoted to findings.
 

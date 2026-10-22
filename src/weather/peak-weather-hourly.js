@@ -196,7 +196,11 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const time = day.window.start + (position - geometry.left) / (geometry.right - geometry.left) * (day.window.end - day.window.start);
         return rows.reduce((nearest, row, index) => Math.abs(rowTime(row) - time) < Math.abs(rowTime(rows[nearest]) - time) ? index : nearest, 0);
     };
-    frame.onpointermove = event => { hover = pointerIndex(event); readout.setAttribute('aria-live', 'off'); drawCursor(); };
+    frame.onpointermove = event => {
+        const index = pointerIndex(event);
+        if (index === hover) return;
+        hover = index; readout.setAttribute('aria-live', 'off'); drawCursor();
+    };
     frame.onpointerleave = () => { hover = -1; drawCursor(); };
     frame.onclick = event => { selected = pointerIndex(event); hover = -1; drawCursor(); };
     frame.onkeydown = event => {

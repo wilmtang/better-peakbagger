@@ -41,6 +41,9 @@ and unavailable states before replies arrive. Previously usable clocks stay
 visible through refresh; an unavailable recheck keeps the last known value and
 identifies it in the cell's title. Sizing text is noninteractive and hidden from
 accessibility output.
+Hourly pointer movement paints only when the nearest sample changes. Resize,
+metric changes, keyboard sampling and pointer selection still invalidate the
+cursor; identical reading text retains its existing node.
 
 Selected points use their own offline timezone and Open-Meteo terrain elevation,
 without applying the summit's elevation to another location. A regional model
