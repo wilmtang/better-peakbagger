@@ -8,7 +8,7 @@ import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup, updateSnotelPopupAction } from '../snow/snotel-map-marker.js';
 
 export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWindow = win }) {
-    const L = win.L, layers = new Map(), controllers = new Map(), records = new Map();
+    const L = win.L, layers = new Map(), controllers = new Map(), records = new Map(), states = new Map();
     const fetchBCTile = createPageBCTileFetch(bridgeWindow);
     const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError, onActivity });
     const z = { sentinel: 250, land: 260, slope: 270 };
@@ -53,16 +53,20 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
     return {
         set(id, state) {
             if (id === 'snotel') return;
+            states.set(id, { ...state });
             if (id === 'land') tiles.landCooldowns(state.providerCooldowns);
             if (!state.enabled || state.opacity === 0) { remove(id); return; }
             if (state.retryAt > Date.now() && !layers.has(id) && !(id === 'land' && Object.keys(state.providerCooldowns || {}).length)) return;
             if (id === 'sentinel' && !hasScenes) return; // Wait for a validated capture.
             (layers.get(id) || add(id)).setOpacity(state.opacity / 100);
         },
-        scenes(scenes, opacity) { remove('sentinel'); hasScenes = scenes.length > 0; tiles.setScenes(scenes); if (hasScenes && opacity > 0) add('sentinel').setOpacity(opacity / 100); },
+        scenes(scenes, opacity) { remove('sentinel'); hasScenes = scenes.length > 0; states.set('sentinel', { enabled: hasScenes, opacity }); tiles.setScenes(scenes); if (hasScenes && opacity > 0) add('sentinel').setOpacity(opacity / 100); },
         clearSentinel() { remove('sentinel'); hasScenes = false; tiles.setScenes([]); },
         retry(id) {
+            const state = states.get(id);
+            if (!state?.enabled || state.opacity === 0 || state.retryAt > Date.now() || id === 'sentinel' && !hasScenes) return;
             if (!tiles.retry(id)) return;
+            if (!layers.has(id)) { add(id).setOpacity(state.opacity / 100); return; }
             const visible = [...records.values()].filter(record => record.id === id);
             const failed = visible.filter(record => record.failed);
             // Retry only holes. An explicit Reload refreshes in place, leaving

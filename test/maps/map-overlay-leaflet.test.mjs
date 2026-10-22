@@ -6,6 +6,41 @@ import { createLeafletOverlays } from '../../src/maps/map-overlay-leaflet.js';
 import { JSDOM } from 'jsdom';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+for (const id of ['slope', 'land']) for (const toggled of [false, true]) test(`${id} retry mounts a cooldown-blocked layer${toggled ? ' after off/on' : ' from a handoff'} at its saved opacity`, async t => {
+    let now = Date.now(), requests = 0;
+    t.mock.method(Date, 'now', () => now);
+    const oldBitmap = globalThis.createImageBitmap;
+    globalThis.createImageBitmap = async () => ({ width: 256, height: 256, close() {} });
+    t.after(() => { if (oldBitmap === undefined) delete globalThis.createImageBitmap; else globalThis.createImageBitmap = oldBitmap; });
+    const opacities = [], activity = [];
+    const document = { createElement: () => ({ getContext: () => ({ clearRect() {}, drawImage() {} }) }) };
+    const map = { getPane: () => ({}), removeLayer() {} };
+    const win = { document, addEventListener() {}, removeEventListener() {}, fetch: async () => {
+        requests++; return new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } });
+    }, L: { GridLayer: { extend(methods) {
+        class Grid {
+            on() {} setOpacity(value) { opacities.push(value); }
+            addTo() { this.createTile({ z: 14, x: 2666, y: 5796 }, () => {}); }
+        }
+        Object.assign(Grid.prototype, methods); return Grid;
+    } } } };
+    const owner = createLeafletOverlays({ win, map, onActivity: (_id, value) => activity.push(value) });
+    const state = { enabled: true, opacity: 37, retryAt: now + 120000 };
+    try {
+        owner.set(id, state);
+        if (toggled) { owner.set(id, { ...state, enabled: false }); owner.set(id, state); }
+        owner.retry(id); await tick(); assert.equal(requests, 0, 'retry respects the active handoff cooldown');
+        now = state.retryAt + 1; owner.retry(id); await tick();
+        assert.equal(requests, 1, 'retry requests tiles even when no layer was mounted');
+        assert.deepEqual(opacities, [.37]);
+        assert.equal(activity.at(-1)?.complete, true, 'loading settles after the requested tile paints');
+        owner.set(id, { ...state, enabled: false }); owner.retry(id); await tick();
+        assert.equal(requests, 1, 'retry cannot restore a disabled layer');
+        owner.set(id, { ...state, opacity: 0 }); owner.retry(id); await tick();
+        assert.equal(requests, 1, 'retry cannot restore a fully transparent layer');
+    } finally { owner.dispose(); }
+});
+
 test('native station membership updates preserve the open popup, marker and focused NRCS link', () => {
     const dom = new JSDOM('<body></body>'), win = dom.window, markers = [], groups = [], removed = [];
     const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
