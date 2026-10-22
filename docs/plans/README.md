@@ -25,6 +25,12 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [October 22 3D map audit](../archive/3d-map-audit-2026-10-22.md)
+records four runtime fixes, the restored GPU provenance probe and Firefox
+terrain verification repair. Forty fixed-angle Rainier-centered zoom cases
+pass across both drape settings; its ledger retains the strict full-detail
+tilt-timing, live-provider and native-UI proof gaps.
+
 The [October 21 repository audit](../archive/codebase-audit-2026-10-21.md)
 fixes four reproduced provider-cooldown, unread-response and remote-photo
 filename findings in independent commits. Its closure ledger retains the
