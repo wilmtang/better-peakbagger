@@ -114,7 +114,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         control.hidden = preferences.mapProvidersEnabled.length === 0 && !activeProvider && !status.textContent;
         for (const provider of providers.values()) {
             provider.button.hidden = !preferences.mapProvidersEnabled.includes(provider.id) && activeProvider !== provider.id;
-            provider.button.disabled = !!activeProvider;
+            provider.button.setAttribute('aria-disabled', String(!!activeProvider));
             provider.button.setAttribute('aria-busy', String(activeProvider === provider.id));
         }
     };

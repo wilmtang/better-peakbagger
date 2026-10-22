@@ -36,8 +36,8 @@ button {
     font-weight: 700;
     cursor: pointer;
 }
-button:hover:not(:disabled) { filter: brightness(.92); }
-button:disabled { opacity: .7; }
+button:hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(.92); }
+button:disabled, button[aria-disabled="true"] { opacity: .7; }
 button.is-complete {
     color: var(--link);
     background: color-mix(in srgb, var(--accent) 12%, var(--card));

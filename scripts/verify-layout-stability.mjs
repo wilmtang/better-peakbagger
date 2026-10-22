@@ -136,6 +136,7 @@ async function accessCase(page, origin, variant) {
                 storage: { sync: { get: async () => ({ bpbSettings: { theme } }) },
                     onChanged: { addListener() {} } },
                 permissions: { request: () => new Promise((resolve, reject) => {
+                    globalThis.__permissionCalls = (globalThis.__permissionCalls || 0) + 1;
                     globalThis.__finishPermission = result => result === 'error' ? reject(new Error('Unavailable')) : resolve(result);
                 }) },
             };
@@ -143,14 +144,20 @@ async function accessCase(page, origin, variant) {
         const selector = `#allow-${id}`;
         const before = await geometry(page, selector);
         for (const result of ['error', false, true]) {
-            await page.click(selector);
-            await page.waitForFunction(id => document.getElementById(`allow-${id}`).disabled, id);
+            await page.locator(selector).press('Enter');
+            await page.waitForFunction(id => document.getElementById(`allow-${id}`).getAttribute('aria-disabled') === 'true', id);
             stable(before, await geometry(page, selector), `${id} pending`);
+            await assertActionFocus(page, selector, `${id} permission pending focus`);
+            const calls = await page.evaluate(() => globalThis.__permissionCalls);
+            await page.locator(selector).press('Enter');
+            await page.locator(selector).press('Space');
+            assert.equal(await page.evaluate(() => globalThis.__permissionCalls), calls, 'pending permission cannot repeat');
             await page.evaluate(result => globalThis.__finishPermission(result), result);
             await page.waitForFunction(({ id, result }) => result === true
                 ? !document.getElementById(`close-${id}`).hidden
-                : !document.getElementById(`allow-${id}`).disabled, { id, result });
+                : document.getElementById(`allow-${id}`).getAttribute('aria-disabled') === 'false', { id, result });
             stable(before, await geometry(page, selector), `${id} ${result}`);
+            await assertActionFocus(page, result === true ? `#close-${id}` : selector, `${id} permission result focus`);
         }
         await capture(page, `${variant.name}-${id}-access`);
     }
@@ -164,6 +171,7 @@ async function handoffCase(page, origin, variant) {
         globalThis.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { theme } }) },
             onChanged: { addListener() {}, removeListener() {} } }, runtime: { sendMessage: async message => {
             if (message.type.endsWith('_PERMISSION_REQUEST')) return new Promise(resolve => {
+                globalThis.__permissionCalls = (globalThis.__permissionCalls || 0) + 1;
                 globalThis.__finishPermission = () => resolve({ ok: true });
             });
             if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'fixture' };
@@ -187,15 +195,21 @@ async function handoffCase(page, origin, variant) {
             const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
         }));
         for (const success of [false, true]) {
-            await page.click(selector);
+            await page.locator(selector).press('Enter');
             await page.waitForFunction(() => typeof globalThis.__finishPermission === 'function');
             stable(before, await geometry(page, selector), `${id} preparing`);
+            await assertActionFocus(page, selector, `${id} transfer pending focus`);
+            const calls = await page.evaluate(() => globalThis.__permissionCalls);
+            await page.locator(selector).press('Enter');
+            await page.locator(selector).press('Space');
+            assert.equal(await page.evaluate(() => globalThis.__permissionCalls), calls, 'pending transfer cannot repeat');
             await page.evaluate(() => { globalThis.__finishImport = null; globalThis.__finishPermission(); });
             await page.waitForFunction(() => typeof globalThis.__finishImport === 'function');
             stable(before, await geometry(page, selector), `${id} opening`);
             await page.evaluate(success => globalThis.__finishImport(success), success);
-            await page.waitForFunction(id => !document.querySelector(`[data-provider="${id}"]`).disabled, id);
+            await page.waitForFunction(id => document.querySelector(`[data-provider="${id}"]`).getAttribute('aria-disabled') === 'false', id);
             stable(before, await geometry(page, selector), `${id} completed ${success}`);
+            await assertActionFocus(page, selector, `${id} completed focus`);
             const allAfter = await page.locator('.bpb-map-handoff-button').evaluateAll(elements => elements.map(element => {
                 const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
             }));
@@ -210,9 +224,11 @@ async function handoffCase(page, origin, variant) {
     await page.evaluate(() => globalThis.__finishPermission());
     await page.waitForFunction(() => document.querySelector('[data-provider="gaia"]').textContent.includes('Opening'));
     stable(collapsed, await geometry(page, '[data-provider="gaia"]'), 'handoff GPX details pending');
+    await page.locator('a[href*="AscentEdit"]').focus();
     await page.evaluate(() => globalThis.__finishImport(true));
-    await page.waitForFunction(() => !document.querySelector('[data-provider="gaia"]').disabled);
+    await page.waitForFunction(() => document.querySelector('[data-provider="gaia"]').getAttribute('aria-disabled') === 'false');
     stable(collapsed, await geometry(page, '[data-provider="gaia"]'), 'handoff GPX details completion');
+    await assertActionFocus(page, 'a[href*="AscentEdit"]', 'transfer completion respects focus moved elsewhere');
 }
 async function ascentBackupCase(page, origin, variant) {
     const html = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascent.html'), 'utf8');

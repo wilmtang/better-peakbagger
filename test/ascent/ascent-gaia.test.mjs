@@ -222,7 +222,7 @@ test('disabling providers during a handoff preserves its busy indicator and resu
     fireTrustedEvent(button(h.dom, 'gaia'), 'click');
     await h.dom.window.chrome.storage.sync.set({ bpbSettings: { mapProvidersEnabled: [] } });
     assert.equal(button(h.dom, 'gaia').hidden, false);
-    assert.equal(button(h.dom, 'gaia').disabled, true);
+    assert.equal(button(h.dom, 'gaia').getAttribute('aria-disabled'), 'true');
     assert.equal(control(h.dom).hidden, false);
     finishPermission({ ok: false, message: 'Access canceled.' });
     await waitFor(h.dom, () => control(h.dom).textContent.includes('Access canceled.'));

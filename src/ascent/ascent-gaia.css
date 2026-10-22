@@ -60,29 +60,29 @@
     box-shadow: 0 1px 2px rgba(86, 35, 0, 0.26), inset 0 1px rgba(255, 255, 255, 0.14);
 }
 
-.bpb-map-handoff-button:hover:not(:disabled) {
+.bpb-map-handoff-button:hover:not(:disabled):not([aria-disabled="true"]) {
     box-shadow: 0 2px 4px rgba(24, 37, 29, 0.28), inset 0 1px rgba(255, 255, 255, 0.12);
 }
-:is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo):hover:not(:disabled) {
+:is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo):hover:not(:disabled):not([aria-disabled="true"]) {
     border-color: #153f2b;
     background: linear-gradient(180deg, #2e714e 0%, #215b3b 100%);
 }
-.bpb-map-handoff-button-alltrails:hover:not(:disabled) {
+.bpb-map-handoff-button-alltrails:hover:not(:disabled):not([aria-disabled="true"]) {
     border-color: #203d0e;
     background: linear-gradient(180deg, #4b742c 0%, #355c1b 100%);
 }
-.bpb-map-handoff-button-onx:hover:not(:disabled) {
+.bpb-map-handoff-button-onx:hover:not(:disabled):not([aria-disabled="true"]) {
     border-color: #602b00;
     background: linear-gradient(180deg, #984400 0%, #773300 100%);
 }
-.bpb-map-handoff-button:active:not(:disabled) {
+.bpb-map-handoff-button:active:not(:disabled):not([aria-disabled="true"]) {
     box-shadow: 0 1px 2px rgba(24, 37, 29, 0.18);
 }
 .bpb-map-handoff-button:focus-visible {
     outline: 2px solid #2b7bb9;
     outline-offset: 2px;
 }
-.bpb-map-handoff-button:disabled {
+.bpb-map-handoff-button:disabled, .bpb-map-handoff-button[aria-disabled="true"] {
     cursor: default;
     opacity: 0.72;
 }
@@ -136,7 +136,7 @@
 
 @media (prefers-reduced-motion: reduce) {
     .bpb-map-handoff-button { transition: none; }
-    .bpb-map-handoff-button:hover:not(:disabled) { transform: none; }
+    .bpb-map-handoff-button:hover:not(:disabled):not([aria-disabled="true"]) { transform: none; }
 }
 
 @media (prefers-color-scheme: dark) {

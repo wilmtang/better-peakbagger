@@ -42,7 +42,11 @@ for (const [id, name, origin] of [
         for (const [result, message] of [[false, 'not granted'], [new Error('browser error'), 'could not change'], [true, 'Return to']]) {
             outcome = result;
             const before = requests.length;
+            button.focus();
             fireTrustedEvent(button, 'click');
+            fireTrustedEvent(button, 'click');
+            assert.equal(button.disabled, false, 'pending permission keeps the action focusable');
+            assert.equal(button.getAttribute('aria-busy'), 'true');
             assert.equal(requests.length, before + 1, 'permission request must start within the trusted event');
             assert.deepEqual(requests.at(-1), { origins: [origin] });
             await waitFor(dom, () => status.textContent.includes(message));
