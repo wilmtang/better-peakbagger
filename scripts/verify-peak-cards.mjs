@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, getComputedStyle */
+/* global document, window, getComputedStyle, localStorage, MouseEvent */
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -105,6 +105,34 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
+        const divider = await evaluate(() => {
+            const handle = document.getElementById('bpb-peak-table-resize-handle');
+            return { visible: handle.getBoundingClientRect().width > 0, role: handle.getAttribute('role') };
+        });
+        assert.equal(divider.role, 'separator'); assert.equal(divider.visible, width > 680);
+        if (width > 680) {
+            await evaluate(() => document.getElementById('bpb-peak-table-resize-handle').scrollIntoView({ block: 'start' }));
+            const before = await evaluate(() => {
+                const h = document.getElementById('bpb-peak-table-resize-handle'), r = h.getBoundingClientRect();
+                return { value: h.getAttribute('aria-valuenow'), x: r.left + r.width / 2, y: 100,
+                    width: document.getElementById('bpb-peak-details-column').getBoundingClientRect().width,
+                    saved: localStorage.getItem('pbPeakTableSplit.v1') };
+            });
+            await pointerDown(before.x, before.y); await movePointer(before.x + 70, before.y);
+            assert.ok(await evaluate(w => document.getElementById('bpb-peak-details-column').getBoundingClientRect().width > w + 50, before.width));
+            assert.equal(await evaluate(() => localStorage.getItem('pbPeakTableSplit.v1')), before.saved);
+            await press(key('Escape')); await pointerUp();
+            assert.equal(await evaluate(() => document.getElementById('bpb-peak-table-resize-handle').getAttribute('aria-valuenow')), before.value);
+            await pointerDown(before.x, before.y); await movePointer(before.x + 70, before.y); await pointerUp();
+            assert.ok(await evaluate(() => JSON.parse(localStorage.getItem('pbPeakTableSplit.v1')).leftPercent > 50));
+            const columnsFit = await evaluate(() => ['details', 'map'].map(id => {
+                const column = document.getElementById(`bpb-peak-${id}-column`), r = column.getBoundingClientRect();
+                return [...column.children].every(node => { const b = node.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1; });
+            }));
+            assert.deepEqual(columnsFit, [true, true], 'resized native tables fit their columns');
+            await image(`${width}-${theme}-divider`);
+            await evaluate(() => document.getElementById('bpb-peak-table-resize-handle').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+        }
         await compactSnow(`${width}/${theme}/ready`);
         const nativeHeading = await evaluate(() => {
             const heading = [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim()));

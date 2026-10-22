@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
+import { readFileSync } from 'node:fs';
 import { createPeakCardLayout } from '../../src/ui/peak-card-layout.js';
 import { settingsSchema as schema } from '../../src/settings/settings-schema.js';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
@@ -197,4 +198,31 @@ test('late cards, feature visibility, bfcache and disposal keep one layout owner
         env.layout.lifecycle.dispose(); env.key('weather', 'Home');
         assert.equal(env.writes.length, 0);
     } finally { env.close(); }
+});
+
+
+test('native peak columns expose a keyboard-resizable divider without moving unrelated tables', async () => {
+    const dom = new JSDOM(readFileSync(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'), {
+        url: 'https://www.peakbagger.com/peak.aspx?pid=2296', pretendToBeVisual: true,
+    });
+    const doc = dom.window.document;
+    const map = doc.getElementById('Gmap'), mapTable = map.closest('table'), details = mapTable.previousElementSibling;
+    const state = schema.clean({});
+    const layout = createPeakCardLayout({ document: doc, settings: {
+        DEFAULTS: schema.DEFAULTS, clean: schema.clean, requireCurrent: async () => state,
+        subscribe: () => () => {}, set: async () => {},
+    } });
+    try {
+        const handle = doc.querySelector('#bpb-peak-table-resize-handle');
+        assert.ok(handle, 'peak details and map need a visible, keyboard-operable divider');
+        assert.equal(handle.getAttribute('role'), 'separator');
+        assert.equal(doc.getElementById('bpb-peak-details-column').firstElementChild, details);
+        assert.equal(doc.getElementById('bpb-peak-map-column').firstElementChild, mapTable);
+        assert.equal(doc.getElementById('Gmap'), map, 'the existing map element is retained');
+        handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }));
+        assert.equal(handle.getAttribute('aria-valuenow'), '75');
+        assert.equal(JSON.parse(dom.window.localStorage.getItem('pbPeakTableSplit.v1')).leftPercent, 75);
+        handle.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+        assert.equal(handle.getAttribute('aria-valuenow'), '49');
+    } finally { layout.lifecycle.dispose(); dom.window.close(); }
 });

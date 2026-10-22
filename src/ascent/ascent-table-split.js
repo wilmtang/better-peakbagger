@@ -12,6 +12,7 @@
 // precedent by living in the Peakbagger origin's localStorage.
 
 import { dom as Dom } from '../ui/dom.js';
+import { createColumnResize } from '../ui/column-resize.js';
 
 const STORAGE_KEY = 'pbAscentTableSplit.v1';
 const DEFAULT_LEFT_PERCENT = 50;
@@ -38,19 +39,6 @@ const defaultPercentFor = (left, right) => {
     return Number.isFinite(leftWidth) && Number.isFinite(rightWidth) && total > 0
         ? clampPercent(leftWidth / total * 100)
         : DEFAULT_LEFT_PERCENT;
-};
-
-const readSavedPercent = (storage, fallback) => {
-    try {
-        const saved = JSON.parse(storage.getItem(STORAGE_KEY));
-        const value = typeof saved === 'number' ? saved : saved?.leftPercent;
-        return Number.isFinite(value) ? clampPercent(value) : fallback;
-    } catch { return fallback; }
-};
-
-const savePercent = (storage, leftPercent) => {
-    try { storage.setItem(STORAGE_KEY, JSON.stringify({ leftPercent })); }
-    catch { /* Page storage can be unavailable in hardened browsing modes. */ }
 };
 
 const findTablePair = doc => {
@@ -126,105 +114,11 @@ export const mountAscentTableSplit = ({
         }
     }
 
-    const storageArea = (() => {
-        if (storage) return storage;
-        try { return globalThis.localStorage; }
-        catch { return null; }
-    })();
-    const initialPercent = defaultPercentFor(left, right);
-    let leftPercent = readSavedPercent(storageArea, initialPercent);
-    let drag = null;
+    const resize = createColumnResize({ wrapper, handle, storage, storageKey: STORAGE_KEY,
+        initialPercent: defaultPercentFor(left, right), leftName: 'Trip report', rightName: 'summary',
+        leftProperty: '--bpb-ascent-report-share', rightProperty: '--bpb-ascent-summary-share',
+        resizingClass: 'bpb-ascent-table-split-resizing' });
 
-    const applyPercent = value => {
-        leftPercent = clampPercent(value);
-        const rounded = Math.round(leftPercent);
-        wrapper.style.setProperty('--bpb-ascent-report-share', `${leftPercent}fr`);
-        wrapper.style.setProperty('--bpb-ascent-summary-share', `${100 - leftPercent}fr`);
-        wrapper.dataset.leftPercent = String(leftPercent);
-        handle.setAttribute('aria-valuenow', String(rounded));
-        handle.setAttribute('aria-valuetext', `Trip report ${rounded}%; summary ${100 - rounded}%`);
-        return leftPercent;
-    };
-
-    const pointerIdOf = event => Number.isInteger(event.pointerId) ? event.pointerId : 1;
-    const releasePointer = pointerId => {
-        try {
-            if (!handle.releasePointerCapture) return;
-            if (!handle.hasPointerCapture || handle.hasPointerCapture(pointerId)) {
-                handle.releasePointerCapture(pointerId);
-            }
-        } catch { /* The browser may already have released capture. */ }
-    };
-    const finishDrag = ({ persist, restore } = {}) => {
-        if (!drag) return;
-        const { pointerId, startPercent } = drag;
-        drag = null;
-        doc.documentElement.classList.remove('bpb-ascent-table-split-resizing');
-        releasePointer(pointerId);
-        if (restore) applyPercent(startPercent);
-        if (persist) savePercent(storageArea, leftPercent);
-    };
-
-    handle.addEventListener('pointerdown', event => {
-        if (event.button !== 0 || drag) return;
-        const rect = wrapper.getBoundingClientRect();
-        const availableWidth = rect.width - handle.getBoundingClientRect().width;
-        if (!(availableWidth > 0)) return;
-        drag = {
-            pointerId: pointerIdOf(event),
-            startX: event.clientX,
-            startPercent: leftPercent,
-            availableWidth,
-        };
-        doc.documentElement.classList.add('bpb-ascent-table-split-resizing');
-        try { handle.setPointerCapture?.(drag.pointerId); }
-        catch { /* Pointer capture is an enhancement, not a mount gate. */ }
-        event.preventDefault();
-    });
-    handle.addEventListener('pointermove', event => {
-        if (!drag || pointerIdOf(event) !== drag.pointerId) return;
-        applyPercent(drag.startPercent
-            + (event.clientX - drag.startX) / drag.availableWidth * 100);
-        event.preventDefault();
-    });
-    handle.addEventListener('pointerup', event => {
-        if (!drag || pointerIdOf(event) !== drag.pointerId) return;
-        finishDrag({ persist: true });
-    });
-    handle.addEventListener('pointercancel', event => {
-        if (!drag || pointerIdOf(event) !== drag.pointerId) return;
-        finishDrag({ persist: true });
-    });
-    handle.addEventListener('lostpointercapture', event => {
-        if (!drag || pointerIdOf(event) !== drag.pointerId) return;
-        finishDrag({ persist: true });
-    });
-    handle.addEventListener('keydown', event => {
-        if (event.metaKey || event.ctrlKey || event.altKey) return;
-        const step = event.shiftKey ? 5 : 1;
-        let next = null;
-        if (event.key === 'ArrowLeft') next = leftPercent - step;
-        else if (event.key === 'ArrowRight') next = leftPercent + step;
-        else if (event.key === 'Home') next = MIN_LEFT_PERCENT;
-        else if (event.key === 'End') next = MAX_LEFT_PERCENT;
-        if (next === null) return;
-        event.preventDefault();
-        applyPercent(next);
-        savePercent(storageArea, leftPercent);
-    });
-    handle.addEventListener('dblclick', event => {
-        event.preventDefault();
-        applyPercent(initialPercent);
-        savePercent(storageArea, leftPercent);
-    });
-    doc.defaultView?.addEventListener('keydown', event => {
-        if (event.key !== 'Escape' || !drag) return;
-        event.preventDefault();
-        finishDrag({ restore: true });
-    }, true);
-    doc.defaultView?.addEventListener('blur', () => finishDrag({ persist: true }));
-
-    applyPercent(leftPercent);
     return {
         wrapper,
         handle,
@@ -232,8 +126,8 @@ export const mountAscentTableSplit = ({
         right,
         reportColumn,
         summaryColumn,
-        get leftPercent() { return leftPercent; },
-        applyPercent,
+        get leftPercent() { return resize.leftPercent; },
+        applyPercent: resize.applyPercent,
     };
 };
 

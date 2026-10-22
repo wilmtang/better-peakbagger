@@ -7,7 +7,7 @@
     display: grid;
     grid-template-columns:
         minmax(0, var(--bpb-ascent-report-share, 50fr))
-        var(--bpb-ascent-handle-width)
+        var(--bpb-column-handle-width, 13px)
         minmax(0, var(--bpb-ascent-summary-share, 50fr));
     align-items: start;
     clear: both;
@@ -41,80 +41,6 @@
     aspect-ratio: var(--bpb-ascent-image-aspect-ratio, auto);
 }
 
-#bpb-ascent-table-resize-handle {
-    align-self: stretch;
-    position: relative;
-    appearance: none;
-    width: var(--bpb-ascent-handle-width);
-    min-height: 44px;
-    margin: 0;
-    padding: 0;
-    /* Site-wide dark button rules must not turn the divider into a panel. */
-    border: 0 !important;
-    border-radius: 5px;
-    color: #727b84;
-    background: transparent !important;
-    cursor: col-resize;
-    touch-action: none;
-}
-
-#bpb-ascent-table-resize-handle::before {
-    content: "";
-    position: absolute;
-    top: 6px;
-    bottom: 6px;
-    left: calc(50% - 1.5px);
-    width: 3px;
-    border-radius: 999px;
-    background: currentColor;
-    opacity: 0.52;
-    transition: opacity 120ms ease, transform 120ms ease;
-}
-
-#bpb-ascent-table-resize-handle:hover,
-#bpb-ascent-table-resize-handle:focus-visible {
-    color: #2f6b3f;
-    background: rgb(47 107 63 / 8%) !important;
-}
-
-#bpb-ascent-table-resize-handle:hover::before,
-#bpb-ascent-table-resize-handle:focus-visible::before,
-html.bpb-ascent-table-split-resizing #bpb-ascent-table-resize-handle::before {
-    opacity: 1;
-    transform: scaleX(1.2);
-}
-
-#bpb-ascent-table-resize-handle:focus-visible {
-    outline: 2px solid #2f6b3f;
-    outline-offset: -2px;
-}
-
-html.bpb-ascent-table-split-resizing,
-html.bpb-ascent-table-split-resizing * {
-    cursor: col-resize !important;
-    user-select: none !important;
-}
-
-:root[data-bpb-theme="dark"] #bpb-ascent-table-resize-handle {
-    color: #929ca6;
-}
-
-:root[data-bpb-theme="dark"] #bpb-ascent-table-resize-handle:hover,
-:root[data-bpb-theme="dark"] #bpb-ascent-table-resize-handle:focus-visible {
-    color: #7ac78d;
-    background: rgb(122 199 141 / 10%) !important;
-}
-
-:root[data-bpb-theme="dark"] #bpb-ascent-table-resize-handle:focus-visible {
-    outline-color: #7ac78d;
-}
-
-@media (pointer: coarse) {
-    #bpb-ascent-table-split {
-        --bpb-ascent-handle-width: 44px;
-    }
-}
-
 @media (max-width: 680px) {
     #bpb-ascent-table-split {
         display: block;
@@ -126,11 +52,5 @@ html.bpb-ascent-table-split-resizing * {
 
     #bpb-ascent-table-resize-handle {
         display: none;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    #bpb-ascent-table-resize-handle::before {
-        transition: none;
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { mountPeakTableSplit } from './peak-table-split.js';
 import { createPageLifecycle } from './page-lifecycle.js';
 
 // Only standalone extension cards participate. Native map, legend, links and
@@ -13,6 +14,7 @@ const definitions = {
 
 export function createPeakCardLayout({ document: doc, settings }) {
     if (doc.getElementById('bpb-peak-card-help')) return null;
+    mountPeakTableSplit(doc);
     const view = doc.defaultView, cards = new Map(), disposers = [];
     const make = (tag, className, text = '') => {
         const node = doc.createElement(tag); node.className = className; node.textContent = text; return node;

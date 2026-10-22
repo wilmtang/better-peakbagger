@@ -37,6 +37,7 @@ html [data-bpb-peak-card] .bpb-peak-card-grip[hidden], .bpb-peak-card-body[hidde
 .bpb-peak-card-dots { display: block; width: 12px; height: 18px; background: radial-gradient(circle, currentColor 1.2px, transparent 1.6px) 0 0 / 6px 6px; }
 html :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: -3px; }
 html [data-bpb-peak-card] .bpb-peak-card-grip:focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: 3px; }
+#bpb-peak-sun .bpb-sun-calculator__chevron { grid-column: -2; grid-row: 1; }
 #bpb-peak-sun .bpb-sun-calculator__toggle { padding-right: 3.75rem; background: transparent !important; border: 0 !important; color: inherit !important; }
 @container bpb-sun-peak (max-width: 440px) {
     #bpb-peak-sun .bpb-peak-card-grip { top: calc(.5rem + .675rem - 16px); }
@@ -52,3 +53,19 @@ html[data-bpb-theme="dark"] .bpb-peak-card-insertion { background: #83bbff; }
 .bpb-peak-card-ghost[hidden], .bpb-peak-card-insertion[hidden] { display: none !important; }
 [data-bpb-card-lifted] { opacity: .65; }
 html.bpb-peak-card-dragging, html.bpb-peak-card-dragging * { cursor: grabbing !important; user-select: none !important; }
+
+#bpb-peak-table-split {
+    display: grid;
+    grid-template-columns: minmax(0, var(--bpb-peak-details-share, 50fr)) var(--bpb-column-handle-width, 13px) minmax(0, var(--bpb-peak-map-share, 50fr));
+    align-items: start; clear: both; width: 100%; box-sizing: border-box;
+}
+#bpb-peak-details-column, #bpb-peak-map-column { min-width: 0; }
+#bpb-peak-table-split .bpb-peak-native-table {
+    float: none !important; width: 100% !important; min-width: 0; margin: 0 !important;
+    box-sizing: border-box; overflow-wrap: anywhere; table-layout: fixed;
+}
+#bpb-peak-table-split .bpb-peak-native-table img { max-width: 100%; height: auto; }
+@media (max-width: 680px) {
+    #bpb-peak-table-split { display: block; max-width: calc(100vw - 48px); }
+    #bpb-peak-details-column { margin-bottom: 12px; }
+}

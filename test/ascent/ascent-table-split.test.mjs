@@ -252,3 +252,22 @@ test('a saved split is cleaned and restored on the next ascent page', () => {
             'corrupt storage falls back to the native ratio');
     } finally { corrupt.restore(); }
 });
+
+test('clicking the divider offers single-pointer resizing without dragging or losing focus', () => {
+    const { dom, split, restore } = setup();
+    try {
+        const before = split.leftPercent;
+        split.handle.click();
+        const menu = dom.window.document.querySelector('.bpb-layout-menu');
+        assert.equal(menu.hidden, false);
+        assert.equal(menu.querySelectorAll('button').length, 3);
+        menu.querySelector('button').click();
+        assert.equal(split.leftPercent, before + 5);
+        assert.equal(menu.hidden, true);
+        assert.equal(dom.window.document.activeElement, split.handle);
+        assert.equal(JSON.parse(dom.window.localStorage.getItem(Split.storageKey)).leftPercent, before + 5);
+        split.handle.click();
+        dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        assert.equal(menu.hidden, true); assert.equal(dom.window.document.activeElement, split.handle);
+    } finally { restore(); }
+});
