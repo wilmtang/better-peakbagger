@@ -1086,7 +1086,7 @@ test('missing map with multiple right tables fails closed, and empty weather lea
     } finally { env.close(); }
 });
 
-test('partial data stays labelled and a failed refresh preserves the previous dated result', async () => {
+test('partial data survives a refused refresh while a headerless limit blocks another request', async () => {
     let limited = false;
     const env = setup({ fetchFn: url => {
         if (limited) return new Response('', { status: 429 });
@@ -1104,7 +1104,11 @@ test('partial data stays labelled and a failed refresh preserves the previous da
         assert.equal(env.doc.querySelector('.bpb-week-range').textContent, range);
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
-        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, false);
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
+        assert.equal(env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy'), 'false');
+        const requests = env.requests.length;
+        env.doc.querySelector('.bpb-week-refresh').click();
+        assert.equal(env.requests.length, requests, 'local cooldown blocks an immediate repeated refresh');
     } finally { env.close(); }
 });
 
