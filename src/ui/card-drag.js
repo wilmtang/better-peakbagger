@@ -1,6 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createLayoutMenu } from './layout-menu.js';
+
 // Opt-in column docking. The owning surface chooses targets and persistence;
 // this controller never registers other cards or touches browser storage.
 export function createCardDrag({ card, handle, surface = handle, status, name = 'Card', getTargets, getPosition, onMove, enabled = () => true }) {
@@ -9,7 +11,7 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
     preview.className = 'bpb-card-drop-preview'; preview.hidden = true; preview.setAttribute('aria-hidden', 'true');
     const previewLabel = doc.createElement('span'); previewLabel.className = 'bpb-card-drop-preview-label'; preview.append(previewLabel);
     doc.body.append(preview);
-    let drag = null, disposed = false, suppressClick = false, animation = null;
+    let drag = null, disposed = false, suppressClick = false, animation = null, frame = null;
     const targets = () => getTargets().filter(target => target.element?.isConnected);
     const available = () => !disposed && enabled() && targets().length > 1;
     const reducedMotion = () => view.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
@@ -21,8 +23,9 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
     const showTarget = target => {
         preview.hidden = !target;
         if (!target) return;
-        const rect = bounds(target), top = Math.max(8, rect.top), bottom = Math.min(view.innerHeight - 8, rect.bottom);
+        const rect = target.previewBounds?.() || bounds(target), top = Math.max(8, rect.top), bottom = Math.min(view.innerHeight - 8, rect.bottom);
         if (bottom <= top) { preview.hidden = true; return; }
+        preview.toggleAttribute('data-insertion', !!target.previewBounds);
         previewLabel.textContent = `Move ${name.toLowerCase()} ${target.label}`;
         Object.assign(preview.style, { left: `${rect.left}px`, top: `${top}px`, width: `${rect.width}px`, height: `${bottom - top}px` });
     };
@@ -30,7 +33,10 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
         const active = available(), list = targets(), next = list.find(target => target.id !== getPosition());
         handle.hidden = !active;
         card.classList.toggle('bpb-card-movable', active);
-        if (next) {
+        if (list.some(target => target.column)) {
+            handle.setAttribute('aria-label', `Reorder ${name.toLowerCase()} card`);
+            handle.title = 'Drag to move. Click for move options. Arrow keys change position or column.';
+        } else if (next) {
             handle.setAttribute('aria-label', `Move ${name.toLowerCase()} ${next.label}`);
             handle.title = `Drag to move the ${name.toLowerCase()} card. Click to move ${next.label}.`;
         }
@@ -46,8 +52,23 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
         handle.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
         return true;
     };
+    const redraw = () => {
+        if (!drag?.active) return;
+        card.style.setProperty('--bpb-card-drag-x', `${drag.clientX - drag.x + view.scrollX - drag.scrollX}px`);
+        card.style.setProperty('--bpb-card-drag-y', `${drag.clientY - drag.y + view.scrollY - drag.scrollY}px`);
+        drag.target = targetAt(drag.clientX, drag.clientY); showTarget(drag.target);
+    };
+    const autoscroll = () => {
+        frame = null;
+        if (!drag?.active) return;
+        const edge = 56, y = drag.clientY, speed = y < edge ? -Math.ceil((edge - y) / 4)
+            : y > view.innerHeight - edge ? Math.ceil((y - view.innerHeight + edge) / 4) : 0;
+        if (speed) { view.scrollBy(0, Math.max(-18, Math.min(18, speed))); redraw(); }
+        frame = view.requestAnimationFrame(autoscroll);
+    };
     const finish = commit => {
         if (!drag) return;
+        if (frame !== null) view.cancelAnimationFrame(frame); frame = null;
         const previous = drag, before = card.getBoundingClientRect();
         drag = null;
         preview.hidden = true;
@@ -65,13 +86,13 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
                 { duration: 180, easing: 'cubic-bezier(.2, .8, .2, 1)' });
         }
     };
-    const cancel = () => { finish(false); animation?.cancel(); animation = null; };
+    const cancel = () => { menu.close(); finish(false); animation?.cancel(); animation = null; };
     const down = event => {
         if (!available() || drag || event.button !== 0 || event.isPrimary === false) return;
         const control = event.target.closest?.('button, a, input, select, textarea, summary, [contenteditable], [role="tab"]');
         if (control && control !== handle) return;
         if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY) || card.getBoundingClientRect().width <= 0) return;
-        animation?.cancel(); animation = null; suppressClick = false;
+        menu.close(); animation?.cancel(); animation = null; suppressClick = false;
         drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY,
             scrollX: view.scrollX, scrollY: view.scrollY, active: false, target: null };
     };
@@ -85,13 +106,11 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
             drag.active = true;
             card.setAttribute('data-bpb-card-dragging', '');
             doc.documentElement.classList.add('bpb-card-drag-active');
+            frame = view.requestAnimationFrame(autoscroll);
             try { handle.setPointerCapture?.(drag.pointerId); } catch { /* Window listeners still finish the gesture. */ }
         }
         if (event.cancelable) event.preventDefault();
-        card.style.setProperty('--bpb-card-drag-x', `${x + view.scrollX - drag.scrollX}px`);
-        card.style.setProperty('--bpb-card-drag-y', `${y + view.scrollY - drag.scrollY}px`);
-        drag.target = targetAt(event.clientX, event.clientY);
-        showTarget(drag.target);
+        drag.clientX = event.clientX; drag.clientY = event.clientY; redraw();
     };
     const up = event => {
         if (!drag || event.pointerId !== drag.pointerId) return;
@@ -104,15 +123,35 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
         event.preventDefault(); event.stopPropagation(); cancel();
     };
     const key = event => {
-        if (event.metaKey || event.ctrlKey || event.altKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-        const list = targets(), index = list.findIndex(target => target.id === getPosition());
-        const target = list[index + (event.key === 'ArrowLeft' ? -1 : 1)];
-        if (!available()) return;
+        if (drag || event.metaKey || event.ctrlKey || event.altKey || !available()) return;
+        const list = targets(), current = list.find(target => target.id === getPosition());
+        let target;
+        if (current?.column) {
+            const same = list.filter(candidate => candidate.column === current.column), index = same.indexOf(current);
+            if (event.key === 'ArrowUp') target = same[index - 1];
+            else if (event.key === 'ArrowDown') target = same[index + 1];
+            else if (event.key === 'Home') target = same[0];
+            else if (event.key === 'End') target = same.at(-1);
+            else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                const columns = [...new Set(list.map(candidate => candidate.column))], at = columns.indexOf(current.column);
+                const column = columns[at + (event.key === 'ArrowLeft' ? -1 : 1)];
+                target = list.filter(candidate => candidate.column === column).at(-1);
+            } else return;
+        } else {
+            if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+            const index = list.findIndex(candidate => candidate.id === getPosition());
+            target = list[index + (event.key === 'ArrowLeft' ? -1 : 1)];
+        }
         event.preventDefault(); if (target) moveTo(target.id);
     };
+    const menu = createLayoutMenu({ handle, label: `Move ${name.toLowerCase()}`, actions: () => targets().map(target => ({
+        label: `Move ${target.label}`, disabled: target.id === getPosition(), run: () => moveTo(target.id),
+    })) });
     const click = event => {
+        if (drag || !available()) return;
         if (suppressClick && event.detail !== 0) { event.preventDefault(); suppressClick = false; return; }
         suppressClick = false;
+        if (targets().some(target => target.column)) { menu.toggle(); return; }
         const next = targets().find(target => target.id !== getPosition());
         if (next) moveTo(next.id);
     };
@@ -125,7 +164,7 @@ export function createCardDrag({ card, handle, surface = handle, status, name = 
     refresh();
     return { refresh, cancel, get dragging() { return drag !== null; }, dispose() {
         if (disposed) return;
-        disposed = true; cancel(); preview.remove(); card.classList.remove('bpb-card-movable'); handle.hidden = true;
+        disposed = true; cancel(); menu.dispose(); preview.remove(); card.classList.remove('bpb-card-movable'); handle.hidden = true;
         surface.removeEventListener('pointerdown', down);
         handle.removeEventListener('click', click); handle.removeEventListener('keydown', key);
         handle.removeEventListener('lostpointercapture', interrupted);

@@ -66,9 +66,9 @@ hover or select a timed GPX point to see the weather for that hour. Weather
 cards show model estimates; check local mountain forecasts before heading out.
 
 The **Sun & Moon**, **Summit weather**, and **Nearby snow** cards can be collapsed
-by clicking their headings and reordered with their drag handles. Up/Down arrow
-keys also move a focused handle. Order and collapse choices are remembered
-across peak pages.
+by clicking their headings. Drag their grips to reorder them or move them to
+either column; click a grip for move options. Arrow keys also move a focused
+grip. Card positions and collapse choices are remembered across peak pages.
 
 On western US and Alaska peaks, **Nearby snow** adds public NRCS SNOTEL snow
 depth and water-equivalent observations, station distance/elevation, and a
@@ -185,9 +185,10 @@ downloads for original images. [Backup guide](docs/github-ascent-backup.md)
 
 ## Make Peakbagger feel like yours
 
-Give maps and reports room to breathe. Resize maps, adjust the divider between
-a saved report and its summary, and place the weather card beneath either
-column. Your layout is remembered for future visits.
+Give maps and reports room to breathe. Resize maps and adjust the column
+divider on peak and saved-ascent pages. Move ascent weather above or below the
+report, summary, or GPS links. Drag a grip, click it for move options, or use
+the arrow keys. Your layout is remembered for future visits.
 
 Choose dark, light, or system appearance, style your maps and charts, and mix
 units—for example, miles and feet with Celsius. Reorder filters and planning

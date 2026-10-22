@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document */
+/* global document, window */
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
@@ -71,8 +71,42 @@ export async function verifyWeatherCardDrag({ evaluate, navigate, click, press, 
         await wait(() => document.getElementById('bpb-ascent-weather').hasAttribute('data-bpb-card-dragging'), 'drag before Escape');
         await press(firefoxMode ? '\uE00C' : 'Escape'); await pointerUp(); await assertColumn('summary');
         assert.equal((await readLocal('bpbAscentWeatherColumn')).bpbAscentWeatherColumn, 'summary', 'Escape leaves the previous saved choice');
-        await click(handleSelector); await assertColumn('report');
-        await click(handleSelector); await assertColumn('summary'); await waitForSaved('summary');
+        await click(handleSelector); await click('.bpb-layout-menu:not([hidden]) button:nth-child(2)'); await assertColumn('report');
+        await click(handleSelector); await click('.bpb-layout-menu:not([hidden]) button:last-child'); await assertColumn('summary'); await waitForSaved('summary');
+        await evaluate(() => document.querySelector('#bpb-ascent-weather .bpb-card-drag-handle').scrollIntoView({ block: 'center', behavior: 'instant' }));
+        const within = await evaluate(() => {
+            const grip = document.querySelector('#bpb-ascent-weather .bpb-card-drag-handle').getBoundingClientRect();
+            const gps = document.getElementById('bpb-ascent-gpx-details').getBoundingClientRect();
+            return { x: grip.left + grip.width / 2, y: grip.top + grip.height / 2,
+                toX: gps.left + gps.width / 2, toY: gps.top + Math.min(8, gps.height / 4) };
+        });
+        const stableGeometry = () => evaluate(() => {
+            const rect = node => { const r = node.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; };
+            return { heading: rect(document.querySelector('h1')), summary: rect(document.querySelector('.bpb-ascent-table-split__summary')),
+                report: rect(document.querySelector('.bpb-ascent-table-split__report')), gps: rect(document.getElementById('bpb-ascent-gpx-details')),
+                scroll: [window.scrollX, window.scrollY], height: document.documentElement.scrollHeight };
+        });
+        const before = await stableGeometry();
+        await pointerDown(within.x, within.y); await movePointer(within.toX, within.toY);
+        await wait(() => !document.querySelector('.bpb-card-drop-preview').hidden, 'same-column insertion preview');
+        assert.deepEqual(await stableGeometry(), before, 'same-column preview preserves surrounding native content and scroll');
+        if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-weather-reorder-preview.png`));
+        await pointerUp(); await assertColumn('summary');
+        await wait(() => document.getElementById('bpb-ascent-weather').nextElementSibling?.id === 'bpb-ascent-gpx-details', 'weather moved above GPS links');
+        await evaluate(() => document.querySelector('#bpb-ascent-weather .bpb-card-drag-handle').focus({ preventScroll: true }));
+        await press(firefoxMode ? '\uE013' : 'ArrowUp');
+        await wait(() => document.getElementById('bpb-ascent-weather').nextElementSibling?.classList.contains('bpb-ascent-table-split__summary'), 'weather moved above summary');
+        await waitForCondition(() => readLocal('bpbAscentWeatherSlot'), { description: 'same-column position saved', isReady: value => value.bpbAscentWeatherSlot === 'before' });
+        await open();
+        await wait(() => document.getElementById('bpb-ascent-weather').nextElementSibling?.classList.contains('bpb-ascent-table-split__summary'), 'same-column position restored');
+        for (const width of [1440, 375]) {
+            await resize(width, 1100); await assertColumn('summary');
+            if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-weather-first-${width}.png`));
+        }
+        await resize(1440, 1100);
+        await evaluate(() => document.querySelector('#bpb-ascent-weather .bpb-card-drag-handle').focus({ preventScroll: true }));
+        await press(firefoxMode ? '\uE010' : 'End');
+        await wait(() => document.getElementById('bpb-ascent-weather').previousElementSibling?.id === 'bpb-ascent-gpx-details', 'weather returned below GPS links');
         if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-weather-right.png`));
     }
 }

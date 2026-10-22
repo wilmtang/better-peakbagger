@@ -263,6 +263,8 @@ test('an empty opposite column accepts a pointer drop only on release and the gr
         await tick();
         env.pointer('pointerdown', 360, env.handle('snow'), 370); env.pointer('pointermove', 110, env.win, 50);
         assert.equal(env.state.peakCardColumns.snow, 'map'); assert.equal(env.writes.length, 0);
+        env.handle('snow').click();
+        assert.equal([...env.doc.querySelectorAll('.bpb-layout-menu')].every(node => node.hidden), true, 'a click during a drag cannot open another interaction');
         env.pointer('pointerup', 110, env.win, 50); await tick();
         assert.equal(env.state.peakCardColumns.snow, 'details');
         env.handle('weather').click();

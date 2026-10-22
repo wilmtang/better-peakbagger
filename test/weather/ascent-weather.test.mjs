@@ -13,6 +13,7 @@ const [ascent, peak, bundle, layoutBundle, challenge] = await Promise.all([
     readFile(new URL('../../dist/content/ascent-layout.js', import.meta.url), 'utf8'),
     readFile(new URL('../fixtures/pages/cloudflare-challenge.html', import.meta.url), 'utf8'),
 ]);
+const moveKey = (env, key) => env.doc.querySelector('.bpb-card-drag-handle').dispatchEvent(new env.win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 const pause = () => new Promise(resolve => setTimeout(resolve, 0));
 async function waitFor(predicate) {
     const until = Date.now() + 2000;
@@ -830,7 +831,9 @@ test('weather column choice persists locally and keeps GPS controls in the summa
         const selectedTime = Date.parse('2024-07-12T17:32:00Z');
         sendCursor(env, { selected: true, selectionTime: selectedTime });
         await waitFor(() => card.querySelector('.bpb-weather-cursor').dataset.time === String(selectedTime));
-        handle.click(); await waitFor(() => env.positionWrites.length === 1);
+        handle.click();
+        [...env.doc.querySelector('.bpb-layout-menu:not([hidden])').querySelectorAll('button')].find(button => button.textContent === 'Move below trip report').click();
+        await waitFor(() => env.positionWrites.length === 1);
         assert.equal(card.parentElement.id, 'bpb-ascent-report-column');
         assert.equal(card.previousElementSibling.classList.contains('bpb-ascent-table-split__report'), true);
         assert.equal(env.doc.getElementById('bpb-ascent-gpx-details').parentElement.id, 'bpb-ascent-summary-column');
@@ -838,7 +841,7 @@ test('weather column choice persists locally and keeps GPS controls in the summa
         assert.equal(card.querySelector('.bpb-weather-cursor').dataset.time, String(selectedTime));
         assert.equal(card.querySelector('[data-metric="temperature"]').getAttribute('aria-selected'), 'true');
         assert.equal(env.requests.length, requests);
-        assert.deepEqual(localPositions, { bpbAscentWeatherColumn: 'report' });
+        assert.deepEqual(localPositions, { bpbAscentWeatherColumn: 'report', bpbAscentWeatherSlot: 'after' });
         const explorer = env.doc.createElement('div'); explorer.id = 'bpb-route-explorer'; env.doc.getElementById('page').append(explorer);
         await pause(); assert.equal(card.parentElement.id, 'bpb-ascent-report-column', 'later GPX DOM cannot undo the chosen column');
         assert.equal(env.doc.querySelectorAll('.bpb-card-drag-handle').length, 1, 'only weather is enabled for dragging');
@@ -853,7 +856,7 @@ test('late and malformed position reads cannot undo current intent or prevent fa
     const env = setup({ readPositions: () => new Promise(resolve => { finish = resolve; }) });
     try {
         await openChart(env);
-        env.doc.querySelector('.bpb-card-drag-handle').click(); await pause();
+        moveKey(env, 'ArrowLeft'); await pause();
         finish({ bpbAscentWeatherColumn: 'summary' }); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
     } finally { env.close(); }
@@ -874,16 +877,15 @@ test('completed moves serialize local writes, retain the last choice and report 
     const env = setup({ savePositions: values => new Promise(resolve => held.push({ values, resolve })) });
     try {
         await openChart(env);
-        const handle = env.doc.querySelector('.bpb-card-drag-handle');
-        handle.click(); handle.click();
+        moveKey(env, 'ArrowLeft'); moveKey(env, 'ArrowRight');
         await waitFor(() => held.length === 1);
-        assert.deepEqual({ ...held[0].values }, { bpbAscentWeatherColumn: 'report' });
+        assert.deepEqual({ ...held[0].values }, { bpbAscentWeatherColumn: 'report', bpbAscentWeatherSlot: 'after' });
         held[0].resolve(); await waitFor(() => held.length === 2);
-        assert.deepEqual({ ...held[1].values }, { bpbAscentWeatherColumn: 'summary' }); held[1].resolve();
+        assert.deepEqual({ ...held[1].values }, { bpbAscentWeatherColumn: 'summary', bpbAscentWeatherSlot: 'after' }); held[1].resolve();
     } finally { env.close(); }
     const failed = setup({ savePositions: async () => { throw new Error('Storage full'); } });
     try {
-        await openChart(failed); failed.doc.querySelector('.bpb-card-drag-handle').click();
+        await openChart(failed); moveKey(failed, 'ArrowLeft');
         await waitFor(() => failed.doc.querySelector('.bpb-card-drag-status').textContent.includes('could not be saved'));
         assert.equal(failed.doc.querySelector('.bpb-card-drag-status').classList.contains('bpb-card-drag-status-visible'), true);
         assert.equal(failed.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
@@ -898,7 +900,7 @@ test('a position read arriving during a pointer gesture cannot reparent the lift
         const card = env.doc.getElementById('bpb-ascent-weather');
         card.getBoundingClientRect = () => ({ width: 300 });
         card.querySelector('.bpb-card-drag-handle').dispatchEvent(pointerEvent({ window: env.win }, 'pointerdown', { button: 0, clientX: 400, clientY: 150 }));
-        finish({ bpbAscentWeatherColumn: 'report' }); await pause();
+        finish({ bpbAscentWeatherColumn: 'report', bpbAscentWeatherSlot: 'after' }); await pause();
         assert.equal(card.parentElement.id, 'bpb-ascent-summary-column');
         env.win.dispatchEvent(pointerEvent({ window: env.win }, 'pointercancel'));
         assert.equal(env.positionWrites.length, 0);
@@ -922,7 +924,7 @@ test('weather placement survives opt-out and BFCache and ignores position reads 
     const disposed = setup({ readPositions: () => new Promise(resolve => { finish = resolve; }) });
     try {
         await pause(); disposed.win.dispatchEvent(new disposed.win.PageTransitionEvent('pagehide'));
-        finish({ bpbAscentWeatherColumn: 'report' }); await pause();
+        finish({ bpbAscentWeatherColumn: 'report', bpbAscentWeatherSlot: 'after' }); await pause();
         assert.equal(disposed.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-summary-column');
         assert.equal(disposed.doc.querySelector('.bpb-card-drop-preview'), null);
     } finally { disposed.close(); }
@@ -1194,4 +1196,33 @@ test('summit lookup keeps a Peakbagger limit distinct from Open-Meteo and makes 
         assert.equal(env.doc.querySelector('.bpb-weather-status').dataset.kind, 'rate-limit');
         assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Try again after/);
     } finally { env.close(); }
+});
+
+
+test('weather reorders within its column while preserving GPS ownership and its selected chart', async () => {
+    const localPositions = {}, env = setup({ localPositions });
+    try {
+        await openChart(env);
+        const card = env.doc.getElementById('bpb-ascent-weather'), gps = env.doc.getElementById('bpb-ascent-gpx-details');
+        const summary = env.doc.querySelector('.bpb-ascent-table-split__summary'), chart = card.querySelector('.bpb-weather-chart');
+        const requests = env.requests.length;
+        moveKey(env, 'ArrowUp'); await pause();
+        assert.equal(summary.nextElementSibling, card, 'weather moves above the native GPS links');
+        assert.equal(card.nextElementSibling, gps);
+        moveKey(env, 'ArrowUp'); await pause();
+        assert.equal(summary.previousElementSibling, card, 'weather moves above the summary in the same column');
+        assert.equal(card.querySelector('.bpb-weather-chart'), chart);
+        assert.equal(env.doc.activeElement, card.querySelector('.bpb-card-drag-handle'));
+        assert.equal(gps.parentElement.id, 'bpb-ascent-summary-column');
+        assert.equal(env.requests.length, requests);
+        await waitFor(() => localPositions.bpbAscentWeatherSlot === 'before');
+        moveKey(env, 'End'); await pause();
+        assert.equal(gps.nextElementSibling, card);
+        moveKey(env, 'Home'); await waitFor(() => localPositions.bpbAscentWeatherSlot === 'before');
+    } finally { env.close(); }
+    const restored = setup({ localPositions });
+    try {
+        await openChart(restored);
+        assert.equal(restored.doc.querySelector('.bpb-ascent-table-split__summary').previousElementSibling.id, 'bpb-ascent-weather');
+    } finally { restored.close(); }
 });

@@ -24,6 +24,7 @@ import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-curs
 
 const ID = 'bpb-ascent-weather', SVG_NS = 'http://www.w3.org/2000/svg';
 const POSITION_KEY = 'bpbAscentWeatherColumn';
+const SLOT_KEY = 'bpbAscentWeatherSlot';
 const MODEL_KEY = 'bpbAscentWeatherModel';
 const element = dom.element;
 const numeric = value => Number.isFinite(value);
@@ -36,7 +37,7 @@ export function mountAscentWeather() {
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const heading = element('h2', { id: `${ID}-heading`, text: 'Weather archive' });
     const moveHandle = element('button', { type: 'button', class: 'bpb-card-drag-handle', hidden: '',
-        'aria-label': 'Move weather below trip report', 'aria-keyshortcuts': 'ArrowLeft ArrowRight' }, [
+        'aria-label': 'Move weather below trip report', 'aria-keyshortcuts': 'ArrowUp ArrowDown ArrowLeft ArrowRight Home End' }, [
         element('span', { class: 'bpb-card-drag-dots', 'aria-hidden': 'true' }),
     ]);
     const moveStatus = element('span', { class: 'bpb-card-drag-status', role: 'status', 'aria-live': 'polite' });
@@ -109,7 +110,7 @@ export function mountAscentWeather() {
     const mountParent = document.querySelector('#page') || subject.table?.parentElement || nativeMap?.parentElement || document.body;
     let preference = settings.DEFAULTS, settingsReady = false;
     const enabled = () => settingsReady && preference.showWeather;
-    let column = 'summary', positionRevision = 0, positionWrites = Promise.resolve(), cardDrag = null;
+    let column = 'summary', slot = 'after', positionRevision = 0, positionWrites = Promise.resolve(), cardDrag = null;
     let gpsDetails = null;
     const gpsOrigins = [];
     const restoreGpsDetails = () => {
@@ -152,7 +153,7 @@ export function mountAscentWeather() {
         }
         const summary = document.querySelector('#bpb-ascent-summary-column > .bpb-ascent-table-split__summary');
         if (summary) {
-            if (summary.nextElementSibling !== gpsDetails) summary.after(gpsDetails);
+            if (gpsDetails.parentElement !== summary.parentElement) summary.after(gpsDetails);
         } else if (card.previousElementSibling !== gpsDetails) card.before(gpsDetails);
     };
     const place = () => {
@@ -160,9 +161,14 @@ export function mountAscentWeather() {
         if (summary) {
             placeGpsDetails();
             const report = document.querySelector('#bpb-ascent-report-column > .bpb-ascent-table-split__report');
-            const anchor = column === 'report' && report ? report
-                : gpsDetails?.parentElement === summary.parentElement ? gpsDetails : summary;
-            if (anchor.nextElementSibling !== card) anchor.after(card);
+            const base = column === 'report' && report ? report : summary;
+            if (slot === 'before') {
+                if (base.previousElementSibling !== card) base.before(card);
+            } else {
+                const anchor = slot === 'gps' || base === report ? base
+                    : gpsDetails?.parentElement === summary.parentElement ? gpsDetails : summary;
+                if (anchor.nextElementSibling !== card) anchor.after(card);
+            }
             cardDrag?.refresh();
             return;
         }
@@ -633,25 +639,41 @@ export function mountAscentWeather() {
         onDispose: () => { modelReadDeadline.clear(); cardDrag?.dispose(); cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
     cardDrag = createCardDrag({ card, handle: moveHandle, surface: header, status: moveStatus, name: 'Weather',
-        enabled: () => enabled() && lifecycle.state === 'active', getPosition: () => column,
+        enabled: () => enabled() && lifecycle.state === 'active', getPosition: () => `${column}:${slot === 'gps' && (column === 'report' || !gpsDetails) ? 'after' : slot}`,
         getTargets: () => {
             const split = document.getElementById('bpb-ascent-table-split');
             const report = document.getElementById('bpb-ascent-report-column'), summary = document.getElementById('bpb-ascent-summary-column');
             if (!split || report?.parentElement !== split || summary?.parentElement !== split) return [];
-            return [['report', report, 'below trip report'], ['summary', summary, 'below summary']].map(([id, targetColumn, label]) => ({ id, element: targetColumn, label,
-                bounds: () => {
-                    const rect = targetColumn.getBoundingClientRect(), area = split.getBoundingClientRect();
-                    return getComputedStyle(split).display === 'grid'
-                        ? { left: rect.left, right: rect.right, width: rect.width, top: area.top, bottom: area.bottom } : rect;
-                },
-            }));
+            return [['report', report, 'trip report'], ['summary', summary, 'summary']].flatMap(([id, targetColumn, label]) => {
+                const base = targetColumn.querySelector('.bpb-ascent-table-split__table');
+                if (!base) return [];
+                const gps = id === 'summary' && gpsDetails?.parentElement === targetColumn ? gpsDetails : null;
+                const entries = [{ slot: 'before', label: `above ${label}`, node: base, before: true },
+                    ...(gps ? [{ slot: 'gps', label: 'above GPS links', node: gps, before: true }] : []),
+                    { slot: 'after', label: `below ${gps ? 'GPS links' : label}`, node: gps || base, before: false }];
+                const middle = node => { const rect = node.getBoundingClientRect(); return rect.top + rect.height / 2; };
+                return entries.map((entry, index) => ({ id: `${id}:${entry.slot}`, column: id, element: targetColumn, label: entry.label,
+                    bounds: () => {
+                        const rect = targetColumn.getBoundingClientRect(), area = getComputedStyle(split).display === 'grid' ? split.getBoundingClientRect() : rect;
+                        return { left: rect.left, right: rect.right, width: rect.width,
+                            top: index === 0 ? area.top : middle(entries[index - 1].node),
+                            bottom: index === entries.length - 1 ? area.bottom : middle(entry.node) };
+                    },
+                    previewBounds: () => {
+                        const rect = entry.node.getBoundingClientRect(), columnRect = targetColumn.getBoundingClientRect();
+                        const top = Math.max(8, Math.min(window.innerHeight - 12, entry.before ? rect.top : rect.bottom));
+                        return { left: columnRect.left, width: columnRect.width, top, bottom: top + 3 };
+                    },
+                }));
+            });
         },
         onMove: next => {
-            if (next !== 'report' && next !== 'summary') return false;
+            const [nextColumn, nextSlot] = next.split(':');
+            if (!['report', 'summary'].includes(nextColumn) || !['before', 'gps', 'after'].includes(nextSlot)) return false;
             moveStatus.classList.remove('bpb-card-drag-status-visible');
-            column = next; const revision = ++positionRevision;
+            column = nextColumn; slot = nextSlot; const revision = ++positionRevision;
             place(); drawChart();
-            positionWrites = positionWrites.catch(() => {}).then(() => chrome.storage.local.set({ [POSITION_KEY]: next })).catch(() => {
+            positionWrites = positionWrites.catch(() => {}).then(() => chrome.storage.local.set({ [POSITION_KEY]: nextColumn, [SLOT_KEY]: nextSlot })).catch(() => {
                 if (revision === positionRevision && lifecycle.state !== 'disposed') {
                     moveStatus.textContent = 'Weather moved for this visit. Position could not be saved.';
                     moveStatus.classList.add('bpb-card-drag-status-visible');
@@ -665,9 +687,10 @@ export function mountAscentWeather() {
     const startupPositionRevision = positionRevision;
     void (async () => {
         try {
-            const saved = (await chrome.storage.local.get(POSITION_KEY))?.[POSITION_KEY];
+            const saved = await chrome.storage.local.get([POSITION_KEY, SLOT_KEY]);
             if (positionRevision !== startupPositionRevision || lifecycle.state === 'disposed' || cardDrag.dragging) return;
-            if (saved === 'report' || saved === 'summary') column = saved;
+            if (saved?.[POSITION_KEY] === 'report' || saved?.[POSITION_KEY] === 'summary') column = saved[POSITION_KEY];
+            if (['before', 'gps', 'after'].includes(saved?.[SLOT_KEY])) slot = saved[SLOT_KEY];
             if (lifecycle.state === 'active') place();
         } catch { /* A storage failure retains the usable default placement. */ }
     })();

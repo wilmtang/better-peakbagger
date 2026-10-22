@@ -22,3 +22,8 @@ html.bpb-card-drag-active, html.bpb-card-drag-active * { cursor: grabbing !impor
 .bpb-card-drop-preview-label { display: inline-block; padding: 4px 8px; border: 1px solid currentColor; border-radius: 6px; background: #fff; text-shadow: none; }
 html[data-bpb-theme="dark"] .bpb-card-drop-preview { color: #83bbff; border-color: #83bbff; background: #83bbff0a; text-shadow: 0 1px #24272b; }
 html[data-bpb-theme="dark"] .bpb-card-drop-preview-label { background: #24272b; }
+
+.bpb-card-drop-preview[data-insertion] { z-index: 1001; height: 3px; min-height: 3px; border: 0; border-radius: 2px; padding: 0; background: #1769aa; }
+.bpb-card-drop-preview[data-insertion] .bpb-card-drop-preview-label { position: absolute; top: 7px; left: 8px; }
+html[data-bpb-theme="dark"] .bpb-card-drop-preview[data-insertion] { background: #83bbff; }
+html #bpb-ascent-weather .bpb-card-drag-handle[hidden] { display: none !important; }

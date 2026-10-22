@@ -167,7 +167,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Nearby snow | `src/snow/peak-snow.js`, `src/snow/snotel-client.js`, `src/snow/snotel-data.js`, `src/snow/snotel-map-source.js`, `src/maps/map-layer-bridge.js` | Independent isolated western-US/Alaska peak card, local station matching within 50 km, bounded credential-free NRCS requests with fixed station time offsets, seven-day public catalog cache and page-memory observations. Opt-in 2D/3D station overlay receives at most 50 public station records through a read-only bridge, revalidated in each renderer; the independent `showSnotel` gate controls all SNOTEL surfaces and requests, retaining legacy weather opt-outs |
 | Map Layers menu | `src/maps/map-layers.js`, `src/maps/map-layer-control.js`, `src/maps/map-overlay-leaflet.js`, `src/terrain/terrain-overlays.js`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Device-local opacity, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
 | Map location menu | `src/maps/map-location-menu.js`, `src/maps/map-elevation.js`, `src/maps/peak-weather-map.js` | Shared MAIN-world coordinates and approximate terrain elevation on native and 3D maps; explicit right-click, bounded credential-free Mapterhorn reads and tab-memory tiles. Independent of weather/3D opt-outs; forecast requests stay with the isolated peak weather card. |
-| Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.js` | Isolated owner of standalone Sun & Moon, weather and snow row ordering/disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
+| Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.js` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -882,16 +882,35 @@ Peak pages use their separately validated summit subject and retain a date
 input. The complete claims, date-source rules, bearing coupling, and privacy
 contract are maintained in [sun-position.md](sun-position.md).
 
+### Shared page layout controls
+
+`src/ui/column-resize.js` and its stylesheet own bounded pointer/keyboard column
+resizing and the click alternative. The ascent and peak table owners recognize
+only their native adjacent table pairs; peak pages retain their map and details
+nodes. Peak divider width is page-local `pbPeakTableSplit.v1`, independently of
+ascent width. Narrow viewports stack the columns and hide the divider.
+
+Peak cards use schema-validated `peakCardOrder` and `peakCardColumns` alongside
+independent disclosure flags. Drag previews stay outside document flow; a drop
+commits order and column together through the existing settings patch queue.
+The native map/legend stay together, while left-column cards precede the native
+peak details. Missing cards retain their settings slots. Arrow keys and the
+shared `src/ui/layout-menu.js` provide alternatives to dragging.
+
 ### Independent historical weather
 
 Saved ascent weather uses a separate isolated-world bundle and runs without a
 GPX or native map. Its strict reader identifies the native ascent date and
 summit, then reads the matching peak page through the existing Peakbagger
-transport. The card lives below Summary Total Data in the resizable right-hand
-column beside the report, including when GPX analysis mounts later. Unrecognized
-table layouts retain a map/metadata fallback. Dedicated native GPS note and
-download/send blocks move together above Weather archive, preserving the
-original controls and leaving the map in place. It does not mutate native weather
+transport. The card defaults below Summary Total Data and the GPS links in the
+resizable right column. Its grip supports insertion above or below the report,
+summary, or dedicated GPS links, using pointer dragging, a click menu, or arrow
+keys. Device-local `bpbAscentWeatherColumn` and `bpbAscentWeatherSlot` store only
+these bounded layout identifiers; old column-only preferences remain valid.
+The existing card, chart selection, and native GPS controls survive movement,
+including when GPX analysis mounts later. GPS controls stay in the summary
+column and the native map stays in place. Unrecognized table layouts retain a
+map/metadata fallback. It does not mutate native weather
 fields. An optional hourly cursor follows GPX hover and selection through the
 narrow local `gpx-time-cursor.js` channel: exact-shape, source/origin-validated
 epoch timestamps and flags only, with no coordinates or privileged actions.

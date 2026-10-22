@@ -268,6 +268,7 @@ export function createPeakCardLayout({ document: doc, settings }) {
         } });
         item.menu = menu;
         const click = event => {
+            if (drag) return;
             if (suppressClick && event.detail !== 0) { suppressClick = false; return; }
             suppressClick = false; menu.toggle();
         };

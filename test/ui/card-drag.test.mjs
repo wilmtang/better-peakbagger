@@ -38,6 +38,8 @@ test('a card follows a thresholded pointer gesture and moves only on a valid dro
         assert.equal(env.card.style.getPropertyValue('--bpb-card-drag-x'), '-250px');
         assert.equal(env.card.parentElement.id, 'right'); assert.deepEqual(env.moves, []);
         assert.equal(env.doc.querySelector('.bpb-card-drop-preview').hidden, false);
+        env.handle.dispatchEvent(new env.dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+        env.handle.click(); assert.deepEqual(env.moves, [], 'keyboard or clicks cannot commit during a pointer gesture');
         env.pointer('pointerup', 150);
         assert.equal(env.card.parentElement.id, 'left'); assert.deepEqual(env.moves, ['left']);
         assert.equal(env.doc.activeElement, env.handle);
