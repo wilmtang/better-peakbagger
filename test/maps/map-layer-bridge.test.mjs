@@ -6,15 +6,16 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { snotelStations } from '../helpers/snotel-fixture.mjs';
 import { createMapLayerHandoff } from '../../src/background/map-layer-handoff.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 
 const bundle = await readFile(new URL('../../dist/content/peak-snow.js', import.meta.url), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function setup({ catalog = snotelStations(), held = false, runtime, syncGet = async () => ({ bpbSettings: { showSnotel: true } }) } = {}) {
+function setup({ catalog = snotelStations(), held = false, runtime, localGet, syncGet = async () => ({ bpbSettings: { showSnotel: true } }) } = {}) {
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', runScripts: 'outside-only' });
     const win = dom.window, messages = [], requests = [], local = {}, listeners = [];
     win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder; win.AbortController = AbortController;
     win.chrome = { runtime, storage: { sync: { get: syncGet },
-        local: { get: async () => local, set: async value => Object.assign(local, value) },
+        local: { get: localGet || (async () => local), set: async value => Object.assign(local, value) },
         onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     const response = () => new Response(JSON.stringify(catalog));
     win.fetch = (url, options) => { const entry = { url, options }; requests.push(entry); return held ? new Promise(resolve => { entry.resolve = () => resolve(response()); }) : Promise.resolve(response()); };
@@ -24,6 +25,38 @@ function setup({ catalog = snotelStations(), held = false, runtime, syncGet = as
         data: { __bpbMapLayers: true, dir: 'toCS', ...detail } }));
     return { win, local, messages, requests, send, listeners, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
+test('opacity announcements wait for saved preferences as well as settings', async () => {
+    let finish;
+    const env = setup({ localGet: key => key === 'bpbMapOverlayOpacityV1' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({}) });
+    try {
+        await tick(); env.send({ type: 'preferences' });
+        assert.equal(env.messages.filter(message => message.type === 'preferences').length, 0, 'saved opacity is still unknown');
+        finish({ bpbMapOverlayOpacityV1: { sentinel: 31, slope: 42, land: 73 } }); await tick();
+        const announcements = env.messages.filter(message => message.type === 'preferences');
+        assert.equal(announcements.length, 1);
+        assert.deepEqual(JSON.parse(JSON.stringify(announcements[0].preferences)), { sentinel: 31, slope: 42, land: 73, snotel: 100 });
+        assert.equal(announcements[0].snotel, true);
+    } finally { env.close(); }
+});
+test('a late opacity read cannot overwrite a newer save', async () => {
+    let finish;
+    const env = setup({ localGet: key => key === 'bpbMapOverlayOpacityV1' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({}) });
+    try {
+        await tick(); env.send({ type: 'save', preferences: { sentinel: 22, slope: 33, land: 44 } }); await tick();
+        finish({ bpbMapOverlayOpacityV1: { sentinel: 85, slope: 55, land: 55 } }); await tick();
+        env.send({ type: 'preferences' });
+        assert.equal(env.messages.filter(message => message.type === 'preferences').at(-1).preferences.land, 44);
+        assert.equal(env.local.bpbMapOverlayOpacityV1.land, 44);
+    } finally { env.close(); }
+});
+test('unavailable preference storage settles startup with usable defaults', async () => {
+    const env = setup({ localGet: async () => { throw new Error('Storage unavailable'); } });
+    try {
+        await tick(); env.send({ type: 'preferences' });
+        const announcement = env.messages.filter(message => message.type === 'preferences').at(-1);
+        assert.equal(announcement.preferences.land, Schema.mapOverlayPreferences().land); assert.equal(announcement.snotel, true);
+    } finally { env.close(); }
+});
 test('loading opacity preferences cannot publish a false SNOTEL opt-out before settings are known', async () => {
     let finish;
     const env = setup({ syncGet: () => new Promise(resolve => { finish = resolve; }) });

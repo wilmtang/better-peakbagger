@@ -17,7 +17,7 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
     client = createSnotelClient({ storage }) } = {}) {
     const post = detail => ownerWindow.postMessage({ __bpbMapLayers: true, dir: 'toPage', ...detail }, ownerWindow.location.origin);
     let allowed = false, active = true, revision = 0, controller = null, preferences = Schema.mapOverlayPreferences(), retryAt = 0;
-    let handoff = null, settingsReady = false;
+    let handoff = null, settingsReady = false, preferencesReady = false, preferencesRevision = 0;
     const bcRequests = new Set();
     const cancelBC = () => {
         for (const requestId of bcRequests) void chrome.runtime.sendMessage({ type: 'BC_LAND_TILE_CANCEL', requestId }).catch(() => {});
@@ -26,7 +26,7 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
     const cancel = () => { revision++; controller?.abort(); controller = null; };
     // Unknown settings are not an opt-out: clearing a handoff here loses the
     // user's selection before the strict read can authorize station requests.
-    const announce = () => { if (active && settingsReady) post({ type: 'preferences', preferences, snotel: allowed }); };
+    const announce = () => { if (active && settingsReady && preferencesReady) post({ type: 'preferences', preferences, snotel: allowed }); };
     const handler = async event => {
         const data = event.data;
         if (event.source !== ownerWindow || event.origin !== ownerWindow.location.origin || !data
@@ -48,6 +48,7 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
         }
         if (data.type === 'handoffState') { handoff = readLayerSnapshot(data.snapshot); return; }
         if (data.type === 'save') {
+            preferencesRevision++;
             preferences = Schema.mapOverlayPreferences(data.preferences);
             try { await storage.set({ [OVERLAY_PREFERENCES_KEY]: preferences }); } catch { /* Paint works without storage. */ }
             return;
@@ -118,9 +119,9 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
         if (settingsReady) return; // A storage change already supplied newer settings.
         settingsReady = true; allowed = next.showSnotel === true; announce();
     }, () => { if (!settingsReady) { settingsReady = true; allowed = false; announce(); } });
-    void Promise.resolve(storage.get(OVERLAY_PREFERENCES_KEY)).then(value => {
-        preferences = Schema.mapOverlayPreferences(value?.[OVERLAY_PREFERENCES_KEY]); announce();
-    }, () => {});
+    void Promise.resolve().then(() => storage.get(OVERLAY_PREFERENCES_KEY)).then(value => {
+        if (preferencesRevision === 0) preferences = Schema.mapOverlayPreferences(value?.[OVERLAY_PREFERENCES_KEY]);
+    }, () => {}).finally(() => { preferencesReady = true; announce(); });
     const lifecycle = createPageLifecycle({ ownerWindow,
         onSuspend: () => { active = false; cancel(); cancelBC(); },
         onResume: () => { active = true; announce(); },
