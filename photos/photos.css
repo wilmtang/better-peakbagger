@@ -21,8 +21,7 @@ body {
   justify-content: space-between;
   padding: 14px clamp(16px, 4vw, 52px);
   border-bottom: 1px solid var(--border);
-  background-color: color-mix(in srgb, var(--bg) 86%, transparent);
-  backdrop-filter: blur(18px);
+  background-color: var(--bg);
 }
 
 .app-header h1,
