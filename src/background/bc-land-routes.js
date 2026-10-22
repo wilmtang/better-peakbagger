@@ -28,7 +28,12 @@ export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = 
             if (!await deadline.run(ext.permissions.contains(BC_LAND_PERMISSION))) return { ok: false, code: 'bc-permission-required' };
             if (deadline.signal.aborted) return { ok: false };
             const response = await deadline.run(fetchImpl(bcLandTileUrl(bbox), { signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' }));
-            if (response.status === 429) { retryAt = rateLimitError('BC maps', response).retryAt; return { ok: false, code: 'rate-limit', retryAt }; }
+            if (response.status === 429) {
+                // Retry-After can be absent or invalid. Share a local backoff
+                // across tabs, and never let an older flight shorten it.
+                retryAt = Math.max(retryAt, rateLimitError('BC maps', response).retryAt ?? Date.now() + 300000);
+                return { ok: false, code: 'rate-limit', retryAt };
+            }
             if (temporaryHttpStatus(response.status)) return { ok: false, code: 'temporary' };
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/png') || Number(response.headers.get('content-length')) > 1048576) return { ok: false };
             reader = response.body.getReader(); let length = 0; const chunks = [];

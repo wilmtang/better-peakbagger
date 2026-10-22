@@ -90,6 +90,38 @@ test('BC rate limits survive client retries without another provider request', a
     await assert.rejects(fetchTile(coordinates, { signal: new AbortController().signal }), { code: 'rate-limit', retryAt: first.retryAt });
     assert.equal(calls, 1);
 });
+test('BC refusals without a usable reset apply a shared five-minute cooldown', async t => {
+    let now = Date.now();
+    t.mock.method(Date, 'now', () => now);
+    for (const header of [null, 'invalid', '0', '999999999']) {
+        let calls = 0;
+        const state = setup({ fetchImpl: async () => {
+            calls++;
+            return new Response('', { status: 429, headers: header === null ? {} : { 'retry-after': header } });
+        } });
+        const first = await state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'first' }, sender);
+        assert.equal(first.retryAt, now + 300000, `fallback for ${header}`);
+        const otherTab = { ...sender, tab: { id: 2 } };
+        assert.deepEqual(await state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'second' }, otherTab), first);
+        assert.equal(calls, 1, 'a second tab shares the provider cooldown');
+        now = first.retryAt;
+        assert.equal((await state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'expired' }, otherTab)).retryAt, now + 300000);
+        assert.equal(calls, 2, 'requests resume at expiry');
+    }
+});
+test('a later in-flight BC refusal cannot shorten an established cooldown', async () => {
+    const responses = [];
+    const state = setup({ fetchImpl: () => new Promise(resolve => responses.push(resolve)) });
+    const first = state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'first' }, sender);
+    const second = state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'second' }, sender);
+    await new Promise(resolve => setImmediate(resolve));
+    responses[0](new Response('', { status: 429, headers: { 'retry-after': '600' } }));
+    const refused = await first;
+    responses[1](new Response('', { status: 429, headers: { 'retry-after': '1' } }));
+    assert.equal((await second).retryAt, refused.retryAt);
+    assert.equal((await state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'third' }, sender)).retryAt, refused.retryAt);
+    assert.equal(responses.length, 2);
+});
 test('a rejected web-page permission gesture opens and reuses an explicit packaged setup tab', async () => {
     const created = [], updated = []; let tab;
     const ext = { runtime: { getURL: path => `moz-extension://self/${path}` }, permissions: { request: async () => { throw Error('user input handler required'); } },
