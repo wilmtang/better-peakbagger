@@ -3285,7 +3285,7 @@ const setPhotoBackupStatus = createPhotoBackupStatus(ui.backupStatus);
 
 const setPhotoBackupBusy = value => {
     photoBackupBusy = value;
-    ui.backupNow.disabled = value;
+    ui.backupNow.setAttribute('aria-disabled', String(value));
     ui.backupNow.setAttribute('aria-busy', String(value));
 };
 
@@ -3296,7 +3296,7 @@ const refreshPhotoBackupStatus = async () => {
         ui.backupNow.disabled = true;
         return false;
     }
-    ui.backupNow.disabled = !response.connected || photoBackupBusy;
+    ui.backupNow.disabled = !response.connected || storeReloadRequired;
     if (!response.connected) {
         setPhotoBackupStatus('Connect a GitHub backup repository in Settings to enable recovery.');
         return false;
@@ -3311,25 +3311,26 @@ const refreshPhotoBackupStatus = async () => {
 };
 
 const backupPhotoLibrary = async () => {
-    if (photoBackupBusy) return;
+    if (photoBackupBusy || ui.backupNow.disabled) return;
     setPhotoBackupBusy(true);
     setPhotoBackupStatus('Backing up photo metadata…');
-    const response = await send({ type: 'GITHUB_PHOTOS_BACKUP' });
-    setPhotoBackupBusy(false);
-    if (response?.ok) {
-        const statusCurrent = await refreshPhotoBackupStatus();
-        toast(statusCurrent
-            ? response.reconciliationPending
-                ? response.warning?.message || 'The GitHub backup is safe, but local backup status is not yet confirmed.'
-                : 'Photo-library metadata backed up to GitHub.'
-            : 'The backup finished, but its current GitHub status could not be refreshed.');
-        void renderLibrary();
-        return;
-    }
-    setPhotoBackupStatus(response?.error?.code === 'photo-backup-conflict'
-        ? `Backup conflict in ${response.error.conflictCount || 1} photo record(s). `
-            + 'Restore from Settings and review before backing up again.'
-        : response?.error?.message || 'The photo-library backup failed. Try again.');
+    try {
+        const response = await send({ type: 'GITHUB_PHOTOS_BACKUP' });
+        if (response?.ok) {
+            const statusCurrent = await refreshPhotoBackupStatus();
+            toast(statusCurrent
+                ? response.reconciliationPending
+                    ? response.warning?.message || 'The GitHub backup is safe, but local backup status is not yet confirmed.'
+                    : 'Photo-library metadata backed up to GitHub.'
+                : 'The backup finished, but its current GitHub status could not be refreshed.');
+            void renderLibrary();
+            return;
+        }
+        setPhotoBackupStatus(response?.error?.code === 'photo-backup-conflict'
+            ? `Backup conflict in ${response.error.conflictCount || 1} photo record(s). `
+                + 'Restore from Settings and review before backing up again.'
+            : response?.error?.message || 'The photo-library backup failed. Try again.');
+    } finally { setPhotoBackupBusy(false); }
 };
 
 const bindInspector = () => {

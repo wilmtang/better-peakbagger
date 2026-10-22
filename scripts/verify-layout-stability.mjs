@@ -646,6 +646,49 @@ async function settingsCase(page, origin, variant) {
     await page.setViewportSize({ width: variant.width, height: 900 });
     await capture(page, `${variant.name}-settings`);
 }
+async function photoBackupCase(page, origin, variant) {
+    await load(page, origin, 'photos/photos.html?mode=library', ({ theme }) => {
+        const area = { get: async () => ({ bpbSettings: { theme } }), set: async () => {}, remove: async () => {} };
+        globalThis.__backupCalls = 0;
+        globalThis.chrome = { storage: { sync: area, local: area, onChanged: { addListener() {}, removeListener() {} } },
+            runtime: { getURL: file => new URL(`/dist/${file}`, location.origin).href,
+                sendMessage: async message => {
+                    if (message.type === 'GITHUB_PHOTOS_BACKUP') {
+                        globalThis.__backupCalls++;
+                        return new Promise(resolve => { globalThis.__finishBackup = reply => { globalThis.__finishBackup = null; resolve(reply); }; });
+                    }
+                    if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true, connected: true,
+                        repo: { fullName: 'fixture/photo-backup' }, state: null };
+                    return { ok: true, configured: false };
+                } } };
+    }, variant);
+    await page.locator('#library-empty').waitFor();
+    const action = '#backup-library';
+    for (const scale of [1, 2]) {
+        await page.addStyleTag({ content: `.backup-card button { font-size: ${14 * scale}px; }` });
+        await page.locator(action).scrollIntoViewIfNeeded();
+        const selectors = [action, '.backup-card', '#photo-backup-heading', '#library-list'];
+        const before = await Promise.all(selectors.map(selector => geometry(page, selector)));
+        const scroll = await page.evaluate(() => document.scrollingElement.scrollTop);
+        for (const success of [false, true]) {
+            const calls = await page.evaluate(() => globalThis.__backupCalls);
+            await page.locator(action).press('Enter');
+            await page.waitForFunction(() => typeof globalThis.__finishBackup === 'function');
+            await assertActionFocus(page, action, 'photo library pending focus');
+            await page.keyboard.press('Enter'); await page.keyboard.press('Space');
+            assert.equal(await page.evaluate(() => globalThis.__backupCalls), calls + 1, 'one photo backup request');
+            for (const [index, selector] of selectors.entries()) stable(before[index], await geometry(page, selector), `${selector}: pending ${scale}`);
+            await capture(page, `${variant.name}-photo-backup-pending-${scale}`);
+            if (success) await page.locator('#library-search').focus();
+            await page.evaluate(success => globalThis.__finishBackup(success ? { ok: true }
+                : { ok: false, error: { message: 'The photo-library backup failed. Check your connection and try again.' } }), success);
+            await page.waitForFunction(() => document.getElementById('backup-library').getAttribute('aria-busy') === 'false');
+            await assertActionFocus(page, success ? '#library-search' : action, 'photo library completed focus');
+            for (const [index, selector] of selectors.entries()) stable(before[index], await geometry(page, selector), `${selector}: complete ${scale}`);
+            assert.ok(Math.abs(scroll - await page.evaluate(() => document.scrollingElement.scrollTop)) <= 1, 'photo library reading position');
+        }
+    }
+}
 async function photoCase(page, origin, variant) {
     const html = (await asset('photos/photos.html')).toString().replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
     await page.route(`${origin}/dist/photos/photos.html`, route => route.fulfill({ contentType: 'text/html', body: html }));
@@ -1210,7 +1253,7 @@ async function reportCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-report-feedback`);
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, weather: weatherCase,
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, 'photo-backup': photoBackupCase, weather: weatherCase,
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
     captions: (page, origin, variant) => verifyReportCaptionStability(page, origin, variant, { asset, capture }) };

@@ -134,10 +134,9 @@ export async function verifyPhotoBackupStatus({ context, extensionId, screenshot
                                 document.querySelector(selector)?.textContent.startsWith('Backing up'), surface.status);
                             stable(before, await geometry(), `${surface.name}: pending`);
                             assert.equal(await button.isDisabled(), true);
-                            if (surface.name === 'settings') {
-                                assert.equal(await button.evaluate(element => element.disabled), false, 'temporary unavailability remains focusable');
-                                assert.equal((await geometry()).focused, 'photos-backup');
-                            }
+                            await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+                            assert.equal(await button.evaluate(element => element.disabled), false, 'temporary unavailability remains focusable');
+                            assert.equal((await geometry()).focused, surface.button.slice(1));
                             await button.evaluate(button => button.click());
                             assert.equal(await page.evaluate(() => window.backupFixture.calls), calls + 1);
                             await page.evaluate(({ failure, state }) => {
