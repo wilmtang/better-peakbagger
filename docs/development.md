@@ -293,7 +293,7 @@ uses them.
 | `terrain cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
 | `terrain lod` | Measures painted elevation provenance across a cold-cache tilt sweep and 20 fixed-angle Rainier zoom cases, with local delayed DEM tiles and elevation/drape traffic counts. Same HTTPS showcase host and GPU rules as `verify -- terrain`. |
 
-Ordinary Test CI runs `snow` and `peak-cards` per browser after the generic
+Ordinary Test CI runs `snow`, `peak-cards` and `weather-interactions` per browser after the generic
 layout matrix, reusing its completed `dist/` build. A separate always-run
 `snow-map` matrix uses hardware GPU runners. Both feed the required Chrome
 aggregate, so a failure or skipped matrix cannot appear successful. These

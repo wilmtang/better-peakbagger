@@ -120,7 +120,7 @@ test('the CI surface step selects the requested engine and preserves either veri
     try {
         await writeFile(executable, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$BPB_SURFACE_COMMANDS"\nif [ "$2" = "$BPB_SURFACE_FAIL" ]; then exit 9; fi\n');
         await chmod(executable, 0o755);
-        for (const browser of ['chrome', 'firefox', 'missing']) for (const fail of ['', '--snow', '--cards']) {
+        for (const browser of ['chrome', 'firefox', 'missing']) for (const fail of ['', '--snow', '--cards', '--interactions']) {
             await rm(commands, { force: true });
             const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', 'mkdir -p browser-evidence\n' + step.run], {
                 cwd: directory, encoding: 'utf8', timeout: 5000,
@@ -129,7 +129,8 @@ test('the CI surface step selects the requested engine and preserves either veri
             });
             const calls = (await readFile(commands, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);
             assert.equal(result.status === 0, browser !== 'missing' && !fail, result.stderr);
-            const modes = browser === 'missing' ? [] : fail === '--snow' ? ['snow'] : ['snow', 'cards'];
+            const modes = browser === 'missing' ? [] : fail === '--snow' ? ['snow']
+                : fail === '--cards' ? ['snow', 'cards'] : ['snow', 'cards', 'interactions'];
             assert.deepEqual(calls, modes.map(mode => `scripts/verify-ascent-weather.mjs --${mode}${browser === 'firefox' ? ' --firefox' : ''}`));
         }
     } finally { await rm(directory, { recursive: true, force: true }); }

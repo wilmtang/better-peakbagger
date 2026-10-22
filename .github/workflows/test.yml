@@ -148,6 +148,7 @@ jobs:
           BPB_VERIFY_ARTIFACTS: browser-evidence/peak-surfaces
           BPB_VERIFY_SNOW_SCREENSHOT_DIR: browser-evidence/snow
           BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR: browser-evidence/peak-cards
+          BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR: browser-evidence/weather-interactions
         # The preceding verification command built dist; use that same build.
         run: |
           case "$BROWSER" in
@@ -157,6 +158,7 @@ jobs:
           esac
           node scripts/verify-ascent-weather.mjs --snow "${browser_args[@]}" 2>&1 | tee browser-evidence/snow.log
           node scripts/verify-ascent-weather.mjs --cards "${browser_args[@]}" 2>&1 | tee browser-evidence/peak-cards.log
+          node scripts/verify-ascent-weather.mjs --interactions "${browser_args[@]}" 2>&1 | tee browser-evidence/weather-interactions.log
 
       - name: Retain layout failure evidence
         if: failure()

@@ -123,6 +123,7 @@ independent of the existing targets.
 - [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)
 - [verify-peak-weather-3d.mjs](verify-peak-weather-3d.mjs)
 - [verify-peak-weather-cases.mjs](verify-peak-weather-cases.mjs)
+- [verify-peak-weather-interactions.mjs](verify-peak-weather-interactions.mjs)
 - [verify-peak-weather-refresh.mjs](verify-peak-weather-refresh.mjs)
 - [verify-snotel-options.mjs](verify-snotel-options.mjs)
 - [verify-snow-map-cases.mjs](verify-snow-map-cases.mjs)
