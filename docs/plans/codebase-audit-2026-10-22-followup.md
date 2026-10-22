@@ -1,7 +1,6 @@
 # Repository bugs, performance, engineering, and UX audit — October 22 follow-up
 
-Status: **plan only; four new findings remain open.** No runtime fixes were
-made by this audit. This is separate from the earlier
+Status: **remediation in progress; F1 fixed locally, F2–F4 open.** This is separate from the earlier
 [October 22 Gemini audit](../archive/codebase-audit-2026-10-22.md) and
 [terrain audit](../archive/3d-map-audit-2026-10-22.md).
 
@@ -280,12 +279,22 @@ fixes. Preserve this ledger when the plan is eventually archived.
 
 ### Fixed and verified
 
-None. This audit produced documentation and evidence, not remediation.
+- F1: the worker now retains a five-minute fallback for unusable Peakbagger
+  reset times, keeps valid provider deadlines, serializes session persistence,
+  and retains the longest in-memory deadline on write failure. The new tests
+  failed on the baseline (second capture reached `ready` / another request ran)
+  and pass after the fix. Covered missing, malformed, past, equal-to-now,
+  over-24-hour, short/long valid times, ordinary/forced retries, second tab,
+  restart, expiry, concurrent refusals and failed writes. Focused worker/request
+  suite: 235 passed; full suite: 3,251 passed, zero failures/skips; the additional
+  concurrent-boundary test and focused lint passed. Real-manifest Chrome smoke
+  passed hidden on Chromium 156.0.8078.4 at 1000 × 760, with header checks at
+  1600/800/390 widths, light/dark and enlarged text; teardown passed.
 
 ### Intentionally not changed
 
-- Runtime, manifest, dependencies, settings schema, privacy boundaries and
-  native Save ownership. All four findings remain open.
+- F2–F4 remain open. Manifest, settings schema, privacy boundaries and native
+  Save ownership are unchanged.
 - Concurrent weather work and the earlier audits' implemented fixes and
   explicit live/native verification gaps.
 - The exact dependency exception and its expiry. It remains an owner decision.
@@ -294,7 +303,7 @@ None. This audit produced documentation and evidence, not remediation.
 
 ### Changed but not fully proven
 
-No runtime changes. The new plan and active-plan index are documentation only.
-Future remediation must record browser states, viewport/theme/zoom evidence,
-regression failures against the baseline, final checks and remaining proof
-limits here before claiming closure.
+- No partially verified runtime fixes at this checkpoint. Live provider refusal
+  timing, native accessibility and hosted CI remain unproven. A failed session
+  write cannot persist a cooldown across worker termination; the running worker
+  still enforces it. Firefox smoke is scheduled for the final integration gate.

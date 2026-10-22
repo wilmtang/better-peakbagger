@@ -71,6 +71,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const BETA_SETTINGS_TABS_KEY = 'bpbBetaSettingsTabs';
     const PEAKBAGGER_HELPER_LEASES_KEY = 'bpbPeakbaggerHelperLeases';
     const PEAKBAGGER_COOLDOWN_KEY = 'bpbPeakbaggerCooldown';
+    const PEAKBAGGER_FALLBACK_COOLDOWN_MS = 5 * 60_000;
+    let peakbaggerCooldownUntil = 0;
     const PEAKBAGGER_HELPER_URL = `${PEAKBAGGER_ORIGIN}/Default.aspx`;
     const PEAKBAGGER_OPERATION_TIMEOUT_MS = 20_000;
     const PEAKBAGGER_CLEANUP_TIMEOUT_MS = 2_000;
@@ -405,7 +407,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const cleanPeakbaggerRetryAt = value => {
         const retryAt = Number(value);
-        return Number.isFinite(retryAt) && retryAt >= now()
+        return Number.isFinite(retryAt) && retryAt > now()
             && retryAt <= now() + 24 * 60 * 60 * 1000
             ? Math.trunc(retryAt)
             : null;
@@ -438,12 +440,33 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return publicError;
     };
 
-    const activePeakbaggerCooldown = async () => {
+    const activePeakbaggerCooldown = () => enqueueMutation(PEAKBAGGER_COOLDOWN_KEY, async () => {
         const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY];
-        const retryAt = cleanPeakbaggerRetryAt(stored?.retryAt);
-        if (stored?.code === 'rate-limit' && retryAt) return { code: 'rate-limit', retryAt };
+        peakbaggerCooldownUntil = Math.max(cleanPeakbaggerRetryAt(peakbaggerCooldownUntil) || 0,
+            stored?.code === 'rate-limit' ? cleanPeakbaggerRetryAt(stored.retryAt) || 0 : 0);
+        if (peakbaggerCooldownUntil) return { code: 'rate-limit', retryAt: peakbaggerCooldownUntil };
         if (stored && typeof storage().remove === 'function') await storage().remove(PEAKBAGGER_COOLDOWN_KEY);
         return null;
+    });
+
+    const retainPeakbaggerCooldown = retryAt => {
+        // Retain synchronously: another admission or concurrent refusal must
+        // never resume traffic while the session write is pending or failed.
+        peakbaggerCooldownUntil = Math.max(cleanPeakbaggerRetryAt(peakbaggerCooldownUntil) || 0,
+            cleanPeakbaggerRetryAt(retryAt) || now() + PEAKBAGGER_FALLBACK_COOLDOWN_MS);
+        return enqueueMutation(PEAKBAGGER_COOLDOWN_KEY, async () => {
+            try {
+                const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY];
+                peakbaggerCooldownUntil = Math.max(peakbaggerCooldownUntil,
+                    stored?.code === 'rate-limit' ? cleanPeakbaggerRetryAt(stored.retryAt) || 0 : 0);
+                await storage().set({
+                    [PEAKBAGGER_COOLDOWN_KEY]: { code: 'rate-limit', retryAt: peakbaggerCooldownUntil },
+                });
+            } catch (error) {
+                console.error('Better Peakbagger: Peakbagger cooldown storage failed', error);
+            }
+            return peakbaggerCooldownUntil;
+        });
     };
 
     const ensurePeakbaggerRequestsAllowed = async () => {
@@ -477,18 +500,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (code === 'cloudflare' && typeof adoptForRecovery === 'function') {
                 await adoptForRecovery();
             }
-            if (code === 'rate-limit' && failure.retryAt) {
-                try {
-                    await storage().set({
-                        [PEAKBAGGER_COOLDOWN_KEY]: { code: 'rate-limit', retryAt: failure.retryAt },
-                    });
-                } catch (error) {
-                    // The in-memory stop remains authoritative for this worker.
-                    // A storage failure must not hide the known rate-limit
-                    // outcome behind a generic capture error.
-                    console.error('Better Peakbagger: Peakbagger cooldown storage failed', error);
-                }
-            }
+            if (code === 'rate-limit') failure.retryAt = await retainPeakbaggerCooldown(failure.retryAt);
             throw failure;
         },
         { signal: options.signal },

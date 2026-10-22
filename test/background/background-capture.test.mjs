@@ -134,6 +134,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     return { [key]: structuredClone(values[key]) };
                 },
                 set: async patch => {
+                    if (patch.bpbPeakbaggerCooldown && faults.cooldownSet) {
+                        throw new Error(faults.cooldownSet);
+                    }
                     if (Object.keys(patch).some(key => key.startsWith('bpbCapturePayload:'))) payloadSetCalls++;
                     checkSessionWrite(patch);
                     sessionSetPatches.push(structuredClone(patch));
@@ -2982,76 +2985,101 @@ test('one Peakbagger challenge stops active and queued sibling captures without 
         'the first refusal stops every request that has not reached the global ceiling');
 });
 
-test('a validated Peakbagger rate limit survives worker restart and resumes only after its time', async () => {
+test('Peakbagger cooldown blocks ordinary and forced capture across tabs and restart', async t => {
+    const start = Date.now();
+    for (const [name, supplied, expected] of [
+        ['missing', undefined, start + 300_000],
+        ['malformed', 'not-a-time', start + 300_000],
+        ['past', start - 1, start + 300_000],
+        ['expired', start, start + 300_000],
+        ['out of range', start + 86_400_001, start + 300_000],
+        ['short provider deadline', start + 30_000, start + 30_000],
+        ['long provider deadline', start + 600_000, start + 600_000],
+    ]) await t.test(name, async () => {
+        const clock = { now: start };
+        let responses = 0;
+        const tabs = new Map([[1, {
+            id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', active: true, status: 'complete',
+        }], [2, {
+            id: 2, windowId: 9, url: 'https://www.strava.com/activities/123', active: false, status: 'complete',
+        }], [50, {
+            id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', active: false, status: 'complete',
+        }]]);
+        const options = {
+            browserTabs: tabs, clock,
+            peakbaggerPagePeakResult: call => ++responses === 1 ? {
+                kind: 'transient', requestedUrl: call.url, url: call.url, status: 429, redirected: false,
+                error: { source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt: supplied },
+            } : {
+                kind: 'ok', requestedUrl: call.url, url: call.url, status: 200, redirected: false,
+                text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+            },
+        };
+        const harness = createHarness(options);
+        const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(limited.error.code, 'rate-limit');
+        for (const worker of [harness, createHarness({ ...options, sessionValues: harness.values })]) {
+            for (const force of [false, true]) {
+                const blocked = await worker.send({ type: 'CAPTURE_START', tabId: 2, force });
+                assert.equal(blocked.phase, 'error');
+                assert.equal(responses, 1, 'no request may escape the cooldown');
+                assert.equal(blocked.error.code, 'rate-limit');
+                assert.equal(blocked.error.retryAt, expected);
+            }
+        }
+        assert.equal(limited.error.retryAt, expected);
+        clock.now = expected + 1;
+        const resumed = await harness.send({ type: 'CAPTURE_START', tabId: 2, force: true });
+        assert.equal(resumed.phase, 'ready');
+        assert.equal(responses, 2);
+    });
+});
+
+test('a failed cooldown write retains the active worker deadline', async () => {
     const clock = { now: Date.now() };
-    const retryAt = clock.now + 60_000;
-    let responses = 0;
-    const tabs = new Map([[1, {
-        id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', active: true, status: 'complete',
-    }], [2, {
-        id: 2, windowId: 9, url: 'https://www.strava.com/activities/123', active: false, status: 'complete',
-    }], [50, {
-        id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', active: false, status: 'complete',
-    }]]);
     const harness = createHarness({
-        browserTabs: tabs,
+        clock, faults: { cooldownSet: 'session write failed' },
+        peakbaggerPagePeakResult: call => ({
+            kind: 'transient', requestedUrl: call.url, url: call.url, status: 429, redirected: false,
+            error: { source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429 },
+        }),
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(harness.values.bpbPeakbaggerCooldown, undefined);
+    const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.equal(blocked.error.code, 'rate-limit');
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1);
+    assert.equal(blocked.error.retryAt, clock.now + 300_000);
+});
+
+test('concurrent Peakbagger refusals retain the longest deadline', async () => {
+    const clock = { now: Date.now() };
+    let release, refusals = 0;
+    const gate = new Promise(resolve => { release = resolve; });
+    const harness = createHarness({
         clock,
-        peakbaggerPagePeakResult: call => ++responses === 1 ? {
-            kind: 'transient',
-            requestedUrl: call.url,
-            url: call.url,
-            status: 429,
-            redirected: false,
-            error: {
-                source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt,
-            },
-        } : {
-            kind: 'ok',
-            requestedUrl: call.url,
-            url: call.url,
-            status: 200,
-            redirected: false,
-            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        browserTabs: new Map([[1, { id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', status: 'complete' }],
+            [2, { id: 2, windowId: 9, url: 'https://www.strava.com/activities/123', status: 'complete' }],
+            [50, { id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', status: 'complete' }]]),
+        beforePeakFetch: () => gate,
+        peakbaggerPagePeakResult: call => {
+            refusals++;
+            return {
+                kind: 'transient', requestedUrl: call.url, url: call.url, status: 429, redirected: false,
+                error: { source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429,
+                    retryAt: clock.now + (call.number === 1 ? 600_000 : 30_000) },
+            };
         },
     });
-
-    const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
-    assert.equal(limited.error.code, 'rate-limit');
-    assert.equal(limited.error.retryAt, retryAt);
-    assert.equal(responses, 1, '429 is never retried');
-
-    const restarted = createHarness({
-        browserTabs: tabs,
-        clock,
-        sessionValues: harness.values,
-        peakbaggerPagePeakResult: call => ++responses === 1 ? {
-            kind: 'transient',
-            requestedUrl: call.url,
-            url: call.url,
-            status: 429,
-            redirected: false,
-            error: {
-                source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt,
-            },
-        } : {
-            kind: 'ok',
-            requestedUrl: call.url,
-            url: call.url,
-            status: 200,
-            redirected: false,
-            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
-        },
-    });
-
-    const stillLimited = await restarted.send({ type: 'CAPTURE_START', tabId: 2, force: false });
-    assert.equal(stillLimited.error.code, 'rate-limit');
-    assert.equal(stillLimited.error.retryAt, retryAt);
-    assert.equal(responses, 1, 'the session cooldown blocks another tab before any request');
-
-    clock.now = retryAt + 1;
-    const resumed = await restarted.send({ type: 'CAPTURE_START', tabId: 2, force: true });
-    assert.equal(resumed.phase, 'ready');
-    assert.equal(responses, 2);
+    const jobs = [1, 2].map(tabId => harness.send({ type: 'CAPTURE_START', tabId, force: false }));
+    await waitForCondition(() => harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length === 2);
+    release();
+    await Promise.all(jobs);
+    assert.equal(refusals, 2, 'both already-in-flight responses reached the worker');
+    assert.equal(harness.values.bpbPeakbaggerCooldown.retryAt, clock.now + 600_000);
+    const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.equal(blocked.error.retryAt, clock.now + 600_000);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 2);
 });
 
 test('Peakbagger transport failures use capture recovery codes at login and summit lookup', async t => {

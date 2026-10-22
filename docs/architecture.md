@@ -242,6 +242,13 @@ matching explanation with an earlier time. This is request-owner state; it does
 not add a persistent provider history or retry uncertain writes. Existing cached
 results stay readable under each owner's cache policy.
 
+The capture worker applies the same five-minute fallback to Peakbagger 429s.
+Its longest active deadline is retained in memory and in `storage.session`,
+serialized across concurrent refusals and admission checks. A failed session
+write preserves the current worker's deadline; surviving a worker restart
+requires that write to succeed. Ordinary and forced captures both wait for
+expiry before the origin scheduler resumes.
+
 ### Sidebar section navigation
 
 Settings remains one continuous document inside the `.content` scroll
