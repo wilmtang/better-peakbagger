@@ -4,7 +4,7 @@
 import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 
 // Provider metadata domains differ from Forecast API selection IDs.
 // https://open-meteo.com/en/docs/model-updates and its published page source.
@@ -59,9 +59,9 @@ export function createPeakModelUpdateClient({ fetchFn = globalThis.fetch, now = 
             const cancel = () => { deadline.abort(); rejectCancel(cancelled()); };
             signal?.addEventListener('abort', cancel, { once: true });
             const run = promise => deadline.run(Promise.race([promise, cancellation]));
-            let result;
+            let result, response;
             try {
-                const response = await run(fetchFn(`https://api.open-meteo.com/data/${domain}/static/meta.json`, {
+                response = await run(fetchFn(`https://api.open-meteo.com/data/${domain}/static/meta.json`, {
                     credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal: deadline.signal,
                 }));
                 if (response.status === 429) limitedUntil = rateLimitError('Open-Meteo', response, now()).retryAt;
@@ -72,6 +72,7 @@ export function createPeakModelUpdateClient({ fetchFn = globalThis.fetch, now = 
                 if (signal?.aborted || error.name === 'AbortError') throw cancelled();
                 result = { data: null };
             } finally {
+                cancelResponseBody(response);
                 deadline.clear(); signal?.removeEventListener('abort', cancel);
             }
             if (signal?.aborted) throw cancelled();

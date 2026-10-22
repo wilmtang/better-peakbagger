@@ -5,7 +5,7 @@ import { sentinelTileUrl } from './sentinel-core.js';
 import { overlayTileUrl, tileBounds, publicLandTileSources, mapOverlayCoverage } from './map-overlay-providers.js';
 import { drawAlbertaLand } from './canadian-land.js';
 import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.js';
 
 const abortError = () => new DOMException('Cancelled.', 'AbortError');
@@ -50,9 +50,10 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
     const bitmap = async (url, signal, bcCoordinates) => {
         const deadline = requestDeadline.createRequestDeadline();
         const abort = () => deadline.abort(); signal.addEventListener('abort', abort, { once: true });
+        let response;
         try {
             if (signal.aborted) throw abortError();
-            const response = await deadline.run(bcCoordinates && fetchBCTile ? fetchBCTile(bcCoordinates, { signal: deadline.signal })
+            response = await deadline.run(bcCoordinates && fetchBCTile ? fetchBCTile(bcCoordinates, { signal: deadline.signal })
                 : fetchImpl(url, { signal: deadline.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }));
             if (response.status === 429) throw rateLimitError('Map service', response);
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw Object.assign(new Error('Map tiles unavailable.'),
@@ -67,7 +68,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                     if (bytes > 4 * 1024 * 1024) throw new Error('Map tile too large.');
                     chunks.push(part.value);
                 }
-            } finally { void reader.cancel().catch(() => {}); }
+            } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
             if (signal.aborted) throw abortError();
             const image = await deadline.run(createImageBitmap(new Blob(chunks)).then(decoded => {
                 if (deadline.expired || signal.aborted) { decoded.close(); throw abortError(); }
@@ -76,7 +77,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
             if (signal.aborted) { image.close(); throw abortError(); }
             if (image.width > 1024 || image.height > 1024) { image.close(); throw new Error('Map tile too large.'); }
             return image;
-        } finally { signal.removeEventListener('abort', abort); deadline.clear(); }
+        } finally { cancelResponseBody(response); signal.removeEventListener('abort', abort); deadline.clear(); }
     };
     return {
         setScenes(next) { generation++; scenes = next.slice(0, 8); cancel('sentinel'); },

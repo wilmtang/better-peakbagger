@@ -5,7 +5,7 @@
 
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const STYLE_MAX_BYTES = 2 * 1024 * 1024;
@@ -173,8 +173,9 @@ const createVectorStyleLoader = ({
     const request = async () => {
         if (limited?.retryAt > Date.now()) throw limited;
         const deadline = Deadline.createRequestDeadline(timeoutMs);
+        let response;
         try {
-            const response = await deadline.run(fetch(requestedUrl, {
+            response = await deadline.run(fetch(requestedUrl, {
                 credentials: 'omit',
                 referrerPolicy: 'no-referrer',
                 signal: deadline.signal,
@@ -204,6 +205,7 @@ const createVectorStyleLoader = ({
             if (!normalized) throw new Error('Unexpected vector style shape');
             return normalized;
         } finally {
+            cancelResponseBody(response);
             deadline.clear();
         }
     };

@@ -21,7 +21,7 @@
 //     else is unclimbed (pink); peak ids can be negative (provisional peaks).
 
 import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 
 // Defensive cap on rendered markers; when the feed returns more, the most
 // prominent peaks win. The native map draws everything, but a pitched 3D
@@ -152,8 +152,9 @@ const createClient = iframeSrc => {
             const controller = new AbortController();
             inflight = controller;
             const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+            let response;
             try {
-                const response = await fetch(url, {
+                response = await fetch(url, {
                     signal: controller.signal,
                     credentials: 'same-origin',
                     headers: { Accept: 'text/xml' }
@@ -178,6 +179,7 @@ const createClient = iframeSrc => {
                 // clears the markers until the next camera settle.
                 return controller === inflight ? [] : null;
             } finally {
+                cancelResponseBody(response);
                 clearTimeout(timeout);
                 if (inflight === controller) inflight = null;
             }

@@ -6,7 +6,7 @@
 // space is tight, and a cache miss always falls back to the network.
 
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 
 const CACHE_NAME = 'bpb-mapterhorn-dem-v1';
 // The status a tile host returns for ground it does not cover. Mapterhorn's
@@ -523,8 +523,9 @@ const create = ({
             owner.cancel = () => reject(Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' }));
         });
         owner.cancelled.catch(() => {});
+        let response;
         owner.promise = (async () => {
-            const response = await deadline.run(request(remoteUrl, {
+            response = await deadline.run(request(remoteUrl, {
                 signal: deadline.signal,
                 credentials: 'omit',
                 referrerPolicy: 'no-referrer'
@@ -540,6 +541,7 @@ const create = ({
             if (!closed && limitBytes > 0) enqueueStore(remoteUrl, data, responseHeader(response, 'content-type'));
             return data;
         })().finally(() => {
+            cancelResponseBody(response);
             owner.settled = true;
             deadline.clear();
             if (inFlight.get(remoteUrl) === owner) inFlight.delete(remoteUrl);

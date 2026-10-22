@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { temporaryHttpStatus } from '../net/retry-transient.js';
 import regionData from './canadian-land-regions.json' with { type: 'json' };
 
@@ -99,10 +99,11 @@ export async function drawAlbertaLand({ context, bbox, fetchImpl, signal }) {
     const deadline = requestDeadline.createRequestDeadline();
     const abort = () => deadline.abort(); signal.addEventListener('abort', abort, { once: true });
     let vertices = 0; const seen = new Set(), span = bbox[2] - bbox[0];
+    let response;
     try {
         for (let page = 0; page < 4; page++) {
             if (signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
-            const response = await deadline.run(fetchImpl(albertaLandTileUrl(bbox, page * 500), {
+            response = await deadline.run(fetchImpl(albertaLandTileUrl(bbox, page * 500), {
                 signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
             }));
             if (response.status === 429) throw rateLimitError('Alberta map service', response);
@@ -132,5 +133,5 @@ export async function drawAlbertaLand({ context, bbox, fetchImpl, signal }) {
             if (data.features.length !== 500) throw new Error('Incomplete Alberta parcels.');
         }
         throw new Error('Too many Alberta parcels. Zoom in.');
-    } finally { signal.removeEventListener('abort', abort); deadline.clear(); }
+    } finally { cancelResponseBody(response); signal.removeEventListener('abort', abort); deadline.clear(); }
 }

@@ -4,7 +4,7 @@ import { BC_LAND_PERMISSION, bcLandTileUrl, landCoverage } from '../maps/canadia
 import { tileBounds } from '../maps/map-overlay-providers.js';
 import { readBCTileCoordinates } from '../maps/bc-land-client.js';
 import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { temporaryHttpStatus } from '../net/retry-transient.js';
 
 export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = () => false, fetchImpl = globalThis.fetch }) {
@@ -23,11 +23,11 @@ export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = 
         if (jobs.has(id) || jobs.size >= 16) return { ok: false, code: 'busy' };
         if (retryAt > Date.now()) return { ok: false, code: 'rate-limit', retryAt };
         const deadline = requestDeadline.createRequestDeadline(); jobs.set(id, deadline);
-        let reader;
+        let reader, response;
         try {
             if (!await deadline.run(ext.permissions.contains(BC_LAND_PERMISSION))) return { ok: false, code: 'bc-permission-required' };
             if (deadline.signal.aborted) return { ok: false };
-            const response = await deadline.run(fetchImpl(bcLandTileUrl(bbox), { signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' }));
+            response = await deadline.run(fetchImpl(bcLandTileUrl(bbox), { signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' }));
             if (response.status === 429) {
                 // Retry-After can be absent or invalid. Share a local backoff
                 // across tabs, and never let an older flight shorten it.
@@ -48,7 +48,10 @@ export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = 
             let encoded = ''; for (let i = 0; i < length; i += 8192) encoded += String.fromCharCode(...bytes.subarray(i, i + 8192));
             return { ok: true, image: btoa(encoded) };
         } catch (error) { return { ok: false, ...(error.name === 'TimeoutError' || error instanceof TypeError ? { code: 'temporary' } : {}) }; }
-        finally { if (reader) void reader.cancel().catch(() => {}); deadline.clear(); jobs.delete(id); }
+        finally {
+            if (reader) { void reader.cancel().catch(() => {}); reader.releaseLock(); }
+            cancelResponseBody(response); deadline.clear(); jobs.delete(id);
+        }
     };
     const cancel = (message, sender) => {
         if (validSender(sender) && validId(message.requestId)) jobs.get(key(message, sender))?.abort();

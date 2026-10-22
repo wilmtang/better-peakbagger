@@ -3,7 +3,7 @@
 
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.js';
 import { validateSnotelStations, validateSnotelData } from './snotel-data.js';
 
@@ -26,8 +26,9 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
         const cancel = () => { deadline.abort(); rejectCancel(aborted()); };
         signal?.addEventListener('abort', cancel, { once: true });
         const run = promise => deadline.run(Promise.race([promise, cancelled]));
+        let response;
         try {
-            const response = await run(fetchFn(url.href, { credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
+            response = await run(fetchFn(url.href, { credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
                 cache: 'no-store', signal: deadline.signal }));
             if (response.status === 429) {
                 limited = rateLimitError('NRCS', response, now());
@@ -39,6 +40,7 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
             const text = await run(readBoundedResponseText(response, { maxBytes, maxChars: maxBytes, signal: deadline.signal, label: 'NRCS response' }));
             return JSON.parse(text);
         } finally {
+            cancelResponseBody(response);
             signal?.removeEventListener('abort', cancel); deadline.clear();
         }
     };

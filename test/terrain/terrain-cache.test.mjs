@@ -503,7 +503,7 @@ test('a zero DEM cache limit clears owned best-effort storage', async () => {
 test('DEM response size accepts the exact ceiling and rejects an honest byte over before reading', async () => {
     const { dom, module } = loadCacheModule();
     const exact = makeWebp(module.MAX_TILE_BYTES, 3);
-    let oversizedBodyReads = 0;
+    let oversizedBodyReads = 0, oversizedBodyCancels = 0;
     const responses = [
         webpResponse(exact, {
             'content-length': String(module.MAX_TILE_BYTES),
@@ -516,9 +516,9 @@ test('DEM response size accepts the exact ceiling and rejects an honest byte ove
                 'content-type': 'image/webp',
                 'content-length': String(module.MAX_TILE_BYTES + 1)
             })[name.toLowerCase()] ?? null },
-            get body() {
-                oversizedBodyReads++;
-                return new ReadableStream();
+            body: {
+                getReader() { oversizedBodyReads++; throw new Error('Oversized bodies must not be read.'); },
+                cancel() { oversizedBodyCancels++; return Promise.resolve(); },
             }
         }
     ];
@@ -537,6 +537,7 @@ test('DEM response size accepts the exact ceiling and rejects an honest byte ove
         /exceeded.*byte limit/i
     );
     assert.equal(oversizedBodyReads, 0, 'an honest oversized response must be rejected before its body is read');
+    assert.equal(oversizedBodyCancels, 1, 'metadata rejection still cancels the unread stream');
     dom.window.close();
 });
 

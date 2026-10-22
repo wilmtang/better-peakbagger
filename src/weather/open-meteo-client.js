@@ -5,7 +5,7 @@ import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { WEATHER_MODELS } from './weather-models.js';
 import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const fields = {
@@ -151,8 +151,9 @@ function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 
         const run = promise => deadline.run(Promise.race([promise, cancellation]));
         const flight = { signal, promise: null };
         flight.promise = (async () => {
+            let response;
             try {
-                const response = await run(fetchFn(url, { credentials: 'omit', referrerPolicy: 'no-referrer',
+                response = await run(fetchFn(url, { credentials: 'omit', referrerPolicy: 'no-referrer',
                     redirect: 'error', cache: 'no-store', signal: deadline.signal }));
                 if (response.status === 429) { limited = rateLimitError('Open-Meteo', response, now()); throw limited; }
                 if ([400, 404].includes(response.status)) throw fail('unavailable', Array.isArray(model)
@@ -173,6 +174,7 @@ function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 
                 if (requestDeadline.isTimeout(error)) throw fail('timeout', 'Weather took too long to load. Try again.');
                 throw fail('network', 'Weather could not be loaded. Check your connection and try again.');
             } finally {
+                cancelResponseBody(response);
                 deadline.clear(); signal?.removeEventListener('abort', cancel);
                 if (flights.get(key) === flight) flights.delete(key);
             }

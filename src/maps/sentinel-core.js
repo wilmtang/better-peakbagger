@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 
 export const SENTINEL_NAME = 'Sentinel-2 (experimental)';
 export const SENTINEL_CODE = 'BPB_SENTINEL';
@@ -145,10 +145,11 @@ export const searchSentinel = async (view, { signal, fetchImpl = globalThis.fetc
     aborted.catch(() => {});
     const run = promise => deadline.run(Promise.race([promise, aborted]));
     const features = [];
+    let response;
     try {
         if (signal?.aborted) throw Object.assign(new Error('Satellite search cancelled.'), { name: 'AbortError' });
         for (const bbox of boxes) {
-            const response = await run(fetchImpl(SEARCH_URL, { method: 'POST', mode: 'cors', credentials: 'omit',
+            response = await run(fetchImpl(SEARCH_URL, { method: 'POST', mode: 'cors', credentials: 'omit',
                 headers: { 'content-type': 'application/json', accept: 'application/geo+json' },
                 body: JSON.stringify({ collections: ['sentinel-2-l2a'], bbox,
                     datetime: `${new Date(now - 30 * DAY).toISOString()}/${new Date(now).toISOString()}`, limit: 100,
@@ -171,7 +172,7 @@ export const searchSentinel = async (view, { signal, fetchImpl = globalThis.fetc
                         text += decoder.decode(chunk.value, { stream: true });
                     }
                     text += decoder.decode();
-                } finally { void reader.cancel().catch(() => {}); }
+                } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
             } else {
                 text = await run(response.text());
                 if (text.length > MAX_BODY) throw new Error('Satellite search is too large. Zoom in.');
@@ -185,5 +186,5 @@ export const searchSentinel = async (view, { signal, fetchImpl = globalThis.fetc
             const time = Date.parse(feature?.properties?.datetime);
             return time >= now - 30 * DAY && time <= now;
         }), view);
-    } finally { removeAbortListener(); deadline.clear(); }
+    } finally { cancelResponseBody(response); removeAbortListener(); deadline.clear(); }
 };
