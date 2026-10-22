@@ -668,7 +668,8 @@ async function main() {
         await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
         await page.locator('.bpb-layers-trigger').click();
         await page.locator('[data-layer="sentinel"] input').check();
-        await page.locator('[data-layer="sentinel"] button').click();
+        const sentinelDetails = page.locator('[data-layer="sentinel"] button');
+        if (await sentinelDetails.getAttribute('aria-expanded') !== 'true') await sentinelDetails.click();
         const capturePicker = page.locator('[aria-label="Sentinel-2 capture"]');
         await page.waitForFunction(() => document.querySelector('[aria-label="Sentinel-2 capture"]').options.length > 1);
         const dateKey = await capturePicker.locator('option').nth(1).getAttribute('value');
