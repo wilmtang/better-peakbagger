@@ -33,6 +33,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     let suspendTimer = null;
     let frameLoaded = false;
     let frameGeneration = 0;
+    let launchRevision = 0;
     let awaitingFrameReady = false;
     let latestLayers = null;
     let terrainEnabled = false;
@@ -160,6 +161,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     };
 
     const fail = reason => {
+        launchRevision++;
         removeFrame();
         postToPage('error', { reason: ALLOWED_FAILURES.has(reason) ? reason : 'renderer' });
     };
@@ -213,6 +215,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     const applySettings = next => {
         terrainEnabled = next && next.enable3dMap === true;
         terrainTheme = next && typeof next.theme === 'string' ? next.theme : 'system';
+        if (!terrainEnabled) launchRevision++;
         if (!terrainEnabled && frame) fail('unavailable');
     };
 
@@ -391,9 +394,11 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     });
 
     const createFrame = async data => {
+        const revision = ++launchRevision;
         const activation = await activationFor('init');
-        if (!activation) return;
+        if (!activation || revision !== launchRevision) return;
         await settingsReady;
+        if (revision !== launchRevision) return;
         if (!terrainEnabled) {
             fail('unavailable');
             return;
@@ -453,6 +458,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 })();
             } else if (data.type === 'init') createFrame(data);
             else if (data.type === 'destroy') {
+                launchRevision++;
                 if (suspended) {
                     // Already parked at opacity 0; nothing more to do.
                 } else if (frame && frameLoaded) {

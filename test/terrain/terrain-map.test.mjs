@@ -551,6 +551,38 @@ test('disabling 3D tears down even a suspended frame immediately', async () => {
     ctx.dom.window.close();
 });
 
+test('cancelling 3D while activation is pending cannot mount an abandoned frame', async () => {
+    const dom = new JSDOM('<!doctype html><body><div id="bpb-map-viewport"></div></body>', {
+        url: 'https://www.peakbagger.com/peak.aspx?pid=1', runScripts: 'outside-only',
+    });
+    const { window } = dom;
+    const pending = [];
+    window.chrome = chromeWith({ enable3dMap: true });
+    Object.defineProperty(window.chrome.runtime, 'sendMessage', {
+        value: () => new Promise(resolve => pending.push(resolve)),
+    });
+    window.postMessage = () => {};
+    window.eval(bridgeBundle);
+    const dispatch = type => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toCS', type, focus: [48.7, -121.8] },
+    }));
+    const settle = () => new Promise(resolve => window.setTimeout(resolve, 0));
+    try {
+        await settle();
+        armTerrain(window); dispatch('init'); dispatch('destroy');
+        pending.shift()({ ok: true, token: 'cancelled-activation', expiresAt: Date.now() + 10000 });
+        await settle();
+        assert.equal(window.document.getElementById('bpb-terrain-frame'), null,
+            'a late activation cannot reopen a cancelled view');
+
+        armTerrain(window); dispatch('init');
+        pending.shift()({ ok: true, token: 'fresh-activation', expiresAt: Date.now() + 10000 });
+        await settle();
+        assert.ok(window.document.getElementById('bpb-terrain-frame'), 'a new user attempt still opens 3D');
+    } finally { dispatch('destroy'); dom.window.close(); }
+});
+
 test('3D terrain bridge refuses forged page requests without trusted activation', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
