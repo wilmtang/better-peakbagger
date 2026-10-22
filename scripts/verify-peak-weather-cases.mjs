@@ -18,7 +18,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const card = '#bpb-peak-weather';
     const assertHourlyTabOrder = async () => assert.deepEqual(
         await evaluate(() => [...document.querySelectorAll('.bpb-week-day[open] [data-metric]')].map(tab => tab.textContent)),
-        ['Conditions', 'Temperature', 'Rain/snow', 'Clouds', 'Wind', 'Gusts']);
+        ['Conditions', 'Temperature', 'Rain/snow', 'Snowfall', 'Freezing level', 'Clouds', 'Wind', 'Gusts']);
     const openPage = async (kind = 'map') => {
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=${kind}`);
         await wait(() => document.getElementById('bpb-peak-weather'), 'real isolated peak weather bundle mounts');

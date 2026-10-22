@@ -99,7 +99,7 @@ try {
             if (peakMode) body.hourly.precipitation.fill(null);
             else body.hourly.precipitation[40] = null;
         }
-        if (mode === 'missing-cloud') delete body.hourly.cloud_cover;
+        if (mode === 'missing-cloud') for (const field of ['cloud_cover', 'snowfall', 'freezing_level_height']) delete body.hourly[field];
         if (mode === 'empty') Object.entries(body.hourly).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
         const replyBody = peakMode ? weatherModelFixture(body, requested.searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
             Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400]))) : body;

@@ -63,13 +63,16 @@ const SYMBOLS = {
     temperature: { metric: '°C', imperial: '°F' },
     precipitation: { metric: 'mm', imperial: 'in' },
     wind: { metric: 'km/h', imperial: 'mph' },
-    cloud: { metric: '%', imperial: '%' }
+    cloud: { metric: '%', imperial: '%' },
+    snowfall: { metric: 'cm', imperial: 'in' },
+    freezing: { metric: 'm', imperial: 'ft' }
 };
 const symbol = (measurement, system) => SYMBOLS[measurement]?.[system] || '';
 const convertWeather = (value, measurement, system) => system !== IMPERIAL || measurement === 'cloud' ? value
     : measurement === 'temperature' ? value * 9 / 5 + 32
-        : measurement === 'precipitation' ? value / 25.4 : value / (METERS_PER_MILE / 1000);
-const weatherDigits = (measurement, system) => measurement === 'precipitation' ? system === IMPERIAL ? 2 : 1 : 0;
+        : measurement === 'precipitation' ? value / 25.4 : measurement === 'snowfall' ? value / 2.54
+            : measurement === 'freezing' ? feetFromMeters(value) : value / (METERS_PER_MILE / 1000);
+const weatherDigits = (measurement, system) => measurement === 'precipitation' ? system === IMPERIAL ? 2 : 1 : measurement === 'snowfall' ? 1 : 0;
 const formatWeather = (value, measurement, system) => Number.isFinite(value)
     ? `${convertWeather(value, measurement, system).toFixed(weatherDigits(measurement, system))}${measurement === 'temperature' || measurement === 'cloud' ? '' : ' '}${symbol(measurement, system)}`.replaceAll('-', '−')
     : '—';

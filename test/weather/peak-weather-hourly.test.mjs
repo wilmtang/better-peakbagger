@@ -83,3 +83,20 @@ test('shared hourly columns retain instantaneous archive gusts at DST and fracti
         if (lon === 85.3) { assert.equal(rows[0].gust, undefined); assert.equal(rows[0].rain.value, .75); }
     }
 });
+
+test('snowfall depth accumulates preceding hours across DST and fractional day boundaries', () => {
+    for (const [lat, lon, date, hours] of [[46.85, -121.75, '2024-11-03', 25], [46.85, -121.75, '2024-03-10', 23], [27.7, 85.3, '2024-11-04', 24]]) {
+        const window = weatherDayWindow(date, mountainTime.resolve(lat, lon), now);
+        const samples = series(window).map(sample => ({ ...sample, snowfall: 1, freezing: 3000 }));
+        const snow = peakHourlySeries(window, samples, 'snowfall');
+        assert.equal(snow.reduce((sum, row) => sum + row.value, 0), hours);
+        assert.equal(snow.at(-1).time, window.end);
+        assert.equal(peakHourlySeries(window, samples, 'freezing').at(-1).time < window.end, true);
+        const table = peakHourlyConditions(window, samples);
+        assert.equal(table.reduce((sum, row) => sum + row.snowfall.value, 0), hours);
+        if (lon === 85.3) { assert.equal(snow[0].value, .75); assert.equal(snow.at(-1).value, .25); }
+        samples[2].snowfall = null;
+        const missing = peakHourlySeries(window, samples, 'snowfall');
+        assert.ok(missing.some(row => row.value === null), 'missing snow stays unavailable');
+    }
+});

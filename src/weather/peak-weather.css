@@ -78,10 +78,27 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
 /* Reserve the selected label's width while retaining regular inactive text. */
 #bpb-peak-weather :is(.bpb-week-tabs, .bpb-week-periods) button::after { content: attr(data-label); font-weight: 600; visibility: hidden; pointer-events: none; grid-area: 1 / 1; }
 #bpb-peak-weather .bpb-week-tab-label { grid-area: 1 / 1; }
+#bpb-peak-weather .bpb-week-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container bpb-week (max-width: 440px) {
+    #bpb-peak-weather .bpb-week-tabs button { padding-inline: 3px; }
+    #bpb-peak-weather .bpb-week-tabs [data-compact] { font-size: 0; }
+    #bpb-peak-weather .bpb-week-tabs [data-compact]::before { content: attr(data-compact); font-size: 12px; }
+    #bpb-peak-weather .bpb-week-tabs [data-metric="temperature"]::after { content: 'Temp'; }
+    #bpb-peak-weather .bpb-week-tabs [data-metric="freezing"]::after { content: 'Freezing'; }
+}
+@container bpb-week (max-width: 280px) { #bpb-peak-weather .bpb-week-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 #bpb-peak-weather .bpb-week-panel { min-width: 0; }
 #bpb-peak-weather .bpb-week-readout { min-height: 36px; display: flex; align-items: center; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 #bpb-peak-weather .bpb-week-chart { width: 100%; min-width: 0; border-radius: 7px; }
 #bpb-peak-weather .bpb-week-chart svg { display: block; width: 100%; height: 184px; overflow: hidden; }
+#bpb-peak-weather .bpb-week-snowfall { fill: var(--weather-plot, var(--week-accent)); opacity: .8; }
+#bpb-peak-weather .bpb-week-reference { stroke: var(--week-sub); stroke-width: 1; stroke-dasharray: 5 4; }
+#bpb-peak-weather .bpb-week-chart-help { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; gap: 8px; margin: 8px 0; }
+#bpb-peak-weather .bpb-week-chart-help > p { margin: 0; }
+#bpb-peak-weather .bpb-week-info { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--week-sub); font-size: 18px; }
+#bpb-peak-weather .bpb-week-info[aria-expanded="true"] { color: var(--week-accent); background: var(--week-soft); }
+#bpb-peak-weather .bpb-week-explanation { position: absolute; z-index: 3; right: 0; width: min(340px, 100%, calc(100vw - 24px)); padding: 12px; border: 1px solid var(--week-border); border-radius: 8px; background: var(--week-bg); color: var(--week-text); box-shadow: 0 3px 12px #0002; font-size: 12px; overflow-wrap: anywhere; }
+@media (pointer: coarse) { #bpb-peak-weather .bpb-week-chart-help { grid-template-columns: minmax(0, 1fr) 44px; } #bpb-peak-weather .bpb-week-info { width: 44px; height: 44px; } }
 #bpb-peak-weather .bpb-week-chart-empty { min-height: 184px; margin: 0; display: grid; place-items: center; padding: 30px 12px; text-align: center; color: var(--week-sub); }
 #bpb-peak-weather .bpb-week-axis { fill: var(--week-sub); font: 10px system-ui, sans-serif; }
 #bpb-peak-weather .bpb-week-grid { stroke: var(--week-border); stroke-width: 1; }

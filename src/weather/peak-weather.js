@@ -156,7 +156,8 @@ export function mountPeakWeather() {
         }));
         select.value = choices[period];
     };
-    const unitSystem = (measurement = 'elevation') => units.resolveUnits(preference, () => readPeakUnitSystem(document), measurement);
+    const unitSystem = (measurement = 'elevation') => units.resolveUnits(preference, () => readPeakUnitSystem(document),
+        measurement === 'snowfall' ? 'precipitation' : measurement === 'freezing' ? 'elevation' : measurement);
     const format = (value, kind) => units.formatWeather(value, kind, unitSystem(kind));
     const unitSignature = () => ['elevation', 'temperature', 'precipitation', 'wind'].map(unitSystem).join('/');
     const renderLabels = week => {
@@ -206,6 +207,7 @@ export function mountPeakWeather() {
         if (hourlyCharts.has(detail)) return;
         state ??= hourlyStates.get(detail.dataset.date);
         const chart = createPeakHourlyChart({ container, day, samples: current.data[period].samples, zone, metric: state?.metric ?? hourlyMetric, format,
+            referenceElevation: subject.elevation, referenceLabel: subject === summit ? 'Summit' : 'Location',
             onMetric: metric => {
                 hourlyMetric = metric;
                 // Persist explicit choices only; mounting or redrawing a day
@@ -220,7 +222,8 @@ export function mountPeakWeather() {
         const focused = days.contains(document.activeElement) ? document.activeElement : null;
         const focusedDate = focused?.closest('details')?.dataset.date;
         const focusSelector = focused?.matches('summary') ? 'summary' : focused?.matches('.bpb-week-chart') ? '.bpb-week-chart'
-            : focused?.matches('.bpb-week-conditions') ? '.bpb-week-conditions' : focused?.dataset.metric ? `[data-metric="${focused.dataset.metric}"]` : null;
+            : focused?.matches('.bpb-week-conditions') ? '.bpb-week-conditions' : focused?.matches('.bpb-week-info') ? '.bpb-week-info'
+                : focused?.dataset.metric ? `[data-metric="${focused.dataset.metric}"]` : null;
         const summaries = current.days[period], forecast = period === 'forecast';
         const model = current.models[period], data = current.data[period];
         const forecastLabel = `${current.window.forecast.days.length}-day forecast`;

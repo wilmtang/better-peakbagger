@@ -315,7 +315,7 @@ test('Conditions is the initial hourly tab and rendering never writes a local pr
 });
 
 test('every hourly data tab survives navigation; keyboard choices persist without render writes', async () => {
-    for (const metric of ['temperature', 'precipitation', 'cloud', 'wind', 'gust', 'code']) {
+    for (const metric of ['temperature', 'precipitation', 'snowfall', 'freezing', 'cloud', 'wind', 'gust', 'code']) {
         const localModels = { bpbPeakWeatherHourlyMetric: 'wind' }, writes = [];
         const env = setup({ localModels, saveModels: async values => { writes.push({ ...values }); Object.assign(localModels, values); } });
         try {
@@ -393,6 +393,60 @@ test('clouds with no readings show an unavailable state while core weather remai
         env.doc.querySelector('[data-metric="temperature"]').click();
         assert.ok(chart.querySelector('.bpb-week-line'));
         assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('snowfall depth and freezing altitude share the response, use independent units and expose dismissible information', async () => {
+    const env = setup({ storedSettings: { units: 'imperial', precipitationUnits: 'metric', elevationUnits: 'metric' } });
+    try {
+        await settled(env, { past: false });
+        const params = new URL(env.requests[0].url).searchParams;
+        for (const key of ['snowfall', 'freezing_level_height']) assert.ok(params.get('hourly').split(',').includes(key));
+        env.doc.querySelector('.bpb-week-day > summary').click();
+        const day = env.doc.querySelector('.bpb-week-day[open]');
+        day.querySelector('[data-metric="snowfall"]').click();
+        assert.ok(day.querySelectorAll('.bpb-week-snowfall').length);
+        assert.match(day.querySelector('.bpb-week-readout').textContent, /New snow depth.*6.0 cm total/);
+        const hint = day.querySelector('.bpb-week-chart-help > p').textContent;
+        const info = day.querySelector('.bpb-week-info'), explanation = day.querySelector('.bpb-week-explanation');
+        info.focus(); info.click();
+        assert.equal(info.getAttribute('aria-expanded'), 'true');
+        assert.equal(explanation.hidden, false);
+        assert.match(explanation.textContent, /depth of newly fallen snow.*not its water equivalent/);
+        env.doc.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        assert.equal(explanation.hidden, true); assert.equal(env.doc.activeElement, info);
+        info.click(); env.doc.body.dispatchEvent(new env.win.Event('pointerdown', { bubbles: true }));
+        assert.equal(explanation.hidden, true);
+        day.querySelector('[data-metric="freezing"]').click();
+        assert.ok(day.querySelector('.bpb-week-reference'));
+        assert.match(day.querySelector('.bpb-week-chart svg').textContent, /Summit 4391 m/);
+        assert.equal(day.querySelector('.bpb-week-chart-help > p').textContent, hint, 'all graph hints keep the same text');
+        assert.match(day.querySelector('.bpb-week-readout').textContent, /m/);
+        assert.doesNotMatch(day.querySelector('.bpb-week-readout').textContent, /ft/);
+        day.querySelector('[data-metric="code"]').click();
+        assert.ok(day.querySelector('[data-weather-row="snowfall"]'));
+        assert.ok(day.querySelector('[data-weather-row="freezing"]'));
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('unavailable snowfall and freezing level retain complete core weather and focusable fallback tabs', async () => {
+    const env = setup({ fetchFn: async url => {
+        const body = await (await reply(url)).json();
+        delete body.hourly.snowfall; delete body.hourly.freezing_level_height;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env); assert.equal(env.doc.querySelectorAll('.bpb-week-partial').length, 0);
+        env.doc.querySelector('.bpb-week-day > summary').click();
+        for (const key of ['snowfall', 'freezing']) {
+            env.doc.querySelector(`[data-metric="${key}"]`).click();
+            assert.equal(env.doc.querySelector('.bpb-week-chart-empty').hidden, false);
+            assert.equal(env.doc.querySelector('.bpb-week-chart').tabIndex, -1);
+            assert.equal(env.doc.querySelector('.bpb-week-info').disabled, false);
+        }
+        env.doc.querySelector('[data-metric="temperature"]').click();
+        assert.ok(env.doc.querySelector('.bpb-week-line')); assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
 
@@ -935,7 +989,7 @@ test('hourly tabs, keyboard sampling, hover and pinned readings reuse data and r
         day.querySelector('[data-metric="temperature"]').click();
         const temperature = day.querySelector('[data-metric="temperature"]'), rain = day.querySelector('[data-metric="precipitation"]');
         const tabs = [...day.querySelectorAll('[role="tab"]')];
-        assert.deepEqual(tabs.map(tab => tab.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Clouds', 'Wind', 'Gusts']);
+        assert.deepEqual(tabs.map(tab => tab.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Snowfall', 'Freezing level', 'Clouds', 'Wind', 'Gusts']);
         assert.deepEqual(tabs.map(tab => tab.dataset.label), tabs.map(tab => tab.textContent));
         assert.deepEqual(tabs.map(tab => tab.getAttribute('aria-label')), tabs.map(tab => tab.textContent));
         assert.equal(temperature.getAttribute('aria-selected'), 'true'); assert.equal(temperature.tabIndex, 0); assert.equal(rain.tabIndex, -1);
@@ -1012,7 +1066,7 @@ test('horizontal Conditions exposes all measurements, interval values and retain
         env.doc.querySelector('[data-metric="code"]').click();
         const grid = env.doc.querySelector('.bpb-week-conditions');
         assert.deepEqual([...grid.querySelectorAll('.bpb-weather-hourly-table > tbody > tr > th')].map(node => node.textContent),
-            ['Conditions', 'Cloud cover', 'Temperature', 'Feels like', 'Rain/snow', 'Wind', 'Gusts', 'Wind from']);
+            ['Conditions', 'Cloud cover', 'Temperature', 'Feels like', 'Rain/snow', 'New snow depth', 'Freezing level', 'Wind', 'Gusts', 'Wind from']);
         assert.equal(grid.querySelectorAll('.bpb-weather-conditions-hour').length, 24);
         assert.match(grid.querySelector('[data-weather-row="apparent"]').textContent, /18°F/);
         assert.match(grid.querySelector('[data-weather-row="direction"]').textContent, /SW/);
@@ -1162,7 +1216,7 @@ test('forecast and history both show sixteen days and share one response, retain
         const first = env.doc.querySelector('.bpb-week-day'); first.open = true;
         await waitFor(() => first.querySelector('[role="tabpanel"]'));
         first.querySelector('[data-metric="temperature"]').click();
-        assert.deepEqual([...first.querySelectorAll('[role="tab"]')].map(tab => tab.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Clouds', 'Wind', 'Gusts']);
+        assert.deepEqual([...first.querySelectorAll('[role="tab"]')].map(tab => tab.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Snowfall', 'Freezing level', 'Clouds', 'Wind', 'Gusts']);
         assert.equal(first.querySelectorAll('.bpb-week-point').length, 24);
         assert.ok([...first.querySelectorAll('.bpb-week-point')].some(point => Number(point.dataset.time) > env.win.Date.now()));
         first.querySelector('[data-metric="precipitation"]').click();
