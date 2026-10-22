@@ -223,6 +223,24 @@ request, and native map-marker polling treats an aborted superseded camera
 request as normal. Neither exception duplicates the user-facing Peakbagger
 error mapper.
 
+### Provider response lifetime and cooldowns
+
+Read-only weather, snow, satellite, public-land, marker, style and DEM request
+owners relinquish unread responses on every exit, including HTTP and metadata
+rejection before a bounded reader is acquired. Use the best-effort
+`cancelResponseBody` helper in `src/net/rate-limit.js`; do not wait on a remote
+stream's cancellation to report the original result. Explicit stream readers
+also release their locks. Consuming a body successfully preserves its parsed
+data and existing cache policy.
+
+Weather, model-update metadata, snow, vector-style and DEM clients, and the BC
+tile worker apply a five-minute local backoff to a confirmed 429 without a
+usable reset header. A valid bounded provider reset still takes precedence.
+Concurrent responses cannot shorten an existing longer deadline or replace its
+matching explanation with an earlier time. This is request-owner state; it does
+not add a persistent provider history or retry uncertain writes. Existing cached
+results stay readable under each owner's cache policy.
+
 ### Sidebar section navigation
 
 Settings remains one continuous document inside the `.content` scroll

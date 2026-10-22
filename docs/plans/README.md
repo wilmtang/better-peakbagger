@@ -25,6 +25,11 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [October 21 repository audit](../archive/codebase-audit-2026-10-21.md)
+fixes four reproduced provider-cooldown, unread-response and remote-photo
+filename findings in independent commits. Its closure ledger retains the
+upstream dependency advisory and explicit live/native/LOD verification limits.
+
 The [shared map Overlays implementation](../archive/map-layers-and-overlays-2026-10-21.md)
 is complete locally: a collapsed overlay menu, a separate basemap selector, independent opacity,
 Sentinel mosaics, viewport SNOTEL, USGS slope and public lands across native and

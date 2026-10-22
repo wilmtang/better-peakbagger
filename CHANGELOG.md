@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Handle provider refusals consistently.** Weather, snow, map and elevation
+  readers release unused responses. Missing rate-limit reset headers use a
+  short local cooldown, and concurrent refusals cannot shorten a longer wait.
+
+- **Keep readable report photos editable.** A remote image filename containing
+  a literal percent or invalid text escape no longer discards its downloaded
+  image.
+
 - **Make map overlays clearer.** The shared menu is named **Overlays**. Sentinel,
   slope and public lands explain when a closer zoom is needed. SNOTEL preserves Full
   Screen selections through settings startup, follows newer opt-outs, and updates
