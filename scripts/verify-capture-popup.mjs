@@ -214,7 +214,8 @@ const renderCase = async (browser, browserName, item, variant) => {
             const cardRect = card?.getBoundingClientRect();
             const buttons = [...card.querySelectorAll('button:not([hidden])')].map(button => {
                 const rect = button.getBoundingClientRect();
-                return { label: button.textContent, left: rect.left, right: rect.right, bottom: rect.bottom, disabled: button.disabled };
+                return { label: button.textContent, left: rect.left, right: rect.right, bottom: rect.bottom,
+                    disabled: button.disabled || button.getAttribute('aria-disabled') === 'true' };
             });
             const names = [...card.querySelectorAll('.peak-name')].map(name => {
                 const rect = name.getBoundingClientRect();

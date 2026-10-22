@@ -1400,6 +1400,11 @@ test('popup pending result actions retain focus and reject repeated activation',
         action.focus(); action.click();
         assert.equal(action.disabled, false, 'pending action remains focusable');
         assert.equal(action.getAttribute('aria-disabled'), 'true');
+        const choice = doc.querySelector('#peak-list input');
+        assert.equal(choice.disabled, true, 'selection is frozen with the pending request');
+        assert.equal(doc.getElementById('include-timestamps-once').disabled, true);
+        assert.equal(doc.getElementById('clear-capture').getAttribute('aria-disabled'), 'true');
+        assert.equal(doc.getElementById('open-drafts').getAttribute('aria-disabled'), 'true');
         action.click();
         assert.equal(calls, 1);
         assert.equal(doc.activeElement, action);
@@ -1407,6 +1412,8 @@ test('popup pending result actions retain focus and reject repeated activation',
         await waitFor(() => !doc.getElementById('open-note').hidden);
         assert.equal(doc.activeElement, action);
         assert.equal(action.getAttribute('aria-disabled'), 'false');
+        assert.equal(doc.querySelector('#peak-list input').disabled, false, 'failure releases selection');
+        assert.equal(doc.getElementById('include-timestamps-once').disabled, false);
     }
 });
 
@@ -1425,4 +1432,18 @@ test('capture progress keeps the same focused Cancel button across status polls'
     await waitFor(() => dom.window.document.querySelector('.state-detail').textContent === '2 of 10 areas checked.');
     assert.equal(dom.window.document.querySelector('#state button'), cancel);
     assert.equal(dom.window.document.activeElement, cancel);
+});
+
+
+test('a failed capture deletion preserves the current summit selection', async t => {
+    const job = { ...readyJob, selectedIds: [1], matches: [readyJob.matches[0], { ...readyJob.matches[0], id: 2 }] };
+    const dom = mountPopup(() => ({ ok: false, error: { message: 'Try again.' } }), job);
+    t.after(() => dom.window.close());
+    const doc = dom.window.document;
+    await waitFor(() => !doc.getElementById('results').hidden);
+    doc.querySelector('#peak-list input[value="1"]').click();
+    doc.querySelector('#peak-list input[value="2"]').click();
+    doc.getElementById('clear-capture').click();
+    await waitFor(() => !doc.getElementById('open-note').hidden);
+    assert.deepEqual([...doc.querySelectorAll('#peak-list input:checked')].map(input => input.value), ['2']);
 });

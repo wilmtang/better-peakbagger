@@ -306,7 +306,18 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     };
 
     const selectedIds = () => [...list.querySelectorAll('input:checked')].map(input => Number(input.value));
+    const setResultActionPending = pending => {
+        resultActionPending = pending;
+        const locked = pending || currentJob?.phase !== 'ready';
+        list.querySelectorAll('input').forEach(input => {
+            input.disabled = locked;
+            input.closest('.peak-row').classList.toggle('selection-locked', locked);
+        });
+        includeTimestampsOnce.disabled = locked;
+        clearCaptureButton.setAttribute('aria-disabled', String(pending));
+    };
     const refreshSelection = () => {
+        if (resultActionPending) return;
         const count = selectedIds().length;
         selectionCount.textContent = `${count} selected`;
         if (currentJob?.phase === 'opening') {
@@ -326,6 +337,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         openButton.textContent = count === 1 ? 'Open 1 draft' : `Open ${count} drafts`;
         openButton.disabled = count === 0;
         openButton.setAttribute('aria-disabled', String(count === 0 || resultActionPending));
+        currentJob.selectedIds = selectedIds();
         void ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab.id, selectedIds: selectedIds() });
     };
 
@@ -506,7 +518,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
 
     clearCaptureButton.addEventListener('click', async () => {
         if (resultActionPending || clearCaptureButton.getAttribute('aria-disabled') === 'true') return;
-        resultActionPending = true;
+        setResultActionPending(true);
         const revision = replaceOperation();
         openButton.setAttribute('aria-disabled', 'true');
         clearCaptureButton.setAttribute('aria-disabled', 'true');
@@ -524,12 +536,12 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             );
         } catch (error) {
             if (revision !== captureRevision) return;
-            resultActionPending = false;
+            setResultActionPending(false);
             renderResults(currentJob);
             openNote.textContent = publicMessage(error);
             openNote.hidden = false;
         } finally {
-            resultActionPending = false;
+            setResultActionPending(false);
             clearCaptureButton.setAttribute('aria-busy', 'false');
         }
     });
@@ -538,7 +550,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     includeTimestampsOnce.addEventListener('change', () => {
         // The choice stays in this job's UI until the opening transaction freezes it.
         // No preference write: the next capture starts with the privacy default.
-        if (currentJob?.phase !== 'ready') return;
+        if (resultActionPending || currentJob?.phase !== 'ready') return;
         currentJob.selectedIds = selectedIds();
         currentJob.includeTimestampsOnce = includeTimestampsOnce.checked;
         currentJob.timestampsRemoved = !includeTimestampsOnce.checked;
@@ -547,7 +559,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
 
     openButton.addEventListener('click', async () => {
         if (resultActionPending || openButton.disabled || openButton.getAttribute('aria-disabled') === 'true') return;
-        resultActionPending = true;
+        setResultActionPending(true);
         const revision = replaceOperation();
         openButton.setAttribute('aria-disabled', 'true');
         includeTimestampsOnce.disabled = true;
@@ -565,7 +577,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             // Re-render from the worker's own state so the selection lock engages
             // in this turn. Patching only the label leaves a "ready" card offering
             // an open the worker would refuse — polling has already stopped.
-            resultActionPending = false;
+            setResultActionPending(false);
             if (response?.job) renderResults(response.job);
             else refreshSelection();
             // Grouping is cosmetic. Say so once in the status line and keep the
@@ -577,13 +589,13 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             openButton.setAttribute('aria-disabled', 'false');
         } catch (error) {
             if (revision !== captureRevision) return;
-            resultActionPending = false;
+            setResultActionPending(false);
             refreshSelection();
             includeTimestampsOnce.disabled = currentJob?.phase !== 'ready';
             openNote.textContent = publicMessage(error);
             openNote.hidden = false;
         } finally {
-            resultActionPending = false;
+            setResultActionPending(false);
             openButton.setAttribute('aria-busy', 'false');
         }
     });

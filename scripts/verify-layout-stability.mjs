@@ -79,10 +79,14 @@ async function popupCase(page, origin, variant) {
     await page.waitForFunction(() => typeof globalThis.__finishOpen === 'function');
     stable(before, await geometry(page, button), 'popup pending');
     await assertActionFocus(page, button, 'popup pending focus');
+    assert.equal(await page.locator('#peak-list input').isDisabled(), true, 'pending draft request freezes selection');
+    assert.equal(await page.locator('#clear-capture').getAttribute('aria-disabled'), 'true');
     await page.evaluate(() => globalThis.__finishOpen(true));
     await page.waitForFunction(() => document.getElementById('open-drafts').getAttribute('aria-disabled') === 'false');
     stable(before, await geometry(page, button), 'popup error');
     await assertActionFocus(page, button, 'popup error focus');
+    assert.equal(await page.locator('#peak-list input').isDisabled(), false, 'failed draft request releases selection');
+    assert.equal(await page.locator('#clear-capture').getAttribute('aria-disabled'), 'false');
     await page.locator(button).press('Enter');
     await page.waitForFunction(() => document.getElementById('open-drafts').getAttribute('aria-disabled') === 'true');
     await page.evaluate(() => globalThis.__finishOpen(false));
