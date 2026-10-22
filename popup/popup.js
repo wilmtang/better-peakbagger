@@ -45,6 +45,9 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     let pollTimer = null;
     let captureRevision = 0;
     let capturePending = false;
+    let resultActionPending = false;
+    let cancelling = false;
+    let progressCard = null;
     let popupCaptureStartedAt = null;
     let popupDiagnosticReported = false;
 
@@ -94,8 +97,24 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     };
 
     const stateCard = (title, detail, options = {}) => {
+        const actions = options.actions || (options.action ? [options.action] : []);
+        const ownedFocus = state.contains(document.activeElement) || results.contains(document.activeElement);
         results.hidden = true;
+        // Progress ticks change readings, never the Cancel control under the
+        // keyboard or pointer. Reservations use real copy and remain unpainted.
+        if (options.loading && progressCard?.card.isConnected
+            && actions.length === progressCard.actions.length
+            && actions.every((action, index) => action.onClick === progressCard.actions[index].onClick)) {
+            progressCard.title.textContent = title;
+            progressCard.detail.set(detail);
+            progressCard.controls.forEach((control, index) => {
+                control.setAttribute('aria-disabled', String(!!actions[index].pending));
+                control.setAttribute('aria-busy', String(!!actions[index].pending));
+            });
+            return;
+        }
         clear(state);
+        progressCard = null;
         const card = document.createElement('div');
         card.className = `state-card ${options.kind || ''}`;
         const heading = document.createElement('div');
@@ -103,17 +122,36 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         if (options.loading) {
             const spinner = document.createElement('span');
             spinner.className = 'spinner';
+            spinner.setAttribute('aria-hidden', 'true');
             heading.append(spinner);
         }
-        heading.append(document.createTextNode(title));
+        const titleNode = document.createTextNode(title);
+        heading.append(titleNode);
         const paragraph = document.createElement('p');
         paragraph.className = 'state-detail';
         paragraph.textContent = detail;
         card.append(heading, paragraph);
-        const actions = options.actions || (options.action ? [options.action] : []);
-        actions.forEach(action => card.append(
-            button(action.label, action.onClick, action.primary ? 'primary' : 'secondary')));
+        const controls = actions.map(action => {
+            const control = button(action.label, event => {
+                if (control.getAttribute('aria-disabled') !== 'true') action.onClick(event);
+            }, action.primary ? 'primary' : 'secondary');
+            control.setAttribute('aria-disabled', String(!!action.pending));
+            control.setAttribute('aria-busy', String(!!action.pending));
+            card.append(control);
+            return control;
+        });
         state.append(card);
+        if (options.loading) {
+            const detailText = createStableText(paragraph);
+            detailText.reserve([
+                detail,
+                ...['validating-activity', 'waiting-provider', 'verifying-ownership', 'checking-peakbagger',
+                    'exporting-gpx', 'processing-track', 'preparing-results', 'searching-summits'].map(phase => phaseText({ phase })[1]),
+                'Removing this in-progress capture from the extension.',
+            ]);
+            progressCard = { card, title: titleNode, detail: detailText, actions, controls };
+        }
+        if (ownedFocus) controls[0]?.focus({ preventScroll: true });
     };
 
     const retry = () => beginCapture(true);
@@ -230,8 +268,12 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     };
 
     const cancelCapture = async () => {
+        if (cancelling) return;
+        cancelling = true;
         const revision = replaceOperation();
-        stateCard('Cancelling capture…', 'Removing this in-progress capture from the extension.', { loading: true });
+        stateCard('Cancelling capture…', 'Removing this in-progress capture from the extension.', {
+            loading: true, action: { label: 'Cancel', onClick: cancelCapture, pending: true }
+        });
         try {
             const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CANCEL', tabId: activeTab.id });
             if (revision !== captureRevision) return;
@@ -250,7 +292,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             stateCard('Couldn’t cancel capture', publicMessage(error), {
                 kind: 'error', action: { label: 'Try again', onClick: cancelCapture }
             });
-        }
+        } finally { cancelling = false; }
     };
 
     const evidenceText = match => {
@@ -271,22 +313,24 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             selectionLockHint.hidden = false;
             openButton.textContent = 'Opening drafts…';
             includeTimestampsOnce.disabled = true;
-            openButton.disabled = true;
+            openButton.setAttribute('aria-disabled', 'true');
             return;
         }
         if (currentJob?.phase === 'opened' || currentJob?.phase === 'previewed') {
             selectionLockHint.hidden = false;
             openButton.textContent = 'Show opened drafts';
-            openButton.disabled = false;
+            openButton.setAttribute('aria-disabled', 'false');
             return;
         }
         selectionLockHint.hidden = true;
         openButton.textContent = count === 1 ? 'Open 1 draft' : `Open ${count} drafts`;
         openButton.disabled = count === 0;
+        openButton.setAttribute('aria-disabled', String(count === 0 || resultActionPending));
         void ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab.id, selectedIds: selectedIds() });
     };
 
     const renderResults = job => {
+        const ownedProgressFocus = state.contains(document.activeElement);
         currentJob = job;
         clear(state);
         clear(list);
@@ -301,7 +345,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         const track = job.trackSummary;
         clear(summary);
         clearCaptureButton.hidden = !job.hasCachedGpx;
-        clearCaptureButton.disabled = false;
+        clearCaptureButton.setAttribute('aria-disabled', 'false');
         clearCaptureButton.textContent = 'Delete captured track data';
         const counts = document.createElement('strong');
         counts.textContent = `${track.originalPointCount.toLocaleString()} → ${track.retainedPointCount.toLocaleString()} points`;
@@ -338,6 +382,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             list.append(row);
         });
         refreshSelection();
+        if (ownedProgressFocus) (list.querySelector('input:not(:disabled)') || openButton).focus({ preventScroll: true });
     };
 
     const render = job => {
@@ -460,9 +505,12 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     };
 
     clearCaptureButton.addEventListener('click', async () => {
+        if (resultActionPending || clearCaptureButton.getAttribute('aria-disabled') === 'true') return;
+        resultActionPending = true;
         const revision = replaceOperation();
-        openButton.disabled = true;
-        clearCaptureButton.disabled = true;
+        openButton.setAttribute('aria-disabled', 'true');
+        clearCaptureButton.setAttribute('aria-disabled', 'true');
+        clearCaptureButton.setAttribute('aria-busy', 'true');
         clearCaptureButton.textContent = 'Deleting…';
         try {
             const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CLEAR', tabId: activeTab.id });
@@ -476,9 +524,13 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             );
         } catch (error) {
             if (revision !== captureRevision) return;
+            resultActionPending = false;
             renderResults(currentJob);
             openNote.textContent = publicMessage(error);
             openNote.hidden = false;
+        } finally {
+            resultActionPending = false;
+            clearCaptureButton.setAttribute('aria-busy', 'false');
         }
     });
 
@@ -494,10 +546,13 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     });
 
     openButton.addEventListener('click', async () => {
+        if (resultActionPending || openButton.disabled || openButton.getAttribute('aria-disabled') === 'true') return;
+        resultActionPending = true;
         const revision = replaceOperation();
-        openButton.disabled = true;
+        openButton.setAttribute('aria-disabled', 'true');
         includeTimestampsOnce.disabled = true;
         openButton.textContent = 'Opening drafts…';
+        openButton.setAttribute('aria-busy', 'true');
         try {
             const response = await ext.runtime.sendMessage({
                 type: 'CAPTURE_OPEN_DRAFTS',
@@ -510,6 +565,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             // Re-render from the worker's own state so the selection lock engages
             // in this turn. Patching only the label leaves a "ready" card offering
             // an open the worker would refuse — polling has already stopped.
+            resultActionPending = false;
             if (response?.job) renderResults(response.job);
             else refreshSelection();
             // Grouping is cosmetic. Say so once in the status line and keep the
@@ -518,13 +574,17 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
                 openNote.textContent = 'Drafts opened. Your browser didn’t group the tabs.';
                 openNote.hidden = false;
             }
-            openButton.disabled = false;
+            openButton.setAttribute('aria-disabled', 'false');
         } catch (error) {
             if (revision !== captureRevision) return;
+            resultActionPending = false;
             refreshSelection();
             includeTimestampsOnce.disabled = currentJob?.phase !== 'ready';
             openNote.textContent = publicMessage(error);
             openNote.hidden = false;
+        } finally {
+            resultActionPending = false;
+            openButton.setAttribute('aria-busy', 'false');
         }
     });
 

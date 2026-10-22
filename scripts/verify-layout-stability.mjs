@@ -35,6 +35,11 @@ function stable(before, after, label, keys = ['x', 'y', 'width', 'height']) {
     for (const key of keys) assert.ok(Math.abs(before[key] - after[key]) <= 1,
         `${label}: ${key} shifted ${after[key] - before[key]}px; ${JSON.stringify({ before, after })}`);
 }
+async function assertActionFocus(page, selector, label) {
+    // Let native disabling settle; checking in the click turn misses Chrome blur.
+    await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+    assert.equal(await page.locator(selector).evaluate(element => document.activeElement === element), true, label);
+}
 async function capture(page, label) {
     if (output) await page.screenshot({ path: path.join(output, `${label}.png`) });
 }
@@ -69,25 +74,60 @@ async function popupCase(page, origin, variant) {
     await page.locator('#open-drafts').filter({ hasText: 'Open 1 draft' }).waitFor();
     const button = '#open-drafts';
     const before = await geometry(page, button);
-    await page.click(button);
+    await page.locator(button).press('Enter');
     await page.waitForFunction(() => typeof globalThis.__finishOpen === 'function');
     stable(before, await geometry(page, button), 'popup pending');
+    await assertActionFocus(page, button, 'popup pending focus');
     await page.evaluate(() => globalThis.__finishOpen(true));
-    await page.waitForFunction(() => !document.getElementById('open-drafts').disabled);
+    await page.waitForFunction(() => document.getElementById('open-drafts').getAttribute('aria-disabled') === 'false');
     stable(before, await geometry(page, button), 'popup error');
-    await page.click(button);
-    await page.waitForFunction(() => document.getElementById('open-drafts').disabled);
+    await assertActionFocus(page, button, 'popup error focus');
+    await page.locator(button).press('Enter');
+    await page.waitForFunction(() => document.getElementById('open-drafts').getAttribute('aria-disabled') === 'true');
     await page.evaluate(() => globalThis.__finishOpen(false));
     await page.locator(button).filter({ hasText: 'Show opened drafts' }).waitFor();
     stable(before, await geometry(page, button), 'popup grouped completion');
     const clearBefore = await geometry(page, '#clear-capture');
-    await page.click('#clear-capture');
+    await page.locator('#clear-capture').press('Enter');
     await page.waitForFunction(() => typeof globalThis.__finishClear === 'function');
     stable(clearBefore, await geometry(page, '#clear-capture'), 'popup clear pending');
+    await assertActionFocus(page, '#clear-capture', 'popup delete pending focus');
     await page.evaluate(() => globalThis.__finishClear());
     await page.locator('#clear-capture').filter({ hasText: 'Delete captured track data' }).waitFor();
     stable(clearBefore, await geometry(page, '#clear-capture'), 'popup clear error');
+    await assertActionFocus(page, '#clear-capture', 'popup delete error focus');
     await capture(page, `${variant.name}-popup-error`);
+    await page.clock.install();
+    await load(page, origin, 'popup/popup.html', ({ theme }) => {
+        globalThis.__progress = { phase: 'searching-summits', provider: 'garmin', progress: { completed: 1, total: 12 } };
+        globalThis.chrome = { tabs: { query: async () => [{ id: 9 }] },
+            storage: { sync: { get: async () => ({ bpbSettings: { theme } }) }, onChanged: { addListener() {} } },
+            runtime: { sendMessage: async message => {
+                if (message.type === 'CAPTURE_CANCEL') return new Promise(resolve => { globalThis.__finishCancel = () => resolve({ ok: true }); });
+                return globalThis.__progress;
+            } } };
+    }, variant);
+    const cancel = page.locator('#state button');
+    await cancel.filter({ hasText: 'Cancel' }).waitFor();
+    await cancel.focus();
+    await cancel.evaluate(element => { globalThis.__cancelNode = element; });
+    const cancelBounds = await cancel.boundingBox();
+    for (const phase of ['checking-peakbagger', 'waiting-provider', 'searching-summits']) {
+        await page.evaluate(phase => { globalThis.__progress.phase = phase; globalThis.__progress.progress.completed++; }, phase);
+        await page.clock.runFor(500);
+        assert.equal(await cancel.evaluate(element => element === globalThis.__cancelNode && document.activeElement === element), true,
+            'capture progress preserves focused Cancel node');
+        stable(cancelBounds, await cancel.boundingBox(), `capture progress ${phase}`);
+    }
+    await capture(page, `${variant.name}-popup-progress`);
+    await cancel.press('Enter');
+    await page.waitForFunction(() => typeof globalThis.__finishCancel === 'function');
+    assert.equal(await cancel.evaluate(element => document.activeElement === element), true, 'cancellation keeps focus');
+    stable(cancelBounds, await cancel.boundingBox(), 'cancelling');
+    await page.evaluate(() => globalThis.__finishCancel());
+    await cancel.filter({ hasText: 'Start again' }).waitFor();
+    assert.equal(await cancel.evaluate(element => document.activeElement === element), true, 'completion focuses next action');
+    await capture(page, `${variant.name}-popup-cancelled`);
 }
 async function accessCase(page, origin, variant) {
     for (const id of ['gaia', 'onx', 'alltrails', 'caltopo']) {

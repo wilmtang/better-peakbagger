@@ -130,7 +130,7 @@ a { color: var(--link); }
 
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
-button:disabled { cursor: default; opacity: .55; }
+button:disabled, button[aria-disabled="true"] { cursor: default; opacity: .55; }
 
 /* One focus ring across every panel, on the elements a keyboard can reach. */
 button:focus-visible,

@@ -438,7 +438,7 @@ test('popup keeps a persisted opening generation visibly locked', async () => {
     dom.window.eval(source);
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Opening drafts…');
-    assert.equal(openButton.disabled, true);
+    assert.equal(openButton.getAttribute('aria-disabled'), 'true');
     assert.equal(dom.window.document.querySelector('#peak-list input').disabled, true);
     assert.equal(dom.window.document.getElementById('selection-lock-hint').hidden, false);
     assert.equal(messages.some(message => message.type === 'CAPTURE_SELECTION'), false);
@@ -1384,4 +1384,45 @@ test('a worker-reported delete failure keeps its own copy on screen', async () =
     assert.match(dom.window.document.getElementById('open-note').textContent, /Wait for the current capture to finish/);
     assert.doesNotMatch(dom.window.document.getElementById('open-note').textContent, /couldn’t be reached/);
     dom.window.close();
+});
+
+test('popup pending result actions retain focus and reject repeated activation', async t => {
+    for (const [id, type] of [['open-drafts', 'CAPTURE_OPEN_DRAFTS'], ['clear-capture', 'CAPTURE_CLEAR']]) {
+        let finish, calls = 0;
+        const dom = mountPopup(message => {
+            if (message.type !== type) return { ok: true };
+            calls++;
+            return new Promise(resolve => { finish = resolve; });
+        });
+        t.after(() => dom.window.close());
+        const doc = dom.window.document, action = doc.getElementById(id);
+        await waitFor(() => !doc.getElementById('results').hidden);
+        action.focus(); action.click();
+        assert.equal(action.disabled, false, 'pending action remains focusable');
+        assert.equal(action.getAttribute('aria-disabled'), 'true');
+        action.click();
+        assert.equal(calls, 1);
+        assert.equal(doc.activeElement, action);
+        finish({ ok: false, phase: 'error', error: { message: 'Try again.' } });
+        await waitFor(() => !doc.getElementById('open-note').hidden);
+        assert.equal(doc.activeElement, action);
+        assert.equal(action.getAttribute('aria-disabled'), 'false');
+    }
+});
+
+test('capture progress keeps the same focused Cancel button across status polls', async t => {
+    const dom = new JSDOM(html, { url: 'chrome-extension://test/popup/popup.html', runScripts: 'outside-only' });
+    t.after(() => dom.window.close());
+    let tick;
+    dom.window.setTimeout = callback => { tick = callback; return 1; };
+    let completed = 0;
+    const job = () => ({ phase: 'searching-summits', provider: 'garmin', progress: { completed: completed++, total: 10 } });
+    dom.window.chrome = { tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async () => job() } };
+    dom.window.eval(source);
+    await waitFor(() => tick && dom.window.document.querySelector('#state button'));
+    const cancel = dom.window.document.querySelector('#state button');
+    cancel.focus(); tick();
+    await waitFor(() => dom.window.document.querySelector('.state-detail').textContent === '2 of 10 areas checked.');
+    assert.equal(dom.window.document.querySelector('#state button'), cancel);
+    assert.equal(dom.window.document.activeElement, cancel);
 });
