@@ -38,6 +38,19 @@ function setup(terrain = false) {
         view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner.dispose(); win.close(); } };
 }
+for (const id of ['slope', 'sentinel']) test(`3D ${id} status updates cannot shorten the cooldown relayed to 2D`, () => {
+    const env = setup(true), retryAt = Date.now() + 600000;
+    try {
+        env.win.document.querySelector(`[data-layer="${id}"] input`).click();
+        const revision = env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.revision;
+        for (const deadline of [retryAt, Date.now() + 5000, 0]) {
+            env.send({ type: 'layerStatus', revision, id, error: true, retry: true, retryAt: deadline }, '__bpbTerrain');
+        }
+        // Returning to 2D publishes the same retained cooldown in the handoff.
+        env.send({ type: 'destroyed' }, '__bpbTerrain');
+        assert.equal(env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.cooldowns[id], retryAt);
+    } finally { env.close(); }
+});
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} opacity dragging updates only the edited overlay`, () => {
     const env = setup(terrain), doc = env.win.document;

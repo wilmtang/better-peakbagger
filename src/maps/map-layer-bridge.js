@@ -77,7 +77,7 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
             post({ type: 'stations', requestId, stations, nearby, overflow: visible.length > 50 });
         } catch (error) {
             if (owner !== revision || error.name === 'AbortError') return;
-            if (error.code === 'rate-limit') retryAt = error.retryAt || Date.now() + 300000;
+            if (error.code === 'rate-limit') retryAt = Math.max(retryAt, error.retryAt || Date.now() + 300000);
             post({ type: 'stations', requestId, error: true, retryAt });
         } finally { if (owner === revision) controller = null; }
     };

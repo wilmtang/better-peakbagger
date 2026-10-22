@@ -53,7 +53,7 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, re
         } catch (error) {
             if (owner !== revision || !active || error.name === 'AbortError') return;
             if (!valid) clear();
-            if (error.code === 'rate-limit') retryAt = error.retryAt || Date.now() + 300000;
+            if (error.code === 'rate-limit') retryAt = Math.max(retryAt, error.retryAt || Date.now() + 300000);
             publish({ pending: false, error: true, retry: true, retryAt,
                 message: error.code === 'rate-limit' ? 'Satellite service is busy. Try again later.'
                     : !valid ? error.message.slice(0, 80) : rendered ? 'Capture search failed. Previous imagery shown.' : 'Captures unavailable. Retry.' });
@@ -94,7 +94,7 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, re
             if (!active) return;
             tileFailed = true;
             tilePending = false;
-            if (error?.code === 'rate-limit') { retryAt = error.retryAt; cancel(); status.pending = false; }
+            if (error?.code === 'rate-limit') { retryAt = Math.max(retryAt, error.retryAt || Date.now() + 300000); cancel(); status.pending = false; }
             publish({ retryAt });
         },
         tileActivity(activity) {

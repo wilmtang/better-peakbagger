@@ -103,6 +103,26 @@ test('catalog cooldown survives off/on and ignores refresh and retry activation'
         assert.equal(calls, 1); assert.equal(env.status().retry, true);
     } finally { env.session.dispose(); }
 });
+test('overlapping imagery failures cannot shorten or erase an active capture cooldown', async () => {
+    let calls = 0;
+    const retryAt = Date.now() + 600000;
+    const env = setup(async () => { calls++; return [capture('new')]; });
+    try {
+        env.session.activate(); await tick();
+        for (const deadline of [retryAt, Date.now() + 5000, undefined]) {
+            env.session.tileError(Object.assign(new Error('limited'), { code: 'rate-limit', retryAt: deadline }));
+            assert.equal(env.status().retryAt, retryAt);
+        }
+        env.session.deactivate(); env.session.activate(); env.session.retry(); await tick(); assert.equal(calls, 1);
+    } finally { env.session.dispose(); }
+});
+test('imagery rate limits without Retry-After receive the standard fallback cooldown', async () => {
+    const now = Date.now(), env = setup(async () => [capture('new')]);
+    try {
+        env.session.activate(); await tick(); env.session.tileError(Object.assign(new Error('limited'), { code: 'rate-limit' }));
+        assert.ok(env.status().retryAt >= now + 300000);
+    } finally { env.session.dispose(); }
+});
 test('off aborts the owner and stale catalog replies cannot install imagery', async () => {
     const pending = []; const env = setup((_bounds, options) => new Promise(resolve => pending.push({ options, resolve })));
     try {

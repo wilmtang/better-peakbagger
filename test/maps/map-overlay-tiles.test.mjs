@@ -48,6 +48,23 @@ test('a provider cooldown blocks new tile work until an explicit allowed retry',
     await assert.rejects(draw(), error => error.code === 'rate-limit'); assert.equal(requests, 1);
     tiles.dispose();
 });
+for (const retryAfter of ['5', null]) test(`concurrent public-land limits retain the longest provider deadline (${retryAfter ?? 'missing'} Retry-After)`, async t => {
+    const now = Date.now(); t.mock.method(Date, 'now', () => now);
+    const held = [], states = [];
+    const tiles = createOverlayTiles({ document, onActivity: (_id, state) => states.push(state),
+        fetchImpl: () => new Promise(resolve => held.push(resolve)) });
+    const draw = x => tiles.draw('land', { z: 10, x, y: 359 }, tiles.canvas()).catch(error => error);
+    try {
+        const first = draw(163), second = draw(164); await tick(); assert.equal(held.length, 2);
+        held[0](new Response('', { status: 429, headers: { 'retry-after': '600' } })); await first;
+        held[1](new Response('', { status: 429, headers: retryAfter ? { 'retry-after': retryAfter } : {} })); await second;
+        assert.equal(states.at(-1).providerCooldowns.us, now + 600000);
+        tiles.landCooldowns({ us: now + 10000 });
+        const blocked = await draw(165);
+        assert.equal(blocked.retryAt, now + 600000, 'a shorter handoff cannot replace the retained provider limit');
+        assert.equal(held.length, 2, 'no new request escapes the retained limit');
+    } finally { tiles.dispose(); }
+});
 test('incomplete Alberta pages never publish a partially colored tile', async () => {
     let filled = 0, published = 0;
     const canvasDocument = { createElement: () => ({ getContext: () => ({ beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() { filled++; } }) }) };

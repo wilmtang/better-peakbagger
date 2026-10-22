@@ -4,7 +4,7 @@ import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
 import { createSentinelSession } from '../maps/sentinel-session.js';
 import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM, rasterTileStatus } from '../maps/map-overlay-providers.js';
-import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
+import { readLayerSnapshot, mergeLandCooldowns } from '../maps/map-layer-protocol.js';
 import { createBCTileFetch } from '../maps/bc-land-client.js';
 
 // The authorized renderer searches its own catalog. No scene geometry, remote
@@ -21,10 +21,10 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     const layers = new Map(), protocol = 'bpb-overlay';
     const error = (id, failure) => {
         if (disposed || failure?.name === 'AbortError') return;
-        if (snapshot && id !== 'land' && failure?.retryAt > Date.now()) snapshot.cooldowns[id] = failure.retryAt;
+        if (snapshot && id !== 'land' && failure?.retryAt > Date.now()) snapshot.cooldowns[id] = Math.max(snapshot.cooldowns[id], failure.retryAt);
         if (id === 'sentinel') sentinel.tileError(failure);
         else if (id === 'land') return; // Aggregate outcomes retain other providers.
-        else reportRaster(id, { pending: false, error: true, retry: true, retryAt: failure?.retryAt,
+        else reportRaster(id, { pending: false, error: true, retry: true, retryAt: snapshot?.cooldowns[id] || failure?.retryAt,
             permission: failure?.code === 'bc-permission-required',
             message: failure?.code === 'bc-permission-required' ? 'Allow BC parcel maps.'
                 : failure?.code === 'rate-limit' ? 'Map service is busy. Try again later.' : 'Some map tiles are unavailable. Retry.' });
@@ -102,6 +102,10 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         update(value) {
             const next = readLayerSnapshot(value); if (!next || snapshot && next.revision < snapshot.revision) return;
             const first = snapshot === null;
+            if (snapshot) {
+                for (const id of ['slope', 'sentinel']) next.cooldowns[id] = Math.max(snapshot.cooldowns[id], next.cooldowns[id]);
+                next.landCooldowns = mergeLandCooldowns(snapshot.landCooldowns, next.landCooldowns);
+            }
             snapshot = next;
             tiles.landCooldowns(next.landCooldowns);
             for (const id of ['land', 'slope']) if (!next.state[id].enabled || next.state[id].opacity === 0) rasterStatus[id] = {};

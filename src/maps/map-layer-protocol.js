@@ -6,6 +6,11 @@ import { sentinelTarget } from './sentinel-core.js';
 const text = (value, limit = 400) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, limit) : '';
 export const readLandCooldowns = value => Object.fromEntries(['us', 'bc', 'ab'].filter(key => Number.isFinite(value?.[key])
     && value[key] > Date.now() && value[key] <= Date.now() + 86400000).map(key => [key, value[key]]));
+export const mergeLandCooldowns = (current, incoming) => {
+    const merged = readLandCooldowns(current);
+    for (const [key, deadline] of Object.entries(readLandCooldowns(incoming))) merged[key] = Math.max(merged[key] || 0, deadline);
+    return merged;
+};
 export function readLayerSnapshot(value) {
     if (!value || !Number.isSafeInteger(value.revision) || value.revision < 1) return null;
     const cooldowns = Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id,

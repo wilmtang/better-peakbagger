@@ -7,7 +7,7 @@ import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { sentinelTarget } from './sentinel-core.js';
 import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
-import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
+import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
@@ -190,7 +190,7 @@ export function installMapLayers(win = window) {
                 const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onError(id, error) {
                     if (id === 'sentinel') binding?.sentinel.tileError(error);
                     else if (id === 'land') return; // Complete provider outcomes supply land feedback below.
-                    else { statuses[id] = { ...statuses[id], pending: false, error: true, retry: true, permission: error?.code === 'bc-permission-required', retryAt: error?.retryAt || 0,
+                    else { statuses[id] = { ...statuses[id], pending: false, error: true, retry: true, permission: error?.code === 'bc-permission-required', retryAt: Math.max(statuses[id].retryAt || 0, error?.retryAt || 0),
                         message: error?.code === 'bc-permission-required' ? 'Allow BC parcel maps.' : 'Some map tiles are unavailable. Retry.' }; paint();
                     if (error?.retryAt > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); } }
                 }, onActivity(id, activity) {
@@ -210,7 +210,7 @@ export function installMapLayers(win = window) {
                     retryTiles: () => engine.retry('sentinel'),
                     onStatus: status => {
                         const previous = statuses.sentinel.retryAt;
-                        statuses.sentinel = { ...statuses.sentinel, ...status }; paint(); if (!status.pending && status.message) control.announce(status.message);
+                        statuses.sentinel = { ...statuses.sentinel, ...status, retryAt: Math.max(previous || 0, status.retryAt || 0) }; paint(); if (!status.pending && status.message) control.announce(status.message);
                         if (status.retryAt > Date.now() && status.retryAt !== previous) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
                     },
                     onCapture: target => { capture = target; revision++; relay(); post({ type: 'handoffState', snapshot: snapshot() }); },
@@ -262,9 +262,9 @@ export function installMapLayers(win = window) {
             if (data.type === 'handoff' && !touched) {
                 const next = readLayerSnapshot(data.snapshot);
                 if (next) {
-                    statuses.land.providerCooldowns = next.landCooldowns;
+                    statuses.land.providerCooldowns = mergeLandCooldowns(statuses.land.providerCooldowns, next.landCooldowns);
                     Object.assign(state, next.state); capture = next.capture;
-                    for (const id of Schema.MAP_OVERLAY_IDS) if (next.cooldowns[id] > Date.now()) statuses[id] = { ...statuses[id], retryAt: next.cooldowns[id], error: true, retry: true, message: 'Map service is busy. Try again later.' };
+                    for (const id of Schema.MAP_OVERLAY_IDS) if (next.cooldowns[id] > Date.now()) statuses[id] = { ...statuses[id], retryAt: Math.max(statuses[id].retryAt || 0, next.cooldowns[id]), error: true, retry: true, message: 'Map service is busy. Try again later.' };
                     changed(); loadStations();
                 }
             } else if (data.type === 'preferences') {
@@ -282,7 +282,7 @@ export function installMapLayers(win = window) {
                     const visible = viewportStations(stations, stationView());
                     statuses.snotel = { ...statuses.snotel, pending: false, error: true, retry: true, saved: visible.length > 0, overflow: false, count: visible.length,
                         message: visible.length ? 'Showing loaded locations.' : 'Couldn’t load station locations. Try again.',
-                        retryAt: Number.isFinite(data.retryAt) ? data.retryAt : 0 };
+                        retryAt: Math.max(statuses.snotel.retryAt || 0, Number.isFinite(data.retryAt) ? data.retryAt : 0) };
                 }
                 else {
                     stations = next; reveal = revealPending; revealPending = false;
@@ -309,7 +309,10 @@ export function installMapLayers(win = window) {
         } else if (data.dir === 'toPage' && data.type === 'layerStatus' && frameMode) {
             const status = readLayerStatus(data); if (status && status.revision === revision) {
                 const previous = statuses[status.id].retryAt, previousLand = JSON.stringify(statuses.land.providerCooldowns);
-                statuses[status.id] = { ...statuses[status.id], ...status }; paint(); if (!status.pending && status.message) control.announce(status.message);
+                statuses[status.id] = { ...statuses[status.id], ...status,
+                    retryAt: status.id === 'land' ? status.retryAt : Math.max(previous || 0, status.retryAt),
+                    providerCooldowns: mergeLandCooldowns(statuses[status.id].providerCooldowns, status.providerCooldowns) };
+                paint(); if (!status.pending && status.message) control.announce(status.message);
                 if (status.retryAt > Date.now() && previous !== status.retryAt || status.id === 'land' && previousLand !== JSON.stringify(statuses.land.providerCooldowns)) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
             }
         } else if (data.dir === 'toPage' && data.type === 'layerCapture' && frameMode) {

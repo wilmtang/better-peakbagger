@@ -15,6 +15,13 @@ const tileKey = ({ z, x, y }) => `${z}/${(x % 2 ** z + 2 ** z) % 2 ** z}/${y}`;
 export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch, fetchBCTile, onError = () => {}, onActivity = () => {}, retryDelayMs = 350 }) {
     let scenes = [], generation = 0, disposed = false;
     const flights = new Set(), blocked = new Map();
+    const retainLimit = (key, error) => {
+        // Reuse the recorded error so earlier tile outcomes see an extended
+        // deadline too. Land providers remain independent within a mixed tile.
+        const limit = blocked.get(key) || error;
+        limit.retryAt = Math.max(limit.retryAt || 0, error.retryAt || Date.now() + 300000);
+        blocked.set(key, limit); return limit;
+    };
     const activity = new Map();
     const landCooldowns = () => Object.fromEntries([...blocked].filter(([key, error]) => key.startsWith('land:') && error.retryAt > Date.now()).map(([key, error]) => [key.slice(5), error.retryAt]));
     const publish = (id, batch) => {
@@ -95,7 +102,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
         failed(id, coordinates) { return activity.get(id)?.outcomes.get(tileKey(coordinates))?.state === 'failed'; },
         landCooldowns(value) {
             for (const provider of ['us', 'bc', 'ab']) if (value?.[provider] > Date.now() && value[provider] <= Date.now() + 86400000)
-                blocked.set(`land:${provider}`, Object.assign(new Error('Land service is busy.'), { code: 'rate-limit', retryAt: value[provider] }));
+                retainLimit(`land:${provider}`, Object.assign(new Error('Land service is busy.'), { code: 'rate-limit', retryAt: value[provider] }));
         },
         forget(id, coordinates) { const batch = activity.get(id); if (batch?.outcomes?.delete(tileKey(coordinates))) publish(id, batch); },
         retain(id, coordinates) {
@@ -156,8 +163,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                         completed++;
                     } catch (error) {
                         if (id !== 'land' || controller.signal.aborted || error.name === 'AbortError') throw error;
-                        if (error.code === 'rate-limit') { error.retryAt ??= Date.now() + 300000; blocked.set(`land:${source.provider}`, error); }
-                        failures.push(error);
+                        failures.push(error.code === 'rate-limit' ? retainLimit(`land:${source.provider}`, error) : error);
                     }
                 }
                 if (controller.signal.aborted) throw abortError();
@@ -170,7 +176,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                 if (!controller.signal.aborted && error.name !== 'AbortError' && (!batch.outcomes || batch.outcomes.get(key) === outcome)) {
                     outcome.state = 'failed';
                     outcome.failures = error.tileFailures || [error];
-                    if (id !== 'land' && error.code === 'rate-limit') { error.retryAt ??= Date.now() + 300000; blocked.set(id, error); abortFlights(id); }
+                    if (id !== 'land' && error.code === 'rate-limit') { error = retainLimit(id, error); abortFlights(id); }
                     onError(id, error);
                 }
                 throw error;
