@@ -72,14 +72,14 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
 
     const repoName = () => OptionsUtils.githubRepoName(githubStatus);
 
-    const hideConfirmation = ({ restoreFocus = true } = {}) => {
+    const hideConfirmation = ({ restoreFocus = confirmationEl.contains(document.activeElement) } = {}) => {
         const returnFocus = pendingImport?.returnFocus;
         pendingImport = null;
         confirmationEl.hidden = true;
         confirmationNameEl.textContent = '';
         confirmationDetailEl.textContent = '';
-        confirmEl.disabled = false;
-        cancelEl.disabled = false;
+        OptionsUtils.setButtonBusy(confirmEl, false);
+        OptionsUtils.setButtonBusy(cancelEl, false);
         confirmationEl.removeAttribute('aria-busy');
         if (restoreFocus && returnFocus?.isConnected) returnFocus.focus();
     };
@@ -103,7 +103,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                     ? 'Replaces your current settings and saved API keys.'
                     : 'Replaces your current settings.';
         confirmationEl.hidden = false;
-        confirmEl.focus();
+        if (document.activeElement === returnFocus) confirmEl.focus();
     };
 
     exportEl.addEventListener('click', async () => {
@@ -168,7 +168,9 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         );
     });
 
-    cancelEl.addEventListener('click', hideConfirmation);
+    cancelEl.addEventListener('click', () => {
+        if (confirmationEl.getAttribute('aria-busy') !== 'true') hideConfirmation();
+    });
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || confirmationEl.hidden
             || confirmationEl.getAttribute('aria-busy') === 'true') return;
@@ -176,10 +178,10 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         hideConfirmation();
     });
     confirmEl.addEventListener('click', async () => {
-        if (!pendingImport) return;
+        if (!pendingImport || confirmationEl.getAttribute('aria-busy') === 'true') return;
         const pending = pendingImport;
-        confirmEl.disabled = true;
-        cancelEl.disabled = true;
+        OptionsUtils.setButtonBusy(confirmEl, true);
+        OptionsUtils.setButtonBusy(cancelEl, true);
         confirmationEl.setAttribute('aria-busy', 'true');
         try {
             if (pending.fileContent != null) {
@@ -212,10 +214,9 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         } catch {
             // Keep the parsed import in memory so a transient storage failure
             // can be retried without making the user select/download it again.
-            confirmEl.disabled = false;
-            cancelEl.disabled = false;
+            OptionsUtils.setButtonBusy(confirmEl, false);
+            OptionsUtils.setButtonBusy(cancelEl, false);
             confirmationEl.removeAttribute('aria-busy');
-            confirmEl.focus();
         }
     });
 
@@ -229,8 +230,8 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             && githubBackupResult?.repo === repoName()
             && githubBackupResult?.signature === settingsSignature;
         githubActionsEl.hidden = !connected;
-        githubBackupEl.disabled = githubBusy;
-        githubRestoreEl.disabled = githubBusy;
+        OptionsUtils.setButtonBusy(githubBackupEl, githubBusy);
+        OptionsUtils.setButtonBusy(githubRestoreEl, githubBusy);
         autoBackupEl.disabled = githubBusy;
         githubStatusEl.classList.remove('settings-backup-github-success');
         githubStatusEl.textContent = '';
@@ -274,6 +275,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     }, operation);
 
     githubBackupEl.addEventListener('click', () => {
+        if (githubBusy) return;
         githubOperation = 'backup';
         void withGithubBusy(async () => {
             const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });

@@ -29,7 +29,7 @@ for (const kind of ['favorites', 'settings']) {
                     };
                 },
             });
-            await waitFor(dom, () => !el(dom, button).disabled);
+            await waitFor(dom, () => !el(dom, button).disabled && el(dom, button).getAttribute('aria-busy') !== 'true');
             el(dom, button).click();
             await waitFor(dom, () => !!finish);
             const signature = kind === 'favorites' ? Favorites.backupSignature(original) : Transfer.signature({ theme: 'dark' });
@@ -45,12 +45,12 @@ for (const kind of ['favorites', 'settings']) {
             if (change === 'repository') {
                 repo = 'ada/new-peaks';
                 await dom.chrome.storage.local.set({ bpbGithubAuth: { repo: { fullName: repo } } });
-                await waitFor(dom, () => el(dom, status).textContent.includes('Working') || el(dom, button).disabled);
+                await waitFor(dom, () => el(dom, button).getAttribute('aria-busy') === 'true');
             }
             finish({ ok: true, result: { commitUrl: 'https://github.com/ada/peaks/commit/old',
                 ...(change === 'missing identity' ? {} : { repo: 'ada/peaks', signature }),
                 superseded: change === 'superseded' } });
-            await waitFor(dom, () => !el(dom, button).disabled);
+            await waitFor(dom, () => !el(dom, button).disabled && el(dom, button).getAttribute('aria-busy') !== 'true');
             assert.doesNotMatch(el(dom, status).textContent, /backed up ✓/);
             assert.equal(el(dom, status).querySelector('a'), null, 'do not link a different snapshot as current');
             if (['edit', 'superseded'].includes(change)) assert.match(el(dom, status).textContent, /Newer changes need backup/);

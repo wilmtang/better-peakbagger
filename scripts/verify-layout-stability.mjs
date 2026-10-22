@@ -14,6 +14,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
+import { verifySettingsActions } from './verify-settings-actions.mjs';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
 import { verifyReportCaptionStability } from './verify-report-caption-stability.mjs';
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
@@ -524,10 +525,11 @@ async function settingsCase(page, origin, variant) {
                 await handle.press('ArrowUp');
                 await page.waitForFunction(() => typeof globalThis.__finishUnitSave === 'function');
                 stable(before, await row.boundingBox(), `${id} pending zoom ${zoom}`);
+                await assertActionFocus(page, `#${id} [data-order-item="${item}"] .order-grip`, `${id} pending reorder focus`);
                 await page.evaluate(success => globalThis.__finishUnitSave(success), success);
                 await page.waitForFunction(({ id, item, success }) => {
                     const list = document.getElementById(id);
-                    return !list.querySelector('.order-grip').disabled
+                    return list.querySelector('.order-grip').getAttribute('aria-disabled') === 'false'
                         && (list.firstElementChild.dataset.orderItem === item) === success;
                 }, { id, item, success });
                 stable(before, await row.boundingBox(), `${id} save ${success} zoom ${zoom}`);
@@ -1208,7 +1210,7 @@ async function reportCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-report-feedback`);
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase,
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, weather: weatherCase,
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
     captions: (page, origin, variant) => verifyReportCaptionStability(page, origin, variant, { asset, capture }) };

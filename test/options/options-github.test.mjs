@@ -128,6 +128,7 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
     await waitFor(dom, () => dom.chrome._store.bpbSettings.autoFavoritesBackup === true);
 
     await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
+    el(dom, 'favorites-restore').focus();
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => el(dom, 'favorites-restore-confirmation').hidden === false);
     assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, original.cid,
@@ -141,14 +142,17 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
     assert.equal(el(dom, 'favorites-restore-confirm').textContent, 'Restore backup');
     assert.equal(dom.window.document.activeElement, el(dom, 'favorites-restore-cancel'));
 
+    el(dom, 'favorites-restore-cancel').focus();
     el(dom, 'favorites-restore-cancel').click();
     assert.equal(el(dom, 'favorites-restore-confirmation').hidden, true);
     assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, original.cid,
         'cancelling a restore must leave the custom list untouched');
     assert.equal(dom.window.document.activeElement, el(dom, 'favorites-restore'));
 
+    el(dom, 'favorites-restore').focus();
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => el(dom, 'favorites-restore-confirmation').hidden === false);
+    el(dom, 'favorites-restore-confirm').focus();
     el(dom, 'favorites-restore-confirm').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid
         && el(dom, 'favorites-restore-undo').hidden === false);
@@ -200,13 +204,15 @@ test('a failed favorites restore retries the reviewed backup without downloading
     });
     await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
 
+    el(dom, 'favorites-restore').focus();
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => el(dom, 'favorites-restore-confirmation').hidden === false);
     const reviewedImpact = el(dom, 'favorites-restore-confirmation-detail').textContent;
+    el(dom, 'favorites-restore-confirm').focus();
     el(dom, 'favorites-restore-confirm').click();
     await waitFor(dom, () => typeof rejectFirstWrite === 'function');
     assert.equal(el(dom, 'favorites-restore-confirmation').getAttribute('aria-busy'), 'true');
-    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-restore-confirmation'));
+    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-restore-confirm'));
 
     rejectFirstWrite(new Error('storage unavailable'));
     await waitFor(dom, () => el(dom, 'favorites-restore-confirmation').getAttribute('aria-busy') === null
@@ -215,6 +221,7 @@ test('a failed favorites restore retries the reviewed backup without downloading
     assert.equal(el(dom, 'favorites-restore-confirmation-detail').textContent, reviewedImpact);
     assert.equal(restoreReads, 1);
 
+    el(dom, 'favorites-restore-confirm').focus();
     el(dom, 'favorites-restore-confirm').click();
     await waitFor(dom, () => el(dom, 'favorites-restore-confirmation').hidden === true
         && dom.chrome._localStore[favoriteKey].entries[0].cid === restored.cid);
@@ -256,6 +263,7 @@ test('a restore from Backup & sync confirms and undoes without the list page ope
     // The list workspace is a separate page; restore does its whole job here.
     assert.equal(el(dom, 'favorites-custom-panel'), null);
 
+    el(dom, 'favorites-restore').focus();
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => el(dom, 'favorites-restore-confirmation').hidden === false);
     // Restore lives in Backup & sync, never inside the custom panel the Buddy
@@ -264,6 +272,7 @@ test('a restore from Backup & sync confirms and undoes without the list page ope
     assert.equal(el(dom, 'favorites-restore-confirmation').closest('#favorites-custom-panel'), null,
         'the restore confirmation must not be trapped inside the hidden custom panel');
 
+    el(dom, 'favorites-restore-confirm').focus();
     el(dom, 'favorites-restore-confirm').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid
         && el(dom, 'favorites-restore-undo').hidden === false);
@@ -308,6 +317,7 @@ test('favorites restore fails closed on an unknown backup schema', async () => {
         },
     });
     await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    el(dom, 'favorites-restore').focus();
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => /newer format/.test(el(dom, 'status-error-text').textContent));
     assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
@@ -339,6 +349,7 @@ test('favorites restore rejects a backup above the 1,500-entry bound', async () 
         },
     });
     await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    el(dom, 'favorites-restore').focus();
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => /not valid/.test(el(dom, 'status-error-text').textContent));
     assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);

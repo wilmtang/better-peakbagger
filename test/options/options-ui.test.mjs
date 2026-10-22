@@ -707,6 +707,7 @@ test('settings import replaces known settings and API keys only after inline con
         value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
     });
 
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
     assert.match(el(dom, 'settings-backup-confirmation').textContent,
@@ -714,6 +715,7 @@ test('settings import replaces known settings and API keys only after inline con
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark', 'reading a file must not apply it');
     assert.equal(dom.chrome._localStore.bpbImgbbAuth.key, 'old-imgbb-key');
 
+    el(dom, 'settings-backup-confirm').focus();
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
@@ -738,6 +740,7 @@ test('settings import rejects honest and streamed oversized files before confirm
             text: async () => { fallbackRead = true; return '{}'; },
         }],
     });
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => /file is too large/i.test(el(dom, 'status-error-text').textContent));
     assert.equal(fallbackRead, false, 'an honest size rejects before the file is read');
@@ -756,6 +759,7 @@ test('settings import rejects honest and streamed oversized files before confirm
             }),
         }],
     });
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => /file is too large/i.test(el(dom, 'status-error-text').textContent));
     await waitFor(dom, () => cancelled === true);
@@ -795,12 +799,14 @@ test('settings import requests GitHub permission and restores a validated connec
         value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }],
     });
 
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
     assert.match(el(dom, 'settings-backup-confirmation').textContent,
         /Replaces your current settings, saved API keys, and GitHub connection/);
     assert.equal(dom.chrome._localStore.bpbGithubAuth, undefined);
 
+    el(dom, 'settings-backup-confirm').focus();
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => dom.chrome._localStore.bpbGithubAuth?.token === 'ghu_imported_token');
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
@@ -838,8 +844,10 @@ test('settings import keeps everything unchanged when GitHub permission is decli
         value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }],
     });
 
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    el(dom, 'settings-backup-confirm').focus();
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => /GitHub access was not granted/.test(el(dom, 'status-error-text').textContent));
 
@@ -874,8 +882,10 @@ test('settings import keeps its confirmation retryable when persistence fails', 
         value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
     });
 
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    el(dom, 'settings-backup-confirm').focus();
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => /could not be imported/i.test(el(dom, 'status-error-text').textContent));
 
@@ -884,6 +894,7 @@ test('settings import keeps its confirmation retryable when persistence fails', 
     assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-confirm'));
 
     failWrite = false;
+    el(dom, 'settings-backup-confirm').focus();
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
@@ -903,6 +914,7 @@ test('Escape cancels a settings import and restores focus to Import', async () =
         configurable: true,
         value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
     });
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
 
@@ -943,9 +955,11 @@ test('Escape cannot visually cancel an import after its write has started', asyn
         configurable: true,
         value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
     });
+    el(dom, 'settings-backup-import').focus();
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
 
+    el(dom, 'settings-backup-confirm').focus();
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => writeStarted);
     dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
@@ -972,6 +986,7 @@ test('settings import rejects invalid and newer files without changing settings'
             configurable: true,
             value: [{ name, text: async () => text }]
         });
+        el(dom, 'settings-backup-import').focus();
         input.dispatchEvent(new dom.window.Event('change'));
         await waitFor(dom, () => el(dom, 'status-error-text').textContent.length > 0);
     };

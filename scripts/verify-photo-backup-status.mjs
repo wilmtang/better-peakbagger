@@ -134,6 +134,10 @@ export async function verifyPhotoBackupStatus({ context, extensionId, screenshot
                                 document.querySelector(selector)?.textContent.startsWith('Backing up'), surface.status);
                             stable(before, await geometry(), `${surface.name}: pending`);
                             assert.equal(await button.isDisabled(), true);
+                            if (surface.name === 'settings') {
+                                assert.equal(await button.evaluate(element => element.disabled), false, 'temporary unavailability remains focusable');
+                                assert.equal((await geometry()).focused, 'photos-backup');
+                            }
                             await button.evaluate(button => button.click());
                             assert.equal(await page.evaluate(() => window.backupFixture.calls), calls + 1);
                             await page.evaluate(({ failure, state }) => {
@@ -142,7 +146,8 @@ export async function verifyPhotoBackupStatus({ context, extensionId, screenshot
                                     ? { ok: false, error: { message: 'The photo-library backup failed. Try again.' } }
                                     : { ok: true });
                             }, { failure, state: states[0][1] });
-                            await page.waitForFunction(selector => !document.querySelector(selector)?.disabled, surface.button);
+                            await page.waitForFunction(selector => !document.querySelector(selector)?.disabled
+                                && document.querySelector(selector).getAttribute('aria-busy') !== 'true', surface.button);
                             await page.waitForFunction(({ selector, failure, library }) => {
                                 const text = document.querySelector(selector)?.textContent;
                                 return failure ? library ? text.includes('failed') : !text.startsWith('Backing up')

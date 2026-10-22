@@ -414,7 +414,8 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         };
         const openMyAscents = async event => {
             const control = event.currentTarget;
-            control.disabled = true;
+            if (control.getAttribute('aria-busy') === 'true') return;
+            OptionsUtils.setButtonBusy(control, true);
             control.querySelector('span').textContent = 'Opening…';
             historyStatus.hidden = true;
             const response = await send({ type: 'PEAKBAGGER_MY_ASCENTS' });
@@ -431,7 +432,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                     : 'Peakbagger could not find your My Ascents page. Confirm you’re signed in, then try again.';
                 showHistoryError(message, { offerSignIn: response && response.error && response.error.code === 'peakbagger-signed-out' });
             }
-            control.disabled = false;
+            OptionsUtils.setButtonBusy(control, false);
             control.querySelector('span').textContent = 'Open My Ascents';
         };
         const deleteToggle = el('label', { class: 'github-auto', for: 'github-delete-backup' }, [

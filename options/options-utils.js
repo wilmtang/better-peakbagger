@@ -8,6 +8,13 @@ const githubRepoName = status => status?.repo?.fullName
         ? `${status.repo.owner}/${status.repo.name}`
         : 'the connected repository');
 
+// Temporary unavailability keeps keyboard focus. Callers must guard activation
+// with their operation state; aria-disabled alone does not suppress events.
+const setButtonBusy = (button, busy) => {
+    button.setAttribute('aria-disabled', String(busy));
+    button.setAttribute('aria-busy', String(busy));
+};
+
 const withBusy = async ({ isBusy, setBusy }, operation) => {
     if (isBusy()) return;
     setBusy(true);
@@ -78,6 +85,7 @@ const createStatusFlash = ({ statusEl, statusErrorEl, statusErrorTextEl, statusE
 export const optionsUtils = {
     githubRepoName,
     withBusy,
+    setButtonBusy,
     logMissingElements,
     actionButton,
     listFocusRestorer,

@@ -3,6 +3,7 @@
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { mutateIgnored } from '../src/favorites/ignored-client.js';
 import { hasGithubPermission, observeGithubAccess } from './github.js';
+import { optionsUtils as OptionsUtils } from './options-utils.js';
 import * as I from '../src/favorites/ignored-climbers.js';
 
 export const initIgnoredBackup = ({ extensionApi } = {}) => {
@@ -77,15 +78,22 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
     };
     const run = async operation => {
         if (busy) return;
+        const focused = document.activeElement;
+        const ownsFocus = () => document.activeElement === focused;
+        let nextFocus = null;
         busy = true; revision++; root.setAttribute('aria-busy', 'true');
-        for (const button of [backup, restore, confirm, cancel, undo]) button.disabled = true;
+        for (const button of [backup, restore, confirm, cancel, undo]) OptionsUtils.setButtonBusy(button, true);
         mode.disabled = true; syncToggle.disabled = !enabled; status.textContent = enabled ? 'Syncing…' : 'Working with GitHub…';
         try {
             const response = await operation();
             if (response.state) { enabled = response.state.enabled; syncToggle.checked = enabled; }
-            if (response.preview) paintPreview(response.preview);
+            if (response.preview) {
+                paintPreview(response.preview, false);
+                if (ownsFocus()) nextFocus = cancel;
+            }
             else {
-                panel.hidden = true; pending = null; trigger.focus({ preventScroll: true });
+                if (panel.contains(document.activeElement) || document.activeElement === undo) nextFocus = trigger;
+                panel.hidden = true; pending = null;
                 if (response.undo) { undoRecord = response.undo; undo.hidden = false; }
                 status.textContent = response.state?.phase === 'synced' ? 'Ignored climbers synced.'
                     : response.state?.phase === 'pending' ? 'Pending changes'
@@ -94,14 +102,14 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
         } catch (error) { status.textContent = error.message; }
         finally {
             busy = false; root.removeAttribute('aria-busy');
-            for (const button of [backup, restore, confirm, cancel, undo]) button.disabled = false;
+            for (const button of [backup, restore, confirm, cancel, undo]) OptionsUtils.setButtonBusy(button, false);
             mode.disabled = false; syncToggle.disabled = !connected; backup.disabled = restore.disabled = !connected;
-            // The triggering action may have been disabled while focus moved.
-            if (!panel.hidden) cancel.focus({ preventScroll: true }); else trigger.focus({ preventScroll: true });
+            // A deliberate move elsewhere during the request belongs to the reader.
+            nextFocus?.focus({ preventScroll: true });
             void refresh();
         }
     };
-    backup.addEventListener('click', () => { trigger = backup; void run(() => request({ action: enabled ? 'sync' : 'backup' })); });
+    backup.addEventListener('click', () => { if (busy) return; trigger = backup; void run(() => request({ action: enabled ? 'sync' : 'backup' })); });
     syncToggle.addEventListener('change', () => {
         const next = syncToggle.checked; trigger = syncToggle;
         if (busy && enabled && !next) {
@@ -112,7 +120,7 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
         if (busy) { syncToggle.checked = enabled; return; }
         void run(() => request({ action: next ? 'enable' : 'disable' }));
     });
-    restore.addEventListener('click', () => { trigger = restore; void run(() => request({ action: 'restore' })); });
+    restore.addEventListener('click', () => { if (busy) return; trigger = restore; void run(() => request({ action: 'restore' })); });
     mode.addEventListener('change', paintImpact);
     confirm.addEventListener('click', () => {
         if (!pending || busy) return;

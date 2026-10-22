@@ -75,7 +75,9 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
             && backupResult?.repo === githubRepoName()
             && backupResult?.signature === signatureOf();
         actionsEl.hidden = false;
-        backupEl.disabled = restoreEl.disabled = githubBusy || !connected;
+        backupEl.disabled = restoreEl.disabled = !connected;
+        OptionsUtils.setButtonBusy(backupEl, githubBusy);
+        OptionsUtils.setButtonBusy(restoreEl, githubBusy);
         autoBackupEl.disabled = githubBusy || !connected;
         statusEl.classList.remove('favorites-github-success');
         statusEl.textContent = '';
@@ -115,13 +117,12 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
 
     const setConfirmBusy = busy => {
         pendingBusy = busy;
-        cancelEl.disabled = busy;
-        confirmEl.disabled = busy;
+        OptionsUtils.setButtonBusy(cancelEl, busy);
+        OptionsUtils.setButtonBusy(confirmEl, busy);
         githubBusy = busy;
         renderGithub();
         if (busy) {
             confirmationEl.setAttribute('aria-busy', 'true');
-            confirmationEl.focus({ preventScroll: true });
         } else {
             confirmationEl.removeAttribute('aria-busy');
         }
@@ -234,7 +235,7 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
             flash('This favorites backup is not valid or uses a newer format.', { error: true });
             return;
         }
-        showConfirmation(parsed.favorites, githubRepoName());
+        showConfirmation(parsed.favorites, githubRepoName(), { focus: document.activeElement === restoreEl });
     });
 
     const readFavorites = async () => {
@@ -271,10 +272,8 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
                 // it, so on a failed write the retry target would be skipped.
                 setConfirmBusy(false);
                 if (changed) {
-                    dismissConfirmation();
+                    dismissConfirmation({ restoreFocus: confirmationEl.contains(document.activeElement) });
                     flash(`Favorites restored from ${repo}`);
-                } else {
-                    confirmEl.focus();
                 }
             })
             .finally(() => setConfirmBusy(false));

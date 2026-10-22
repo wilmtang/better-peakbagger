@@ -61,8 +61,8 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     const render = () => {
         const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
         actionsEl.hidden = !connected;
-        backupEl.disabled = busy;
-        restoreEl.disabled = busy;
+        OptionsUtils.setButtonBusy(backupEl, busy);
+        OptionsUtils.setButtonBusy(restoreEl, busy);
         autoEl.disabled = busy;
         if (busy) {
             setStatus(operation === 'backup'
@@ -96,6 +96,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     };
 
     const withBusy = (name, run) => {
+        if (busy) return Promise.resolve();
         operation = name;
         return OptionsUtils.withBusy({
             isBusy: () => busy,
@@ -106,11 +107,11 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         });
     };
 
-    const hideConfirmation = ({ restoreFocus = true } = {}) => {
+    const hideConfirmation = ({ restoreFocus = confirmationEl.contains(document.activeElement) } = {}) => {
         pendingRestore = null;
         confirmationEl.hidden = true;
-        confirmEl.disabled = false;
-        cancelEl.disabled = false;
+        OptionsUtils.setButtonBusy(confirmEl, false);
+        OptionsUtils.setButtonBusy(cancelEl, false);
         confirmationEl.removeAttribute('aria-busy');
         if (restoreFocus && restoreEl.isConnected) restoreEl.focus();
     };
@@ -155,10 +156,10 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
                 + 'the original image is still on this device.',
         ].filter(Boolean).join(' ');
         confirmationEl.hidden = false;
-        confirmEl.focus();
+        if (document.activeElement === restoreEl) confirmEl.focus();
     }));
 
-    cancelEl.addEventListener('click', () => hideConfirmation());
+    cancelEl.addEventListener('click', () => { if (!busy) hideConfirmation(); });
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || confirmationEl.hidden
             || confirmationEl.getAttribute('aria-busy') === 'true') return;
@@ -167,10 +168,10 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     });
 
     confirmEl.addEventListener('click', () => {
-        if (!pendingRestore) return;
+        if (!pendingRestore || busy) return;
         const pending = pendingRestore;
-        confirmEl.disabled = true;
-        cancelEl.disabled = true;
+        OptionsUtils.setButtonBusy(confirmEl, true);
+        OptionsUtils.setButtonBusy(cancelEl, true);
         confirmationEl.setAttribute('aria-busy', 'true');
         void withBusy('restore', async () => {
             const response = await send({
@@ -182,8 +183,8 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
                 keepLocalConflicts: pending.conflicts > 0,
             });
             if (!response?.ok) {
-                confirmEl.disabled = false;
-                cancelEl.disabled = false;
+                OptionsUtils.setButtonBusy(confirmEl, false);
+                OptionsUtils.setButtonBusy(cancelEl, false);
                 confirmationEl.removeAttribute('aria-busy');
                 flash(photoBackupError(response?.error), { error: true });
                 return;

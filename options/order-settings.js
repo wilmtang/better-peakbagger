@@ -50,9 +50,9 @@ export const initOrderSettings = ({ save }) => {
             for (const [index, item] of (drag?.draft || order()).entries()) {
                 const row = rows.get(item);
                 if (list.children[index] !== row) list.insertBefore(row, list.children[index] || null);
-                row.querySelector('.order-grip').disabled = pending;
+                row.querySelector('.order-grip').setAttribute('aria-disabled', String(pending));
                 const check = row.querySelector('input');
-                if (check) { check.checked = settings[enabledKey].includes(item); check.disabled = pending; }
+                if (check) { check.checked = settings[enabledKey].includes(item); check.setAttribute('aria-disabled', String(pending)); }
                 if (before && row !== drag?.row) animate(row, before.get(row) - (list.getBoundingClientRect().top + row.offsetTop));
             }
             if (focused && !focused.disabled) focused.focus({ preventScroll: true });
@@ -164,6 +164,7 @@ export const initOrderSettings = ({ save }) => {
                 const check = document.createElement('input');
                 check.type = 'checkbox';
                 check.addEventListener('change', () => {
+                    if (pending) { render(); return; }
                     const enabled = settings[enabledKey].filter(value => value !== item);
                     if (check.checked) enabled.push(item);
                     void change({ [enabledKey]: enabled });

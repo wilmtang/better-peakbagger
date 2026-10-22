@@ -84,12 +84,14 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
     assert.equal(commitLink.getAttribute('rel'), 'noopener noreferrer');
     await waitFor(dom, () => !el(dom, 'settings-backup-github-restore').disabled);
 
+    el(dom, 'settings-backup-github-restore').focus();
     el(dom, 'settings-backup-github-restore').click();
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
     assert.match(el(dom, 'settings-backup-confirmation').textContent,
         /settings\.json from ada\/peaks.*Replaces your current settings/s);
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
 
+    el(dom, 'settings-backup-confirm').focus();
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
@@ -127,8 +129,8 @@ test('settings backup reports in-row progress before its persistent success stat
     await waitFor(dom, () => !el(dom, 'settings-backup-github-actions').hidden);
     el(dom, 'settings-backup-github-backup').click();
     await waitFor(dom, () => /Backing up settings to GitHub/.test(el(dom, 'settings-backup-github-status').textContent));
-    assert.equal(el(dom, 'settings-backup-github-backup').disabled, true);
-    assert.equal(el(dom, 'settings-backup-github-restore').disabled, true);
+    assert.equal(el(dom, 'settings-backup-github-backup').getAttribute('aria-disabled'), 'true');
+    assert.equal(el(dom, 'settings-backup-github-restore').getAttribute('aria-disabled'), 'true');
     assert.equal(el(dom, 'settings-backup-auto').disabled, true);
 
     finishBackup({
@@ -447,7 +449,7 @@ test('keyboard reordering keeps focus on the grip at the first position', async 
     grip.focus();
     grip.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'onx');
-    await waitFor(dom, () => !grip.disabled);
+    await waitFor(dom, () => grip.getAttribute('aria-disabled') === 'false');
     assert.equal(dom.window.document.activeElement, grip);
     assert.match(grip.getAttribute('aria-label'), /Reorder onX/);
     assert.match(dom.window.document.getElementById(grip.getAttribute('aria-describedby')).textContent, /Up and Down/);
@@ -539,7 +541,7 @@ test('a failed drag save restores the confirmed order and reports the failure', 
     pointer(dom.window, 'pointermove', 18);
     pointer(dom.window, 'pointerup', 18);
     await waitFor(dom, () => el(dom, 'status-error-text').textContent.includes('couldn’t be saved'));
-    await waitFor(dom, () => !grip.disabled);
+    await waitFor(dom, () => grip.getAttribute('aria-disabled') === 'false');
     assert.deepEqual(ids(), ['gaia', 'onx', 'alltrails', 'caltopo']);
     assert.equal(list.querySelectorAll('input:checked').length, 4);
     assert.equal(dom.window.document.activeElement, grip);

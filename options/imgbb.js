@@ -39,8 +39,8 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
 
     const setBusy = value => {
         busy = value;
-        saveEl.disabled = value;
-        removeEl.disabled = value;
+        OptionsUtils.setButtonBusy(saveEl, value);
+        OptionsUtils.setButtonBusy(removeEl, value);
     };
 
     // Three states worth distinguishing: no key, a key that can upload, and a
@@ -118,6 +118,7 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
             }
             keyEl.value = '';
             configured = false;
+            if (document.activeElement === removeEl) saveEl.focus({ preventScroll: true });
             removeEl.hidden = true;
             setStatus('No key saved on this device.');
             // Uploaded photos keep their public URLs; only new uploads stop.

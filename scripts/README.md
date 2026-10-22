@@ -150,5 +150,6 @@ independent of the existing targets.
 - [verify-report-caption-stability.mjs](verify-report-caption-stability.mjs)
 - [verify-report-draft-ownership.mjs](verify-report-draft-ownership.mjs)
 - [verify-report-photos.mjs](verify-report-photos.mjs)
+- [verify-settings-actions.mjs](verify-settings-actions.mjs) — held Settings actions and restore focus, run by `layout-stability`.
 - [verify-settings-navigation.mjs](verify-settings-navigation.mjs)
 
