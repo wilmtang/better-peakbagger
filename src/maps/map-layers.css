@@ -13,7 +13,7 @@
     --bpb-layer-focus: #2f6fd0;
     --bpb-layer-error: #912f2f;
     color-scheme: light;
-    position: fixed; z-index: 10005; pointer-events: auto;
+    position: absolute; z-index: 10005; pointer-events: auto;
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     color: var(--bpb-layer-ink); text-align: left;
 }

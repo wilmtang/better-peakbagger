@@ -165,6 +165,9 @@ MasterMap documents defer to a recognized parent, so one map has one menu.
 The native basemap selector and its existing handler remain untouched. The
 terrain frame owns its separate upper-right basemap picker. The overlay control
 aligns 10 pixels inside the visible map's left edge in either renderer.
+Its document anchor scrolls with the page without waiting for JavaScript;
+scroll callbacks update dropdown viewport limits and visibility. Document
+coordinates survive asynchronous status paints and the dark theme's positioned body.
 The overlay bootstrap does not depend on GPX readiness or 3D eligibility.
 
 The presentation lives in `src/maps/map-layer-control.js`. State and opacity
@@ -293,6 +296,10 @@ delegates to this integration check. Use `BPB_VERIFY_LAYERS_SCREENSHOT_DIR` to
 retain integration screenshots.
 Run `node scripts/verify-map-layer-control.mjs --firefox` for the matching compact
 component matrix in Firefox.
+Both browsers also sample real wheel scrolling at 736/320 × 800, light/dark,
+normal/doubled control text, and open/closed menus. Delayed position callbacks
+and loading/error/success paints must preserve the map inset, button dimensions
+and following native content.
 
 `npm run verify -- snow-map` covers the real Chrome and Firefox extensions,
 keyboard station popups, card selection, pending/error/retry, opt-out, renderer

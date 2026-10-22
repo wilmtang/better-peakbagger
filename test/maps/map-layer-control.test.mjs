@@ -13,6 +13,30 @@ test('overlay schema bounds device-local alpha and fails closed on enablement', 
     assert.equal(Object.hasOwn(Schema.DEFAULTS, 'mapOverlays'), false, 'overlay enablement is not a synced preference');
 });
 
+test('overlay geometry retains its document anchor through scrolling and async status paints', () => {
+    const dom = new JSDOM('<body></body>'), win = dom.window, document = win.document;
+    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const state = Schema.mapOverlayState({ slope: { enabled: true } });
+    win.scrollX = 30; win.scrollY = 500;
+    control.position({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
+    assert.equal(control.element.style.top, '550px'); assert.equal(control.element.style.left, '60px');
+    win.scrollY = 580;
+    for (const status of [{ pending: true }, { error: true, retry: true }, {}]) {
+        control.render({ state, statuses: { slope: status } });
+        assert.equal(control.element.style.top, '550px', 'a reply before the scroll handler cannot move the anchor');
+        assert.equal(control.element.hidden, false);
+    }
+    control.position({ left: 20, top: -40, bottom: 360, width: 800, height: 400 });
+    assert.equal(control.element.style.top, '550px', 'remeasuring after scroll preserves the document coordinate');
+    // Theme changes can introduce body as the positioned containing block.
+    document.body.style.position = 'relative';
+    document.body.getBoundingClientRect = () => ({ left: 16 - win.scrollX, top: 100 - win.scrollY });
+    Object.defineProperty(control.element, 'offsetParent', { get: () => document.body });
+    control.render({ state, theme: 'dark' });
+    assert.equal(control.element.style.left, '44px'); assert.equal(control.element.style.top, '450px');
+    control.dispose(); dom.window.close();
+});
+
 test('compact Overlays control separates collapse, enablement and one detail selection', () => {
     const dom = new JSDOM('<body></body>'), document = dom.window.document;
     const changes = [], opacity = [];

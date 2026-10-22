@@ -166,7 +166,7 @@ export function installMapLayers(win = window) {
     control.element.hidden = true; doc.body.append(control.element);
     const position = () => {
         // A visible control could mark defaults as user-owned before the
-        // isolated bridge delivers saved opacity. Its fixed overlay occupies
+        // isolated bridge delivers saved opacity. Its absolute overlay occupies
         // no native layout space while the initial read is pending.
         if (!preferencesReady) { control.element.hidden = true; return; }
         const target = (frameMode && doc.getElementById('bpb-terrain-frame'))

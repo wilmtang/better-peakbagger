@@ -121,14 +121,23 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         if (!rect) return;
         const width = win.innerWidth || doc.documentElement.clientWidth || 320;
         const height = win.innerHeight || 800;
-        const left = Math.max(8, Math.min(rect.left + 10, width - 110));
+        const left = Math.max(8, Math.min(rect.left - win.scrollX + 10, width - 110));
         const top = rect.top + 10;
-        element.style.left = `${left}px`; element.style.top = `${top}px`;
+        const viewportTop = top - win.scrollY;
+        element.hidden = rect.width < 120 || rect.height < 80 || rect.bottom - win.scrollY < 42 || rect.top - win.scrollY > height - 30;
+        // Dark mode positions body, making it the containing block. Light
+        // mode's static body uses the document origin instead. Neither may
+        // make the button depend on a scroll callback to follow the page.
+        const parent = element.offsetParent;
+        const parentRect = parent && (parent !== doc.body || win.getComputedStyle(parent).position !== 'static')
+            ? parent.getBoundingClientRect() : null;
+        const originX = parentRect ? parentRect.left + win.scrollX + parent.clientLeft - parent.scrollLeft : 0;
+        const originY = parentRect ? parentRect.top + win.scrollY + parent.clientTop - parent.scrollTop : 0;
+        element.style.left = `${left + win.scrollX - originX}px`; element.style.top = `${top - originY}px`;
         panel.style.width = `${Math.min(232, width - 16)}px`;
         panel.style.left = `${Math.min(0, width - 8 - left - Math.min(232, width - 16))}px`;
         const panelTop = Number.parseFloat(win.getComputedStyle(panel).top) || 38;
-        panel.style.maxHeight = `${Math.max(40, height - Math.max(8, top) - panelTop - 8)}px`;
-        element.hidden = rect.width < 120 || rect.height < 80 || rect.bottom < 42 || rect.top > height - 30;
+        panel.style.maxHeight = `${Math.max(40, height - Math.max(8, viewportTop) - panelTop - 8)}px`;
     };
     const paint = () => {
         if (disposed) return;
@@ -229,7 +238,13 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     return {
         element, trigger,
         render(next) { model = next; paint(); },
-        position(next) { rect = next; position(); },
+        position(next) {
+            // Store document coordinates when the owner measures the map.
+            // Async status paints can run before its next scroll callback.
+            rect = { left: next.left + win.scrollX, top: next.top + win.scrollY,
+                bottom: next.bottom + win.scrollY, width: next.width, height: next.height };
+            position();
+        },
         isOpen: () => open,
         announce(message) { live.textContent = message; },
         dispose() { disposed = true; win.clearTimeout(cooldownTimer); element.remove(); },

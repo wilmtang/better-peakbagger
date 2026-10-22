@@ -11,6 +11,7 @@ import { chromium, firefox } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { darkCss } from '../src/theme/site-dark-css.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
@@ -126,6 +127,74 @@ try {
         nativeThemeCases++;
     }
     assert.equal(nativeThemeCases, 3, 'all native map theme selections executed');
+    await page.route('**/layer-scroll.aspx', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+        <style>body{margin:16px;font:14px system-ui}.before-map{height:480px}#map{height:320px;background:#c4cdc3}.after-map{height:1600px}</style>
+        <h1>Ascent map</h1><div class="before-map"></div><div id="map"></div><h2>Following native content</h2><div class="after-map"></div>` }));
+    const scrollCases = [];
+    for (const width of [736, 320]) for (const theme of ['light', 'dark']) for (const scale of [1, 2]) {
+        await page.setViewportSize({ width, height: 800 }); await page.emulateMedia({ colorScheme: theme });
+        await page.goto(`${origin}/layer-scroll.aspx`);
+        await page.addStyleTag({ content: css + darkCss });
+        await page.evaluate(theme => {
+            document.documentElement.dataset.bpbTheme = theme;
+            window.scrollTo(0, document.querySelector('#map').getBoundingClientRect().top - 220);
+        }, theme);
+        await page.addScriptTag({ content: bundle.outputFiles[0].text });
+        await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${13 * scale}px`; }, scale);
+        for (const open of [false, true]) {
+            if (open) await page.getByRole('button', { name: /^Overlays/ }).press('Enter');
+            await page.evaluate(() => {
+                // Intentionally leave the owner's position callback pending:
+                // compositor scrolling must carry the button with the map.
+                window.scrollFrames = [];
+                window.traceScroll = true;
+                const sample = () => {
+                    if (!window.traceScroll) return;
+                    const map = document.querySelector('#map').getBoundingClientRect();
+                    const trigger = document.querySelector('.bpb-layers-trigger').getBoundingClientRect();
+                    const heading = document.querySelector('h2').getBoundingClientRect();
+                    window.scrollFrames.push({ x: trigger.x - map.x, y: trigger.y - map.y,
+                        width: trigger.width, height: trigger.height, following: heading.y - map.bottom,
+                        mapDocumentY: map.y + window.scrollY, headingDocumentY: heading.y + window.scrollY, scrollY: window.scrollY });
+                    window.requestAnimationFrame(sample);
+                };
+                sample();
+            });
+            await page.mouse.move(width - 2, 300);
+            for (const [delta, status] of [[80, { pending: true }], [-50, { error: true, retry: true, message: 'Could not load slope shading.' }], [60, {}]]) {
+                const before = await page.evaluate(() => window.scrollY);
+                await page.mouse.wheel(0, delta);
+                await page.waitForFunction(before => window.scrollY !== before && window.scrollFrames.at(-1)?.scrollY === window.scrollY, before);
+                await page.evaluate(async status => {
+                    const { control, state, statuses } = window.fixture;
+                    // Provider replies can paint before the delayed scroll
+                    // handler; they must not combine stale viewport geometry
+                    // with the new scroll offset and snap the button back.
+                    statuses.slope = status;
+                    control.render({ state, statuses, theme: document.documentElement.dataset.bpbTheme });
+                    await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+                }, status);
+            }
+            const frames = await page.evaluate(() => { window.traceScroll = false; return window.scrollFrames; });
+            assert.ok(new Set(frames.map(frame => frame.scrollY)).size >= 3, 'real wheel scrolling produced intermediate frames');
+            assert.ok(Math.abs(frames[0].x - 10) <= 1 && Math.abs(frames[0].y - 10) <= 1, 'both themes keep the button ten pixels inside the map');
+            for (const frame of frames) for (const key of ['x', 'y', 'width', 'height', 'following', 'mapDocumentY', 'headingDocumentY']) {
+                assert.ok(Math.abs(frame[key] - frames[0][key]) <= 1,
+                    `overlay follows the map during scrolling (${width}/${theme}/${scale}x/${open ? 'open' : 'closed'} ${key}): ${JSON.stringify(frames)}`);
+            }
+            // Once the owner catches up, updating its geometry must also be
+            // invisible; the dropdown can still recalculate viewport limits.
+            const before = await page.locator('.bpb-layers-trigger').boundingBox();
+            await page.evaluate(() => window.fixture.paint());
+            assert.deepEqual(await page.locator('.bpb-layers-trigger').boundingBox(), before, 'the scroll callback cannot move the anchored button');
+            if (screenshots) {
+                await mkdir(screenshots, { recursive: true });
+                await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-scroll-${open ? 'open' : 'closed'}.png`) });
+            }
+            scrollCases.push({ width, theme, textScale: scale, open, frames: frames.length });
+        }
+    }
+    assert.equal(scrollCases.length, 16, 'all scrolling selections executed');
     await page.route('**/layer-control.aspx', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>body{margin:16px;font:14px system-ui}#map{height:240px;margin-top:36px;background:#c4cdc3}</style><div id="map"></div><h2>Following native content</h2>' }));
     const cases = [];
     for (const width of [736, 320]) for (const theme of ['light', 'dark']) for (const scale of [1, 2]) {
@@ -419,7 +488,7 @@ try {
     }
     assert.equal(errors.length, 0, errors.join('\n'));
     assert.equal(cases.length, 8, 'all component selections executed');
-    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser().version(), hidden: true, nativeThemeCases, cases };
+    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser().version(), hidden: true, nativeThemeCases, scrollCases, cases };
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);
 console.log(JSON.stringify({ ...summary, teardown: 'passed' }));

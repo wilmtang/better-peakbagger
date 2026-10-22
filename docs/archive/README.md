@@ -8,6 +8,10 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [CascadeClimbers weather feature gaps — 2026-10-21](cascadeclimbers-weather-feature-gaps-2026-10-21.md) —
+  Chrome inspection of Weather Research and Weather Lab compared with the
+  plugin source, separating missing comparisons, atmospheric data, inline
+  hazards and vertical forecasts from existing features and unproven claims.
 - [CI, UI, and maintainability follow-up — 2026-10-10](ci-ux-maintainability-audit-2026-10-10.md) —
   shared production release/capture gates, Firefox moved-tab recovery, outdoor
   extension panels, unclipped popup results, and reduced duplicate owners.
