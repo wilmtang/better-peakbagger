@@ -1,5 +1,8 @@
 # Active plans
 
+- [UX audit — October 22](ux-audit-2026-10-22.md) — in progress; keyboard focus,
+  asynchronous action recovery and cross-surface interaction verification.
+
 - [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)
   — four runtime findings fixed and verified locally in focused commits:
   capture cooldown, keyboard focus, metadata stability and chart efficiency.
