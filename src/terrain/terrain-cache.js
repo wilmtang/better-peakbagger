@@ -690,6 +690,9 @@ const getUsage = async ({ cacheStorage, storageArea } = {}) => {
     }
 };
 
+// The point sampler shares validation without bundling the persistent cache.
+export { readBoundedWebp };
+
 export const terrainCache = {
     CACHE_NAME, INDEX_KEY, MAX_TILE_BYTES, PROTOCOL, create, getUsage, isMissingTile, parseTileUrl
 };

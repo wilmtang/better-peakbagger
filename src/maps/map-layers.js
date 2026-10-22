@@ -12,6 +12,8 @@ import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createMapLocationMenu } from './map-location-menu.js';
+import { bindMapLocationMenu } from './peak-weather-map.js';
 
 const MAP_PAGES = /\/(?:ascent|peak|bigmap)\.aspx$/i;
 const FRAME_SELECTOR = 'iframe#if, iframe[src*="MasterMap.aspx" i]';
@@ -20,6 +22,7 @@ export function installMapLayers(win = window) {
     // An embedded MasterMap's outer page owns controls even before its map has
     // loaded. Standalone MasterMap and other native map shells own themselves.
     try { if (win.parent !== win && MAP_PAGES.test(win.parent.location.pathname)) return null; } catch { /* Standalone owner. */ }
+    const locationMenu = createMapLocationMenu({ window: win });
     const state = Schema.mapOverlayState();
     let touched = false, preferencesReady = false, revision = 1, capture = null;
     let binding = null, polling = null, frameMode = false, booting = false, active = true, disposed = false;
@@ -176,6 +179,7 @@ export function installMapLayers(win = window) {
         nativeReveal.cancel();
         if (!binding) return;
         binding.map.off('moveend', refresh);
+        binding.unbindLocation();
         binding.observer?.disconnect(); binding.sentinel.dispose(); binding.engine.dispose();
         binding = null;
     };
@@ -219,7 +223,8 @@ export function installMapLayers(win = window) {
                     },
                     onCapture: target => { capture = target; revision++; relay(); post({ type: 'handoffState', snapshot: snapshot() }); },
                 });
-                binding = { ...candidate, map, engine, sentinel };
+                const unbindLocation = bindMapLocationMenu({ ownerWindow: owner, map, frame: candidate.frame, menu: locationMenu });
+                binding = { ...candidate, map, engine, sentinel, unbindLocation };
                 map.on('moveend', refresh);
                 if (win.ResizeObserver) { binding.observer = new win.ResizeObserver(position); binding.observer.observe(candidate.frame || map.getContainer()); }
                 apply(); refresh(); return true;
@@ -236,6 +241,13 @@ export function installMapLayers(win = window) {
     const handle = event => {
         const data = event.data;
         if (event.source !== win || event.origin !== win.location.origin || !data || !active) return;
+        if (data.__bpbMapLocation === true) {
+            if (data.type === 'dismiss') locationMenu.close();
+            else if (data.type === 'context' && data.map === 'terrain' && frameMode && !booting) {
+                locationMenu.show(data, doc.getElementById('bpb-terrain-frame'));
+            }
+            return;
+        }
         if (data.__bpbPeakSnow === true && data.dir === 'toPage') {
             if (data.type === 'availability') {
                 cardAvailable = data.enabled === true;
@@ -272,6 +284,7 @@ export function installMapLayers(win = window) {
                     changed(); loadStations();
                 }
             } else if (data.type === 'preferences') {
+                locationMenu.setUnits({ units: data.units, elevationUnits: data.elevationUnits });
                 preferencesReady = true;
                 if (!touched) { const preferences = Schema.mapOverlayPreferences(data.preferences); for (const id of Schema.MAP_OVERLAY_IDS) state[id].opacity = preferences[id]; }
                 const wasAllowed = snotelAllowed; snotelAllowed = data.snotel === true;
@@ -303,6 +316,7 @@ export function installMapLayers(win = window) {
         }
         if (data.__bpbTerrain !== true) return;
         if (data.dir === 'toCS' && data.type === 'init') {
+            locationMenu.close();
             booting = true; binding?.sentinel.deactivate(); binding?.engine.dispose();
             // Recreate the native adapter only when returning to 2D.
             if (binding) { unbind(); start(); }
@@ -339,10 +353,10 @@ export function installMapLayers(win = window) {
     const themeObserver = new win.MutationObserver(paint); themeObserver.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-bpb-theme', 'data-theme'] });
     frameLifecycle.subscribe(start); frameLifecycle.start(); start(); post({ type: 'preferences' }); snowCard({ type: 'availability' });
     const lifecycle = createPageLifecycle({ ownerWindow: win,
-        onSuspend() { active = false; cancelReveal(); stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
+        onSuspend() { active = false; locationMenu.close(); cancelReveal(); stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
         onResume() { active = true; start(); post({ type: 'preferences' }); },
         onDispose() { disposed = true; active = false; stopPolling(); clearTimeout(stationTimer); if (relayFrame !== null) win.cancelAnimationFrame(relayFrame);
-            post({ type: 'cancel' }); unbind(); frameLifecycle.dispose(); themeObserver.disconnect(); control.dispose();
+            post({ type: 'cancel' }); unbind(); frameLifecycle.dispose(); themeObserver.disconnect(); control.dispose(); locationMenu.dispose();
             win.removeEventListener('message', handle); win.removeEventListener('scroll', position, true); win.removeEventListener('resize', position); },
     });
     return { dispose: () => lifecycle.dispose() };

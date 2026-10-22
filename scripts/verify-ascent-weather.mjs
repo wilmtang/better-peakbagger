@@ -25,19 +25,22 @@ import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
 import { verifySnotelOptions } from './verify-snotel-options.mjs';
 import { verifyPeakCards } from './verify-peak-cards.mjs';
+import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
 const live = process.argv.includes('--live'); // one optional public-coordinate CORS proof
+const mapLocationMode = process.argv.includes('--map-location');
 const snowMapMode = process.argv.includes('--snow-map');
 const cardsMode = process.argv.includes('--cards');
 const cloudMode = process.argv.includes('--clouds');
 const snowMode = process.argv.includes('--snow') || snowMapMode || cardsMode;
-const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--clouds'].includes(arg));
-if (unknown.length || (snowMode && live) || (cloudMode && (snowMode || live))) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
-const peakMode = process.argv.includes('--peak') || snowMode || cloudMode;
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--clouds', '--map-location'].includes(arg));
+if (unknown.length || (snowMode && live) || (cloudMode && (snowMode || live))
+    || (mapLocationMode && (snowMode || cloudMode || live))) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
+const peakMode = process.argv.includes('--peak') || snowMode || cloudMode || mapLocationMode;
 const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
 const resources = createResourceStack();
 let primaryError = null, summary;
@@ -45,17 +48,19 @@ const failureEvidence = {};
 try {
     const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-ascent-weather-verify-'));
     resources.defer('weather verification profile', () => rm(temporaryRoot, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot, ...(snowMapMode ? { peakMapDocument: await snowMapDocument() } : {}) });
+    const nativeMap = snowMapMode || mapLocationMode || peakMode ? await snowMapDocument() : null;
+    const fixture = await createBrowserFixtureServer({ temporaryRoot, ...(nativeMap ? { peakMapDocument: nativeMap, ...(mapLocationMode ? { masterMapDocument: nativeMap } : {}) } : {}) });
     resources.defer('weather HTTPS fixtures', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     failureEvidence.fixtureOrigin = origin;
-    const evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
+    const elevationEvidence = [], evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
     let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readSettings, setZoom, readLocal, writeLocal, version, withOptions;
     const providerPattern = /^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov|tiles\.mapterhorn\.com)\//;
     const replyFor = url => {
         const requested = new URL(url);
-        if (requested.hostname === 'tiles.mapterhorn.com') return { status: 200, body: snowMapDem, contentType: 'image/webp', headers: {} };
+        if (requested.hostname === 'tiles.mapterhorn.com') return { status: mode === 'elevation-missing' ? 404 : mode === 'elevation-error' ? 503 : mode === 'elevation-limited' ? 429 : 200,
+            body: snowMapDem, contentType: 'image/webp', headers: { 'cache-control': 'no-store', ...(mode === 'elevation-limited' ? { 'retry-after': '120' } : {}) } };
         if (requested.hostname === 'wcc.sc.egov.usda.gov') {
             const body = !snowMode || mode === 'no-stations' ? snotelStations().map(station => ({ ...station, latitude: 40, longitude: -111 })) : requested.pathname.endsWith('/stations')
                 ? mode === 'map-selection' ? Array.from({ length: 4 }, (_, index) => ({ ...snotelStations()[0],
@@ -107,6 +112,7 @@ try {
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');
         assert.ok(!/[?&](?:aid|cid|name|gpx)=/i.test(url));
+        if (new URL(url).hostname === 'tiles.mapterhorn.com') { elevationEvidence.push(url); return; }
         if (new URL(url).hostname === 'wcc.sc.egov.usda.gov') {
             assert.ok(!/[?&](?:latitude|longitude|pid)=/i.test(url));
             snowEvidence.push({ path: new URL(url).pathname, query: new URL(url).search }); return;
@@ -116,7 +122,7 @@ try {
             fields: new URL(url).searchParams.get('hourly').split(','), origin: headers.find(header => header.name.toLowerCase() === 'origin')?.value });
     };
     if (firefoxMode) {
-        const { Builder, By } = await import('selenium-webdriver');
+        const { Builder, By, Key } = await import('selenium-webdriver');
         const firefox = (await import('selenium-webdriver/firefox.js')).default;
         const prepared = await prepareFirefoxSource({ temporaryRoot });
         resources.defer('weather Firefox source', () => prepared.cleanup());
@@ -124,7 +130,7 @@ try {
         const profile = path.join(temporaryRoot, 'profile'); await mkdir(profile);
         const options = new firefox.Options().addArguments('-headless').enableBidi().setProfile(profile)
             .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com').setAcceptInsecureCerts(true);
-        if (snowMapMode) {
+        if (snowMapMode || mapLocationMode) {
             options.setPreference('webgl.sanitize-unmasked-renderer', false);
             if (process.platform === 'darwin') options.setPreference('webgl.disable-angle', false);
         }
@@ -148,8 +154,8 @@ try {
                 if (!providerPattern.test(url)) return;
                 void (async () => {
                     const headers = params.request.headers.map(header => ({ name: header.name, value: header.value.value }));
-                    if (new URL(url).hostname !== 'tiles.mapterhorn.com') checkRequest(url, headers);
-                    if (mode === 'loading' && (!snowMode || cardsMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
+                    checkRequest(url, headers);
+                    if (mode === 'elevation-loading' && new URL(url).hostname === 'tiles.mapterhorn.com' || mode === 'loading' && (!snowMode || cardsMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
                     const reply = replyFor(url);
                     await send({ method: 'network.provideResponse', params: { request: params.request.request, statusCode: reply.status,
                         headers: [{ name: 'content-type', value: { type: 'string', value: reply.contentType || 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
@@ -163,7 +169,7 @@ try {
                 { type: 'pattern', protocol: 'https', hostname: 'historical-forecast-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'wcc.sc.egov.usda.gov' },
-                ...(snowMapMode ? [{ type: 'pattern', protocol: 'https', hostname: 'tiles.mapterhorn.com' }] : []),
+                { type: 'pattern', protocol: 'https', hostname: 'tiles.mapterhorn.com' },
             ] } });
         } else {
             await bidi.subscribe('network.beforeRequestSent');
@@ -199,7 +205,15 @@ try {
             } catch (error) { throw new Error(`${error.message}; live geometry: ${JSON.stringify(last)}`); }
             await target.click();
         };
-        press = key => driver.actions({ async: true }).sendKeys(key).perform();
+        press = key => {
+            const sequence = [...key], actions = driver.actions({ async: true });
+            // Actions.sendKeys releases modifiers immediately; these callers
+            // pass WebElement-style chords, which need an explicit held Shift.
+            if (sequence[0] === Key.SHIFT && sequence.at(-1) === Key.NULL) {
+                return actions.keyDown(Key.SHIFT).sendKeys(...sequence.slice(1, -1)).keyUp(Key.SHIFT).perform();
+            }
+            return actions.sendKeys(key).perform();
+        };
         movePointer = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).perform();
         pointerDown = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).press().perform();
         pointerUp = () => driver.actions({ async: true }).release().perform();
@@ -283,8 +297,8 @@ try {
         const screenshotSession = await context.newCDPSession(page);
         resources.defer('weather screenshot session', () => screenshotSession.detach());
         if (!live) await context.route(providerPattern, async route => {
-            if (new URL(route.request().url()).hostname !== 'tiles.mapterhorn.com') checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
-            if (mode === 'loading' && (!snowMode || cardsMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
+            checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
+            if (mode === 'elevation-loading' && new URL(route.request().url()).hostname === 'tiles.mapterhorn.com' || mode === 'loading' && (!snowMode || cardsMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
             const reply = replyFor(route.request().url());
             await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': reply.contentType || 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
         });
@@ -495,6 +509,12 @@ try {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyWeatherClouds({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, setZoom, wait,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, networkErrors, firefoxMode }) };
+    } else if (mapLocationMode) {
+        const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
+        if (output) await mkdir(output, { recursive: true });
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            ...await verifyMapLocationCases({ evaluate, evaluateTerrain, navigate, click, clickPoint, press, resize, wait, setSettings, setZoom,
+                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), elevationEvidence, evidence, origin, screenshotPage, output, firefoxMode }) };
     } else if (cardsMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,

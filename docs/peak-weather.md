@@ -22,7 +22,9 @@ this location** to use that point for both periods. The menu opens beside the
 pointer, fits within the viewport, supports keyboard activation and Escape,
 and closes on an outside click, wheel zoom, scrolling, or resizing. Escape,
 Tab and Shift+Tab return focus to the map without moving the page. Opening it sends no
-weather request. The card identifies the selected coordinates; **Reset to
+weather request. The shared [location menu](map-layers.md#location-menu) also
+shows coordinates and an approximate elevation, including when weather is off.
+Only the elevation lookup contacts Mapterhorn on opening. The card identifies the selected coordinates; **Reset to
 summit** immediately restores the already-loaded summit result and cancels any
 pending location request. Neither action pans the map or scrolls the page.
 Reset also restores the summit's model choices. A failed location switch names

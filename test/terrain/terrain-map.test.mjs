@@ -472,23 +472,24 @@ test('a parked terrain frame cannot reveal stations and resume does not replay t
     } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
 });
 
-test('3D weather points require the active frame generation, valid coordinates and a visible card', async () => {
+test('3D location points require the active frame generation and valid coordinates, independently of weather', async () => {
     const harness = await bootLoadedFrame();
     const { window, frame, dispatchPage, dispatchFrame, pageMessages, frameMessages, initData } = harness;
     try {
         const card = window.document.createElement('section'); card.id = 'bpb-peak-weather'; window.document.body.append(card);
         frame.getBoundingClientRect = () => ({ left: 100, top: 50, width: 600, height: 400 });
-        const context = { type: 'weatherContext', latitude: 46.8, longitude: -121.7, x: 20, y: 30 };
+        const context = { type: 'locationContext', latitude: 46.8, longitude: -121.7, x: 20, y: 30 };
         dispatchFrame(context);
-        assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), { __bpbPeakWeather: true, type: 'context', map: 'terrain', latitude: 46.8, longitude: -121.7, x: 120, y: 80 });
+        assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), { __bpbMapLocation: true, type: 'context', map: 'terrain', latitude: 46.8, longitude: -121.7, x: 120, y: 80 });
         const count = pageMessages.length;
         for (const invalid of [{ latitude: 91 }, { x: 601 }, { longitude: '1' }, { generation: -1 }]) dispatchFrame({ ...context, ...invalid });
-        card.hidden = true; dispatchFrame(context); assert.equal(pageMessages.length, count);
-        card.hidden = false; dispatchFrame({ type: 'weatherDismiss' }); assert.equal(pageMessages.at(-1).type, 'dismiss');
+        assert.equal(pageMessages.length, count);
+        card.hidden = true; dispatchFrame(context); assert.equal(pageMessages.length, count + 1);
+        card.hidden = false; dispatchFrame({ type: 'locationDismiss' }); assert.equal(pageMessages.at(-1).type, 'dismiss');
         const oldGeneration = frameMessages.find(message => message.type === 'init').generation;
         dispatchPage({ type: 'destroy' });
         const parkedCount = pageMessages.length;
-        dispatchFrame(context); dispatchFrame({ type: 'weatherDismiss' });
+        dispatchFrame(context); dispatchFrame({ type: 'locationDismiss' });
         assert.equal(pageMessages.length, parkedCount, 'a parked renderer cannot open or dismiss a weather menu');
         armTerrain(window); dispatchPage(initData);
         await new Promise(resolve => harness.realSetTimeout(resolve, 0));
@@ -1101,12 +1102,14 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(map.options.fitBoundsOptions.pitch, 60);
     assert.equal(map.fitted, undefined, 'no redundant post-load fitBounds');
     assert.equal(window.document.getElementById('bpb-terrain-map').style.pointerEvents, 'auto');
-    assert.equal(messages.at(-1).type, 'loaded');
+    assert.equal(messages.filter(message => message.type !== 'locationDismiss').at(-1).type, 'loaded');
     assert.equal(map.handlers.has('data'), true,
         'the frame reports loaded without waiting for a drape tile data event');
     map.handlers.get('error')({ sourceId: 'terrain', error: new Error('one DEM tile failed') });
     assert.equal(map.removed, false, 'a post-load source error remains a recoverable coverage gap');
-    assert.equal(messages.at(-1).type, 'loaded', 'recoverable source errors stay silent to the page');
+    assert.equal(messages.filter(message => message.type !== 'locationDismiss').at(-1).type, 'loaded', 'recoverable source errors stay silent to the page');
+    map.handlers.get('contextmenu')({ lngLat: { lat: 48.7, wrap: () => ({ lng: -121.8 }) }, originalEvent: { clientX: 20, clientY: 30 } });
+    assert.equal(messages.at(-1).type, 'locationContext', 'route terrain exposes a location without a focus peak');
 
     // macOS Firefox rewrites Ctrl + primary-button mousedown to button=2 but
     // leaves buttons=1. MapLibre cannot continue that internally inconsistent
@@ -1324,14 +1327,14 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     await new Promise(resolve => window.queueMicrotask(resolve));
     const focused = maps.at(-1);
     focused.handlers.get('contextmenu')({ lngLat: { lat: 46.8, wrap: () => ({ lng: -121.7 }) }, originalEvent: { clientX: 30, clientY: 40 } });
-    assert.equal(messages.at(-1).type, 'weatherContext');
+    assert.equal(messages.at(-1).type, 'locationContext');
     assert.equal(messages.at(-1).latitude, 46.8); assert.equal(messages.at(-1).longitude, -121.7);
     const pickerPointer = new window.Event('pointerdown', { bubbles: true, cancelable: true });
     window.document.getElementById('bpb-terrain-map').dispatchEvent(pickerPointer);
-    assert.equal(pickerPointer.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'weatherDismiss'));
+    assert.equal(pickerPointer.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'locationDismiss'));
     const weatherWheel = new window.Event('wheel', { bubbles: true, cancelable: true });
     window.document.querySelector('#bpb-terrain-map').dispatchEvent(weatherWheel);
-    assert.equal(weatherWheel.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'weatherDismiss'));
+    assert.equal(weatherWheel.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'locationDismiss'));
     assert.deepEqual(JSON.parse(JSON.stringify(focused.options.center)), [-121.60214, 48.83115]);
     assert.equal(focused.options.zoom, 13);
     assert.equal(focused.options.bounds, undefined, 'a summit view does not synthesize route bounds');

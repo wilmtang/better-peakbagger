@@ -30,6 +30,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['provider-performance'], [['verify-provider-performance.mjs']]],
         [['map-handoffs'], [['verify-map-handoffs.mjs']]],
         [['map-layers'], [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']]],
+        [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
         [['api-rate-limits'], [['verify-api-rate-limits.mjs']]],
         [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mjs']]],
         [['peak-map-layout'], [['verify-peak-map-layout.mjs']]],

@@ -226,7 +226,53 @@ Canadian sources compose into the same opaque working tile before the map
 applies opacity once. Coarse, packaged public-domain Natural Earth province
 outlines select providers only; parcel records determine every colored area.
 
+## Location menu
+
+Right-click a peak, ascent, BigMap or standalone native Leaflet map, or an active
+3D terrain view, for elevation and decimal coordinates. Coordinates remain
+selectable text. The first elevation unit follows the shared elevation preference
+and, in Auto on peak pages, the native elevation heading; the second unit is
+always shown. An enabled peak weather card adds its existing forecast/archive
+action. Weather opt-out and weather cooldown do not disable the elevation readout.
+
+The shared MAIN-world menu is owned by the map-layer lifecycle. Native point
+projection lives in `src/maps/peak-weather-map.js`; the terrain frame sends a
+validated, generation-bound point through its existing bridge. Only the isolated
+weather card performs forecast requests. Map replacement, navigation, dismissal
+and a newer selection invalidate and abort the prior elevation lookup.
+
+`src/maps/map-elevation.js` reads credential-free Mapterhorn Terrarium tiles at
+fixed zoom 14, falling back through zoom 10 only on 404. This detail policy is
+independent of the viewport, 3D tile availability and terrain exaggeration.
+It samples the clicked raster cell; it does not snap to a nearby peak or read
+the ascent's GPX elevation. It reuses the terrain loader's bounded WebP response
+validation, checks decoded 512-pixel dimensions, and shares one eight-second
+deadline across downloads and decoding. Up to four decoded tiles and 64 absent
+keys remain in page memory; this does not use the optional persistent 3D cache.
+429 responses gate subsequent uncached lookups until Retry-After, or five minutes.
+No data, polar coordinates beyond Web Mercator coverage, corrupt responses and
+network errors show an unavailable reading rather than a fabricated sea level.
+
+Elevation is a terrain estimate. [Mapterhorn's underlying source resolution](https://mapterhorn.com/)
+varies geographically, and the served tile can be coarser; resolution is not a
+vertical-accuracy guarantee. [Underlying sources and attribution](https://mapterhorn.com/attribution/)
+remain available from the provider. Sharp summits and cliffs can differ substantially
+from a survey or Peakbagger's listed summit elevation. The menu rounds to whole
+units and labels the estimate instead of implying decimal precision.
+
 ## Verification
+
+`npm run verify -- map-location` exercises the real extensions in hidden Chrome
+and Firefox with pinned Leaflet and synthetic Mapterhorn/weather responses:
+all four native surfaces, light/dark, desktop/narrow, slow success, no data,
+service failure/reopen, rate limits, 200% browser zoom, wrapped labels,
+forecast activation/cooldown, map-frame reloads, Shift+F10, and hardware 3D without
+weather. Per-frame menu geometry
+and the surrounding native content are compared through the pending/success
+transition; failure states use the same geometry assertion. A deliberate five-pixel
+shift is a negative control. Use `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain
+screenshots. Live provider elevations, browser context-menu chrome, OS focus and
+screen-reader speech remain outside these hidden fixtures.
 
 `npm run verify -- map-layers` runs the compact component checks and real
 unpacked Chrome integration with pinned Leaflet, synthetic provider responses

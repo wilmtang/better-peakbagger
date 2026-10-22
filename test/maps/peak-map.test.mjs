@@ -94,39 +94,6 @@ for (const [label, text, expected] of [
     });
 }
 
-test('native map right-click projects the live point only with a visible weather card and survives frame reloads', async () => {
-    const { window, messages } = loadPeakMap();
-    try {
-        const frame = window.document.getElementById('Gmap'), doc = frame.contentDocument;
-        doc.open(); doc.write('<!doctype html><html><body></body></html>'); doc.close();
-        frame.dispatchEvent(new window.Event('load'));
-        frame.getBoundingClientRect = () => ({ left: 200, top: 100 });
-        frame.contentWindow.mapsPlaceholder = { on() {}, eachLayer() {}, mouseEventToLatLng: () => ({ lat: 46.8, lng: 238.3 }) };
-        const card = window.document.createElement('section'); card.id = 'bpb-peak-weather'; window.document.body.append(card);
-        const rightClick = () => {
-            const event = new window.MouseEvent('contextmenu', { clientX: 20, clientY: 30, bubbles: true, cancelable: true });
-            doc.body.dispatchEvent(event); return event;
-        };
-        assert.equal(rightClick().defaultPrevented, true);
-        const context = messages.filter(message => message.__bpbPeakWeather && message.type === 'context').at(-1);
-        assert.equal(context.latitude, 46.8); assert.ok(Math.abs(context.longitude + 121.7) < 1e-8);
-        assert.equal(context.x, 220); assert.equal(context.y, 130);
-        const wheel = new window.WheelEvent('wheel', { bubbles: true, cancelable: true });
-        doc.body.dispatchEvent(wheel);
-        assert.equal(wheel.defaultPrevented, false); assert.equal(messages.at(-1).type, 'dismiss');
-        doc.dispatchEvent(new window.Event('scroll')); assert.equal(messages.at(-1).type, 'dismiss');
-        card.hidden = true; assert.equal(rightClick().defaultPrevented, false);
-        card.hidden = false;
-        window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
-        assert.equal(rightClick().defaultPrevented, false);
-        const suspendedCount = messages.length; doc.body.dispatchEvent(wheel); assert.equal(messages.length, suspendedCount);
-        window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
-        frame.dispatchEvent(new window.Event('load')); frame.dispatchEvent(new window.Event('load'));
-        const count = messages.filter(message => message.type === 'context').length;
-        rightClick(); assert.equal(messages.filter(message => message.type === 'context').length, count + 1);
-    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
-});
-
 test('Sun display opt-out updates live independently of terrain, including BFCache', async () => {
     const { dom, window } = loadPeakMap({ showSunMoon: false, enabled: false });
     try {

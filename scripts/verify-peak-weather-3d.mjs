@@ -132,7 +132,7 @@ try {
     await page.locator('#bpb-terrain-toggle').click();
     await page.waitForFunction(() => document.getElementById('bpb-terrain-frame').style.opacity === '0');
     await canvas.evaluate((node, data) => window.parent.postMessage({ __bpbTerrainFrame: true, dir: 'toParent',
-        type: 'weatherContext', generation: data.generation, latitude: 46.8, longitude: -121.7, x: 100, y: 100,
+        type: 'locationContext', generation: data.generation, latitude: 46.8, longitude: -121.7, x: 100, y: 100,
         auditParkedContext: true }, data.origin), { generation, origin: `https://www.peakbagger.com:${fixture.port}` });
     await page.waitForFunction(() => window.__bpbWeatherParkedContextReceived);
     await page.evaluate(async () => { for (let frame = 0; frame < 2; frame++) await new Promise(resolve => requestAnimationFrame(resolve)); });

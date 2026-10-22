@@ -1834,7 +1834,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         mapElement.setAttribute('role', 'region');
         mapElement.setAttribute('aria-label', 'Interactive 3D terrain map');
         const weatherRoot = mapElement;
-        const dismissWeatherMenu = () => { if (mapElement === weatherRoot && focusPeakFeature) post('weatherDismiss'); };
+        const dismissWeatherMenu = () => { if (mapElement === weatherRoot) post('locationDismiss'); };
         weatherRoot.addEventListener('pointerdown', dismissWeatherMenu, { capture: true, passive: true });
         weatherRoot.addEventListener('wheel', dismissWeatherMenu, { capture: true, passive: true });
 
@@ -2075,9 +2075,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     }
                 });
                 terrainMap.on('contextmenu', event => {
-                    if (map !== terrainMap || !focusPeakFeature || !event?.lngLat || !event.originalEvent) return;
-                    post('weatherContext', { latitude: event.lngLat.lat, longitude: event.lngLat.wrap().lng,
+                    if (map !== terrainMap || !event?.lngLat || !event.originalEvent) return;
+                    post('locationContext', { latitude: event.lngLat.lat, longitude: event.lngLat.wrap().lng,
                         x: event.originalEvent.clientX, y: event.originalEvent.clientY });
+                });
+                terrainMap.getCanvas?.()?.addEventListener?.('keydown', event => {
+                    if (map !== terrainMap || !event.isTrusted
+                        || !(event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) return;
+                    const center = terrainMap.getCenter(), rect = terrainMap.getCanvas().getBoundingClientRect();
+                    event.preventDefault(); event.stopPropagation();
+                    post('locationContext', { latitude: center.lat, longitude: center.wrap().lng, keyboard: true,
+                        x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
                 });
                 terrainMap.on('mousemove', event => {
                     if (map === terrainMap && event && event.point) schedulePointerUpdate(event.point);

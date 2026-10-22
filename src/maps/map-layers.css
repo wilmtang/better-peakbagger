@@ -102,3 +102,43 @@
     .bpb-layers-panel { top: max(50px, calc(1.4em + 16px)); }
     .bpb-map-layers select { font-size: 16px; }
 }
+
+/* A quiet location readout, shared by native maps and the terrain frame. */
+#bpb-peak-weather-menu {
+    --bpb-location-bg: #fff;
+    --bpb-location-text: #202832;
+    --bpb-location-muted: #5c6875;
+    --bpb-location-line: #e5e9ee;
+    position: fixed; z-index: 2147483647; box-sizing: border-box;
+    width: 276px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto;
+    padding: 16px 16px 12px; border: 1px solid #d0d7df; border-radius: 14px;
+    background: var(--bpb-location-bg); color: var(--bpb-location-text);
+    box-shadow: 0 8px 28px #172b4530, 0 2px 6px #172b4512;
+    font: 13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    text-align: left; font-variant-numeric: tabular-nums; cursor: default;
+}
+#bpb-peak-weather-menu[hidden], #bpb-peak-weather-menu [hidden] { display: none !important; }
+#bpb-peak-weather-menu:focus { outline: none; }
+#bpb-peak-weather-menu[data-keyboard="true"]:focus-visible { outline: 2px solid #1769aa; outline-offset: 2px; }
+#bpb-peak-weather-menu .bpb-map-location-label { color: var(--bpb-location-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+#bpb-peak-weather-menu .bpb-map-location-value { min-height: 1.4em; margin-top: 3px; font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -.025em; overflow-wrap: anywhere; }
+#bpb-peak-weather-menu .bpb-map-location-alternative { min-height: 1.5em; color: var(--bpb-location-muted); font-size: 12px; line-height: 1.5; }
+#bpb-peak-weather-menu .bpb-weather-menu-coordinates { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--bpb-location-line); font-size: 13px; user-select: text; overflow-wrap: anywhere; }
+#bpb-peak-weather-menu .bpb-map-location-source { margin-top: 3px; color: var(--bpb-location-muted); font-size: 11px; }
+#bpb-peak-weather-menu .bpb-map-location-weather {
+    display: block; box-sizing: border-box; width: calc(100% + 16px); margin: 12px -8px -4px; padding: 9px 8px;
+    border: 0; border-radius: 7px; background: transparent; color: inherit;
+    font: inherit; font-size: 12px; line-height: 1.5; text-align: left; cursor: pointer;
+}
+#bpb-peak-weather-menu .bpb-map-location-weather:not(:disabled):is(:hover, :focus-visible) { background: #eaf2fc; color: #095ca1; outline: none; }
+#bpb-peak-weather-menu .bpb-map-location-weather:disabled { color: var(--bpb-location-muted); cursor: default; }
+html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu {
+    --bpb-location-bg: #272d34; --bpb-location-text: #f0f3f7; --bpb-location-muted: #b6c0cc; --bpb-location-line: #404954;
+    border-color: #4c5764; box-shadow: 0 8px 30px #0006, 0 2px 6px #0003;
+}
+html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu .bpb-map-location-weather:not(:disabled):is(:hover, :focus-visible) { background: #34485f; color: #c2deff; }
+html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu:focus-visible { outline-color: #83bbff; }
+@media (forced-colors: active) {
+    #bpb-peak-weather-menu { border-color: CanvasText; }
+    #bpb-peak-weather-menu .bpb-map-location-weather:focus-visible { outline: 2px solid Highlight; }
+}

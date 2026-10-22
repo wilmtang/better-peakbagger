@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
+import { build } from 'esbuild';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
@@ -11,6 +12,7 @@ const [peak, bundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
     readFile(new URL('../../dist/content/peak-weather.js', import.meta.url), 'utf8'),
 ]);
+const menuBundle = (await build({ entryPoints: ['src/maps/map-location-menu.js'], bundle: true, write: false, format: 'iife', globalName: 'testMapMenu' })).outputFiles[0].text;
 const waitFor = async predicate => {
     const deadline = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > deadline) throw new Error('Peak weather did not settle'); await new Promise(resolve => setTimeout(resolve, 0)); }
@@ -56,11 +58,14 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
             Date.parse(new Date(clock).toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400])));
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     };
+    win.postMessage = data => win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data }));
+    win.eval(menuBundle);
+    const locationMenu = win.testMapMenu.createMapLocationMenu({ window: win, client: { lookup: async () => 1957, clear() {} } });
     win.eval(bundle);
-    return { win, doc: win.document, requests, metadataRequests, listeners, observers, resizeObservers,
+    return { win, locationMenu, doc: win.document, requests, metadataRequests, listeners, observers, resizeObservers,
         setNow: next => { clock = Date.parse(next); },
         resize: width => { chartWidth = width; resizeObservers.filter(observer => !observer.disconnected).forEach(observer => observer.callback()); },
-        close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
+        close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); locationMenu.dispose(); win.close(); } };
 }
 const settled = async (env, { past = true } = {}) => {
     await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 16 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
@@ -73,8 +78,7 @@ const chooseModel = (env, id) => {
 const openLocationMenu = (env, latitude = 46.8, longitude = -121.7, extra = {}) => {
     const frame = env.doc.getElementById('Gmap');
     frame.getBoundingClientRect = () => ({ left: 10, top: 10, right: 650, bottom: 435, width: 640, height: 425 });
-    env.win.dispatchEvent(new env.win.MessageEvent('message', { source: env.win, origin: env.win.location.origin,
-        data: { __bpbPeakWeather: true, type: 'context', map: 'native', latitude, longitude, x: 100, y: 100, ...extra } }));
+    env.locationMenu.show({ latitude, longitude, x: 100, y: 100, ...extra }, frame);
 };
 const selectLocation = (env, latitude, longitude) => {
     openLocationMenu(env, latitude, longitude); env.doc.querySelector('#bpb-peak-weather-menu button').click();
@@ -167,25 +171,6 @@ test('selected location resolves its own civil days and resets unavailable regio
     } finally { env.close(); }
 });
 
-test('menu dismisses on Escape, outside frame clicks and suspension; invalid or disabled map points do nothing', async () => {
-    const env = setup();
-    try {
-        await settled(env, { past: false }); const menu = env.doc.querySelector('#bpb-peak-weather-menu');
-        for (const extra of [{ latitude: 91 }, { longitude: '1' }, { x: -1 }, { y: Infinity }, { map: 'unknown' }]) {
-            openLocationMenu(env, 46.8, -121.7, extra); assert.equal(menu.hidden, true);
-        }
-        openLocationMenu(env); env.doc.activeElement.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        assert.equal(menu.hidden, true); assert.equal(env.doc.activeElement, env.doc.getElementById('Gmap'));
-        openLocationMenu(env); const frameWin = env.doc.getElementById('Gmap').contentWindow;
-        frameWin.document.dispatchEvent(new frameWin.Event('pointerdown', { bubbles: true })); assert.equal(menu.hidden, true);
-        openLocationMenu(env); env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true })); assert.equal(menu.hidden, true);
-        openLocationMenu(env); assert.equal(menu.hidden, true);
-        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
-        openLocationMenu(env); assert.equal(menu.hidden, true); assert.equal(env.requests.length, 1);
-    } finally { env.close(); }
-});
-
 test('known rate limits keep the map menu dismissible and prevent location requests during cooldown', async () => {
     let limited = false;
     const env = setup({ fetchFn: url => limited ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : reply(url) });
@@ -198,25 +183,6 @@ test('known rate limits keep the map menu dismissible and prevent location reque
         assert.equal(menu.hidden, false); assert.equal(menu.querySelector('button').disabled, true);
         menu.querySelector('button').click(); assert.equal(env.requests.length, count);
         menu.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); assert.equal(menu.hidden, true);
-    } finally { env.close(); }
-});
-
-test('Tab and Shift+Tab dismiss the menu back to the map; blur and outside focus do not trap keyboard navigation', async () => {
-    const env = setup();
-    try {
-        await settled(env, { past: false }); const menu = env.doc.querySelector('#bpb-peak-weather-menu');
-        for (const shiftKey of [false, true]) {
-            openLocationMenu(env);
-            const key = new env.win.KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true });
-            env.doc.activeElement.dispatchEvent(key);
-            assert.equal(key.defaultPrevented, true); assert.equal(menu.hidden, true);
-            assert.equal(env.doc.activeElement, env.doc.getElementById('Gmap'));
-        }
-        const normalTab = new env.win.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
-        env.doc.activeElement.dispatchEvent(normalTab); assert.equal(normalTab.defaultPrevented, false);
-        openLocationMenu(env); env.win.dispatchEvent(new env.win.Event('blur')); assert.equal(menu.hidden, true);
-        openLocationMenu(env); env.doc.querySelector('.bpb-week-refresh').focus();
-        assert.equal(menu.hidden, true); assert.equal(env.doc.activeElement, env.doc.querySelector('.bpb-week-refresh'));
     } finally { env.close(); }
 });
 

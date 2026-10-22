@@ -95,6 +95,7 @@ independent of the existing targets.
 - [verify-map-handoffs.mjs](verify-map-handoffs.mjs)
 - [verify-map-layer-control.mjs](verify-map-layer-control.mjs)
 - [verify-map-layers.mjs](verify-map-layers.mjs)
+- [verify-map-location-cases.mjs](verify-map-location-cases.mjs)
 - [verify-peak-link-order.mjs](verify-peak-link-order.mjs)
 - [verify-peak-map-layout.mjs](verify-peak-map-layout.mjs)
 - [verify-terrain-cache-owners.mjs](verify-terrain-cache-owners.mjs)

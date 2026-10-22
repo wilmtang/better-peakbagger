@@ -405,6 +405,7 @@ export function mountPeakWeather() {
         const previousUnits = unitSignature();
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();
+        locationMenu.updateAvailability();
         if (!enabled()) {
             locationMenu.close();
             cooldown.suspend(); cancel(); cancelUpdates(); clearChart();

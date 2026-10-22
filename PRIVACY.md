@@ -63,6 +63,8 @@ permission to read device location. It covers:
   approaches the viewport, with summit proximity computed locally;
 - viewed-area tile coordinates sent to Mapterhorn, OpenFreeMap, or a selected
   compatible map provider when 3D is used;
+- clicked-area tile coordinates sent to Mapterhorn after an explicit map
+  right-click for the approximate elevation readout;
 - a Peakbagger-stored GPS track written to the user's GitHub repository when
   the user backs up an ascent; and
 - a Peakbagger-stored GPS track sent to Gaia, onX, AllTrails, or CalTopo when the user clicks that destination's **Send** button.
@@ -450,6 +452,19 @@ credits Open-Meteo; underlying datasets retain their provider licences.
 
 ## Optional map overlays and 3D terrain
 
+Right-clicking a native or 3D map opens a location readout with coordinates and
+an approximate elevation. That explicit gesture requests public Mapterhorn DEM
+tiles for the clicked area, even with weather and 3D disabled. Requests contain
+only tile coordinates, IP address and ordinary network metadata, omit credentials
+and referrers, and have an eight-second total deadline. Missing detail levels
+may request up to five tiles. Four decoded tiles and a bounded set of absent
+tile keys remain in page memory only; there is no extension-managed persistent
+cache for these lookups. Closing the menu, selecting another point or leaving
+the page cancels the lookup. Browser HTTP caching may retain tile responses.
+The separate forecast action, when the peak weather card is enabled, retains
+the Open-Meteo behavior described above; opening the location menu itself makes
+no weather request.
+
 The compact Layers menu offers independent overlays in native and supported 3D
 maps. Opening it makes no provider request. Enabling slope or public lands
 sends tile bounds to USGS 3DEP or PAD-US, with credentials and referrers omitted.
@@ -598,7 +613,7 @@ The user can export and import settings without GitHub:
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
 | Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or sixteen past days plus up to sixteen forecast days when an enabled card approaches the viewport; selecting a map location requests that point without summit elevation. Model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
 | USDA NRCS | Public SNOTEL station catalog, then selected public station IDs, relative date ranges, snow fields, period convention and quality-filter options when the enabled snow card approaches the viewport, changes stations, refreshes or returns with expired data. Local proximity matching sends no summit coordinates; no credentials or referrer. |
-| Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
+| Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled; or a bounded elevation lookup after an explicit map right-click, independently of 3D/weather settings. No credentials or referrer. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | USGS 3DEP / PAD-US | Viewed-area tile bounds when the slope/public-land overlay is enabled, without credentials or referrers. |
 | ParcelMap BC / Alberta Environment and Protected Areas | Viewed-area tile bounds when public lands is enabled in supported Canadian areas. BC images require explicit optional host access and pass transiently through the extension worker. Alberta returns only geometry, object IDs and ownership classes. No credentials or referrers; no extension-managed persistent parcel cache. |

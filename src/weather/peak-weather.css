@@ -120,13 +120,3 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
     #bpb-peak-weather .bpb-week-overview { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }
 @media (pointer: coarse) { #bpb-peak-weather :is(button, select) { min-height: 44px; } }
-
-#bpb-peak-weather-menu { position: fixed; z-index: 2147483647; box-sizing: border-box; width: 288px; max-width: calc(100vw - 16px); padding: 5px; border: 1px solid #c8cdd4; border-radius: 9px; background: #fff; color: #1d232a; box-shadow: 0 4px 18px #0003; font: 12px/1.45 system-ui, -apple-system, sans-serif; text-align: left; }
-#bpb-peak-weather-menu[hidden] { display: none !important; }
-#bpb-peak-weather-menu button { display: block; box-sizing: border-box; width: 100%; padding: 9px 8px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-#bpb-peak-weather-menu button:not(:disabled):is(:hover, :focus-visible) { background: #1769aa; color: #fff; outline: none; }
-#bpb-peak-weather-menu button:disabled { opacity: .65; cursor: default; background: transparent; color: inherit; }
-#bpb-peak-weather-menu .bpb-weather-menu-coordinates { margin: 2px 8px 5px; font-size: 11px; color: #606873; font-variant-numeric: tabular-nums; }
-html[data-bpb-theme="dark"] #bpb-peak-weather-menu { background: #24272b; color: #f1eee7; border-color: #4a5058; }
-html[data-bpb-theme="dark"] #bpb-peak-weather-menu button:not(:disabled):is(:hover, :focus-visible) { background: #83bbff; color: #1d232a; }
-html[data-bpb-theme="dark"] #bpb-peak-weather-menu .bpb-weather-menu-coordinates { color: #b6b0a6; }

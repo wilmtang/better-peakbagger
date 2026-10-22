@@ -18,7 +18,6 @@ import { sunState as SunState } from '../sun/sun-state.js';
 import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 import { mapViewport as MapViewport } from '../gpx/map-viewport.js';
-import { createPeakWeatherMap } from './peak-weather-map.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
 // dependencies are ES imports and the module publishes no globals.
@@ -350,9 +349,7 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
         }
     });
 
-    const weatherMap = createPeakWeatherMap({ getFrame: () => iframe, getMap: () => resolveMapContext()?.map });
     const handleIframeLoad = () => {
-        weatherMap.attach();
         peaksResponder.reset();
         viewport.scheduleInvalidate();
     };
@@ -362,7 +359,6 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
     sunCalculator?.setTheme(effectiveTheme());
     PageLifecycle.create({
         onSuspend: () => {
-            weatherMap.suspend();
             if (terrainCoordinator.isOpen() && !terrainCoordinator.isActive()) {
                 terrainCoordinator.reset();
             }
@@ -385,7 +381,6 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
             window.postMessage({ __bpbPeakMap: true, dir: 'toCS', type: 'get' }, location.origin);
         },
         onDispose: () => {
-            weatherMap.suspend();
             if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
             iframe.removeEventListener('load', handleIframeLoad);
             viewport.dispose();

@@ -597,17 +597,17 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         } else if (data.type === 'snowSelect') {
             if (suspended || !frameLoaded || typeof data.stationId !== 'string' || !/^\d{1,8}:[A-Z]{2}:SNTL$/.test(data.stationId)) return;
             window.postMessage({ __bpbPeakSnow: true, dir: 'toCS', type: 'select', stationId: data.stationId }, location.origin);
-        } else if (data.type === 'weatherContext' || data.type === 'weatherDismiss') {
-            const card = document.getElementById('bpb-peak-weather');
-            if (suspended || !frameLoaded || !card || card.hidden) return;
+        } else if (data.type === 'locationContext' || data.type === 'locationDismiss') {
+            if (suspended || !frameLoaded) return;
             const rect = frame.getBoundingClientRect();
-            if (data.type === 'weatherContext' && (!Number.isFinite(data.latitude) || Math.abs(data.latitude) > 90
+            if (data.type === 'locationContext' && (!Number.isFinite(data.latitude) || Math.abs(data.latitude) > 90
                 || !Number.isFinite(data.longitude) || Math.abs(data.longitude) > 180
                 || !Number.isFinite(data.x) || data.x < 0 || data.x > rect.width
                 || !Number.isFinite(data.y) || data.y < 0 || data.y > rect.height)) return;
-            window.postMessage({ __bpbPeakWeather: true, type: data.type === 'weatherContext' ? 'context' : 'dismiss',
+            window.postMessage({ __bpbMapLocation: true, type: data.type === 'locationContext' ? 'context' : 'dismiss',
                 map: 'terrain', latitude: data.latitude, longitude: data.longitude,
-                x: rect.left + data.x, y: rect.top + data.y }, location.origin);
+                x: rect.left + data.x, y: rect.top + data.y,
+                ...(data.keyboard === true ? { keyboard: true } : {}) }, location.origin);
         } else if (data.type === 'exit') {
             // Escape pressed while the cross-origin frame held focus. The page
             // never saw that key, so the frame asks for the ordinary return to
