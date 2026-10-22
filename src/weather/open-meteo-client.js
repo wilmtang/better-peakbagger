@@ -21,7 +21,6 @@ const peakFields = {
     wind_direction_10m: { name: 'direction', unit: '°', min: 0, max: 360 },
     is_day: { name: 'isDay', unit: '', min: 0, max: 1, integer: true },
     cloud_cover: { name: 'cloud', unit: '%', min: 0, max: 100, optional: true },
-    snowfall: { name: 'snowfall', unit: 'cm', min: 0, max: 1000, optional: true },
     freezing_level_height: { name: 'freezing', unit: 'm', min: -1000, max: 20000, optional: true },
 };
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
@@ -119,7 +118,7 @@ function validateResponse(body, summit, window, model, maxRows, definitions = fi
         // Model processing can return negative precipitation (seen in ARPEGE).
         // Floor finite amounts at zero; keep genuinely missing values and
         // malformed data subject to the normal validation below.
-        if (key === 'precipitation' || key === 'snowfall') values = values.map(value => Number.isFinite(value) && value < 0 ? 0 : value);
+        if (key === 'precipitation') values = values.map(value => Number.isFinite(value) && value < 0 ? 0 : value);
         const validValue = value => value === null || (Number.isFinite(value) && value >= definition.min && value <= definition.max
             && (!definition.integer || Number.isInteger(value)));
         if (definition.optional) values = values.map(value => validValue(value) ? value : null);

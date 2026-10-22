@@ -20,7 +20,6 @@ html[data-bpb-theme="dark"] :is(#bpb-ascent-weather, #bpb-peak-weather) {
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__storm { fill: var(--weather-wind); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="temperature"] { --weather-plot: var(--weather-warm); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="precipitation"] { --weather-plot: var(--weather-cold); }
-:is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="snowfall"] { --weather-plot: var(--weather-cold); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="freezing"] { --weather-plot: var(--weather-cold); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="cloud"] { --weather-plot: var(--weather-cloud); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) :is([data-weather-metric="wind"], [data-weather-metric="gust"]) { --weather-plot: var(--weather-wind); }

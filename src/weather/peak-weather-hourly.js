@@ -7,7 +7,7 @@ import { mountainTime } from '../time/mountain-time.js';
 import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.js';
 
 const HOUR = 3600_000, element = dom.element;
-const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['snowfall', 'Snowfall'], ['freezing', 'Freezing level'], ['cloud', 'Clouds'], ['wind', 'Wind'], ['gust', 'Gusts']];
+const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['freezing', 'Freezing level'], ['cloud', 'Clouds'], ['wind', 'Wind'], ['gust', 'Gusts']];
 const svgElement = (tag, attrs = {}, text) => {
     const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
@@ -15,7 +15,7 @@ const svgElement = (tag, attrs = {}, text) => {
     return node;
 };
 
-export const resolvePeakHourlyMetric = value => metrics.some(([key]) => key === value) ? value : 'code';
+export const resolvePeakHourlyMetric = value => value === 'snowfall' ? 'precipitation' : metrics.some(([key]) => key === value) ? value : 'code';
 
 export function createPeakHourlyChart({ container, day, samples, zone, metric = 'code', format, onMetric, state, referenceElevation, referenceLabel = 'Summit' }) {
     const id = `bpb-week-${day.window.date}`;
@@ -64,15 +64,14 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     panel.append(readout, frame, conditions, help);
     container.replaceChildren(tabs, panel);
     const localTime = time => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
-    const accumulation = key => key === 'precipitation' || key === 'snowfall';
+    const accumulation = key => key === 'precipitation';
     const timeLabel = (row, key = metric) => accumulation(key) || key === 'gust'
         ? `${localTime(row.start)} – ${localTime(row.time)}${row.time === day.window.end ? ' (next midnight)' : ''}` : localTime(row.time);
     const valueLabel = (value, key = metric) => format(value, key === 'gust' ? 'wind' : key);
-    const readingLabel = (row, key = metric) => `${timeLabel(row, key)} · ${Number.isFinite(row.value) ? `${valueLabel(row.value, key)}${key === 'snowfall' ? ' new snow' : ''}` : 'Unavailable'}${row.partialInterval ? accumulation(key) ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
+    const readingLabel = (row, key = metric) => `${timeLabel(row, key)} · ${Number.isFinite(row.value) ? valueLabel(row.value, key) : 'Unavailable'}${row.partialInterval ? accumulation(key) ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
     const overviewFor = (key, candidates) => {
         const values = candidates.map(row => row.value).filter(Number.isFinite);
         if (!values.length) return 'Hourly readings unavailable';
-        if (key === 'snowfall') return `New snow depth · ${valueLabel(values.reduce((sum, value) => sum + value, 0), key)} total${values.length !== candidates.length ? ' (partial)' : ''}`;
         return `Low ${valueLabel(Math.min(...values), key)} · High ${valueLabel(Math.max(...values), key)}`;
     };
     readingText.reserve(['Hourly readings unavailable', ...metrics.filter(([key]) => key !== 'code').flatMap(([key]) => {
@@ -80,7 +79,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         return [...candidates.map(row => readingLabel(row, key)), overviewFor(key, candidates)];
     })]);
     const overview = () => overviewFor(metric, rows);
-    const rowTime = row => metric === 'snowfall' ? (row.start + row.time) / 2 : row.time;
+    const rowTime = row => row.time;
     function drawCursor() {
         svg.querySelector('.bpb-week-cursor')?.remove();
         const index = hover >= 0 ? hover : selected, row = rows[index];
@@ -131,14 +130,6 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
             svg.append(svgElement('line', { class: 'bpb-week-reference', x1: left, x2: right, y1: position, y2: position }),
                 svgElement('text', { class: 'bpb-week-axis', x: right, y: position > top + 20 ? position - 6 : position + 14, 'text-anchor': 'end' }, `${referenceLabel} ${valueLabel(referenceElevation, 'freezing')}`));
         }
-        if (metric === 'snowfall') {
-            for (const row of rows.filter(sample => Number.isFinite(sample.value))) {
-                const bar = svgElement('rect', { class: 'bpb-week-snowfall', x: x(row.start) + 1, y: y(row.value),
-                    width: Math.max(1, x(row.time) - x(row.start) - 2), height: Math.max(0, bottom - y(row.value)), 'data-time': row.sourceTime });
-                bar.append(svgElement('title', {}, readingLabel(row))); svg.append(bar);
-            }
-            drawCursor(); return;
-        }
         let path = '', previous = null;
         for (const row of rows) {
             if (!Number.isFinite(row.value)) { previous = null; continue; }
@@ -175,17 +166,16 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
             draw();
         }
         const information = {
-            snowfall: 'Snowfall is the depth of newly fallen snow, in centimeters or inches, not its water equivalent or existing snow depth. Bars cover the preceding hour; the total adds the shown intervals. Open-Meteo uses an approximate 7:1 snow-to-liquid ratio. Partial boundary intervals are estimated.',
             freezing: 'Freezing level is the altitude above sea level where air temperature is 0°C (32°F), not snow depth or the snowline. Snow can fall below this level. The dashed reference marks the summit or selected location when its elevation is known.',
-            precipitation: 'Rain/snow is total precipitation as liquid water equivalent, including rain, showers and melted snow. Values cover the preceding hour. Partial boundary intervals are proportionally estimated.',
+            precipitation: 'Rain/snow is total precipitation as liquid water equivalent, including rain and melted snow. Open-Meteo converts the snow portion to estimated snowfall depth using a fixed 1:7 water-to-snow depth ratio (1 cm of water → 7 cm of snow). Actual snow density varies. Values cover the preceding hour; partial boundary intervals are estimated.',
             gust: 'Gusts are maxima for the preceding hour. A partial boundary hour can include time outside this day.',
             cloud: 'Cloud cover is the percentage of sky covered by clouds: 0% is clear and 100% is overcast. It does not indicate cloud-base height or whether the summit is inside cloud.',
-            code: 'Hourly model estimates in local time. Rain/snow is water equivalent; new snow depth is separate. Rain/snow, snowfall and gusts cover the hour starting at the shown time. Freezing level is altitude above sea level. Missing readings stay unavailable.',
+            code: 'Hourly model estimates in local time. Rain/snow is water equivalent. Rain/snow and gusts cover the hour starting at the shown time. Freezing level is altitude above sea level. Missing readings stay unavailable.',
             temperature: 'Air temperature at two meters above ground, adjusted to the requested elevation when available. These are model estimates, not station observations.',
             wind: 'Wind speed at ten meters above ground. These are model estimates; terrain and exposure can change local conditions.',
         };
         explanation.textContent = information[metric];
-        info.setAttribute('aria-label', `About ${metrics.find(([key]) => key === metric)[1].toLowerCase()}${metric === 'snowfall' ? ' depth' : ''}`);
+        info.setAttribute('aria-label', `About ${metrics.find(([key]) => key === metric)[1].toLowerCase()}`);
     }
     tabs.onclick = event => {
         const button = event.target.closest('button[data-metric]');

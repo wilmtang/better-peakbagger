@@ -63,9 +63,10 @@ day retains its own data tab, pinned reading and hourly-table scroll through
 refresh, unit changes and period switches. **Conditions** is the
 initial data tab; the last explicit data-tab selection is saved in extension-local
 storage on this device and restored across peak pages and reloads. Missing or
-invalid saved selections fall back to Conditions. Temperature, rain/snow, clouds,
-wind and gusts use responsive line graphs; Conditions shows a horizontally scrollable hourly table of condition icons,
-cloud cover, temperature, feels-like, rain/snow, new snow depth, freezing level,
+invalid saved selections fall back to Conditions. Temperature, rain/snow,
+freezing level, clouds, wind and gusts use responsive line graphs; Conditions
+shows a horizontally scrollable hourly table of condition icons,
+cloud cover, temperature, feels-like, rain/snow, freezing level,
 wind, gusts and wind direction. Row labels
 stay visible while scrolling; clear hours use a Moon icon at night.
 **Clouds** shows total cloud cover on a fixed 0–100% scale, with percentages
@@ -73,20 +74,21 @@ unchanged by the unit preference. It describes modelled sky coverage, not cloud
 base or whether the summit is inside cloud. It uses `cloud_cover` in the same
 weather request; no additional request or setting is needed. Unavailable or
 invalid cloud readings remain gaps without discarding usable core weather.
-**Snowfall** shows hourly new-snow depth as bars and a total for the displayed
-local day. It uses `snowfall` in the same request, in centimeters or inches,
-following the precipitation-unit preference. It is distinct from rain/snow
-water equivalent and from existing snow depth. Partial hours are proportionally
-allocated; unavailable hours remain gaps and make the total partial. The provider
-uses an approximate 7:1 snow-to-liquid ratio, so this is a modelled depth estimate.
+**Rain/snow** remains total precipitation as liquid water equivalent. Its circled
+information button explains that Open-Meteo converts the snow portion to an
+estimated snowfall depth using a fixed **1:7 water-to-snow depth ratio**:
+1 cm of water becomes 7 cm of snow. Actual snow density varies; the conversion
+does not apply to the rain portion. The redundant Snowfall tab and Conditions
+row have been removed, and `snowfall` is no longer requested. An existing saved
+Snowfall tab preference opens Rain/snow without rewriting storage on mount.
 **Freezing level** uses `freezing_level_height` from that same request: altitude
 above sea level of 0°C air, following elevation units. A dashed reference marks
 the summit or selected location when its elevation is known. It is not a snowline.
-Both are supplementary fields: unavailable or invalid readings do not discard
+Freezing level is supplementary: unavailable or invalid readings do not discard
 the core forecast. The collapsed daily rows retain their compact layout.
 
-Hourly tabs use two balanced rows, with compact **Temp** and **Freezing** labels
-in narrow cards and full accessible names. All graph tabs share the same hint.
+Hourly tabs use two balanced rows of three and four, with compact **Temp** and
+**Freezing** labels in narrow cards and full accessible names. All graph tabs share the same hint.
 The circled information button opens the active measurement's explanation over
 the chart, within the viewport, without adding layout height. Clicking it again,
 pressing Escape or pressing outside dismisses it. Escape returns focus to the
@@ -213,7 +215,7 @@ Instantaneous fields exclude the ending midnight. Exact local times
 and timezone labels retain repeated hours on DST days.
 
 The separate peak client allows at most thirty-three inclusive UTC dates and 792 rows,
-with eleven fixed hourly fields per model and at most two named models. The ascent client retains its three-date/72-row
+with ten fixed hourly fields per model and at most two named models. The ascent client retains its three-date/72-row
 contract. Both use a 128-KiB response bound, 15-second deadline, schema/grid/unit
 validation, omitted credentials/referrer, and no redirects. Results live only
 in the bounded per-page cache. Requests begin near the viewport. Failed refreshes
@@ -372,7 +374,7 @@ was asserted. Hidden checks do not prove native focus/window placement,
 screen-reader speech or forecast accuracy. Layer-specific cloud forecasts and
 snow-surface predictions are outside this addition.
 
-The snowfall/freezing-level addition was verified on 2026-10-22 with 185 focused
+The initial snowfall/freezing-level addition was verified on 2026-10-22 with 185 focused
 weather/unit tests, changed-file ESLint and a successful build. Hidden Chrome for
 Testing 156.0.8078.4 and Firefox 158.0.1 each passed the 16-configuration weather
 details verifier at 1440/375 × 1100, light/imperial and dark/metric, 100%/200%
@@ -383,11 +385,26 @@ open/close additionally checks viewport containment and Escape focus. Held
 refresh, service failure, retry and unavailable supplementary fields passed.
 These checks use stubbed provider responses and real unpacked extension assets.
 
-One live public Rainier request returned 83,442 bytes for two models and eleven
-fields, below the unchanged 128-KiB bound. GFS had 768 populated snowfall and
+Before removal of the Snowfall display, one live public Rainier request returned
+83,442 bytes for two models and eleven fields, below the unchanged 128-KiB bound.
+GFS had 768 populated snowfall and
 freezing-level samples; IFS had 745 snowfall samples and no freezing-level
 values. Missing provider fields remain unavailable without changing models.
 The hidden real-manifest Chrome smoke check passed at 1000 × 760 with BFCache
 restoration. Charts and tooltips use HTML/SVG; no WebGL renderer was asserted.
 Hidden checks do not establish native window focus/placement, screen-reader
 speech or forecast accuracy.
+
+The Snowfall display removal was verified on 2026-10-22 with 187 focused
+weather/unit tests and all 3,243 tests in the full Node suite after a successful
+build. The new removal assertion first failed on the old visible Snowfall tab.
+Hidden Chrome 156.0.8078.4 and Firefox 158.0.1 each passed the same sixteen
+weather configurations at 1440/375 × 1100, both themes/unit systems and
+100%/200% zoom. They verify that snowfall is absent from requests, tabs and the
+Conditions table, and that the Rain/snow explanation contains the fixed 1:7
+conversion. Popup bounds, Escape focus and geometry through opening/closing,
+graph changes, slow refresh, error and retry passed; light/dark narrow popup
+screenshots were inspected. The hidden Chrome manifest smoke check also passed
+at 1000 × 760 with BFCache restoration. Provider responses were stubbed; these
+HTML/SVG checks do not establish physical touch, screen-reader speech or native
+window focus/placement, and no WebGL renderer was asserted.

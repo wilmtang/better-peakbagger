@@ -70,12 +70,9 @@ test('cloud percentages never receive an imperial wind conversion', () => {
     }
 });
 
-test('new snowfall depth and freezing altitude use their own canonical units', () => {
-    assert.equal(Units.formatWeather(25.4, 'snowfall', 'imperial'), '10.0 in');
-    assert.equal(Units.formatWeather(25.4, 'snowfall', 'metric'), '25.4 cm');
+test('freezing altitude uses its canonical elevation units', () => {
     assert.equal(Units.formatWeather(1000, 'freezing', 'imperial'), '3281 ft');
     assert.equal(Units.formatWeather(1000, 'freezing', 'metric'), '1000 m');
-    assert.equal(Units.formatWeather(0, 'snowfall', 'imperial'), '0.0 in');
     assert.equal(Units.formatWeather(null, 'freezing', 'metric'), '—');
 });
 

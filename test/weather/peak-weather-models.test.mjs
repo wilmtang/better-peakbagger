@@ -175,26 +175,25 @@ test('unavailable or malformed cloud cover cannot discard otherwise usable weath
     assert.deepEqual(values, [null, null, null, null, null, 0, 100, 62.5]);
 });
 
-test('snowfall depth and freezing level arrive in the existing call with model identity and optional validation', () => {
+test('freezing level arrives in the existing call with model identity and optional validation', () => {
     const ids = ['gfs_global', 'ecmwf_ifs'], models = ids.map(model), body = fixture(ids);
     const fields = new URL(peakWeatherRequestUrl(summit, window, models)).searchParams.get('hourly').split(',');
-    for (const field of ['snowfall', 'freezing_level_height']) assert.equal(fields.filter(value => value === field).length, 1);
-    body.hourly.snowfall_gfs_global.splice(0, 3, 0, null, 3.5);
-    body.hourly.snowfall_ecmwf_ifs.fill(1);
+    assert.equal(fields.includes('snowfall'), false, 'removed snowfall does not add request data');
+    assert.equal(fields.filter(value => value === 'freezing_level_height').length, 1);
     body.hourly.freezing_level_height_gfs_global.splice(0, 3, 0, null, 3200);
+    body.hourly.freezing_level_height_ecmwf_ifs.fill(2500);
     const result = validatePeakWeatherResponse(body, summit, window, models).models;
-    assert.deepEqual(result.gfs_global.samples.slice(0, 3).map(row => row.snowfall), [0, null, 3.5]);
     assert.deepEqual(result.gfs_global.samples.slice(0, 3).map(row => row.freezing), [0, null, 3200]);
-    assert.equal(result.ecmwf_ifs.samples[0].snowfall, 1);
+    assert.equal(result.ecmwf_ifs.samples[0].freezing, 2500);
     assert.ok(Buffer.byteLength(JSON.stringify(body)) < 128 * 1024);
     for (const mutate of [
-        body => { delete body.hourly.snowfall_gfs_global; delete body.hourly.freezing_level_height_gfs_global; },
-        body => { body.hourly_units.snowfall_gfs_global = 'mm'; body.hourly_units.freezing_level_height_gfs_global = 'ft'; },
-        body => { body.hourly.snowfall_gfs_global.fill(1001); body.hourly.freezing_level_height_gfs_global.fill(20001); },
+        body => { delete body.hourly.freezing_level_height_gfs_global; },
+        body => { body.hourly_units.freezing_level_height_gfs_global = 'ft'; },
+        body => { body.hourly.freezing_level_height_gfs_global.fill(20001); },
     ]) {
         const invalid = fixture(ids); mutate(invalid);
         const parsed = validatePeakWeatherResponse(invalid, summit, window, models).models.gfs_global;
-        assert.ok(parsed.samples.every(row => row.snowfall === null && row.freezing === null));
+        assert.ok(parsed.samples.every(row => row.freezing === null));
         assert.ok(summarizeWeatherWeek(parsed, window.past).every(day => day.useful && !day.partial));
     }
 });

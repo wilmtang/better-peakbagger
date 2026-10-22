@@ -7,13 +7,13 @@ import { hourlyWeatherCondition } from './weather-day.js';
 import { createWeatherIcon } from './weather-icon.js';
 
 const HOUR = 3600_000, element = dom.element;
-const measurements = [['code', 'Conditions'], ['cloud', 'Cloud cover'], ['temperature', 'Temperature'], ['apparent', 'Feels like'], ['precipitation', 'Rain/snow'], ['snowfall', 'New snow depth'], ['freezing', 'Freezing level'], ['wind', 'Wind'], ['gust', 'Gusts'], ['direction', 'Wind from']];
+const measurements = [['code', 'Conditions'], ['cloud', 'Cloud cover'], ['temperature', 'Temperature'], ['apparent', 'Feels like'], ['precipitation', 'Rain/snow'], ['freezing', 'Freezing level'], ['wind', 'Wind'], ['gust', 'Gusts'], ['direction', 'Wind from']];
 
 // Instantaneous fields exclude ending midnight; accumulations include it and
 // exclude starting midnight. Missing timestamps remain explicit empty slots.
 export function hourlyWeatherSeries(window, samples, metric, gustTiming = 'preceding-hour') {
     const byTime = new Map(samples.map(sample => [sample.time, sample]));
-    const accumulation = metric === 'precipitation' || metric === 'snowfall';
+    const accumulation = metric === 'precipitation';
     const interval = accumulation || (metric === 'gust' && gustTiming === 'preceding-hour');
     const rows = [];
     const first = interval ? Math.floor(window.start / HOUR) * HOUR + HOUR : Math.ceil(window.start / HOUR) * HOUR;
@@ -35,14 +35,12 @@ export function hourlyWeatherSeries(window, samples, metric, gustTiming = 'prece
 export function hourlyWeatherColumns(window, samples, gustTiming = 'preceding-hour') {
     const instant = hourlyWeatherSeries(window, samples, 'code');
     const rain = hourlyWeatherSeries(window, samples, 'precipitation');
-    const snowfall = hourlyWeatherSeries(window, samples, 'snowfall');
     const gust = hourlyWeatherSeries(window, samples, 'gust', gustTiming);
     const byTime = new Map(samples.map(sample => [sample.time, sample]));
     const rainByStart = new Map(rain.map(row => [row.start, row]));
-    const snowByStart = new Map(snowfall.map(row => [row.start, row]));
     const gustByStart = new Map(gust.map(row => [row.start, row]));
     return [...new Set([...instant.map(row => row.time), ...rain.map(row => row.start)])].sort((a, b) => a - b).map(time => ({
-        time, sample: byTime.get(time), rain: rainByStart.get(time), snowfall: snowByStart.get(time), gust: gustByStart.get(time),
+        time, sample: byTime.get(time), rain: rainByStart.get(time), gust: gustByStart.get(time),
     }));
 }
 
@@ -63,8 +61,8 @@ export function createWeatherHourlyTable({ window, samples, zone, format, gustTi
     for (const [key, label] of measurements.filter(([fieldKey]) => keys.includes(fieldKey))) {
         const line = element('tr', { 'data-weather-row': key }, [element('th', { scope: 'row', text: label })]);
         for (const row of hours) {
-            const interval = key === 'precipitation' ? row.rain : key === 'snowfall' ? row.snowfall : key === 'gust' ? row.gust : null;
-            const value = interval ? interval.value : ['precipitation', 'snowfall', 'gust'].includes(key) ? null : row.sample?.[key];
+            const interval = key === 'precipitation' ? row.rain : key === 'gust' ? row.gust : null;
+            const value = interval ? interval.value : ['precipitation', 'gust'].includes(key) ? null : row.sample?.[key];
             const cell = element('td', { 'data-weather-time': row.time });
             if (key === 'code') {
                 const condition = hourlyWeatherCondition(value);
@@ -77,7 +75,7 @@ export function createWeatherHourlyTable({ window, samples, zone, format, gustTi
             } else {
                 cell.textContent = format(value, key === 'apparent' ? 'temperature' : key === 'gust' ? 'wind' : key);
                 if (interval) cell.title = key === 'gust' && gustTiming === 'instant' ? `${localTime(row.time)} · Instantaneous gust estimate`
-                    : `${localTime(interval.start)} – ${localTime(interval.time)}${key === 'snowfall' ? ' · New snow depth' : ''}${interval.partialInterval ? key !== 'gust' ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
+                    : `${localTime(interval.start)} – ${localTime(interval.time)}${interval.partialInterval ? key !== 'gust' ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
                 if ((key === 'wind' || key === 'gust') && Number.isFinite(value)) cell.dataset.strength = value < 20 ? 'calm' : value < 40 ? 'breezy' : value < 60 ? 'strong' : 'high';
             }
             line.append(cell); columns.get(row.time).push(cell);

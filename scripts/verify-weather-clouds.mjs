@@ -61,7 +61,7 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
         await wait(() => ['light', 'dark'].includes(document.documentElement.dataset.bpbTheme), 'theme applied');
         assert.equal(evidence.length - beforeLoad, 1, 'cloud cover arrives with the existing weather request');
         assert.ok(evidence.at(-1).fields.includes('cloud_cover'));
-        assert.ok(evidence.at(-1).fields.includes('snowfall'));
+        assert.equal(evidence.at(-1).fields.includes('snowfall'), false, 'removed snowfall is not requested');
         assert.ok(evidence.at(-1).fields.includes('freezing_level_height'));
         for (const period of ['forecast', 'past']) {
             const label = `${firefoxMode ? 'firefox' : 'chrome'}-clouds-${theme}-${width}-${zoom}x-${period}`;
@@ -69,6 +69,7 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
             await click(`${card} .bpb-week-day:first-child > summary`);
             await click(`${day} [data-metric="code"]`);
             await verifyWeatherConditions(evaluate);
+            assert.equal(await evaluate(() => document.querySelector('.bpb-week-day[open] [data-metric="snowfall"], .bpb-week-day[open] [data-weather-row="snowfall"]')), null);
             const values = await evaluate(() => [...document.querySelectorAll('.bpb-week-day[open] [data-weather-row="cloud"] td')].map(cell => cell.textContent));
             for (const value of ['0%', '25%', '50%', '100%', '—']) assert.ok(values.includes(value), `${units}: ${value}`);
             if (output) {
@@ -92,7 +93,7 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
                 await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-cursor'), 'keyboard cloud reading');
                 stable(before, await evaluate(snapshot), `${theme}/${width}/${zoom}/${period}: reading`);
             }
-            for (const metric of ['temperature', 'precipitation', 'snowfall', 'freezing', 'cloud', 'wind', 'gust', 'cloud']) {
+            for (const metric of ['temperature', 'precipitation', 'freezing', 'cloud', 'wind', 'gust', 'cloud']) {
                 // Keep the target visible before measuring so transport scrolling
                 // cannot masquerade as an application layout shift.
                 await evaluate(metric => document.querySelector(`.bpb-week-day[open] [data-metric="${metric}"]`)
@@ -115,9 +116,8 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
                 assert.ok(frames.every(frame => Math.abs(frame.scroll - before.scroll) <= 1
                     && Math.abs(frame.top - before.boxes[5].y) <= 1
                     && Math.abs(frame.tabs - before.boxes[4].height) <= 1), `intermediate graph movement: ${JSON.stringify(frames)}`);
-                if (metric === 'snowfall' || metric === 'freezing') {
-                    await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-snowfall, .bpb-week-day[open] .bpb-week-line'), 'snow/freezing plot rendered');
-                    if (metric === 'snowfall') assert.match(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-readout').textContent), /New snow depth/);
+                if (metric === 'precipitation' || metric === 'freezing') {
+                    await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'rain/freezing plot rendered');
                     if (metric === 'freezing') assert.ok(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-reference')));
                     if (output) {
                         await evaluate(() => document.querySelector('.bpb-week-day[open] > summary').scrollIntoView({ block: 'start', behavior: 'instant' }));
@@ -127,6 +127,12 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
                     const helpBefore = await evaluate(snapshot);
                     await click(`${day} .bpb-week-info`);
                     await wait(() => !document.querySelector('.bpb-week-day[open] .bpb-week-explanation').hidden, 'clicked information appears');
+                    if (metric === 'precipitation') {
+                        const text = await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-explanation').textContent);
+                        assert.match(text, /liquid water equivalent/);
+                        assert.match(text, /snow portion.*fixed 1:7 water-to-snow depth ratio/);
+                        assert.match(text, /1 cm of water → 7 cm of snow/);
+                    }
                     stable(helpBefore, await evaluate(snapshot), 'information opens without reflow');
                     const popup = await evaluate(() => {
                         const r = document.querySelector('.bpb-week-day[open] .bpb-week-explanation').getBoundingClientRect();
@@ -186,7 +192,7 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
     await click(`${card} [data-period="past"]`);
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 0, 'missing clouds do not invalidate core weather');
     await click(`${card} .bpb-week-day:first-child > summary`);
-    for (const metric of ['cloud', 'snowfall', 'freezing']) {
+    for (const metric of ['cloud', 'freezing']) {
         await click(`${day} [data-metric="${metric}"]`);
         await wait(() => !document.querySelector('.bpb-week-day[open] .bpb-week-chart-empty').hidden, 'supplementary field unavailable state');
         assert.equal(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-chart').tabIndex), -1);

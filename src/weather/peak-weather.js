@@ -157,7 +157,7 @@ export function mountPeakWeather() {
         select.value = choices[period];
     };
     const unitSystem = (measurement = 'elevation') => units.resolveUnits(preference, () => readPeakUnitSystem(document),
-        measurement === 'snowfall' ? 'precipitation' : measurement === 'freezing' ? 'elevation' : measurement);
+        measurement === 'freezing' ? 'elevation' : measurement);
     const format = (value, kind) => units.formatWeather(value, kind, unitSystem(kind));
     const unitSignature = () => ['elevation', 'temperature', 'precipitation', 'wind'].map(unitSystem).join('/');
     const renderLabels = week => {
