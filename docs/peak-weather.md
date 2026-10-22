@@ -61,10 +61,15 @@ day retains its own data tab, pinned reading and hourly-table scroll through
 refresh, unit changes and period switches. **Conditions** is the
 initial data tab; the last explicit data-tab selection is saved in extension-local
 storage on this device and restored across peak pages and reloads. Missing or
-invalid saved selections fall back to Conditions. Temperature, rain/snow,
+invalid saved selections fall back to Conditions. Temperature, rain/snow, clouds,
 wind and gusts use responsive line graphs; Conditions shows a horizontally scrollable hourly table of condition icons,
-temperature, feels-like, rain/snow, wind, gusts and wind direction. Row labels
+cloud cover, temperature, feels-like, rain/snow, wind, gusts and wind direction. Row labels
 stay visible while scrolling; clear hours use a Moon icon at night.
+**Clouds** shows total cloud cover on a fixed 0–100% scale, with percentages
+unchanged by the unit preference. It describes modelled sky coverage, not cloud
+base or whether the summit is inside cloud. It uses `cloud_cover` in the same
+weather request; no additional request or setting is needed. Unavailable or
+invalid cloud readings remain gaps without discarding usable core weather.
 Both weather cards share packaged SVG illustrations and the Sun & Moon palette:
 amber sun and temperature graphs, blue rain/snow, and muted violet wind graphs.
 Daily temperature ranges use normal text color and label **Low** and **High**; wind is
@@ -186,7 +191,7 @@ Instantaneous fields exclude the ending midnight. Exact local times
 and timezone labels retain repeated hours on DST days.
 
 The separate peak client allows at most thirty-three inclusive UTC dates and 792 rows,
-with eight fixed hourly fields per model and at most two named models. The ascent client retains its three-date/72-row
+with nine fixed hourly fields per model and at most two named models. The ascent client retains its three-date/72-row
 contract. Both use a 128-KiB response bound, 15-second deadline, schema/grid/unit
 validation, omitted credentials/referrer, and no redirects. Results live only
 in the bounded per-page cache. Requests begin near the viewport. Failed refreshes
@@ -314,3 +319,33 @@ Two live public Mount Rainier API probes validated Best Match alone (36,026 byte
 and alongside GFS (62,705 bytes), each with 792 hourly timestamps and the expected
 plain/model-suffixed fields. These establish the transport contract, not forecast
 accuracy, native dropdown-menu behavior or screen-reader speech.
+
+Cloud cover was verified on 2026-10-22: build, changed-file ESLint and all 182
+focused weather/unit tests passed. The percentage assertion was also run against
+the previous formatter read-only and failed as expected (100 became 62 in
+imperial settings). The full suite ran 3,205 tests: 3,204 passed; the sole failure
+was broken links in the pre-existing untracked codebase audit document, which
+this change leaves untouched.
+
+`node scripts/verify-ascent-weather.mjs --clouds` (after building), with
+`--firefox` for Firefox, checks the real unpacked extension against HTTPS
+Peakbagger fixtures. Hidden Chrome for Testing 156.0.8078.4 and Firefox 158.0.1
+passed 16 configurations each: 1440/375 × 1100, light/imperial and dark/metric,
+100%/200% browser zoom, forecast/history. Inspected screenshots of the Clouds
+graph and Conditions table. Frame and geometry checks cover graph-tab changes,
+keyboard readings, surrounding card/native-table positions and document scroll;
+held refresh, service failure, retry and missing-cloud cases also passed.
+Controls must be panned into view on the native page at narrow 200% zoom.
+Provider responses are stubbed in these repeatable checks. The existing broader
+peak verifier failed its location-in-header assertion before implementation;
+this focused check does not establish that unrelated placement behavior.
+
+A live public Rainier request returned total cloud cover for GFS and IFS in one
+65,519-byte, 768-row response, within the unchanged 128-KiB bound. Best Match/AIFS
+also returned cloud columns, but that pair failed existing core validation
+because AIFS gusts used an `undefined` unit; that compatibility gap is unchanged.
+The real-manifest Chrome smoke check passed hidden at 1000 × 760 with BFCache
+restoration. These HTML/SVG checks do not require WebGL, and no WebGL renderer
+was asserted. Hidden checks do not prove native focus/window placement,
+screen-reader speech or forecast accuracy. Layer-specific cloud forecasts and
+snow-surface predictions are outside this addition.

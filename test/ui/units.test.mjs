@@ -61,6 +61,15 @@ test('weather formatting converts canonical values with measurement-specific pre
     assert.equal(Units.formatWeather(null, 'temperature', 'metric'), '—');
 });
 
+test('cloud percentages never receive an imperial wind conversion', () => {
+    for (const system of ['metric', 'imperial']) {
+        assert.equal(Units.formatWeather(0, 'cloud', system), '0%');
+        assert.equal(Units.formatWeather(62.5, 'cloud', system), '63%');
+        assert.equal(Units.formatWeather(100, 'cloud', system), '100%');
+        assert.equal(Units.formatWeather(null, 'cloud', system), '—');
+    }
+});
+
 test('display strings match what each surface used to produce on its own', () => {
     assert.equal(Units.formatDistance(1609.344, 'imperial'), '1.0 mi');
     assert.equal(Units.formatDistance(1000, 'metric'), '1.0 km');

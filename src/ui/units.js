@@ -62,15 +62,16 @@ const SYMBOLS = {
     elevation: { metric: 'm', imperial: 'ft' },
     temperature: { metric: '°C', imperial: '°F' },
     precipitation: { metric: 'mm', imperial: 'in' },
-    wind: { metric: 'km/h', imperial: 'mph' }
+    wind: { metric: 'km/h', imperial: 'mph' },
+    cloud: { metric: '%', imperial: '%' }
 };
 const symbol = (measurement, system) => SYMBOLS[measurement]?.[system] || '';
-const convertWeather = (value, measurement, system) => system !== IMPERIAL ? value
+const convertWeather = (value, measurement, system) => system !== IMPERIAL || measurement === 'cloud' ? value
     : measurement === 'temperature' ? value * 9 / 5 + 32
         : measurement === 'precipitation' ? value / 25.4 : value / (METERS_PER_MILE / 1000);
 const weatherDigits = (measurement, system) => measurement === 'precipitation' ? system === IMPERIAL ? 2 : 1 : 0;
 const formatWeather = (value, measurement, system) => Number.isFinite(value)
-    ? `${convertWeather(value, measurement, system).toFixed(weatherDigits(measurement, system))}${measurement === 'temperature' ? '' : ' '}${symbol(measurement, system)}`.replaceAll('-', '−')
+    ? `${convertWeather(value, measurement, system).toFixed(weatherDigits(measurement, system))}${measurement === 'temperature' || measurement === 'cloud' ? '' : ' '}${symbol(measurement, system)}`.replaceAll('-', '−')
     : '—';
 
 export const units = {

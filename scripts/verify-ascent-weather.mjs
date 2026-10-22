@@ -15,6 +15,7 @@ import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier
 import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.js';
 import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
+import { verifyWeatherClouds } from './verify-weather-clouds.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 import { verifyWeatherCardDrag } from './verify-weather-card-drag.mjs';
 import { verifyWeatherModelRefresh, verifyAscentWeatherModelMemory } from './verify-weather-model-refresh.mjs';
@@ -32,10 +33,11 @@ const firefoxMode = process.argv.includes('--firefox');
 const live = process.argv.includes('--live'); // one optional public-coordinate CORS proof
 const snowMapMode = process.argv.includes('--snow-map');
 const cardsMode = process.argv.includes('--cards');
+const cloudMode = process.argv.includes('--clouds');
 const snowMode = process.argv.includes('--snow') || snowMapMode || cardsMode;
-const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards'].includes(arg));
-if (unknown.length || (snowMode && live)) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
-const peakMode = process.argv.includes('--peak') || snowMode;
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--clouds'].includes(arg));
+if (unknown.length || (snowMode && live) || (cloudMode && (snowMode || live))) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
+const peakMode = process.argv.includes('--peak') || snowMode || cloudMode;
 const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
 const resources = createResourceStack();
 let primaryError = null, summary;
@@ -92,6 +94,7 @@ try {
             if (peakMode) body.hourly.precipitation.fill(null);
             else body.hourly.precipitation[40] = null;
         }
+        if (mode === 'missing-cloud') delete body.hourly.cloud_cover;
         if (mode === 'empty') Object.entries(body.hourly).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
         const replyBody = peakMode ? weatherModelFixture(body, requested.searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
             Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400]))) : body;
@@ -109,7 +112,8 @@ try {
             snowEvidence.push({ path: new URL(url).pathname, query: new URL(url).search }); return;
         }
         if (new URL(url).pathname.startsWith('/data/')) { metadataEvidence.push({ host: new URL(url).host, path: new URL(url).pathname, query: new URL(url).search }); return; }
-        evidence.push({ host: new URL(url).host, model: new URL(url).searchParams.get('models'), origin: headers.find(header => header.name.toLowerCase() === 'origin')?.value });
+        evidence.push({ host: new URL(url).host, model: new URL(url).searchParams.get('models'),
+            fields: new URL(url).searchParams.get('hourly').split(','), origin: headers.find(header => header.name.toLowerCase() === 'origin')?.value });
     };
     if (firefoxMode) {
         const { Builder, By } = await import('selenium-webdriver');
@@ -487,7 +491,11 @@ try {
         for (const key of ['dateWithHeading', 'inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
         assert.equal(geometry.cardCount, 1);
     };
-    if (cardsMode) {
+    if (cloudMode) {
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            ...await verifyWeatherClouds({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, setZoom, wait,
+                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, networkErrors, firefoxMode }) };
+    } else if (cardsMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,
                 movePointer, pointerDown, pointerUp, setMode: next => { mode = next; }, heldCount: () => held.length,

@@ -20,6 +20,7 @@ html[data-bpb-theme="dark"] :is(#bpb-ascent-weather, #bpb-peak-weather) {
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__storm { fill: var(--weather-wind); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="temperature"] { --weather-plot: var(--weather-warm); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="precipitation"] { --weather-plot: var(--weather-cold); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="cloud"] { --weather-plot: var(--weather-cloud); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) :is([data-weather-metric="wind"], [data-weather-metric="gust"]) { --weather-plot: var(--weather-wind); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-scroll { position: relative; width: 100%; min-width: 0; margin: 12px 0; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--hourly-border); border-radius: 7px; }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-scroll:focus-visible { outline: 2px solid var(--hourly-accent); outline-offset: 3px; }

@@ -7,7 +7,7 @@ import { hourlyWeatherCondition } from './weather-day.js';
 import { createWeatherIcon } from './weather-icon.js';
 
 const HOUR = 3600_000, element = dom.element;
-const measurements = [['code', 'Conditions'], ['temperature', 'Temperature'], ['apparent', 'Feels like'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts'], ['direction', 'Wind from']];
+const measurements = [['code', 'Conditions'], ['cloud', 'Cloud cover'], ['temperature', 'Temperature'], ['apparent', 'Feels like'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts'], ['direction', 'Wind from']];
 
 // Instantaneous fields exclude ending midnight; accumulations include it and
 // exclude starting midnight. Missing timestamps remain explicit empty slots.

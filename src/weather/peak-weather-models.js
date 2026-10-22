@@ -22,7 +22,7 @@ const horizons = {
 };
 const forecastModel = (item, forecastDays, options = {}) => Object.freeze({
     ...item, endpoint: 'https://api.open-meteo.com/v1/forecast',
-    fields: Object.freeze([...item.fields, 'apparent_temperature', 'wind_direction_10m', 'is_day']),
+    fields: Object.freeze([...item.fields, 'apparent_temperature', 'wind_direction_10m', 'is_day', 'cloud_cover']),
     gustTiming: 'preceding-hour', type: 'Forecast model', forecastDays, ...options,
 });
 // The automatic forecast blend has rolling history, not the archive blend's

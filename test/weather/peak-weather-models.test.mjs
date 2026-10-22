@@ -131,3 +131,46 @@ test('peak-only fields are bounded, unit-checked and retain missing values', () 
     body.hourly_units.wind_direction_10m = 'rad';
     assert.throws(() => validatePeakWeatherResponse(body, summit, window, models), { code: 'invalid-response' });
 });
+
+test('cloud cover shares the bounded request and keeps model identity, zeroes and gaps', async () => {
+    for (const item of PEAK_WEATHER_MODELS) assert.ok(item.fields.includes('cloud_cover'));
+    const ids = ['gfs_global', 'ecmwf_ifs'], models = ids.map(model);
+    const body = fixture(ids);
+    body.hourly.cloud_cover_gfs_global.splice(0, 3, 0, null, 100);
+    body.hourly.cloud_cover_ecmwf_ifs.fill(75);
+    let calls = 0;
+    const client = createPeakWeatherClient({ fetchFn: async url => {
+        calls++;
+        const params = new URL(url).searchParams;
+        assert.equal(params.get('models'), ids.join(','));
+        assert.equal(params.get('hourly').split(',').filter(field => field === 'cloud_cover').length, 1);
+        const text = JSON.stringify(body);
+        assert.ok(Buffer.byteLength(text) < 128 * 1024, '792 rows of two models including clouds fit the existing bound');
+        return new Response(text, { headers: { 'content-type': 'application/json' } });
+    } });
+    const result = await client.request(summit, window, models);
+    assert.deepEqual(result.models.gfs_global.samples.slice(0, 3).map(row => row.cloud), [0, null, 100]);
+    assert.ok(result.models.ecmwf_ifs.samples.every(row => row.cloud === 75));
+    await client.request(summit, window, models);
+    assert.equal(calls, 1, 'clouds and repeated reads use the existing weather flight/cache');
+});
+
+test('unavailable or malformed cloud cover cannot discard otherwise usable weather', () => {
+    const models = [model('gfs_global')];
+    for (const mutate of [
+        body => { delete body.hourly.cloud_cover; },
+        body => { body.hourly.cloud_cover.pop(); },
+        body => { body.hourly_units.cloud_cover = 'fraction'; },
+        body => { body.hourly.cloud_cover.fill(null); },
+    ]) {
+        const body = fixture(['gfs_global']); mutate(body);
+        const data = validatePeakWeatherResponse(body, summit, window, models).models.gfs_global;
+        assert.ok(data.samples.every(row => row.cloud === null));
+        assert.ok(data.samples.every(row => Number.isFinite(row.temperature)));
+        assert.ok(summarizeWeatherWeek(data, window.past).every(day => day.useful && !day.partial));
+    }
+    const body = fixture(['gfs_global']);
+    body.hourly.cloud_cover.splice(0, 8, -1, 101, '50', {}, Infinity, 0, 100, 62.5);
+    const values = validatePeakWeatherResponse(body, summit, window, models).models.gfs_global.samples.slice(0, 8).map(row => row.cloud);
+    assert.deepEqual(values, [null, null, null, null, null, 0, 100, 62.5]);
+});

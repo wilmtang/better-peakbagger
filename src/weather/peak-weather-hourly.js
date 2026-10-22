@@ -7,7 +7,7 @@ import { mountainTime } from '../time/mountain-time.js';
 import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.js';
 
 const HOUR = 3600_000, element = dom.element;
-const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts']];
+const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['cloud', 'Clouds'], ['wind', 'Wind'], ['gust', 'Gusts']];
 const svgElement = (tag, attrs = {}, text) => {
     const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
@@ -34,6 +34,15 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     frame.append(svg, empty);
     const conditions = element('div', { class: 'bpb-week-conditions bpb-weather-hourly-scroll', tabindex: '0', role: 'region', 'aria-label': 'Hourly weather in summit local time. Scroll horizontally for all hours.' });
     const note = element('p', { class: 'bpb-week-sub', id: `${id}-hint` });
+    const noteText = createStableText(note);
+    const graphNote = key => {
+        const boundary = hourlyWeatherSeries(day.window, samples, key).some(row => row.partialInterval);
+        const detail = key === 'precipitation' ? `. Rain/snow is preceding-hour water equivalent${boundary ? '; boundary intervals are proportionally estimated' : ''}.`
+            : key === 'gust' ? `. Gusts are maxima for the preceding hour${boundary ? '; boundary intervals extend outside this day' : ''}.`
+                : key === 'cloud' ? '. Cloud cover is the share of sky covered by clouds.' : '.';
+        return `Summit local time · Hover, tap or use ← → for readings${detail}`;
+    };
+    noteText.reserve(metrics.filter(([key]) => key !== 'code').map(([key]) => graphNote(key)));
     panel.append(readout, frame, conditions, note);
     container.replaceChildren(tabs, panel);
     const localTime = time => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
@@ -72,14 +81,15 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const values = rows.map(row => row.value).filter(Number.isFinite);
         empty.hidden = values.length > 0; svg.toggleAttribute('hidden', !values.length);
         frame.tabIndex = values.length ? 0 : -1;
-        empty.textContent = `${metrics.find(([key]) => key === metric)[1]} readings are unavailable for this day.`;
+        empty.textContent = metric === 'cloud' ? 'Cloud cover is unavailable for this day.'
+            : `${metrics.find(([key]) => key === metric)[1]} readings are unavailable for this day.`;
         frame.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} hourly graph. Use left and right arrows to explore readings; Escape clears selection.`);
         svg.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} in summit local time. ${overview()}. Missing readings leave gaps.`);
         if (!values.length) { geometry = null; drawCursor(); return; }
         const low = metric === 'temperature' ? Math.min(...values) - 2 : 0;
         // Keep rounded axis labels distinct even for a dry or calm day, in
         // either unit system (1 mm of rain, 4 km/h of wind).
-        const high = Math.max(low + (metric === 'temperature' ? 4 : metric === 'precipitation' ? 1 : 4), Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
+        const high = metric === 'cloud' ? 100 : Math.max(low + (metric === 'temperature' ? 4 : metric === 'precipitation' ? 1 : 4), Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
         const x = time => left + (time - day.window.start) / (day.window.end - day.window.start) * (right - left);
         const y = value => bottom - (value - low) / (high - low) * (bottom - top);
         geometry = { x, y, top, bottom, left, right, width };
@@ -123,12 +133,9 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         if (isConditions) {
             const { table } = createWeatherHourlyTable({ window: day.window, samples, zone, format });
             conditions.replaceChildren(table);
-            note.textContent = 'Summit local time · Scroll for all hours. Rain/snow and gusts cover the hour starting at the shown time; rain/snow is water equivalent.';
+            noteText.set('Summit local time · Scroll for all hours. Rain/snow and gusts cover the hour starting at the shown time; rain/snow is water equivalent.');
         } else {
-            const boundary = rows.some(row => row.partialInterval);
-            const intervalNote = metric === 'precipitation' ? `. Rain/snow is preceding-hour water equivalent${boundary ? '; boundary intervals are proportionally estimated' : ''}.`
-                : metric === 'gust' ? `. Gusts are maxima for the preceding hour${boundary ? '; boundary intervals extend outside this day' : ''}.` : '.';
-            note.textContent = `Summit local time · Hover, tap or use ← → for readings${intervalNote}`;
+            noteText.set(graphNote(metric));
             draw();
         }
     }

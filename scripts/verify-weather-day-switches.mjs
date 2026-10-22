@@ -146,7 +146,7 @@ export async function verifyWeatherConditions(evaluate) {
     assert.equal(state.afterWidth, state.pageWidth, 'scrolling hourly columns widened the page');
     assert.ok(state.scrollHeight <= state.height + 1, 'Conditions needs vertical scrolling');
     assert.equal(state.hours, 24);
-    assert.deepEqual(state.rowLabels, ['Conditions', 'Temperature', 'Feels like', 'Rain/snow', 'Wind', 'Gusts', 'Wind from']);
+    assert.deepEqual(state.rowLabels, ['Conditions', 'Cloud cover', 'Temperature', 'Feels like', 'Rain/snow', 'Wind', 'Gusts', 'Wind from']);
 }
 
 export async function verifyWeatherTabWrapping(evaluate) {

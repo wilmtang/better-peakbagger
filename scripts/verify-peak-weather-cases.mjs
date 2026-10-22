@@ -18,7 +18,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const card = '#bpb-peak-weather';
     const assertHourlyTabOrder = async () => assert.deepEqual(
         await evaluate(() => [...document.querySelectorAll('.bpb-week-day[open] [data-metric]')].map(tab => tab.textContent)),
-        ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
+        ['Conditions', 'Temperature', 'Rain/snow', 'Clouds', 'Wind', 'Gusts']);
     const openPage = async (kind = 'map') => {
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=${kind}`);
         await wait(() => document.getElementById('bpb-peak-weather'), 'real isolated peak weather bundle mounts');
@@ -164,7 +164,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             assert.ok(opened.pageWidth <= state.pageWidth + 1, 'hourly graph must fit inside the card without widening the peak page');
             assert.equal(evidence.length, before, 'hourly disclosure reuses the weekly response');
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-hourly-${width}.png`));
-            for (const metric of ['precipitation', 'wind', 'gust', 'code']) {
+            for (const metric of ['precipitation', 'cloud', 'wind', 'gust', 'code']) {
                 await click(`${card} .bpb-week-day[open] [data-metric="${metric}"]`);
                 await waitForCondition(async () => await evaluate(() => document.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric) === metric,
                     { description: 'hourly data tab selection', timeoutMs: 20_000 });

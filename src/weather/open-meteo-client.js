@@ -20,6 +20,7 @@ const peakFields = {
     apparent_temperature: { name: 'apparent', unit: '°C', min: -150, max: 100 },
     wind_direction_10m: { name: 'direction', unit: '°', min: 0, max: 360 },
     is_day: { name: 'isDay', unit: '', min: 0, max: 1, integer: true },
+    cloud_cover: { name: 'cloud', unit: '%', min: 0, max: 100, optional: true },
 };
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
 export function weatherRequestUrl(summit, window, model) {
@@ -107,13 +108,20 @@ function validateResponse(body, summit, window, model, maxRows, definitions = fi
     for (const [key, definition] of Object.entries(definitions)) {
         if (!model.fields.includes(key)) { columns[definition.name] = times.map(() => null); continue; }
         let values = hourly[key];
-        if (!Array.isArray(values) || values.length !== times.length || body.hourly_units?.[key] !== definition.unit) invalid();
+        if (!Array.isArray(values) || values.length !== times.length || body.hourly_units?.[key] !== definition.unit) {
+            // An unavailable supplementary field must not discard usable core
+            // weather. Never interpret a missing column or wrong unit as zero.
+            if (!definition.optional) invalid();
+            columns[definition.name] = times.map(() => null); continue;
+        }
         // Model processing can return negative precipitation (seen in ARPEGE).
         // Floor finite amounts at zero; keep genuinely missing values and
         // malformed data subject to the normal validation below.
         if (key === 'precipitation') values = values.map(value => Number.isFinite(value) && value < 0 ? 0 : value);
-        if (values.some(value => value !== null && (!Number.isFinite(value) || value < definition.min || value > definition.max
-            || (definition.integer && !Number.isInteger(value))))) invalid();
+        const validValue = value => value === null || (Number.isFinite(value) && value >= definition.min && value <= definition.max
+            && (!definition.integer || Number.isInteger(value)));
+        if (definition.optional) values = values.map(value => validValue(value) ? value : null);
+        else if (values.some(value => !validValue(value))) invalid();
         columns[definition.name] = values;
     }
     return {
