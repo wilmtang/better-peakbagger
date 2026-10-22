@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Respect Peakbagger request limits across captures.** When a rate-limit
+  response has no usable reset time, captures wait five minutes before trying
+  again. The wait applies across tabs, worker restarts and forced retries.
+
+- **Keep summit weather interactions steady.** Refresh and the model selector
+  retain keyboard focus during requests and cooldowns. Model update times
+  reserve their wrapping before replies arrive, and hourly hover avoids
+  repainting an unchanged reading.
+
 - **Recover overlays without losing preferences.** Retry restores layers that
   started during a service cooldown, saved opacity waits for storage, and
   concurrent refusals retain the longest provider wait. Terrain keeps style,

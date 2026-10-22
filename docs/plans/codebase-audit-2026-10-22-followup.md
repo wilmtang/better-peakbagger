@@ -244,7 +244,7 @@ or expiry extension was applied. D1 remains open for an upstream repair or an
 explicit owner policy decision. The stale workflow comment now points to the
 executing policy instead of carrying a second expiry date.
 
-## Verification and evidence limits
+## Original audit verification and evidence limits
 
 | Check | Observed result |
 | --- | --- |
@@ -277,8 +277,9 @@ Still unproven: native screen-reader output, OS/browser focus and chrome,
 physical touch, live Peakbagger/provider behavior, store/package acceptance,
 hosted CI, the complete general browser smoke suite, and terrain GPU/LOD
 behavior. Existing audit ledgers' proof gaps remain in force. Successful tests
-do not close F1–F4, and the concurrent weather commit is not covered by the
-starting-tree full-suite result.
+did not close F1–F4 at audit completion, and the concurrent weather commit was
+not covered by the starting-tree full-suite result. Current remediation
+verification is recorded in the closure ledger below.
 
 ## Execution order and closure ledger
 
@@ -288,6 +289,43 @@ completed independent unit needs its own focused Conventional Commit after
 appropriate checks; port the disposable repro into a durable test before
 changing its runtime owner. Do not bundle an architecture rewrite into these
 fixes. Preserve this ledger when the plan is eventually archived.
+
+### Remediation commits and final integration
+
+| Unit | Commit |
+| --- | --- |
+| F1 capture cooldown | `a0f5f76e` |
+| F2 weather focus | `d660b677` |
+| F3 metadata layout | `4040e701` |
+| F4 chart efficiency | `3eef74df` |
+| Browser CI and script inventory | `7b14bf1c` |
+| D1 upstream review and stale-comment correction | `e97621f1` |
+
+Final full suite: **3,257 passed, zero failures/skips** (about 41.9 seconds).
+Scale suite: **14 passed, zero failures/skips** (about 22.6 seconds). Full
+ESLint/build/web-ext lint passed with the same eight reviewed warnings. The
+first integration run found the missing new-verifier inventory entry; it was
+registered, its CI failure propagation tested, and the full suite rerun cleanly.
+The focused inventory/CI/runner suite passed all 48 checks. The new interaction
+gate runs after snow/card coverage in each browser; hosted CI remains unrun.
+
+General real-manifest smoke passed in hidden Chromium 156.0.8078.4 and Firefox
+158.0.1 at 1000 × 760, plus header checks at 1600/800/390 widths and enlarged
+text. Chrome exercised a persisted BFCache restore; Firefox reported a
+non-persisted navigation, preserving the native Firefox BFCache proof gap.
+
+Final `--cards` gates passed in both browsers (ten case groups each, including
+the durable Refresh-focus regression). Final `--interactions` gates passed
+eight width/theme/zoom cases plus two desktop chart-input cases per browser;
+each 120-event unchanged-sample burst produced zero child-list mutations.
+Earlier German-locale runs cover the metadata matrix independently. All runs
+used real unpacked `dist/`, HTTPS Peakbagger fixtures, stubbed providers and
+isolated headless profiles; no live account, Save or provider write was used.
+Every successful verifier reported teardown passed. Final process inspection
+found no remaining verifier browser/server processes; all twelve distinct
+profile paths reported in retained summaries were absent. Disposable screenshots
+and logs were removed after review. Documentation checks passed; no push,
+release or hosted workflow was performed. D1 is the sole remaining audit item.
 
 ### Fixed and verified
 
@@ -360,6 +398,9 @@ fixes. Preserve this ledger when the plan is eventually archived.
 ### Changed but not fully proven
 
 - No partially verified runtime fixes at this checkpoint. Live provider refusal
-  timing, native accessibility and hosted CI remain unproven. A failed session
-  write cannot persist a cooldown across worker termination; the running worker
-  still enforces it. Firefox smoke is scheduled for the final integration gate.
+  timing, native screen-reader output, OS/browser focus and chrome, physical
+  touch, native Firefox BFCache, hosted CI and store/package acceptance remain
+  unproven. General hidden Chrome/Firefox smoke passes do not establish them.
+  No new WebGL renderer or terrain GPU/LOD measurement was made for these
+  DOM/SVG changes. A failed session write cannot persist a cooldown across
+  worker termination; the running worker still enforces it.

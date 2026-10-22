@@ -1,9 +1,10 @@
 # Active plans
 
 - [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)
-  — proposed; four reproduced cooldown, keyboard-focus, layout-stability and
-  chart-efficiency findings, with baseline evidence and the existing dependency
-  advisory deadline recorded separately.
+  — four runtime findings fixed and verified locally in focused commits:
+  capture cooldown, keyboard focus, metadata stability and chart efficiency.
+  The upstream dependency advisory remains open with its existing October 24
+  expiry; regression evidence and native/live proof gaps are retained.
 
 - [Owned activity export from Garmin and Strava feeds](activity-feed-export.md)
   — proposed; optional per-service access, owner-only activity buttons, an
