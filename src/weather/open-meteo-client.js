@@ -155,7 +155,12 @@ function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 
             try {
                 response = await run(fetchFn(url, { credentials: 'omit', referrerPolicy: 'no-referrer',
                     redirect: 'error', cache: 'no-store', signal: deadline.signal }));
-                if (response.status === 429) { limited = rateLimitError('Open-Meteo', response, now()); throw limited; }
+                if (response.status === 429) {
+                    const next = rateLimitError('Open-Meteo', response, now());
+                    next.retryAt = Math.max(limited?.retryAt || 0, next.retryAt ?? now() + 300000);
+                    limited = next;
+                    throw limited;
+                }
                 if ([400, 404].includes(response.status)) throw fail('unavailable', Array.isArray(model)
                     ? 'This weather model selection is unavailable for this summit. Choose another model.' : 'This model has no data for the ascent’s date or location.');
                 if (!response.ok) throw fail('service', 'The weather service is unavailable. Try again later.');

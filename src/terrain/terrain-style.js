@@ -180,7 +180,11 @@ const createVectorStyleLoader = ({
                 referrerPolicy: 'no-referrer',
                 signal: deadline.signal,
             }));
-            if (response?.status === 429) { limited = rateLimitError('OpenFreeMap', response); throw limited; }
+            if (response?.status === 429) {
+                limited = rateLimitError('OpenFreeMap', response);
+                limited.retryAt ??= Date.now() + 300000;
+                throw limited;
+            }
             if (!response || !response.ok) {
                 throw new Error(`Vector style request failed (${response && response.status})`);
             }

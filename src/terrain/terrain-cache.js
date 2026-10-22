@@ -530,7 +530,12 @@ const create = ({
                 credentials: 'omit',
                 referrerPolicy: 'no-referrer'
             }));
-            if (response?.status === 429) { limited = rateLimitError('Mapterhorn', response, now()); throw limited; }
+            if (response?.status === 429) {
+                const next = rateLimitError('Mapterhorn', response, now());
+                next.retryAt = Math.max(limited?.retryAt || 0, next.retryAt ?? now() + 300000);
+                limited = next;
+                throw limited;
+            }
             if (!response || !response.ok) {
                 throw new TileRequestError(
                     `DEM tile request failed (${response && response.status})`,

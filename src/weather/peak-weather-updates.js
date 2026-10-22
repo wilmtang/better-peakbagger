@@ -64,7 +64,8 @@ export function createPeakModelUpdateClient({ fetchFn = globalThis.fetch, now = 
                 response = await run(fetchFn(`https://api.open-meteo.com/data/${domain}/static/meta.json`, {
                     credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal: deadline.signal,
                 }));
-                if (response.status === 429) limitedUntil = rateLimitError('Open-Meteo', response, now()).retryAt;
+                if (response.status === 429) limitedUntil = Math.max(limitedUntil,
+                    rateLimitError('Open-Meteo', response, now()).retryAt ?? now() + 300000);
                 if (!response.ok || !/application\/json/i.test(response.headers?.get('content-type') || '')) throw new Error('Update times unavailable.');
                 const text = await run(readBoundedResponseText(response, { maxBytes: 16 * 1024, signal: deadline.signal, label: 'Model metadata' }));
                 result = { data: validatePeakModelUpdate(JSON.parse(text), now()) };
