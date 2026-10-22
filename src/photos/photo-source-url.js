@@ -30,7 +30,11 @@ export const readPhotoSourceUrl = async (value, { maxBytes, fetchFn = globalThis
             chunks.push(chunk);
         }
         if (!bytes) throw new Error('The image is empty.');
-        return new File(chunks, decodeURIComponent(url.pathname.split('/').pop() || 'report-image'), { type: response.headers.get('content-type').split(';')[0] });
+        let filename = url.pathname.split('/').pop() || 'report-image';
+        // A valid fetch URL may contain a literal percent or non-UTF-8 bytes.
+        // Its display name must not invalidate already validated image data.
+        try { filename = decodeURIComponent(filename); } catch { /* Keep the URL spelling. */ }
+        return new File(chunks, filename, { type: response.headers.get('content-type').split(';')[0] });
     } finally {
         deadline.abort();
         deadline.clear();

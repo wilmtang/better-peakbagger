@@ -16,6 +16,25 @@ test('clicked remote images are bounded and fetched without credentials or refer
     assert.equal(options.referrerPolicy, 'no-referrer');
 });
 
+test('a readable image remains editable when its URL filename is not valid URI-encoded text', async t => {
+    for (const [path, name] of [
+        ['ridge%view.png', 'ridge%view.png'],
+        ['ridge%FF.png', 'ridge%FF.png'],
+        ['ridge%E2%82.png', 'ridge%E2%82.png'],
+        ['ridge%20view.png', 'ridge view.png'],
+        ['%E5%B1%B1.png', '山.png'],
+        ['', 'report-image'],
+    ]) await t.test(path || 'unnamed source', async () => {
+        const file = await readPhotoSourceUrl(`https://images.example/${path}`, {
+            maxBytes: 16,
+            fetchFn: async () => new Response('pixels', { headers: { 'content-type': 'image/png' } }),
+        });
+        assert.equal(file.name, name);
+        assert.equal(file.type, 'image/png');
+        assert.equal(await file.text(), 'pixels');
+    });
+});
+
 test('insecure sources, HTML responses, empty files and dishonest size headers are refused', async () => {
     for (const url of ['http://images.example/a.png', 'https://user:secret@images.example/a.png']) {
         await assert.rejects(readPhotoSourceUrl(url, { maxBytes: 4, fetchFn: () => { throw new Error('must not fetch'); } }), /HTTPS/);
