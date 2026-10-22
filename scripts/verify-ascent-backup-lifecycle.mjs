@@ -13,6 +13,8 @@ import { createFixtureCertificate, projectRoot } from './browser-verification-fi
 import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
+if (process.argv.length > 2) throw new Error('Usage: node scripts/verify-ascent-backup-lifecycle.mjs');
+
 const resources = createResourceStack();
 let failure;
 try {

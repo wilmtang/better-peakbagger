@@ -13,7 +13,8 @@ import { createBrowserFixtureServer, readSunCalculatorGeometry } from './browser
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
-assertChromeLaunchAllowed();
+if (process.argv.length > 2) throw new Error('Usage: node scripts/verify-peak-map-layout.mjs');
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = process.env.BPB_VERIFY_PEAK_LAYOUT_ARTIFACTS;
 const resources = createResourceStack();
@@ -35,6 +36,12 @@ try {
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
     });
     resources.defer('peak layout browser', () => context.close());
+    // Sun geometry and native map resizing are offline checks. Unrelated
+    // default weather/catalog readers must not turn them into live probes.
+    await context.route('**/*', route => {
+        const url = new URL(route.request().url());
+        return url.hostname === 'www.peakbagger.com' && url.port === String(fixture.port) ? route.continue() : route.abort();
+    });
     console.log(`Hidden Chrome ${context.browser().version()}; disposable profile ${profile}`);
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const page = await context.newPage();

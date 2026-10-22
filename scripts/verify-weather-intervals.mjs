@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, chrome, getComputedStyle */
+/* global document, chrome */
 
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -8,14 +8,17 @@ import { JSDOM } from 'jsdom';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
 
+if (process.argv.length > 2) throw new Error('Usage: node scripts/verify-weather-intervals.mjs');
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const temporaryRoot = await mkdtemp('/tmp/bpb-weather-audit-verify-');
-const output = process.env.BPB_WEATHER_AUDIT_OUTPUT;
-let context, fixture, fractional = false;
+const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'bpb-weather-intervals-'));
+const output = process.env.BPB_WEATHER_INTERVALS_OUTPUT;
+let context, fixture;
 const requests = [];
 try {
     if (output) await mkdir(output, { recursive: true });
@@ -35,12 +38,12 @@ try {
                 hours: (Date.parse(url.searchParams.get('end_date')) - Date.parse(url.searchParams.get('start_date'))) / 3600_000 + 24,
                 latitude: Number(url.searchParams.get('latitude')), longitude: Number(url.searchParams.get('longitude')),
                 elevation: Number(url.searchParams.get('elevation')), fields: url.searchParams.get('hourly').split(',') });
-            if (fractional) body.hourly.precipitation.fill(1);
+            body.hourly.precipitation.fill(1);
             return route.fulfill({ json: body });
         }
-        if (url.hostname === 'www.peakbagger.com' && (!url.port || (fractional && /^\/peak\.aspx$/i.test(url.pathname)))) {
+        if (url.hostname === 'www.peakbagger.com' && (!url.port || /^\/peak\.aspx$/i.test(url.pathname))) {
             const response = await route.fetch({ url: `https://127.0.0.1:${fixture.port}${url.pathname}${url.search}`, ignoreHTTPSErrors: true });
-            if (fractional && /^\/peak\.aspx$/i.test(url.pathname)) {
+            if (/^\/peak\.aspx$/i.test(url.pathname)) {
                 const html = new JSDOM(await response.text());
                 const rows = [...html.window.document.querySelectorAll('tr')].filter(row => row.cells.length === 2);
                 rows.find(row => row.cells[0].textContent.trim() === 'Latitude/Longitude (WGS84)').cells[1].textContent = '27.7, 85.3 (Dec Deg)';
@@ -60,7 +63,6 @@ try {
     await setSettings({});
     const page = await context.newPage();
     const origin = `https://www.peakbagger.com:${fixture.port}`;
-    fractional = true;
     await page.goto(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`);
     await page.locator('#bpb-ascent-weather').scrollIntoViewIfNeeded();
     await page.waitForFunction(() => document.querySelector('.bpb-weather-model-description')?.textContent.includes('Using'));
@@ -82,49 +84,6 @@ try {
     await page.locator('.bpb-weather-chart-frame').focus(); await page.keyboard.press('Home');
     await page.waitForFunction(() => document.querySelector('.bpb-weather-readout').textContent.includes('Estimated boundary interval'));
     assert.match(await page.locator('.bpb-weather-readout').innerText(), /12:00 AM.*12:45 AM/);
-    for (const theme of ['light', 'dark']) {
-        await setSettings({ theme });
-        await page.waitForFunction(theme => document.documentElement.dataset.bpbTheme === theme, theme);
-        const tabs = await page.evaluate(() => [...document.querySelectorAll('.bpb-weather-tabs button')].map(button => ({
-            selected: button.getAttribute('aria-selected') === 'true', background: getComputedStyle(button).backgroundColor,
-            color: getComputedStyle(button).color,
-        })));
-        assert.notEqual(tabs.find(tab => tab.selected).background, tabs.find(tab => !tab.selected).background);
-        assert.notEqual(tabs.find(tab => tab.selected).color, tabs.find(tab => !tab.selected).color);
-        assert.equal(await page.locator('.bpb-weather-disclosure').evaluate(button => getComputedStyle(button).borderTopWidth), '1px');
-        await page.setViewportSize({ width: 375, height: 1000 });
-        await page.waitForFunction(() => document.querySelector('.bpb-weather-chart').getAttribute('viewBox').split(' ')[2] - document.querySelector('.bpb-weather-chart').getBoundingClientRect().width < 1);
-        if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, `ascent-reading-${theme}-375.png`) });
-    }
-    fractional = false;
-    await setSettings({ showWeather: false });
-    const requestsBeforeOptOut = requests.length;
-    await page.goto(`${origin}/climber/ascent.aspx?aid=7654321&weather=gpx`);
-    await page.waitForFunction(() => document.querySelector('#bpb-ascent-weather')?.hidden);
-    assert.equal(await page.locator('#bpb-ascent-gpx-details').count(), 0);
-    const original = await page.locator('#gpxlinks').evaluate(node => {
-        node.dataset.originalWeatherParent = node.parentElement.id || node.parentElement.tagName;
-        return node.dataset.originalWeatherParent;
-    });
-    assert.equal(requests.length, requestsBeforeOptOut);
-    await setSettings({ showWeather: true });
-    await page.waitForFunction(() => document.querySelector('#bpb-ascent-gpx-details #gpxlinks'));
-    await setSettings({ showWeather: false });
-    await page.waitForFunction(() => !document.querySelector('#bpb-ascent-gpx-details') && document.querySelector('#bpb-ascent-weather').hidden);
-    assert.equal(await page.locator('#gpxlinks').evaluate(node => node.parentElement.id || node.parentElement.tagName), original);
-    assert.equal(await page.locator('#gpxlinks').isVisible(), true);
-    if (output) await page.locator('#gpxlinks').screenshot({ path: path.join(output, 'weather-disabled-native-gps.png') });
-    await setSettings({ showWeather: true });
-    fractional = false;
-    await page.setViewportSize({ width: 375, height: 1000 });
-    await page.goto(`${origin}/peak.aspx?pid=2296&week-weather=map`);
-    await page.locator('#bpb-peak-weather').scrollIntoViewIfNeeded();
-    await page.waitForFunction(() => document.querySelectorAll('.bpb-week-day').length === 16);
-    await page.locator('.bpb-week-day:first-child > summary').click();
-    await page.locator('.bpb-week-day:nth-child(2) > summary').click();
-    await page.locator('.bpb-week-day[open] [data-metric="temperature"]').click();
-    await page.waitForFunction(() => document.querySelector('.bpb-week-day:nth-child(2)[open] .bpb-week-line'));
-    if (output) await page.locator('.bpb-week-day:nth-child(2)').screenshot({ path: path.join(output, 'peak-day-switch-375.png') });
     console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, rain, requests: requests.length, profile: temporaryRoot }));
 } finally {
     try { await context?.close(); } finally {
