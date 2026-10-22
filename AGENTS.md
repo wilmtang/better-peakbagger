@@ -6,6 +6,10 @@ When making code changes, commit each completed independent unit of work before 
 
 For audit-remediation work, keep an explicit closure ledger with three categories: fixed and verified, intentionally not changed, and changed but not fully proven. Do not summarize the audit as completely fixed while owner-choice items or verification gaps remain. Preserve that ledger when archiving the completed plan so the handoff distinguishes product risk from optional cleanup and missing evidence.
 
+## Repository skills
+
+For UI/UX design, interface implementation, accessibility, interaction, or layout reviews, read and apply [ui-ux-pro-max](.agents/skills/ui-ux-pro-max/SKILL.md). Codex and Gemini CLI discover the shared `.agents/skills/` copy; Claude Code uses a symlink under `.claude/skills/`. Follow this file's project-specific rules when generic skill recommendations differ.
+
 ## Architecture
 
 This is a Manifest V3 browser extension for Chrome and Firefox. Runtime source is authored as ES modules and bundled with esbuild into `dist/`; load, verify, lint, and package `dist/`, never the repository root. `manifest.json` is the source of truth for permissions, execution worlds, and the order of separately loaded bundles/vendor scripts. `scripts/build-config.mjs` is the source of truth for each bundle's module composition and copied assets. See `docs/development.md` for the workflow, `docs/architecture.md` for the maintained design overview, and `PRIVACY.md` for the public data-handling contract; keep this section focused on boundaries that code changes must preserve.

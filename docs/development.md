@@ -44,6 +44,31 @@ Better Peakbagger module uses a global as an internal dependency.
   by the product, not a formality: `src/peakbagger/peakbagger-request.js`
   refuses any other origin.
 
+## Shared UI/UX skill
+
+The repository includes [UI UX Pro Max](../.agents/skills/ui-ux-pro-max/SKILL.md)
+for interface design, accessibility, interaction, and layout reviews. Codex and
+Gemini CLI discover it in `.agents/skills/ui-ux-pro-max/`; Claude Code discovers
+the same copy through `.claude/skills/ui-ux-pro-max`, a relative symlink. The
+skill defers to the project rules in `AGENTS.md`.
+
+It is available to Codex on the next turn. Start a fresh Claude Code or Gemini
+CLI session if an existing session has not discovered it. Ask any agent to
+"use ui-ux-pro-max to review the popup UX"; in Claude Code you can also invoke
+`/ui-ux-pro-max`.
+
+Its local search helper requires Python 3 and no third-party Python packages.
+For example, from the repository root:
+
+```bash
+python3 .agents/skills/ui-ux-pro-max/scripts/search.py "keyboard focus modal" --domain ux
+```
+
+The upstream revision, license, and local adaptations are recorded in
+[UPSTREAM.md](../.agents/skills/ui-ux-pro-max/UPSTREAM.md). Update the canonical
+copy and preserve its Claude Code symlink rather than maintaining separate
+versions for each agent.
+
 ## Source and test layout
 
 Runtime modules are grouped by the behavior they own. The directory is an
