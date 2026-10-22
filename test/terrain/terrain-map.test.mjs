@@ -1878,6 +1878,15 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         'no request below the native zoom cutoff');
     assert.equal(rendered().length, 0, 'dots are cleared when the map covers too big an area');
 
+    dispatch({ type: 'peaks', requestId: 1,
+        peaks: [{ id: 7, name: 'Delayed Peak', lat: 48.71, lon: -121.81, state: 'unclimbed' }] });
+    assert.equal(rendered().length, 0, 'a delayed response cannot restore dots below the zoom cutoff');
+
+    camera.zoom = 13;
+    dispatch({ type: 'peaks', requestId: 1,
+        peaks: [{ id: 7, name: 'Old View', lat: 48.71, lon: -121.81, state: 'unclimbed' }] });
+    assert.equal(rendered().length, 0, 'zooming back in cannot revive a request invalidated by the cutoff');
+
     camera.zoom = 13;
     dispatch({ type: 'peaks', unavailable: true });
     map.handlers.get('moveend')();

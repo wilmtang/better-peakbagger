@@ -1583,13 +1583,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const requestPeaks = () => {
-        if (!map || !loaded || peaksUnavailable || peaksLimitedUntil > Date.now()) return;
+        if (!map || !loaded) return;
         try {
             if (map.getZoom() < PEAK_MARKERS.minZoom) {
+                peaksRequestId++;
                 lastPeaksBoundsKey = null;
                 setPeakData([]);
                 return;
             }
+            if (peaksUnavailable || peaksLimitedUntil > Date.now()) return;
             const bounds = peakRequestBounds();
             if (!bounds) return;
             const key = JSON.stringify(bounds);
@@ -1693,6 +1695,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     const applyPeaks = data => {
         if (!map || !loaded) return;
+        if (map.getZoom() < PEAK_MARKERS.minZoom) return;
         if (data.unavailable === true) {
             // This surface has no peak feed (e.g. group maps): stop asking.
             peaksUnavailable = true;
