@@ -36,6 +36,11 @@ Refresh stays focusable while busy or temporarily rate limited, with an
 accessible unavailable state and guarded activation. The model selector also
 retains focus during a cooldown and rejects changes until requests are allowed.
 Completion does not move focus back after the user has left either control.
+Model-update cells reserve the wrapping of localized timestamps, delayed clocks
+and unavailable states before replies arrive. Previously usable clocks stay
+visible through refresh; an unavailable recheck keeps the last known value and
+identifies it in the cell's title. Sizing text is noninteractive and hidden from
+accessibility output.
 
 Selected points use their own offline timezone and Open-Meteo terrain elevation,
 without applying the summit's elevation to another location. A regional model

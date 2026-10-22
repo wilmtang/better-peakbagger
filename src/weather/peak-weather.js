@@ -86,6 +86,7 @@ export function mountPeakWeather() {
 
     const client = createPeakWeatherClient();
     const updateClient = createPeakModelUpdateClient();
+    const updateClocks = new Map();
     let updatesController = null, updatesGeneration = 0;
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
     let settingsReady = false, modelsReady = false, locationMenu = null;
@@ -100,19 +101,37 @@ export function mountPeakWeather() {
         // a failed model change retains the previous result.
         const models = [current.models[period]];
         const targets = new Map();
+        const label = time => `${dateLabel(mountainTime.localDate(zone, time), { month: 'short', day: 'numeric' })} ${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
+        // Use real localized clock alternatives, including both seasonal zone
+        // labels and AM/PM, rather than a clipped height or an empty spacer.
+        const clockLabels = Array.from({ length: 24 }, (_, index) => label(Date.UTC(new Date(Date.now()).getUTCFullYear(), index % 12, 28, index < 12 ? 0 : 12, 58)));
+        const cadenceLabels = [86400, 604800, 601200, 604740, 604799].map(updateIntervalLabel);
+        const valueCell = (text, alternatives) => {
+            const value = element('span'), tableCell = element('td', {}, [value]);
+            const stable = createStableText(value);
+            if (alternatives.length) stable.reserve(['Loading…', 'Unavailable', ...alternatives]);
+            stable.set(text);
+            return { cell: tableCell, set: stable.set };
+        };
+        const clockText = data => ({
+            last: label(data.lastUpdate),
+            next: `${label(data.nextExpected)}${data.nextExpected < Date.now() ? ' (delayed)' : ''}`,
+            interval: updateIntervalLabel(data.updateIntervalSeconds),
+        });
         updatesBody.replaceChildren();
         for (const model of models) {
             const domains = peakModelUpdateDomains(model);
             for (const domain of domains.length ? domains : [null]) {
-                const label = model.id === 'gfs_global' ? `${model.label} · ${domain === 'ncep_gfs013' ? '13' : '25'} km` : model.label;
+                const modelLabel = model.id === 'gfs_global' ? `${model.label} · ${domain === 'ncep_gfs013' ? '13' : '25'} km` : model.label;
                 const unavailable = model === PEAK_BEST_MATCH ? 'Varies by model' : 'Unavailable';
-                const last = element('td', { text: domain ? 'Loading…' : unavailable }), next = element('td', { text: domain ? 'Loading…' : unavailable }), interval = element('td', { text: domain ? 'Loading…' : unavailable });
-                updatesBody.append(element('tr', { 'data-update-model': model.id }, [element('th', { scope: 'row', text: label }), last, next, interval]));
+                const previous = updateClocks.get(domain);
+                const initial = previous ? clockText(previous) : { last: domain ? 'Loading…' : unavailable, next: domain ? 'Loading…' : unavailable, interval: domain ? 'Loading…' : unavailable };
+                const last = valueCell(initial.last, domain ? clockLabels : []), next = valueCell(initial.next, domain ? clockLabels.map(text => `${text} (delayed)`) : []), interval = valueCell(initial.interval, domain ? cadenceLabels : []);
+                updatesBody.append(element('tr', { 'data-update-model': model.id }, [element('th', { scope: 'row', text: modelLabel }), last.cell, next.cell, interval.cell]));
                 if (domain) targets.set(domain, [...(targets.get(domain) || []), { last, next, interval }]);
             }
         }
         const queue = [...targets.keys()];
-        const label = time => `${dateLabel(mountainTime.localDate(zone, time), { month: 'short', day: 'numeric' })} ${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
         // Fetch only when the disclosure is open, with at most three metadata
         // requests in flight. A failure never replaces usable weather data.
         await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
@@ -122,11 +141,11 @@ export function mountPeakWeather() {
                 try { result = await updateClient.request(domain, { signal: updateController.signal }); }
                 catch { return; }
                 if (owner !== updatesGeneration || updateController.signal.aborted) return;
+                if (result.data) updateClocks.set(domain, result.data);
+                const data = updateClocks.get(domain), text = data ? clockText(data) : { last: 'Unavailable', next: 'Unavailable', interval: 'Unavailable' };
                 for (const { last, next, interval } of targets.get(domain)) {
-                    last.textContent = result.data ? label(result.data.lastUpdate) : 'Unavailable';
-                    next.textContent = result.data ? `${label(result.data.nextExpected)}${result.data.nextExpected < Date.now() ? ' (delayed)' : ''}` : 'Unavailable';
-                    interval.textContent = result.data ? updateIntervalLabel(result.data.updateIntervalSeconds) : 'Unavailable';
-                    if (result.data) last.title = `Model initialized ${label(result.data.run)}`;
+                    last.set(text.last); next.set(text.next); interval.set(text.interval);
+                    if (data) last.cell.title = `Model initialized ${label(data.run)}${result.data ? '' : ' · Last known update; latest check unavailable.'}`;
                 }
             }
         }));

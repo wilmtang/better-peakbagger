@@ -7,7 +7,7 @@ import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate, clickPoint, press, resize, setZoom,
-    setSettings, wait, setMode, heldCount, release, evidence, networkErrors, firefoxMode, screenshotPage, writeLocal }) {
+    setSettings, wait, setMode, heldCount, release, releaseOne, evidence, networkErrors, firefoxMode, screenshotPage, writeLocal, verificationLocale }) {
     const cases = [], output = process.env.BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015', Tab: '\uE004' }[name] : name;
@@ -37,6 +37,13 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
             else assert.ok(Math.abs(value - after[name]) <= 1, `${label}.${name}: ${value} → ${after[name]}`);
         }
     };
+    const metadataGeometry = () => evaluate(() => {
+        const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect();
+            return { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height }; };
+        return { trigger: rect('.bpb-week-source summary'), source: rect('.bpb-week-source'),
+            table: rect('.bpb-week-updates'), footer: rect('#bpb-peak-weather footer'),
+            following: rect('#bpb-peak-snow'), native: rect('h1'), scroll: window.scrollY };
+    });
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) for (const zoom of [1, 2]) {
         const label = `${width}-${theme}-zoom${zoom}`;
         console.log(`Weather interaction case: ${label}`);
@@ -48,10 +55,27 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, peakWeatherCollapsed: false });
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map-first`);
         await setZoom(zoom);
+        assert.equal(await evaluate(() => Intl.DateTimeFormat().resolvedOptions().locale), verificationLocale, 'real browser formatting locale');
         await focus('.bpb-week-refresh'); await ready();
         // Settle the following card before comparing reading positions.
         await evaluate(() => document.querySelector('#bpb-peak-snow').scrollIntoView({ block: 'center' }));
         await wait(() => document.querySelector('.bpb-snow-status')?.textContent.includes('Hourly readings'), 'following snow ready');
+        setMode('metadata-loading');
+        await focus('.bpb-week-source summary'); await press(key('Enter'));
+        await waitForCondition(heldCount, { description: 'two held GFS metadata replies', isReady: count => count === 2 });
+        await wait(() => document.querySelector('.bpb-week-source').open && document.querySelectorAll('[data-update-model]').length === 2, 'open metadata table');
+        const metadataBefore = await metadataGeometry();
+        if (output && width === 375 && zoom === 1) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-metadata-pending.png`));
+        setMode('metadata-delayed'); releaseOne();
+        await wait(() => document.querySelector('.bpb-week-updates').textContent.includes('(delayed)'), 'first delayed model clock');
+        stable(metadataBefore, await metadataGeometry(), `${label}: first metadata reply`);
+        setMode('metadata-error'); release();
+        await wait(() => document.querySelector('.bpb-week-updates').textContent.includes('Unavailable')
+            && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'second model unavailable');
+        stable(metadataBefore, await metadataGeometry(), `${label}: metadata failure`);
+        if (output && width === 375 && zoom === 1) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-metadata-ready.png`));
+        await press(key('Enter')); await wait(() => !document.querySelector('.bpb-week-source').open, 'source closed');
+        setMode('complete');
         await focus('.bpb-week-refresh');
         const before = await geometry(), count = evidence.length;
         setMode('loading'); await press(key('Enter'));
@@ -92,9 +116,9 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         assert.equal(evidence.length, limited, 'cooldown rejects model and Refresh activation');
         assert.equal(await focused('.bpb-week-refresh'), true, `${label}: cooldown Refresh focus`);
         await press(key('Tab')); assert.equal(await focused('.bpb-week-refresh'), false, 'Tab remains usable during cooldown');
-        cases.push({ width, theme, zoom, states: ['pending', 'duplicate-input', 'service-error', 'Space-retry', 'focus-moved', 'success', 'model-cooldown'] });
+        cases.push({ width, theme, zoom, states: ['metadata-pending', 'staggered-clock', 'delayed-clock', 'metadata-error', 'pending', 'duplicate-input', 'service-error', 'Space-retry', 'focus-moved', 'success', 'model-cooldown'] });
     }
     assert.equal(cases.length, 8, 'the complete interaction matrix executed');
     assert.deepEqual(networkErrors, []);
-    return { cases, screenshots: output || null };
+    return { cases, locale: verificationLocale, screenshots: output || null };
 }

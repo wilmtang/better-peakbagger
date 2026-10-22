@@ -1400,6 +1400,30 @@ test('model update times and cadence load only on disclosure, cover both GFS pro
     } finally { env.close(); }
 });
 
+test('metadata reserves readable states and keeps known clocks during refresh and failure', async () => {
+    let hold = false, release;
+    const env = setup({ metadataFn: () => hold ? new Promise(resolve => { release = () => resolve(new Response('', { status: 503 })); })
+        : new Response(JSON.stringify({ last_run_initialisation_time: 1730790000,
+            last_run_availability_time: 1730793000, update_interval_seconds: 21600 }), { headers: { 'content-type': 'application/json' } }) });
+    try {
+        await settled(env, { past: false });
+        const source = env.doc.querySelector('.bpb-week-source'); source.open = true;
+        await waitFor(() => env.metadataRequests.length === 2 && !source.textContent.includes('Loading'));
+        const previous = [...source.querySelectorAll('tbody td')].map(node => node.textContent);
+        assert.ok(previous.some(text => text.includes('PST')));
+        const reservations = [...source.querySelectorAll('[data-sizing-text]')];
+        assert.ok(reservations.length > 0);
+        assert.ok(reservations.every(node => node.getAttribute('aria-hidden') === 'true' && node.tabIndex === -1));
+        hold = true; env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.metadataRequests.length === 4);
+        assert.deepEqual([...source.querySelectorAll('tbody td')].map(node => node.textContent), previous);
+        // One failing domain must not erase its previous clock or its sibling.
+        release();
+        await waitFor(() => !!source.querySelector('td[title*="latest check unavailable"]'));
+        assert.deepEqual([...source.querySelectorAll('tbody td')].map(node => node.textContent), previous);
+    } finally { env.close(); }
+});
+
 test('update clocks follow only the active period model and reuse cached products', async () => {
     const env = setup({ localModels: { bpbPeakWeatherModelPast: 'icon_global', bpbPeakWeatherModelForecast: 'gfs_global' } });
     const rows = () => [...env.doc.querySelectorAll('[data-update-model]')].map(row => row.dataset.updateModel);

@@ -1,6 +1,6 @@
 # Repository bugs, performance, engineering, and UX audit — October 22 follow-up
 
-Status: **remediation in progress; F1–F2 fixed locally, F3–F4 open.** This is separate from the earlier
+Status: **remediation in progress; F1–F3 fixed locally, F4 open.** This is separate from the earlier
 [October 22 Gemini audit](../archive/codebase-audit-2026-10-22.md) and
 [terrain audit](../archive/3d-map-audit-2026-10-22.md).
 
@@ -279,6 +279,20 @@ fixes. Preserve this ledger when the plan is eventually archived.
 
 ### Fixed and verified
 
+- F3: metadata cells use noninteractive, accessibility-hidden localized clock
+  and cadence reservations, preserving readable wrapping without a fixed box.
+  Last usable per-domain clocks survive refresh and failed rechecks (with a
+  last-known title). The new browser assertion failed on baseline after the
+  first delayed reply: source height 292.17 → 309.56 CSS px. It now passes the
+  pending → individual delayed reply → sibling failure transitions, comparing
+  source trigger/table/footer, following card/native heading and scroll within
+  1 CSS px. Eight cases per browser and locale passed: Chromium 156.0.8078.4 /
+  Firefox 158.0.1, `en-US` / `de-DE`, light/dark, 375/1440 × 1100 and 100/200%
+  real tab zoom; all teardowns passed. Narrow pending/ready and German dark
+  renders were inspected. Firefox's installed UI language pack did not change
+  Intl via preferences alone; the fixture's isolated locale service now selects
+  and asserts actual content formatting. This does not prove localized browser
+  chrome. Weather tests: 72 passed; focused lint and verifier tests passed.
 - F2: weather Refresh and the model selector retain focus with guarded
   `aria-disabled` states. No focus restoration runs on completion. The durable
   card assertion failed on baseline focus after failure and passes with the
@@ -310,7 +324,7 @@ fixes. Preserve this ledger when the plan is eventually archived.
 
 ### Intentionally not changed
 
-- F3–F4 remain open. Manifest, settings schema, privacy boundaries and native
+- F4 remains open. Manifest, settings schema, privacy boundaries and native
   Save ownership are unchanged.
 - Concurrent weather work and the earlier audits' implemented fixes and
   explicit live/native verification gaps.

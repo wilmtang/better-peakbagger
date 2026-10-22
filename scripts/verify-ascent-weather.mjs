@@ -36,6 +36,7 @@ const live = process.argv.includes('--live'); // one optional public-coordinate 
 const mapLocationMode = process.argv.includes('--map-location');
 const snowMapMode = process.argv.includes('--snow-map');
 const interactionsMode = process.argv.includes('--interactions');
+const verificationLocale = Intl.getCanonicalLocales(process.env.BPB_VERIFY_WEATHER_LOCALE || 'en-US')[0];
 const cardsMode = process.argv.includes('--cards') || interactionsMode;
 const cloudMode = process.argv.includes('--clouds');
 const snowMode = process.argv.includes('--snow') || snowMapMode || cardsMode;
@@ -76,9 +77,9 @@ try {
             return { status: mode === 'error' ? 429 : mode === 'service-error' ? 503 : 200,
                 headers: mode === 'error' ? { 'retry-after': '120' } : {}, body: JSON.stringify(body) };
         }
-        if (requested.pathname.startsWith('/data/')) return { status: 200, headers: {}, body: JSON.stringify({
-            last_run_initialisation_time: Math.floor(Date.now() / 1000) - 3600,
-            last_run_availability_time: Math.floor(Date.now() / 1000) - 600, update_interval_seconds: 21600,
+        if (requested.pathname.startsWith('/data/')) return { status: mode === 'metadata-error' ? 503 : 200, headers: {}, body: JSON.stringify({
+            last_run_initialisation_time: Math.floor(Date.now() / 1000) - (mode === 'metadata-delayed' ? 400000 : 3600),
+            last_run_availability_time: Math.floor(Date.now() / 1000) - (mode === 'metadata-delayed' ? 390000 : 600), update_interval_seconds: 21600,
         }) };
         const fields = requested.searchParams.get('hourly').split(',');
         const body = weatherFixture({ startDate: requested.searchParams.get('start_date'), fields,
@@ -132,6 +133,11 @@ try {
         const profile = path.join(temporaryRoot, 'profile'); await mkdir(profile);
         const options = new firefox.Options().addArguments('-headless').enableBidi().setProfile(profile)
             .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com').setAcceptInsecureCerts(true);
+        if (interactionsMode) options.setPreference('intl.locale.requested', verificationLocale)
+            .setPreference('intl.accept_languages', verificationLocale).setPreference('intl.regional_prefs.use_os_locales', false)
+            // Intl in content uses web-exposed locales, independently of the
+            // language packs installed for browser chrome (LocaleService.cpp).
+            .setPreference('intl.locale.privacy.web_exposed', verificationLocale);
         if (snowMapMode || mapLocationMode) {
             options.setPreference('webgl.sanitize-unmasked-renderer', false);
             if (process.platform === 'darwin') options.setPreference('webgl.disable-angle', false);
@@ -144,6 +150,12 @@ try {
         version = (await driver.getCapabilities()).getBrowserVersion();
         const addon = await driver.installAddon(prepared.sourceDir, true);
         await driver.setContext(firefox.Context.CHROME);
+        if (interactionsMode) {
+            // The installed en-US application has no German UI language pack.
+            // Select the formatting locale in this disposable test profile;
+            // this verifies Intl/content layout, not translated browser chrome.
+            await driver.executeScript('Services.locale.availableLocales = [arguments[0], "en-US"]; Services.locale.requestedLocales = [arguments[0]];', verificationLocale);
+        }
         const extensionUrl = await driver.executeScript('return WebExtensionPolicy.getByID(arguments[0]).getURL("options/options.html");', addon);
         await driver.setContext(firefox.Context.CONTENT);
         const bidi = await driver.getBidi();
@@ -163,7 +175,8 @@ try {
                 void (async () => {
                     const headers = params.request.headers.map(header => ({ name: header.name, value: header.value.value }));
                     checkRequest(url, headers);
-                    if (mode === 'elevation-loading' && new URL(url).hostname === 'tiles.mapterhorn.com' || mode === 'loading' && (!snowMode || cardsMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
+                    if (mode === 'metadata-loading' && new URL(url).pathname.startsWith('/data/')
+                        || mode === 'elevation-loading' && new URL(url).hostname === 'tiles.mapterhorn.com' || mode === 'loading' && (!snowMode || cardsMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
                     const reply = replyFor(url);
                     await send({ method: 'network.provideResponse', params: { request: params.request.request, statusCode: reply.status,
                         headers: [{ name: 'content-type', value: { type: 'string', value: reply.contentType || 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
@@ -295,6 +308,7 @@ try {
         const dist = path.join(root, 'dist');
         assertChromeLaunchAllowed();
         const context = await chromium.launchPersistentContext(temporaryRoot, { channel: 'chromium', headless: true,
+            ...(interactionsMode ? { locale: verificationLocale } : {}),
             ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : {}),
             ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], viewport: { width: 1440, height: 1100 },
             args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${dist}`, `--load-extension=${dist}`, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] });
@@ -306,7 +320,8 @@ try {
         resources.defer('weather screenshot session', () => screenshotSession.detach());
         if (!live) await context.route(providerPattern, async route => {
             checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
-            if (mode === 'elevation-loading' && new URL(route.request().url()).hostname === 'tiles.mapterhorn.com' || mode === 'loading' && (!snowMode || cardsMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
+            if (mode === 'metadata-loading' && new URL(route.request().url()).pathname.startsWith('/data/')
+                || mode === 'elevation-loading' && new URL(route.request().url()).hostname === 'tiles.mapterhorn.com' || mode === 'loading' && (!snowMode || cardsMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
             const reply = replyFor(route.request().url());
             await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': reply.contentType || 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
         });
@@ -527,7 +542,7 @@ try {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakWeatherInteractions({ origin, evaluate, navigate, clickPoint, press, resize, setZoom, setSettings, wait,
                 setMode: next => { mode = next; }, heldCount: () => held.length, release: () => held.splice(0).forEach(resolve => resolve()),
-                evidence, networkErrors, firefoxMode, screenshotPage, writeLocal }) };
+                releaseOne: () => held.shift()?.(), evidence, networkErrors, firefoxMode, screenshotPage, writeLocal, verificationLocale }) };
     } else if (cardsMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,
