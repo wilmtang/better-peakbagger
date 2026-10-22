@@ -131,3 +131,58 @@ test('off aborts the owner and stale catalog replies cannot install imagery', as
         pending[1].resolve([capture('current')]); await tick(); assert.equal(env.scenes[0][0].id, 'current');
     } finally { env.session.dispose(); }
 });
+
+test('capture labels retain mountain dates, DST, unusual offsets and wrapped dateline views', async () => {
+    for (const [area, time, expected] of [
+        [[-122,46,-121,47], '2026-10-08T01:27:00Z', '2026-10-07 18:27 PDT'],
+        [[-122,46,-121,47], '2026-01-08T01:27:00Z', '2026-01-07 17:27 PST'],
+        [[85,27.4,85.6,28], '2026-10-08T01:27:00Z', '2026-10-08 07:12 GMT+5:45'],
+        [[539,-17,541,-16], '2026-10-08T01:27:00Z', '2026-10-08 13:27 GMT+12'],
+    ]) {
+        const item = { ...capture('one', Date.parse(time)), cloud: 3 };
+        const env = setup(async () => [item]);
+        env.view({ zoom: 13, bounds: { getWest: () => area[0], getSouth: () => area[1], getEast: () => area[2], getNorth: () => area[3] } });
+        try {
+            env.session.activate(); await tick();
+            assert.equal(env.status().captures[0].label, `Latest · ${expected.slice(5, 16)} · ☁ 3%`);
+            assert.equal(env.status().captures[0].title, `Latest · ${expected} · Clouds 3%`);
+            env.session.activate(item); assert.equal(env.status().capture, 'latest');
+            assert.equal(env.status().captures.length, 1, 'pinning the newest pass does not duplicate it');
+            env.session.activate({ ...item, time: item.time - 86400000 });
+            assert.equal(env.status().capture, 'missing');
+            assert.match(env.status().captures.at(-1).title, /Clouds unknown$/);
+        } finally { env.session.dispose(); }
+    }
+});
+
+test('stale catalogs cannot change the capture timezone and formatter failures use the labelled estimate', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const pending = [], env = setup(() => new Promise(resolve => pending.push(resolve)));
+    const item = { ...capture('one', Date.parse('2026-10-08T01:27:00Z')), cloud: 3 };
+    try {
+        env.session.activate();
+        env.view({ zoom: 13, bounds: { getWest: () => 85, getEast: () => 85.6, getSouth: () => 27.4, getNorth: () => 28 } });
+        env.session.refresh(); t.mock.timers.tick(5);
+        pending[1]([item]); await tick(); pending[0]([item]); await tick();
+        assert.equal(env.status().captures[0].title, 'Latest · 2026-10-08 07:12 GMT+5:45 · Clouds 3%');
+        const OriginalFormatter = Intl.DateTimeFormat;
+        t.mock.method(Intl, 'DateTimeFormat', function (locales, options) {
+            if (options.timeZone !== 'UTC') throw new RangeError('unsupported timezone');
+            return new OriginalFormatter(locales, options);
+        });
+        env.view({ bounds, zoom: 13 }); env.session.refresh(); t.mock.timers.tick(5); pending[2]([item]); await tick();
+        assert.equal(env.status().captures[0].title, 'Latest · 2026-10-07 17:27 UTC−8, estimated from longitude · Clouds 3%');
+    } finally { env.session.dispose(); }
+});
+
+test('an unsupported viewport clears imagery while a failed supported catalog keeps the previous pass', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] }); let fail = false;
+    const env = setup(async () => { if (fail) throw new Error('offline'); return [capture('one')]; });
+    try {
+        env.session.activate(); await tick(); const cleared = env.cleared();
+        fail = true; env.session.refresh(); t.mock.timers.tick(5); await tick();
+        assert.equal(env.cleared(), cleared); assert.match(env.status().message, /Previous imagery/);
+        env.view({ bounds, zoom: 8 }); env.session.refresh(); t.mock.timers.tick(5); await tick();
+        assert.ok(env.cleared() > cleared); assert.match(env.status().message, /Zoom in/);
+    } finally { env.session.dispose(); }
+});

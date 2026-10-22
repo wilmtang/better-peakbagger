@@ -94,9 +94,14 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             const current = model.statuses?.[key];
             if (model.coverage?.[key] === false || current?.pending || current?.retryAt > Date.now() || current?.permission) return;
             const recovery = details.get(key); recovery.recovering = true; recovery.reloading = retry.textContent === 'Reload';
+            // Long errors can make a zoomed menu scroll. Shrinking feedback at
+            // activation clamps that scroll and moves the focused action. Hold
+            // its current space only for this focused recovery transaction.
+            const height = recovery.feedback.getBoundingClientRect().height;
+            if (height > 0) recovery.feedback.style.minHeight = `${Math.ceil(height)}px`;
             onRetry(key);
         });
-        retry.addEventListener('blur', () => { const recovery = details.get(key); recovery.recovering = false; recovery.reloading = false; paint(); });
+        retry.addEventListener('blur', () => { const recovery = details.get(key); recovery.recovering = false; recovery.reloading = false; recovery.feedback.style.minHeight = ''; paint(); });
         action.append(retry); feedback.append(status, action); detail.append(feedback); well.append(detail);
         checkbox.addEventListener('change', () => {
             if (model.coverage?.[key] === false) { paint(); return; }

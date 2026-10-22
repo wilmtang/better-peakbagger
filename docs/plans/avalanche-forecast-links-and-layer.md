@@ -242,7 +242,7 @@ flowchart LR
   requests when supported. Cache freshness never extends bulletin validity.
   Recheck validity while a tab stays open, after suspension, and on BFCache
   restore. Abort on deactivation and reject stale generation responses.
-- **Rendering:** follow [sentinel-map.js](../../src/maps/sentinel-map.js) for
+- **Rendering:** follow [map-overlay-leaflet.js](../../src/maps/map-overlay-leaflet.js) for
   bounded attachment and teardown on the native MAIN-world map. Add a dedicated
   Leaflet pane for forecast polygons rather than altering native layers.
   [terrain-frame-runtime.js](../../src/terrain/terrain-frame-runtime.js) owns

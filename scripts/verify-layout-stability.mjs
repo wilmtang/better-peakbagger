@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Transition geometry checks against shipped UI assets with controlled APIs.
 // Fixtures are isolated HTTPS Peakbagger pages; no live data or accounts are used.
-/* global document, location, getComputedStyle */
+/* global document, window, location, getComputedStyle */
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -713,161 +713,112 @@ async function gpxSourceCase(page, origin, variant) {
 async function mapCase(page, origin, variant) {
     await page.goto(`${origin}/dist/photos/guide.html`);
     await page.evaluate(({ theme }) => {
+        document.head.querySelectorAll('style,link[rel="stylesheet"]').forEach(element => element.remove());
         document.documentElement.dataset.bpbTheme = theme;
-        document.body.innerHTML = '<div id="bpb-gpx-analysis"><div class="bpb-gpx-header" style="display:grid">'
+        document.body.innerHTML = '<h1 id="map-heading">Dynamic Map</h1><div id="bpb-terrain-frame" style="height:360px;background:#c4cdc3"></div><h2 id="map-following">Following native content</h2>'
+            + '<div id="bpb-gpx-analysis"><div class="bpb-gpx-header" style="display:grid">'
             + '<div class="bpb-gpx-controls"><button>Units</button></div><section id="bpb-gpx-segment-details">'
             + '<button class="bpb-gpx-segment-view" data-label="Show all source segments"><span>Show all source segments</span></button><p>Interpreted view</p></section>'
             + '<button class="bpb-gpx-retry">Try loading again</button><div class="bpb-gpx-stats">Metrics</div></div>'
             + '<canvas style="width:100%;height:150px"></canvas><div class="bpb-gpx-coordinate-controls"><button class="bpb-gpx-copy-coordinates">Copy coordinates</button><div class="bpb-gpx-hint">Choose a point</div></div></div>'
-            + '<div id="sentinel-fixture" style="position:fixed;bottom:12px;left:12px"></div>';
+            + '<p>Following analyzer content</p>';
     }, variant);
     await page.addStyleTag({ content: gpxPanelCss });
-    await page.addStyleTag({ content: (await asset('css/sentinel.css')).toString() });
-    const source = (await asset('content/sentinel-map.js')).toString();
-    const end = source.lastIndexOf('})();');
-    await page.addScriptTag({ content: source.slice(0, end) + 'globalThis.__createSentinel = createSentinelLayer;' + source.slice(end) });
+    await page.addStyleTag({ content: 'body{margin:16px;font:14px Arial}' });
+    await page.addStyleTag({ content: (await asset('css/map-layers.css')).toString() });
     await page.evaluate(() => {
-        globalThis.__layoutCaptures = [0, 1].map(index => ({ key: `capture-${index}`,
-            time: Date.parse('2026-10-08T01:27:00Z') - index * 86400000, platform: 'Sentinel-2B', orbit: '13',
-            scenes: [], coverage: 1, cloud: 98 }));
-        globalThis.__sentinel = globalThis.__createSentinel({ document, readView: () => ({ zoom: 12,
-            bounds: { getWest: () => -122, getEast: () => -121, getNorth: () => 48, getSouth: () => 47 } }), replaceScenes() {}, clearScenes() {},
-        search: () => new Promise((resolve, reject) => { globalThis.__finishScenes = ok => ok ? resolve(globalThis.__layoutCaptures)
-            : reject(new Error('Satellite imagery is temporarily unavailable. Please check your connection and try another capture. '.repeat(2))); }) });
-        document.getElementById('sentinel-fixture').append(globalThis.__sentinel.element);
-        globalThis.__sentinel.activate();
+        // The shipped owner/control run normally. Only the isolated station
+        // service and authorized terrain renderer are replaced by protocol stubs.
+        globalThis.__layoutRequests = [];
+        window.addEventListener('message', event => {
+            const data = event.data;
+            if (data?.__bpbTerrain && data.dir === 'toCS' && data.type === 'layers') globalThis.__layoutSnapshot = data.snapshot;
+            if (data?.__bpbMapLayers && data.dir === 'toCS' && data.type === 'stations') globalThis.__layoutRequests.push(data);
+        });
     });
-    await page.waitForFunction(() => typeof globalThis.__finishScenes === 'function');
-    const picker = await geometry(page, '.bpb-sentinel select');
-    const compactBottom = async () => {
-        const control = await geometry(page, '.bpb-sentinel');
-        const select = await geometry(page, '.bpb-sentinel select');
-        assert.ok(control.y + control.height - select.y - select.height <= 8,
-            `Sentinel reserves unused space below the picker: ${JSON.stringify({ control, select })}`);
-    };
-    await compactBottom();
-    await page.evaluate(() => globalThis.__finishScenes(false));
-    await page.locator('.bpb-sentinel button').waitFor();
-    stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel failure picker');
-    const retry = await geometry(page, '.bpb-sentinel button');
-    const panel = await geometry(page, '.bpb-sentinel');
-    await page.locator('.bpb-sentinel button').focus();
-    await page.keyboard.press('Enter');
-    stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel retry picker');
-    stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel pending retry');
-    stable(panel, await geometry(page, '.bpb-sentinel'), 'Sentinel pending panel');
-    assert.equal(await page.locator('.bpb-sentinel button').isDisabled(), true);
-    await page.evaluate(() => globalThis.__finishScenes(false));
-    await page.waitForFunction(() => !document.querySelector('.bpb-sentinel button').disabled);
-    stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel repeated failure retry');
-    await page.click('.bpb-sentinel button');
-    await page.evaluate(() => globalThis.__finishScenes(true));
-    await page.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage 100%' }).waitFor();
-    assert.equal(await page.locator('.bpb-sentinel select option').count(), 2, 'each capture appears once');
-    stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel completed picker');
-    await compactBottom();
-    await capture(page, `${variant.name}-sentinel-compact`);
-    await page.evaluate(() => globalThis.__sentinel.tileError());
-    stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel imagery retry');
-    await capture(page, `${variant.name}-sentinel`);
-    await page.locator('.bpb-sentinel').evaluate(element => { element.style.fontSize = '24px'; });
-    const enlargedPicker = await geometry(page, '.bpb-sentinel select');
-    const enlargedRetry = await geometry(page, '.bpb-sentinel button');
-    await page.locator('.bpb-sentinel-summary').evaluate(element => { element.textContent += ' Check your connection and try another capture. '.repeat(2); });
-    stable(enlargedPicker, await geometry(page, '.bpb-sentinel select'), 'Sentinel enlarged text picker');
-    stable(enlargedRetry, await geometry(page, '.bpb-sentinel button'), 'Sentinel enlarged text retry');
-    await capture(page, `${variant.name}-sentinel-enlarged-text`);
-    await page.evaluate(() => globalThis.__sentinel.dispose());
-    await page.addStyleTag({ content: (await asset('css/terrain-map.css')).toString() });
-    await page.evaluate(({ theme }) => {
-        // The production 3D controls live in their own frame. Hide the unrelated
-        // analyzer fixture while checking that frame's layout and pointer path.
-        document.getElementById('bpb-gpx-analysis').hidden = true;
-        const root = document.createElement('div'); root.id = 'bpb-terrain-map'; root.dataset.theme = theme;
-        // The renderer enables pointer events when its map finishes loading.
-        root.style.cssText = 'position:fixed;inset:0;pointer-events:auto';
-        root.innerHTML = '<div class="bpb-terrain-controls"><select class="bpb-terrain-picker"><option>Sentinel-2 imagery</option></select></div>';
-        document.body.append(root);
-        globalThis.__topSentinel = globalThis.__createSentinel({ document, readView: () => ({ zoom: 12,
-            bounds: { getWest: () => -122, getEast: () => -121, getNorth: () => 48, getSouth: () => 47 } }), replaceScenes() {}, clearScenes() {},
-        search: () => new Promise((resolve, reject) => { globalThis.__finishTopScenes = ok => ok ? resolve(globalThis.__layoutCaptures)
-            : reject(new Error('Satellite imagery is temporarily unavailable. Check your connection and try another capture. '.repeat(2))); }) });
-        root.querySelector('.bpb-terrain-controls').append(globalThis.__topSentinel.element);
-        globalThis.__topSentinel.activate();
-    }, variant);
-    await page.waitForFunction(() => typeof globalThis.__finishTopScenes === 'function');
-    const topPicker = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
-    const compactTop = async () => {
-        const select = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
-        const metadata = await geometry(page, '#bpb-terrain-map .bpb-sentinel-metadata');
-        assert.ok(metadata.y - select.y - select.height <= 5,
-            `3D Sentinel reserves an unused retry row: ${JSON.stringify({ select, metadata })}`);
-    };
-    await compactTop();
-    await page.evaluate(() => globalThis.__finishTopScenes(false));
-    await page.locator('#bpb-terrain-map .bpb-sentinel button').waitFor();
-    stable(topPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel failure picker');
-    const topRetry = await geometry(page, '#bpb-terrain-map .bpb-sentinel button');
-    const topPanel = await geometry(page, '#bpb-terrain-map .bpb-sentinel');
-    await page.click('#bpb-terrain-map .bpb-sentinel button');
-    stable(topRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel pending retry');
-    stable(topPanel, await geometry(page, '#bpb-terrain-map .bpb-sentinel'), '3D Sentinel pending panel');
-    await page.evaluate(() => globalThis.__finishTopScenes(true));
-    await page.locator('#bpb-terrain-map .bpb-sentinel-stats').filter({ hasText: 'Coverage 100%' }).waitFor();
-    assert.equal(await page.locator('#bpb-terrain-map .bpb-sentinel select option').count(), 2, '3D shares the unique capture list');
-    stable(topPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel completed picker');
-    await compactTop();
-    await capture(page, `${variant.name}-3d-sentinel-compact`);
-    await page.evaluate(() => globalThis.__topSentinel.tileError());
-    stable(topRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel imagery retry');
-    await capture(page, `${variant.name}-3d-sentinel`);
-    await page.locator('#bpb-terrain-map .bpb-sentinel').evaluate(element => { element.style.fontSize = '24px'; });
-    const enlargedTopPicker = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
-    const enlargedTopRetry = await geometry(page, '#bpb-terrain-map .bpb-sentinel button');
-    await page.locator('#bpb-terrain-map .bpb-sentinel-summary').evaluate(element => { element.textContent += ' Check your connection and try another capture. '.repeat(2); });
-    stable(enlargedTopPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel enlarged text picker');
-    stable(enlargedTopRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel enlarged text retry');
-    await capture(page, `${variant.name}-3d-sentinel-enlarged-text`);
-    await page.locator('#bpb-terrain-map .bpb-sentinel').evaluate(element => { element.style.fontSize = ''; });
+    await page.addScriptTag({ content: (await asset('content/map-layers.js')).toString() });
     await page.evaluate(() => {
-        const root = document.getElementById('bpb-terrain-map');
-        root.style.height = '180px'; root.style.bottom = 'auto';
+        window.postMessage({ __bpbMapLayers: true, dir: 'toPage', type: 'preferences', snotel: true }, location.origin);
+        window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'loaded' }, location.origin);
+        window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'layerView', bounds: [-122,46,-121,47], zoom: 16 }, location.origin);
     });
-    const shortPicker = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
-    const shortRetry = await geometry(page, '#bpb-terrain-map .bpb-sentinel button');
-    await page.locator('#bpb-terrain-map .bpb-sentinel-summary').evaluate(element => {
-        element.textContent = 'Satellite imagery is temporarily unavailable. Please check your connection and try another capture. '.repeat(6);
-    });
-    stable(shortPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), 'short 3D Sentinel picker');
-    stable(shortRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), 'short 3D Sentinel retry');
-    const overflow = await page.locator('#bpb-terrain-map .bpb-terrain-controls').evaluate(element => ({
-        scrollable: element.scrollHeight > element.clientHeight,
-        bounded: element.getBoundingClientRect().bottom <= 180,
-        overflow: element.ownerDocument.defaultView.getComputedStyle(element).overflowY,
-    }));
-    assert.deepEqual(overflow, { scrollable: true, bounded: true, overflow: 'auto' }, 'long feedback remains readable in a short map');
-    await capture(page, `${variant.name}-3d-sentinel-short`);
-    const stack = await geometry(page, '#bpb-terrain-map .bpb-terrain-controls');
-    await page.mouse.move(stack.x + stack.width / 2, stack.y + stack.height - 12);
-    const scrollState = () => page.locator('#bpb-terrain-map .bpb-terrain-controls').evaluate(element => ({
-        top: element.scrollTop, height: element.clientHeight, total: element.scrollHeight,
-    }));
-    for (let gesture = 0; gesture < 8; gesture++) {
-        const beforeScroll = await scrollState();
-        if (beforeScroll.top + beforeScroll.height >= beforeScroll.total - 1) break;
-        await page.mouse.wheel(0, 2000);
-        await page.waitForFunction(previous => {
-            const element = document.querySelector('#bpb-terrain-map .bpb-terrain-controls');
-            return element.scrollTop > previous;
-        }, beforeScroll.top).catch(async error => { throw new Error(`3D feedback scroll did not advance: ${JSON.stringify(await scrollState())}`, { cause: error }); });
+    const trigger = '.bpb-layers-trigger';
+    await page.locator(trigger).waitFor();
+    const triggerBefore = await geometry(page, trigger);
+    await page.locator(trigger).focus(); await page.keyboard.press('Enter');
+    await page.locator('.bpb-layers-panel').waitFor();
+    stable(triggerBefore, await geometry(page, trigger), 'opening Overlays keeps its trigger anchored');
+    for (const scale of [1, 2]) {
+        await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${13 * scale}px`; }, scale);
+        const selectors = [trigger, ...['sentinel', 'slope', 'land', 'snotel'].map(id => `[data-layer="${id}"]`), '#map-heading', '#bpb-terrain-frame', '#map-following'];
+        let baseline = await Promise.all(selectors.map(selector => geometry(page, selector)));
+        const scroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
+        const anchored = async label => {
+            for (let index = 0; index < selectors.length; index++) stable(baseline[index], await geometry(page, selectors[index]), `${label} ${selectors[index]}`);
+            assert.deepEqual(await page.evaluate(() => [window.scrollX, window.scrollY]), scroll, `${label} reading position`);
+        };
+        for (const id of ['sentinel', 'slope', 'land', 'snotel']) {
+            const checkbox = page.locator(`[data-layer="${id}"] input`);
+            if (!await checkbox.isChecked()) { await checkbox.focus(); await page.keyboard.press('Space'); }
+            await page.waitForFunction(id => globalThis.__layoutSnapshot?.state[id].enabled, id);
+            const disclosure = page.locator(`[data-layer="${id}"] button`);
+            if (await disclosure.getAttribute('aria-expanded') !== 'true') await disclosure.click();
+            const detail = `.bpb-layers-detail:nth-child(${['sentinel', 'slope', 'land', 'snotel'].indexOf(id) + 1})`;
+            const retry = `${detail} .bpb-layers-retry`;
+            const status = async failure => {
+                await page.evaluate(({ id, failure }) => {
+                    if (id === 'snotel') {
+                        const requestId = globalThis.__layoutRequests.at(-1).requestId;
+                        window.postMessage({ __bpbMapLayers: true, dir: 'toPage', type: 'stations', requestId,
+                            ...(failure ? { error: true } : { stations: [] }) }, location.origin);
+                    } else window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'layerStatus', id,
+                        revision: globalThis.__layoutSnapshot.revision, pending: false, error: failure, retry: failure,
+                        captureError: id === 'sentinel' && failure,
+                        message: failure ? 'Some imagery could not load. Check your connection and try again. '.repeat(3) : 'Loaded',
+                        ...(id === 'sentinel' ? { capture: 'latest', captures: [{ id: 'latest', label: 'Latest · 10-07 18:27 · ☁ 100%' },
+                            { id: 'older', label: '2026-10-06 18:27 · ☁ ?' }] } : {}) }, location.origin);
+                }, { id, failure });
+                await page.waitForFunction(({ id, failure }) => document.querySelector(`[data-layer="${id}"]`).dataset.status === (failure ? 'error' : ''), { id, failure })
+                    .catch(async error => { throw new Error(`${id} ${failure ? 'failure' : 'success'} did not settle: ${await page.locator(`[data-layer="${id}"]`).textContent()}; requests=${await page.evaluate(() => globalThis.__layoutRequests.map(request => request.requestId))}`, { cause: error }); });
+            };
+            if (id === 'snotel') await page.waitForFunction(() => globalThis.__layoutRequests.length > 0);
+            await status(true);
+            // A disclosure or keyboard navigation may deliberately scroll a
+            // tall menu to expose its action. Measure the activation after
+            // that navigation, then require every async state to stay put.
+            await page.locator(retry).scrollIntoViewIfNeeded(); await page.locator(retry).focus();
+            for (const index of [0, 5, 6, 7]) stable(baseline[index], await geometry(page, selectors[index]), `${id} disclosure preserves native content`);
+            baseline = await Promise.all(selectors.map(selector => geometry(page, selector)));
+            const retryBefore = await geometry(page, retry);
+            const startRetry = async () => {
+                const count = await page.evaluate(() => globalThis.__layoutRequests.length);
+                await page.locator(retry).focus(); await page.keyboard.press('Enter');
+                await page.waitForFunction(retry => document.querySelector(retry).getAttribute('aria-disabled') === 'true', retry);
+                if (id === 'snotel') await page.waitForFunction(count => globalThis.__layoutRequests.length > count, count);
+            };
+            await startRetry();
+            stable(retryBefore, await geometry(page, retry), `${id} pending retry`);
+            await anchored(`${id} pending ${scale}x`);
+            await page.keyboard.press('Enter'); // Busy activation must not duplicate work.
+            await status(true); stable(retryBefore, await geometry(page, retry), `${id} repeated error retry`);
+            await anchored(`${id} repeated failure ${scale}x`);
+            await startRetry();
+            await status(false); await anchored(`${id} success ${scale}x`);
+            await page.locator(retry).blur();
+            assert.equal(await page.locator(retry).isVisible(), false, 'completion is not a clickable placeholder');
+            if (id === 'sentinel') {
+                const select = page.locator(`${detail} select`), before = await geometry(page, `${detail} select`);
+                await select.selectOption('older'); await anchored('capture selection');
+                stable(before, await geometry(page, `${detail} select`), 'capture picker');
+                assert.equal(await select.locator('option').count(), 2);
+            }
+            await capture(page, `${variant.name}-overlays-${id}-${scale}x`);
+        }
     }
-    const afterScroll = await scrollState();
-    assert.ok(afterScroll.top + afterScroll.height >= afterScroll.total - 1, `3D feedback scroll did not reach the end: ${JSON.stringify(afterScroll)}`);
-    await capture(page, `${variant.name}-3d-sentinel-scrolled`);
-    await page.evaluate(() => {
-        globalThis.__topSentinel.dispose(); document.getElementById('bpb-terrain-map').remove();
-        document.getElementById('bpb-gpx-analysis').hidden = false;
-    });
+    await page.locator('.bpb-map-layers').evaluate(element => { element.style.fontSize = '13px'; });
+    await page.locator(trigger).click();
+    stable(triggerBefore, await geometry(page, trigger), 'closing Overlays keeps its trigger anchored');
+    await page.locator('.bpb-map-layers').evaluate(element => element.remove());
     const selectors = ['.bpb-gpx-segment-view', '.bpb-gpx-controls button'];
     const baseline = await Promise.all(selectors.map(selector => geometry(page, selector)));
     await page.locator('.bpb-gpx-segment-view > span').evaluate(element => { element.textContent = 'Use interpreted view'; });
@@ -1206,7 +1157,7 @@ for (const argument of process.argv.slice(2)) {
 assert.ok(!(process.argv.includes('--chrome-only') && process.argv.includes('--firefox-only')), 'Choose only one layout browser');
 assert.ok(!selected || Object.hasOwn(cases, selected), `Unknown layout surface: ${selected}`);
 const resources = createResourceStack();
-let failure = null;
+let failure = null, executedCases = 0;
 try {
     const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'bpb-jitter-fixture-'));
     fixtureDirectory = temporaryRoot;
@@ -1238,7 +1189,7 @@ try {
                             page.setDefaultTimeout(10000);
                             page.on('pageerror', error => console.error(`${surface}: ${error.message}`));
                             const variant = { theme, width, zoom, name: `${name}-${theme}-${width}${zoom === 1 ? '' : '-zoom150'}` };
-                            await check(page, origin, variant);
+                            await check(page, origin, variant); executedCases++;
                             console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,
                                 surface, theme, viewport: `${Math.floor(width / zoom)}x${Math.floor(900 / zoom)}`, deviceScaleFactor: zoom, layoutZoom: zoom, result: 'passed' }));
                         } finally { await context.close(); }
@@ -1246,5 +1197,6 @@ try {
                 }
         } finally { await browser.close(); }
     }
+    assert.ok(executedCases > 0, 'layout verification must execute at least one case');
 } catch (error) { failure = error; }
 await resources.dispose(failure);

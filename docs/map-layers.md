@@ -45,11 +45,15 @@ failure cannot erase validated US/Alberta coverage. Each Alberta provider pass
 still requires complete, validated pagination before any of its polygons are
 published. Provider-specific cooldowns survive renderer changes and Full Screen
 handoffs; these contain only named service deadlines, never request URLs.
+Concurrent failures and renderer updates retain the longest deadline for each
+provider. A shorter or missing Retry-After cannot reopen that provider early.
 
 Retry remains anchored and rejects repeated activation while work is pending.
 After success, a focused Retry becomes a working **Reload** action until focus
 leaves it; it does not disappear under the pointer or become a fake success
-button. Tile feedback follows complete tile/body/decode work, including queued
+button. Long error feedback reserves its current height during focused recovery,
+so a scrollable menu cannot shrink and move Retry; leaving the action releases
+that temporary reservation. Tile feedback follows complete tile/body/decode work, including queued
 requests; late cancelled work cannot clear newer loading. Capture search and
 imagery loading are tracked separately so Sentinel's dated picker is usable
 while tiles load. Other layers, opacity and the Overlays disclosure remain usable.
@@ -68,8 +72,10 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 Opacity updates immediately and changes only the edited raster; station markers
 and unrelated overlays stay untouched. Unchanged legends are reused, and
 regional land metadata is recalculated only when the viewport changes.
-Only opacity preferences are saved on this device;
-unrelated map sessions start with overlays off. A native Full Screen link carries
+Only opacity preferences are saved on this device. Startup waits for both saved
+opacity and settings before announcing them, and a
+late startup read cannot replace a newer save.
+Unrelated map sessions start with overlays off. A native Full Screen link carries
 the current selection once, for 30 seconds, to its matching destination tab.
 The destination starts with the menu collapsed. The handoff contains no GPX,
 route, scene catalog or account
@@ -79,6 +85,9 @@ The same menu controls supported 3D maps. Existing 3D consent and subject gates
 still apply. Switching between 2D and 3D preserves enabled layers, opacity and
 the pinned Sentinel pass. The active renderer owns its provider work; a hidden
 renderer cancels requests and removes its overlay resources.
+Style, theme and condition membership changed during frame authorization are
+replayed after loading, including resume. Unknown station membership offers no
+weather-card action.
 
 Sentinel captures show mountain-local time and scene-wide cloud percentages.
 Every capture choice keeps its cloud percentage (or `?` when unknown), and the

@@ -3,7 +3,7 @@
 
 import { searchSentinel, sentinelView, sentinelTarget } from './sentinel-core.js';
 import { mountainTime } from '../time/mountain-time.js';
-import { sentinelCaptureChoice } from './sentinel-layer.js';
+import { sentinelCaptureChoice } from './sentinel-capture-choice.js';
 
 export function createSentinelSession({ readView, replaceScenes, clearScenes, retryTiles = () => {}, onStatus, onCapture = () => {},
     search = searchSentinel, fetchImpl, debounceMs = 300 }) {
