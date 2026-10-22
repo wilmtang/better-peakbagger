@@ -1,6 +1,6 @@
 # Repository bugs, performance, engineering, and UX audit — October 22 follow-up
 
-Status: **remediation in progress; F1 fixed locally, F2–F4 open.** This is separate from the earlier
+Status: **remediation in progress; F1–F2 fixed locally, F3–F4 open.** This is separate from the earlier
 [October 22 Gemini audit](../archive/codebase-audit-2026-10-22.md) and
 [terrain audit](../archive/3d-map-audit-2026-10-22.md).
 
@@ -279,6 +279,23 @@ fixes. Preserve this ledger when the plan is eventually archived.
 
 ### Fixed and verified
 
+- F2: weather Refresh and the model selector retain focus with guarded
+  `aria-disabled` states. No focus restoration runs on completion. The durable
+  card assertion failed on baseline focus after failure and passes with the
+  fix. All 71 weather tests passed, including pending duplicates, cooldown
+  expiry, rejected selector changes and a simulated timeout/retry. The new
+  `weather-interactions` verifier passed eight cases in each hidden browser:
+  Chromium 156.0.8078.4 and Firefox 158.0.1; 375/1440 × 1100, light/dark,
+  100/200% real tab zoom. Checked held Enter/Space/pointer activation, service
+  error, retry, success, deliberate focus movement, selector cooldown, action
+  dimensions, panel/following-card geometry and scroll (1 px rounding tolerance).
+  Narrow dark pending renders were visually inspected. Focused ESLint and
+  diff checks passed; both browser teardowns passed. Timeout classification was
+  injected in the unit harness; real slow-network timeout was not browser-tested.
+  Verifier repairs: immediate pointer input avoids Playwright waiting for ARIA
+  availability; each case resets persisted model choices. Firefox twice timed
+  out in BiDi `setViewport` when narrowing directly from 200% zoom; resetting
+  real tab zoom before resizing made the full transition matrix pass.
 - F1: the worker now retains a five-minute fallback for unusable Peakbagger
   reset times, keeps valid provider deadlines, serializes session persistence,
   and retains the longest in-memory deadline on write failure. The new tests
@@ -293,7 +310,7 @@ fixes. Preserve this ledger when the plan is eventually archived.
 
 ### Intentionally not changed
 
-- F2–F4 remain open. Manifest, settings schema, privacy boundaries and native
+- F3–F4 remain open. Manifest, settings schema, privacy boundaries and native
   Save ownership are unchanged.
 - Concurrent weather work and the earlier audits' implemented fixes and
   explicit live/native verification gaps.

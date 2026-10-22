@@ -25,6 +25,7 @@ import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
 import { verifySnotelOptions } from './verify-snotel-options.mjs';
 import { verifyPeakCards } from './verify-peak-cards.mjs';
+import { verifyPeakWeatherInteractions } from './verify-peak-weather-interactions.mjs';
 import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
@@ -34,10 +35,11 @@ const firefoxMode = process.argv.includes('--firefox');
 const live = process.argv.includes('--live'); // one optional public-coordinate CORS proof
 const mapLocationMode = process.argv.includes('--map-location');
 const snowMapMode = process.argv.includes('--snow-map');
-const cardsMode = process.argv.includes('--cards');
+const interactionsMode = process.argv.includes('--interactions');
+const cardsMode = process.argv.includes('--cards') || interactionsMode;
 const cloudMode = process.argv.includes('--clouds');
 const snowMode = process.argv.includes('--snow') || snowMapMode || cardsMode;
-const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--clouds', '--map-location'].includes(arg));
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--interactions', '--clouds', '--map-location'].includes(arg));
 if (unknown.length || (snowMode && live) || (cloudMode && (snowMode || live))
     || (mapLocationMode && (snowMode || cloudMode || live))) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
 const peakMode = process.argv.includes('--peak') || snowMode || cloudMode || mapLocationMode;
@@ -145,7 +147,13 @@ try {
         const extensionUrl = await driver.executeScript('return WebExtensionPolicy.getByID(arguments[0]).getURL("options/options.html");', addon);
         await driver.setContext(firefox.Context.CONTENT);
         const bidi = await driver.getBidi();
-        const send = async request => { const result = await bidi.send(request); if (result.type === 'error') throw new Error(`${result.error}: ${result.message}`); return result; };
+        const send = async request => {
+            let result;
+            try { result = await bidi.send(request); }
+            catch (cause) { throw new Error(`Weather BiDi ${request.method} failed: ${cause.message}`, { cause }); }
+            if (result.type === 'error') throw new Error(`${request.method}: ${result.error}: ${result.message}`);
+            return result;
+        };
         if (!live) {
             await bidi.subscribe('network.beforeRequestSent');
             const listener = params => {
@@ -515,6 +523,11 @@ try {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyMapLocationCases({ evaluate, evaluateTerrain, navigate, click, clickPoint, press, resize, wait, setSettings, setZoom,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), elevationEvidence, evidence, origin, screenshotPage, output, firefoxMode }) };
+    } else if (interactionsMode) {
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            ...await verifyPeakWeatherInteractions({ origin, evaluate, navigate, clickPoint, press, resize, setZoom, setSettings, wait,
+                setMode: next => { mode = next; }, heldCount: () => held.length, release: () => held.splice(0).forEach(resolve => resolve()),
+                evidence, networkErrors, firefoxMode, screenshotPage, writeLocal }) };
     } else if (cardsMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,

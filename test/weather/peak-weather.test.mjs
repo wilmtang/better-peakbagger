@@ -292,7 +292,7 @@ test('reset and BFCache preserve a known cooldown and its explanation', async ()
         await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.requests.length, count); assert.equal(env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy'), 'false');
         assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
-        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').getAttribute('aria-disabled'), 'true');
     } finally { env.close(); }
 });
 
@@ -1168,6 +1168,69 @@ test('missing map with multiple right tables fails closed, and empty weather lea
     } finally { env.close(); }
 });
 
+test('Refresh remains focusable and rejects repeated activation while pending', async () => {
+    let release, hold = false;
+    const env = setup({ fetchFn: url => hold ? new Promise(resolve => { release = () => resolve(reply(url)); }) : reply(url) });
+    try {
+        await settled(env, { past: false });
+        const refresh = env.doc.querySelector('.bpb-week-refresh');
+        refresh.focus(); hold = true; refresh.click();
+        await waitFor(() => env.requests.length === 2);
+        assert.equal(refresh.disabled, false);
+        assert.equal(refresh.getAttribute('aria-disabled'), 'true');
+        assert.equal(env.doc.activeElement, refresh);
+        refresh.click(); refresh.dispatchEvent(new env.win.MouseEvent('click', { bubbles: true }));
+        assert.equal(env.requests.length, 2);
+        env.doc.querySelector('#bpb-peak-weather-model').focus();
+        release();
+        await waitFor(() => refresh.getAttribute('aria-disabled') === 'false');
+        assert.equal(env.doc.activeElement.id, 'bpb-peak-weather-model', 'completion does not steal deliberately moved focus');
+    } finally { env.close(); }
+});
+
+test('cooldown preserves the focused model selector and rejects native and scripted changes', async () => {
+    let limited = false;
+    const env = setup({ fetchFn: url => limited ? new Response('', { status: 429, headers: { 'retry-after': '1' } }) : reply(url) });
+    try {
+        await settled(env, { past: false });
+        const select = env.doc.querySelector('#bpb-peak-weather-model');
+        select.focus(); limited = true; chooseModel(env, 'best_match');
+        await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(select.disabled, false);
+        assert.equal(select.getAttribute('aria-disabled'), 'true');
+        assert.equal(env.doc.activeElement, select);
+        const requests = env.requests.length;
+        for (const type of ['pointerdown', 'keydown']) {
+            const event = type === 'keydown' ? new env.win.KeyboardEvent(type, { key: 'ArrowDown', cancelable: true })
+                : new env.win.MouseEvent(type, { cancelable: true });
+            select.dispatchEvent(event); assert.equal(event.defaultPrevented, true);
+        }
+        chooseModel(env, 'gfs_global');
+        assert.equal(select.value, 'best_match');
+        assert.equal(env.requests.length, requests);
+        env.setNow('2024-11-05T12:00:02Z');
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(() => select.getAttribute('aria-disabled') === 'false');
+    } finally { env.close(); }
+});
+
+test('weather timeout leaves Refresh focused and immediately retryable', async () => {
+    let timeout = false;
+    const env = setup({ fetchFn: url => timeout ? Promise.reject(Object.assign(new Error('deadline'), { name: 'TimeoutError' })) : reply(url) });
+    try {
+        await settled(env, { past: false });
+        const refresh = env.doc.querySelector('.bpb-week-refresh');
+        refresh.focus(); timeout = true; refresh.click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Weather took too long'));
+        assert.equal(env.doc.activeElement, refresh);
+        assert.equal(refresh.getAttribute('aria-disabled'), 'false');
+        timeout = false; refresh.click(); await settled(env, { past: false });
+        assert.equal(env.doc.activeElement, refresh);
+        assert.equal(env.requests.length, 3);
+    } finally { env.close(); }
+});
+
 test('partial data survives a refused refresh while a headerless limit blocks another request', async () => {
     let limited = false;
     const env = setup({ fetchFn: url => {
@@ -1186,7 +1249,7 @@ test('partial data survives a refused refresh while a headerless limit blocks an
         assert.equal(env.doc.querySelector('.bpb-week-range').textContent, range);
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
-        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').getAttribute('aria-disabled'), 'true');
         assert.equal(env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy'), 'false');
         const requests = env.requests.length;
         env.doc.querySelector('.bpb-week-refresh').click();
@@ -1486,7 +1549,7 @@ test('switching periods preserves the previous response and a known rate-limit w
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(env.doc.querySelector('.bpb-week-status').textContent, warning);
-        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').getAttribute('aria-disabled'), 'true');
         env.doc.querySelector('[data-period="forecast"]').click();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');

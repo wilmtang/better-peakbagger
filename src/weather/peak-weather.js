@@ -139,7 +139,11 @@ export function mountPeakWeather() {
     const choices = { past: 'gfs_global', forecast: 'gfs_global' };
     let summitChoices = null;
     const openDates = new Map();
-    const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; locationMenu?.updateAvailability(); });
+    const cooldown = createRetryCooldown(blocked => {
+        refresh.setAttribute('aria-disabled', String(blocked || pending));
+        select.setAttribute('aria-disabled', String(blocked));
+        locationMenu?.updateAvailability();
+    });
     const populateModels = () => {
         const window = requestedWindow || weatherPeakWindow(zone);
         const models = eligiblePeakWeatherModels(requestedSubject, window, period);
@@ -314,13 +318,13 @@ export function mountPeakWeather() {
     });
     choosePeriod(period);
     populateModels();
-    const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); refresh.disabled = cooldown.active(); };
+    const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); };
     async function load({ clear = false } = {}) {
         if (!enabled() || lifecycle.state !== 'active' || pending || cooldown.active()) return;
         visibilityObserver?.disconnect(); visibilityObserver = null;
         started = true; pending = true;
         controller = new AbortController(); const owner = ++generation;
-        card.setAttribute('aria-busy', 'true'); refresh.disabled = true;
+        card.setAttribute('aria-busy', 'true'); cooldown.refresh();
         const target = requestedSubject, targetZone = mountainTime.resolve(target.latitude, target.longitude);
         const changingLocation = target !== subject;
         notice = { text: changingLocation ? `Loading ${target === summit ? 'summit weather' : weatherLocationLabel(target)}…`
@@ -359,13 +363,18 @@ export function mountPeakWeather() {
         }
     }
     select.addEventListener('change', () => {
-        if (!enabled() || lifecycle.state !== 'active' || cooldown.active()) return;
+        if (cooldown.active()) { select.value = choices[period]; return; }
+        if (!enabled() || lifecycle.state !== 'active') return;
         if (!eligiblePeakWeatherModels(requestedSubject, requestedWindow || weatherPeakWindow(zone), period).some(model => model.id === select.value)) return;
         choices[period] = select.value;
         // Separate keys avoid overwriting the other period's choice from a
         // concurrently open tab. Store only the allowlisted model identifier.
         try { void chrome.storage.local.set({ [modelKeys[period]]: select.value }).catch(() => {}); } catch { /* Storage failure keeps the page usable. */ }
         cancelUpdates(); cancel(); void load();
+    });
+    select.addEventListener('pointerdown', event => { if (cooldown.active()) event.preventDefault(); });
+    select.addEventListener('keydown', event => {
+        if (cooldown.active() && !['Tab', 'Escape'].includes(event.key) && !event.ctrlKey && !event.metaKey) event.preventDefault();
     });
     const chooseLocation = next => {
         if (!enabled() || lifecycle.state !== 'active' || (next !== summit && cooldown.active())) return;

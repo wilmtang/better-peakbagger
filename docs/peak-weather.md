@@ -32,6 +32,10 @@ its target on **Retry** and can be retried by selecting the same map point.
 If summit weather has not loaded yet, a failed reset remains available to retry.
 Resetting during a provider cooldown retains its explanation and request limit.
 An open menu becomes usable when the cooldown expires, without reopening it.
+Refresh stays focusable while busy or temporarily rate limited, with an
+accessible unavailable state and guarded activation. The model selector also
+retains focus during a cooldown and rejects changes until requests are allowed.
+Completion does not move focus back after the user has left either control.
 
 Selected points use their own offline timezone and Open-Meteo terrain elevation,
 without applying the summit's elevation to another location. A regional model

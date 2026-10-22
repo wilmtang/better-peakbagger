@@ -432,8 +432,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     setMode('error'); await click('.bpb-week-refresh');
     await wait(() => document.querySelector('.bpb-week-status').textContent.includes('Open-Meteo request limit reached'), 'rate limit explains failed refresh');
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 16);
-    assert.equal(await evaluate(() => document.querySelector('.bpb-week-refresh').disabled), true);
-    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').disabled), true);
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-refresh').getAttribute('aria-disabled')), 'true');
+    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').getAttribute('aria-disabled')), 'true');
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-status').dataset.kind), 'rate-limit');
     const limitedRequests = evidence.length;
     await click(`${card} [data-period="forecast"]`);

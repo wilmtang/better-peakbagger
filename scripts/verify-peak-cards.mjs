@@ -225,6 +225,8 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         const weatherBefore = await geometry(); setMode('loading'); await press(key('Enter'));
         await wait(() => document.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'true', 'weather refresh pending');
         await waitForCondition(heldCount, { description: 'weather response held by fixture', isReady: count => count > 0 });
+        assert.equal(await evaluate(() => document.activeElement === document.querySelector('.bpb-week-refresh')), true,
+            'weather Refresh keeps keyboard focus while unavailable');
         stable(weatherBefore, await geometry(), 'weather refresh keeps its header, panel and surrounding content anchored');
         const weatherAction = await evaluate(() => {
             const r = document.querySelector('.bpb-week-refresh').getBoundingClientRect();
@@ -239,6 +241,8 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             return { x: r.x, y: r.y, width: r.width, height: r.height };
         });
         stable(weatherAction, weatherErrorAction, 'weather error keeps Refresh anchored');
+        assert.equal(await evaluate(() => document.activeElement === document.querySelector('.bpb-week-refresh')), true,
+            'weather Refresh keeps keyboard focus after failure');
         await image(`${width}-${theme}-weather-error`);
         setMode('complete'); await click('.bpb-week-refresh'); await ready();
         stable(weatherBefore, await geometry(), 'weather retry restores the settled layout');
