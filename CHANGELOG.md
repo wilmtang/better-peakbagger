@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Recover overlays without losing preferences.** Retry restores layers that
+  started during a service cooldown, saved opacity waits for storage, and
+  concurrent refusals retain the longest provider wait. Terrain keeps style,
+  theme and station-condition updates through activation and resume. Long
+  feedback keeps the focused Retry action in place at enlarged text sizes.
+
 - **Handle provider refusals consistently.** Weather, snow, map and elevation
   readers release unused responses. Missing rate-limit reset headers use a
   short local cooldown, and concurrent refusals cannot shorten a longer wait.

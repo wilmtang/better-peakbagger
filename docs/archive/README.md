@@ -13,6 +13,10 @@ living docs in [`docs/`](../).
   extension panels, unclipped popup results, and reduced duplicate owners.
   Three consecutive local packaged-browser pairs passed; hosted CI, browser
   floors, dependency exception, and native/live proof limits remain explicit.
+- [Gemini code audit and script review — 2026-10-22](codebase-audit-2026-10-22.md) —
+  six confirmed findings fixed, long-feedback Retry stability, obsolete map and
+  verifier removal, and an indexed script inventory; local checks and remaining
+  authorization-order, live/native and dependency limits are explicit.
 - [UI state audit remediation — 2026-10-06](ui-state-audit-2026-10-06.md) —
   seven reproduced defects fixed, including draft/photo edit loss, stale popup
   replies, settings drift, keyboard focus, and naturally narrow report controls.

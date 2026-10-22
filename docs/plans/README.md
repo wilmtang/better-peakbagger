@@ -25,6 +25,11 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [October 22 Gemini code audit and script review](../archive/codebase-audit-2026-10-22.md)
+records six validated fixes, an additional long-feedback Retry shift, obsolete
+map/verifier removal and a complete script inventory. Its closure ledger retains
+live/native authorization-order and dependency proof limits.
+
 The [October 22 3D map audit](../archive/3d-map-audit-2026-10-22.md)
 records four runtime fixes, the restored GPU provenance probe and Firefox
 terrain verification repair. Forty fixed-angle Rainier-centered zoom cases
