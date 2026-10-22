@@ -1,5 +1,10 @@
 # Active plans
 
+- [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)
+  — proposed; four reproduced cooldown, keyboard-focus, layout-stability and
+  chart-efficiency findings, with baseline evidence and the existing dependency
+  advisory deadline recorded separately.
+
 - [Owned activity export from Garmin and Strava feeds](activity-feed-export.md)
   — proposed; optional per-service access, owner-only activity buttons, an
   anchored review panel, and leased extraction tabs with explicit privacy,
