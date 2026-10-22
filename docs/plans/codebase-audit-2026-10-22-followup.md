@@ -232,6 +232,18 @@ the expiry or weaken the default gate. The stale “expires October 17” commen
 in `.github/workflows/test.yml` (line 58) should be corrected with that policy
 work; the executing policy's October 24 timestamp is the authority.
 
+**Remediation review, October 22.** Fresh `npm audit --json` still reports only
+the same three high findings. Evaluating that exact response rejects the
+strict gate and accepts the existing reviewed exception, unchanged through
+`2026-10-24T07:00:00Z`. The public npm registry reports `node-forge` 1.4.0 as
+latest, and the linked advisory still reports no patched version. Current
+`web-ext` 10.8.0 still depends on `@devicefarmer/adbkit` 3.3.9, whose dependency
+remains `node-forge` ^1.3.1. An ordinary compatible tool upgrade therefore does
+not remove this chain; no downgrade, unreviewed crypto fork, dependency patch,
+or expiry extension was applied. D1 remains open for an upstream repair or an
+explicit owner policy decision. The stale workflow comment now points to the
+executing policy instead of carrying a second expiry date.
+
 ## Verification and evidence limits
 
 | Check | Observed result |

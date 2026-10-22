@@ -55,7 +55,8 @@ jobs:
         uses: ./.github/actions/setup-verification
 
       - name: Check dependency advisories
-        # Owner-reviewed exact dev-only node-forge chain; expires October 17.
+        # Owner-reviewed exact dev-only node-forge chain; the enforced expiry
+        # is defined by DEVELOPMENT_ADVISORY in scripts/check-npm-audit.mjs.
         # Release verification selects the same exact reviewed exception.
         run: npm run audit:ci -- --allow-reviewed-development-advisory
 
