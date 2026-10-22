@@ -37,11 +37,13 @@ const mapLocationMode = process.argv.includes('--map-location');
 const snowMapMode = process.argv.includes('--snow-map');
 const interactionsMode = process.argv.includes('--interactions');
 const verificationLocale = Intl.getCanonicalLocales(process.env.BPB_VERIFY_WEATHER_LOCALE || 'en-US')[0];
-const cardsMode = process.argv.includes('--cards') || interactionsMode;
+const cardsPlacementMode = process.argv.includes('--cards-placement');
+const cardsMode = process.argv.includes('--cards') || cardsPlacementMode || interactionsMode;
 const cloudMode = process.argv.includes('--clouds');
 const snowMode = process.argv.includes('--snow') || snowMapMode || cardsMode;
-const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--interactions', '--clouds', '--map-location'].includes(arg));
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--cards-placement', '--interactions', '--clouds', '--map-location'].includes(arg));
 if (unknown.length || (snowMode && live) || (cloudMode && (snowMode || live))
+    || (cardsPlacementMode && process.argv.slice(2).some(arg => !['--cards-placement', '--firefox'].includes(arg)))
     || (mapLocationMode && (snowMode || cloudMode || live))) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
 const peakMode = process.argv.includes('--peak') || snowMode || cloudMode || mapLocationMode;
 const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
@@ -547,7 +549,7 @@ try {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,
                 movePointer, pointerDown, pointerUp, setMode: next => { mode = next; }, heldCount: () => held.length,
-                release: () => held.splice(0).forEach(resolve => resolve()), writeLocal, networkErrors, firefoxMode }) };
+                release: () => held.splice(0).forEach(resolve => resolve()), writeLocal, networkErrors, firefoxMode, placementOnly: cardsPlacementMode }) };
     } else if (snowMapMode) {
         const optionsCases = await withOptions(verifySnotelOptions);
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,

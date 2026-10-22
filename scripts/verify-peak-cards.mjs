@@ -8,7 +8,7 @@ import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 export async function verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings,
-    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, writeLocal, networkErrors, firefoxMode }) {
+    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, writeLocal, networkErrors, firefoxMode, placementOnly = false }) {
     const output = process.env.BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR, cases = [];
     if (output) await mkdir(output, { recursive: true });
     const browser = firefoxMode ? 'firefox' : 'chrome';
@@ -49,6 +49,25 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         const card = document.querySelector(`[data-bpb-peak-card="${id}"]`), target = card.querySelector(control);
         target.scrollIntoView({ block: 'center', inline: 'nearest' }); target.focus({ preventScroll: true });
     }, { id, control });
+    const placement = async (id, below) => {
+        await waitForCondition(() => evaluate(id => {
+            const native = document.querySelector('#bpb-peak-details-column > .bpb-peak-native-table').getBoundingClientRect();
+            const card = document.querySelector(`[data-bpb-peak-card="${id}"]`).getBoundingClientRect();
+            return { top: card.top, bottom: card.bottom, nativeTop: native.top, nativeBottom: native.bottom,
+                focused: document.activeElement.getAttribute('aria-label'), message: document.querySelector('.bpb-peak-card-status').textContent };
+        }, id), { description: `${id} ${below ? 'below' : 'above'} the native peak details`,
+            isReady: bounds => below ? bounds.top >= bounds.nativeBottom : bounds.bottom <= bounds.nativeTop });
+    };
+    const gripFocused = async id => assert.equal(await evaluate(id => document.activeElement ===
+        document.querySelector(`[data-bpb-peak-card="${id}"] .bpb-peak-card-grip`), id), true, `${id} keeps keyboard focus after moving`);
+    const moveMenu = async id => {
+        await focus(id, '.bpb-peak-card-grip');
+        // Let the scroll requested by focus reach the compositor before a
+        // physical click. A queued scroll event correctly dismisses menus.
+        await evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+        await click(`[data-bpb-peak-card="${id}"] .bpb-peak-card-grip`);
+        await wait(() => [...document.querySelectorAll('.bpb-layout-menu')].some(menu => !menu.hidden), 'single-pointer move menu');
+    };
     const expanded = (id, expected) => waitForCondition(() => evaluate(id => {
         const card = document.querySelector(`[data-bpb-peak-card="${id}"]`), button = card.querySelector('.bpb-peak-card-toggle, .bpb-sun-calculator__toggle');
         return button.getAttribute('aria-expanded');
@@ -103,6 +122,70 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
                 return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('button') === button;
             }) };
     }, id);
+    // Keep this interaction matrix in its own run: combining it with the
+    // disclosure/refresh matrix exceeds storage.sync's per-minute write quota.
+    if (placementOnly) {
+        for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
+            await resize(width, 1100); setMode('complete');
+            await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true,
+                peakSunCollapsed: true, peakWeatherCollapsed: true, peakSnowCollapsed: true });
+            await open(); await focus('weather', '.bpb-peak-card-grip'); await press(key('ArrowLeft'));
+            await saved('peakCardColumns', { sun: 'map', weather: 'details', snow: 'map' });
+            await focus('weather', '.bpb-peak-card-grip'); await press(key('End'));
+            await placement('weather', true); await gripFocused('weather');
+            await saved('peakCardColumns', { sun: 'map', weather: 'details-bottom', snow: 'map' });
+            await image(`${width}-${theme}-below-details`);
+            await focus('weather', '.bpb-peak-card-grip'); await press(key('ArrowUp')); await placement('weather', false); await gripFocused('weather');
+            await press(key('ArrowDown')); await placement('weather', true); await gripFocused('weather');
+            await press(key('Home')); await placement('weather', false); await gripFocused('weather');
+            await moveMenu('weather');
+            await click('.bpb-layout-menu:not([hidden]) button:nth-child(3)'); await placement('weather', true);
+            await moveMenu('weather'); await image(`${width}-${theme}-below-details-menu`);
+            await click('.bpb-layout-menu:not([hidden]) button:nth-child(3)'); await placement('weather', false);
+            // The native details table is taller than one viewport. Keep the
+            // pointer held while scrolling to its lower half, as a long drag does.
+            await focus('weather', '.bpb-peak-card-grip');
+            const dragBelow = async cancel => {
+                const start = await evaluate(() => {
+                    const r = document.activeElement.getBoundingClientRect();
+                    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+                });
+                await pointerDown(start.x, start.y);
+                const target = await evaluate(() => {
+                    const native = document.querySelector('#bpb-peak-details-column > .bpb-peak-native-table');
+                    native.scrollIntoView({ block: 'end', inline: 'nearest' }); window.scrollBy(0, 200);
+                    const r = native.getBoundingClientRect();
+                    return { x: r.left + r.width / 2, y: r.bottom - 20, bottom: r.bottom };
+                });
+                const before = await geometry();
+                await movePointer(target.x, target.y);
+                await wait(() => !document.querySelector('.bpb-peak-card-insertion').hidden, 'below-details insertion preview');
+                const preview = await evaluate(() => document.querySelector('.bpb-peak-card-insertion').getBoundingClientRect().top);
+                assert.ok(Math.abs(preview - target.bottom) <= 1, 'the empty lower destination previews the native details boundary');
+                stable(before, await geometry(), 'below-details preview preserves native content and scroll');
+                if (cancel) {
+                    await image(`${width}-${theme}-below-details-drag`);
+                    await press(key('Escape')); await pointerUp();
+                    stable(before, await geometry(), 'canceling a lower placement preserves native content and scroll');
+                    await placement('weather', false);
+                } else { await pointerUp(); await placement('weather', true); }
+            };
+            await dragBelow(true);
+            await focus('weather', '.bpb-peak-card-grip');
+            await dragBelow(false);
+            await open(); await placement('weather', true);
+            await focus('weather', '.bpb-peak-card-toggle'); await press(key('Enter')); await expanded('weather', true);
+            await placement('weather', true); await image(`${width}-${theme}-below-details-expanded`);
+            if (width === 375 && theme === 'dark') {
+                await setZoom(2); await focus('weather', '.bpb-peak-card-toggle');
+                await placement('weather', true); await image('below-details-200-percent'); await setZoom(1);
+            }
+            cases.push({ width, theme, states: ['above-below-keyboard', 'above-below-menu', 'below-details-pointer',
+                'below-details-cancel', 'below-details-expanded', 'below-details-reload', 'stable-preview', 'retained-focus'] });
+        }
+        assert.deepEqual(networkErrors, []); assert.ok(cases.length > 0);
+        return { verification: 'peak-card-placement', cases, output: output || null, providers: 'fixture responses; no live provider requests' };
+    }
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
@@ -306,8 +389,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         await focus('snow', '.bpb-peak-card-grip'); await press(key('ArrowUp'));
         assert.deepEqual(await leftOrder(), ['snow', 'weather']);
         await image(`${width}-${theme}-left-column`);
-        await click('[data-bpb-peak-card="snow"] .bpb-peak-card-grip');
-        await wait(() => [...document.querySelectorAll('.bpb-layout-menu')].some(menu => !menu.hidden), 'single-pointer move menu');
+        await moveMenu('snow');
         await image(`${width}-${theme}-move-menu`);
         await click('.bpb-layout-menu:not([hidden]) button:last-child');
         await saved('peakCardColumns', { sun: 'map', weather: 'details', snow: 'map' });

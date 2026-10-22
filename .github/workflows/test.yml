@@ -159,6 +159,7 @@ jobs:
           esac
           node scripts/verify-ascent-weather.mjs --snow "${browser_args[@]}" 2>&1 | tee browser-evidence/snow.log
           node scripts/verify-ascent-weather.mjs --cards "${browser_args[@]}" 2>&1 | tee browser-evidence/peak-cards.log
+          node scripts/verify-ascent-weather.mjs --cards-placement "${browser_args[@]}" 2>&1 | tee browser-evidence/peak-card-placement.log
           node scripts/verify-ascent-weather.mjs --interactions "${browser_args[@]}" 2>&1 | tee browser-evidence/weather-interactions.log
 
       - name: Retain layout failure evidence

@@ -38,6 +38,8 @@ function setup({ saved = {}, read, fail = false, snow = true, lateSunListener = 
     if (columns) for (const [id, left] of [['details', 0], ['map', 320]]) {
         doc.getElementById(`bpb-peak-${id}-column`).getBoundingClientRect = () => ({ left, right: left + 300, top: 0, bottom: 700, width: 300, height: 700 });
     }
+    if (columns) doc.querySelector('#bpb-peak-details-column > .bpb-peak-native-table').getBoundingClientRect = () =>
+        ({ left: 0, right: 300, top: 200, bottom: 500, width: 300, height: 300 });
     const order = () => [...doc.querySelectorAll('[data-bpb-peak-card]')].map(node => node.dataset.bpbPeakCard);
     const card = key => doc.querySelector(`[data-bpb-peak-card="${key}"]`);
     const handle = key => card(key).querySelector('.bpb-peak-card-grip');
@@ -277,5 +279,65 @@ test('an empty opposite column accepts a pointer drop only on release and the gr
         env.win.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         env.pointer('pointerup', 110, env.win, 370); await tick();
         assert.deepEqual(env.order(), before); assert.equal(env.state.peakCardColumns.snow, 'details');
+    } finally { env.close(); }
+});
+
+test('dropping below native peak details previews the lower boundary and persists that placement', async () => {
+    const env = setup({ columns: true, saved: { peakSnowCollapsed: true } });
+    try {
+        await tick();
+        const native = env.doc.querySelector('#bpb-peak-details-column > .bpb-peak-native-table'), snow = env.card('snow');
+        env.pointer('pointerdown', 360, env.handle('snow'), 370); env.pointer('pointermove', 600);
+        assert.equal(env.doc.querySelector('.bpb-peak-card-insertion').style.top, '500px', 'the drop preview belongs below the native details');
+        assert.equal(env.writes.length, 0); assert.equal(env.state.peakCardColumns.snow, 'map');
+        env.win.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        env.pointer('pointerup', 600); assert.equal(env.writes.length, 0);
+        env.pointer('pointerdown', 360, env.handle('snow'), 370); env.pointer('pointermove', 600); env.pointer('pointerup', 600);
+        assert.equal(native.nextElementSibling.hidden, false, 'the lower destination is visible before focus restoration');
+        await tick();
+        assert.equal(native.nextElementSibling.contains(snow), true, 'the same card is placed after the native details table');
+        assert.equal(env.card('snow'), snow); assert.equal(env.state.peakCardColumns.snow, 'details-bottom');
+        assert.equal(snow.querySelector('.bpb-peak-card-body').hidden, true);
+        assert.equal(env.doc.activeElement, env.handle('snow'));
+        const next = setup({ columns: true, saved: env.state });
+        try {
+            await tick();
+            assert.equal(next.doc.querySelector('#bpb-peak-details-column > .bpb-peak-native-table').nextElementSibling.contains(next.card('snow')), true);
+        } finally { next.close(); }
+        snow.closest('tr').hidden = true; await tick();
+        assert.equal(native.nextElementSibling.hidden, true, 'an empty lower card area reserves no space');
+        snow.closest('tr').hidden = false; await tick(); assert.equal(native.nextElementSibling.hidden, false);
+    } finally { env.close(); }
+});
+
+test('keyboard and move menu cross the native details boundary in both directions', async () => {
+    const env = setup({ columns: true });
+    try {
+        await tick();
+        const native = env.doc.querySelector('#bpb-peak-details-column > .bpb-peak-native-table');
+        env.key('weather', 'ArrowLeft'); env.key('weather', 'ArrowDown'); await tick();
+        assert.equal(native.nextElementSibling?.contains(env.card('weather')), true, 'ArrowDown moves the card past the native details');
+        env.key('weather', 'ArrowLeft'); await tick();
+        assert.equal(env.state.peakCardColumns.weather, 'details-bottom', 'Left keeps a lower left card in the left column');
+        env.key('weather', 'ArrowUp'); await tick(); assert.equal(native.previousElementSibling.contains(env.card('weather')), true);
+        env.key('weather', 'End'); await tick(); assert.equal(native.nextElementSibling.contains(env.card('weather')), true);
+        env.key('weather', 'Home'); await tick(); assert.equal(native.previousElementSibling.contains(env.card('weather')), true);
+        const choose = async label => {
+            env.handle('weather').click();
+            const menu = [...env.doc.querySelectorAll('.bpb-layout-menu')].find(node => !node.hidden);
+            const button = [...menu.querySelectorAll('button')].find(node => node.textContent === label);
+            assert.ok(button, label); assert.equal(button.disabled, false); button.click(); await tick();
+        };
+        await choose('Move below peak details'); assert.equal(native.nextElementSibling.contains(env.card('weather')), true);
+        await choose('Move above peak details'); assert.equal(native.previousElementSibling.contains(env.card('weather')), true);
+        env.key('weather', 'ArrowRight'); await tick(); assert.equal(env.state.peakCardColumns.weather, 'map');
+        await choose('Move below peak details'); assert.equal(native.nextElementSibling.contains(env.card('weather')), true);
+        assert.equal(env.doc.activeElement, env.handle('weather'));
+        env.key('snow', 'ArrowLeft'); env.key('snow', 'End'); await tick();
+        const lowerOrder = () => [...native.nextElementSibling.querySelectorAll('[data-bpb-peak-card]')].map(card => card.dataset.bpbPeakCard);
+        assert.deepEqual(lowerOrder(), ['weather', 'snow']);
+        env.key('snow', 'ArrowUp'); await tick(); assert.deepEqual(lowerOrder(), ['snow', 'weather']);
+        env.key('snow', 'ArrowUp'); await tick();
+        assert.deepEqual(lowerOrder(), ['weather']); assert.equal(native.previousElementSibling.contains(env.card('snow')), true);
     } finally { env.close(); }
 });

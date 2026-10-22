@@ -900,8 +900,9 @@ ascent width. Narrow viewports stack the columns and hide the divider.
 Peak cards use schema-validated `peakCardOrder` and `peakCardColumns` alongside
 independent disclosure flags. Drag previews stay outside document flow; a drop
 commits order and column together through the existing settings patch queue.
-The native map/legend stay together, while left-column cards precede the native
-peak details. Missing cards retain their settings slots. Arrow keys and the
+The native map/legend stay together. Left-column cards can precede (`details`)
+or follow (`details-bottom`) the native peak details; existing saved `details`
+placements stay above. Missing cards retain their settings slots. Arrow keys and the
 shared `src/ui/layout-menu.js` provide alternatives to dragging.
 
 ### Independent historical weather

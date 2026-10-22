@@ -39,6 +39,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['peak-weather'], [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']]],
         [['snow'], [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']]],
         [['snow-map'], [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']]],
+        [['peak-card-placement'], [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']]],
         [['map-controls'], [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']]],
         [['terrain'], [['verify-terrain-visual.mjs']]],
         [['terrain', 'chrome', '/tmp/terrain evidence'], [['verify-terrain-visual.mjs', '/tmp/terrain evidence']]],
@@ -123,5 +124,13 @@ test('focused no-argument verifiers reject unknown selections before opening a b
         const result = spawnSync(process.execPath, [script(name), '--unknown'], { encoding: 'utf8', timeout: 5000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Usage: node scripts\//);
+    }
+});
+
+test('peak-card placement rejects unknown and conflicting selections before opening a browser', () => {
+    for (const args of [['--cards-placement', '--unknown'], ['--cards-placement', '--cards'], ['--cards-placement', '--interactions']]) {
+        const result = spawnSync(process.execPath, [script('verify-ascent-weather.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /Unsupported weather verification arguments/);
     }
 });

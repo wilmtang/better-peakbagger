@@ -34,6 +34,7 @@ const targets = {
     snow: [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']],
     'snow-map': [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']],
     'peak-cards': [['verify-ascent-weather.mjs', '--cards'], ['verify-ascent-weather.mjs', '--cards', '--firefox']],
+    'peak-card-placement': [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']],
     'weather-interactions': [['verify-ascent-weather.mjs', '--interactions'], ['verify-ascent-weather.mjs', '--interactions', '--firefox']],
     packages: [['verify-packaged-extensions.mjs']],
 };

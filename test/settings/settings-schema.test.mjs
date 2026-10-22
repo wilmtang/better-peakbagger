@@ -299,8 +299,8 @@ test('planning link order removes unknown and duplicate IDs and fills missing sl
 
 
 test('peak-card columns reject unknown destinations and return independent validated maps', () => {
-    const cleaned = Schema.clean({ peakCardColumns: { sun: 'details', weather: 'unknown', snow: null, unknown: 'details' } });
-    assert.deepEqual(cleaned.peakCardColumns, { sun: 'details', weather: 'map', snow: 'map' });
+    const cleaned = Schema.clean({ peakCardColumns: { sun: 'details', weather: 'unknown', snow: 'details-bottom', unknown: 'details' } });
+    assert.deepEqual(cleaned.peakCardColumns, { sun: 'details', weather: 'map', snow: 'details-bottom' });
     assert.deepEqual(Schema.clean(cleaned), cleaned);
     assert.notEqual(Schema.clean({}).peakCardColumns, Schema.DEFAULTS.peakCardColumns);
 });

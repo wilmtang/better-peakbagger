@@ -32,16 +32,21 @@ export function createPeakCardLayout({ document: doc, settings }) {
     doc.body.append(help, status, ghost, indicator);
     let preference = settings.clean(settings.DEFAULTS), received = false, revision = 0, writeRevision = 0;
     const pendingWrites = new Map(), failedFields = new Set();
-    let anchor = null, detailsAnchor = null, drag = null, frame = null, scanning = false, suppressClick = false;
+    let anchor = null, drag = null, frame = null, scanning = false, suppressClick = false;
+    const detailsAnchors = {};
     const columnOf = key => doc.getElementById('bpb-peak-table-split') ? preference.peakCardColumns[key] : 'map';
+    const columnName = column => column === 'map' ? 'right column' : `left column, ${column === 'details' ? 'above' : 'below'} peak details`;
+    const nativeDetails = () => doc.querySelector('#bpb-peak-details-column > .bpb-peak-native-table');
     const anchors = () => {
         const details = doc.getElementById('bpb-peak-details-column');
-        if (details && !detailsAnchor) {
-            const table = doc.createElement('table'); table.id = 'bpb-peak-details-cards'; table.setAttribute('role', 'presentation');
-            const body = doc.createElement('tbody'); detailsAnchor = doc.createComment('Better Peakbagger left cards');
-            body.append(detailsAnchor); table.append(body); details.prepend(table);
+        if (details) for (const column of ['details', 'details-bottom']) if (!detailsAnchors[column]) {
+            const table = doc.createElement('table'); table.id = `bpb-peak-${column}-cards`;
+            table.className = 'bpb-peak-details-cards'; table.setAttribute('role', 'presentation');
+            const body = doc.createElement('tbody'); detailsAnchors[column] = doc.createComment('Better Peakbagger left cards');
+            body.append(detailsAnchors[column]); table.append(body);
+            if (column === 'details') details.prepend(table); else details.append(table);
         }
-        return { details: detailsAnchor, map: anchor };
+        return { ...detailsAnchors, map: anchor };
     };
     const visible = () => preference.peakCardOrder.map(key => cards.get(key)).filter(item => item && !item.card.hidden && !item.row.hidden);
     const save = patch => {
@@ -74,6 +79,12 @@ export function createPeakCardLayout({ document: doc, settings }) {
             if (!item || !previous[column]) continue;
             if (previous[column].nextSibling !== item.row) previous[column].after(item.row);
             previous[column] = item.row;
+        }
+        // A destination can have been hidden while empty. Reveal it before
+        // restoring focus or scrolling to the moved card, not on a later scan.
+        for (const column of ['details', 'details-bottom']) {
+            const host = doc.getElementById(`bpb-peak-${column}-cards`);
+            if (host && host.hidden !== (inColumn(column).length === 0)) host.hidden = inColumn(column).length === 0;
         }
         if (active?.isConnected && doc.activeElement !== active) active.focus({ preventScroll: true });
     };
@@ -112,7 +123,13 @@ export function createPeakCardLayout({ document: doc, settings }) {
         save({ peakCardOrder: order, peakCardColumns: { ...preference.peakCardColumns, [item.key]: column } });
         applyOrder(); focus(item);
         item.handle.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-        announce(`${item.definition.name} moved to position ${index + 1} in the ${column === 'details' ? 'left' : 'right'} column.`);
+        announce(`${item.definition.name} moved to position ${index + 1} in the ${columnName(column)}.`);
+    };
+    const verticalTarget = (item, direction) => {
+        const column = columnOf(item.key), list = inColumn(column), index = list.indexOf(item) + direction;
+        if (column === 'details' && index === list.length) return { column: 'details-bottom', index: 0 };
+        if (column === 'details-bottom' && index < 0) return { column: 'details', index: inColumn('details').length };
+        return { column, index };
     };
     const stopFrame = () => { if (frame !== null) view.cancelAnimationFrame(frame); frame = null; };
     const cancel = () => {
@@ -139,12 +156,18 @@ export function createPeakCardLayout({ document: doc, settings }) {
             if (column) area = doc.getElementById(`bpb-peak-${column}-column`).getBoundingClientRect();
         }
         if (!column || drag.x < area.left - 24 || drag.x > area.right + 24) { indicator.hidden = true; drag.target = null; return; }
+        if (column === 'details') {
+            const native = nativeDetails().getBoundingClientRect();
+            if (drag.y > native.top + native.height / 2) {
+                column = 'details-bottom'; area = { left: area.left, width: area.width, top: native.bottom };
+            }
+        }
         const list = inColumn(column).filter(item => item !== drag.item);
         const index = list.filter(item => { const r = item.card.getBoundingClientRect(); return drag.y > r.top + r.height / 2; }).length;
         drag.target = { index, column };
         const target = list[index] || list.at(-1), bounds = target?.card.getBoundingClientRect() || area;
         const y = Math.max(8, Math.min(view.innerHeight - 8, target ? (list[index] ? bounds.top : bounds.bottom) : bounds.top));
-        ghost.textContent = `${drag.item.definition.name} · ${column === 'details' ? 'Left' : 'Right'} column`;
+        ghost.textContent = `${drag.item.definition.name} · ${columnName(column)}`;
         indicator.hidden = false;
         Object.assign(indicator.style, { left: `${bounds.left}px`, top: `${y}px`, width: `${bounds.width}px` });
     };
@@ -260,9 +283,13 @@ export function createPeakCardLayout({ document: doc, settings }) {
         };
         const menu = createLayoutMenu({ handle, label: `Move ${definition.name}`, actions: () => {
             const column = columnOf(key), list = inColumn(column), index = list.indexOf(item), other = column === 'map' ? 'details' : 'map';
+            const up = verticalTarget(item, -1), downward = verticalTarget(item, 1);
+            const placement = column === 'details-bottom' ? 'details' : 'details-bottom';
             return [
-                { label: 'Move up', disabled: index <= 0, run: () => move(item, index - 1) },
-                { label: 'Move down', disabled: index >= list.length - 1, run: () => move(item, index + 1) },
+                { label: 'Move up', disabled: up.column === column && index <= 0, run: () => move(item, up.index, up.column) },
+                { label: 'Move down', disabled: downward.column === column && index >= list.length - 1, run: () => move(item, downward.index, downward.column) },
+                { label: `Move ${placement === 'details' ? 'above' : 'below'} peak details`, disabled: !anchors()[placement],
+                    run: () => move(item, inColumn(placement).length, placement) },
                 { label: `Move to ${other === 'details' ? 'left' : 'right'} column`, disabled: !anchors()[other], run: () => move(item, inColumn(other).length, other) },
             ];
         } });
@@ -274,11 +301,20 @@ export function createPeakCardLayout({ document: doc, settings }) {
         };
         const keydown = event => {
             if (drag || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-            const list = inColumn(columnOf(key)), from = list.indexOf(item);
+            const column = columnOf(key), list = inColumn(column);
             const other = event.key === 'ArrowLeft' ? 'details' : event.key === 'ArrowRight' ? 'map' : null;
-            if (other) { event.preventDefault(); if (other !== columnOf(key)) move(item, inColumn(other).length, other); return; }
-            const index = event.key === 'ArrowUp' ? from - 1 : event.key === 'ArrowDown' ? from + 1
-                : event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : null;
+            if (other) { event.preventDefault(); if ((other === 'map') !== (column === 'map')) move(item, inColumn(other).length, other); return; }
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                event.preventDefault();
+                const target = verticalTarget(item, event.key === 'ArrowUp' ? -1 : 1);
+                move(item, target.index, target.column); return;
+            }
+            if (column !== 'map' && (event.key === 'Home' || event.key === 'End')) {
+                event.preventDefault();
+                const target = event.key === 'Home' ? 'details' : 'details-bottom';
+                move(item, event.key === 'Home' ? 0 : inColumn(target).filter(entry => entry !== item).length, target); return;
+            }
+            const index = event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : null;
             if (index === null) return;
             event.preventDefault(); move(item, index);
         };
@@ -307,14 +343,12 @@ export function createPeakCardLayout({ document: doc, settings }) {
                 const card = doc.querySelector(definitions[key].selector);
                 if (card && !cards.has(key)) register(key, card);
             }
-            applyOrder();
             for (const item of cards.values()) {
                 applyCollapse(item);
                 const hidden = (!doc.getElementById('bpb-peak-table-split') && visible().length < 2) || item.card.hidden || item.row.hidden;
                 if (item.handle.hidden !== hidden) item.handle.hidden = hidden;
             }
-            const host = doc.getElementById('bpb-peak-details-cards');
-            if (host && host.hidden !== (inColumn('details').length === 0)) host.hidden = inColumn('details').length === 0;
+            applyOrder();
             if (drag && !visible().includes(drag.item)) cancel();
         } finally { scanning = false; }
     };
