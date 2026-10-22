@@ -1682,6 +1682,80 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     dom.window.close();
 });
 
+test('terrain warming cancels for gestures and suspension without restarting from hidden map events', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only',
+        pretendToBeVisual: true,
+    });
+    const { window } = dom;
+    const timers = new Map(), requests = [];
+    let timerId = 0, map;
+    window.setTimeout = (callback, ms) => { timers.set(++timerId, { callback, ms }); return timerId; };
+    window.clearTimeout = id => timers.delete(id);
+    const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+    const runWarmTimer = async () => {
+        for (const [id, timer] of [...timers]) if (timer.ms === 350) {
+            timers.delete(id); timer.callback();
+        }
+        await tick();
+    };
+    class MapStub {
+        constructor() { map = this; this.sources = new Map(); this.layers = []; this.handlers = new Map(); }
+        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type, callback) { this.handlers.set(type, callback); }
+        fire(type) { this.handlers.get(type)?.(); }
+        addControl() {}
+        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
+        getSource(id) { return this.sources.get(id); }
+        addLayer(layer) { this.layers.push(layer); }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        setPaintProperty() {}
+        setLayoutProperty() {}
+        getCanvas() { return { clientWidth: 800, clientHeight: 600 }; }
+        getCenter() { return { lng: -121.8, lat: 48.7 }; }
+        getZoom() { return 14; }
+        getBounds() { return { getWest: () => -121.82, getEast: () => -121.78,
+            getSouth: () => 48.68, getNorth: () => 48.72 }; }
+        fitBounds() {}
+        resize() {}
+        stop() { this.fire('moveend'); }
+        remove() {}
+    }
+    const dispatch = bootTerrainFrame(window, MapStub, { fetch: (_url, options) => {
+        requests.push(options.signal);
+        return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () =>
+            reject(new window.DOMException('Cancelled', 'AbortError')), { once: true }));
+    } });
+    try {
+        const payload = { routeSegments: [[[48.7, -121.8], [48.71, -121.81]]], cacheLimitMb: 512 };
+        dispatch({ type: 'init', ...payload });
+        await tick(); await runWarmTimer();
+        assert.equal(requests.length, 2, 'a still camera starts only two speculative downloads');
+        map.fire('movestart');
+        await tick();
+        assert.ok(requests.every(signal => signal.aborted), 'starting a gesture cancels speculative transport');
+        await tick();
+
+        dispatch({ type: 'suspend' });
+        map.fire('moveend'); map.fire('idle');
+        await runWarmTimer();
+        assert.equal(requests.length, 2, 'hidden map events cannot restart warming');
+
+        dispatch({ type: 'resume', ...payload });
+        await tick();
+        // The interval guard is intentionally independent of the idle timer.
+        const originalNow = window.Date.now;
+        window.Date.now = () => originalNow() + 1000;
+        await runWarmTimer();
+        assert.equal(requests.length, 4, 'resume retries cancelled tiles rather than remembering them as warmed');
+        dispatch({ type: 'suspend' });
+        await tick();
+        assert.ok(requests.every(signal => signal.aborted), 'suspension cancels in-flight warming too');
+        await tick();
+        assert.equal(requests.length, 4, 'a cancelled pass cannot advance to its next tile');
+    } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
+});
+
 test('3D peak markers request Peakbagger dots on camera settle and render only validated batches', async () => {
     const dom = new JSDOM('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',

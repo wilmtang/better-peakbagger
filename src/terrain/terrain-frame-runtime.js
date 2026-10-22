@@ -201,6 +201,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let gestureHintTimer = null;
     let gestureHintElement = null;
     let loaded = false;
+    let suspended = false;
     let parentOrigin = null;
     let activeGeneration = null;
     let authorized = false;
@@ -239,6 +240,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // waste: every tile would be fetched and then thrown away.
     let terrainCacheWarmable = false;
     let tiltWarmTimer = null;
+    let tiltWarmController = null;
     let tiltWarmAt = 0;
     const tiltWarmedTiles = new Set();
     let activeRouteStyle = { ...settingsSchema.ROUTE_STYLE };
@@ -362,6 +364,13 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         gestureHintTimer = setTimeout(dismissGestureHint, GESTURE_HINT_TIMEOUT_MS);
     };
 
+    const cancelTiltWarm = () => {
+        if (tiltWarmTimer !== null) clearTimeout(tiltWarmTimer);
+        tiltWarmTimer = null;
+        tiltWarmController?.abort();
+        tiltWarmController = null;
+    };
+
     const removeTerrain = () => {
         snowReveal.cancel();
         snowMarkers.clear(); snowStations = [];
@@ -376,10 +385,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             clearTimeout(peaksDebounceTimer);
             peaksDebounceTimer = null;
         }
-        if (tiltWarmTimer !== null) {
-            clearTimeout(tiltWarmTimer);
-            tiltWarmTimer = null;
-        }
+        cancelTiltWarm();
         if (peakPopup) {
             try { peakPopup.remove(); } catch (error) { /* Already detached with its map. */ }
             peakPopup = null;
@@ -459,6 +465,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         pickerElement = null;
         noticeElement = null;
         loaded = false;
+        suspended = false;
     };
 
     // Park the live map without tearing it down: stop ambient work so a hidden
@@ -466,16 +473,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // and DOM alive so a resume is instant. An idle MapLibre at opacity 0 renders
     // nothing.
     const suspendTerrain = () => {
+        suspended = true;
+        cancelTiltWarm();
+        map?.stop?.();
         snowReveal.cancel();
         snowMarkers.closePopup();
         overlays?.suspend();
         if (peaksDebounceTimer !== null) {
             clearTimeout(peaksDebounceTimer);
             peaksDebounceTimer = null;
-        }
-        if (tiltWarmTimer !== null) {
-            clearTimeout(tiltWarmTimer);
-            tiltWarmTimer = null;
         }
         if (peakPopup) {
             try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
@@ -1583,7 +1589,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const requestPeaks = () => {
-        if (!map || !loaded) return;
+        if (!map || !loaded || suspended) return;
         try {
             if (map.getZoom() < PEAK_MARKERS.minZoom) {
                 peaksRequestId++;
@@ -1603,6 +1609,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const schedulePeaksRequest = () => {
+        if (suspended) return;
         if (peaksDebounceTimer !== null) clearTimeout(peaksDebounceTimer);
         peaksDebounceTimer = setTimeout(() => {
             peaksDebounceTimer = null;
@@ -1618,7 +1625,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // while the camera is still, through the same cache loader MapLibre reads
     // through, so anything warmed here is a cache hit for the renderer later.
     const warmTiltTiles = async () => {
-        if (!map || !loaded || !terrainCache || !terrainCacheWarmable) return;
+        if (!map || !loaded || suspended || !terrainCache || !terrainCacheWarmable || tiltWarmController) return;
         if (cameraIsMoving()) return;
         const now = Date.now();
         if (now - tiltWarmAt < TILT_WARM_MIN_INTERVAL_MS) return;
@@ -1659,33 +1666,38 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         tiltWarmAt = now;
 
         const token = map;
+        const cache = terrainCache;
+        const controller = new AbortController();
+        tiltWarmController = controller;
         let next = 0;
         const worker = async () => {
             while (next < fresh.length) {
                 const { tile, key } = fresh[next++];
                 // A gesture that starts mid-warm must not compete for bandwidth
                 // with the tiles the user is actually waiting for.
-                if (map !== token || cameraIsMoving()) return;
+                if (controller.signal.aborted || map !== token || suspended || cameraIsMoving()) return;
                 tiltWarmedTiles.add(key);
                 try {
-                    await terrainCache.load({ url: `${TerrainCache.PROTOCOL}://${tile.z}/${tile.x}/${tile.y}.webp` });
+                    await cache.load({ url: `${TerrainCache.PROTOCOL}://${tile.z}/${tile.x}/${tile.y}.webp` }, controller);
                 } catch (error) {
                     // A failed warm stays retryable on a later settle — but a
                     // tile the provider says does not exist is a settled answer,
                     // and retrying it every time the camera rests would spend a
                     // donated server's bandwidth on ground it does not cover.
-                    if (!TerrainCache.isMissingTile(error)) tiltWarmedTiles.delete(key);
+                    if (map === token && !TerrainCache.isMissingTile(error)) tiltWarmedTiles.delete(key);
                 }
             }
         };
         await Promise.all(Array.from({ length: TILT_WARM_CONCURRENCY }, worker));
+        if (tiltWarmController === controller) tiltWarmController = null;
+        if (map !== token) return;
         while (tiltWarmedTiles.size > TILT_WARM_MEMORY_LIMIT) {
             tiltWarmedTiles.delete(tiltWarmedTiles.values().next().value);
         }
     };
 
     const scheduleTiltWarm = () => {
-        if (!terrainCacheWarmable) return;
+        if (!terrainCacheWarmable || suspended) return;
         if (tiltWarmTimer !== null) clearTimeout(tiltWarmTimer);
         tiltWarmTimer = setTimeout(() => {
             tiltWarmTimer = null;
@@ -1694,7 +1706,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const applyPeaks = data => {
-        if (!map || !loaded) return;
+        if (!map || !loaded || suspended) return;
         if (map.getZoom() < PEAK_MARKERS.minZoom) return;
         if (data.unavailable === true) {
             // This surface has no peak feed (e.g. group maps): stop asking.
@@ -2082,7 +2094,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     paint: { 'circle-radius': 8, 'circle-color': HIGHLIGHT_COLORS.distance, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }
                 });
                 terrainMap.on('moveend', () => {
-                    if (map !== terrainMap) return;
+                    if (map !== terrainMap || suspended) return;
                     overlays?.refresh();
                     postOverlayView();
                     const camera = terrainCamera.fromMapLibre(terrainMap);
@@ -2094,8 +2106,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     if (peakPointerPoint) schedulePointerUpdate(peakPointerPoint);
                 });
                 terrainMap.on('move', () => {
-                    if (map === terrainMap) scheduleView();
+                    if (map === terrainMap && !suspended) scheduleView();
                 });
+                terrainMap.on('movestart', cancelTiltWarm);
                 loaded = true;
                 if (!snowMarkers.replace(terrainMap, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
                 try {
@@ -2154,6 +2167,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // the caller boots fresh via createTerrain.
     const resumeTerrain = data => {
         if (!map || !loaded) return false;
+        suspended = false;
         snowStations = readSnotelMapStations(data.snowStations) || [];
         if (!snowMarkers.replace(map, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
