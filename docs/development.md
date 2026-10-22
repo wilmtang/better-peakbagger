@@ -258,7 +258,7 @@ is part of `map-handoffs`.
 | `terrain` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
 | `terrain firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Includes inherited/explicit Sentinel capture resume, loaded source identity and desktop/narrow light/dark warning geometry. Uses instrumented fixture authorization/storage, distinct from the real-manifest check. Same HTTPS showcase host. |
 | `terrain cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
-| `terrain lod` | Measures the 3D tilt detail collapse against the acceptance criteria in `docs/archive/3d-tilt-detail-blink.md`: which elevation level every visible pixel is drawn from across a cold-cache pitch sweep, plus the elevation and drape traffic it costs. Same HTTPS showcase host and GPU rules as `verify -- terrain`. |
+| `terrain lod` | Measures painted elevation provenance across a cold-cache tilt sweep and 20 fixed-angle Rainier zoom cases, with local delayed DEM tiles and elevation/drape traffic counts. Same HTTPS showcase host and GPU rules as `verify -- terrain`. |
 
 Ordinary Test CI runs `snow` and `peak-cards` per browser after the generic
 layout matrix, reusing its completed `dist/` build. A separate always-run
@@ -785,13 +785,13 @@ add it to the merge-step condition, for example
   every Terrarium elevation channel and satisfying the production cache's MIME
   and byte validation. It adds a 140 ms delivery delay after fixture generation;
   encoding cost, tile sizes and provider latency do not model live Mapterhorn.
-- The current `terrain lod` per-pixel probe depends on MapLibre's private
-  coordinate framebuffer, which the locked 6.13.0 build no longer exposes
-  (`painter.maybeDrawCoords` is absent). It fails after the terrain frame boots;
-  the lossless DEM fixture is independently validated, but the provenance probe
-  needs adaptation. Passing terrain/snow-map smoke does not prove those LOD
-  criteria. The [October 19 ledger](plans/codebase-audit-2026-10-19.md) records
-  the exact local evidence and remaining measurement gap.
+- The LOD probe uses MapLibre 6.13's custom terrain rendering hook to paint
+  desired/actual DEM levels onto the mesh and count the resulting pixels.
+  It replaces the removed private coordinate framebuffer. Samples contain the
+  tile census and pixel read from the same painted frame; movement cannot be
+  reported settled. This diagnostic replaces the imagery's appearance and
+  therefore does not measure imagery quality, frame rate, or live Rainier
+  elevation. Passing terrain/snow-map smoke alone does not prove LOD criteria.
 - `BPB_LOD_DRAPE` picks which of the two shipped drape LOD settings that run
   exercises: `L_OS` (the default, full `(4, 3)`) or `L_OT` (thrifty `(6, 1.5)`,
   what OpenTopoMap and every live Leaflet layer get). Run both when touching

@@ -896,6 +896,7 @@ receiver check.
 | `npm run verify -- browsers` | Real unpacked Chrome and Firefox profiles | Live provider behavior and GPU terrain visuals |
 | `npm run verify -- terrain` | Real packaged MapLibre frame in hidden Chrome on asserted hardware GPU; route, drape, elevation coverage gap, pending-drape boot, compass placement, context-loss fallback | Real storage/settings bridge, live Mapterhorn or Peakbagger services, native focus |
 | `npm run verify -- terrain firefox` | Focused Firefox hardware-WebGL terrain and interaction | Full extension workflow or live services |
+| `npm run verify -- terrain lod` | Painted DEM provenance, terrain detail ladder and 20 fixed-angle zoom cases centered on Rainier; run both `BPB_LOD_DRAPE=L_OS` and `L_OT` | Live Rainier elevation or imagery, frame-rate benchmarks, native focus |
 
 The terrain showcase intentionally stubs storage and bridge protocol, but it is
 served over HTTPS on `www.peakbagger.com` rather than `http://localhost`,

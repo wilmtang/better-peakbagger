@@ -7,11 +7,10 @@
 //
 // It drives the real extension frame — the same dist/ bundle verify -- terrain
 // loads — on hardware GL, headless, with locally generated Terrarium DEM tiles
-// served at a realistic per-tile delay. For every camera it reads MapLibre's own
-// coords framebuffer, which encodes the render-to-texture tile each screen pixel
-// was drawn from, and resolves that tile to the DEM level it wanted and the DEM
-// level it actually got. Every percentage below is therefore a share of the
-// surface the user sees, not a share of tiles.
+// served at a realistic per-tile delay. A custom terrain hook paints desired
+// and actual DEM levels onto each render-to-texture tile, then counts those
+// colors in the painted framebuffer. Percentages describe visible surface
+// unless explicitly reported per tile.
 //
 // What it cannot see: the real Mapterhorn service, the real drape providers, and
 // anything about native focus or window placement. A live spot-check through
@@ -41,6 +40,7 @@ import {
     manageChildProcess,
 } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { installTerrainLodProbe } from './terrain-lod-probe.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chromePath = process.env.CHROME_BIN || ({
@@ -65,9 +65,9 @@ const DRAPE_SPECS = {
     L_OS: { host: 'tile.openstreetmap.org', label: 'full drape LOD, maxzoom 18' },
     L_OT: { host: 'a.tile.opentopomap.org', label: 'thrifty drape LOD, maxzoom 15' }
 };
-const DRAPE_CODE = Object.hasOwn(DRAPE_SPECS, String(process.env.BPB_LOD_DRAPE || ''))
-    ? process.env.BPB_LOD_DRAPE
-    : 'L_OS';
+if (process.argv.length !== 2) throw new Error('Usage: node scripts/verify-terrain-lod.mjs');
+const DRAPE_CODE = process.env.BPB_LOD_DRAPE || 'L_OS';
+if (!Object.hasOwn(DRAPE_SPECS, DRAPE_CODE)) throw new Error(`Unknown LOD drape: ${DRAPE_CODE}`);
 const DRAPE_HOST = DRAPE_SPECS[DRAPE_CODE].host;
 const DRAPE_LABEL = DRAPE_SPECS[DRAPE_CODE].label;
 // The plan measured at 1100x700 with 140 ms per tile; keep both so the numbers
@@ -83,7 +83,7 @@ const TILE_DELAY_MS = 140;
 // at pitch 60 already fetches the whole horizon ladder, and every later tilt is
 // then served from a warm cache no matter what the code does.
 const SWEEP_ZOOM = 14;
-const SWEEP_CENTER = [-118.5, 43.5];
+const SWEEP_CENTER = [-121.760395, 46.851731]; // Mount Rainier; synthetic DEM, not live elevation.
 // Pitch sweep: 3-degree steps across the band the plan measured, then one step
 // back so reversing a gesture is measured too.
 const SWEEP_START_PITCH = 55;
@@ -293,144 +293,8 @@ const waitForPageState = async (cdp, expression, timeoutMs = 40000) => {
 // The measurement
 // ---------------------------------------------------------------------------
 
-// MapLibre renders a "coords" framebuffer whose alpha channel names the
-// render-to-texture tile each pixel was drawn from (Terrain.getCoordsTexture).
-// Reading it in one pass gives the exact per-pixel tile provenance the plan
-// measured, without a readPixels round trip per sample. Each RTT tile is then
-// resolved to the DEM level it asked for (overscaledZ - deltaZoom, the offset
-// the plan's appendix warns about) and the DEM level it actually got.
-const PROBE = `(() => {
-    const frame = document.getElementById('bpb-terrain-frame');
-    const win = frame && frame.contentWindow;
-    const map = win && win.__bpbTerrainTestMap;
-    if (!map || !map.terrain || !map.terrain.painter) {
-        return { ready: false, reason: map ? 'terrain is not enabled yet' : 'the 3D frame is not up' };
-    }
-    const terrain = map.terrain;
-    const tileManager = terrain.tileManager;
-    const source = tileManager.getSource();
-    const painter = terrain.painter;
-    try {
-        // MapLibre only rebuilds the coords framebuffer when the camera matrix
-        // changes or a tile arrives — not when the render-to-texture key set
-        // grows. Left alone it therefore describes a set of tiles that is one or
-        // two horizon tiles behind the live one, and those are exactly the tiles
-        // a tilt is waiting for: the shortfall would go unmeasured and every
-        // tilt would look instantaneous. Force the rebuild on every probe.
-        painter.terrainFacilitator.depthDirty = true;
-        painter.maybeDrawDepth(true);
-        painter.maybeDrawCoords();
-    } catch (error) {
-        return { ready: false, reason: 'coords framebuffer: ' + error.message };
-    }
-    const framebuffer = terrain.getFramebuffer('coords');
-    const width = framebuffer.width, height = framebuffer.height;
-    if (!(width > 0) || !(height > 0)) return { ready: false, reason: 'empty coords framebuffer' };
-    const pixels = new win.Uint8Array(width * height * 4);
-    const gl = painter.context.gl;
-    painter.context.bindFramebuffer.set(framebuffer.framebuffer);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    painter.context.bindFramebuffer.set(null);
-
-    // Alpha 255 - index identifies the RTT tile (see Terrain.pointCoordinate).
-    // Each is resolved once to the DEM level it asked for and the DEM level it
-    // actually got; the pixel loop then only looks up an alpha byte.
-    const byAlpha = new Map();
-    const tileShortfalls = {};
-    terrain.coordsIndex.forEach((key, index) => {
-        const tile = tileManager.getTileByID(key);
-        if (!tile) return;
-        let desired = tile.tileID.overscaledZ - tileManager.deltaZoom;
-        if (desired > source.maxzoom) desired = source.maxzoom;
-        if (desired < source.minzoom) return;
-        const demTile = tileManager.getSourceTile(tile.tileID, true);
-        const actual = demTile && demTile.dem ? demTile.tileID.overscaledZ : null;
-        byAlpha.set(255 - index, { desired: desired, actual: actual });
-        // Counted per tile as well as per pixel: a tile can want a level it has
-        // not got and still contribute no pixels, because distant terrain is
-        // often hidden behind a nearer ridge. Reporting only the pixel-weighted
-        // figure would hide those, and hiding them is how a check comes to read
-        // as "nothing was short" when something was.
-        const key2 = actual === null ? 'none' : String(desired - actual);
-        tileShortfalls[key2] = (tileShortfalls[key2] || 0) + 1;
-    });
-
-    const levels = {}, shortfalls = {};
-    let surface = 0, sky = 0;
-    const step = 4;
-    for (let y = 0; y < height; y += step) {
-        for (let x = 0; x < width; x += step) {
-            const entry = byAlpha.get(pixels[(y * width + x) * 4 + 3]);
-            if (!entry) { sky++; continue; }
-            surface++;
-            const level = entry.actual === null ? 'none' : String(entry.actual);
-            levels[level] = (levels[level] || 0) + 1;
-            const shortfall = entry.actual === null ? 'none' : String(entry.desired - entry.actual);
-            shortfalls[shortfall] = (shortfalls[shortfall] || 0) + 1;
-        }
-    }
-    // The drape, and the ceiling it is painted into. MapLibre never paints the
-    // drape onto the screen: it paints it into render-to-texture tiles sized from
-    // the *elevation* source's level-of-detail function, each rendered into a
-    // target of tileSize * qualityFactor pixels. A drape tile finer than that
-    // target can hold is traffic bought for detail the pipeline discards, which
-    // is the question section 6 of the plan leaves open.
-    const drapeManager = map.style && map.style.tileManagers && map.style.tileManagers.basemap;
-    let drape = null;
-    if (drapeManager && typeof drapeManager.getRenderableIds === 'function') {
-        const drapeLevels = {};
-        for (const id of drapeManager.getRenderableIds()) {
-            const tile = drapeManager.getTileByID(id);
-            if (!tile) continue;
-            const z = String(tile.tileID.overscaledZ);
-            drapeLevels[z] = (drapeLevels[z] || 0) + 1;
-        }
-        const drapeTileSize = (drapeManager._source && drapeManager._source.tileSize) || 512;
-        const targetPixels = tileManager.tileSize * terrain.qualityFactor;
-        // A render-to-texture tile at level Z covers 1/2^Z of the world, and a
-        // drape at level B lays drapeTileSize * 2^(B - Z) texels across it. The
-        // finest B that still fits the target is Z + log2(target / tileSize).
-        //
-        // The ceiling is a range, not a number, and that is the whole point: a
-        // pitched frame holds several render-to-texture levels at once, so the
-        // near band and the horizon band have different ceilings. One ceiling
-        // taken from the near band makes every measurement read "nothing
-        // wasted", which is true and useless.
-        const headroom = Math.round(Math.log2(targetPixels / drapeTileSize));
-        const rttLevels = [...byAlpha.values()].map(entry => entry.desired + tileManager.deltaZoom);
-        drape = {
-            levels: drapeLevels,
-            tileSize: drapeTileSize,
-            targetPixels: targetPixels,
-            ceilingFinest: rttLevels.length ? Math.max(...rttLevels) + headroom : null,
-            ceilingCoarsest: rttLevels.length ? Math.min(...rttLevels) + headroom : null
-        };
-    }
-
-    return {
-        ready: surface > 0,
-        reason: surface > 0 ? '' : 'no terrain surface on screen',
-        surface: surface, sky: sky, levels: levels, shortfalls: shortfalls, drape: drape,
-        pitch: Math.round(map.getPitch() * 100) / 100,
-        zoom: Math.round(map.getZoom() * 1000) / 1000,
-        rttTiles: tileManager.getRenderableTiles().length,
-        // How many off-screen elevation tiles MapLibre will keep before
-        // evicting. Reported so the retention setting is a measured number
-        // rather than an assumption about where a Map option landed.
-        retainedTileCeiling: tileManager.tileManager._outOfViewCache
-            ? tileManager.tileManager._outOfViewCache.max
-            : null,
-        // A camera change is not visible to this probe until MapLibre has
-        // painted it: before that first frame the render-to-texture key set and
-        // the coords framebuffer still describe the previous camera, and a
-        // settled previous frame would read as an instantly settled new one.
-        renders: map.__bpbRenders || 0,
-        idle: map.loaded() === true
-            && (typeof map.areTilesLoaded !== 'function' || map.areTilesLoaded() === true),
-        framebuffer: { width: width, height: height },
-        tiles: tileShortfalls
-    };
-})()`;
+// Read the last painted provenance frame; never mutate renderer state in a poll.
+const PROBE = 'window.__bpbReadLodProbe()';
 
 // 'none' — no DEM tile at any level — is worse than any finite shortfall.
 const NO_DATA = 99;
@@ -640,6 +504,8 @@ try {
         return true;
     })()`);
 
+    await evaluate(cdp, `window.__bpbReadLodProbe = (${installTerrainLodProbe.toString()})(document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap); true;`);
+
     const moveCamera = async body => evaluate(cdp, `(() => {
         const map = document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap;
         const renders = map.__bpbRenders || 0;
@@ -767,6 +633,28 @@ try {
             + ` — widest gap ${gap}, ${result.sample.rttTiles} RTT tiles`);
         if (gap > 2) failures.push(`At ${pitch} degrees the detail ladder skips ${gap} levels in one frame`);
     }
+    const demAfterCensus = demRequests;
+
+    // Zoom without rotating or tilting, crossing integer tile levels in both
+    // directions. Loading may use an ancestor, but no settled view may keep a
+    // detail deficit after its requested tiles have arrived.
+    console.log('\nFixed-angle Rainier zoom sweep (synthetic DEM)');
+    let zoomCases = 0;
+    for (const pitch of [60, 75]) {
+        await settle(await moveCamera(`map.jumpTo({ zoom: 14, pitch: ${pitch}, bearing: 0 });`));
+        for (const zoom of [14.25, 14.8, 15.2, 14.8, 14.2, 13.8, 13.2, 12.8, 13.2, 14]) {
+            const result = await settle(await moveCamera(`map.easeTo({ zoom: ${zoom}, duration: 600 });`));
+            zoomCases++;
+            const sample = result.sample;
+            console.log(`  pitch ${pitch}, zoom ${zoom}: settled ${result.settleMs} ms, worst ${describeShortfall(result.worst)}`);
+            if (!sample?.ready || !sample.idle || worstShortfall(sample).levels > 0) {
+                failures.push(`Zoom ${zoom} at pitch ${pitch} retained a settled elevation deficit: ${JSON.stringify(sample?.shortfalls)}`);
+            }
+            if (!sample || Math.abs(sample.pitch - pitch) > 0.01 || Math.abs(sample.bearing) > 0.01
+                || Math.abs(sample.zoom - zoom) > 0.002) failures.push(`Zoom ${zoom} did not preserve its fixed-angle camera`);
+        }
+    }
+    if (zoomCases !== 20) throw new Error(`Expected 20 zoom cases, executed ${zoomCases}`);
 
     // ---- The drape's level against the ceiling it is painted into ------------
     console.log('\nDrape levels versus the render-to-texture ceiling');
@@ -802,10 +690,10 @@ try {
     // ---- Criterion 4: traffic stays bounded ---------------------------------
     console.log('\nTraffic');
     console.log(`  DEM tiles: ${demAtBoot} on boot, ${demAfterSweep - demAtBoot} across the sweep`
-        + `, ${demRequests - demAfterSweep} across the census, ${demRequests} total.`);
+        + `, ${demAfterCensus - demAfterSweep} across the census, ${demRequests - demAfterCensus} across zooms, ${demRequests} total.`);
     console.log(`  Drape tiles: ${drapeRequests} total.`);
     console.log(`  Peak render-to-texture tiles: ${Math.max(...census.map(entry => entry.sample.rttTiles), 0)}`
-        + ' (MapLibre pools 30).');
+        + ' (MapLibre 6 retains RTTs per visible terrain tile).');
     console.log(`  Off-screen elevation tiles retained before eviction: ${opening.sample.retainedTileCeiling}.`);
 
     if (unexpected.length) {
@@ -821,7 +709,7 @@ try {
         for (const failure of failures) console.error(`  - ${failure}`);
         process.exitCode = 1;
     } else {
-        console.log('\nAll four acceptance criteria passed.');
+        console.log('\nAll four tilt criteria and 20 fixed-angle zoom cases passed.');
     }
 } catch (error) {
     if (chromeStderr) error.message += `\nChrome stderr (tail):\n${chromeStderr}`;
