@@ -89,6 +89,7 @@ try {
             assert.equal(await page.locator('.garmin-key-label a').getAttribute('href'), 'https://connect.garmin.com/app/settings/personalApiToken');
             await page.locator('#garmin-frequency').selectOption('0');
             assert.equal(await page.locator('#garmin-recent-help').textContent(), 'How far back Check now looks.');
+            await page.locator('#garmin-types').selectOption('all');
             if (name === 'chromium') {
                 await page.screenshot({ path: path.join(output, `settings-${width}-${theme}-top.png`) });
                 await page.locator('#garmin-save').scrollIntoViewIfNeeded();

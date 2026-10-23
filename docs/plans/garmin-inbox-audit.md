@@ -2,6 +2,12 @@
 
 ## Fixed and verified
 
+- **P2: the broad activity filter claimed to exclude indoor activities.** Renamed
+  it to **All activities** and documented the two filters' actual scope. Filtering
+  behavior is unchanged. Three Garmin UI unit tests and all 12 hidden Chrome
+  156/Firefox 157 fixture cases pass; selected-option screenshots were inspected
+  at desktop and narrow widths. This verifies the label, not live recording
+  support for every Garmin sport.
 - **P2: Garmin connection was missing from settings navigation.** Added its
   sidebar entry and accessible heading association. The earlier isolated Garmin
   fixture disabled the main options controller, and the options fixture omitted

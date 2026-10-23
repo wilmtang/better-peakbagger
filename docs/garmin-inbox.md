@@ -31,6 +31,10 @@ Activity IDs and saved/dismissed history prevent repeat imports on this device.
 Ascents entered manually or imported independently elsewhere are not guaranteed
 to be detected as duplicates.
 
+**Activities:** the default includes hiking, walking, trail running and
+mountaineering. **All activities** also admits skiing, rock climbing and other
+types, including indoor workouts. Draft preparation needs a usable GPS track.
+
 ## Review and recover
 
 - Strong matches start selected. Review Probable matches before selecting them.
