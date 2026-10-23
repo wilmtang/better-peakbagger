@@ -6,6 +6,55 @@ import { createLeafletOverlays } from '../../src/maps/map-overlay-leaflet.js';
 import { JSDOM } from 'jsdom';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('scene refresh retains native canvases and stale or failed replacements cannot erase painted imagery', async t => {
+    const previous = globalThis.createImageBitmap;
+    globalThis.createImageBitmap = async blob => ({ width: 256, height: 256, painted: await blob.text(), close() {} });
+    t.after(() => { if (previous === undefined) delete globalThis.createImageBitmap; else globalThis.createImageBitmap = previous; });
+    const held = [], mounted = new Set(); let hold = false;
+    const document = { createElement: () => {
+        const canvas = { painted: '', getContext: () => ({ clearRect() { canvas.painted = ''; }, drawImage(image) { canvas.painted = image.painted; } }) };
+        return canvas;
+    } };
+    const map = { getPane: () => ({}), removeLayer(layer) { mounted.delete(layer); layer.events.tileunload({ tile: layer.canvas }); } };
+    const win = { document, addEventListener() {}, removeEventListener() {}, fetch: (url, { signal }) => {
+        const image = () => new Response(new URL(url).searchParams.get('item') || 'other', { headers: { 'content-type': 'image/png' } });
+        if (!hold) return Promise.resolve(image());
+        return new Promise(resolve => held.push({ signal, image, resolve }));
+    }, L: { GridLayer: { extend(methods) {
+        class Grid {
+            constructor(options) { this.options = options; this.events = {}; this.ready = 0; }
+            on(name, callback) { this.events[name] = callback; }
+            setOpacity(value) { this.options.opacity = value; return this; }
+            addTo() { mounted.add(this); this.canvas = this.createTile({ z: 14, x: 2666, y: 5796 }, () => this.ready++); }
+        }
+        Object.assign(Grid.prototype, methods); return Grid;
+    } } } };
+    const owner = createLeafletOverlays({ win, map });
+    const scene = id => [{ id, bounds: [-122, 46, -121, 47] }];
+    try {
+        for (const id of ['land', 'slope']) owner.set(id, { enabled: true, opacity: 37 });
+        owner.scenes(scene('original'), 60); await tick();
+        const layers = [...mounted], layer = layers.find(item => item.options.pane === 'bpb-overlay-sentinel'), canvas = layer.canvas;
+        assert.equal(canvas.painted, 'original'); assert.equal(layer.ready, 1);
+        hold = true; owner.scenes(scene('stale'), 60); await tick();
+        assert.deepEqual([...mounted], layers, 'catalog changes preserve every layer');
+        assert.equal(canvas.painted, 'original');
+        owner.scenes(scene('current'), 60); await tick();
+        assert.equal(held[0].signal.aborted, true);
+        held[0].resolve(held[0].image()); await tick(); assert.equal(canvas.painted, 'original');
+        held[1].resolve(new Response('', { status: 404 })); await tick();
+        assert.equal(canvas.painted, 'original', 'a failed replacement preserves last good pixels');
+        hold = false; owner.retry('sentinel'); await tick();
+        assert.equal(layer.canvas, canvas); assert.equal(canvas.painted, 'current');
+        assert.equal(layer.ready, 1, 'repainting a ready canvas never restarts Leaflet tile fading');
+        for (const id of ['land', 'slope']) owner.retry(id);
+        await tick();
+        assert.ok(layers.every(item => item.ready === 1), 'successful land/slope reloads also avoid another ready/fade callback');
+        assert.deepEqual([...mounted], layers);
+        owner.clearSentinel(); assert.equal(mounted.has(layer), false, 'explicit clearing still removes stale imagery');
+    } finally { owner.dispose(); }
+});
+
 for (const id of ['slope', 'land']) for (const toggled of [false, true]) test(`${id} retry mounts a cooldown-blocked layer${toggled ? ' after off/on' : ' from a handoff'} at its saved opacity`, async t => {
     let now = Date.now(), requests = 0;
     t.mock.method(Date, 'now', () => now);

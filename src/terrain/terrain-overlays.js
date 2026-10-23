@@ -88,7 +88,14 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         }
     };
     const sentinel = createSentinelSession({ readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() + 1 }),
-        replaceScenes(next) { remove('sentinel'); scenes = next; sceneRevision++; tiles.setScenes(next); paint(); },
+        replaceScenes(next) {
+            scenes = next; sceneRevision++; tiles.setScenes(next);
+            const source = layers.get('sentinel');
+            // setTiles reloads the source while retaining renderable textures;
+            // removing it would expose the basemap during every mosaic change.
+            if (source) map.getSource(source)?.setTiles([`${protocol}://sentinel/${sceneRevision}/{z}/{x}/{y}`]);
+            paint();
+        },
         clearScenes() { remove('sentinel'); scenes = []; tiles.setScenes([]); },
         retryTiles() { if (tiles.retry('sentinel')) map.getSource(layers.get('sentinel'))?.setTiles([`${protocol}://sentinel/${sceneRevision}/{z}/{x}/{y}`]); },
         onStatus: status => { sentinelStatus = status; post('layerStatus', { id: 'sentinel', revision: snapshot?.revision, ...status }); },

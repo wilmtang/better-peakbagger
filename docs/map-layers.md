@@ -186,6 +186,10 @@ scenes are composited at full alpha into one transparent 256-pixel tile; opacity
 is applied once by the renderer, so overlaps do not become darker. A tile is
 published only after all intersecting scenes finish successfully. Engines own
 tile reuse and request coalescing; unchanged scene sets retain their sources.
+When a pan changes the scene mosaic, native maps repaint their existing canvases
+and terrain reloads its existing raster source. Already painted imagery remains
+visible while replacement tiles load. Native tile refreshes do not restart
+Leaflet's fade animation; this also applies to slope and public-land retries.
 The compositor limits work to four concurrent tiles, a 128-entry waiting queue,
 eight scenes per capture, 4 MiB per encoded image, 1024-pixel decoded dimensions
 and 15-second transport/body/decode deadlines. Decoded bitmaps are closed after

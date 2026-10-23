@@ -5,6 +5,34 @@ import assert from 'node:assert/strict';
 import { createTerrainOverlays } from '../../src/terrain/terrain-overlays.js';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('terrain scene changes reload the existing raster source and leave other layers attached', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const sources = new Map(), layers = new Map(), urls = [], posts = [];
+    let scene = 'original';
+    t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ features: [{ id: scene, collection: 'sentinel-2-l2a',
+        properties: { datetime: new Date(Date.now() - 86400000).toISOString(), platform: 'Sentinel-2B', 'sat:relative_orbit': 13 },
+        geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 47], [-122, 47], [-122, 46]]] } }] })));
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getLayer: id => layers.get(id), getSource: id => sources.get(id),
+        getZoom: () => 12, getBounds: () => ({ getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 }),
+        addLayer: layer => layers.set(layer.id, layer), addSource: (id, source) => sources.set(id, { ...source, setTiles(next) { this.tiles = next; urls.push(next); } }),
+        removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), setPaintProperty() {}, moveLayer() {} };
+    const owner = createTerrainOverlays({ map, document: {}, maplibre: { addProtocol() {}, removeProtocol() {} }, post: (_type, value) => posts.push(value) });
+    try {
+        owner.update({ revision: 1, state: Object.fromEntries(['sentinel', 'slope', 'land'].map(id => [id, { enabled: true, opacity: 60 }])) });
+        await tick();
+        const originalSources = [...sources.values()], originalLayers = [...layers.values()];
+        assert.equal(originalSources.length, 3);
+        scene = 'next'; owner.refresh(); t.mock.timers.tick(300); await tick();
+        assert.deepEqual([...sources.values()], originalSources, 'a pan keeps the existing raster textures reachable');
+        assert.deepEqual([...layers.values()], originalLayers);
+        assert.equal(urls.length, 1); assert.match(urls[0][0], /sentinel\/2\//, 'a fresh revision replaces the scene data in place');
+        scene = 'next'; owner.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(urls.length, 1, 'unchanged mosaics never reload the raster source');
+        assert.equal(posts.filter(item => item.id === 'sentinel').at(-1).capturePending, false);
+        owner.suspend(); assert.equal(sources.size, 0); assert.equal(layers.size, 0);
+    } finally { owner.dispose(); }
+});
+
 for (const id of ['slope', 'land']) test(`terrain ${id} retry publishes loading and keeps its painted source`, async t => {
     const held = [], posts = [], sources = new Map(), layers = new Map(); let protocol;
     const previous = globalThis.createImageBitmap;

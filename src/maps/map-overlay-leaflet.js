@@ -18,12 +18,16 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         controllers.set(canvas, controller); record.failed = false;
         tiles.draw(id, coordinates, canvas, controller.signal).then(() => {
             record.failed = tiles.failed(id, coordinates);
-            if (records.get(canvas) === record && controllers.get(canvas) === controller) done(null, canvas);
+            if (records.get(canvas) === record && controllers.get(canvas) === controller && !record.loaded) {
+                // Leaflet's ready callback restarts its tile fade. A canvas
+                // already on screen only needs its pixels replaced, once.
+                record.loaded = true; done(null, canvas);
+            }
         }, error => {
             if (records.get(canvas) !== record || controllers.get(canvas) !== controller) return;
             // A provider cooldown also aborts neighboring visible requests.
             // Those holes need retry too; unloaded records were removed above.
-            record.failed = true; done(error, canvas);
+            record.failed = true; if (!record.loaded) done(error, canvas);
         }).finally(() => { if (controllers.get(canvas) === controller) controllers.delete(canvas); });
     };
     const remove = id => {
@@ -35,7 +39,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         if (!map.getPane(pane)) { map.createPane(pane); map.getPane(pane).style.cssText = `z-index:${z[id]};pointer-events:none`; }
         const Grid = L.GridLayer.extend({
             createTile(coordinates, done) {
-                const canvas = tiles.canvas(), record = { id, coordinates, canvas, done, failed: false };
+                const canvas = tiles.canvas(), record = { id, coordinates, canvas, done, failed: false, loaded: false };
                 records.set(canvas, record); draw(record);
                 return canvas;
             },
@@ -60,7 +64,15 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
             if (id === 'sentinel' && !hasScenes) return; // Wait for a validated capture.
             (layers.get(id) || add(id)).setOpacity(state.opacity / 100);
         },
-        scenes(scenes, opacity) { remove('sentinel'); hasScenes = scenes.length > 0; states.set('sentinel', { enabled: hasScenes, opacity }); tiles.setScenes(scenes); if (hasScenes && opacity > 0) add('sentinel').setOpacity(opacity / 100); },
+        scenes(scenes, opacity) {
+            hasScenes = scenes.length > 0; states.set('sentinel', { enabled: hasScenes, opacity }); tiles.setScenes(scenes);
+            if (!hasScenes || opacity === 0) { remove('sentinel'); return; }
+            const layer = layers.get('sentinel');
+            // Panning can change the selected pass's scene mosaic. Keep the
+            // loaded canvases attached until each replacement paints in place.
+            if (layer) for (const record of records.values()) if (record.id === 'sentinel') draw(record);
+            (layer || add('sentinel')).setOpacity(opacity / 100);
+        },
         clearSentinel() { remove('sentinel'); hasScenes = false; tiles.setScenes([]); },
         retry(id) {
             const state = states.get(id);

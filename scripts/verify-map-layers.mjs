@@ -111,9 +111,10 @@ try {
             // Failure belongs to the selected older pass. An outgoing Latest
             // request can still reach the interceptor after the picker changes.
             if (imageryMode === 'partial' && url.includes('item=scene_old')) missingImageryUrl ??= url;
-            if (imageryMode === 'hold' && url === missingImageryUrl) await new Promise(resolve => heldImagery.push(resolve));
+            if (imageryMode === 'hold' && url === missingImageryUrl || imageryMode === 'pan-hold' && url.includes('item=scene_pan'))
+                await new Promise(resolve => heldImagery.push(resolve));
             await route.fulfill({ status: imageryMode === 'partial' && url === missingImageryUrl ? 404 : 200, contentType: 'image/png', headers: cors,
-                body: tile(url.includes('scene_old') ? '#315bb0' : '#347d61') });
+                body: tile(url.includes('scene_old') || url.includes('scene_pan_old') ? '#315bb0' : '#347d61') });
         }
     });
     let slopeMode = 'ready', missingSlopeUrl = null; const slopeRequests = new Map(), heldSlope = [];
@@ -242,6 +243,56 @@ try {
         }
         for (const label of ['Slope angle', 'Public lands']) await page.getByRole('checkbox', { name: label, exact: true }).check();
         await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay && layer._tiles).length === 3), { description: 'three independently layered rasters' });
+        // A different scene set from the same pass is normal near a footprint
+        // boundary. Hold replacement imagery after a same-zoom pan: removing
+        // the layer here would visibly expose the native basemap again.
+        await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
+        await page.getByRole('checkbox', { name: 'Public lands', exact: true }).uncheck();
+        const sentinelOpacity = page.getByRole('slider', { name: 'Sentinel-2 (experimental) opacity' });
+        await page.getByRole('button', { name: /^Adjust Sentinel-2/ }).click();
+        await sentinelOpacity.fill('100'); await sentinelOpacity.dispatchEvent('input');
+        const painted = await waitForCondition(async () => countImageColors(await (pathname.includes('MasterMap') ? page.locator('#map') : page.locator('iframe#if')).screenshot(), [[52, 125, 97]]),
+            { description: `loaded imagery before panning ${pathname}`, isReady: counts => counts[0] > 10000 });
+        if (output && cases.length === 0) { await mkdir(output, { recursive: true }); await page.screenshot({ path: path.join(output, 'sentinel-before-pan.png') }); }
+        const originalCapture = catalog[0];
+        catalog[0] = { ...originalCapture, id: 'scene_pan' }; imageryMode = 'pan-hold';
+        await native.evaluate(() => { window.__panBasemap = nativeTiles; mapsPlaceholder.panBy([32, 0], { animate: false }); });
+        await waitForCondition(() => heldImagery.length, { description: 'replacement scene tiles are held after the pan', isReady: count => count > 0 });
+        const during = await countImageColors(await (pathname.includes('MasterMap') ? page.locator('#map') : page.locator('iframe#if')).screenshot(), [[52, 125, 97]]);
+        assert.ok(during[0] >= painted[0] * .8, `panning retains painted imagery while replacements load: ${during[0]} of ${painted[0]} pixels`);
+        if (output && cases.length === 0) await page.screenshot({ path: path.join(output, 'sentinel-pan-pending.png') });
+        assert.equal(await native.evaluate(() => nativeTiles === window.__panBasemap && mapsPlaceholder.hasLayer(nativeTiles)), true, 'pan preserves the native basemap');
+        imageryMode = 'ready'; heldImagery.splice(0).forEach(resolve => resolve());
+        await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-value')?.hidden === false, 'replacement scene tiles finish');
+        catalog[0] = originalCapture;
+        for (const label of ['Slope angle', 'Public lands']) await page.getByRole('checkbox', { name: label, exact: true }).check();
+        await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer._tiles)
+            .every(layer => !layer._loading && Object.values(layer._tiles).every(({ el, loaded }) => loaded && Number(window.getComputedStyle(el).opacity) >= .99))),
+        { description: 'all native rasters finish loading and fading before the pan' });
+        await native.evaluate(() => {
+            const bounds = document.getElementById('map').getBoundingClientRect(), cx = (bounds.left + bounds.right) / 2, cy = (bounds.top + bounds.bottom) / 2;
+            window.__panLayers = Object.values(mapsPlaceholder._layers).filter(layer => layer._tiles).map(layer => ({ layer,
+                tile: Object.values(layer._tiles).map(({ el }) => el).sort((a, b) => {
+                    const distance = el => { const r = el.getBoundingClientRect(); return Math.hypot((r.left + r.right) / 2 - cx, (r.top + r.bottom) / 2 - cy); };
+                    return distance(a) - distance(b);
+                })[0] }));
+            window.__panFades = [];
+            window.__panRoute = nativeRoute.getElement();
+            window.__panObserver = new window.MutationObserver(() => {
+                for (const { layer, tile } of window.__panLayers) if (tile.isConnected && Number(window.getComputedStyle(tile).opacity) < .99) window.__panFades.push(layer.options.pane);
+            });
+            for (const { tile } of window.__panLayers) window.__panObserver.observe(tile, { attributes: true, attributeFilter: ['style'] });
+            mapsPlaceholder.panBy([-16, 16], { animate: false });
+        });
+        await wait(() => ['sentinel', 'slope', 'land'].every(id => document.querySelector(`[data-layer="${id}"] .bpb-layers-value`)?.hidden === false),
+            'all rasters settle after panning');
+        await native.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await native.evaluate(() => window.__panLayers.every(({ layer, tile }) => mapsPlaceholder.hasLayer(layer) && tile.isConnected)), true,
+            'basemap, Sentinel, slope and land retain their painted center tiles');
+        assert.deepEqual(await native.evaluate(() => { window.__panObserver.disconnect(); return window.__panFades; }), [],
+            'already visible native tiles do not fade out when their pixels refresh');
+        assert.equal(await native.evaluate(() => mapsPlaceholder.hasLayer(nativeRoute) && nativeRoute.getElement() === window.__panRoute && window.__panRoute.isConnected), true,
+            'the native route remains attached through raster refreshes');
         await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
         await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
         assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local', 'Tribal']);
@@ -288,6 +339,21 @@ try {
         assert.equal(await page.locator('[data-layer="snotel"]').getAttribute('data-selected'), 'true', 'SNOTEL activation selects its own details');
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: /stations? in view/ }).waitFor();
         assert.ok(await native.locator('.bpb-snotel-marker').count() > 0, 'viewport stations rendered');
+        await page.evaluate(() => {
+            window.__stationPanSettled = false;
+            const settled = event => {
+                const data = event.data;
+                if (event.source === window && event.origin === window.location.origin && data?.__bpbMapLayers && data.dir === 'toPage' && data.type === 'stations') {
+                    window.__stationPanSettled = true; window.removeEventListener('message', settled);
+                }
+            };
+            window.addEventListener('message', settled);
+        });
+        await native.evaluate(() => { window.__panStationMarkers = [...document.querySelectorAll('.bpb-snotel-marker')]; mapsPlaceholder.panBy([2, 0], { animate: false }); });
+        await wait(() => window.__stationPanSettled && document.querySelector('[data-layer="snotel"] .bpb-layers-value')?.hidden === false,
+            'station membership refresh completes after a same-zoom pan');
+        assert.equal(await native.evaluate(() => window.__panStationMarkers.every(marker => marker.isConnected)), true,
+            'unchanged SNOTEL markers remain attached while panning');
         if (cases.length === 0) {
             await native.locator('.bpb-snotel-marker').first().click();
             const link = native.getByRole('link', { name: 'View NRCS snow data', exact: true }); await link.focus();
@@ -535,6 +601,21 @@ try {
     const bluePixels=()=>coloredPixels('blue');
     await waitForCondition(bluePixels,{description:'painted pinned capture in hardware 3D',timeoutMs:30000,isReady:count=>count>1000});
     assert.equal(await capturePicker.inputValue(),older,'pinned pass survives engine handoff');
+    const beforeTerrainPan = await bluePixels(), originalOldCapture = catalog[1];
+    catalog[1] = { ...originalOldCapture, id: 'scene_pan_old' }; imageryMode = 'pan-hold';
+    const drag = await terrain.locator('canvas.maplibregl-canvas').boundingBox();
+    assert.equal(await terrain.locator('canvas.maplibregl-canvas').evaluate(canvas => {
+        const r = canvas.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width * .75, r.top + r.height * .72) === canvas;
+    }), true, 'terrain pan begins on exposed canvas');
+    await page.mouse.move(drag.x + drag.width * .75, drag.y + drag.height * .72);
+    await page.mouse.down(); await page.mouse.move(drag.x + drag.width * .75 - 24, drag.y + drag.height * .72, { steps: 6 }); await page.mouse.up();
+    await waitForCondition(() => heldImagery.length, { description: 'terrain replacement imagery held after dragging', timeoutMs: 30000, isReady: count => count > 0 });
+    const duringTerrainPan = await bluePixels();
+    assert.ok(duringTerrainPan >= beforeTerrainPan * .75, `hardware terrain retains imagery while a new mosaic loads: ${duringTerrainPan} of ${beforeTerrainPan} pixels`);
+    if (output) await page.screenshot({ path: path.join(output, 'sentinel-terrain-pan-pending.png') });
+    imageryMode = 'ready'; heldImagery.splice(0).forEach(resolve => resolve()); catalog[1] = originalOldCapture;
+    await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-value')?.hidden === false, 'terrain replacement imagery finishes');
+    cases.push('native basemap/all raster center tiles and fades remain stable through same-zoom pans on four surfaces; hardware Sentinel retains textures during scene refresh');
     await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).uncheck();
     imageryMode = 'partial'; missingImageryUrl = null;
     await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).check();
