@@ -22,7 +22,7 @@ const waitForCondition = (read, ready, { timeoutMs = 10_000, message = 'capture 
 const resources = createResourceStack();
 let failure;
 const artifacts = process.env.BPB_CAPTURE_FLOW_ARTIFACTS;
-const links = '<a href="/climber/climber.aspx?cid=900001">My Home Page</a><a href="/climber/climberedit.aspx?cid=900001">Edit Account</a>';
+const links = '<div>Logged in: Test Climber | <a href="/climber/climber.aspx?cid=900001">My Home Page</a><a href="/climber/climberedit.aspx?cid=900001">Edit Account</a></div>';
 const gpx = '<?xml version="1.0"?><gpx version="1.1"><metadata><desc>PRIVATE_SOURCE_SENTINEL</desc></metadata>'
     + '<wpt lat="0" lon="0"><ele>130</ele><time>2026-07-01T16:00:00Z</time><name>Summit waypoint</name><desc>PRIVATE_WAYPOINT_SENTINEL</desc></wpt>'
     + '<trk><name>Fixture traverse</name><trkseg>'

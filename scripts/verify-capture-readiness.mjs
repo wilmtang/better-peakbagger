@@ -23,8 +23,8 @@ import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const accountLinks = '<a href="/climber/climber.aspx?cid=77">My Home Page</a>'
-    + '<a href="/climber/climberedit.aspx?cid=77">Edit Account</a>';
+const accountLinks = '<div>Logged in: Test Climber | <a href="/climber/climber.aspx?cid=77">My Home Page</a>'
+    + '<a href="/climber/climberedit.aspx?cid=77">Edit Account</a></div>';
 
 async function fixtureServer(resources, temporaryRoot) {
     const certificate = await createFixtureCertificate({ directory: temporaryRoot });

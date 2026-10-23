@@ -450,7 +450,7 @@ test('an options refresh cannot replace a Buddy change confirmed while its repor
     await send({ phase: 'dispatch', token: lease.token });
     await send({ phase: 'complete', token: lease.token, buddy: true });
     const confirmed = structuredClone(dom.chrome._localStore[buddyCacheKey]);
-    release(pageResponse('<a href="https://www.peakbagger.com/climber/climber.aspx?cid=900001">My Home Page</a>'
+    release(pageResponse('<div>Logged in: Test | <a href="https://www.peakbagger.com/climber/climber.aspx?cid=900001">My Home Page</a></div>'
         + '<h1>Buddy List</h1><table id="RGridView"><tr><th>Climber</th></tr></table>'));
     await waitFor(dom, () => !el(dom, 'favorites-refresh-buddies').disabled
         && /1 buddy.*changed during refresh/.test(el(dom, 'favorites-buddy-status').textContent));

@@ -13,7 +13,7 @@ import { peakbaggerAccount as PeakbaggerAccount } from './peakbagger-account.js'
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 import { fetchPeakbaggerResource } from './peakbagger-request.js';
 
-const VERSION = 2;
+const VERSION = 3;
 const REQUEST_ID = /^[a-z0-9-]{1,80}$/i;
 const BOX_KEYS = Object.freeze(['miny', 'maxy', 'minx', 'maxx']);
 const activeRequests = new Map();
@@ -62,19 +62,17 @@ const accountEvidence = () => {
     if (globalThis.location?.origin !== PEAKBAGGER_ORIGIN) return null;
     const links = [];
     const seen = new Set();
-    for (const anchor of globalThis.document?.querySelectorAll?.('a[href]') || []) {
-        const label = (anchor.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!PeakbaggerAccount.linkPaths[label]) continue;
+    for (const anchor of PeakbaggerAccount.documentLinks(globalThis.document)) {
+        const { label } = anchor;
         let url;
-        try { url = new URL(anchor.getAttribute('href'), globalThis.location.href); }
+        try { url = new URL(anchor.href, globalThis.location.href); }
         catch { continue; }
         const accountLink = PeakbaggerAccount.canonicalAccountLink(label, url.href);
-        if (!accountLink) continue;
+        if (!accountLink) return { pageUrl: globalThis.location.href, links: [] };
         const key = `${label}\n${accountLink.href}`;
         if (seen.has(key)) continue;
         seen.add(key);
         links.push({ label, href: accountLink.href });
-        if (links.length === Object.keys(PeakbaggerAccount.linkPaths).length) break;
     }
     return { pageUrl: globalThis.location.href, links };
 };

@@ -44,7 +44,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
     captureDiagnostics = false,
-    loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
+    loginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=77">My Home Page</a></div>' } = {}) => {
     const values = sessionValues || {};
     const localValues = {};
     let sessionGetCalls = 0;
@@ -1583,7 +1583,7 @@ test('an unsupported tab is rejected before the authoritative settings read', as
 
 test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {
     const accountControl = createHarness({
-        loginHtml: '<a class="account" href="/climber/ClimberEdit.aspx?mode=profile&amp;cid=77">Edit Account</a>'
+        loginHtml: '<div>Logged in: Test | <a class="account" href="/climber/ClimberEdit.aspx?mode=profile&amp;cid=77">Edit Account</a></div>'
     });
     assert.equal((await accountControl.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
 

@@ -7,7 +7,7 @@ import { createFavoriteSource } from '../../src/favorites/favorite-source.js';
 import { makeChromeStub } from '../helpers/load-page.mjs';
 import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.js';
 const harness = (cache, owner = 1) => {
-    const dom = new JSDOM(owner ? `<a href="/climber/climber.aspx?cid=${owner}">My Home Page</a>` : '',
+    const dom = new JSDOM(owner ? `<div>Logged in: Test | <a href="/climber/climber.aspx?cid=${owner}">My Home Page</a></div>` : '',
         { url: 'https://www.peakbagger.com/peak.aspx?pid=1' });
     let config = { favoritesSource: 'buddies' }; const states = [];
     const api = makeChromeStub({}, { bpbBuddyCache: cache });

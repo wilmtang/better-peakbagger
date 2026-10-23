@@ -6,6 +6,7 @@
 
 import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
 import { classifyResponse } from '../peakbagger/peakbagger-response.js';
+import { peakbaggerAccount } from '../peakbagger/peakbagger-account.js';
 export { classifyResponse } from '../peakbagger/peakbagger-response.js';
 
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -24,11 +25,8 @@ const findLink = (row, pathPattern) => Array.from(row.querySelectorAll('a[href]'
 }) || null;
 
 export const ownerClimberId = doc => {
-    const links = Array.from(doc.querySelectorAll('a[href]'));
-    const owner = links.find(anchor => /^My Ascents$/i.test(trim(anchor.textContent)))
-        || links.find(anchor => /^Add Ascent$/i.test(trim(anchor.textContent)))
-        || links.find(anchor => /^My Home Page$/i.test(trim(anchor.textContent)));
-    return owner ? numericParam(owner.href, 'cid', doc.baseURI) : null;
+    const state = peakbaggerAccount.fromDocument(doc);
+    return state.cid === null ? null : Number(state.cid);
 };
 
 const dateFromText = value => {

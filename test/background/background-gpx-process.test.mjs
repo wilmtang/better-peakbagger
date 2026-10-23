@@ -33,7 +33,7 @@ const uploadSelection = generation => ({
 
 const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, beforePeakFetch = null,
     syncGetError = null, beforeSyncGet = null, setTimeoutImpl = setTimeout, faults = {},
-    loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>', loginFailure = null,
+    loginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=77">My Home Page</a></div>', loginFailure = null,
     sessionInitial = {} } = {}) => {
     const values = structuredClone(sessionInitial);
     const localValues = {};

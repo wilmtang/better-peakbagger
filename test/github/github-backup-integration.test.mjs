@@ -51,7 +51,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     local: sharedLocal = null, failLocalGetAfterClear = false, localGetHook = null,
     localSetHook = null, syncReadFailures = [], ignoredSync = false,
     fastAscentOperationTimeout = false, clockNow = null,
-    peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
+    peakbaggerLoginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=900001">My Home Page</a></div>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
     const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});

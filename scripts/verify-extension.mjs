@@ -2155,10 +2155,10 @@ try {
             return route.fulfill({
                 status: 200,
                 contentType: 'text/html',
-                body: `<html>
+                body: `<html><div>Logged in: Test Climber |
                     <a href="/climber/climber.aspx?cid=77">My Home Page</a>
                     <a href="/climber/climberedit.aspx?cid=77">Edit Account</a>
-                </html>`,
+                </div></html>`,
             });
         });
         await context.route(capturePeaksUrl, route => {
@@ -5395,10 +5395,10 @@ try {
                 return route.fulfill({
                     status: 200,
                     contentType: 'text/html',
-                    body: `<html>
+                    body: `<html><div>Logged in: Test Climber |
                         <a href="/climber/climber.aspx?cid=900001">My Home Page</a>
                         <a href="/climber/climberedit.aspx?cid=900001">Edit Account</a>
-                    </html>`,
+                    </div></html>`,
                 });
             });
             await context.route('**/Async/pllbb2.aspx?**', route => {

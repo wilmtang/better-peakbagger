@@ -1,6 +1,6 @@
 # Signed-out Peakbagger users: feature gates and remediation plan
 
-Status: **Audited; implementation proposed. No runtime changes.**
+Status: **Remediation in progress. A2 implemented and verified locally.**
 
 ## Findings first
 
@@ -318,9 +318,40 @@ proof of pending/error transitions, focus, or terrain rendering.
 
 ## Closure ledger
 
+### Live reproduction and implementation evidence — October 23
+
+- Read-only Chrome 156 inspection confirmed the native signed-in navigation on
+  an existing Peakbagger tab. A separate anonymous context loaded the live
+  Rainier page with only the global Log In link; no user session was changed.
+- A hidden full Chrome for Testing 156.0.8078.4 profile loaded the real extension
+  against the live signed-out page. Cloudflare initially challenged it; reusing
+  only the anonymous context's clearance cookie with its exact User-Agent allowed
+  the read. No Peakbagger authentication cookies were transferred. Activating
+  Climbing buddies hid all 30 loaded reports, offered only the manager link in
+  its recovery row, and keyboard Retry left focus on BODY (A1).
+- On that live page, a controlled prior-account cache in the disposable profile
+  disabled Ignore and displayed the generic refresh instruction (A3). No Buddy,
+  ascent, provider-export or GitHub write was performed.
+- The A4 comparison did not establish a false sign-out: fresh first-party and
+  extension account requests were both refused by Cloudflare. Its conditional
+  transport regression still needs deterministic coverage; do not claim a live
+  cookie-isolation reproduction.
+- A2's new regression assertion failed on the original reader with an off-site
+  CID accepted as 17. The shared reader now scopes evidence to native account
+  navigation before the page heading, validates all account links consistently,
+  and rejects conflicting, off-site, duplicate/invalid/non-safe identities.
+  Both HTTPS hosts and the existing profile-mode link variant remain supported;
+  the fresh-page shortcut retains its stricter canonical/corroborated contract.
+  The page helper version was advanced so an already-open page cannot retain
+  the old evidence collector. Synthetic fixtures now include the native bar.
+  Verification: 411 focused tests, targeted ESLint, and hidden real-manifest
+  Chrome verification passed. A2's parser rejection is not a demonstrated
+  successful remote authorization bypass.
+
 ### Fixed and verified
 
-None. A1–A4 are proposed work; audit observations do not close them.
+A2: shared account validation and adapters, locally verified as recorded above.
+A1, A3 and A4 remain in progress.
 
 ### Intentionally not changed
 
@@ -334,6 +365,5 @@ None. A1–A4 are proposed work; audit observations do not close them.
 
 ### Changed but not fully proven
 
-Runtime: none changed. This plan and its screenshots document a limited local
-audit. A4's live reproduction, the broader signed-out browser matrix and the
-transition/renderer/native/live proof gaps listed above remain open.
+A4's live cookie-isolation reproduction, the broader signed-out browser matrix
+and the transition/renderer/native/live proof gaps listed above remain open.

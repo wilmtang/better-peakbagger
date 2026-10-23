@@ -53,7 +53,7 @@ test('the page transport uses the signed-in page fetch policy for its two captur
     });
     const api = dom.window.BPBPeakbaggerPage;
 
-    assert.equal(api.version, 2);
+    assert.equal(api.version, 3);
     assert.equal(Object.isFrozen(api), true);
     assert.equal((await api.request('login-1', LOGIN_URL, 'html')).kind, 'ok');
     assert.equal((await api.request('peaks-1', PEAKS_URL, 'peaks')).kind, 'ok');
@@ -67,11 +67,11 @@ test('the page transport uses the signed-in page fetch policy for its two captur
 
 test('fresh-page account evidence exposes only corroborated navigation links', () => {
     const dom = load({
-        html: `<!doctype html>
+        html: `<!doctype html><div>Logged in: Test Climber |
             <a href="/climber/climber.aspx?cid=77">My Home Page</a>
             <a href="/climber/climberedit.aspx?cid=77">Edit Account</a>
             <a href="/climber/ascentedit.aspx?cid=77">Add Ascent</a>
-            <a href="/climber/climblistc.aspx?cid=77">My Ascents</a>
+            <a href="/climber/climblistc.aspx?cid=77">My Ascents</a></div><h1>Content</h1>
             <a href="/climber/climber.aspx?cid=999">Someone else's profile</a>
             <a href="/other.aspx?cid=77">My Home Page</a>
             <p>Private page text and cid=1234 must not cross the boundary.</p>`,

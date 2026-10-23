@@ -77,7 +77,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const PEAKBAGGER_OPERATION_TIMEOUT_MS = 20_000;
     const PEAKBAGGER_CLEANUP_TIMEOUT_MS = 2_000;
     const PROVIDER_CLEANUP_TIMEOUT_MS = 2_000;
-    const PEAKBAGGER_PAGE_VERSION = 2;
+    const PEAKBAGGER_PAGE_VERSION = 3;
     const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
         code: 'capture-failed',
         message: captureErrorMessage('capture-failed'),
@@ -531,10 +531,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // is not collapsed into the generic unexpected-capture fallback.
             throw failure;
         }
-        const html = response.text;
-        const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html)
-            || /href=["'][^"']*\/climber\/(?:climberedit|ascentedit)\.aspx\?[^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?(?:Edit Account|Add Ascent)/i.exec(html);
-        return match ? match[1] : null;
+        return PeakbaggerAccount.fromHtml(response.text, `${PEAKBAGGER_ORIGIN}/Default.aspx`).cid;
     };
 
     const cancelledCaptureError = () => PublicErrors.exception(

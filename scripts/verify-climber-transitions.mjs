@@ -180,7 +180,7 @@ async function boot(page, origin, variant) {
             return route.fulfill({ contentType: 'text/html', body });
         }
         if (/report\.aspx$/i.test(url.pathname)) return route.fulfill(failRead ? { status: 429, body: 'Too many requests' }
-            : { contentType: 'text/html', body: '<a href="/climber/climber.aspx?cid=900001">My Home Page</a><table id="RGridView"><tr><th>Climber</th></tr></table>' });
+            : { contentType: 'text/html', body: '<div>Logged in: Test Climber | <a href="/climber/climber.aspx?cid=900001">My Home Page</a></div><table id="RGridView"><tr><th>Climber</th></tr></table>' });
         return route.abort();
     });
     await page.goto(`${origin}/climber/climber.aspx?cid=900002`);
