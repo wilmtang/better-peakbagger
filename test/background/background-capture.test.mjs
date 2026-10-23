@@ -5,6 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { IDBFactory } from 'fake-indexeddb';
+import { createGarminStore } from '../../src/garmin/garmin-store.js';
 import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mjs';
 
 // The worker ships as one bundle (gpx-metrics + capture-core + settings-schema
@@ -43,7 +45,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     peakbaggerDocumentState = null,
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
-    captureDiagnostics = false,
+    captureDiagnostics = false, garminDatabase = undefined,
     loginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=77">My Home Page</a></div>' } = {}) => {
     const values = sessionValues || {};
     const localValues = {};
@@ -424,7 +426,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 return { id: windowId, ...structuredClone(patch) };
             },
         },
-        alarms: { create: () => {}, onAlarm: alarmEvent }
+        alarms: { create: () => {}, clear: async () => {}, onAlarm: alarmEvent }
     };
 
     const fetchCalls = [];
@@ -452,6 +454,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const WorkerDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
     const context = vm.createContext({
         browser,
+        indexedDB: garminDatabase,
         fetch,
         URL,
         URLSearchParams,
@@ -4336,4 +4339,35 @@ test('My Ascents owns and releases only its inactive helper, including account f
         assert.equal(h.tabs.has(1), true);
         assert.equal(Object.keys(h.values.bpbPeakbaggerHelperLeases || {}).length, 0);
     }
+});
+
+test('Garmin inbox recreates a private handoff and reuses it without duplicating forms', async () => {
+    const database = new IDBFactory();
+    const harness = createHarness({ garminDatabase: database });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const derived = harness.values.bpbCaptureJobs[1];
+    assert.equal(derived.phase, 'ready');
+    harness.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
+    const store = createGarminStore(database);
+    await store.mutate(state => {
+        state.connection = { owner: '1234', cid: '77', key: null, enabled: false, connectedDate: '2026-10-23' };
+        state.items['123'] = { id: '123', owner: '1234', cid: '77', phase: 'ready', saved: [],
+            summary: { date: '2026-10-23', type: 'hiking' }, analysis: { matches: derived.matches,
+                route: [[{ lat: 0, lon: -0.001, ele: 100, time: 1 }, { lat: 0, lon: 0, ele: 130, time: 2 }, { lat: 0, lon: 0.001, ele: 100, time: 3 }]],
+                waypoints: [], tripName: '', nightsOut: 0, dayStats: [], trackSummary: derived.trackSummary } };
+    });
+    const sender = { tab: { id: 9 }, url: 'chrome-extension://test-extension/options/inbox.html' };
+    const message = { type: 'GARMIN_OPEN_DRAFTS', id: '123', tabId: 9, selectedIds: [7] };
+    const first = await harness.send(message, sender);
+    assert.equal(first.ok, true, JSON.stringify(first)); assert.equal(first.tabIds.length, 1);
+    const draft = harness.values.bpbDraftTabs[first.tabIds[0]];
+    assert.equal(draft.waitForSave, true, 'Even single-summit inbox drafts require verified Save');
+    assert.equal((await store.read()).items['123'].analysis.route.length, 1);
+    const repeated = await harness.send(message, sender);
+    assert.equal(repeated.reused, true); assert.deepEqual(repeated.tabIds, first.tabIds);
+    harness.values.bpbCaptureJobs[9].expiresAt = 0;
+    const expired = await harness.send(message, sender);
+    assert.equal(expired.ok, false); assert.equal(expired.error.code, 'handoff');
+    assert.equal((await store.read()).items['123'].phase, 'ready', 'Durable inbox draft does not expire with delivery');
+    await store.close();
 });

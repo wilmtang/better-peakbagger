@@ -12,11 +12,11 @@ Implementation ledger (updated with each completed unit):
 | Unit | Status / evidence |
 | --- | --- |
 | Strict FIT route adapter | Implemented; 24 focused tests and ESLint pass. Vendored MIT raw reader with bounded streaming projection and compressed-timestamp fix. Legacy protocol 0 and multisport remain explicit unsupported cases. |
-| Device-local credentials, API and discovery | Pending |
-| Durable inbox and short-lived draft handoff | Pending |
-| Settings, inbox and popup UI | Pending |
+| Device-local credentials, API and discovery | Implemented; API/store and discovery tests cover bounded renewal, projection, ID deduplication, resumable scans, rejected-key pause and Manual only. Live profile-identity/browser-permission validation remains open. |
+| Durable inbox and short-lived draft handoff | Implemented; bundled-worker test verifies retained snapshots, single-summit Save verification, handoff reuse and fail-closed expired delivery. Cross-entry receipts reserve toolbar imports too. |
+| Settings, inbox and popup UI | Implemented; 54 popup tests, settings/inbox behavior tests and eight hidden Chrome/Firefox fixture cases. Real unpacked Chrome startup passed. Native permission prompts and live provider integration remain open. |
 | Credential-file export/import | Pending |
-| Browser integration, privacy and documentation | Pending |
+| Browser integration, privacy and documentation | Privacy contract updated; actual Chrome manifest/worker check passed. Firefox extension integration and complete final suite remain pending. |
 | Distribution / business program | External agreement review remains open; no business account application or release is authorized by implementation. |
 
 ## Recommendation

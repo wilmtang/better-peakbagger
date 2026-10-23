@@ -120,7 +120,7 @@ test('theme bootstrap loads before the options stylesheet', async () => {
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
     // The shared panel stylesheet comes first so page rules of equal
     // specificity win, and both come after the theme bootstrap.
-    assert.deepEqual(resources, ['options-head.js', '../css/panel.css', 'options.css']);
+    assert.deepEqual(resources, ['options-head.js', '../css/panel.css', 'options.css', '../css/garmin.css']);
 });
 
 test('Settings photo backup copy distinguishes saved records, newer edits, and unconfirmed status', async () => {

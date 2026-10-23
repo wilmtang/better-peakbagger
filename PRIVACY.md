@@ -41,7 +41,7 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | Permission | Purpose and limits |
 | --- | --- |
 | `storage` | Stores preferences, credentials, caches, drafts, and other extension data as detailed below. |
-| `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. There is no persistent provider host access. |
+| `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. This toolbar path has no persistent provider website access; the separate Garmin API connection is optional. |
 | `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia, onX, AllTrails, or CalTopo after the matching **Send** click to use that site's visible importer. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
 | `alarms` | Removes expired session records every five minutes and schedules automatic backups and the 30-second trailing / 15-minute periodic ignored-list sync checks when enabled. |
@@ -81,6 +81,45 @@ permission to read device location. It covers:
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
 | Peakbagger `localStorage` | Page-specific filter state and the early theme mirror | Remains with the Peakbagger site data. |
+
+## Garmin API activity inbox
+
+Connecting Garmin requests optional access only to
+`https://personal.connectapi.garmin.com/*`. Your personal API key stays in
+extension-origin IndexedDB on this device. It is excluded from browser sync,
+automatic backups, diagnostics and URLs. A manual settings export includes it
+only when **Include saved credentials** is checked; that file is not encrypted.
+Access tokens stay in worker memory and are never exported.
+
+Connection alone does not enable imports. **Enable Garmin drafts** records your
+chosen Peakbagger account and consent to local route processing. Checks run
+while the browser is running, every four hours by default; frequency, recent
+lookback (30 days by default) and full history dates are configurable. Manual
+only disables automatic scans. Full history checks look for older uploads;
+discovery uses activity dates and IDs, not an upload-time watermark.
+
+Garmin sends complete activity summaries and recordings, which can contain
+health and device data. The extension immediately projects summaries to ID,
+owner, activity type and dates, and decodes only route fields from FIT. Raw
+recordings and unwanted fields remain transient in extension memory. Route
+processing waits for a suitable existing Peakbagger session. Summit lookup sends
+small route-corridor boxes to Peakbagger; every lookup must succeed before
+matches appear. Automatic checks do not open or focus provider or Peakbagger tabs.
+
+Pending drafts retain derived ascent values and a privacy-reduced route (up to
+3,000 points) in extension-origin IndexedDB until completed or explicitly removed.
+They have no automatic expiry. No raw FIT/ZIP, arbitrary source XML or fitness
+measurements are persisted. Preparation is limited to 200 activities and 20 MiB;
+capacity errors preserve existing items. Minimal source-ID, dismissal and
+verified-save receipts remain locally to prevent duplicate proposals. They are
+excluded from settings files and sync. Clearing extension data removes the inbox.
+
+**Open selected drafts** creates a fresh 30-minute session handoff. Current
+privacy settings are applied again, and Peakbagger receives newly serialized
+Preview GPX. Save remains manual. An unverified previous handoff blocks automatic
+replacement forms. **Disconnect** deletes the key and optional permission while
+keeping drafts and history. **Delete local Garmin data** also removes those local
+records; neither action deletes Garmin activities or Peakbagger ascents.
 
 ## Activity capture
 

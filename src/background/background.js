@@ -51,6 +51,8 @@ import {
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 import { classifyResponse as classifyPeakbaggerResponse } from '../peakbagger/peakbagger-response.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { createGarminImports, GARMIN_ALARM } from '../garmin/garmin-imports.js';
+import { GarminError } from '../garmin/garmin-api.js';
 
 (() => {
     'use strict';
@@ -1630,7 +1632,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 nightsOut,
                 dayStats,
                 uploadGpx,
-                uploadGpxWithoutTimestamps
+                uploadGpxWithoutTimestamps,
+                reducedRoute: reduced.segments,
+                reducedWaypoints: cleanWaypoints,
             };
         } catch (error) {
             deadline.abort();
@@ -1910,6 +1914,16 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     error: { code: 'unsupported', message: captureErrorMessage('unsupported') },
                 },
             };
+        }
+        if (activity.provider === 'garmin' && globalThis.indexedDB) {
+            const imports = await garminImports.store.read();
+            const current = (await readMap(JOBS_KEY))[tabId];
+            if (imports.items[activity.activityId] || (imports.receipts[activity.activityId]
+                && imports.receipts[activity.activityId].jobId !== current?.id)) {
+                return { kind: 'complete', value: { phase: 'error', error: {
+                    code: 'garmin-inbox-activity', message: 'This Garmin activity is already in your import history. Open the activity inbox to review its drafts.',
+                } } };
+            }
         }
         let capturePreferences;
         try {
@@ -2205,7 +2219,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             previewStarted: false,
             applyLease: null,
             complete: false,
-            waitForSave: selection.matches.length > 1,
+            waitForSave: !!job.inboxActivityId || (!!globalThis.indexedDB && job.provider === 'garmin') || selection.matches.length > 1,
             saved: false,
             dayStatsPending: false,
             focusOnReady,
@@ -2574,6 +2588,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             );
             if (!opening.matches.length) {
                 throw PublicErrors.exception('no-selection', 'Select at least one detected peak.');
+            }
+            if (job.provider === 'garmin' && !job.inboxActivityId && globalThis.indexedDB) {
+                await garminImports.reserveCapture(job);
             }
 
             const liveByPeak = new Map(existingForJob.map(draft => [String(draft.pid), draft]));
@@ -3292,6 +3309,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 ])];
                 if (draft.tripInfo) jobs[draft.sourceTabId].savedTripId = tripId;
             });
+            if (job.inboxActivityId) await garminImports.saved(job.inboxActivityId, String(draft.pid), String(message.aid), job.id, String(job.cid));
+            else if (job.provider === 'garmin' && globalThis.indexedDB) await garminImports.captureSaved(job, String(draft.pid), String(message.aid));
             const next = firstPendingDraft(await readMap(DRAFTS_KEY), job.id);
             if (next) {
                 // The waiting form predates trip creation. Reload its native
@@ -3427,6 +3446,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const isExtensionPage = createPackagedPageMatcher(ext, [
         'popup/popup.html', 'options/options.html', 'options/favorites.html',
         'options/drafts.html', 'photos/photos.html',
+        'options/inbox.html',
     ]);
     const isPopupPage = createPackagedPageMatcher(ext, ['popup/popup.html']);
     const bcLandRoutes = createBCLandRoutes({ ext, isPeakbaggerSender,
@@ -3538,6 +3558,78 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         isPeakbaggerSender,
         isExtensionPage: createPackagedPageMatcher(ext, ['options/drafts.html']),
         mutateMap,
+    });
+    // Imports reuse existing authenticated Peakbagger tabs only. An alarm may
+    // not manufacture the activeTab gesture or open/focus a helper window.
+    const garminBinding = async expectedCid => {
+        await ensurePeakbaggerRequestsAllowed();
+        const candidates = (await ext.tabs.query({})).filter(canonicalPeakbaggerTab);
+        for (const tab of candidates) {
+            try {
+                await ensurePeakbaggerPage(tab.id);
+                const request = (url, options) => schedulePeakbaggerRequest(
+                    (target, init) => requestThroughPeakbaggerPage(tab.id, target, init), url, options,
+                );
+                const cid = await peakbaggerLogin({ request });
+                if (cid && (!expectedCid || String(cid) === String(expectedCid))) return { cid, request, tabId: tab.id };
+            } catch { /* leave the durable item waiting for a usable page */ }
+        }
+        throw new GarminError('peakbagger');
+    };
+    const garminImports = createGarminImports({
+        ext, settings: Settings, binding: garminBinding,
+        prepare: async (item, route, context, signal) => {
+            const preferences = await readCapturePreferences();
+            const analysis = await analyzeTrack({ ...route,
+                metadata: { displayedLocalStart: item.summary.localStart.replace(' ', 'T'),
+                    utcOffsetMinutes: item.summary.utcStart
+                        ? Math.round((Date.parse(`${item.summary.localStart.replace(' ', 'T')}Z`) - Date.parse(`${item.summary.utcStart.replace(' ', 'T')}Z`)) / 60000) : undefined },
+                capturePreferences: preferences, peakbaggerRequest: context.request, signal });
+            if (analysis.status !== 'ready') return { phase: analysis.status, analysis: null };
+            // Rebuild Preview XML only at handoff; persist narrow reduced fields.
+            const reduced = analysis.reducedRoute.map(segment => segment.map(point => ({
+                lat: point.lat, lon: point.lon, ele: point.ele,
+                time: preferences.removeGpxTimestamps ? null : point.time,
+            })));
+            return { analysis: { matches: analysis.matches, route: reduced,
+                waypoints: analysis.reducedWaypoints, trackSummary: analysis.trackSummary,
+                tripName: analysis.tripName, nightsOut: analysis.nightsOut, dayStats: analysis.dayStats } };
+        },
+        openDrafts: async (message, sender) => {
+            const state = await garminImports.store.read(); const item = state.items[message.id];
+            if (!item?.analysis || !item.cid) throw new Error('This activity is not ready.');
+            await garminBinding(item.cid);
+            const tabId = sender.tab?.id ?? Number(message.tabId);
+            const source = await ext.tabs.get(tabId);
+            if (!createPackagedPageMatcher(ext, ['options/inbox.html'])({ ...sender, url: source.url })) throw new Error('Invalid inbox tab.');
+            return serializeLifecycle(tabId, async () => {
+                const jobs = await readMap(JOBS_KEY); const existing = jobs[tabId];
+                if (item.handoff) {
+                    if (!isFresh(existing) || existing.id !== item.handoff.jobId) throw new GarminError('handoff');
+                    return { ok: true, ...await openDraftsTransaction({ ...message, tabId }, tabId) };
+                }
+                if (existing && (await inspectRecordedDrafts(existing.id, await readMap(DRAFTS_KEY))).live.length) throw new Error('Finish reviewing the previous activity’s draft forms first.');
+                const preferences = await readCapturePreferences();
+                const analysis = item.analysis;
+                const matches = analysis.matches.filter(match => !item.saved.includes(String(match.id)));
+                const id = makeId();
+                await garminImports.store.mutate(current => {
+                    if (current.epoch !== state.epoch || current.items[item.id]?.handoff) throw new Error('The inbox changed.');
+                    current.items[item.id].handoff = { jobId: id, tabId };
+                });
+                await installLifecycleJob({ id, sourceTabId: tabId, provider: 'garmin', activityId: item.id,
+                    inboxActivityId: item.id, cid: item.cid, phase: 'ready', createdAt: now(), updatedAt: now(), expiresAt: now() + JOB_TTL_MS,
+                    matches, selectedIds: [], capturePreferences: preferences, tripName: analysis.tripName,
+                    nightsOut: analysis.nightsOut, dayStats: analysis.dayStats, trackSummary: analysis.trackSummary });
+                const waypoints = preferences.retainWaypoints ? Core.sanitizeWaypoints(analysis.waypoints) : [];
+                const route = Core.sanitizeTrack(analysis.route).segments;
+                if (route.reduce((n, segment) => n + segment.length, 0) + waypoints.length > Core.MAX_UPLOAD_POINTS) throw new Error('Invalid retained route.');
+                const upload = Core.serializeUploadGpx(route, waypoints);
+                await installCapturePayload(tabId, id, upload, {},
+                    preferences.removeGpxTimestamps ? Core.serializeUploadGpx(route, waypoints, { includeTimestamps: false }) : null);
+                return { ok: true, ...await openDraftsTransaction({ ...message, tabId }, tabId) };
+            });
+        },
     });
     const settingsFileRoutes = createSettingsFileRoutes({
         ext,
@@ -3698,6 +3790,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
+            if (typeof type === 'string' && type.startsWith('GARMIN_')) return garminImports.handle(message, sender);
             const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? bcLandRoutes.handlers[type] : null;
             if (bcLandHandler) return bcLandHandler(message, sender);
             if (captureControlTypes.has(type) && !isPopupPage(sender)) {
@@ -3906,6 +3999,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     // debounce. Nudging favorites here makes enabling its toggle create the
     // first backup; equal signatures make other settings changes free.
     Settings.subscribe(githubRoutes.onSettingsChanged);
+    Settings.subscribe(() => { if (globalThis.indexedDB) runDetachedCleanup('Garmin preferences', garminImports.settingsChanged); });
+    if (globalThis.indexedDB) runDetachedCleanup('Garmin startup', garminImports.reconcile);
+    ext.permissions?.onRemoved?.addListener(() => {
+        if (globalThis.indexedDB) runDetachedCleanup('Garmin permission change', garminImports.reconcile);
+    });
     runDetachedCleanup('capture payload recovery', reconcileCapturePayloads);
     runDetachedCleanup('temporary Peakbagger tab recovery', () =>
         cleanupExpiredPeakbaggerHelperLeases(now()));
@@ -3921,6 +4019,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     if (ext.alarms) {
         ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
         ext.alarms.onAlarm.addListener(alarm => {
+            if (alarm.name === GARMIN_ALARM) { void garminImports.check(); return; }
             if (alarm.name === CLEANUP_ALARM) {
                 runDetachedCleanup('expired capture cleanup', cleanup);
             }

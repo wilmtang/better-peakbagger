@@ -149,3 +149,12 @@ button.primary, button.secondary { width: 100%; }
 .timestamp-choice[hidden] { display: none !important; }
 .timestamp-choice input { margin: 3px 0 0; flex: 0 0 auto; }
 .timestamp-choice small { display: block; font-size: 12px; color: var(--sub); }
+/* Persistent inbox navigation stays anchored above capture progress. */
+.inbox-entry { margin:16px 0; }
+#activity-inbox { width:100%; min-height:48px; display:flex; align-items:center; gap:12px; }
+#activity-inbox>span:first-child { flex:1; text-align:left; }
+#inbox-count { min-width:28px; text-align:center; font-variant-numeric:tabular-nums; }
+.inbox-feedback { display:grid; font-size:11px; line-height:1.5; margin-top:6px; overflow-wrap:break-word; }
+.inbox-feedback>span { grid-area:1/1; }
+.inbox-feedback>span[aria-hidden] { visibility:hidden; pointer-events:none; }
+#activity-inbox[aria-disabled=true] { opacity:.6; cursor:default; }

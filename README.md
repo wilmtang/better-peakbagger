@@ -280,17 +280,15 @@ never solves CAPTCHAs, rotates identities or proxies, or evades blocks.
 
 ### Why doesn't Better Peakbagger update Peakbagger ascents automatically?
 
-There is no safe, reliable hook for a small independent extension to receive new
-activities automatically. [Strava requires a subscription][strava-api] to
-create an API application, even when the developer reads only their own data.
-The [Garmin Connect Developer Program][garmin-api] is limited to approved
-business and enterprise integrations. An unattended workaround would require
-brittle login automation and another copy of sensitive activity data.
+Garmin users can connect a personal API key in **Settings → Capture & reports**
+to prepare activities in the **Activity inbox**. Enable imports explicitly,
+choose automatic checks or Manual only, then review the detected peaks and open
+drafts. Pending drafts stay on this device until completed or removed. Keys can
+expire; reconnect from Settings when Garmin rejects a key.
 
-Better Peakbagger instead works through the provider page you already opened
-and signed in to. A toolbar click grants temporary access to that one activity;
-the extension never receives your password or keeps permanent Garmin or Strava
-access.
+The Garmin connection uses the optional Personal API permission. The toolbar
+workflow still captures an activity from its signed-in provider page. Strava
+continues to use that explicit toolbar workflow.
 
 Summit matching is also evidence, not certainty, and an ascent log is your
 record. Better Peakbagger does the repetitive work, then stops before Save so
@@ -329,7 +327,7 @@ both before opening drafts, and review every draft before Save.
 ### Which third-party services can receive my information?
 
 Better Peakbagger has no developer data server, account, analytics, advertising,
-or telemetry. Garmin or Strava is accessed only after your toolbar click, and
+or telemetry. Provider-page capture starts only after your explicit capture action, and
 the raw activity GPX is processed on that page rather than sent to the
 developer.
 

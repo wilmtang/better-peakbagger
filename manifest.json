@@ -23,6 +23,7 @@
     "https://www.peakbagger.com/*"
   ],
   "optional_host_permissions": [
+    "https://personal.connectapi.garmin.com/*",
     "https://maps.gov.bc.ca/*",
     "https://github.com/*",
     "https://api.github.com/*",

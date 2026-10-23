@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const FAIL_SOFT = Object.freeze({
+    'options/inbox.js': [{ count: 1, kind: 'display', reason: 'show the optional timestamp choice; the worker revalidates authoritative capture privacy' }],
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
@@ -33,6 +34,8 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
+    'options/garmin.js': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
+    'src/garmin/garmin-imports.js': [{ count: 4, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],
     'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
     'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
     'src/maps/map-layer-bridge.js': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before viewport catalog requests' }],

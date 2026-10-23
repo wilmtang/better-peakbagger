@@ -4,6 +4,7 @@
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
 import { captureErrorPolicy } from '../src/capture/capture-error-policy.js';
 import { matchLabel } from '../src/capture/match-confidence.js';
+import { providerFromUrl } from '../src/capture/provider-url.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
@@ -213,6 +214,11 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     ]);
     const errorState = error => {
         const code = error?.code || 'capture-failed';
+        if (code === 'garmin-inbox-activity') {
+            stateCard('Activity already imported', error.message, { action: { label: 'Open activity inbox', primary: true,
+                onClick: () => document.getElementById('activity-inbox')?.click() } });
+            return;
+        }
         const policy = captureErrorPolicy(code);
         const action = actionForRecovery(policy.recovery);
         let detail = dynamicErrorMessages.has(code) && error?.message
@@ -618,6 +624,37 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             errorState({ code: 'unsupported', message: 'No active browser tab is available.' });
             return;
         }
-        beginCapture(false);
+        // Opening the popup reads existing work only. Starting a provider read
+        // belongs to the explicit Capture this activity gesture.
+        void ext.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: activeTab.id }).then(job => {
+            if (job?.phase) { render(job); if (!CapturePhases.isTerminal(job.phase)) pollTimer = setTimeout(() => void poll(), 450); }
+            else if (activeTab.url && !providerFromUrl(activeTab.url)) errorState({ code: 'unsupported' });
+            else stateCard('Prepare this activity', 'Open a Garmin or Strava activity to prepare summit drafts.', {
+                action: { label: 'Capture this activity', primary: true, onClick: () => beginCapture(false) },
+            });
+        }).catch(() => stateCard('Couldn’t read capture status', 'Try opening the popup again.'));
     });
+    const inboxButton = document.getElementById('activity-inbox');
+    const inboxStatus = document.getElementById('activity-inbox-status');
+    let openingInbox = false;
+    inboxButton?.addEventListener('click', async () => {
+        if (openingInbox) return; openingInbox = true;
+        inboxButton.setAttribute('aria-disabled', 'true'); inboxButton.setAttribute('aria-busy', 'true'); inboxStatus.textContent = 'Opening your activity inbox…';
+        try {
+            const result = await ext.runtime.sendMessage({ type: 'GARMIN_INBOX_OPEN' });
+            if (!result?.ok) throw new Error();
+            window.close();
+        } catch { inboxStatus.textContent = 'Couldn’t open inbox. Try again.'; }
+        finally { openingInbox = false; inboxButton.removeAttribute('aria-disabled'); inboxButton.removeAttribute('aria-busy'); }
+    });
+    void ext.runtime.sendMessage({ type: 'GARMIN_SUMMARY' }).then(inboxSummary => {
+        if (!inboxSummary?.ok || openingInbox) return;
+        const count = inboxSummary.pending;
+        if (!Number.isInteger(count) || count < 0) return;
+        document.getElementById('inbox-count').textContent = count > 99 ? '99+' : count ? String(count) : '';
+        inboxButton.setAttribute('aria-label', `Activity inbox, ${count} pending activities`);
+        inboxStatus.textContent = inboxSummary.error?.code === 'key-rejected' ? 'Garmin needs a new key. Open inbox to reconnect.'
+            : !inboxSummary.configured ? 'Connect Garmin to import your activities.' : inboxSummary.manual
+                ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
+    }).catch(() => {});
 })();

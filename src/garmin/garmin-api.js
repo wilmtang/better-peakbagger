@@ -16,6 +16,9 @@ export class GarminError extends Error {
             response: 'Garmin returned an unexpected response. Try again later.',
             cancelled: 'Garmin checking was cancelled.',
             capacity: 'Your activity inbox is full. Review or remove activities to make room.',
+            peakbagger: 'Open Peakbagger, sign in to your selected climber, then try again.',
+            handoff: 'Review the previous draft forms and saved ascents before continuing. Your activity stays in the inbox.',
+            duplicate: 'This activity is already in your import history. Review it in the activity inbox.',
         })[code] || 'Garmin could not be checked. Try again.');
         this.name = 'GarminError'; this.code = code; this.retryAt = retryAt;
     }

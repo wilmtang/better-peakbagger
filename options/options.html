@@ -9,6 +9,7 @@
     <script src="options-head.js"></script>
     <link rel="stylesheet" href="../css/panel.css">
     <link rel="stylesheet" href="options.css">
+    <link rel="stylesheet" href="../css/garmin.css">
 </head>
 <body>
     <nav class="side-nav" aria-label="Settings sections">
@@ -205,6 +206,7 @@
 
         <section id="capture" class="settings-section" aria-labelledby="capture-settings-heading">
             <h2 class="section-title" id="capture-settings-heading">Capture &amp; reports</h2>
+            <div id="capture-garmin" class="subsection" data-garmin-settings></div>
 
             <div class="subsection" id="capture-gpx" role="group" aria-labelledby="capture-gpx-heading">
                 <h3 class="subsection-title" id="capture-gpx-heading">GPX capture</h3>
@@ -798,5 +800,6 @@
     </main>
 
     <script src="options.js"></script>
+    <script src="garmin.js"></script>
 </body>
 </html>

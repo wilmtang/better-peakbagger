@@ -16,6 +16,14 @@ const waitFor = async condition => {
     }
 };
 
+// Existing capture-path scenarios now enter through the explicit user gesture.
+const startIfOffered = async dom => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const action = [...dom.window.document.querySelectorAll('#state button')]
+        .find(element => element.textContent === 'Capture this activity');
+    action?.click();
+};
+
 test('popup stops spinner motion when the user requests reduced motion', () => {
     assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{[^}]*\.spinner\s*{[^}]*animation:\s*none/s);
 });
@@ -94,6 +102,7 @@ test('popup explains both match class and confidence percentage', async () => {
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     await new Promise(resolve => setTimeout(resolve, 30));
 
     assert.deepEqual(
@@ -137,6 +146,7 @@ const loadPopupWithUnits = async (units, overrides = {}) => {
         }
     };
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => dom.window.document.querySelector('.peak-evidence'));
     return dom;
 };
@@ -176,7 +186,7 @@ test('popup resolves auto units without a page to sniff, and never mixes systems
     dom.window.close();
 });
 
-test('popup starts admission before units resolve and delays the first result paint', async () => {
+test('popup reads cached results before units resolve and delays the first result paint', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
@@ -203,7 +213,8 @@ test('popup starts admission before units resolve and delays the first result pa
     };
 
     dom.window.eval(source);
-    await waitFor(() => messages.some(message => message.type === 'CAPTURE_START'));
+    await startIfOffered(dom);
+    await waitFor(() => messages.some(message => message.type === 'CAPTURE_STATUS'));
     assert.equal(dom.window.document.querySelector('.peak-evidence'), null,
         'a fast worker result must not flash the fallback unit system');
     assert.match(dom.window.document.getElementById('state').textContent, /Loading your display units/);
@@ -211,11 +222,7 @@ test('popup starts admission before units resolve and delays the first result pa
     resolveSettings({ bpbSettings: { units: 'metric' } });
     await waitFor(() => dom.window.document.querySelector('.peak-evidence'));
     assert.match(dom.window.document.querySelector('.peak-evidence').textContent, /^8 m from summit/);
-    assert.equal(diagnostics.length, 1);
-    assert.equal(diagnostics[0][0], 'Better Peakbagger popup diagnostics');
-    assert.equal(diagnostics[0][1].outcome, 'ready');
-    assert.ok(Number.isFinite(diagnostics[0][1].popupToReadyMs));
-    assert.doesNotMatch(JSON.stringify(diagnostics[0][1]), /garmin|strava|Unit Peak|activity|coordinates/i);
+    assert.equal(diagnostics.length, 0, 'Reading cached results is not a new capture admission');
     dom.window.close();
 });
 
@@ -251,6 +258,7 @@ test('popup discards the cached GPX before offering a fresh capture', async () =
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => !dom.window.document.getElementById('clear-capture').hidden);
     dom.window.document.getElementById('clear-capture').click();
     await waitFor(() => /Captured track data deleted/.test(dom.window.document.getElementById('state').textContent));
@@ -261,9 +269,9 @@ test('popup discards the cached GPX before offering a fresh capture', async () =
         .find(element => element.textContent === 'Capture again');
     assert.ok(captureAgain);
     captureAgain.click();
-    await waitFor(() => captureStarts === 2 && !dom.window.document.getElementById('results').hidden);
+    await waitFor(() => captureStarts === 1 && !dom.window.document.getElementById('results').hidden);
     await new Promise(resolve => setTimeout(resolve, 30));
-    assert.equal(captureStarts, 2);
+    assert.equal(captureStarts, 1);
     dom.window.close();
 });
 
@@ -291,6 +299,7 @@ test('popup presents a trackless manual activity as a neutral retryable state', 
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => /No GPS track on this activity/.test(dom.window.document.getElementById('state').textContent));
 
     const card = dom.window.document.querySelector('.state-card');
@@ -301,8 +310,8 @@ test('popup presents a trackless manual activity as a neutral retryable state', 
     assert.ok(checkAgain);
     assert.equal(checkAgain.classList.contains('primary'), true);
     checkAgain.click();
-    await waitFor(() => captureStarts.length === 2);
-    assert.equal(captureStarts[1].force, true);
+    await waitFor(() => captureStarts.length === 1);
+    assert.equal(captureStarts[0].force, true);
     await new Promise(resolve => setTimeout(resolve, 30));
     dom.window.close();
 });
@@ -330,6 +339,7 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => /No confident summit matches/.test(dom.window.document.getElementById('state').textContent));
 
     const card = dom.window.document.querySelector('.state-card');
@@ -339,8 +349,8 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
     assert.ok(checkAgain);
     assert.equal(checkAgain.classList.contains('primary'), true);
     checkAgain.click();
-    await waitFor(() => captureStarts.length === 2);
-    assert.equal(captureStarts[1].force, true);
+    await waitFor(() => captureStarts.length === 1);
+    assert.equal(captureStarts[0].force, true);
     await new Promise(resolve => setTimeout(resolve, 30));
     dom.window.close();
 });
@@ -384,6 +394,7 @@ test('popup locks the selection in the same turn the drafts open', async () => {
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const openButton = dom.window.document.getElementById('open-drafts');
     const lockHint = dom.window.document.getElementById('selection-lock-hint');
     await waitFor(() => openButton.textContent === 'Open 2 drafts');
@@ -436,6 +447,7 @@ test('popup keeps a persisted opening generation visibly locked', async () => {
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Opening drafts…');
     assert.equal(openButton.getAttribute('aria-disabled'), 'true');
@@ -474,6 +486,7 @@ test('popup reports a grouping failure in the status line, not on the primary bu
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const openButton = dom.window.document.getElementById('open-drafts');
     const openNote = dom.window.document.getElementById('open-note');
     await waitFor(() => openButton.textContent === 'Open 1 draft');
@@ -521,6 +534,7 @@ test('popup locks an opened selection and keeps its existing drafts discoverable
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Show opened drafts');
     assert.equal(openButton.disabled, false);
@@ -566,6 +580,7 @@ test('popup keeps previewed drafts reachable for manual review and Save', async 
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Show opened drafts');
     assert.equal(openButton.disabled, false);
@@ -615,6 +630,7 @@ test('popup explains when every previewed draft tab is gone and offers recovery'
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Show opened drafts');
     openButton.click();
@@ -652,6 +668,7 @@ test('popup restores the singular draft label after opening fails', async () => 
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Open 1 draft');
     openButton.click();
@@ -703,6 +720,7 @@ test('popup rides out a transient poll failure instead of declaring the capture 
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const state = dom.window.document.getElementById('state');
     await waitFor(() => statusCalls >= 3);
     assert.doesNotMatch(state.textContent, /Capture stopped/,
@@ -729,11 +747,13 @@ test('popup gives up on a sustained poll outage with recoverable, plain copy', a
         nativeSetTimeout(callback, delay === 450 ? 3 : delay, ...args);
     dom.window.console = { ...dom.window.console, warn: () => {} };
     const starts = [];
+    let initialStatus = true;
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
             sendMessage: async message => {
                 if (message.type === 'CAPTURE_STATUS') {
+                    if (initialStatus) { initialStatus = false; return null; }
                     throw new Error('Could not establish connection. Receiving end does not exist.');
                 }
                 if (message.type === 'CAPTURE_START') {
@@ -747,6 +767,7 @@ test('popup gives up on a sustained poll outage with recoverable, plain copy', a
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const state = dom.window.document.getElementById('state');
     await waitFor(() => /Couldn’t reach the extension/.test(state.textContent));
     assert.match(state.textContent, /The capture may still be running/);
@@ -792,6 +813,7 @@ test('popup stops status polling when capture finishes without storing a job', a
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => /Open a Garmin Connect or Strava activity/.test(
         dom.window.document.getElementById('state').textContent));
     await new Promise(resolve => setTimeout(resolve, 20));
@@ -834,6 +856,7 @@ test('popup names each capture stage and shows bounded summit-area progress', as
             },
         };
         dom.window.eval(source);
+        await startIfOffered(dom);
         const state = dom.window.document.getElementById('state');
         await waitFor(() => state.textContent.includes(title));
         assert.match(state.textContent, new RegExp(detail));
@@ -860,6 +883,7 @@ test('popup shows a neutral unsupported-page state with discoverable Settings', 
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => /Open an activity to begin/.test(dom.window.document.getElementById('state').textContent));
 
     const card = dom.window.document.querySelector('.state-card');
@@ -908,6 +932,7 @@ test('popup turns a Peakbagger human check into a direct recovery flow', async (
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const state = dom.window.document.getElementById('state');
     await waitFor(() => /Peakbagger needs a human check/.test(state.textContent));
 
@@ -954,6 +979,7 @@ test('popup focuses the exact preserved Peakbagger challenge instead of opening 
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     const state = dom.window.document.getElementById('state');
     await waitFor(() => /Peakbagger needs a human check/.test(state.textContent));
     state.querySelector('button').click();
@@ -1005,6 +1031,7 @@ test('popup names Peakbagger transport failures and offers direct recovery', asy
         };
 
         dom.window.eval(source);
+        await startIfOffered(dom);
         const state = dom.window.document.getElementById('state');
         await waitFor(() => state.textContent.includes(item.message));
 
@@ -1089,6 +1116,7 @@ test('popup recovery actions match the shared capture error policy', async t => 
             };
 
             dom.window.eval(source);
+            await startIfOffered(dom);
             const state = dom.window.document.getElementById('state');
             await waitFor(() => state.textContent.includes(item.title));
             const actions = [...state.querySelectorAll('button')];
@@ -1141,7 +1169,7 @@ test('export recovery reopens only the captured provider activity and preserves 
                     windowId: 4, index: 3,
                 }]);
                 assert.deepEqual(destructive, [], 'the source may contain unsaved notes');
-                assert.equal(starts.length, 1, 'reopening does not export GPS without another toolbar gesture');
+                assert.equal(starts.length, 0, 'reopening cached failure does not start another capture');
                 job.activityId = '777?PRIVATE_QUERY';
                 state.querySelector('button').click();
                 assert.equal(created.length, 1, 'unvalidated activity URLs must not be opened');
@@ -1164,7 +1192,7 @@ test('popup can cancel an in-progress capture without retaining track data', asy
             sendMessage: message => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START') return new Promise(resolve => { finishStart = resolve; });
-                if (message.type === 'CAPTURE_STATUS') return Promise.resolve({ phase: 'checking-peakbagger', provider: 'strava' });
+                if (message.type === 'CAPTURE_STATUS') return Promise.resolve(messages.filter(m => m.type === 'CAPTURE_STATUS').length === 1 ? null : { phase: 'checking-peakbagger', provider: 'strava' });
                 if (message.type === 'CAPTURE_CANCEL') return Promise.resolve({ ok: true, cancelled: true, job: null });
                 return Promise.resolve(null);
             }
@@ -1172,6 +1200,7 @@ test('popup can cancel an in-progress capture without retaining track data', asy
     };
 
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => Array.from(dom.window.document.querySelectorAll('#state button'))
         .some(button => button.textContent === 'Cancel'));
     Array.from(dom.window.document.querySelectorAll('#state button'))
@@ -1206,14 +1235,15 @@ for (const obsoleteReply of ['progress', 'failure']) {
             tabs: { query: async () => [{ id: 9 }] },
             runtime: { sendMessage: message => {
                 if (message.type === 'CAPTURE_START') return start;
-                if (message.type === 'CAPTURE_STATUS') return ++polls === 1
+                if (message.type === 'CAPTURE_STATUS') return ++polls === 1 ? Promise.resolve(null) : polls === 2
                     ? Promise.resolve(progress) : status;
                 return Promise.resolve({ ok: true });
             } },
         };
         dom.window.eval(source);
-        await waitFor(() => polls === 2);
-        assert.equal(polls, 2);
+        await startIfOffered(dom);
+        await waitFor(() => polls === 3);
+        assert.equal(polls, 3);
         [...dom.window.document.querySelectorAll('#state button')]
             .find(button => button.textContent === 'Cancel').click();
         await waitFor(() => /Capture cancelled/.test(stateText(dom)));
@@ -1246,6 +1276,7 @@ for (const action of ['clear', 'open']) {
             } },
         };
         dom.window.eval(source);
+        await startIfOffered(dom);
         const doc = dom.window.document;
         await waitFor(() => doc.querySelector('.peak-row'));
         doc.getElementById(action === 'clear' ? 'clear-capture' : 'open-drafts').click();
@@ -1426,6 +1457,7 @@ test('capture progress keeps the same focused Cancel button across status polls'
     const job = () => ({ phase: 'searching-summits', provider: 'garmin', progress: { completed: completed++, total: 10 } });
     dom.window.chrome = { tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async () => job() } };
     dom.window.eval(source);
+    await startIfOffered(dom);
     await waitFor(() => tick && dom.window.document.querySelector('#state button'));
     const cancel = dom.window.document.querySelector('#state button');
     cancel.focus(); tick();
@@ -1446,4 +1478,23 @@ test('a failed capture deletion preserves the current summit selection', async t
     doc.getElementById('clear-capture').click();
     await waitFor(() => !doc.getElementById('open-note').hidden);
     assert.deepEqual([...doc.querySelectorAll('#peak-list input:checked')].map(input => input.value), ['2']);
+});
+
+test('opening popup and inbox never starts a capture', async () => {
+    const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    const messages = [];
+    dom.window.chrome = { tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async message => {
+        messages.push(message);
+        if (message.type === 'CAPTURE_STATUS') return null;
+        if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 3 };
+        if (message.type === 'GARMIN_INBOX_OPEN') return { ok: false };
+        return { ok: true };
+    } } };
+    dom.window.eval(source);
+    await waitFor(() => dom.window.document.getElementById('inbox-count').textContent === '3');
+    assert.equal(messages.filter(m => m.type === 'CAPTURE_START').length, 0);
+    dom.window.document.getElementById('activity-inbox').click();
+    await waitFor(() => /Couldn’t open inbox/.test(dom.window.document.getElementById('activity-inbox-status').textContent));
+    assert.equal(messages.filter(m => m.type === 'CAPTURE_START').length, 0);
+    dom.window.close();
 });

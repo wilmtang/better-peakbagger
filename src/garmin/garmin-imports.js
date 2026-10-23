@@ -85,6 +85,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         return { configured: !!connection?.key, enabled: connection?.enabled === true, cid: connection?.cid || null,
             connectedDate: connection?.connectedDate || today(), checking: !!running, pending: items.length,
             error: state.error, lastCheck: state.lastCheck, lastFull: state.lastFull, historyIncomplete: !!state.scan,
+            nextCheck: prefs.garminCheckHours ? Math.max(state.retryAt || 0, state.lastCheck + prefs.garminCheckHours * 3600000) : null,
             manual: prefs.garminCheckHours === 0, ...(includeItems ? { items } : {}) };
     };
     const runCheck = async full => {
@@ -198,12 +199,29 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             return { ok: true };
         },
         GARMIN_RETRY: async message => {
-            await store.mutate(state => { const item = state.items[message.id]; if (item && !item.handoff) { item.phase = 'waiting'; item.retryAt = 0; } });
+            await store.mutate(state => { const item = state.items[message.id];
+                if (item?.handoff) throw new Error('Review the previous draft forms before refreshing this activity.');
+                if (item) { item.phase = 'waiting'; item.retryAt = 0; } });
             void check(); return { ok: true };
         },
         GARMIN_OPEN_DRAFTS: (message, sender) => openDrafts(message, sender),
     };
     return { store, connect, disconnect, check, reconcile, snapshot, settingsChanged,
+        async reserveCapture(job) {
+            await store.mutate(state => {
+                const receipt = state.receipts[job.activityId];
+                if (state.items[job.activityId] || (receipt && receipt.jobId !== job.id)) throw new GarminError('duplicate');
+                state.receipts[job.activityId] ||= { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {} };
+            });
+        },
+        async captureSaved(job, peakId, aid) {
+            await store.mutate(state => {
+                const receipt = state.receipts[job.activityId];
+                if (receipt?.jobId !== job.id || String(receipt.cid) !== String(job.cid)) return;
+                receipt.peaks[peakId] = aid;
+                receipt.complete = job.selectedIds.every(id => receipt.peaks[String(id)]);
+            });
+        },
         async handle(message, sender) {
             if (!Object.hasOwn(handlers, message?.type)) return null;
             const navigation = ['GARMIN_SUMMARY', 'GARMIN_INBOX_OPEN'].includes(message.type);
@@ -211,9 +229,10 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             try { return await handlers[message.type](message, sender); }
             catch (error) { return { ok: false, error: { code: error instanceof GarminError ? error.code : 'garmin-failed', message: error instanceof GarminError ? error.message : 'Garmin could not finish this action. Your existing drafts are safe.' } }; }
         },
-        async saved(activityId, peakId, aid) {
+        async saved(activityId, peakId, aid, jobId, cid) {
             if (!positiveId(activityId) || !positiveId(peakId) || !positiveId(aid)) return;
             await store.mutate(state => { const item = state.items[activityId]; if (!item) return;
+                if (jobId && (item.handoff?.jobId !== jobId || String(item.cid) !== cid)) return;
                 item.saved = [...new Set([...item.saved, peakId])];
                 const receipt = state.receipts[activityId] ||= { owner: item.owner, cid: item.cid, peaks: {} };
                 receipt.peaks[peakId] = aid;
