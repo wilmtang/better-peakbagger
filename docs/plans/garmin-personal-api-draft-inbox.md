@@ -199,6 +199,40 @@ newly uploaded recording can have an old activity date, and an old activity can
 be edited after the last check. The synchronization design must handle those
 cases explicitly; see [Discovery, persistence and idempotency](#discovery-persistence-and-idempotency).
 
+A focused upload-date follow-up on October 23 re-read the OpenAPI schema
+embedded in Garmin's Swagger page. Its activity search describes `sortBy` as an
+activity field, with examples such as name/distance/duration and a default of
+`startLocal`; it provides no enum of every supported sort field. None of its
+32 query parameters defines an upload-date or modification-date filter.
+`MetadataDTO.uploadedDate` is documented on the activity detail, not the list
+summary. This permits local comparison after discovery, not an efficient
+documented upload-date search.
+
+Eight bounded authenticated list requests tested `start=0&limit=3`, each in
+ascending and descending order, without activity-date filters:
+
+| `sortBy` | HTTP result | Returned summaries in each direction |
+| --- | --- | ---: |
+| `startLocal` | 200 | 3 |
+| `uploadedDate` | 200 | 0 |
+| `uploadDate` | 200 | 0 |
+| Deliberately invalid sort field | 200 | 0 |
+
+The upload-date names behaved like the invalid control. A successful HTTP status
+therefore does not prove support; no upload ordering could be evaluated on those
+empty results. This test does not exclude every possible undocumented field
+alias. Do not base synchronization on a guessed sort field or interpret that
+empty response as evidence that the account has no activities. The probe printed
+only status/count comparisons and retained no credentials or activity payloads.
+
+An upload-based product mode remains possible through client-side reconciliation:
+enumerate activity IDs across all accessible history, compare them with a durable
+baseline, and obtain details for newly discovered IDs to inspect `uploadedDate`.
+This requires broader metadata scans than the activity-date-scoped proposal.
+Initial baseline creation must handle uploads during the scan and incomplete
+pagination; a newly observed ID is not itself proof of a new upload. Such a mode
+would need separate setup semantics and is not selected or implemented here.
+
 ### Data shape and projection
 
 Illustrative field shape below uses invented values, not the user's activity:
