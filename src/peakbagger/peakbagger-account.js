@@ -11,6 +11,13 @@ export const ACCOUNT_LINK_PATHS = Object.freeze({
 });
 
 const cleanText = value => String(value || '').replace(/\s+/g, ' ').trim();
+// Firefox's isolated-world Xrays can deny Symbol.iterator on the native
+// keys() result. forEach crosses that boundary without an iterator object.
+const queryKeys = url => {
+    const keys = [];
+    url.searchParams.forEach((_value, key) => keys.push(key));
+    return keys;
+};
 const accountLink = (label, href, base = `${PEAKBAGGER_ORIGIN}/`) => {
     const expectedPath = ACCOUNT_LINK_PATHS[label];
     if (!expectedPath || typeof href !== 'string') return null;
@@ -22,7 +29,7 @@ const accountLink = (label, href, base = `${PEAKBAGGER_ORIGIN}/`) => {
         && url.searchParams.getAll('mode').length === 1 && url.searchParams.get('mode') === 'profile';
     if (!isPeakbaggerUrl(url.href) || url.username || url.password || url.hash
         || url.pathname.toLowerCase() !== expectedPath.toLowerCase()
-        || [...url.searchParams.keys()].some(key => key !== 'cid' && !(legacyProfileMode && key === 'mode'))
+        || queryKeys(url).some(key => key !== 'cid' && !(legacyProfileMode && key === 'mode'))
         || cidValues.length !== 1
         || !/^[1-9]\d*$/.test(cidValues[0])
         || !Number.isSafeInteger(Number(cidValues[0]))) return null;
@@ -32,7 +39,7 @@ const accountLink = (label, href, base = `${PEAKBAGGER_ORIGIN}/`) => {
 const canonicalAccountLink = (label, href) => {
     try {
         const url = new URL(href);
-        if (url.origin !== PEAKBAGGER_ORIGIN || [...url.searchParams.keys()].length !== 1) return null;
+        if (url.origin !== PEAKBAGGER_ORIGIN || queryKeys(url).length !== 1) return null;
         return accountLink(label, href);
     } catch { return null; }
 };

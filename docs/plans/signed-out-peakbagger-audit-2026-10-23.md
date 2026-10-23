@@ -347,6 +347,15 @@ proof of pending/error transitions, focus, or terrain rendering.
   Verification: 411 focused tests, targeted ESLint, and hidden real-manifest
   Chrome verification passed. A2's parser rejection is not a demonstrated
   successful remote authorization bypass.
+- The final real-manifest Firefox run exposed an A2 compatibility regression:
+  Firefox's content-script Xray boundary denied iteration of the native
+  `URLSearchParams.keys()` result, preventing profile controls from mounting.
+  The shared validator now collects keys through `forEach`. A focused test
+  reproduced the same TypeError before the fix and passed afterward (11 account/
+  profile tests). The real unpacked extension then passed in hidden Chrome
+  156.0.8078.4 and Firefox 158.0.1, including profile/Buddy flows; both verifiers
+  reported successful teardown. This is why ordinary renderer stubs were not
+  sufficient proof of Firefox compatibility.
 - A1 now keeps a typed account-unavailable reason, offers sign-in and custom
   favorites, and preserves the selected filter. Retry coalesces activation and
   retains its error/action while the read is pending. Controls precede the

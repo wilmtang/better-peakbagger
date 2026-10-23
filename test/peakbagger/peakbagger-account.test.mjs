@@ -4,6 +4,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { ownerClimberId } from '../../src/profile/profile-backup-core.js';
+import { peakbaggerAccount } from '../../src/peakbagger/peakbagger-account.js';
+
+test('account readers do not depend on iterating Firefox Xray URLSearchParams', () => {
+    const NativeURL = globalThis.URL;
+    globalThis.URL = class extends NativeURL {
+        get searchParams() {
+            const params = super.searchParams;
+            // Firefox content-script Xrays expose the native methods but can
+            // deny Symbol.iterator on the object returned by keys().
+            params.keys = () => ({ next: () => ({ done: true }) });
+            return params;
+        }
+    };
+    try {
+        assert.deepEqual(peakbaggerAccount.fromHtml('<div>Logged in: Test | <a href="/climber/climber.aspx?cid=77">My Home Page</a></div>'),
+            { status: 'signed-in', cid: '77' });
+        assert.equal(peakbaggerAccount.freshAccountCid({ pageUrl: 'https://www.peakbagger.com/Default.aspx', links: [
+            { label: 'My Home Page', href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77' },
+            { label: 'My Ascents', href: 'https://www.peakbagger.com/climber/climblistc.aspx?cid=77' },
+        ] }, 'https://www.peakbagger.com/Default.aspx'), '77');
+    } finally { globalThis.URL = NativeURL; }
+});
 
 const url = 'https://www.peakbagger.com/Peak.aspx?pid=2296';
 const nav = body => `<div>Logged in: Test Climber | ${body}</div>`;

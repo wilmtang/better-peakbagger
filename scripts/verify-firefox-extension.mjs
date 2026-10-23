@@ -1197,21 +1197,19 @@ async function main() {
             longDistanceNavigation,
         );
 
-        await driver.executeAsyncScript(done => {
+        const favoriteSettingsUrl = await driver.getCurrentUrl();
+        const favoritePreparation = await driver.executeAsyncScript(done => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) => Promise.all([
-                api.storage.sync.set({
-                    bpbSettings: {
-                        ...bpbSettings,
-                        favoritesSource: 'custom',
-                        removeFavoriteWhenBuddyRemoved: false,
-                    },
-                }),
+            Promise.all([
+                api.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: {
+                    favoritesSource: 'custom', removeFavoriteWhenBuddyRemoved: false,
+                } }).then(result => { if (!result?.ok) throw new Error('Favorite settings patch failed'); }),
                 api.storage.local.set({
                     bpbFavoriteClimbers: { schemaVersion: 1, entries: [] },
                 }),
-            ])).then(() => done(true), error => done(String(error)));
+            ]).then(() => done(true), error => done(String(error)));
         });
+        assertState(favoritePreparation === true, 'Firefox custom favorites preparation failed', favoritePreparation);
         const buddyMutationBaseline = { ...fixture.requests };
         const otherClimberUrl = `https://${fixtureHost}:${fixture.port}/climber/climber.aspx?cid=900002`;
         const waitForBuddyAdditionReady = () => waitForScript(driver, `
@@ -1229,7 +1227,30 @@ async function main() {
     `, 'the enabled Firefox Buddy addition', 15_000, state => state?.ready);
         await driver.get(otherClimberUrl);
         await driver.wait(until.elementLocated(By.id('BuddyButton')), 10_000);
-        await driver.wait(until.elementLocated(By.id('bpb-climber-favorite')), 10_000);
+        await driver.wait(until.elementLocated(By.id('bpb-climber-favorite')), 10_000).catch(async error => {
+            const state = await driver.executeScript(`return {
+                    title: document.title, url: location.href,
+                    heading: document.querySelector('#TitleLabel h1')?.textContent,
+                    account: [...document.querySelectorAll('a')].filter(a => /^(My Home Page|My Ascents|Add Ascent)$/.test(a.textContent.trim()))
+                        .map(a => ({ label: a.textContent, href: a.href })),
+                    styleLoaded: !!document.getElementById('bpb-climber-favorite-style'),
+                    body: document.body.innerText.slice(0, 1500),
+                };`);
+            await driver.setContext(firefox.Context.CHROME);
+            try {
+                state.console = await driver.executeScript(`return Services.console.getMessageArray()
+                  .map(message => message.message).filter(message => /moz-extension:|climber-favorite|TypeError|ReferenceError/.test(message)).slice(-20);`);
+            } finally { await driver.setContext(firefox.Context.CONTENT); }
+            try {
+                await driver.get(favoriteSettingsUrl);
+                state.settings = await driver.executeAsyncScript(done => {
+                    const api = globalThis.browser || globalThis.chrome;
+                    if (!api?.storage) return done({ error: 'Extension settings API unavailable', url: location.href });
+                    api.storage.sync.get('bpbSettings').then(result => done(result.bpbSettings), failure => done({ error: String(failure) }));
+                });
+            } catch (diagnosticError) { state.settings = { error: String(diagnosticError) }; }
+            throw new Error(`Firefox favorite control did not mount: ${JSON.stringify(state)}`, { cause: error });
+        });
         await waitForBuddyAdditionReady();
         await driver.findElement(By.id('BuddyButton')).click();
         const buddyAdded = await waitForScript(driver, `
