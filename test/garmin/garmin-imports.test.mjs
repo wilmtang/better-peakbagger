@@ -221,3 +221,38 @@ test('one Peakbagger visit drains several preparation batches even in Manual onl
         assert.equal((await imports.snapshot()).queued, 0);
     } finally { await store.close(); }
 });
+
+test('the master switch stops alarms and visit/manual work without deleting the queue or key', async () => {
+    const { imports, prefs, store, counts, alarms } = await setup();
+    try {
+        await imports.check();
+        await store.mutate(state => { state.items['12'].phase = 'waiting'; });
+        const key = (await store.read()).connection.key;
+        const before = { ...counts };
+        prefs.enableGarminInbox = false; await imports.settingsChanged();
+        assert.equal(alarms.size, 0);
+        await imports.check(); await imports.peakbaggerVisited(42);
+        assert.deepEqual(counts, before);
+        assert.equal((await store.read()).connection.key, key);
+        assert.equal((await store.read()).items['12'].phase, 'waiting');
+        assert.equal((await imports.handle({ type: 'GARMIN_INBOX_OPEN' }, sender)).error.code, 'disabled');
+        prefs.enableGarminInbox = true; await imports.settingsChanged();
+        assert.equal(alarms.size, 1);
+        await imports.peakbaggerVisited(42);
+        assert.equal((await store.read()).items['12'].phase, 'ready');
+    } finally { await store.close(); }
+});
+
+test('turning the inbox off cancels in-flight preparation and preserves the queued item', async () => {
+    let signal, started;
+    const ready = new Promise(resolve => { started = resolve; });
+    const { imports, prefs, store } = await setup({ onClient: options => { signal = options.signal; },
+        api: { recording: async () => { started(); return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })); } } });
+    try {
+        const checking = imports.check(); await ready;
+        prefs.enableGarminInbox = false; await imports.settingsChanged(); await checking;
+        assert.equal(signal.aborted, true);
+        assert.equal((await store.read()).items['12'].phase, 'waiting');
+        assert.equal((await imports.snapshot()).featureEnabled, false);
+    } finally { await store.close(); }
+});

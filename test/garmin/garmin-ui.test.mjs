@@ -87,3 +87,17 @@ test('inbox identifies queued activities and preserves them during a human check
         assert.equal(d.querySelectorAll('.garmin-activity').length, 2);
     } finally { dom.window.close(); }
 });
+
+test('a bookmarked inbox stays hidden while disabled and does not poll its data', async () => {
+    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    let messages = 0;
+    dom.window.chrome = { runtime: { sendMessage: async () => { messages++; return { ok: true, items: [] }; } },
+        storage: { sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } } };
+    try {
+        dom.window.eval(inboxSource); await tick();
+        assert.equal(dom.window.document.querySelector('#inbox-content').hidden, true);
+        assert.equal(dom.window.document.querySelector('#inbox-disabled').hidden, false);
+        dom.window.document.querySelector('#inbox-check').click(); await tick();
+        assert.equal(messages, 0);
+    } finally { dom.window.close(); }
+});

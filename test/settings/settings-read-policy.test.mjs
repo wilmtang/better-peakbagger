@@ -34,8 +34,10 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
+    'options/inbox.js': [{ count: 1, kind: 'privacy', reason: 'hide the inbox until the master switch is read authoritatively' }],
+    'popup/popup.js': [{ count: 1, kind: 'privacy', reason: 'hide the inbox entry until the master switch is read authoritatively' }],
     'options/garmin.js': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
-    'src/garmin/garmin-imports.js': [{ count: 4, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],
+    'src/garmin/garmin-imports.js': [{ count: 7, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],
     'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
     'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
     'src/maps/map-layer-bridge.js': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before viewport catalog requests' }],

@@ -2,6 +2,23 @@
 
 ## Fixed and verified
 
+- **General master switch.** Garmin activity inbox defaults on; disabling it
+  cancels in-flight work, removes its alarm and blocks manual/visit-triggered
+  processing. Popup, connection section and sidebar entry hide. Existing keys,
+  queue and duplicate receipts are retained. Bookmarked inboxes explain the
+  disabled state; old settings links return to General, including same-document
+  fragment navigation. The alarm regression failed before implementation and
+  passes afterward. Verified: full suite 3,386 passing tests, then 143 focused
+  tests after the fragment fix; full ESLint and packaging lint (eight existing
+  warnings); all 12 Garmin UI fixture cases in hidden Chrome 156/Firefox 157;
+  real unpacked-extension checks in hidden Chrome 156/Firefox 158. Off/on,
+  saved-state restoration and disabled deep links pass in both themes. Switch
+  and scroll geometry stay within 1px. Chrome settings viewports: 1982×1000,
+  1000×760, 1000×420 and 480×760; Firefox content viewports: 1982×915, 1000×675,
+  1000×347 and 500×675. Desktop/narrow settings and disabled popup screenshots
+  were inspected. Static DOM/CSS checks do not establish native focus or
+  permission prompts. Process and profile inspection confirmed teardown.
+
 - **Blocked summit lookups now retain a durable queue.** Discovery continues;
   peak preparation pauses after a challenge, missing session or rate limit.
   Loading or selecting a completed active Peakbagger page resumes bounded

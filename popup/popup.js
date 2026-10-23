@@ -34,7 +34,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     const providerLabel = document.getElementById('provider-label');
     const settingsButton = document.getElementById('open-settings');
     let activeTab = null;
-    let currentJob = null;
+    let currentJob = null; let garminInboxEnabled = false;
     // Resolved once when the popup opens. `units: 'auto'` means "follow the
     // page", and the popup has no Peakbagger page to follow — it opens over a
     // Garmin or Strava activity — so it takes the shared module's documented
@@ -214,6 +214,10 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     ]);
     const errorState = error => {
         const code = error?.code || 'capture-failed';
+        if (code === 'garmin-inbox-activity' && !garminInboxEnabled) {
+            stateCard('Activity already imported', 'Enable Garmin activity inbox in General settings to review the saved draft.', { action: { label: 'Open General settings', primary: true, onClick: () => { void ext.tabs.create({ url: ext.runtime.getURL('options/options.html#general') }); } } });
+            return;
+        }
         if (code === 'garmin-inbox-activity') {
             stateCard('Activity already imported', error.message, { action: { label: 'Open activity inbox', primary: true,
                 onClick: () => document.getElementById('activity-inbox')?.click() } });
@@ -638,7 +642,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     const inboxStatus = document.getElementById('activity-inbox-status');
     let openingInbox = false;
     inboxButton?.addEventListener('click', async () => {
-        if (openingInbox) return; openingInbox = true;
+        if (openingInbox || !garminInboxEnabled) return; openingInbox = true;
         inboxButton.setAttribute('aria-disabled', 'true'); inboxButton.setAttribute('aria-busy', 'true'); inboxStatus.textContent = 'Opening your activity inbox…';
         try {
             const result = await ext.runtime.sendMessage({ type: 'GARMIN_INBOX_OPEN' });
@@ -647,7 +651,12 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         } catch { inboxStatus.textContent = 'Couldn’t open inbox. Try again.'; }
         finally { openingInbox = false; inboxButton.removeAttribute('aria-disabled'); inboxButton.removeAttribute('aria-busy'); }
     });
-    void ext.runtime.sendMessage({ type: 'GARMIN_SUMMARY' }).then(inboxSummary => {
+    const refreshInbox = async settings => {
+        garminInboxEnabled = settings.enableGarminInbox;
+        document.querySelector('.inbox-entry').hidden = !garminInboxEnabled;
+        if (!garminInboxEnabled) return;
+        const inboxSummary = await ext.runtime.sendMessage({ type: 'GARMIN_SUMMARY' });
+        if (!garminInboxEnabled) return;
         if (!inboxSummary?.ok || openingInbox) return;
         const count = inboxSummary.pending;
         if (!Number.isInteger(count) || count < 0) return;
@@ -657,5 +666,8 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             : inboxSummary.queued > 0 ? `${inboxSummary.queued} waiting for peak checks. Open inbox to resume.`
                 : !inboxSummary.configured ? 'Connect Garmin to import your activities.' : inboxSummary.manual
                     ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
-    }).catch(() => {});
+    };
+    void Settings.requireCurrent().then(refreshInbox).catch(() => {});
+    const unsubscribeInbox = Settings.subscribe(settings => { void refreshInbox(settings).catch(() => {}); });
+    addEventListener('pagehide', unsubscribeInbox, { once: true });
 })();

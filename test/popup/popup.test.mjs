@@ -1483,7 +1483,7 @@ test('a failed capture deletion preserves the current summit selection', async t
 test('opening popup and inbox never starts a capture', async () => {
     const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
     const messages = [];
-    dom.window.chrome = { tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async message => {
+    dom.window.chrome = { storage: { sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async message => {
         messages.push(message);
         if (message.type === 'CAPTURE_STATUS') return null;
         if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 3 };
@@ -1492,9 +1492,31 @@ test('opening popup and inbox never starts a capture', async () => {
     } } };
     dom.window.eval(source);
     await waitFor(() => dom.window.document.getElementById('inbox-count').textContent === '3');
+    assert.equal(dom.window.document.getElementById('inbox-count').textContent, '3');
     assert.equal(messages.filter(m => m.type === 'CAPTURE_START').length, 0);
     dom.window.document.getElementById('activity-inbox').click();
     await waitFor(() => /Couldn’t open inbox/.test(dom.window.document.getElementById('activity-inbox-status').textContent));
     assert.equal(messages.filter(m => m.type === 'CAPTURE_START').length, 0);
     dom.window.close();
+});
+
+test('the master switch hides the popup inbox and blocks opening it', async () => {
+    const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    const messages = [], listeners = []; let settings = { enableGarminInbox: false };
+    dom.window.chrome = { tabs: { query: async () => [] }, runtime: { sendMessage: async message => {
+        messages.push(message); return { ok: true, configured: true, pending: 3, queued: 2 };
+    } }, storage: { sync: { get: async () => ({ bpbSettings: settings }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } } };
+    try {
+        dom.window.eval(source); await new Promise(resolve => setTimeout(resolve, 0));
+        const entry = dom.window.document.querySelector('.inbox-entry');
+        assert.equal(entry.hidden, true);
+        dom.window.document.getElementById('activity-inbox').click();
+        assert.equal(messages.filter(m => m.type.startsWith('GARMIN_')).length, 0);
+        settings = { enableGarminInbox: true };
+        listeners.forEach(fn => fn({ bpbSettings: { newValue: settings } }, 'sync'));
+        await waitFor(() => dom.window.document.getElementById('inbox-count').textContent === '3');
+        assert.equal(entry.hidden, false);
+        assert.equal(dom.window.document.getElementById('inbox-count').textContent, '3');
+        assert.match(dom.window.document.getElementById('activity-inbox-status').textContent, /2 waiting for peak checks/);
+    } finally { dom.window.close(); }
 });

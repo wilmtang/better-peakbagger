@@ -130,9 +130,15 @@ export async function verifySettingsNavigation({ navigate, evaluate, resize, cli
                     }));
                 });
             });
+            // Persist the theme through the real control: saving the inbox
+            // switch re-applies settings and would undo a dataset-only override.
+            await wait(() => document.getElementById('enable-garmin-inbox').checked);
             await evaluate(theme === 'dark'
-                ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
-                : () => { document.documentElement.dataset.bpbTheme = 'light'; });
+                ? () => { const control = document.getElementById('theme'); control.value = 'dark'; control.dispatchEvent(new Event('change')); }
+                : () => { const control = document.getElementById('theme'); control.value = 'light'; control.dispatchEvent(new Event('change')); });
+            await wait(theme === 'dark'
+                ? () => document.documentElement.dataset.bpbTheme === 'dark'
+                : () => document.documentElement.dataset.bpbTheme === 'light');
             const before = await evaluate(readFrame);
             await click('.side-nav a[href="#about"]');
             await landing(aboutLanded, `${label}-click`);
@@ -168,6 +174,28 @@ export async function verifySettingsNavigation({ navigate, evaluate, resize, cli
                 : () => { document.documentElement.dataset.bpbTheme = 'light'; });
             await landing(garminLanded, `${label}-garmin-deep-link`);
             await checkFrame(before, `${label}-garmin-deep-link`);
+            await navigate('#general');
+            await landing(generalLanded, `${label}-garmin-switch`);
+            await wait(() => document.getElementById('enable-garmin-inbox').checked);
+            const readSwitch = () => {
+                const rect = document.getElementById('enable-garmin-inbox').getBoundingClientRect();
+                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scroll: document.querySelector('.content').scrollTop };
+            };
+            const toggleBefore = await evaluate(readSwitch);
+            await click('#enable-garmin-inbox');
+            await wait(() => document.getElementById('capture-garmin').hidden
+                && document.querySelector('a[href="#capture-garmin"]').closest('li').hidden);
+            const toggleAfter = await evaluate(readSwitch);
+            for (const key of Object.keys(toggleBefore)) assert(Math.abs(toggleAfter[key] - toggleBefore[key]) <= 1, `Garmin switch moved: ${key} ${toggleBefore[key]} → ${toggleAfter[key]}`);
+            assert.equal(await evaluate(() => document.documentElement.dataset.bpbTheme), theme);
+            await screenshot?.(`${label}-garmin-disabled`);
+            await navigate('#capture-garmin');
+            await landing(generalLanded, `${label}-disabled-deep-link`);
+            assert.equal(await evaluate(() => document.getElementById('enable-garmin-inbox').checked), false);
+            await click('#enable-garmin-inbox');
+            await wait(() => !document.getElementById('capture-garmin').hidden
+                && !document.querySelector('a[href="#capture-garmin"]').closest('li').hidden);
+
         }
     }
 }

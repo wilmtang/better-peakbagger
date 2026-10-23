@@ -28,7 +28,7 @@
             <li>
                 <a class="nav-item" href="#capture">Capture &amp; reports</a>
                 <ul class="nav-sublist">
-                    <li><a class="nav-subitem" href="#capture-garmin">Garmin connection</a></li>
+                    <li data-garmin-inbox hidden><a class="nav-subitem" href="#capture-garmin">Garmin connection</a></li>
                     <li><a class="nav-subitem" href="#capture-gpx">GPX capture</a></li>
                     <li><a class="nav-subitem" href="#capture-report">Report editor</a></li>
                     <li data-report-editor-dependent><a class="nav-subitem" href="#capture-photos">Report photos</a></li>
@@ -68,6 +68,10 @@
         <section id="general" class="settings-section" aria-labelledby="general-settings-heading">
             <h2 class="section-title" id="general-settings-heading">General</h2>
             <div class="card">
+                <div class="row">
+                    <div class="label"><span class="title">Garmin activity inbox</span><span class="desc" id="enable-garmin-inbox-desc">Automatically bring Garmin activities into drafts. Turning this off hides the inbox and stops imports. Your key and drafts stay saved.</span></div>
+                    <div class="control"><label class="check" for="enable-garmin-inbox"><input type="checkbox" id="enable-garmin-inbox" aria-describedby="enable-garmin-inbox-desc"><span>Enable Garmin activity inbox</span></label></div>
+                </div>
                 <div class="row">
                     <label class="label" for="theme">
                         <span class="title">Theme</span>
@@ -207,7 +211,7 @@
 
         <section id="capture" class="settings-section" aria-labelledby="capture-settings-heading">
             <h2 class="section-title" id="capture-settings-heading">Capture &amp; reports</h2>
-            <div id="capture-garmin" class="subsection" role="group" aria-labelledby="capture-garmin-heading" data-garmin-settings></div>
+            <div id="capture-garmin" class="subsection" role="group" aria-labelledby="capture-garmin-heading" data-garmin-settings data-garmin-inbox hidden></div>
 
             <div class="subsection" id="capture-gpx" role="group" aria-labelledby="capture-gpx-heading">
                 <h3 class="subsection-title" id="capture-gpx-heading">GPX capture</h3>

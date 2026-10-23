@@ -37,7 +37,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     const reconcile = async () => {
         await ext.alarms.clear(GARMIN_ALARM);
         const [state, prefs] = await Promise.all([store.read(), settings.requireCurrent()]);
-        if (!state.connection?.key || !state.connection.enabled || !prefs.garminCheckHours || state.error?.code === 'key-rejected' || !await permission()
+        if (!prefs.enableGarminInbox || !state.connection?.key || !state.connection.enabled || !prefs.garminCheckHours || state.error?.code === 'key-rejected' || !await permission()
             || (state.error?.code === 'capacity' && !state.preparePending)) return;
         const continuing = state.scan || (state.preparePending && !state.peakbaggerBlocked);
         const due = continuing ? Math.max(clock() + 60000, state.retryAt || 0) : Math.max(clock() + 60000, state.lastCheck + prefs.garminCheckHours * 3600000, state.retryAt || 0);
@@ -47,10 +47,11 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         const prefs = await settings.requireCurrent();
         const scope = JSON.stringify([prefs.garminHistoryStart, prefs.garminRecentDays, prefs.garminActivityTypes]);
         const state = await store.read();
-        if (state.scope !== scope || state.privacy !== JSON.stringify([prefs.removeGpxTimestamps, prefs.retainWaypoints])) {
+        if (state.featureEnabled !== prefs.enableGarminInbox || state.scope !== scope || state.privacy !== JSON.stringify([prefs.removeGpxTimestamps, prefs.retainWaypoints])) {
             controller?.abort(); clientEpoch = -1;
             await store.mutate(current => {
                 current.epoch++;
+                current.featureEnabled = prefs.enableGarminInbox;
                 if (current.scope !== scope) { current.lastFull = 0; current.scan = null; }
                 current.scope = scope; current.privacy = JSON.stringify([prefs.removeGpxTimestamps, prefs.retainWaypoints]);
                 for (const item of Object.values(current.items)) {
@@ -63,6 +64,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         await reconcile();
     };
     const connect = async key => {
+        if (!(await settings.requireCurrent()).enableGarminInbox) throw new GarminError('disabled');
         if (!await permission()) throw new GarminError('permission');
         const previous = await store.read();
         const candidate = clientFactory({ key }); const account = await identity(candidate);
@@ -88,6 +90,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     };
     const snapshot = async (includeItems = true) => {
         const [initialMeta, prefs] = await Promise.all([store.summary(), settings.requireCurrent()]);
+        if (!prefs.enableGarminInbox) return { featureEnabled: false, enabled: false, configured: false, pending: 0, queued: 0, items: [], history: [] };
         let meta = initialMeta;
         if (meta.undoDue <= clock()) {
             await store.mutate(state => { for (const [id, item] of Object.entries(state.items)) {
@@ -109,18 +112,19 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             })), history: Object.entries(state.receipts).slice(-200).map(([id, receipt]) => ({ id, complete: !!receipt.complete,
                 dismissed: !!receipt.dismissed, date: receipt.date || '', undoUntil: state.items[id]?.undoUntil || 0 })) };
         }
-        return { ...meta, connectedDate: meta.connectedDate || date(), checking: !!running,
+        return { ...meta, featureEnabled: true, connectedDate: meta.connectedDate || date(), checking: !!running,
             nextCheck: prefs.garminCheckHours ? Math.max(meta.retryAt || 0, meta.lastCheck + prefs.garminCheckHours * 3600000) : null,
             manual: prefs.garminCheckHours === 0, ...(includeItems ? { items: publicCache.items, history: publicCache.history.map(item => ({ ...item, undoAvailable: item.undoUntil > clock() })) } : {}) };
     };
     const runCheck = async (full, continuation = false, { prepareOnly = false, resume = false, tabId = null } = {}) => {
         controller = new AbortController(); clientEpoch = -1;
         const state = await store.read(); const connection = state.connection;
-        if (!connection?.key || !connection.enabled) return;
+        const prefs = await settings.requireCurrent();
+        if (!prefs.enableGarminInbox || !connection?.key || !connection.enabled) return;
         if (!await permission()) throw new GarminError('permission');
         if (state.error?.code === 'key-rejected') throw new GarminError('key-rejected');
         if (state.retryAt > clock()) throw new GarminError('rate', state.retryAt);
-        const epoch = state.epoch, prefs = await settings.requireCurrent(), service = api(state);
+        const epoch = state.epoch, service = api(state);
         const account = await identity(service);
         if (account.subject !== (connection.subject || connection.owner) || (connection.owner && account.owner !== connection.owner)) throw new GarminError('identity');
         if (!connection.owner && account.owner) {
@@ -239,6 +243,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             await running;
             let previous = Infinity;
             for (;;) {
+                if (!(await settings.requireCurrent()).enableGarminInbox) return;
                 const state = await store.read();
                 const count = Object.values(state.items).filter(item => !item.handoff && ['waiting', 'error'].includes(item.phase) && !(item.retryAt > clock())).length;
                 if (!state.connection?.key || !state.connection.enabled || !count || count >= previous
@@ -352,7 +357,10 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             if (!Object.hasOwn(handlers, message?.type)) return null;
             const navigation = ['GARMIN_SUMMARY', 'GARMIN_INBOX_OPEN'].includes(message.type);
             if (!trusted(sender) && !(navigation && popup(sender))) return { ok: false, error: { message: 'Open Garmin Settings or the activity inbox to continue.' } };
-            try { return await handlers[message.type](message, sender); }
+            try {
+                if (!['GARMIN_STATUS', 'GARMIN_SUMMARY'].includes(message.type) && !(await settings.requireCurrent()).enableGarminInbox) throw new GarminError('disabled');
+                return await handlers[message.type](message, sender);
+            }
             catch (error) { return { ok: false, error: { code: error instanceof GarminError ? error.code : 'garmin-failed', message: error instanceof GarminError ? error.message : 'Garmin could not finish this action. Your existing drafts are safe.' } }; }
         },
         async saved(activityId, peakId, aid, jobId, cid) {

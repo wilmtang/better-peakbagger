@@ -6,7 +6,7 @@ import { garminActivityLabel, positiveId } from '../src/garmin/garmin-api.js';
 const ext = globalThis.browser || globalThis.chrome;
 const $ = selector => document.querySelector(selector);
 const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Your inbox could not be updated. Try again.'); return result; };
-let current; let items = new Map(); let review = null; let busy = false; let accepted = new Set();
+let featureEnabled = false; let current; let items = new Map(); let review = null; let busy = false; let accepted = new Set();
 let statusError = false;
 const rows = new Map();
 const changedMatches = () => review && items.has(review.id)
@@ -50,7 +50,7 @@ function showReview(id, focus = true) {
     void Settings.get().then(prefs => { $('#inbox-timestamp-row').hidden = !prefs.removeGpxTimestamps || !review?.analysis?.hasTimestamps; });
 }
 const busyAction = async (button, status, operation) => {
-    if (busy || button.getAttribute('aria-disabled') === 'true') return;
+    if (!featureEnabled || busy || button.getAttribute('aria-disabled') === 'true') return;
     if (status.id === 'inbox-status') statusError = false;
     busy = true; button.setAttribute('aria-disabled', 'true'); button.setAttribute('aria-busy', 'true'); status.textContent = 'Working…';
     try { await operation(); } catch (error) { status.textContent = error.message; if (status.id === 'inbox-status') statusError = true; }
@@ -81,7 +81,11 @@ function paintList() {
     } else if (pending.length) $('#inbox-empty')?.remove();
 }
 async function refresh(initial = false) {
-    current = await send({ type: 'GARMIN_STATUS' }); items = new Map(current.items.map(item => [item.id, item]));
+    if (!featureEnabled) return;
+    const next = await send({ type: 'GARMIN_STATUS' });
+    if (!featureEnabled) return;
+    if (next.featureEnabled === false) { applyFeature({ enableGarminInbox: false }); return; }
+    current = next; items = new Map(current.items.map(item => [item.id, item]));
     updateReviewControls();
     const history = current.history || [];
     for (const receipt of history) {
@@ -104,7 +108,7 @@ async function refresh(initial = false) {
     const arrivals = [...items.keys()].filter(id => !accepted.has(id)); $('#inbox-new').hidden = !arrivals.length;
     $('#inbox-description').textContent = !current.configured ? 'Connect Garmin to import your activities.' : current.manual ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
     const queued = current.queued || 0;
-    $('#inbox-queue').textContent = queued ? `${queued} ${queued === 1 ? 'activity' : 'activities'} waiting for peak checks. Visit Peakbagger to resume.` : 'All queued activities have been checked for peaks.';
+    $('#inbox-queue').textContent = queued ? `${queued} ${queued === 1 ? 'activity' : 'activities'} waiting for peak checks. Visit Peakbagger to resume.` : 'No activities waiting for peak checks.';
     $('#inbox-resume-peaks').hidden = !queued;
     const peakbaggerMessage = current.peakbaggerBlocked?.code === 'cloudflare'
         ? 'Peakbagger needs a human check. Your activities are queued safely.'
@@ -136,6 +140,18 @@ for (const [selector, type] of [['#inbox-dismiss', 'GARMIN_DISMISS'], ['#inbox-d
     if (type === 'GARMIN_DONE' && !confirm('Mark this activity done? It will leave the inbox and will not be imported again.')) return;
     await send({ type, id: review.id }); review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false; await refresh();
 }));
-void refresh(true).catch(error => { $('#inbox-status').textContent = error.message; });
+const applyFeature = settings => {
+    const changed = featureEnabled !== settings.enableGarminInbox;
+    featureEnabled = settings.enableGarminInbox;
+    $('#inbox-content').hidden = !featureEnabled;
+    $('#inbox-disabled').hidden = featureEnabled;
+    if (changed && featureEnabled) void refresh(true).catch(error => { $('#inbox-status').textContent = error.message; });
+};
+void Settings.requireCurrent().then(applyFeature).catch(() => {
+    $('#inbox-disabled').hidden = false;
+    $('#inbox-disabled h1').textContent = 'Settings could not be read';
+    $('#inbox-disabled p').textContent = 'Reload this page to try again.';
+});
+const unsubscribe = Settings.subscribe(applyFeature);
 const timer = setInterval(() => { if (!busy && !document.hidden) void refresh().catch(() => {}); }, 2500);
-addEventListener('pagehide', () => clearInterval(timer), { once: true });
+addEventListener('pagehide', () => { clearInterval(timer); unsubscribe(); }, { once: true });

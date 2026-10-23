@@ -41,17 +41,20 @@ try {
         const context = await browser.newContext({ ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
         context.setDefaultTimeout(15000);
         await context.addInitScript(defaults => {
-            const prefs = { ...defaults };
+            const prefs = { ...defaults, ...(window.location.search.includes('disabled') ? { enableGarminInbox: false } : {}) };
+            const listeners = [];
             const row = { id: '123', owner: '1234', cid: '5678', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
                 analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], hasTimestamps: false } };
-            window.fixture = { mode: 'success', checks: 0, connects: 0, enables: 0, opens: 0, captures: 0, state: { configured: true, enabled: !window.location.pathname.endsWith('/options/options.html'), pending: 1, cid: '5678', items: [row], history: [], connectedDate: '2026-10-23' } };
+            window.fixture = { mode: 'success', checks: 0, connects: 0, enables: 0, opens: 0, captures: 0, statuses: 0, state: { configured: true, enabled: !window.location.pathname.endsWith('/options/options.html'), pending: 1, cid: '5678', items: [row], history: [], connectedDate: '2026-10-23' } };
             if (window.location.search.includes('queued')) {
                 row.analysis = null; row.phase = 'waiting';
                 window.fixture.state.queued = 1;
                 window.fixture.state.peakbaggerBlocked = { code: 'cloudflare' };
             }
-            window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => ({ bpbSettings: prefs }) }, onChanged: { addListener() {}, removeListener() {} } },
+            window.fixture.setEnabled = value => { prefs.enableGarminInbox = value; listeners.forEach(fn => fn({ bpbSettings: { newValue: prefs } }, 'sync')); };
+            window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => ({ bpbSettings: prefs }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } },
                 tabs: { query: async () => [{ id: 1 }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
+                    if (message.type === 'GARMIN_STATUS') window.fixture.statuses++;
                     if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
                     if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 1 };
                     if (message.type === 'CAPTURE_STATUS') return null;
@@ -194,7 +197,7 @@ try {
             assert(await check.evaluate(el => document.activeElement === el));
             assert(await page.locator('#inbox-update-key').isVisible());
             await check.press('Enter'); assert.equal(await page.evaluate(() => window.fixture.checks), 1);
-            if (name === 'chromium') await page.locator('.garmin-workspace').screenshot({ path: path.join(output, `inbox-${width}-${theme}.png`) });
+            if (name === 'chromium') await page.locator('#inbox-content .garmin-workspace').screenshot({ path: path.join(output, `inbox-${width}-${theme}.png`) });
             await page.locator('.garmin-activity button').click();
             assert.equal(await page.locator('#inbox-matches input:checked').count(), 1);
             assert.equal(await page.locator('#inbox-matches input:not(:checked)').count(), 1);
@@ -224,6 +227,24 @@ try {
             assert(await open.evaluate(el => document.activeElement === el));
             if (name === 'chromium') await page.screenshot({ path: path.join(output, `review-${width}-${theme}.png`) });
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+            await page.goto(`${origin}/options/options.html?disabled#general`);
+            await page.waitForFunction(() => document.getElementById('garmin-key') && document.getElementById('capture-garmin').hidden);
+            assert(await page.locator('.side-nav a[href="#capture-garmin"]').isHidden());
+            assert.equal(await page.evaluate(() => window.fixture.statuses), 0);
+            await page.goto(`${origin}/options/inbox.html?disabled`);
+            await page.locator('#inbox-disabled').waitFor();
+            assert(await page.locator('#inbox-content').isHidden());
+            assert.equal(await page.evaluate(() => window.fixture.statuses), 0);
+            await page.evaluate(() => window.fixture.setEnabled(true));
+            await page.locator('.garmin-activity').waitFor();
+            assert(await page.locator('#inbox-disabled').isHidden());
+            await page.goto(`${origin}/popup/popup.html?disabled`);
+            await page.waitForFunction(() => document.getElementById('state').textContent.length > 0);
+            assert(await page.locator('.inbox-entry').isHidden());
+            await page.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
+            if (name === 'chromium') await page.screenshot({ path: path.join(output, `popup-disabled-${width}-${theme}.png`) });
+            await page.evaluate(() => window.fixture.setEnabled(true));
+            await page.locator('#activity-inbox').waitFor();
             cases++;
         }
         await page.setViewportSize({ width: 390, height: 1000 });

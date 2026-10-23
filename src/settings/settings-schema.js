@@ -91,6 +91,7 @@ const DEFAULTS = {
     // Put the captured Garmin/Strava activity link into the ascent form's
     // "URL Link to External Trip Report" field when it is empty.
     fillExternalUrl: true,
+    enableGarminInbox: true,
     garminCheckHours: 4,
     garminRecentDays: 30,
     garminHistoryStart: '',
@@ -256,7 +257,7 @@ const clean = raw => {
     if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
     for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'enableGarminInbox', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
     }
     // SNOTEL previously shared the weather gate. Preserve legacy opt-outs

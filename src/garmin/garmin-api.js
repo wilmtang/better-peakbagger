@@ -9,7 +9,8 @@ export const cleanGarminKey = value => typeof value === 'string' && value.trim()
     && value.trim().length <= 2048 && !/[\s\u0000-\u001f\u007f]/.test(value.trim()) ? value.trim() : null;
 export class GarminError extends Error {
     constructor(code, retryAt = 0) {
-        super(({ 'key-rejected': 'Garmin needs a new API key. Imports paused; your drafts are safe.',
+        super(({ disabled: 'Garmin activity inbox is off. Enable it in General settings to continue.',
+            'key-rejected': 'Garmin needs a new API key. Imports paused; your drafts are safe.',
             permission: 'Allow Garmin access in Settings to resume imports.',
             offline: 'Could not reach Garmin. Your drafts are safe. Check your connection and try again.',
             rate: 'Garmin asked us to wait. Your drafts are safe; checking will resume after the cooldown.',

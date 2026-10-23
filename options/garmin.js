@@ -30,9 +30,9 @@ export async function initGarminSettings(root) {
     const $ = selector => root.querySelector(selector);
     root.addEventListener('submit', event => event.preventDefault());
     const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Garmin could not finish this action. Try again.'); return result; };
-    let state; let busy = false; let keyError = false; let settingsError = false;
+    let featureEnabled = false; let state; let busy = false; let keyError = false; let settingsError = false;
     const perform = async (button, status, operation) => {
-        if (busy) return; busy = true;
+        if (busy || !featureEnabled) return; busy = true;
         if (status.id === 'garmin-key-status') keyError = false; else settingsError = false;
         button.setAttribute('aria-disabled', 'true'); button.setAttribute('aria-busy', 'true'); status.textContent = 'Working…';
         try { await operation(); } catch (error) { status.textContent = error.message;
@@ -48,6 +48,7 @@ export async function initGarminSettings(root) {
         $('#garmin-history-help').textContent = manual ? 'Used when you choose Check full history.' : 'Checked weekly to find older activities uploaded late.';
     };
     const refresh = async () => {
+        if (!featureEnabled) return;
         state = await send({ type: 'GARMIN_STATUS' });
         $('#garmin-preferences').hidden = !state.configured && !state.pending;
         $('#garmin-connect span').textContent = state.configured || state.pending ? 'Reconnect Garmin' : 'Connect Garmin';
@@ -63,6 +64,23 @@ export async function initGarminSettings(root) {
     try { prefs = await Settings.requireCurrent(); }
     catch { $('#garmin-key-status').textContent = 'Settings could not be read. Reload Settings to connect Garmin.';
         for (const button of root.querySelectorAll('button')) button.disabled = true; return; }
+    const redirectDisabledLink = () => {
+        if (!featureEnabled && location.hash === '#capture-garmin') {
+            history.replaceState(null, '', '#general');
+            dispatchEvent(new HashChangeEvent('hashchange'));
+        }
+    };
+    addEventListener('hashchange', redirectDisabledLink);
+    const applyFeature = settings => {
+        featureEnabled = settings.enableGarminInbox;
+        for (const element of document.querySelectorAll('[data-garmin-inbox]')) element.hidden = !featureEnabled;
+        root.hidden = !featureEnabled;
+        redirectDisabledLink();
+        if (featureEnabled) void refresh().catch(() => {});
+    };
+    applyFeature(prefs);
+    const unsubscribe = Settings.subscribe(applyFeature);
+    addEventListener('pagehide', unsubscribe, { once: true });
     const selectValue = (select, custom, value) => {
         const known = [...$(select).options].some(option => option.value === String(value));
         $(select).value = known ? String(value) : 'custom'; $(custom).value = value;

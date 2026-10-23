@@ -91,12 +91,20 @@ automatic backups, diagnostics and URLs. A manual settings export includes it
 only when **Include saved credentials** is checked; that file is not encrypted.
 Access tokens stay in worker memory and are never exported.
 
+The General **Garmin activity inbox** switch defaults on. Turning it off hides
+the feature and stops imports and queued peak checks, preserving the key,
+drafts and import history. Turning it on does not grant Garmin access or consent.
+
 Connection alone does not enable imports. **Enable Garmin drafts** records your
 chosen Peakbagger account and consent to local route processing. Checks run
 while the browser is running, every four hours by default; frequency, recent
 lookback (30 days by default) and full history dates are configurable. Manual
 only disables automatic scans. Full history checks look for older uploads;
-discovery uses activity dates and IDs, not an upload-time watermark.
+discovery uses activity dates and IDs, not an upload-time watermark. If Peakbagger
+is unavailable or requires verification, activities remain queued locally.
+Returning to a loaded, active Peakbagger tab resumes queued peak checks using
+that tab's session, including in Manual only mode, subject to rate limits.
+The extension does not open a tab or solve an interactive challenge automatically.
 
 Garmin sends complete activity summaries and recordings, which can contain
 health and device data. The extension immediately projects summaries to ID,
