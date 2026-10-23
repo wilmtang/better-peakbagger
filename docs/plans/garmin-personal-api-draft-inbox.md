@@ -16,12 +16,25 @@ without visiting Garmin activity pages. Present those suggestions in an
 **Activity inbox**. Opening Peakbagger forms and saving ascents remain explicit
 user actions.
 
-Accepted product direction: check every **four hours** by default, allow manual
-checks and a user-selected interval, include the personal key in a settings file
-only when **Include saved credentials** is checked, and give pending inbox
-drafts **no automatic expiry**. Keep their small, privacy-filtered route snapshot
-on this device until completion or explicit removal. The 30-minute form-delivery
-transaction remains separate from inbox retention.
+**Current automatic scan design:**
+
+| When | What is scanned |
+| --- | --- |
+| Every **four hours** by default | The last **30 days of activity dates**, within the user's chosen history. Widen this window after a long offline period to catch up. |
+| About once a week | The user's **full chosen history**, to find older activities uploaded late. Large histories and provider delays can take longer. |
+| On demand | **Check now** runs the recent scan; **Check full history** runs the full chosen-history scan. |
+
+“Chosen history” begins at the date selected during setup; by default, the day
+the user connects Garmin. Users can include earlier dates or all available
+history. A scan does not import dates they have excluded. Frequency is editable;
+**Manual only** disables both automatic scans. This is a proposed design, not
+implemented behavior.
+
+Pending inbox drafts have **no automatic expiry**. Keep their small,
+privacy-filtered route snapshot on this device until completion or explicit
+removal. The 30-minute form-delivery transaction is separate from inbox retention.
+Include the personal key in a settings file only when **Include saved credentials**
+is checked.
 
 For distribution, resolve Garmin's terms for a free, locally executed,
 user-supplied-key extension before treating this as an approved integration.
@@ -216,110 +229,29 @@ gaps indiscriminately. Raw response bytes stayed in process memory and were
 discarded when the test exited. Only field names, types, counts and sizes were
 printed. The public OpenAPI schema was inspected separately.
 
-### Historical access and change tracking
+### Activity dates, upload dates and the scan decision
 
-A second bounded live test on October 23 requested the oldest activity using
-`start=0&limit=1&sortOrder=asc&sortBy=startLocal`, read its detail, and downloaded
-its original file. All four requests, including authentication, returned 200.
-The activity was more than five years old; the ZIP was 135,760 bytes and held
-one 373,159-byte FIT file. Private dates and identifiers are omitted here.
-This verifies deep-history access for this account, not a guaranteed retention
-period for every account or recording. No historical maximum was established
-from the inspected Personal API reference. A 30-day polling window below is an
-extension efficiency choice, not a Garmin history limit.
+**Garmin returns activities by when they happened, newest first by default.**
+A July hike uploaded today still appears among July activities.
 
-The documented list API uses offset pagination (`start`, `limit`) and filters
-`startDate` / `endDate` by the activity's local start date. It does not document
-an opaque continuation token, uploaded-since / modified-since filter, changes
-feed, or deletion feed. Repeating a search can return the same activities;
-reading an activity does not consume it or mark it imported at Garmin.
+**We found no working upload-time sort.** All eight upload/creation field names
+we tested returned empty lists; normal date and distance sorting worked. Garmin
+provides an upload timestamp in activity details, but does not document an
+uploaded-after search filter. Having the timestamp does not mean the list can
+be sorted or filtered by it. Activity-ID ordering was inconclusive too.
 
-The old activity's detail response contained `metadataDTO.uploadedDate` and
-`metadataDTO.lastUpdateDate`. Its list summary had no upload/update/modified/
-created field names. Those detail timestamps may help compare known items, but
-their presence does not create a server-side incremental-query contract. A
-newly uploaded recording can have an old activity date, and an old activity can
-be edited after the last check. The synchronization design must handle those
-cases explicitly; see [Discovery, persistence and idempotency](#discovery-persistence-and-idempotency).
+**The design remains a rolling 30-day scan every four hours**, using activity
+dates and staying inside the user's chosen history. A separate weekly scan of
+that full chosen history catches older activities uploaded late. For example,
+a July hike uploaded in October can be found by the weekly scan if July is
+included in the chosen history. Known activity IDs prevent duplicate imports.
 
-A focused upload-date follow-up on October 23 re-read the OpenAPI schema
-embedded in Garmin's Swagger page. Its activity search describes `sortBy` as an
-activity field, with examples such as name/distance/duration and a default of
-`startLocal`; it provides no enum of every supported sort field. None of its
-32 query parameters defines an upload-date or modification-date filter.
-`MetadataDTO.uploadedDate` is documented on the activity detail, not the list
-summary. This permits local comparison after discovery, not an efficient
-documented upload-date search.
+We successfully retrieved an activity more than five years old. The 30-day
+window is our efficiency choice, not Garmin's history limit or a draft expiry.
+There is no verified “only uploads since the last import” shortcut.
 
-Eight bounded authenticated list requests tested `start=0&limit=3`, each in
-ascending and descending order, without activity-date filters:
-
-| `sortBy` | HTTP result | Returned summaries in each direction |
-| --- | --- | ---: |
-| `startLocal` | 200 | 3 |
-| `uploadedDate` | 200 | 0 |
-| `uploadDate` | 200 | 0 |
-| Deliberately invalid sort field | 200 | 0 |
-
-The upload-date names behaved like the invalid control. A successful HTTP status
-therefore does not prove support; no upload ordering could be evaluated on those
-empty results. This test does not exclude every possible undocumented field
-alias. Do not base synchronization on a guessed sort field or interpret that
-empty response as evidence that the account has no activities. The probe printed
-only status/count comparisons and retained no credentials or activity payloads.
-
-#### Expanded upload-sort verification
-
-A further October 23 probe tested eight upload/creation-field spellings, plus
-two ID-field candidates, against working and invalid controls. Each used
-`start=0&limit=5`, both `asc` and `desc`, and no activity-date filters. Response
-values were compared in memory; only counts and ordering checks were printed.
-
-| `sortBy` | Each direction | Ordering evidence |
-| --- | --- | --- |
-| `startLocal` | HTTP 200, five items | Activity dates followed the requested direction. |
-| `distance` | HTTP 200, five items | Distances followed the requested direction and IDs differed from the date-sorted control. This verifies that a supported sort can change the result. |
-| `uploadedDate`, `uploadDate`, `uploadTime`, `uploadTimestamp`, `dateUploaded`, `metadataDTO.uploadedDate`, `createdDate`, `createdTimestamp` | HTTP 200, zero items for every spelling | Same behavior as the deliberately invalid sort; no usable upload ordering established. |
-| `activityId` | HTTP 200, five items | IDs and detail upload timestamps followed the requested direction, but returned IDs exactly matched the activity-date control. This sample cannot distinguish upload/ID sorting from date sorting. |
-| `id` | HTTP 200, five items | Neither activity IDs nor detail upload timestamps followed the requested direction. A nonempty result is insufficient proof too. |
-| Deliberately invalid sort field | HTTP 200, zero items | Negative control. |
-
-The final `startLocal` control returned the same IDs as at the start. That probe
-made 48 requests: one token exchange, 27 list reads and 20 detail reads. No
-activity files were downloaded and nothing was uploaded or modified.
-
-An adaptive follow-up compared `startLocal` with `activityId`, both directions,
-at `limit=100`: all four requests returned 100 items, monotonically ordered by
-both activity date and activity ID, with identical ID sequences for each
-direction. It made five requests including authentication. There were no
-date/ID inversions to inspect, so it fetched no further details. These samples
-contain no distinguishing late-upload case; **they do not independently prove
-that `activityId` sorting is honored, or that ID order guarantees upload order**.
-The OpenAPI describes `activityId` only as a unique identifier. Do not replace
-an upload-time checkpoint with a maximum-ID cutoff on this evidence.
-
-The rechecked public schema still has 32 list query parameters, with no
-uploaded-after filter or complete supported-sort enum. It defines
-`metadataDTO.uploadedDate` as UTC despite omitting `Z` or an offset; parse that
-documented field explicitly as UTC, never as the browser's local time.
-
-**Decision:** upload-date incremental discovery remains unverified and must not
-be the correctness boundary. The tested spellings are unusable on this account;
-this does not exclude every undocumented alias or future API change. A usable
-sort needs evidence from records whose activity-date and upload-date orders
-differ, plus tied timestamps and page boundaries. A supported uploaded-after
-filter additionally needs a cutoff test that demonstrably excludes older
-uploads. A controlled late-upload fixture remains unverified; these read-only
-probes did not create or modify an activity. Preserve the reconciliation strategy
-below meanwhile.
-
-An upload-based product mode remains possible through client-side reconciliation:
-enumerate activity IDs across all accessible history, compare them with a durable
-baseline, and obtain details for newly discovered IDs to inspect `uploadedDate`.
-This requires broader metadata scans than the activity-date-scoped proposal.
-Initial baseline creation must handle uploads during the scan and incomplete
-pagination; a newly observed ID is not itself proof of a new upload. Such a mode
-would need separate setup semantics and is not selected or implemented here.
+[Detailed test evidence and remaining uncertainty](experiments/garmin-upload-ordering.md)
+are kept separately so the implementation decision stays readable.
 
 ### Data shape and projection
 
@@ -846,8 +778,8 @@ For example, a July hike uploaded in October is invisible to a query filtering
 activity start after the previous October check. A watermark alone misses it.
 The initial proposal uses this discovery strategy:
 
-1. Every four hours (or the chosen interval), list recent activity dates with a
-   30-day overlap, clipped to the selected scope. After a long offline period,
+1. Every four hours (or the chosen interval), scan the last 30 days of activity
+   dates within the user's chosen history. After a long offline period,
    widen the range to cover the time since the last completed pass, with overlap.
 2. Deduplicate by source account and activity ID before requesting files. Skip
    durable prepared items and tombstones. An interrupted analysis resumes; it
@@ -878,35 +810,11 @@ does not promise snapshot isolation. A failed page leaves the old committed
 checkpoint intact. Never equate maximum activity ID or last start date with a
 complete set of new/modified activities. Historical imports use the same rules.
 
-#### Conditional upload-time optimization
-
-If Garmin later confirms a usable upload-date sort/filter, the proposed
-optimization is appropriate, with these boundaries:
-
-1. Keep an account-bound **last fully discovered upload time**, separate from
-   per-activity processing state. Persist every discovered ID and its pending
-   work before advancing this checkpoint. The newest successful import alone
-   cannot establish it: an older import may still have failed or be queued.
-2. A verified uploaded-after filter can reduce the server-side result. With
-   only verified descending upload sorting, start at the first page and stop
-   after passing an overlapping checkpoint boundary; sorting alone does not
-   create an API filter. If upload timestamps remain detail-only, each previously
-   unknown item may require a detail read to decide where that boundary lies.
-3. Include the timestamp boundary and a bounded overlap, deduplicating by
-   account/activity ID. Equal upload times may span pages; never use a strict
-   `uploadedDate > checkpoint` rule that drops tied records. Finish the entire
-   boundary group, and require validated ordering before stopping early. A
-   failed/incomplete discovery pass retains its prior committed checkpoint;
-   prepared items and failed analyses retain their independent resumable state.
-4. Keep periodic reconciliation until the API promises stable pagination and
-   bounded indexing delay. Upload order does not reveal edits or deletions to
-   existing activities. Missing/invalid timestamps, changed query semantics or
-   a source-account change invalidate the shortcut. Apply the user's selected
-   activity-date scope separately; an upload cursor must not silently expand
-   consent to previously excluded history.
-
-This is a conditional design, not the current discovery algorithm. The expanded
-probe above did not establish the required upload-date ordering/filter contract.
+Upload-time checkpoints are **not part of this design**. Revisit them only if
+Garmin provides a verified upload sort/filter; the
+[research note](experiments/garmin-upload-ordering.md#requirements-for-a-future-upload-checkpoint)
+records the requirements. Until then, keep the date scans and ID deduplication
+above.
 
 Allow one active import analysis at a time initially and reuse the existing
 origin-wide Peakbagger scheduler/cooldown. Never persist a retry loop that
