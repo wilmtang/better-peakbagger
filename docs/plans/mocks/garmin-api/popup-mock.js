@@ -10,11 +10,20 @@ for (const [key, selector] of [['state', '#popup-state'], ['context', '#popup-co
 }
 function inboxState(announce = false) {
     const state = $('#popup-state').value;
-    const count = state === 'many' ? 125 : ['ready', 'checking', 'attention'].includes(state) ? 3 : 0;
+    const count = state === 'many' ? 125 : ['ready', 'checking', 'attention', 'expired', 'manual'].includes(state) ? 3 : 0;
     $('#popup-count').hidden = state === 'empty' || state === 'disconnected';
     $('#popup-count').textContent = state === 'unknown' ? '—' : count > 99 ? '99+' : String(count);
     const description = state === 'unknown' ? 'pending count unavailable' : `${count} pending ${count === 1 ? 'activity' : 'activities'}`;
     $('#popup-inbox').setAttribute('aria-label', `Activity inbox, ${description}`);
+    if ($('#popup-inbox').getAttribute('aria-busy') !== 'true') {
+        $('#popup-inbox-status').textContent = ({
+            disconnected: 'Connect Garmin to import your activities.',
+            attention: 'Garmin needs a new key. Open inbox to reconnect.',
+            expired: 'Garmin key expired. Open inbox to reconnect.',
+            manual: 'Your Garmin activities, ready when you check.',
+        })[state] || 'Your Garmin activities, imported automatically.';
+        $('#popup-inbox-status').classList.toggle('error', ['attention', 'expired'].includes(state));
+    }
     if (announce) $('#popup-count-status').textContent = `Activity inbox: ${description}.`;
     // Connectivity and refresh never gate access to already stored drafts.
 }

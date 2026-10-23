@@ -4,8 +4,8 @@
 .prototype-tools { display:flex; flex-wrap:wrap; align-items:center; gap:18px; padding:12px 20px; background:var(--card); border-bottom:1px solid var(--border); font-size:12px; }
 .prototype-tools>div { margin-right:auto; }
 .prototype-tools>div span { display:block; color:var(--sub); }
-.prototype-tools label { display:flex; align-items:center; gap:7px; }
-.prototype-tools select { padding:5px 8px; font-size:12px; }
+.prototype-tools label { display:flex; align-items:center; flex-wrap:wrap; gap:7px; max-width:100%; }
+.prototype-tools select { padding:5px 8px; font-size:12px; max-width:100%; }
 .app { display:flex; min-height:820px; }
 .side-nav { width:220px; height:auto; position:relative; padding:32px 16px; }
 .brand { display:flex; align-items:center; gap:10px; padding-bottom:30px; background:none; }
@@ -37,6 +37,14 @@ p { margin:0; }
 .key-field { display:flex; align-items:center; gap:8px; margin-top:12px; }
 .key-field input { flex:1; min-width:0; height:40px; letter-spacing:2px; }
 .key-field button { width:66px; min-height:40px; }
+.key-body { padding:24px 22px 12px; }
+.key-label { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; }
+.key-label a { font-size:13px; text-underline-offset:3px; }
+.key-body p { margin:8px 0; color:var(--sub); font-size:12px; }
+.key-body input[aria-invalid="true"] { border-color:var(--danger); }
+#connect { min-height:44px; max-width:100%; white-space:normal; }
+.feedback a { white-space:nowrap; text-underline-offset:3px; }
+.connected.error { color:var(--danger); }
 .card-footer { padding:20px 22px 18px; border-top:1px solid var(--border); }
 button.primary, .primary-button, button.secondary, a.secondary { min-height:40px; white-space:nowrap; }
 .actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }

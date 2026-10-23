@@ -68,6 +68,9 @@ brand header. Its badge counts pending activities, including items waiting for
 attention. The label stays the same at zero; opening the inbox does not clear
 the count. Keep capture as the primary action for the current Garmin or Strava
 activity, with an explicit **Capture this activity** button.
+Describe the inbox's benefit directly: **“Your Garmin activities, imported
+automatically.”** Use **“Your Garmin activities, ready when you check.”** in
+Manual only, and **“Connect Garmin to import your activities.”** before setup.
 
 ![Toolbar popup with Activity inbox, a count of three pending activities and a separate Capture this activity action](mocks/garmin-api/images/10-popup-activity.png)
 
@@ -94,10 +97,21 @@ retain focus and show a short error below the same button so it can be retried.
 
 Keep setup in Capture & reports, with one primary action and a masked key.
 Connection leads to an explicit Enable Garmin drafts step; it does not silently
-enable scheduled imports. The create-key destination is represented as text in
-this offline mock, and the key field contains only a read-only demo value.
+enable scheduled imports. **Get a Garmin API key ↗** sits beside the key-field
+label and opens Garmin's key page in a new tab. The field contains only a
+read-only demo value; the mock makes no API requests.
 
 ![Garmin connection mock with create-key guidance, a masked personal-key field and Connect Garmin action](mocks/garmin-api/images/01-connect.png)
+
+### Recover from an expired key
+
+Show **“Garmin API key expired. Imports paused; your drafts are safe.”** with
+**Update key**. Keep the inbox and its draft count available. The action opens
+the replacement form, with the same direct Garmin link and **Reconnect Garmin**.
+
+![Inbox retaining its activities with an expired-key message and Update key action](mocks/garmin-api/images/17-expired-inbox.png)
+
+![Replacement-key form with a direct Get a Garmin API key link beside the field](mocks/garmin-api/images/18-reconnect.png)
 
 ### Set the schedule
 
@@ -170,16 +184,25 @@ used DOM/CSS rendering, with no WebGL or live API calls. Native browser zoom,
 permission prompts, window focus and production extension behavior remain
 unverified by these mocks.
 
-The popup prototype additionally passed nine cases per browser, including
-390 × 600 and 320 × 600 in both themes; seven badge states; open/error/retry;
+The popup prototype additionally passed eleven cases per browser, including
+390 × 600 and 320 × 600 in both themes; nine badge/copy states; open/error/retry;
 duplicate activation; retained keyboard focus; unrelated websites; active/error
-captures; and empty/setup destinations. Header, inbox entry, capture section,
-following content and scroll geometry stayed within 1px through count and open
+captures; and empty/setup/expired-key/rejected-key destinations. Header, inbox
+entry, capture section, following content and scroll geometry stayed within 1px through count and open
 state updates. A 200% CSS zoom case at 390 × 1000 also exercised opening/error
 feedback. Visual inspection caught fragmented words in the enlarged inbox
 label; a new assertion failed on that defect and passed after the constrained
 layout hid only the decorative inbox icon. The label, count and progress slot
 remain readable. See the [enlarged popup](mocks/garmin-api/images/15-popup-enlarged.png).
+
+Key recovery passed eight cases per browser: direct key-page link (navigation
+intercepted), expiry, unknown rejection, rejected replacement, offline retry and
+successful reconnect. At 1180px and 390px in both themes, feedback preserved
+action/panel/heading/following-content geometry within 1px, scroll and focus.
+Drafts and schedule/history choices survived replacement, including Manual only;
+a rejected replacement preserved a working connection. Enlarged reconnect was
+checked at 200% CSS zoom. Actual Garmin expiry responses and authenticated
+key-management behavior remain runtime verification gaps.
 
 ## Verified API findings
 
@@ -328,29 +351,61 @@ colors and controls. Keep credentials out of the small toolbar popup.
 
 ```text
 Garmin connection
-Prepare Peakbagger drafts from your Garmin activities.
+Bring your Garmin activities into your inbox automatically.
 
-1. Create a personal key in Garmin Connect ↗
-2. Paste your key
-   [••••••••••••••••••••••••••••] [Show]
+Personal API key                       Get a Garmin API key ↗
+Create a key in Garmin, then paste it below.
+[••••••••••••••••••••••••••••] [Show]
 
-The key is stored on this device. Better Peakbagger reads activity data.
+Stored only on this device. Keys last up to one year.
 [Connect Garmin]
 ```
 
 Link directly to
 [Garmin's key page](https://connect.garmin.com/app/settings/personalApiToken).
+Keep this visible beside the field in both Connect and Update key forms; open
+a new tab with `noopener noreferrer` and an accessible new-tab label. Garmin
+handles sign-in and key creation. The official setup link was rechecked on
+October 23 and redirected signed-out users through sign-in to this destination.
 Use a labeled password field with paste enabled, no autocomplete or spellcheck,
 and an accessible Show/Hide action. Never read the clipboard automatically.
 Request only the API-origin permission from the Connect gesture, then validate
 the token and a small activity response. On success clear the input; display
 **Connected on this device**, with **Replace key** and **Disconnect**.
 
-Do not display an invented key expiry from the JWT: that describes the access
-token. Link to Garmin to manage key expiry until an authoritative key-expiry
-contract is established. Replacing a key invalidates in-flight work. A change
-of account starts a new connection identity and never inherits another
-account's history or pending drafts.
+#### Key expiry and reconnect
+
+Garmin keys last **30, 90 or 180 days, or one year**, depending on the user's
+choice. One year is a maximum, not a promise for every pasted key. Garmin sends
+an expiry reminder about a week beforehand. Access tokens last at most 24 hours
+and cannot outlive the key. [Garmin FAQ](https://developer.garmin.com/gc-developer-program/personal/personal-faq/)
+
+| Situation | Message | Action |
+| --- | --- | --- |
+| Expiry is confirmed | **Garmin API key expired. Imports paused; your drafts are safe.** | **Update key** |
+| Credentials rejected, exact reason unknown | **Garmin needs a new API key. Imports paused; your drafts are safe.** | **Update key** |
+| A replacement key is rejected | **Garmin didn’t accept this key. Copy the full key or get a new one.** | Keep the field and direct Garmin link available |
+
+Pause Garmin checks after credential rejection, including scheduled retries.
+Keep existing drafts reviewable and show the message in the inbox and Settings;
+the popup says **“Garmin key expired. Open inbox to reconnect.”** only when
+expiry is confirmed. A generic rejection says **“Garmin needs a new key. Open
+inbox to reconnect.”** Do not erase the pending count or redirect users away
+from drafts.
+
+Allow one bounded access-token renewal before declaring reconnect required.
+An offline response, timeout or rate limit must keep its own recovery message,
+not claim key expiry. Persist the paused state across browser restarts. Show an
+expiry date/countdown only from authoritative key-expiry information; JWT expiry
+is for the access token, and the connection date is not the key's creation date.
+
+**Update key → get a new key in Garmin → paste it → Reconnect Garmin.** Validate
+the new key and account before replacing the saved connection. A failed
+replacement preserves it. For the same account, retain drafts, import history,
+scan ranges and schedule; resume due work once, without enabling automatic
+checks in Manual only. Successful replacement invalidates old in-flight work.
+A different Garmin account requires an explicit new binding and cannot inherit
+the previous account's history or drafts.
 
 ### 2. Enable automatic preparation deliberately
 
@@ -443,7 +498,7 @@ Peakbagger Drafts                                      [Settings]
 Garmin Connect activity
 
 [ Inbox icon  Activity inbox                         3  › ]
-Drafts stay until saved or removed.
+Your Garmin activities, imported automatically.
 
 Prepare this activity
 Find summit matches from the activity open in this tab.
@@ -572,7 +627,8 @@ status**, not **Try again**, and do not create replacement ascents automatically
 
 | State | User-facing feedback | Recovery |
 | --- | --- | --- |
-| Token/key rejected after one bounded renewal attempt | Garmin connection needs attention | Replace key |
+| Confirmed key expiry after one bounded renewal attempt | Garmin API key expired. Imports paused; your drafts are safe. | Update key |
+| Credentials rejected, expiry not confirmed | Garmin needs a new API key. Imports paused; your drafts are safe. | Update key |
 | Offline or temporary Garmin failure | Could not check Garmin; previous results remain | Check again, respecting backoff |
 | Rate-limited | Garmin asked us to wait; show retry time if trustworthy | Automatic resume after cooldown; no hammering Retry |
 | No Peakbagger session / account changed | Sign in to the selected Peakbagger account | Open Peakbagger; account changes require explicit rebind |
@@ -950,6 +1006,12 @@ states. Test keyboard
 focus and duplicate activation in both browsers. Use masked HTTPS fixtures
 and hidden real browsers under the repository's non-interruption rules. Before
 implementation, confirm the selected harness can load the target UI.
+
+For credentials, verify confirmed expiry versus unknown rejection, one bounded
+token renewal, paused retries after restart, and network errors that do not
+claim expiry. Rejected replacements must preserve a working connection; a
+same-account replacement must keep drafts, ranges and Manual only. Verify the
+direct Garmin key link in both setup and recovery forms.
 
 For range settings, verify presets/custom-day bounds, explicit-date/all-history
 choices, effective-range clipping, Manual only descriptions, and changing scope

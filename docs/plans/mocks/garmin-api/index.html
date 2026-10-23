@@ -16,7 +16,8 @@
     <div><strong>Workflow prototype</strong><span>Fictional data · no connections or downloads</span></div>
     <label>Screen <select id="screen"><option value="connect">1 · Connect</option><option value="settings">2 · Schedule</option><option value="inbox">3 · Inbox</option><option value="review">4 · Review</option><option value="export">5 · Export</option></select></label>
     <label>Theme <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
-    <label>Response <select id="response"><option value="success">Success</option><option value="error">Offline error</option></select></label>
+    <label>Response <select id="response"><option value="success">Success</option><option value="error">Offline error</option><option value="expired">Expired key</option><option value="rejected">Key not accepted</option></select></label>
+    <label>Connection <select id="connection-state"><option value="active">Connected</option><option value="expired">Key expired</option><option value="rejected">New key needed</option></select></label>
     <a href="popup.html">Toolbar popup prototype</a>
   </div>
   <div class="app">
@@ -28,36 +29,41 @@
     <main>
       <section data-screen="connect">
         <p class="eyebrow">Settings / Capture &amp; reports</p>
-        <h1>Capture &amp; reports</h1>
-        <p class="lede">Connect Garmin to prepare drafts from your activities.</p>
+        <h1 id="connect-title">Connect Garmin</h1>
+        <p class="lede" id="connect-lede">Bring your Garmin activities into your inbox automatically.</p>
         <div class="card connection">
-          <div class="card-heading"><h2>Garmin connection</h2><span class="quiet-tag">Not connected</span></div>
-          <ol class="connect-steps"><li><strong>Create a personal key</strong><p>In Garmin Connect, open Settings → Personal API.</p><span class="link-text">Create a key in Garmin Connect ↗</span></li><li><label for="personal-key"><strong>Paste your personal key</strong></label><div class="key-field"><input id="personal-key" type="password" value="fictional-demo-key" autocomplete="off" spellcheck="false" readonly aria-describedby="key-note"><button id="show-key" class="secondary" type="button">Show</button></div><p id="key-note">Your key is stored on this device.</p></li></ol>
-          <div class="card-footer"><button id="connect" class="primary">Connect Garmin</button><div class="feedback"><span aria-hidden="true">Could not reach Garmin. Check your connection, then try again.</span><span id="connect-status" role="status">You’ll choose which activities to prepare next.</span></div></div>
+          <div class="card-heading"><h2>Garmin connection</h2><span class="quiet-tag" id="connect-tag">Not connected</span></div>
+          <div class="key-body">
+            <div class="key-label"><label for="personal-key"><strong>Personal API key</strong></label><a id="get-garmin-key" href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer" aria-label="Get a Garmin API key (opens in a new tab)">Get a Garmin API key ↗</a></div>
+            <p>Create a key in Garmin, then paste it below.</p>
+            <div class="key-field"><input id="personal-key" type="password" value="fictional-demo-key" autocomplete="off" spellcheck="false" readonly aria-describedby="key-note connect-status"><button id="show-key" class="secondary" type="button" aria-controls="personal-key" aria-pressed="false">Show</button></div>
+            <p id="key-note">Stored only on this device. Keys last up to one year.</p>
+          </div>
+          <div class="card-footer"><button id="connect" class="primary">Connect Garmin</button><div class="feedback"><span aria-hidden="true">Could not reach Garmin. Check your connection, then try again.</span><span aria-hidden="true">Garmin didn’t accept this key. Copy the full key or get a new one.</span><span id="connect-status" role="status" aria-atomic="true">You’ll choose which activities to prepare next.</span></div></div>
         </div>
         <p class="footnote">Connecting never saves an ascent. You review every draft in Peakbagger.</p>
       </section>
 
       <section data-screen="settings" hidden>
-        <p class="eyebrow">Settings / Capture &amp; reports</p><h1>Garmin drafts</h1><p class="lede">New activities, ready when you are.</p>
+        <p class="eyebrow">Settings / Capture &amp; reports</p><h1>Garmin drafts</h1><p class="lede">New Garmin activities become drafts for you to review.</p>
         <div class="card">
-          <div class="card-heading"><h2>Garmin connection</h2><span class="connected"><span aria-hidden="true">●</span> Connected on this device</span></div>
+          <div class="card-heading"><h2>Garmin connection</h2><span class="connected" id="settings-connection">● Connected</span></div>
           <div class="setting-row"><label for="frequency"><strong>Check for activities</strong><span>While your browser is running.</span></label><select id="frequency"><option value="manual">Manual only</option><option value="1">Every hour</option><option value="4" selected>Every 4 hours</option><option value="12">Every 12 hours</option><option value="24">Every day</option><option value="custom">Custom…</option></select></div>
           <div class="setting-row" id="custom-row" hidden><label for="custom-hours"><strong>Custom interval</strong><span>Between 1 and 168 hours.</span></label><div class="inline"><input id="custom-hours" type="number" min="1" max="168" value="6" required><span>hours</span></div></div>
           <div class="setting-row"><label for="activity-types"><strong>Activities</strong><span>Recordings with a GPS route.</span></label><select id="activity-types"><option>Hikes, walks &amp; trail runs</option><option>All outdoor activities</option></select></div>
           <div class="setting-row"><label for="history"><strong>Start with</strong><span>Based on when the activity was recorded.</span></label><select id="history"><option selected>Activities from today</option><option>Last 30 days</option><option>All available history</option></select></div>
           <div class="setting-row"><div><strong>Peakbagger account</strong><span>Drafts are prepared for this climber.</span></div><span>Alex Morgan <span class="connected" aria-label="verified">✓</span></span></div>
-          <div class="card-footer"><div class="actions"><button id="settings-primary" class="primary">Open activity inbox</button><button class="secondary" id="settings-check">Check now</button></div><div class="feedback"><span aria-hidden="true">Could not reach Garmin. Check your connection, then try again.</span><span id="settings-status" role="status">Last checked 10:40 AM · Next check about 2:40 PM</span></div></div>
+          <div class="card-footer"><div class="actions"><button id="settings-primary" class="primary">Open activity inbox</button><button class="secondary" id="settings-check">Check now</button></div><div class="feedback"><span aria-hidden="true">Could not reach Garmin. Check your connection, then try again.</span><span aria-hidden="true">Garmin needs a new API key. Imports paused; your drafts are safe. Update key</span><span><span id="settings-status" role="status" aria-atomic="true">Last checked 10:40 AM · Next check about 2:40 PM</span> <a href="#connect" id="settings-update-key" class="update-key" hidden>Update key</a></span></div></div>
         </div>
         <p class="footnote">Drafts and reduced routes stay here until completed or removed.</p>
-        <details class="connection-details"><summary>Connection details</summary><p>Older uploads are checked gradually within your selected history. Manual checks respect Garmin’s cooldowns.</p><div class="actions"><button class="secondary" id="full-history">Check full history</button><a href="#connect" class="secondary">Replace key</a></div><p>Disconnecting keeps your prepared drafts. Deleting local Garmin data also removes drafts and import history.</p></details>
+        <details class="connection-details"><summary>Connection details</summary><p>Older uploads are checked gradually within your selected history. Manual checks respect Garmin’s cooldowns.</p><div class="actions"><button class="secondary" id="full-history">Check full history</button><a href="#connect" class="secondary update-key" id="replace-key">Replace key</a></div><p>Disconnecting keeps your prepared drafts. Deleting local Garmin data also removes drafts and import history.</p></details>
       </section>
 
       <section data-screen="inbox" hidden>
         <p class="eyebrow">Garmin / Activity inbox</p>
-        <div class="page-heading"><div><h1>Activity inbox</h1><p class="lede">2 ready to review · 1 waiting for sign-in</p></div><button id="inbox-check" class="secondary">Check now</button></div>
-        <div class="sync-line"><span class="connected">● Garmin connected</span><span>Every 4 hours</span><a href="#settings">Settings</a></div>
-        <div class="feedback inbox-feedback"><span aria-hidden="true">Could not reach Garmin. Your drafts are safe. Check your connection and try again.</span><span id="inbox-status" role="status">Last checked today at 10:40 AM</span></div>
+        <div class="page-heading"><div><h1>Activity inbox</h1><p class="lede" id="inbox-lede">Your Garmin activities, imported automatically.</p></div><button id="inbox-check" class="secondary">Check now</button></div>
+        <div class="sync-line"><span class="connected" id="inbox-connection">● Garmin connected</span><span id="inbox-frequency">Every 4 hours</span><a href="#settings">Settings</a></div>
+        <div class="feedback inbox-feedback"><span aria-hidden="true">Could not reach Garmin. Your drafts are safe. Check your connection and try again.</span><span aria-hidden="true">Garmin needs a new API key. Imports paused; your drafts are safe. Update key</span><span><span id="inbox-status" role="status" aria-atomic="true">Last checked today at 10:40 AM</span> <a href="#connect" id="inbox-update-key" class="update-key" hidden>Update key</a></span></div>
         <div class="inbox-list">
           <article class="activity card"><div class="activity-body"><p class="date">OCT 22, 2026</p><h2>Hike</h2><p class="metrics">12.4 km <span>·</span> 890 m gain <span>·</span> 4 h 12 min</p><div class="badges"><span class="badge strong">2 Strong</span><span class="badge probable">1 Probable</span></div></div><a href="#review" class="primary-button">Review activity</a></article>
           <article class="activity card"><div class="activity-body"><p class="date">OCT 20, 2026</p><h2>Trail run</h2><p class="metrics">8.6 km <span>·</span> 420 m gain</p><p class="waiting">Waiting for Peakbagger sign-in</p></div><button id="sign-in" class="secondary">Open Peakbagger</button></article>

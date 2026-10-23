@@ -27,7 +27,7 @@
         <span class="inbox-count-slot" aria-hidden="true"><span id="popup-count">3</span></span>
         <span class="inbox-indicator" aria-hidden="true"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m7 4 6 6-6 6"/></svg><span class="inbox-spinner" hidden></span></span>
       </button>
-      <div class="inbox-feedback"><span aria-hidden="true">Couldn’t open inbox. Try again.</span><span aria-hidden="true">Drafts stay until saved or removed.</span><span id="popup-inbox-status" role="status" aria-atomic="true">Drafts stay until saved or removed.</span></div>
+      <div class="inbox-feedback"><span aria-hidden="true">Couldn’t open inbox. Try again.</span><span aria-hidden="true">Your Garmin activities, imported automatically.</span><span aria-hidden="true">Connect Garmin to import your activities.</span><span aria-hidden="true">Garmin key expired. Open inbox to reconnect.</span><span aria-hidden="true">Garmin needs a new key. Open inbox to reconnect.</span><span aria-hidden="true">Your Garmin activities, ready when you check.</span><span id="popup-inbox-status" role="status" aria-atomic="true">Your Garmin activities, imported automatically.</span></div>
       <span id="popup-count-status" class="visually-hidden" role="status" aria-atomic="true"></span>
     </nav>
 
@@ -44,7 +44,7 @@
   <aside class="demo-controls" aria-label="Prototype controls">
     <strong>Popup prototype</strong><p>Fictional states · no Garmin access or tab creation</p>
     <label>Current tab <select id="popup-context"><option value="activity">Garmin activity</option><option value="unsupported">Any other website</option><option value="working">Capture in progress</option><option value="capture-error">Capture error</option></select></label>
-    <label>Inbox <select id="popup-state"><option value="ready">3 pending activities</option><option value="empty">Empty</option><option value="disconnected">Not connected</option><option value="checking">Checking · 3 pending</option><option value="attention">Reconnect · 3 pending</option><option value="unknown">Count unavailable</option><option value="many">125 pending activities</option></select></label>
+    <label>Inbox <select id="popup-state"><option value="ready">3 pending activities</option><option value="empty">Empty</option><option value="disconnected">Not connected</option><option value="checking">Checking · 3 pending</option><option value="attention">New key needed · 3 pending</option><option value="expired">Key expired · 3 pending</option><option value="manual">Manual checks · 3 pending</option><option value="unknown">Count unavailable</option><option value="many">125 pending activities</option></select></label>
     <label>Open result <select id="popup-response"><option value="success">Open inbox</option><option value="error">Opening fails</option></select></label>
     <label>Theme <select id="popup-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
     <a href="index.html#inbox">Full workflow prototype</a>

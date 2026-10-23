@@ -14,8 +14,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../../..');
 const preflight = process.argv.slice(2).includes('--preflight');
 const popupOnly = process.argv.slice(2).includes('--popup-only');
-assert(process.argv.slice(2).every(arg => ['--preflight', '--popup-only'].includes(arg)), 'Unknown argument');
-assert(!(preflight && popupOnly), 'Choose preflight or popup-only');
+const authOnly = process.argv.slice(2).includes('--auth-only');
+assert(process.argv.slice(2).every(arg => ['--preflight', '--popup-only', '--auth-only'].includes(arg)), 'Unknown argument');
+assert([preflight, popupOnly, authOnly].filter(Boolean).length <= 1, 'Choose one renderer selection');
 assertChromeLaunchAllowed();
 await access(chromium.executablePath());
 await access(firefox.executablePath());
@@ -58,15 +59,18 @@ try {
     if (!preflight) {
         const { verifyAndCapture } = await import('./verify.mjs');
         await mkdir(path.join(here, 'images'), { recursive: true });
-        if (!popupOnly) await verifyAndCapture({ page, origin, output: path.join(here, 'images'), capture: true });
+        if (!popupOnly && !authOnly) await verifyAndCapture({ page, origin, output: path.join(here, 'images'), capture: true });
         const { verifyPopup } = await import('./verify-popup.mjs');
-        await verifyPopup({ page, origin, output: path.join(here, 'images'), capture: true });
+        if (!authOnly) await verifyPopup({ page, origin, output: path.join(here, 'images'), capture: true });
+        const { verifyAuth } = await import('./verify-auth.mjs');
+        if (!popupOnly) await verifyAuth({ page, origin, output: path.join(here, 'images'), capture: true });
         const ff = await firefox.launch({ headless: true,
             firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } });
         browsers.push(ff);
         const ffPage = await ff.newPage({ viewport: { width: 1180, height: 900 }, ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
-        if (!popupOnly) await verifyAndCapture({ page: ffPage, origin, capture: false });
-        await verifyPopup({ page: ffPage, origin, capture: false });
+        if (!popupOnly && !authOnly) await verifyAndCapture({ page: ffPage, origin, capture: false });
+        if (!authOnly) await verifyPopup({ page: ffPage, origin, capture: false });
+        if (!popupOnly) await verifyAuth({ page: ffPage, origin, capture: false });
         console.log(`Verified hidden Chromium ${browser.version()} and Firefox ${ff.version()}; DOM/CSS only, no WebGL.`);
     }
 } finally {
