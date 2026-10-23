@@ -1,12 +1,23 @@
 # Garmin Personal API and automatic draft inbox
 
-Status: research and proposed workflow, revised October 23, 2026. Runtime
-implementation has not started. Initial source review used commit `61b07643`;
+Status: implementation in progress, October 23, 2026. Initial source review used commit `61b07643`;
 the revision also inspected the current settings credential export/import path
 and toolbar popup startup, layout and capture controls.
 The user authorized bounded read-only tests of their personal key; no key,
 token, activity identifier, activity name, coordinate, or original activity file
 is included in this plan.
+
+Implementation ledger (updated with each completed unit):
+
+| Unit | Status / evidence |
+| --- | --- |
+| Strict FIT route adapter | Implemented; 24 focused tests and ESLint pass. Vendored MIT raw reader with bounded streaming projection and compressed-timestamp fix. Legacy protocol 0 and multisport remain explicit unsupported cases. |
+| Device-local credentials, API and discovery | Pending |
+| Durable inbox and short-lived draft handoff | Pending |
+| Settings, inbox and popup UI | Pending |
+| Credential-file export/import | Pending |
+| Browser integration, privacy and documentation | Pending |
+| Distribution / business program | External agreement review remains open; no business account application or release is authorized by implementation. |
 
 ## Recommendation
 
