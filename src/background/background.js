@@ -3597,7 +3597,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         },
         openDrafts: async (message, sender) => {
             const state = await garminImports.store.read(); const item = state.items[message.id];
-            if (!item?.analysis || !item.cid) throw new Error('This activity is not ready.');
+            if (!item?.analysis || !item.cid || item.phase === 'dismissed') throw new Error('This activity is not ready.');
             await garminBinding(item.cid);
             const tabId = sender.tab?.id ?? Number(message.tabId);
             const source = await ext.tabs.get(tabId);
@@ -3612,9 +3612,13 @@ import { GarminError } from '../garmin/garmin-api.js';
                 const preferences = await readCapturePreferences();
                 const analysis = item.analysis;
                 const matches = analysis.matches.filter(match => !item.saved.includes(String(match.id)));
+                if (!Array.isArray(message.selectedIds) || !message.selectedIds.length
+                    || message.selectedIds.some(pid => !matches.some(match => match.id === pid))) throw new Error('Select current summit matches before opening drafts.');
                 const id = makeId();
                 await garminImports.store.mutate(current => {
-                    if (current.epoch !== state.epoch || current.items[item.id]?.handoff) throw new Error('The inbox changed.');
+                    const live = current.items[item.id];
+                    if (current.epoch !== state.epoch || !live || live.handoff || live.phase === 'dismissed'
+                        || (live.revision || 0) !== (item.revision || 0)) throw new Error('The inbox changed.');
                     current.items[item.id].handoff = { jobId: id, tabId };
                 });
                 await installLifecycleJob({ id, sourceTabId: tabId, provider: 'garmin', activityId: item.id,

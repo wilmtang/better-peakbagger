@@ -21,7 +21,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     decode = decodeGarminRecording, prepare, binding, openDrafts, clock = Date.now, date = today } = {}) {
     const trusted = createPackagedPageMatcher(ext, ['options/options.html', 'options/inbox.html']);
     const popup = createPackagedPageMatcher(ext, ['popup/popup.html']);
-    let running = null; let controller = null; let opening = null; let client = null; let clientEpoch = -1; let publicCache = null;
+    let running = null; let queuedFull = null; let controller = null; let opening = null; let client = null; let clientEpoch = -1; let publicCache = null;
     const mutateEpoch = (epoch, mutate) => store.mutate(state => {
         if (state.epoch !== epoch) throw new GarminError('cancelled'); return mutate(state);
     });
@@ -127,7 +127,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         }
         const fullScan = full || !!state.scan?.full || clock() - state.lastFull >= 7 * DAY;
         const scope = JSON.stringify([prefs.garminHistoryStart, prefs.garminRecentDays, prefs.garminActivityTypes]);
-        const range = state.scan?.scope === scope ? { from: state.scan.from, to: state.scan.to }
+        const range = state.scan?.scope === scope && (!full || state.scan.full) ? { from: state.scan.from, to: state.scan.to }
             : importRange(prefs, connection.connectedDate, state.lastCheck, fullScan, date());
         const signature = JSON.stringify({ ...range, types: prefs.garminActivityTypes });
         let scan = state.scan?.signature === signature ? state.scan : { ...range, scope, signature, offset: 0, full: fullScan, head: null };
@@ -182,7 +182,9 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
                 stage = 'prepare';
                 const result = await prepare(item, route, context, controller.signal);
                 await mutateEpoch(epoch, current => {
-                    if (!current.items[item.id] || current.items[item.id].handoff) return;
+                    if (!current.items[item.id] || current.items[item.id].handoff
+                        || current.items[item.id].phase === 'dismissed'
+                        || (current.items[item.id].revision || 0) !== (item.revision || 0)) return;
                     const next = { ...current.items[item.id], ...result, phase: result.phase || 'ready', error: null };
                     const size = new TextEncoder().encode(JSON.stringify({ ...current.items, [item.id]: next })).length;
                     if (size > 20 * 1024 * 1024) throw new GarminError('capacity');
@@ -191,7 +193,9 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             } catch (error) {
                 if (controller.signal.aborted || ['key-rejected', 'rate', 'identity', 'capacity'].includes(error.code)) throw error;
                 await mutateEpoch(epoch, current => {
-                    if (current.items[item.id]) Object.assign(current.items[item.id], {
+                    if (current.items[item.id] && !current.items[item.id].handoff
+                        && current.items[item.id].phase !== 'dismissed'
+                        && (current.items[item.id].revision || 0) === (item.revision || 0)) Object.assign(current.items[item.id], {
                         phase: stage === 'decode' ? 'unsupported' : 'error',
                         error: stage === 'decode' ? 'This recording is damaged or unsupported. Open Garmin and use its GPX export.'
                             : stage === 'prepare' ? 'Could not finish finding peaks. Open Peakbagger and check again.'
@@ -203,7 +207,10 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         await mutateEpoch(epoch, current => { current.preparePending = Object.values(current.items).some(item => item.phase === 'waiting'); });
     };
     const check = (full = false, continuation = false) => {
-        if (running) return running;
+        if (running) {
+            if (full) return queuedFull ||= running.then(() => check(true)).finally(() => { queuedFull = null; });
+            return running;
+        }
         running = runCheck(full, continuation).catch(async error => {
             if (controller?.signal.aborted) return;
             const failure = error instanceof GarminError ? error : new GarminError('offline');
@@ -242,6 +249,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         GARMIN_DISMISS: async message => {
             await store.mutate(state => { const item = state.items[message.id]; if (!item) return;
                 if (item.handoff) throw new GarminError('handoff');
+                item.revision = (item.revision || 0) + 1;
                 item.previousPhase = item.phase; item.phase = 'dismissed'; item.undoUntil = clock() + 60000;
                 state.receipts[message.id] = { owner: item.owner, cid: item.cid, dismissed: true, date: item.summary?.date || '' }; });
             await reconcile(); return { ok: true };
@@ -261,7 +269,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         GARMIN_RETRY: async message => {
             await store.mutate(state => { const item = state.items[message.id];
                 if (item?.handoff) throw new GarminError('handoff');
-                if (item) { item.phase = 'waiting'; item.retryAt = 0; } });
+                if (item && item.phase !== 'dismissed') { item.revision = (item.revision || 0) + 1; item.phase = 'waiting'; item.retryAt = 0; } });
             void check(); return { ok: true };
         },
         GARMIN_OPEN_DRAFTS: (message, sender) => openDrafts(message, sender),

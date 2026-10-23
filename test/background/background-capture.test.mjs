@@ -4358,6 +4358,8 @@ test('Garmin inbox recreates a private handoff and reuses it without duplicating
     });
     const sender = { tab: { id: 9 }, url: 'chrome-extension://test-extension/options/inbox.html' };
     const message = { type: 'GARMIN_OPEN_DRAFTS', id: '123', tabId: 9, selectedIds: [7] };
+    assert.equal((await harness.send({ ...message, selectedIds: [999999] }, sender)).ok, false);
+    assert.equal((await store.read()).items['123'].handoff, undefined, 'Invalid selection must not lock a durable activity');
     const first = await harness.send(message, sender);
     assert.equal(first.ok, true, JSON.stringify(first)); assert.equal(first.tabIds.length, 1);
     const draft = harness.values.bpbDraftTabs[first.tabIds[0]];

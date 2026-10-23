@@ -125,3 +125,27 @@ test('resumable coverage keeps its declared end date across midnight', async () 
     await imports.check(); date = '2026-10-24'; await imports.check(false, true);
     assert.equal(queries.at(-1).to, '2026-10-23'); assert.equal((await store.read()).scan.offset, 270); await store.close();
 });
+
+test('a dismissed activity stays dismissed when an in-flight recording finishes', async () => {
+    let finish, started; const ready = new Promise(resolve => { started = resolve; });
+    const { imports, store } = await setup({ api: { recording: async () => { started(); return new Promise(resolve => { finish = resolve; }); } } });
+    const checking = imports.check(); await ready;
+    await imports.handle({ type: 'GARMIN_DISMISS', id: '12' }, sender);
+    finish(new Uint8Array()); await checking;
+    assert.equal((await imports.snapshot()).pending, 0);
+    assert.equal((await store.read()).items['12'].phase, 'dismissed');
+    await store.close();
+});
+test('full-history intent survives a concurrent recent scan and restarts at the history boundary', async () => {
+    let finish, started; const ready = new Promise(resolve => { started = resolve; }); let held = true; const queries = [];
+    const { imports, store } = await setup({ api: { list: async query => {
+        queries.push(query);
+        if (held) { held = false; started(); await new Promise(resolve => { finish = resolve; }); }
+        return [];
+    } } });
+    await store.mutate(s => { s.lastFull = Date.now(); });
+    const active = imports.check(); await ready; const full = imports.check(true);
+    finish(); await Promise.all([active, full]);
+    assert(queries.some(query => query.from === '2026-01-01'), 'Explicit full-history request must not disappear behind a recent check');
+    await store.close();
+});
