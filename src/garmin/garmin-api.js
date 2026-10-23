@@ -38,7 +38,7 @@ export async function boundedGarminBytes(response, limit) {
 }
 export function createGarminClient({ key, fetcher = globalThis.fetch, clock = Date.now, signal } = {}) {
     if (!cleanGarminKey(key)) throw new GarminError('key-rejected');
-    let bearer = null; let expires = 0; let exchange = null;
+    let bearer = null; let expires = 0; let exchange = null; let subject = null;
     const request = async (path, authorization, { token = false, binary = false } = {}) => {
         signal?.throwIfAborted();
         let response;
@@ -68,6 +68,7 @@ export function createGarminClient({ key, fetcher = globalThis.fetch, clock = Da
             try {
                 const payload = JSON.parse(atob(value.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
                 if (!Number.isFinite(payload.exp) || payload.exp * 1000 <= clock()) throw new Error();
+                subject = typeof payload.garmin_guid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(payload.garmin_guid) ? payload.garmin_guid : null;
                 expires = Math.min(payload.exp * 1000, clock() + 86400000); bearer = value; return bearer;
             } catch { throw new GarminError('response'); }
         })();
@@ -82,8 +83,22 @@ export function createGarminClient({ key, fetcher = globalThis.fetch, clock = Da
     return {
         async owner() {
             const data = await get('/userprofile-service/userprofile/settings');
-            const owner = positiveId(data?.userData?.userProfilePk);
-            if (!owner) throw new GarminError('identity'); return owner;
+            // The real settings response has display/locale preferences, no
+            // numeric profile ID. Do not use its display name as identity.
+            // Establish token usability with that authenticated API response,
+            // then corroborate numeric activity ownership through list+detail.
+            if (!subject || typeof data?.displayName !== 'string' || !data.displayName) throw new GarminError('identity');
+            const rows = await get('/activitylist-service/activities/search/activities?start=0&limit=1');
+            if (!Array.isArray(rows) || rows.length > 1) throw new GarminError('identity');
+            let owner = null;
+            if (rows.length) {
+                const id = positiveId(rows[0].activityId);
+                if (!id) throw new GarminError('identity');
+                const detail = await get(`/activity-service/activity/${id}`);
+                owner = positiveId(detail?.userProfileId);
+                if (!owner || positiveId(detail?.activityId) !== id || (positiveId(rows[0].ownerId) && positiveId(rows[0].ownerId) !== owner)) throw new GarminError('identity');
+            }
+            return { subject, owner }; // Empty accounts still have a stable binding.
         },
         async list({ start = 0, from, to }) {
             if (!Number.isSafeInteger(start) || start < 0 || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw new GarminError('response');

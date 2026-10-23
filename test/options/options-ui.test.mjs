@@ -1241,3 +1241,23 @@ test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
     assert.equal(el(dom, active.hash.slice(1)).hidden, false,
         'the scroll-spy must resolve to a visible settings section');
 });
+
+test('Garmin credential import names the key and requires API permission before writing', async () => {
+    const messages = []; const requested = [];
+    const dom = await loadOptions({ theme: 'dark' }, { prepareChrome: chrome => {
+        chrome.permissions = { contains: async () => false, remove: async () => true,
+            request: async details => { requested.push(structuredClone(details)); return false; } };
+        installSettingsFileWorker(chrome, { messages });
+    } });
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, { apiKeys: { garmin: 'fictional-garmin-personal-key' } });
+    const input = el(dom, 'settings-backup-file');
+    Object.defineProperty(input, 'files', { configurable: true, value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }] });
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => !el(dom, 'settings-backup-confirmation').hidden);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent, /Includes a Garmin key/);
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => /Garmin access was not granted/.test(el(dom, 'status-error-text').textContent));
+    assert.deepEqual(requested, [{ origins: ['https://personal.connectapi.garmin.com/*'] }]);
+    assert.equal(messages.some(message => message.type === 'SETTINGS_FILE_IMPORT'), false);
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark'); dom.window.close();
+});

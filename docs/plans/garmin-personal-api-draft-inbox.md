@@ -12,10 +12,10 @@ Implementation ledger (updated with each completed unit):
 | Unit | Status / evidence |
 | --- | --- |
 | Strict FIT route adapter | Implemented; 24 focused tests and ESLint pass. Vendored MIT raw reader with bounded streaming projection and compressed-timestamp fix. Legacy protocol 0 and multisport remain explicit unsupported cases. |
-| Device-local credentials, API and discovery | Implemented; API/store and discovery tests cover bounded renewal, projection, ID deduplication, resumable scans, rejected-key pause and Manual only. Live profile-identity/browser-permission validation remains open. |
+| Device-local credentials, API and discovery | Implemented; tests cover bounded renewal, projection, ID deduplication, resumable scans, rejected-key pause and Manual only. Live client identity/list/detail/recording read passed; native browser permission/networking validation remains open. |
 | Durable inbox and short-lived draft handoff | Implemented; bundled-worker test verifies retained snapshots, single-summit Save verification, handoff reuse and fail-closed expired delivery. Cross-entry receipts reserve toolbar imports too. |
 | Settings, inbox and popup UI | Implemented; 54 popup tests, settings/inbox behavior tests and eight hidden Chrome/Firefox fixture cases. Real unpacked Chrome startup passed. Native permission prompts and live provider integration remain open. |
-| Credential-file export/import | Pending |
+| Credential-file export/import | Implemented in schema 4; export checkbox, legacy omission, explicit null, permission refusal, failed validation, rollback and concurrent replacement covered. New devices do not inherit import consent. |
 | Browser integration, privacy and documentation | Privacy contract updated; actual Chrome manifest/worker check passed. Firefox extension integration and complete final suite remain pending. |
 | Distribution / business program | External agreement review remains open; no business account application or release is authorized by implementation. |
 
@@ -717,8 +717,8 @@ key in the versioned credential payload. The short-lived bearer token is always
 omitted. Frequency, activity types and both scan ranges may travel as ordinary
 settings; device permission and consent to start background processing do not.
 
-The current schema is version 3 and `cleanApiKeys` recognizes only `imgbb`.
-Extend the schema and compatibility tests deliberately: an absent Garmin key
+The implementation upgrades schema 3 to **schema 4**, adding `garmin` beside
+`imgbb`. Compatibility tests preserve these rules: an absent Garmin key
 field leaves an existing connection untouched, while explicit `null` represents
 a deliberate removal. Importing an older export must never erase the Garmin
 connection merely because that format did not know about it. Distinguish missing

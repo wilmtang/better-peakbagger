@@ -87,7 +87,7 @@ test('manual settings transfer round-trips every supported API key state', () =>
         { imgbb: null },
         'an explicit empty key lets import clear a key the destination already has'
     );
-    assert.deepEqual(Transfer.API_KEY_NAMES, ['imgbb']);
+    assert.deepEqual(Transfer.API_KEY_NAMES, ['imgbb', 'garmin']);
 });
 
 test('manual settings transfer includes a cleaned GitHub connection only when requested', () => {

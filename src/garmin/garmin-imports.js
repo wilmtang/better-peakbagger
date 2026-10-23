@@ -30,6 +30,8 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         return client;
     };
     const permission = () => ext.permissions.contains({ origins: [GARMIN_PERMISSION] });
+    const identity = async service => { const result = await service.owner();
+        return typeof result === 'string' ? { subject: result, owner: result } : result; };
     const reconcile = async () => {
         await ext.alarms.clear(GARMIN_ALARM);
         const [state, prefs] = await Promise.all([store.read(), settings.requireCurrent()]);
@@ -59,12 +61,13 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     const connect = async key => {
         if (!await permission()) throw new GarminError('permission');
         const previous = await store.read();
-        const candidate = clientFactory({ key }); const owner = await candidate.owner();
-        if (previous.connection?.owner && previous.connection.owner !== owner) throw new GarminError('identity');
+        const candidate = clientFactory({ key }); const account = await identity(candidate);
+        if (previous.connection && (previous.connection.subject || previous.connection.owner) !== account.subject) throw new GarminError('identity');
         controller?.abort(); clientEpoch = -1;
         await mutateEpoch(previous.epoch, state => {
             state.epoch++;
-            state.connection = { ...state.connection, key, owner, connectedDate: state.connection?.connectedDate || today(), enabled: state.connection?.enabled === true };
+            state.credentialEpoch = (state.credentialEpoch || 0) + 1;
+            state.connection = { ...state.connection, key, ...account, connectedDate: state.connection?.connectedDate || today(), enabled: state.connection?.enabled === true };
             state.error = null; state.retryAt = 0; state.scan = null;
         });
         await reconcile();
@@ -73,6 +76,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         controller?.abort(); clientEpoch = -1;
         await store.mutate(state => {
             state.epoch++; if (state.connection) { state.connection.key = null; state.connection.enabled = false; }
+            state.credentialEpoch = (state.credentialEpoch || 0) + 1;
             state.scan = null; state.error = null;
             if (removeData) { state.connection = null; state.items = {}; state.receipts = {}; state.lastCheck = 0; state.lastFull = 0; }
         });
@@ -96,6 +100,12 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         if (state.error?.code === 'key-rejected') throw new GarminError('key-rejected');
         if (state.retryAt > clock()) throw new GarminError('rate', state.retryAt);
         const epoch = state.epoch, prefs = await settings.requireCurrent(), service = api(state);
+        const account = await identity(service);
+        if (account.subject !== (connection.subject || connection.owner) || (connection.owner && account.owner !== connection.owner)) throw new GarminError('identity');
+        if (!connection.owner && account.owner) {
+            connection.owner = account.owner;
+            await mutateEpoch(epoch, current => { current.connection.owner = account.owner; });
+        }
         const fullScan = full || !!state.scan?.full || clock() - state.lastFull >= 7 * DAY;
         const range = importRange(prefs, connection.connectedDate, state.lastCheck, fullScan);
         const signature = JSON.stringify({ ...range, types: prefs.garminActivityTypes });
@@ -183,7 +193,8 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         GARMIN_ENABLE: async () => {
             const current = await store.read(); if (!current.connection?.key) throw new GarminError('key-rejected');
             const context = await binding(current.connection.cid);
-            await mutateEpoch(current.epoch, state => { state.connection.cid = context.cid; state.connection.enabled = true; });
+            await mutateEpoch(current.epoch, state => { state.connection.cid = context.cid; state.connection.enabled = true;
+                state.credentialEpoch = (state.credentialEpoch || 0) + 1; });
             await reconcile(); return { ok: true, ...await snapshot() };
         },
         GARMIN_CHECK: async message => { void check(message.full === true); return { ok: true }; },
@@ -207,6 +218,26 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         GARMIN_OPEN_DRAFTS: (message, sender) => openDrafts(message, sender),
     };
     return { store, connect, disconnect, check, reconcile, snapshot, settingsChanged,
+        async readSnapshot() { const state = await store.read(); return { epoch: state.credentialEpoch || 0, connection: state.connection }; },
+        async verifyImportedKey(key, previous) {
+            if (key === null) return previous.connection ? { ...previous.connection, key: null, enabled: false } : null;
+            if (!await permission()) throw new GarminError('permission');
+            const account = await identity(clientFactory({ key }));
+            if (previous.connection && (previous.connection.subject || previous.connection.owner) !== account.subject) throw new GarminError('identity');
+            return { ...previous.connection, key, ...account, connectedDate: previous.connection?.connectedDate || today(), enabled: previous.connection?.enabled === true };
+        },
+        async replaceIfSnapshot(expected, replacement) {
+            let result;
+            await store.mutate(state => {
+                if ((state.credentialEpoch || 0) !== expected.epoch || JSON.stringify(state.connection) !== JSON.stringify(expected.connection)) {
+                    result = { replaced: false }; return;
+                }
+                state.epoch++; state.credentialEpoch = expected.epoch + 1; state.connection = replacement;
+                state.scan = null; state.error = null; state.retryAt = 0; result = { replaced: true };
+            });
+            if (result.replaced) { controller?.abort(); clientEpoch = -1; await reconcile(); }
+            return result;
+        },
         async reserveCapture(job) {
             await store.mutate(state => {
                 const receipt = state.receipts[job.activityId];

@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.js';
 import { createGarminClient } from '../../src/garmin/garmin-api.js';
 const key = 'fictional-personal-key-for-tests';
-const jwt = () => `a.${btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }))}.b`;
+const jwt = () => `a.${btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600, garmin_guid: 'test-owner-guid' }))}.b`;
 test('API uses isolated transport, bounded token renewal and generic rejection', async () => {
     const calls = []; let exchange = 0;
     const client = createGarminClient({ key, fetcher: async (url, options) => {
@@ -20,10 +20,11 @@ test('owner verified through authenticated API; list drops names and coordinates
     let tokens = 0;
     const client = createGarminClient({ key, fetcher: async url => {
         if (url.endsWith('/token')) { tokens++; return new Response(jwt()); }
-        return Response.json(url.includes('userprofile') ? { userData: { userProfilePk: 123 } }
-            : [{ activityId: 45, ownerId: 123, startTimeLocal: '2026-10-23 08:00:00', activityName: 'private name', startLatitude: 48, averageHR: 120, activityType: { typeKey: 'hiking' } }]);
+        return Response.json(url.includes('userprofile') ? { displayName: 'not-used-as-identity' }
+            : url.includes('/activity-service/') ? { activityId: 45, userProfileId: 123 }
+                : [{ activityId: 45, ownerId: 123, startTimeLocal: '2026-10-23 08:00:00', activityName: 'private name', startLatitude: 48, averageHR: 120, activityType: { typeKey: 'hiking' } }]);
     } });
-    assert.equal(await client.owner(), '123');
+    assert.deepEqual(await client.owner(), { subject: 'test-owner-guid', owner: '123' });
     const list = await client.list({ from: '2026-10-01', to: '2026-10-23' });
     assert.deepEqual(Object.keys(list[0]), ['id', 'owner', 'date', 'localStart', 'utcStart', 'type']); assert.equal(tokens, 1);
 });

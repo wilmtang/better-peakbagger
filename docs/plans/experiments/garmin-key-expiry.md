@@ -57,3 +57,23 @@ the key's undocumented string segments, or one year since connection.
 The expiry-specific mock remains an illustrative future state. Enabling it
 requires a documented expiry signal or a bounded test with a genuinely expired
 key that returns an unambiguous expiry reason. No such key was available here.
+
+## Implementation client check
+
+The implemented client was exercised on October 23 with the authorized key.
+Garmin's `/userprofile-service/userprofile/settings` response contained display
+and locale preferences, **not** `userData.userProfilePk`. The initial validator
+rejected this response without changing the connection. The corrected validator
+checks token usability with the authenticated settings read, binds the subject
+from the token obtained directly from Garmin, and corroborates numeric activity
+ownership using a one-item list plus its detail response. Empty accounts keep a
+subject binding without inventing a numeric profile ID. Display names are never
+used as account identity.
+
+The corrected live run verified the binding and owner consistency across 12
+summaries, then downloaded and decoded one recording in memory: four route
+segments, 5,380 points, with only `lat`, `lon`, `ele` and `time` projected.
+No key, token, identity value, activity ID, route or health values were logged
+or written to a fixture. This was a Node transport/decoder check; native browser
+permission prompts and browser-origin authenticated networking remain separate
+verification gaps.

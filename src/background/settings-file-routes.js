@@ -55,6 +55,7 @@ export function createSettingsFileRoutes({
     keyStore = ImgbbAuth.keyStore,
     authStore = GithubAuth.authStore,
     verifyGithubConnection,
+    garmin = null,
 } = {}) {
     if (!ext || !settings?.requireCurrent || !settings?.applyPatch || !settings?.replaceIfCurrent
         || !settings?.clean || !keyStore?.read || !keyStore?.replace || !keyStore?.replaceIfCurrent
@@ -86,16 +87,18 @@ export function createSettingsFileRoutes({
         if (!isOptionsPage(sender)) return forbidden();
         const includeCredentials = message?.includeCredentials === true;
         try {
-            const [currentSettings, imgbb, auth] = await Promise.all([
+            const [currentSettings, imgbb, auth, garminSnapshot] = await Promise.all([
                 settings.requireCurrent(),
                 includeCredentials ? keyStore.read() : null,
                 includeCredentials ? authStore.read() : null,
+                includeCredentials && garmin ? garmin.readSnapshot() : null,
             ]);
             const connection = includeCredentials ? connectionPayload(auth) : null;
             const payload = Transfer.buildPayload(currentSettings, {
                 extensionVersion: ext.runtime.getManifest().version,
                 exportedAt: new Date().toISOString(),
-                ...(includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null } } : {}),
+                ...(includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null,
+                    ...(garmin ? { garmin: garminSnapshot?.connection?.key || null } : {}) } } : {}),
                 ...(connection ? { githubConnection: connection } : {}),
             });
             return {
@@ -118,9 +121,22 @@ export function createSettingsFileRoutes({
     };
 
     const importParsed = async parsed => {
-        const importsApiKeys = Object.hasOwn(parsed, 'apiKeys');
+        const importsApiKeys = Object.hasOwn(parsed.apiKeys || {}, 'imgbb');
+        const importsGarmin = Object.hasOwn(parsed.apiKeys || {}, 'garmin');
         const importsGithubConnection = Object.hasOwn(parsed, 'githubConnection');
         const stores = storeStates({ importsApiKeys, importsGithubConnection });
+        let previousGarmin; let installedGarmin; let garminAttempted = false;
+        if (importsGarmin) {
+            stores.garmin = 'not-written';
+            try {
+                if (!garmin) throw new Error();
+                previousGarmin = await garmin.readSnapshot();
+                installedGarmin = await garmin.verifyImportedKey(parsed.apiKeys.garmin, previousGarmin);
+            } catch {
+                return { ok: false, error: { source: 'garmin', code: 'garmin-validation',
+                    message: 'The Garmin key in this file could not be verified. Allow Garmin access and check the key; nothing was imported.' }, stores };
+            }
+        }
         let importedGithubAuth = null;
         if (importsGithubConnection) {
             try {
@@ -188,6 +204,12 @@ export function createSettingsFileRoutes({
         } : null;
         const attempted = { settings: false, imgbb: false, github: false };
         try {
+            if (importsGarmin) {
+                garminAttempted = true;
+                const result = await garmin.replaceIfSnapshot(previousGarmin, installedGarmin);
+                if (!result.replaced) throw new Error('Garmin connection changed during import.');
+                stores.garmin = 'committed';
+            }
             attempted.settings = true;
             const importedSettings = await settings.applyPatch(parsed.settings);
             stores.settings = 'committed';
@@ -229,6 +251,12 @@ export function createSettingsFileRoutes({
                     console.error(`Better Peakbagger: ${name} import rollback failed`, rollbackError);
                 }
             };
+            if (garminAttempted) {
+                try {
+                    const restored = await garmin.replaceIfSnapshot({ epoch: previousGarmin.epoch + 1, connection: installedGarmin }, previousGarmin.connection);
+                    stores.garmin = restored.replaced ? 'rolled-back' : 'conflicted';
+                } catch { stores.garmin = 'rollback-failed'; }
+            }
             if (attempted.github) {
                 try {
                     const result = await authStore.replaceIfSnapshot(

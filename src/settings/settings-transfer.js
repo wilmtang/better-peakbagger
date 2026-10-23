@@ -6,11 +6,12 @@
 import { settingsSchema as Schema } from './settings-schema.js';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { cleanGarminKey } from '../garmin/garmin-api.js';
 
 const KIND = 'better-peakbagger-settings';
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const BACKUP_PATH = 'settings.json';
-const API_KEY_NAMES = Object.freeze(['imgbb']);
+const API_KEY_NAMES = Object.freeze(['imgbb', 'garmin']);
 const IMPORT_MAX_BYTES = 1024 * 1024;
 const IMPORT_STRUCTURE_LIMITS = Object.freeze({
     maxDepth: 12,
@@ -34,11 +35,18 @@ const pick = settings => {
 };
 
 const cleanApiKeys = value => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)
-        || !Object.hasOwn(value, 'imgbb')) return null;
-    if (value.imgbb == null) return { imgbb: null };
-    const imgbb = ImgbbClient.cleanKey(value.imgbb);
-    return imgbb ? { imgbb } : null;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const result = {};
+    for (const name of API_KEY_NAMES) {
+        if (!Object.hasOwn(value, name)) continue;
+        if (value[name] === null) result[name] = null;
+        else {
+            const cleaned = name === 'imgbb' ? ImgbbClient.cleanKey(value[name]) : cleanGarminKey(value[name]);
+            if (!cleaned) return null;
+            result[name] = cleaned;
+        }
+    }
+    return Object.keys(result).length ? result : null;
 };
 
 const cleanGithubPart = (value, { max = 255, slash = false } = {}) => {

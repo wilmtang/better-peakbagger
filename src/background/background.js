@@ -3633,6 +3633,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     });
     const settingsFileRoutes = createSettingsFileRoutes({
         ext,
+        garmin: garminImports,
         verifyGithubConnection: githubRoutes.validateImportedConnection,
     });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });

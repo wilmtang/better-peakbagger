@@ -62,3 +62,18 @@ test('untrusted messages cannot read retained routes or credentials', async () =
     const summary = await imports.handle({ type: 'GARMIN_SUMMARY' }, { ...sender, url: 'chrome-extension://test/popup/popup.html' });
     assert.equal(summary.items, undefined); assert.equal(JSON.stringify(summary).includes('fictional-personal-key'), false); await store.close();
 });
+
+test('credential imports preserve consent and ignore independent scope epochs', async () => {
+    const { imports, prefs, store } = await setup();
+    const snapshot = await imports.readSnapshot();
+    const next = await imports.verifyImportedKey('replacement-fictional-key', snapshot);
+    prefs.garminRecentDays = 14; await imports.settingsChanged();
+    assert.equal((await imports.replaceIfSnapshot(snapshot, next)).replaced, true);
+    assert.equal((await store.read()).connection.enabled, true);
+    const onNewDevice = await imports.verifyImportedKey('replacement-fictional-key', { epoch: 0, connection: null });
+    assert.equal(onNewDevice.enabled, false);
+    const before = await imports.readSnapshot();
+    await imports.connect('newer-fictional-key');
+    assert.equal((await imports.replaceIfSnapshot(before, next)).replaced, false);
+    assert.equal((await store.read()).connection.key, 'newer-fictional-key'); await store.close();
+});

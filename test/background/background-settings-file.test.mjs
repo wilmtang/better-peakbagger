@@ -26,6 +26,7 @@ const harness = ({
     settings = { theme: 'dark', units: 'imperial' },
     imgbb = null,
     github = null,
+    garmin = null,
     verifyGithubConnection = async connection => ({
         ok: true,
         auth: {
@@ -60,7 +61,7 @@ const harness = ({
         },
     };
     const routes = createSettingsFileRoutes({
-        ext, settings: settingsStore, keyStore, authStore, verifyGithubConnection,
+        ext, settings: settingsStore, keyStore, authStore, verifyGithubConnection, garmin,
     });
     return { routes, sync, local, settingsStore, keyStore, authStore };
 };
@@ -528,3 +529,64 @@ for (const failedStore of ['settings', 'imgbb', 'github']) {
         assert.match(response.error.message, /Reload Settings and review/);
     });
 }
+
+const garminTransfer = () => {
+    let snapshot = { epoch: 1, connection: { key: 'old-fictional-garmin-key', owner: '123', enabled: true } };
+    let reads = 0;
+    return {
+        readSnapshot: async () => { reads++; return structuredClone(snapshot); },
+        verifyImportedKey: async (key, previous) => key === null ? { ...previous.connection, key: null, enabled: false } : { ...previous.connection, key },
+        replaceIfSnapshot: async (expected, connection) => {
+            if (JSON.stringify(expected) !== JSON.stringify(snapshot)) return { replaced: false };
+            snapshot = { epoch: snapshot.epoch + 1, connection: structuredClone(connection) }; return { replaced: true };
+        },
+        current: () => structuredClone(snapshot), reads: () => reads,
+        supersede: () => { snapshot.epoch++; snapshot.connection.key = 'newer-fictional-garmin-key'; },
+    };
+};
+test('Garmin is read and exported only with the existing credential checkbox', async () => {
+    const garmin = garminTransfer(); const h = harness({ garmin });
+    const ordinary = await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender);
+    assert.equal(garmin.reads(), 0); assert.equal(ordinary.content.includes('old-fictional-garmin-key'), false);
+    const sensitive = await h.routes.handlers.SETTINGS_FILE_EXPORT({ includeCredentials: true }, optionsSender);
+    assert.equal(Transfer.parse(sensitive.content).apiKeys.garmin, 'old-fictional-garmin-key');
+    assert.equal(sensitive.content.includes('access_token'), false);
+});
+test('legacy settings files omit Garmin without touching its connection', async () => {
+    const garmin = garminTransfer(); const h = harness({ garmin });
+    const file = Transfer.buildPayload({ theme: 'light' }, { apiKeys: { imgbb: null } }); file.schemaVersion = 3;
+    assert.equal((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender)).ok, true);
+    assert.equal(garmin.reads(), 0); assert.equal(garmin.current().connection.key, 'old-fictional-garmin-key');
+});
+test('Garmin-only key import preserves ImgBB; explicit null removes only Garmin', async () => {
+    const garmin = garminTransfer(); const h = harness({ garmin, imgbb: 'preserved-imgbb-key' });
+    const file = Transfer.buildPayload({}, { apiKeys: { garmin: null } });
+    assert.equal((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender)).ok, true);
+    assert.equal(garmin.current().connection.key, null); assert.equal(garmin.current().connection.enabled, false);
+    assert.equal((await h.keyStore.read()).key, 'preserved-imgbb-key');
+});
+test('invalid Garmin import changes no settings or connection', async () => {
+    const garmin = garminTransfer(); garmin.verifyImportedKey = async () => { throw new Error('rejected'); };
+    const h = harness({ garmin }); const before = await h.settingsStore.requireCurrent();
+    const file = Transfer.buildPayload({ theme: 'light' }, { apiKeys: { garmin: 'replacement-fictional-garmin-key' } });
+    const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender);
+    assert.equal(response.ok, false); assert.deepEqual(await h.settingsStore.requireCurrent(), before);
+    assert.equal(garmin.current().connection.key, 'old-fictional-garmin-key');
+});
+test('concurrent Garmin replacement wins over an older file import', async () => {
+    const garmin = garminTransfer(); const verify = garmin.verifyImportedKey;
+    garmin.verifyImportedKey = async (...args) => { const result = await verify(...args); garmin.supersede(); return result; };
+    const h = harness({ garmin });
+    const file = Transfer.buildPayload({ theme: 'light' }, { apiKeys: { garmin: 'replacement-fictional-garmin-key' } });
+    assert.equal((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender)).ok, false);
+    assert.equal(garmin.current().connection.key, 'newer-fictional-garmin-key');
+    assert.equal((await h.settingsStore.requireCurrent()).theme, 'dark');
+});
+test('failed settings write rolls back the installed Garmin key conditionally', async () => {
+    const garmin = garminTransfer(); const h = harness({ garmin });
+    h.settingsStore.applyPatch = async () => { throw new Error('unavailable'); };
+    const file = Transfer.buildPayload({}, { apiKeys: { garmin: 'replacement-fictional-garmin-key' } });
+    const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender);
+    assert.equal(response.ok, false); assert.equal(response.stores.garmin, 'rolled-back');
+    assert.equal(garmin.current().connection.key, 'old-fictional-garmin-key');
+});

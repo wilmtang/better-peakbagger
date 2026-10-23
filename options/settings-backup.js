@@ -10,6 +10,7 @@ import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { boundedText as BoundedText } from '../src/net/bounded-text.js';
 import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.js';
 
 const SETTINGS_STORAGE_KEY = S.STORAGE_KEY;
 
@@ -89,10 +90,10 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         settings,
         successMessage = 'Settings imported',
         returnFocus = importEl,
-        { fileContent = null, includesApiKeys = false, includesGithubConnection = false } = {}
+        { fileContent = null, includesApiKeys = false, includesGithubConnection = false, includesGarminKey = false, requestsGarminAccess = false } = {}
     ) => {
         pendingImport = {
-            settings, successMessage, returnFocus, fileContent, includesGithubConnection,
+            settings, successMessage, returnFocus, fileContent, includesGithubConnection, requestsGarminAccess,
         };
         confirmationNameEl.textContent = name;
         confirmationDetailEl.textContent = includesApiKeys && includesGithubConnection
@@ -102,6 +103,9 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 : includesApiKeys
                     ? 'Replaces your current settings and saved API keys.'
                     : 'Replaces your current settings.';
+        if (includesGarminKey) confirmationDetailEl.textContent += requestsGarminAccess
+            ? ' Includes a Garmin key, which will be checked before replacing your connection.'
+            : ' Removes your Garmin key while keeping your drafts.';
         confirmationEl.hidden = false;
         if (document.activeElement === returnFocus) confirmEl.focus();
     };
@@ -164,6 +168,8 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 fileContent: text,
                 includesApiKeys: Object.hasOwn(parsed, 'apiKeys'),
                 includesGithubConnection: Object.hasOwn(parsed, 'githubConnection'),
+                includesGarminKey: Object.hasOwn(parsed.apiKeys || {}, 'garmin'),
+                requestsGarminAccess: typeof parsed.apiKeys?.garmin === 'string',
             }
         );
     });
@@ -185,13 +191,16 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         confirmationEl.setAttribute('aria-busy', 'true');
         try {
             if (pending.fileContent != null) {
-                if (pending.includesGithubConnection && !(await hasGithubPermission(extensionApi))) {
+                const origins = [...(pending.includesGithubConnection ? GITHUB_ORIGINS : []), ...(pending.requestsGarminAccess ? [GARMIN_PERMISSION] : [])];
+                if (origins.length) {
                     let granted = false;
                     try {
-                        granted = !!(await extensionApi.permissions?.request?.({ origins: GITHUB_ORIGINS }));
+                        granted = !!(await extensionApi.permissions?.request?.({ origins }));
                     } catch { granted = false; }
                     if (!granted) {
-                        flash('GitHub access was not granted, so nothing was imported.', { error: true });
+                        flash(pending.requestsGarminAccess
+                            ? 'Garmin access was not granted, so nothing was imported.'
+                            : 'GitHub access was not granted, so nothing was imported.', { error: true });
                         throw new Error('github-permission-denied');
                     }
                 }
