@@ -80,6 +80,7 @@ independent of the existing targets.
 - [verify-capture-flow.mjs](verify-capture-flow.mjs)
 - [verify-capture-popup.mjs](verify-capture-popup.mjs)
 - [verify-garmin-ui.mjs](verify-garmin-ui.mjs) — Garmin connection, inbox and popup geometry, recovery and keyboard checks in hidden Chrome and Firefox.
+- [jszip-csp-patch.mjs](jszip-csp-patch.mjs) — Version-checked removal of JSZip's legacy string-evaluation scheduler fallback.
 - [verify-capture-readiness.mjs](verify-capture-readiness.mjs)
 - [verify-draft-recovery.mjs](verify-draft-recovery.mjs)
 - [verify-multi-summit.mjs](verify-multi-summit.mjs)

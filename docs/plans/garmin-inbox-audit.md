@@ -22,6 +22,10 @@
 - **P2: recovery copy could mislead.** Disconnected users see connection guidance;
   removed permission offers Allow Garmin access instead of Update key.
   Transport errors survive background status polls.
+- **P2: new ZIP bundle included legacy dynamic evaluation.** The build applies
+  a version-checked patch that accepts function callbacks only. DEFLATE/FIT
+  decoding passes with VM dynamic code generation disabled; string callbacks
+  are rejected. Packaging lint passes without increasing warning allowances.
 
 Validation: 3,368 tests passed. Hidden Chrome 156 and Firefox 158 real-extension
 checks passed. Twelve Garmin fixture cases passed in Chrome 156 and Firefox 157,
@@ -41,8 +45,6 @@ duplicate activation are checked. Review screenshots were visually inspected.
 
 ## Changed but not fully proven
 
-- Packaging lint found JSZip's legacy string-evaluation scheduler fallback.
-  Removing it is in progress; the warning is not allowlisted.
 - Native permission prompts, a truly expired Garmin key, and live browser
   provider/Peakbagger sessions have not been verified. The authorized live Node
   API test verified identity, 12 activity summaries and one FIT recording.

@@ -20,6 +20,7 @@
 //   node scripts/build.mjs --watch    rebuild on source/asset change
 
 import { build, context } from 'esbuild';
+import { jsZipCspPlugin } from './jszip-csp-patch.mjs';
 import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mjs';
 import {
     access,
@@ -129,7 +130,7 @@ function esbuildOptions(entry, { minify = MINIFY, outputDir = distDir } = {}) {
         minify,
         sourcemap: minify ? false : 'linked',
         logLevel: 'warning',
-        plugins: browserImportPlugins(entry.browserImports),
+        plugins: [...browserImportPlugins(entry.browserImports), ...(entry.patchJsZip ? [jsZipCspPlugin()] : [])],
     };
 }
 
