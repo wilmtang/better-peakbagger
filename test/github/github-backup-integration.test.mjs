@@ -1246,29 +1246,13 @@ test('profile messages require ClimbListC and matching ascent identity', async (
     assert.equal(mismatched.error.code, 'no-data');
 });
 
-test('the options page resolves My Ascents for the signed-in climber and rejects web senders', async () => {
-    const backend = gitDataBackend();
-    const worker = createWorker({ auth: AUTH, github: backend.handler });
-    const resolved = await worker.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, EXTENSION_SENDER);
-    assert.equal(resolved.ok, true);
-    const url = new URL(resolved.url);
-    assert.equal(url.origin + url.pathname, 'https://www.peakbagger.com/climber/ClimbListC.aspx');
-    assert.equal(url.searchParams.get('cid'), '900001');
-    assert.equal(url.searchParams.get('j'), '-1');
-    assert.equal(url.searchParams.get('y'), '9999');
-    assert.equal(url.searchParams.get('sort'), 'AscentDate');
-
+test('My Ascents is extension-only and unavailable browser verification never falls back to worker cookies', async () => {
+    const worker = createWorker({ auth: AUTH, github: gitDataBackend().handler });
+    const result = await worker.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, EXTENSION_SENDER);
+    assert.equal(result.ok, false, 'this transaction harness deliberately has no page-session browser APIs');
+    assert.equal(result.error.code, 'peakbagger-tab-access-failed');
     const forbidden = await worker.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, PEAK_SENDER);
     assert.equal(forbidden.error, 'forbidden');
-
-    const signedOut = createWorker({
-        auth: AUTH,
-        github: backend.handler,
-        peakbaggerLoginHtml: '<a href="/climber/login.aspx">Log In</a>',
-    });
-    const missing = await signedOut.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, EXTENSION_SENDER);
-    assert.equal(missing.error.code, 'peakbagger-signed-out');
-    assert.match(missing.error.message, /Sign in to Peakbagger, then try again/);
 });
 
 test('backup fails closed when the feature is off, disconnected, or the sender is not Peakbagger', async () => {

@@ -11,7 +11,9 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
         const area = { get: async () => ({ bpbSettings: settings }), set: async () => {}, remove: async () => {} };
         const repo = { owner: 'fixture', name: 'backup', fullName: 'fixture/backup' };
         globalThis.__calls = 0;
+        globalThis.__openedTabs = [];
         globalThis.chrome = {
+            tabs: { create: async details => { globalThis.__openedTabs.push(details.url); } },
             storage: { sync: area, local: area, session: area, onChanged: { addListener() {}, removeListener() {} } },
             permissions: { contains: async () => true, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
             runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.2' }),
@@ -71,10 +73,19 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             assert.equal(await page.evaluate(() => globalThis.__calls), 1, `${selector}: no duplicate work`);
             const pending = await action.boundingBox();
             for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(before[key] - pending[key]) <= 1, `${selector}: pending ${key}`);
-            await page.evaluate(() => globalThis.__finish({ ok: false, error: { code: 'network', message: 'Connection unavailable. Try again.' } }));
+            await page.evaluate(type => globalThis.__finish({ ok: false, error: type === 'PEAKBAGGER_MY_ASCENTS'
+                ? { code: 'peakbagger-unverified', message: 'Your Peakbagger account could not be verified. Open Peakbagger, check your session, then try again.' }
+                : { code: 'network', message: 'Connection unavailable. Try again.' } }), type);
             await page.waitForFunction(selector => !document.querySelector(selector).disabled
                 && document.querySelector(selector).getAttribute('aria-disabled') !== 'true', selector);
             await focus(selector, `${selector} failed at ${textScale}x`);
+            if (type === 'PEAKBAGGER_MY_ASCENTS') {
+                await capture(page, `${variant.name}-settings-my-ascents-${textScale}`);
+                const recovery = page.locator('.github-history-status button');
+                assert.equal(await recovery.textContent(), 'Open Peakbagger');
+                await recovery.press('Enter');
+                assert.equal(await page.evaluate(() => globalThis.__openedTabs.at(-1)), 'https://www.peakbagger.com/Default.aspx');
+            }
             if (Math.abs(scroll - await page.locator('.content').evaluate(element => element.scrollTop)) > 1) failures.push(`${selector}: error reading position`);
             await page.locator('#status-error-dismiss').evaluate(button => { if (!button.closest('[hidden]')) button.click(); });
             // Retry while deliberately moving to another visible control. A

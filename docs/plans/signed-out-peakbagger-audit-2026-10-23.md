@@ -1,6 +1,6 @@
 # Signed-out Peakbagger users: feature gates and remediation plan
 
-Status: **Remediation in progress. A1–A3 implemented and verified locally.**
+Status: **A1–A4 implemented and verified locally. Live/session and native-UI proof gaps remain explicit below.**
 
 ## Findings first
 
@@ -281,7 +281,7 @@ once after the fixes. Broaden GPU/terrain verification only if map rendering or
 its data contracts change. Do not treat a static signed-out screenshot as
 proof of pending/error transitions, focus, or terrain rendering.
 
-## Verification performed and limits
+## Initial audit verification and limits (before implementation)
 
 - `npm run build` succeeded before bundle-based checks.
 - Focused existing suites passed **431 tests**: 66 across favorite source/card/
@@ -386,13 +386,40 @@ proof of pending/error transitions, focus, or terrain rendering.
   keyboard focus; account recovery and wrapped explanations fit the viewport.
   Chrome and Firefox screenshots were visually inspected. These renderer cases
   use explicit operation/storage stubs, not live Buddy writes.
+- A4 now verifies explicit My Ascents navigation through the bounded first-party
+  page transport. Only a newly navigated owned helper can use fresh account-bar
+  evidence; an existing tab requires a fresh page-owned account read. Leases,
+  request scheduling/cooldowns and helper teardown are reused. Confirmed login
+  forms offer sign-in, while missing/invalid identity and provider challenges
+  stay distinct and offer **Open Peakbagger**. Deletion confirmation retains
+  its separate fresh authority. The worker-signed-out/page-signed-in regression
+  failed before the fix and now passes; eight focused My Ascents tests cover
+  sender gates, typed errors, no provider export, inactive helpers and cleanup.
+  Hidden real-manifest Chrome also verifies the different session views through
+  the actual worker/page helper. This is controlled transport proof, not a live
+  reproduction of browser cookie isolation.
+  The Settings transition check passed eight Chrome/Firefox renderer variants
+  at 390/1280 × 900, light/dark, each with normal/doubled control text: held
+  request, repeated keyboard activation, unverified error, recovery URL and
+  retry/completion. Pending action bounds, error reading position and keyboard
+  focus stayed stable. Narrow light/dark screenshots were visually inspected.
+  Replies/storage were explicit stubs; native browser zoom was not exercised.
+- Final verification used an isolated snapshot of `d25dd7d4` plus only these
+  fixes, preserving concurrent Garmin implementation in the shared checkout.
+  All **3,337 tests** passed. Full ESLint/build/web-ext lint passed with the
+  eight documented upstream/cross-browser warnings; the final account and
+  verifier edits also passed targeted ESLint. Real-manifest hidden Chrome
+  156.0.8078.4 and Firefox 158.0.1 passed at 1000 × 760 (plus their existing
+  narrow/header cases), with teardown reported by both. Firefox's BFCache
+  probe did not establish a restored document; Chrome's did.
 
 ### Fixed and verified
 
 A1: actionable filter recovery, retry focus/stability and live source switching.
 A2: shared account validation and adapters.
-A3: truthful cached-account feedback and public-profile recovery. Local evidence
-is recorded above. A4 remains in progress.
+A3: truthful cached-account feedback and public-profile recovery.
+A4: first-party My Ascents verification, honest recovery and helper cleanup.
+Local evidence and its boundaries are recorded above.
 
 ### Intentionally not changed
 
@@ -406,5 +433,13 @@ is recorded above. A4 remains in progress.
 
 ### Changed but not fully proven
 
-A4's live cookie-isolation reproduction, the broader signed-out browser matrix
-and the transition/renderer/native/live proof gaps listed above remain open.
+- A4's live cookie-isolation condition remains unproven: Cloudflare refused both
+  fresh account views during reproduction. A later optional post-fix live probe
+  timed out connecting to the existing browser protocol before loading a test
+  profile. No account-write bypass or live Buddy/ascent write was attempted.
+- The implemented 64 filter and 24 cached-account renderer variants cover their
+  recorded states only. Native browser zoom, screen-reader output, visible
+  focus/Space/window placement, every BFCache/account-switch race, and anonymous
+  access to every native GPX endpoint remain outside the demonstrated proof.
+- Concurrent Garmin changes were preserved and excluded from the final snapshot;
+  the checks above do not certify that unfinished feature or the combined tree.

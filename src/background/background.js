@@ -521,7 +521,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return finished;
     };
 
-    const peakbaggerLogin = async ({ request = fetchPeakbaggerResource, signal } = {}) => {
+    const readPeakbaggerAccount = async ({ request = fetchPeakbaggerResource, signal } = {}) => {
         const response = await request(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html', signal });
         if (response.kind !== 'ok') {
             const failure = peakbaggerPublicError(response.error);
@@ -531,8 +531,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // is not collapsed into the generic unexpected-capture fallback.
             throw failure;
         }
-        return PeakbaggerAccount.fromHtml(response.text, `${PEAKBAGGER_ORIGIN}/Default.aspx`).cid;
+        return PeakbaggerAccount.fromHtml(response.text, `${PEAKBAGGER_ORIGIN}/Default.aspx`);
     };
+    const peakbaggerLogin = async options => (await readPeakbaggerAccount(options)).cid;
 
     const cancelledCaptureError = () => PublicErrors.exception(
         'capture-cancelled',
@@ -1185,6 +1186,21 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 error,
             );
         }
+    };
+
+    // Explicit Settings navigation uses the same bounded page-session path as
+    // capture. The separate deletion check continues to require its own fresh
+    // authority; neither a stale open tab nor a worker-cookie failure is login.
+    const peakbaggerNavigationAccount = async () => {
+        await ensurePeakbaggerRequestsAllowed();
+        const page = await acquirePeakbaggerPage(undefined, makeId());
+        try {
+            const cid = await page.freshAccount();
+            if (cid) return { status: 'signed-in', cid };
+            return await readPeakbaggerAccount({ request: (url, options) => schedulePeakbaggerRequest(
+                page.request, url, options, { recoveryTabId: page.tabId },
+            ) });
+        } finally { await page.release(); }
     };
 
     const fetchBox = async (box, { signal, budget, request = fetchPeakbaggerResource }) => {
@@ -3477,6 +3493,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         storage,
         now,
         peakbaggerLogin,
+        peakbaggerNavigationAccount,
         isPeakbaggerSender,
         isClimbListSender,
         isFresh,

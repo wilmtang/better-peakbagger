@@ -392,16 +392,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         });
         const historyStatus = el('p', { class: 'github-hint github-error github-history-status', role: 'status' });
         historyStatus.hidden = true;
-        const showHistoryError = (message, { offerSignIn = false } = {}) => {
+        const showHistoryError = (message, { offerSignIn = false, offerPeakbagger = false } = {}) => {
             const children = [document.createTextNode(message)];
-            if (offerSignIn) {
+            if (offerSignIn || offerPeakbagger) {
                 children.push(
                     document.createTextNode(' '),
                     el('button', {
-                        type: 'button', class: 'github-link', text: 'Sign in to Peakbagger',
+                        type: 'button', class: 'github-link', text: offerSignIn ? 'Sign in to Peakbagger' : 'Open Peakbagger',
                         onclick: async () => {
                             try {
-                                await createTab('https://www.peakbagger.com/Climber/Login.aspx');
+                                await createTab(offerSignIn ? 'https://www.peakbagger.com/Climber/Login.aspx' : 'https://www.peakbagger.com/Default.aspx');
                             } catch {
                                 showHistoryError('The Peakbagger sign-in tab could not be opened. Check your browser settings, then try again.');
                             }
@@ -430,7 +430,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 const message = response && response.error && response.error.message
                     ? response.error.message
                     : 'Peakbagger could not find your My Ascents page. Confirm you’re signed in, then try again.';
-                showHistoryError(message, { offerSignIn: response && response.error && response.error.code === 'peakbagger-signed-out' });
+                showHistoryError(message, { offerSignIn: response && response.error && response.error.code === 'peakbagger-signed-out', offerPeakbagger: true });
             }
             OptionsUtils.setButtonBusy(control, false);
             control.querySelector('span').textContent = 'Open My Ascents';

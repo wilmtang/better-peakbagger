@@ -66,6 +66,7 @@ export function createGithubRoutes({
     storage,
     now,
     peakbaggerLogin,
+    peakbaggerNavigationAccount = async () => ({ status: 'unverified', cid: null }),
     isPeakbaggerSender,
     isClimbListSender,
     isFresh,
@@ -122,10 +123,11 @@ export function createGithubRoutes({
     });
 
     const peakbaggerMyAscents = async () => {
-        let cid;
+        let account;
         try {
-            cid = await peakbaggerLogin();
+            account = await peakbaggerNavigationAccount();
         } catch (error) {
+            if (PublicErrors.isPublic(error)) return { ok: false, error: { source: 'peakbagger', ...PublicErrors.expose(error) } };
             const peakbaggerFailure = error?.source === 'peakbagger';
             return {
                 ok: false,
@@ -138,12 +140,15 @@ export function createGithubRoutes({
                 },
             };
         }
+        const cid = account?.status === 'signed-in' ? positiveAscentId(account.cid) : null;
         if (!cid) {
+            const signedOut = account?.status === 'signed-out';
             return {
                 ok: false,
                 error: {
-                    code: 'peakbagger-signed-out',
-                    message: 'Peakbagger could not find a signed-in account. Sign in to Peakbagger, then try again.',
+                    code: signedOut ? 'peakbagger-signed-out' : 'peakbagger-unverified',
+                    message: signedOut ? 'Sign in to Peakbagger, then try again.'
+                        : 'Your Peakbagger account could not be verified. Open Peakbagger, check your session, then try again.',
                 },
             };
         }

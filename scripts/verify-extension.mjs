@@ -2152,6 +2152,10 @@ try {
         let capturePeakRequests = 0;
         await context.route(captureLoginUrl, route => {
             captureLoginRequests++;
+            // A worker-cookie view must not authorize this navigation. Only
+            // the first-party page has the synthetic signed-in session here.
+            try { route.request().frame(); }
+            catch { return route.fulfill({ status: 200, contentType: 'text/html', body: '<form><input id="PasswordText"></form>' }); }
             return route.fulfill({
                 status: 200,
                 contentType: 'text/html',
@@ -2219,6 +2223,10 @@ try {
             captureLoginRequests,
             capturePeakRequests,
         })}`);
+
+        const myAscents = await optionsPage.evaluate(() => chrome.runtime.sendMessage({ type: 'PEAKBAGGER_MY_ASCENTS' }));
+        check(myAscents?.ok === true && new URL(myAscents.url).searchParams.get('cid') === '77',
+            `My Ascents must verify the current first-party session: ${JSON.stringify(myAscents)}`);
 
         // Exercise the actual worker's durable helper lease, including the
         // activation event that a VM harness can only emulate. Selection must

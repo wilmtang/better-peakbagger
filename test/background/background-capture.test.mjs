@@ -4284,3 +4284,56 @@ test('payload reconciliation validates the delivery variant and removes failed l
         assert.ok(h.values[job.payloadKey]);
     }
 });
+
+test('My Ascents verifies the site session when the worker session is signed out', async () => {
+    const h = createHarness({ loginHtml: '<form><input id="PasswordText"></form>',
+        peakbaggerPageLoginResult: call => ({ kind: 'ok', requestedUrl: call.url, url: call.url,
+            status: 200, redirected: false,
+            text: '<div>Logged in: Test | <a href="/climber/climber.aspx?cid=77">My Home Page</a></div>' }) });
+    const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, { url: 'chrome-extension://test-extension/options/options.html' });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(new URL(result.url).searchParams.get('cid'), '77');
+    assert.equal(h.fetchCalls.length, 0, 'account verification stays in the Peakbagger page');
+    assert.deepEqual(h.peakbaggerPageCalls.map(call => call.kind), ['html']);
+    assert.equal(h.providerCaptureCalls.length, 0);
+    assert.equal(h.windowUpdates.length, 0, 'verification must not focus a window');
+});
+
+test('My Ascents keeps missing identity, confirmed sign-out and challenges distinct', async () => {
+    const sender = { url: 'chrome-extension://test-extension/options/options.html' };
+    for (const [html, code] of [
+        ['<form><input id="PasswordText"><button id="LoginButton">Log In</button></form>', 'peakbagger-signed-out'],
+        ['<a href="/Climber/Login.aspx">Log In</a>', 'peakbagger-unverified'],
+        ['<div>Logged in: Test | <a href="https://example.invalid/?cid=77">My Home Page</a></div>', 'peakbagger-unverified'],
+    ]) {
+        const h = createHarness({ loginHtml: html });
+        const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, sender);
+        assert.equal(result.ok, false); assert.equal(result.error.code, code);
+        assert.equal(h.fetchCalls.length, 0); assert.equal(h.providerCaptureCalls.length, 0);
+        if (code === 'peakbagger-unverified') assert.match(result.error.message, /could not be verified/);
+    }
+    const h = createHarness({ peakbaggerPageLoginResult: call => ({
+        kind: 'challenged', requestedUrl: call.url, url: call.url, status: 403, redirected: false,
+        error: { source: 'peakbagger', code: 'cloudflare', resource: 'html' },
+    }) });
+    const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, sender);
+    assert.equal(result.error.code, 'cloudflare');
+    assert.equal(h.fetchCalls.length, 0);
+});
+
+test('My Ascents owns and releases only its inactive helper, including account failure', async () => {
+    const sender = { url: 'chrome-extension://test-extension/options/options.html' };
+    for (const failure of [false, true]) {
+        const created = [];
+        const h = createHarness({ beforeTabCreate: ({ details }) => created.push(details), loginHtml: failure ? '<p>Unverified account</p>' : undefined,
+            ...(failure ? { peakbaggerAccountEvidence: { pageUrl: 'https://www.peakbagger.com/Default.aspx', links: [] } } : {}) });
+        h.tabs.delete(5);
+        const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, sender);
+        assert.equal(result.ok, !failure, JSON.stringify(result));
+        assert.deepEqual(h.removedTabs, [100]);
+        assert.equal(created[0].active, false);
+        assert.equal(h.windowUpdates.length, 0);
+        assert.equal(h.tabs.has(1), true);
+        assert.equal(Object.keys(h.values.bpbPeakbaggerHelperLeases || {}).length, 0);
+    }
+});

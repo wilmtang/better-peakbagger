@@ -1561,3 +1561,27 @@ test('the connected state makes enabled ascent backup automatic and keeps deleti
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(dom.chrome._store.bpbSettings.removeGithubBackupOnDelete, false);
 });
+
+test('an unverified My Ascents session offers a site check without claiming sign-out', async t => {
+    const opened = [];
+    const dom = await loadOptions({ enableGithubBackup: true }, { prepareChrome: chrome => {
+        chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+        chrome.tabs = { create: async details => { opened.push(details.url); } };
+        chrome.runtime.sendMessage = (message, callback) => {
+            const reply = message.type === 'PEAKBAGGER_MY_ASCENTS'
+                ? { ok: false, error: { code: 'peakbagger-unverified', message: 'Your Peakbagger account could not be verified. Open Peakbagger, check your session, then try again.' } }
+                : { enabled: true, connected: true, hasToken: true, account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' } };
+            if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+            return Promise.resolve(reply);
+        };
+    } });
+    t.after(() => dom.window.close());
+    const panel = el(dom, 'github-ascent-panel');
+    await waitFor(dom, () => [...panel.querySelectorAll('button')].some(b => b.textContent === 'Open My Ascents'));
+    [...panel.querySelectorAll('button')].find(b => b.textContent === 'Open My Ascents').click();
+    await waitFor(dom, () => [...panel.querySelectorAll('button')].some(b => b.textContent === 'Open Peakbagger'));
+    assert.equal([...panel.querySelectorAll('button')].some(b => b.textContent === 'Sign in to Peakbagger'), false);
+    [...panel.querySelectorAll('button')].find(b => b.textContent === 'Open Peakbagger').click();
+    await waitFor(dom, () => opened.length === 1);
+    assert.equal(opened[0], 'https://www.peakbagger.com/Default.aspx');
+});
