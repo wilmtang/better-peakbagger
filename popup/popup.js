@@ -91,7 +91,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     const button = (label, onClick, className = '') => {
         const element = document.createElement('button');
         element.type = 'button';
-        element.className = className;
+        element.className = `panel-button ${className}`;
         element.textContent = label;
         element.addEventListener('click', onClick);
         return element;

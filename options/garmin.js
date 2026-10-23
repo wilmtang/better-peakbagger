@@ -12,8 +12,8 @@ export async function initGarminSettings(root) {
       <form class="garmin-key-form">
         <div class="garmin-key-label"><label for="garmin-key">Personal API key</label><a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer" aria-label="Get a Garmin API key (opens in a new tab)">Get a Garmin API key ↗</a></div>
         <p class="garmin-helper" id="garmin-key-help">Create a key in Garmin, then paste it below. Stored only on this device. Keys last up to one year.</p>
-        <div class="garmin-key-entry"><input id="garmin-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="garmin-key-help garmin-key-status"><button id="garmin-show-key" type="button" class="secondary" aria-pressed="false">Show</button></div>
-        <button id="garmin-connect" type="submit" class="primary">Connect Garmin</button>
+        <div class="garmin-key-entry"><input id="garmin-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="garmin-key-help garmin-key-status"><button id="garmin-show-key" type="button" class="panel-button secondary" aria-pressed="false" data-sizing-label="Show"><span>Show</span></button></div>
+        <button id="garmin-connect" type="submit" class="panel-button primary" data-sizing-label="Reconnect Garmin"><span>Connect Garmin</span></button>
         <div class="garmin-feedback"><span aria-hidden="true">Garmin didn’t accept this key. Copy the full key or get a new one.</span><span id="garmin-key-status" role="status" aria-atomic="true">Not connected</span></div>
       </form>
       <div id="garmin-preferences" hidden>
@@ -22,10 +22,10 @@ export async function initGarminSettings(root) {
         <div class="garmin-pref"><label for="garmin-history">Full history range<small id="garmin-history-help">Checked weekly to find older activities uploaded late.</small></label><select id="garmin-history"><option value="connection">From connection date</option><option value="date">Choose start date…</option><option value="all">All available history</option></select><label id="garmin-date-row" hidden>From <input id="garmin-date" type="date"></label></div>
         <div class="garmin-pref"><label for="garmin-types">Activities</label><select id="garmin-types"><option value="walking">Hikes, walks &amp; trail runs</option><option value="all">All activities</option></select></div>
         <p class="garmin-helper" id="garmin-scope-note">Ranges use activity dates. Recent checks stay within your full history range. Changing ranges keeps your existing drafts.</p>
-        <div class="garmin-actions"><button id="garmin-save" class="secondary">Save preferences</button><button id="garmin-enable" class="primary">Enable Garmin drafts</button><a href="inbox.html" class="garmin-inbox-link">Open activity inbox</a></div>
+        <div class="garmin-actions"><button id="garmin-save" class="panel-button secondary">Save preferences</button><button id="garmin-enable" class="panel-button primary" data-sizing-label="Enable Garmin drafts"><span>Enable Garmin drafts</span></button><a href="inbox.html" class="garmin-inbox-link">Open activity inbox</a></div>
         <p class="garmin-helper">While your browser runs, imports use routes to find peaks on Peakbagger. Drafts and reduced routes stay on this device until completed or removed. You review every ascent before Save.</p>
         <div class="garmin-feedback"><span aria-hidden="true">Open Peakbagger, sign in to your selected climber, then enable Garmin drafts.</span><span id="garmin-settings-status" role="status" aria-atomic="true"></span></div>
-        <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="secondary">Check full history</button><button id="garmin-disconnect" class="secondary">Disconnect</button><button id="garmin-delete" class="secondary">Delete local Garmin data</button></div><p class="garmin-helper">Disconnect keeps your drafts. Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
+        <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="panel-button secondary">Check full history</button><button id="garmin-disconnect" class="panel-button secondary">Disconnect</button><button id="garmin-delete" class="panel-button secondary">Delete local Garmin data</button></div><p class="garmin-helper">Disconnect keeps your drafts. Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
       </div>`;
     const $ = selector => root.querySelector(selector);
     root.addEventListener('submit', event => event.preventDefault());
@@ -50,9 +50,10 @@ export async function initGarminSettings(root) {
     const refresh = async () => {
         state = await send({ type: 'GARMIN_STATUS' });
         $('#garmin-preferences').hidden = !state.configured && !state.pending;
-        $('#garmin-connect').textContent = state.configured || state.pending ? 'Reconnect Garmin' : 'Connect Garmin';
+        $('#garmin-connect span').textContent = state.configured || state.pending ? 'Reconnect Garmin' : 'Connect Garmin';
+        $('#garmin-connect').classList.toggle('primary', (!state.configured && !state.pending) || state.error?.code === 'key-rejected');
         $('#garmin-enable').hidden = state.enabled && state.error?.code !== 'permission';
-        $('#garmin-enable').textContent = state.error?.code === 'permission' ? 'Allow Garmin access' : 'Enable Garmin drafts';
+        $('#garmin-enable span').textContent = state.error?.code === 'permission' ? 'Allow Garmin access' : 'Enable Garmin drafts';
         $('#garmin-history option[value="connection"]').textContent = `From ${state.connectedDate} to today`;
         if (!keyError) $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
         if (!settingsError) $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
@@ -73,7 +74,7 @@ export async function initGarminSettings(root) {
     $('#garmin-date').value = prefs.garminHistoryStart === 'all' ? '' : prefs.garminHistoryStart;
     for (const selector of ['#garmin-frequency', '#garmin-recent', '#garmin-history']) $(selector).addEventListener('change', updateChoices);
     updateChoices();
-    $('#garmin-show-key').addEventListener('click', () => { const show = $('#garmin-key').type === 'password'; $('#garmin-key').type = show ? 'text' : 'password'; $('#garmin-show-key').textContent = show ? 'Hide' : 'Show'; $('#garmin-show-key').setAttribute('aria-pressed', String(show)); });
+    $('#garmin-show-key').addEventListener('click', () => { const show = $('#garmin-key').type === 'password'; $('#garmin-key').type = show ? 'text' : 'password'; $('#garmin-show-key span').textContent = show ? 'Hide' : 'Show'; $('#garmin-show-key').setAttribute('aria-pressed', String(show)); });
     $('#garmin-key').addEventListener('input', () => { keyError = false; });
     $('.garmin-key-form').addEventListener('submit', event => {
         event.preventDefault();

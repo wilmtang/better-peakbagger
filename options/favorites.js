@@ -273,7 +273,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         meta.append(`#${entry.cid}`, ' · ', `Added ${addedLabel(entry.addedAt)}`, tag);
         body.append(name, meta);
         const remove = OptionsUtils.actionButton(
-            'favorite-remove',
+            'quiet favorite-remove',
             'Remove',
             `Remove ${entry.name} from favorites`,
         );
@@ -290,7 +290,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         const message = document.createElement('span');
         message.textContent = 'Favorite removed';
         const undo = OptionsUtils.actionButton(
-            'favorite-undo',
+            'link favorite-undo',
             'Undo',
             `Restore ${entry.name} to favorites`,
         );

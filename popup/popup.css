@@ -62,7 +62,7 @@ h2 { font-size: 14px; }
    a comfortable target in a small window, and gives the one action that ends
    the task the full column. Actions offered inside a state card stay the width
    of their label so two of them can sit together. */
-button { margin-top: 11px; min-height: 38px; font-size: 13px; font-weight: 600; }
+button { margin-top: 11px; }
 button.primary, button.secondary { width: 100%; }
 .state-card button.secondary { width: auto; }
 /* Only between two label-width buttons: after the full-width primary the next
@@ -103,7 +103,9 @@ button.primary, button.secondary { width: 100%; }
 
 #selection-count { color: var(--sub); font-size: 11px; }
 .peak-list {
-  max-height: 240px;
+  /* Leave room for the inbox entry and capture actions within the browser's
+     600px popup cap. More matches stay available in this scrolling list. */
+  max-height: 160px;
   overflow-y: auto;
   background: var(--card);
   border: 1px solid var(--border);
@@ -151,10 +153,9 @@ button.primary, button.secondary { width: 100%; }
 .timestamp-choice small { display: block; font-size: 12px; color: var(--sub); }
 /* Persistent inbox navigation stays anchored above capture progress. */
 .inbox-entry { margin:16px 0; }
-#activity-inbox { width:100%; min-height:48px; display:flex; align-items:center; gap:12px; }
+#activity-inbox { width:100%; display:flex; align-items:center; gap:12px; }
 #activity-inbox>span:first-child { flex:1; text-align:left; }
 #inbox-count { min-width:28px; text-align:center; font-variant-numeric:tabular-nums; }
 .inbox-feedback { display:grid; font-size:11px; line-height:1.5; margin-top:6px; overflow-wrap:break-word; }
 .inbox-feedback>span { grid-area:1/1; }
 .inbox-feedback>span[aria-hidden] { visibility:hidden; pointer-events:none; }
-#activity-inbox[aria-disabled=true] { opacity:.6; cursor:default; }

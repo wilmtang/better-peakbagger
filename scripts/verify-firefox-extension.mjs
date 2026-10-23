@@ -1012,6 +1012,9 @@ async function main() {
     })()`);
         await driver.findElement(By.css('.favorites-buddy-options summary')).click();
         await driver.findElement(By.id('favorites-mirror-buddies')).click();
+        const addButtonHeight = await driver.executeScript("return document.getElementById('favorites-add-button').getBoundingClientRect().height;");
+        assertState(addButtonHeight >= 32 && addButtonHeight <= 36,
+            'Firefox Add action must stay compact on one line instead of wrapping each letter', { addButtonHeight });
         const mirrorPreview = await waitForScript(driver, `
       const dialog = document.getElementById("favorites-mirror-confirmation");
       const status = document.getElementById("favorites-import-status")?.textContent || "";

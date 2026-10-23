@@ -39,7 +39,7 @@ export const initIgnored = api => {
             const meta = document.createElement('span'); meta.className = 'favorite-meta';
             meta.textContent = `#${entry.cid} · Added ${new Date(entry.addedAt).toLocaleDateString()}`;
             info.append(name, meta);
-            const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'favorite-remove';
+            const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'panel-button quiet favorite-remove';
             remove.textContent = 'Unignore'; remove.setAttribute('aria-label', `Unignore ${entry.name}`);
             // Keep the focused control available while saving. Native disabled
             // buttons cannot regain focus after this list is rendered again.

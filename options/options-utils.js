@@ -39,7 +39,7 @@ const logMissingElements = (surface, elements) => {
 const actionButton = (className, text, ariaLabel) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = className;
+    button.className = `panel-button ${className}`;
     button.textContent = text;
     button.setAttribute('aria-label', ariaLabel);
     return button;

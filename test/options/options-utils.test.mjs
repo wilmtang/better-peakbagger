@@ -59,7 +59,7 @@ test('options action buttons share one accessible non-submit shape', () => {
     try {
         const button = Utils.actionButton('secondary', 'Delete', 'Delete Mount Rainier');
         assert.equal(button.outerHTML,
-            '<button type="button" class="secondary" aria-label="Delete Mount Rainier">Delete</button>');
+            '<button type="button" class="panel-button secondary" aria-label="Delete Mount Rainier">Delete</button>');
     } finally {
         globalThis.document = previousDocument;
         dom.window.close();

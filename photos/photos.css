@@ -53,23 +53,14 @@ body {
 /* The editor's own quiet controls. The secondary and primary shapes come from
    the shared stylesheet; every control in a bar just shares its height. */
 .tab-button,
-.quiet-button,
 .icon-button,
-.tool-rail button,
-.danger-button {
+.tool-rail button {
   min-height: 34px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--text);
   font-weight: 600;
-}
-
-.secondary-button,
-.quiet-file,
-.primary-button,
-.file-button {
-  min-height: 34px;
 }
 
 .tab-button {
@@ -156,19 +147,11 @@ textarea {
   font-size: 12px;
 }
 
-.quiet-button,
-.danger-button {
-  padding: 6px 10px;
-}
-
-.quiet-button:hover,
 .tool-rail button:hover {
   background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
-.danger-button {
-  color: var(--danger);
-}
+.panel-button.danger-button { color: var(--danger); }
 
 .empty-state {
   display: grid;

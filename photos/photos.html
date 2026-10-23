@@ -50,9 +50,9 @@
           never exposed to Peakbagger, another website, GitHub, browser sync, or status UI.
           Manual exports can include it; keep them private.
         </p>
-        <button id="save-key" type="button" class="secondary-button">Continue</button>
+        <button id="save-key" type="button" class="panel-button secondary secondary-button">Continue</button>
       </div>
-      <button id="remove-key" type="button" class="quiet-button" hidden>Forget for this tab</button>
+      <button id="remove-key" type="button" class="panel-button quiet quiet-button" hidden>Forget for this tab</button>
     </section>
 
     <section id="editor-view" aria-labelledby="editor-heading">
@@ -61,7 +61,7 @@
         <h2 id="editor-heading">Create a photo topo</h2>
         <p>Mark the route and climbing symbols on your own photo. Everything stays on this
           device until you choose <strong>Upload and insert</strong>.</p>
-        <label class="file-button">
+        <label class="panel-button primary file-button">
           Choose photo
           <input id="photo-file" type="file" accept="image/*">
         </label>
@@ -207,7 +207,7 @@
             <div id="photo-text-editor" class="photo-text-editor" hidden></div>
             <p id="view-help" class="sr-only">Use plus and minus to zoom, 0 to fit. Hold Space and drag to pan, or choose Hand. Pinch or hold Ctrl, Command, or Alt while scrolling to zoom.</p>
             <div class="viewport-actions">
-              <button id="finish-route" type="button" class="secondary-button" hidden>Done drawing</button>
+              <button id="finish-route" type="button" class="panel-button secondary secondary-button" hidden>Done drawing</button>
               <span id="editor-status" class="status-line" role="status" aria-live="polite"></span>
             </div>
           </div>
@@ -216,7 +216,7 @@
             <section class="annotation-browser" aria-labelledby="annotation-heading">
               <div class="annotation-heading-row">
                 <h2 id="annotation-heading">Annotations</h2>
-                <button id="add-at-center" type="button" class="quiet-button" disabled>Add at center</button>
+                <button id="add-at-center" type="button" class="panel-button quiet quiet-button" disabled>Add at center</button>
               </div>
               <p id="annotation-help" class="annotation-help">
                 Select a mark to edit it. Use Cmd/Ctrl+C to copy and Cmd/Ctrl+V to paste.
@@ -228,8 +228,8 @@
                 <p>Choose a point to move it. Insert adds a point on the next segment.</p>
                 <ol id="route-point-list" class="route-point-list"></ol>
                 <div class="route-point-actions">
-                  <button id="insert-route-point" type="button" class="quiet-button">Insert point</button>
-                  <button id="remove-route-point" type="button" class="quiet-button">Remove point</button>
+                  <button id="insert-route-point" type="button" class="panel-button quiet quiet-button">Insert point</button>
+                  <button id="remove-route-point" type="button" class="panel-button quiet quiet-button">Remove point</button>
                 </div>
               </section>
             </section>
@@ -294,7 +294,7 @@
               <label for="text-width">Width (px)</label>
               <div class="text-width-control">
                 <input id="text-width" type="number" min="1" step="1" placeholder="Auto">
-                <button id="text-width-auto" type="button" class="quiet-button">Auto</button>
+                <button id="text-width-auto" type="button" class="panel-button quiet quiet-button">Auto</button>
               </div>
             </div>
             <label class="field text-only">
@@ -310,10 +310,10 @@
               Contrast background
             </label>
             <div id="object-actions" class="button-grid">
-              <button id="send-back" type="button" class="quiet-button">Send back</button>
-              <button id="bring-front" type="button" class="quiet-button">Bring front</button>
-              <button id="duplicate-object" type="button" class="quiet-button">Duplicate</button>
-              <button id="delete-object" type="button" class="danger-button">Delete</button>
+              <button id="send-back" type="button" class="panel-button quiet quiet-button">Send back</button>
+              <button id="bring-front" type="button" class="panel-button quiet quiet-button">Bring front</button>
+              <button id="duplicate-object" type="button" class="panel-button quiet quiet-button">Duplicate</button>
+              <button id="delete-object" type="button" class="panel-button quiet danger-button">Delete</button>
             </div>
             </section>
           </aside>
@@ -349,13 +349,13 @@
               <select data-report-width aria-label="Size in report"></select>
               <span class="report-width-note">Upload stays full resolution · remembered for new report photos</span>
             </label>
-            <button id="clear-annotations" type="button" class="quiet-button">Clear annotations</button>
-            <button id="upload-insert" type="button" class="primary-button">Upload and insert</button>
+            <button id="clear-annotations" type="button" class="panel-button quiet quiet-button">Clear annotations</button>
+            <button id="upload-insert" type="button" class="panel-button primary primary-button">Upload and insert</button>
           </div>
           <div class="editor-summary">
             <strong id="export-summary">Local draft</strong>
             <span id="save-status" class="fine-print">Not yet saved</span>
-            <button id="save-conflicted-draft" type="button" class="secondary-button" hidden>
+            <button id="save-conflicted-draft" type="button" class="panel-button secondary secondary-button" hidden>
               Replace other tab’s edits
             </button>
           </div>
@@ -381,7 +381,7 @@
             <select data-report-width aria-label="Size in report"></select>
             <span class="report-width-note">Upload stays full resolution · remembered for new report photos</span>
           </label>
-          <label class="file-button quiet-file">
+          <label class="panel-button secondary file-button quiet-file">
             Import project…
             <input id="import-project" type="file" accept=".bpb-photo,application/zip">
           </label>
@@ -411,7 +411,7 @@
           </p>
         </div>
         <div class="backup-actions">
-          <button id="backup-library" type="button" class="secondary-button">Back up now</button>
+          <button id="backup-library" type="button" class="panel-button secondary secondary-button">Back up now</button>
           <a id="photo-backup-settings" href="../options/options.html#github-photos-backup">Restore and automatic backup</a>
         </div>
         <p class="backup-boundary">
@@ -421,9 +421,9 @@
       </section>
       <div id="library-list" class="library-grid"></div>
       <nav id="library-pagination" class="library-pagination" aria-label="Photo library pages" hidden>
-        <button id="library-previous" type="button" class="secondary-button">Previous</button>
+        <button id="library-previous" type="button" class="panel-button secondary secondary-button">Previous</button>
         <span id="library-page-status" role="status" aria-live="polite"></span>
-        <button id="library-next" type="button" class="secondary-button">Next</button>
+        <button id="library-next" type="button" class="panel-button secondary secondary-button">Next</button>
       </nav>
       <div id="library-empty" class="empty-state" hidden>
         <h3>No matching photos</h3>
@@ -434,7 +434,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden>
     <span id="toast-message"></span>
-    <button id="toast-action" type="button" class="quiet-button" hidden>Undo</button>
+    <button id="toast-action" type="button" class="panel-button quiet quiet-button" hidden>Undo</button>
     <input id="toast-copy-value" class="toast-copy-value" type="text" readonly
       aria-label="Image URL for manual copy" hidden>
     <span id="toast-copy-status" class="toast-copy-status" hidden></span>

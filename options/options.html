@@ -199,7 +199,7 @@
                                 <option value="metric">Kilometers per hour (km/h)</option>
                             </select></div>
                         </div>
-                        <div class="unit-reset-row"><button type="button" class="secondary" id="unit-reset" disabled>Use default for all</button></div>
+                        <div class="unit-reset-row"><button type="button" class="panel-button secondary" id="unit-reset" disabled>Use default for all</button></div>
                     </details>
                 </div>
             </div>
@@ -337,11 +337,11 @@
                                 <input id="imgbb-key" type="password" autocomplete="off" spellcheck="false"
                                        placeholder="Paste your API key"
                                        aria-labelledby="imgbb-key-title" aria-describedby="imgbb-key-desc imgbb-key-status">
-                                <button id="imgbb-key-save" class="secondary" type="button">Save key</button>
+                                <button id="imgbb-key-save" class="panel-button secondary" type="button">Save key</button>
                             </div>
                             <div class="imgbb-key-state">
                                 <span class="imgbb-key-status" id="imgbb-key-status" role="status">Checking this device…</span>
-                                <button id="imgbb-key-remove" class="secondary" type="button" hidden>Remove</button>
+                                <button id="imgbb-key-remove" class="panel-button secondary" type="button" hidden>Remove</button>
                             </div>
                         </div>
                     </div>
@@ -352,7 +352,7 @@
                             <span class="desc">Every photo you have edited on this device, with its annotations, public links, and the reports that use it. Insert an uploaded photo again, edit one as a new version, or keep an original with <strong>Download project</strong>.</span>
                         </div>
                         <div class="control">
-                            <a class="secondary" id="open-photo-library" href="../photos/photos.html?mode=library">Open photo library</a>
+                            <a class="panel-button secondary" id="open-photo-library" href="../photos/photos.html?mode=library">Open photo library</a>
                         </div>
                     </div>
                 </div>
@@ -372,7 +372,7 @@
                             <span class="desc">Rich and Markdown trip report drafts autosave on this device and become eligible for cleanup after two weeks. Open, copy, restore, or delete them on their own page.</span>
                         </div>
                         <div class="control">
-                            <a class="secondary" id="open-draft-manager" href="drafts.html">Open draft manager</a>
+                            <a class="panel-button secondary" id="open-draft-manager" href="drafts.html">Open draft manager</a>
                         </div>
                     </div>
                 </div>
@@ -422,7 +422,7 @@
                                 <input id="map-route-casing-width" class="route-width" type="number" min="3" max="20" step="1" inputmode="numeric" aria-label="Route outline width in pixels">
                                 <span>px</span>
                             </div>
-                            <button id="map-route-reset" class="secondary" type="button">Reset appearance</button>
+                            <button id="map-route-reset" class="panel-button secondary" type="button">Reset appearance</button>
                         </fieldset>
                     </div>
 
@@ -472,7 +472,7 @@
                                 <input id="map-viewport-height" type="number" min="240" max="720" step="10" inputmode="numeric" aria-label="Map height in pixels">
                                 <span>px</span>
                             </label>
-                            <button id="map-viewport-reset" class="secondary" type="button">Reset size</button>
+                            <button id="map-viewport-reset" class="panel-button secondary" type="button">Reset size</button>
                         </fieldset>
                     </div>
                 </div>
@@ -506,7 +506,7 @@
                             <span class="desc">Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.</span>
                         </div>
                         <div class="control">
-                            <a class="secondary" id="open-favorites" href="favorites.html">Manage climber lists</a>
+                            <a class="panel-button secondary" id="open-favorites" href="favorites.html">Manage climber lists</a>
                         </div>
                     </div>
                 </div>
@@ -611,8 +611,8 @@
                         </div>
                         <div class="control settings-file-transfer-actions">
                             <div class="settings-backup-actions">
-                                <button id="settings-backup-export" class="secondary" type="button">Export settings</button>
-                                <button id="settings-backup-import" class="secondary" type="button">Import from file…</button>
+                                <button id="settings-backup-export" class="panel-button secondary" type="button">Export settings</button>
+                                <button id="settings-backup-import" class="panel-button secondary" type="button">Import from file…</button>
                                 <input id="settings-backup-file" type="file" accept=".json,application/json" hidden>
                             </div>
                             <label class="check settings-export-credentials" for="settings-backup-export-credentials">
@@ -627,8 +627,8 @@
                             <p class="settings-backup-confirmation-detail" id="settings-backup-confirmation-detail">Replaces your current settings.</p>
                         </div>
                         <div class="settings-backup-confirmation-actions">
-                            <button id="settings-backup-cancel" class="secondary" type="button">Cancel</button>
-                            <button id="settings-backup-confirm" class="settings-backup-confirm" type="button">Import settings</button>
+                            <button id="settings-backup-cancel" class="panel-button secondary" type="button">Cancel</button>
+                            <button id="settings-backup-confirm" class="panel-button danger settings-backup-confirm" type="button">Import settings</button>
                         </div>
                     </div>
                     <div class="row">
@@ -638,8 +638,8 @@
                         </div>
                         <div class="control settings-backup-github-actions" id="settings-backup-github-actions" hidden>
                             <div class="settings-backup-actions">
-                                <button id="settings-backup-github-backup" class="secondary" type="button">Back up settings</button>
-                                <button id="settings-backup-github-restore" class="secondary" type="button">Restore from GitHub</button>
+                                <button id="settings-backup-github-backup" class="panel-button secondary" type="button">Back up settings</button>
+                                <button id="settings-backup-github-restore" class="panel-button secondary" type="button">Restore from GitHub</button>
                             </div>
                             <label class="check" for="settings-backup-auto">
                                 <input type="checkbox" id="settings-backup-auto">
@@ -660,8 +660,8 @@
                         </div>
                         <div class="control favorites-github-actions" id="favorites-github-actions">
                             <div class="favorites-github-buttons">
-                                <button id="favorites-backup" class="secondary" type="button">Back up now</button>
-                                <button id="favorites-restore" class="secondary" type="button">Restore…</button>
+                                <button id="favorites-backup" class="panel-button secondary" type="button">Back up now</button>
+                                <button id="favorites-restore" class="panel-button secondary" type="button">Restore…</button>
                             </div>
                         </div>
                     </div>
@@ -686,13 +686,13 @@
                             </p>
                         </div>
                         <div class="favorites-mirror-confirmation-actions">
-                            <button id="favorites-restore-cancel" class="secondary" type="button">Cancel</button>
-                            <button id="favorites-restore-confirm" class="favorites-mirror-confirm" type="button">Restore backup</button>
+                            <button id="favorites-restore-cancel" class="panel-button secondary" type="button">Cancel</button>
+                            <button id="favorites-restore-confirm" class="panel-button danger favorites-mirror-confirm" type="button">Restore backup</button>
                         </div>
                     </div>
                     <div class="favorites-undo-all" id="favorites-restore-undo" role="status" hidden>
                         <span>Favorites restored from GitHub</span>
-                        <button class="favorite-undo" id="favorites-restore-undo-button" type="button">Undo</button>
+                        <button class="panel-button link favorite-undo" id="favorites-restore-undo-button" type="button">Undo</button>
                     </div>
                 </div>
                 <div class="card" id="ignored-github">
@@ -701,8 +701,8 @@
                             <span class="desc" id="ignored-github-status" role="status">Saved on this device</span>
                         </div>
                         <div class="control favorites-github-buttons">
-                            <button id="ignored-backup" class="secondary" type="button">Back up now</button>
-                            <button id="ignored-restore" class="secondary" type="button">Restore…</button>
+                            <button id="ignored-backup" class="panel-button secondary" type="button">Back up now</button>
+                            <button id="ignored-restore" class="panel-button secondary" type="button">Restore…</button>
                         </div>
                     </div>
                     <div class="row climber-sync-row">
@@ -723,11 +723,11 @@
                             <div id="ignored-review-conflicts"></div>
                         </div>
                         <div class="favorites-mirror-confirmation-actions">
-                            <button id="ignored-review-cancel" class="secondary" type="button">Cancel</button>
-                            <button id="ignored-review-confirm" type="button">Apply reviewed changes</button>
+                            <button id="ignored-review-cancel" class="panel-button secondary" type="button">Cancel</button>
+                            <button id="ignored-review-confirm" class="panel-button primary" type="button">Apply reviewed changes</button>
                         </div>
                     </div>
-                    <button id="ignored-restore-undo" class="favorite-undo" type="button" hidden>Undo list replacement</button>
+                    <button id="ignored-restore-undo" class="panel-button link favorite-undo" type="button" hidden>Undo list replacement</button>
                 </div>
                 <p class="desc climber-sync-privacy">Backup and sync upload climber IDs and names to your connected repository. Public repositories and prior Git history may expose these lists.</p>
             </div>
@@ -743,8 +743,8 @@
                         </div>
                         <div class="control photos-github-actions" id="photos-github-actions" hidden>
                             <div class="photos-github-buttons">
-                                <button id="photos-backup" class="secondary" type="button">Back up photos</button>
-                                <button id="photos-restore" class="secondary" type="button">Restore from backup</button>
+                                <button id="photos-backup" class="panel-button secondary" type="button">Back up photos</button>
+                                <button id="photos-restore" class="panel-button secondary" type="button">Restore from backup</button>
                             </div>
                             <label class="check" for="photos-auto-backup">
                                 <input type="checkbox" id="photos-auto-backup">
@@ -758,8 +758,8 @@
                             <p class="photos-restore-detail" id="photos-restore-detail"></p>
                         </div>
                         <div class="photos-restore-actions">
-                            <button id="photos-restore-cancel" class="secondary" type="button">Cancel</button>
-                            <button id="photos-restore-confirm" class="photos-restore-confirm" type="button">Restore photo records</button>
+                            <button id="photos-restore-cancel" class="panel-button secondary" type="button">Cancel</button>
+                            <button id="photos-restore-confirm" class="panel-button danger photos-restore-confirm" type="button">Restore photo records</button>
                         </div>
                     </div>
                 </div>

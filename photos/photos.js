@@ -2656,7 +2656,7 @@ const statusLabels = item => {
 };
 
 const makeButton = (label, handler, className = 'quiet-button') => {
-    const button = element('button', className, label);
+    const button = element('button', `panel-button ${className === 'secondary-button' ? 'secondary' : 'quiet'} ${className}`, label);
     button.type = 'button';
     button.addEventListener('click', handler);
     return button;

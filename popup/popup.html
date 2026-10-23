@@ -25,7 +25,7 @@
     </header>
 
     <nav class="inbox-entry" aria-label="Activity drafts">
-      <button id="activity-inbox" class="secondary" type="button" aria-label="Activity inbox, pending count unavailable"><span>Activity inbox</span><span id="inbox-count">—</span><span aria-hidden="true">›</span></button>
+      <button id="activity-inbox" class="panel-button secondary" type="button" aria-label="Activity inbox, pending count unavailable"><span>Activity inbox</span><span id="inbox-count">—</span><span aria-hidden="true">›</span></button>
       <div class="inbox-feedback"><span aria-hidden="true">Your Garmin activities, imported automatically.</span><span aria-hidden="true">Garmin needs a new key. Open inbox to reconnect.</span><span id="activity-inbox-status" role="status" aria-atomic="true">Your Garmin activities, imported automatically.</span></div>
     </nav>
     <section id="state" aria-live="polite"></section>
@@ -40,8 +40,8 @@
         <span>Include timestamps for this capture<small>Removed by default. Applies to all selected drafts.</small></span>
       </label>
       <p id="capture-privacy-note" class="privacy-note">Peak lookup sends small track-corridor boxes to Peakbagger. Opening drafts sends the reduced GPX track with coordinates, elevation, and time to Preview. Save is always manual.</p>
-      <button id="open-drafts" class="primary" type="button"></button>
-      <button id="clear-capture" class="secondary" type="button" hidden>Delete captured track data</button>
+      <button id="open-drafts" class="panel-button primary" type="button"></button>
+      <button id="clear-capture" class="panel-button secondary" type="button" hidden>Delete captured track data</button>
       <p id="selection-lock-hint" class="selection-lock-hint" hidden>Delete captured track data to change the selection.</p>
       <p id="open-note" class="open-note" role="status" hidden></p>
       <details class="track-details">

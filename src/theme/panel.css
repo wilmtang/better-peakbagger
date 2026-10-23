@@ -272,59 +272,87 @@ textarea {
 input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); cursor: pointer; }
 input[type="range"] { accent-color: var(--accent); }
 
-/* The default action shape. Anchors take it too, so an action that is really a
-   destination (View repository, Open the guide) keeps link affordances without
-   looking odd beside the buttons it sits with. The photo page's own class names
-   are aliases of the same control, not a second one. */
-button.secondary,
-a.secondary,
-.secondary-button,
-.quiet-file {
+/* One action component for every panel. Variants change emphasis, never size.
+   Anchors and file-picker labels share it; icons, tabs and editor tools retain
+   their own interaction shapes. Use min-height so wrapped/zoomed text can grow. */
+.panel-button {
+    appearance: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 5px 10px;
+    gap: 6px;
+    min-height: 34px;
+    max-width: 100%;
+    padding: 6px 10px;
     color: var(--text);
     background: transparent;
     border: 1px solid var(--input-border);
     border-radius: 8px;
     font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    text-align: center;
     text-decoration: none;
+    white-space: normal;
+    overflow-wrap: break-word;
+    vertical-align: middle;
     cursor: pointer;
 }
-button.secondary:hover,
-a.secondary:hover,
-.secondary-button:hover,
-.quiet-file:hover { color: var(--accent); border-color: var(--accent); }
-
-/* One filled accent action per surface. A file picker's label is the only
-   visible control it has, so it takes a button shape too — .quiet-file marks
-   the one that is a secondary action rather than the surface's primary. */
-button.github-primary,
-button.primary,
-.primary-button,
-.file-button:not(.quiet-file) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px 12px;
+.panel-button:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.panel-button.primary {
     color: var(--accent-fg);
     background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    font: inherit;
-    font-weight: 600;
-    text-decoration: none;
-    cursor: pointer;
+    border-color: var(--accent);
 }
-button.github-primary:hover,
-button.primary:hover,
-.primary-button:hover,
-.file-button:not(.quiet-file):hover { filter: brightness(1.06); }
-button.github-primary:focus-visible,
-button.primary:focus-visible,
-.primary-button:focus-visible,
-.file-button:focus-visible { outline-offset: 2px; }
+.panel-button.danger {
+    color: var(--accent-fg);
+    background: var(--danger-fill);
+    border-color: var(--danger-fill);
+}
+.panel-button:is(.primary, .danger):hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--accent-fg);
+    background: var(--accent);
+    border-color: var(--accent);
+    filter: brightness(1.06);
+}
+.panel-button.danger:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--danger-fill);
+    border-color: var(--danger-fill);
+}
+.panel-button.quiet { border-color: transparent; }
+.panel-button.link {
+    min-height: 0;
+    padding: 0;
+    color: var(--link);
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    font-size: inherit;
+    line-height: inherit;
+}
+.panel-button.link:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: none;
+    text-decoration: underline;
+}
+.panel-button:focus-visible { outline-offset: 2px; }
+.panel-button.danger:focus-visible { outline-color: var(--danger); }
+/* Reserve alternate labels without fixed widths or duplicate accessible text. */
+.panel-button[data-sizing-label] { display: inline-grid; }
+.panel-button[data-sizing-label] > span,
+.panel-button[data-sizing-label]::after { grid-area: 1 / 1; min-width: 0; }
+.panel-button[data-sizing-label]::after {
+    content: attr(data-sizing-label);
+    visibility: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+@media (pointer: coarse) {
+    .panel-button:not(.link) { min-height: 44px; }
+}
 
 /* A read-only tag on a row or card: what this item is, not something to press. */
 .status-chip,

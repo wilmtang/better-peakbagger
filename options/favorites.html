@@ -47,7 +47,7 @@
                     <div class="favorites-panel" id="favorites-buddy-panel">
                         <div class="favorites-summary">
                             <p id="favorites-buddy-status" class="favorites-status" role="status">Never loaded</p>
-                            <button id="favorites-refresh-buddies" class="secondary" type="button">Refresh now</button>
+                            <button id="favorites-refresh-buddies" class="panel-button secondary" type="button">Refresh now</button>
                         </div>
                         <p class="favorites-hint" id="favorites-buddy-cache-hint">Better Peakbagger may use a saved copy of your Buddy List for up to 7 days before checking Peakbagger again. Changes made on Peakbagger may not appear immediately; choose Refresh now after editing your buddies.</p>
                     </div>
@@ -60,15 +60,15 @@
                             </label>
                             <span class="favorites-add-controls">
                                 <input id="favorites-add-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Climber link or id">
-                                <button id="favorites-add-button" class="secondary" type="submit">Add</button>
+                                <button id="favorites-add-button" class="panel-button secondary" type="submit">Add</button>
                             </span>
                         </form>
             
                         <details class="favorites-buddy-options">
                             <summary>Buddy List options</summary>
                             <div class="favorites-tools">
-                                <button id="favorites-merge-buddies" class="secondary" type="button">Add buddies to favorites</button>
-                                <button id="favorites-mirror-buddies" class="secondary favorites-mirror-trigger" type="button">Mirror Buddy List…</button>
+                                <button id="favorites-merge-buddies" class="panel-button secondary" type="button">Add buddies to favorites</button>
+                                <button id="favorites-mirror-buddies" class="panel-button secondary favorites-mirror-trigger" type="button">Mirror Buddy List…</button>
                             </div>
                             <p class="favorites-hint">Add keeps your existing favorites. Mirror replaces them with your Buddy List (up to 100 climbers).</p>
                             <label class="favorites-sync-setting" for="favorites-remove-with-buddy">
@@ -94,13 +94,13 @@
                                 </p>
                             </div>
                             <div class="favorites-mirror-confirmation-actions">
-                                <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
-                                <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
+                                <button id="favorites-mirror-cancel" class="panel-button secondary" type="button">Cancel</button>
+                                <button id="favorites-mirror-confirm" class="panel-button danger favorites-mirror-confirm" type="button">Replace custom list</button>
                             </div>
                         </div>
                         <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
                             <span id="favorites-undo-message">Custom list replaced</span>
-                            <button class="favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
+                            <button class="panel-button link favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
                         </div>
                         <div class="favorites-list-toolbar">
                             <p class="favorites-count" id="favorites-count" aria-live="polite">0 favorites</p>
@@ -146,7 +146,7 @@
                     <p class="favorites-hint">Ignore and don't display TRs of certain climbers.</p>
                     <form id="ignored-add-form" class="favorites-add">
                         <label for="ignored-add-input"><span class="title">Climber link or id</span><span class="desc">Saved on this device. Up to 1,500 climbers.</span></label>
-                        <span class="favorites-add-controls"><input id="ignored-add-input" type="text" autocomplete="off" placeholder="Climber link or id"><button id="ignored-add-button" class="secondary" type="submit" disabled>Add to ignored</button></span>
+                        <span class="favorites-add-controls"><input id="ignored-add-input" type="text" autocomplete="off" placeholder="Climber link or id"><button id="ignored-add-button" class="panel-button secondary" type="submit" disabled>Add to ignored</button></span>
                     </form>
                     <p id="ignored-status" class="favorites-status" role="status"></p>
                     <div class="favorites-list-toolbar">
@@ -154,9 +154,9 @@
                         <div class="favorites-list-controls"><input id="ignored-search" type="search" maxlength="200" aria-label="Search ignored climbers" placeholder="Search by name or id"><label class="favorites-sort" for="ignored-sort"><span>Sort</span><select id="ignored-sort"><option value="newest">Newest first</option><option value="name">Name</option></select></label></div>
                     </div>
                     <p id="ignored-empty" class="favorites-empty">Loading ignored climbers…</p>
-                    <button id="ignored-retry" class="secondary" type="button" hidden>Retry</button>
+                    <button id="ignored-retry" class="panel-button secondary" type="button" hidden>Retry</button>
                     <ul id="ignored-list" class="favorites-list"></ul>
-                    <div id="ignored-undo" class="favorites-undo-all" role="status" hidden><span>Climber unignored</span><button id="ignored-undo-button" class="favorite-undo" type="button">Undo</button></div>
+                    <div id="ignored-undo" class="favorites-undo-all" role="status" hidden><span>Climber unignored</span><button id="ignored-undo-button" class="panel-button link favorite-undo" type="button">Undo</button></div>
                     <p class="favorites-hint"><a href="options.html#github-ignored-backup">GitHub backup &amp; sync →</a></p>
                 </div>
             </section>

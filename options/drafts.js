@@ -262,7 +262,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         const actions = document.createElement('div');
         actions.className = 'draft-actions';
         const open = document.createElement('a');
-        open.className = 'secondary';
+        open.className = 'panel-button secondary';
         open.href = Drafts.editUrl(draft.parsed);
         open.target = '_blank';
         open.rel = 'noopener';
@@ -291,7 +291,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             ? 'Deleting draft…'
             : pending.restoring ? 'Restoring draft…' : 'Draft deleted';
         const undo = OptionsUtils.actionButton(
-            'draft-undo',
+            'link draft-undo',
             pending.deleting ? 'Deleting…' : pending.restoring ? 'Restoring…' : 'Undo',
             `Undo deletion of ${pending.title}`
         );

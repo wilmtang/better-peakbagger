@@ -16,7 +16,7 @@ function updateReviewControls() {
     const live = items.get(review.id), updated = changedMatches();
     const handoff = !!live?.handoff;
     $('#inbox-open').setAttribute('aria-disabled', String(!live || updated || !review.analysis));
-    $('#inbox-refresh').textContent = updated ? 'Review updated matches' : 'Refresh from Garmin';
+    $('#inbox-refresh span').textContent = updated ? 'Review updated matches' : 'Refresh from Garmin';
     $('#inbox-refresh').setAttribute('aria-disabled', String(!live || handoff || (!updated && (!current.configured || ['key-rejected', 'permission'].includes(current.error?.code)))));
     $('#inbox-dismiss').setAttribute('aria-disabled', String(!live || handoff));
     $('#inbox-done').setAttribute('aria-disabled', String(!live));
@@ -67,7 +67,7 @@ function paintList() {
         if (!element) {
             element = document.createElement('article'); element.className = 'garmin-activity';
             const body = document.createElement('div'), date = document.createElement('p'), title = document.createElement('h2'), status = document.createElement('p');
-            body.append(date, title, status); const button = document.createElement('button'); button.className = 'secondary'; button.textContent = 'Review activity';
+            body.append(date, title, status); const button = document.createElement('button'); button.className = 'panel-button secondary'; button.textContent = 'Review activity';
             button.addEventListener('click', () => showReview(item.id)); element.append(body, button); rows.set(item.id, element); $('#inbox-list').append(element);
         }
         element.querySelector('p').textContent = item.summary.date;
@@ -92,7 +92,7 @@ async function refresh(initial = false) {
             const link = document.createElement('a'); link.textContent = 'View in Garmin'; link.target = '_blank'; link.rel = 'noopener noreferrer';
             if (positiveId(receipt.id)) link.href = `https://connect.garmin.com/app/activity/${receipt.id}`;
             row.append(link);
-            if (receipt.dismissed) { const undo = document.createElement('button'); undo.className = 'secondary'; undo.textContent = 'Undo';
+            if (receipt.dismissed) { const undo = document.createElement('button'); undo.className = 'panel-button secondary'; undo.textContent = 'Undo';
                 undo.addEventListener('click', () => void busyAction(undo, $('#inbox-status'), async () => { await send({ type: 'GARMIN_UNDO', id: receipt.id }); accepted.add(receipt.id); await refresh(); })); row.append(undo); }
             $('#inbox-history-list').append(row);
         }

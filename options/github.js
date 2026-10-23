@@ -111,7 +111,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     const el = Dom.element;
     const button = (label, { primary = false, onClick } = {}) =>
-        el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', 'data-sizing-label': label,
+        el('button', { type: 'button', class: primary ? 'panel-button primary github-primary' : 'panel-button secondary', 'data-sizing-label': label,
             onclick: event => withConnectionOperation(() => onClick(event)) }, [el('span', { text: label })]);
     // One way out to an external page. tabs.create is preferred and cannot be
     // popup-blocked; window.open is the last resort for a context without the
@@ -292,7 +292,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             ]),
             el('div', { class: 'github-actions' }, [
                 url ? el('a', {
-                    class: 'secondary', href: url,
+                    class: 'panel-button secondary', href: url,
                     target: '_blank', rel: 'noopener noreferrer', text: 'View repository',
                 }) : null,
                 button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
@@ -314,7 +314,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 document.createTextNode(`Couldn’t check existing backups. ${errorText(summary.error)}`),
                 document.createTextNode(' '),
                 el('button', {
-                    type: 'button', class: 'github-link', text: 'Try again',
+                    type: 'button', class: 'panel-button link github-link', text: 'Try again',
                     onclick: () => { forgetAscentSummary(); void refreshAscentSummary(summaryEl, status); },
                 }),
             );
@@ -398,7 +398,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 children.push(
                     document.createTextNode(' '),
                     el('button', {
-                        type: 'button', class: 'github-link', text: offerSignIn ? 'Sign in to Peakbagger' : 'Open Peakbagger',
+                        type: 'button', class: 'panel-button link github-link', text: offerSignIn ? 'Sign in to Peakbagger' : 'Open Peakbagger',
                         onclick: async () => {
                             try {
                                 await createTab(offerSignIn ? 'https://www.peakbagger.com/Climber/Login.aspx' : 'https://www.peakbagger.com/Default.aspx');
@@ -449,7 +449,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         });
         const historyHint = el('p', { class: 'github-hint github-history' }, [
             document.createTextNode('New and edited ascents and TRs are backed up automatically. To back up earlier ascents and TRs, '),
-            el('button', { type: 'button', class: 'github-link', 'data-sizing-label': 'Open My Ascents', onclick: openMyAscents },
+            el('button', { type: 'button', class: 'panel-button link github-link', 'data-sizing-label': 'Open My Ascents', onclick: openMyAscents },
                 [el('span', { text: 'Open My Ascents' })]),
             document.createTextNode(' and choose Back up all ascents and TRs (it covers every year).'),
         ]);

@@ -1526,6 +1526,9 @@ try {
         if (process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT) {
             await optionsPage.locator('.content').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT });
         }
+        const addButtonHeight = await optionsPage.locator('#favorites-add-button').evaluate(button => button.getBoundingClientRect().height);
+        check(addButtonHeight >= 32 && addButtonHeight <= 36,
+            `the Add action must stay compact on one line, not collapse into a vertical label: ${addButtonHeight}px`);
         await optionsPage.locator('#favorites-mirror-cancel').click();
         const mirrorCancelled = await optionsPage.evaluate(async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;

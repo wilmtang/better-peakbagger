@@ -2,6 +2,10 @@
 
 ## Fixed and verified
 
+- **P2: oversized, inconsistent action buttons.** Garmin now uses the shared
+  compact panel button component; Reconnect is secondary when connected.
+  The [panel button audit](panel-button-audit.md) records the migration,
+  transition checks, popup fit correction and retained verification limits.
 - **P2: the broad activity filter claimed to exclude indoor activities.** Renamed
   it to **All activities** and documented the two filters' actual scope. Filtering
   behavior is unchanged. Three Garmin UI unit tests and all 12 hidden Chrome

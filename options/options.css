@@ -170,22 +170,6 @@ button.secondary, a.secondary { align-self: flex-end; }
 .photos-restore-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
 .settings-backup-confirmation-actions button.secondary,
 .photos-restore-actions button.secondary { align-self: auto; }
-.settings-backup-confirm,
-.photos-restore-confirm {
-    appearance: none;
-    padding: 6px 10px;
-    color: #fff;
-    background: var(--danger-fill);
-    border: 1px solid var(--danger-fill);
-    border-radius: 8px;
-    font: inherit;
-    font-weight: 650;
-    cursor: pointer;
-}
-.settings-backup-confirm:hover,
-.photos-restore-confirm:hover { filter: brightness(.92); }
-.settings-backup-confirm:focus-visible,
-.photos-restore-confirm:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
 
 .beta-signals { display: flex; flex-direction: column; gap: 9px; }
 .check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
@@ -275,20 +259,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorites-mirror-confirmation-detail strong { color: var(--danger); }
 .favorites-mirror-confirmation-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
 .favorites-mirror-confirmation-actions button.secondary { align-self: auto; }
-.favorites-mirror-confirm {
-    appearance: none;
-    padding: 6px 10px;
-    color: #fff;
-    background: var(--danger-fill);
-    border: 1px solid var(--danger-fill);
-    border-radius: 8px;
-    font: inherit;
-    font-weight: 650;
-    cursor: pointer;
-}
-.favorites-mirror-confirm:hover { filter: brightness(.92); }
-.favorites-mirror-confirm:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
-.favorites-mirror-confirm:disabled { cursor: wait; opacity: .58; }
+
 .favorites-list-toolbar {
     display: flex;
     align-items: center;
@@ -334,7 +305,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .climber-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 #ignored-workspace .card { padding:18px; }
 #ignored-workspace .favorite-name { overflow-wrap:anywhere; }
-#ignored-workspace .favorite-remove { min-height:32px; flex-shrink:0; }
+#ignored-workspace .favorite-remove { flex-shrink:0; }
 .favorite-item {
     display: flex;
     align-items: center;
@@ -348,21 +319,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorite-name:hover { text-decoration: underline; }
 .favorite-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 .favorite-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 4px 0 0; color: var(--sub); font-size: 11.5px; }
-.favorite-remove, .favorite-undo {
-    appearance: none;
-    padding: 4px 6px;
-    color: var(--link);
-    background: none;
-    border: 0;
-    border-radius: 4px;
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-}
-.favorite-remove:hover, .favorite-undo:hover { text-decoration: underline; }
-.favorite-remove[aria-disabled="true"], .favorite-undo[aria-disabled="true"] { cursor: wait; opacity: .55; text-decoration: none; }
-.favorite-remove:focus-visible, .favorite-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .favorite-item-deleted { justify-content: flex-start; color: var(--sub); font-size: 13px; }
 .favorites-undo-all { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--sub); font-size: 13px; }
 .favorites-undo-all[hidden] { display: none; }
@@ -378,19 +334,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .github-panel { display: flex; flex-direction: column; gap: 12px; }
 .github-line { margin: 0; font-size: 13px; color: var(--text); max-width: 58ch; }
 .github-hint { margin: 0; font-size: 12px; color: var(--sub); max-width: 58ch; }
-.github-link {
-    appearance: none;
-    padding: 0;
-    border: 0;
-    color: var(--link);
-    background: none;
-    font: inherit;
-    text-decoration: none;
-    cursor: pointer;
-}
-.github-link:hover { text-decoration: underline; }
-.github-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
-.github-link:disabled { color: var(--sub); cursor: wait; text-decoration: none; }
 .github-history-status[hidden] { display: none; }
 .github-error { color: #d0453b; }
 .github-backup-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
@@ -414,9 +357,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .github-code-value { font: 700 22px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; user-select: all; }
 .github-code-copy { color: var(--sub); font: 600 11px/1 system-ui, sans-serif; letter-spacing: 0; }
 .github-code-copy { min-inline-size: 15ch; text-align: end; }
-.github-actions button[data-sizing-label] { display: grid; }
-.github-actions button[data-sizing-label] > span, .github-actions button[data-sizing-label]::after { grid-area: 1 / 1; }
-.github-actions button[data-sizing-label]::after { content: attr(data-sizing-label); visibility: hidden; }
 .github-link[data-sizing-label] { display: inline-grid; }
 .github-link[data-sizing-label] > span, .github-link[data-sizing-label]::after { grid-area: 1 / 1; }
 .github-link[data-sizing-label]::after { content: attr(data-sizing-label); visibility: hidden; }
@@ -480,32 +420,11 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     white-space: nowrap;
 }
 .draft-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
-/* The shared secondary control, one step down: several sit in a row beside a
-   draft's title, so they carry the row's smaller type. */
-.draft-actions .secondary {
-    align-self: auto;
-    min-height: 31px;
-    padding: 5px 9px;
-    font-size: 12px;
-    line-height: 1.2;
-}
+.draft-actions .secondary { align-self: auto; }
 .draft-item-deleted { justify-content: flex-start; color: var(--sub); font-size: 13px; }
 .draft-actions [data-action="copy"] { display: grid; }
 .draft-actions [data-action="copy"] > span, .draft-actions [data-action="copy"]::after { grid-area: 1 / 1; }
 .draft-actions [data-action="copy"]::after { content: "Copy Markdown"; visibility: hidden; }
-.draft-undo {
-    appearance: none;
-    padding: 2px 3px;
-    color: var(--link);
-    background: none;
-    border: 0;
-    border-radius: 3px;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-}
-.draft-undo:hover { text-decoration: underline; }
-.draft-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .drafts-undo-all { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; color: var(--sub); font-size: 13px; }
 .drafts-undo-all[hidden] { display: none; }
 /* Reuses the shared confirmation block; it sits inside the drafts panel rather
