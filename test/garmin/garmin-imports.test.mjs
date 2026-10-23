@@ -16,8 +16,8 @@ async function setup(overrides = {}) {
     store, settings: { requireCurrent: async () => prefs },
     clientFactory: options => { overrides.onClient?.(options); return { owner: async () => '123', list: async () => { counts.lists++; return [row]; }, recording: async () => { counts.downloads++; return new Uint8Array(); }, ...overrides.api }; },
     clock: overrides.clock || Date.now, date: overrides.date,
-    binding: async () => ({ cid: '456' }), decode: async () => ({ segments: [] }),
-    prepare: async () => { counts.preparations++; return { analysis: { matches: [{ id: 987 }] } }; },
+    binding: overrides.binding || (async () => ({ cid: '456' })), decode: async () => ({ segments: [] }),
+    prepare: overrides.prepare || (async () => { counts.preparations++; return { analysis: { matches: [{ id: 987 }] } }; }),
     });
     await imports.connect('fictional-personal-key');
     await imports.handle({ type: 'GARMIN_ENABLE' }, sender);
@@ -162,4 +162,62 @@ test('full-history intent survives a concurrent recent scan and restarts at the 
     finish(); await Promise.all([active, full]);
     assert(queries.some(query => query.from === '2026-01-01'), 'Explicit full-history request must not disappear behind a recent check');
     await store.close();
+});
+
+
+test('blocked peak lookups survive checks and resume the queued activity on a Peakbagger visit', async () => {
+    let blocked = true, preparations = 0;
+    const { imports, store, counts } = await setup({ prepare: async () => {
+        preparations++;
+        if (blocked) throw Object.assign(new Error('challenge'), { code: 'cloudflare' });
+        return { analysis: { matches: [{ id: 987 }] } };
+    } });
+    try {
+        await imports.check();
+        assert.equal((await imports.snapshot()).queued, 1);
+        assert.equal((await store.read()).peakbaggerBlocked.code, 'cloudflare');
+        await imports.check();
+        assert.equal(preparations, 1, 'scheduled checks must not retry blocked Peakbagger requests');
+        assert.equal(counts.downloads, 1);
+        const lists = counts.lists;
+        blocked = false;
+        await Promise.all([imports.peakbaggerVisited(42), imports.peakbaggerVisited(42)]);
+        assert.equal(counts.lists, lists, 'a visit resumes preparation without rescanning Garmin history');
+        assert.equal(preparations, 2);
+        assert.equal((await imports.snapshot()).queued, 0);
+        assert.equal((await store.read()).items['12'].phase, 'ready');
+        assert.equal((await store.read()).peakbaggerBlocked, null);
+    } finally { await store.close(); }
+});
+test('a missing Peakbagger page queues metadata without downloading and rate limits survive visits', async () => {
+    let available = true, probes = 0, now = Date.now();
+    const { imports, store, counts } = await setup({ clock: () => now, binding: async () => {
+        probes++;
+        if (!available) throw Object.assign(new Error('limited'), { code: 'rate-limit', retryAt: now + 60000 });
+        return { cid: '456' };
+    } });
+    try {
+        available = false; await imports.check();
+        assert.equal((await imports.snapshot()).queued, 1);
+        assert.equal(counts.downloads, 0);
+        const before = probes; available = true;
+        await imports.peakbaggerVisited(42); assert.equal(probes, before);
+        now += 60001; await imports.peakbaggerVisited(42);
+        assert.equal((await imports.snapshot()).queued, 0);
+    } finally { await store.close(); }
+});
+
+test('one Peakbagger visit drains several preparation batches even in Manual only mode', async () => {
+    const { imports, store, counts, alarms } = await setup({ prefs: { garminCheckHours: 0 } });
+    try {
+        await store.mutate(state => {
+            state.peakbaggerBlocked = { code: 'peakbagger' };
+            for (let i = 1; i <= 7; i++) state.items[i] = { id: String(i), phase: 'waiting', owner: '123', cid: '456', summary: { type: 'hiking' } };
+        });
+        await imports.peakbaggerVisited(42);
+        assert.equal(counts.preparations, 7);
+        assert.equal(counts.lists, 0);
+        assert.equal(alarms.size, 0);
+        assert.equal((await imports.snapshot()).queued, 0);
+    } finally { await store.close(); }
 });

@@ -4,6 +4,8 @@
 <body class="garmin-inbox"><header class="garmin-brand"><img src="../icons/icon-48.png" width="36" height="36" alt=""><strong>Better Peakbagger</strong><a href="options.html#capture-garmin">Settings</a></header>
 <main class="garmin-workspace"><div class="garmin-heading"><div><h1>Activity inbox</h1><p id="inbox-description">Your Garmin activities, imported automatically.</p></div><button id="inbox-check" class="panel-button secondary">Check now</button></div>
 <div class="garmin-feedback"><span aria-hidden="true">Garmin needs a new API key. Imports paused; your drafts are safe. Update key in Settings.</span><span id="inbox-status" role="status" aria-atomic="true">Reading your inbox…</span></div>
+<div class="garmin-feedback"><span aria-hidden="true">200 activities waiting for peak checks. Visit Peakbagger to resume.</span><span id="inbox-queue" role="status" aria-atomic="true"></span></div>
+<p class="garmin-recovery-link"><a id="inbox-resume-peaks" href="https://www.peakbagger.com/Default.aspx" target="_blank" rel="noopener noreferrer" hidden>Open Peakbagger to resume</a></p>
 <p class="garmin-recovery-link"><a id="inbox-update-key" href="options.html#capture-garmin" hidden>Update key</a></p>
 <button id="inbox-new" class="panel-button secondary" hidden>New activities available</button>
 <section id="inbox-list" aria-label="Garmin activities"></section>

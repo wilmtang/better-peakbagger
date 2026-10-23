@@ -43,7 +43,7 @@ function showReview(id, focus = true) {
         text.append(detail); label.append(checkbox, text); $('#inbox-matches').append(label);
     }
     $('#inbox-review-status').textContent = review.handoff ? 'Draft forms were opened. Review their saved state before continuing.'
-        : !review.analysis ? review.error || 'Waiting for peaks. Open Peakbagger, sign in, then Check now.' : 'Strong matches are selected. Review any Probable matches before opening drafts.';
+        : !review.analysis ? review.error || 'Waiting for peak checks. Visit Peakbagger to resume.' : 'Strong matches are selected. Review any Probable matches before opening drafts.';
     $('#inbox-timestamps').checked = false;
     updateReviewControls();
     if (focus) $('#inbox-back').focus();
@@ -74,7 +74,7 @@ function paintList() {
         element.querySelector('h2').textContent = garminActivityLabel(item.summary.type);
         element.querySelectorAll('p')[1].textContent = item.analysis
             ? `${item.analysis.matches.filter(match => match.classification === 'strong').length} Strong · ${item.analysis.matches.filter(match => match.classification === 'probable').length} Probable`
-            : item.phase === 'no-matches' ? 'No matching summits' : item.phase === 'no-gps' ? 'No usable GPS route' : item.error || 'Waiting for Peakbagger — open Peakbagger, sign in, then Check now.';
+            : item.phase === 'no-matches' ? 'No matching summits' : item.phase === 'no-gps' ? 'No usable GPS route' : item.error || 'Queued for peak checks — visit Peakbagger to resume.';
     }
     if (!pending.length && !$('#inbox-empty')) {
         const empty = document.createElement('p'); empty.id = 'inbox-empty'; empty.textContent = current?.configured ? 'No activities need review. Check now to look for activities.' : 'Connect Garmin in Settings to import your activities.'; $('#inbox-list').append(empty);
@@ -103,7 +103,13 @@ async function refresh(initial = false) {
     if (initial) accepted = new Set(items.keys());
     const arrivals = [...items.keys()].filter(id => !accepted.has(id)); $('#inbox-new').hidden = !arrivals.length;
     $('#inbox-description').textContent = !current.configured ? 'Connect Garmin to import your activities.' : current.manual ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
-    if (!statusError) $('#inbox-status').textContent = current.error?.message || (current.checking ? 'Checking Garmin… Your drafts remain ready to review.'
+    const queued = current.queued || 0;
+    $('#inbox-queue').textContent = queued ? `${queued} ${queued === 1 ? 'activity' : 'activities'} waiting for peak checks. Visit Peakbagger to resume.` : 'All queued activities have been checked for peaks.';
+    $('#inbox-resume-peaks').hidden = !queued;
+    const peakbaggerMessage = current.peakbaggerBlocked?.code === 'cloudflare'
+        ? 'Peakbagger needs a human check. Your activities are queued safely.'
+        : current.peakbaggerBlocked?.code === 'rate-limit' ? 'Peakbagger asked us to wait. Your activities are queued safely.' : null;
+    if (!statusError) $('#inbox-status').textContent = current.error?.message || peakbaggerMessage || (current.checking ? 'Checking Garmin… Your drafts remain ready to review.'
         : current.lastCheck ? `Last checked ${new Date(current.lastCheck).toLocaleString()}${current.historyIncomplete ? ' · History check in progress' : ''}` : current.enabled ? 'Ready to check Garmin.' : 'Connect Garmin and enable drafts in Settings.');
     $('#inbox-update-key').hidden = !current.error || !['key-rejected', 'permission'].includes(current.error.code);
     $('#inbox-update-key').textContent = current.error?.code === 'permission' ? 'Allow Garmin access' : 'Update key';

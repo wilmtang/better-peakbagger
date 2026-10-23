@@ -72,3 +72,18 @@ test('review exposes refreshed results explicitly and updates handoff recovery w
     assert.equal(d.querySelector('#inbox-dismiss').getAttribute('aria-disabled'), 'true');
     dom.window.close();
 });
+
+test('inbox identifies queued activities and preserves them during a human check', async () => {
+    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    dom.window.chrome = { runtime: { sendMessage: async () => ({ ok: true, configured: true, enabled: true,
+        queued: 2, peakbaggerBlocked: { code: 'cloudflare' }, history: [], items: [1, 2].map(id => ({ id: String(id), phase: 'waiting', summary: { date: '2026-10-23', type: 'hiking' } })) }) },
+    storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    try {
+        dom.window.eval(inboxSource); await tick();
+        const d = dom.window.document;
+        assert.match(d.querySelector('#inbox-queue').textContent, /2 activities waiting for peak checks/);
+        assert.match(d.querySelector('#inbox-status').textContent, /human check/);
+        assert.equal(d.querySelector('#inbox-resume-peaks').hidden, false);
+        assert.equal(d.querySelectorAll('.garmin-activity').length, 2);
+    } finally { dom.window.close(); }
+});

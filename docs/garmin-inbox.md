@@ -38,6 +38,17 @@ other types, including resort skiing and indoor workouts. Draft preparation
 needs a usable GPS track. Existing default-group preferences gain the added
 types automatically; choose **Check full history** to find older activities now.
 
+## When Peakbagger needs attention
+
+Garmin discovery continues on your chosen schedule. New activities wait locally
+if Peakbagger is closed, signed out, rate limited or asking for a human check.
+The inbox shows how many activities are waiting for peak checks. Open a
+Peakbagger tab and complete any check or sign-in: returning to a loaded
+Peakbagger page resumes the queue automatically, including in Manual only mode.
+This prepares activities already discovered; it does not scan Garmin history.
+Rate-limit cooldowns still apply. No tabs open automatically and ready drafts
+are not prepared again.
+
 ## Review and recover
 
 - Strong matches start selected. Review Probable matches before selecting them.

@@ -654,7 +654,8 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         document.getElementById('inbox-count').textContent = count > 99 ? '99+' : count ? String(count) : '';
         inboxButton.setAttribute('aria-label', `Activity inbox, ${count} pending activities`);
         inboxStatus.textContent = inboxSummary.error?.code === 'key-rejected' ? 'Garmin needs a new key. Open inbox to reconnect.'
-            : !inboxSummary.configured ? 'Connect Garmin to import your activities.' : inboxSummary.manual
-                ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
+            : inboxSummary.queued > 0 ? `${inboxSummary.queued} waiting for peak checks. Open inbox to resume.`
+                : !inboxSummary.configured ? 'Connect Garmin to import your activities.' : inboxSummary.manual
+                    ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
     }).catch(() => {});
 })();

@@ -3561,20 +3561,24 @@ import { GarminError } from '../garmin/garmin-api.js';
     });
     // Imports reuse existing authenticated Peakbagger tabs only. An alarm may
     // not manufacture the activeTab gesture or open/focus a helper window.
-    const garminBinding = async expectedCid => {
+    const garminBinding = async (expectedCid, { tabId = null, signal } = {}) => {
         await ensurePeakbaggerRequestsAllowed();
-        const candidates = (await ext.tabs.query({})).filter(canonicalPeakbaggerTab);
+        const candidates = (await ext.tabs.query({})).filter(tab => canonicalPeakbaggerTab(tab) && (tabId === null || tab.id === tabId));
+        let failure;
         for (const tab of candidates) {
             try {
-                await ensurePeakbaggerPage(tab.id);
+                await ensurePeakbaggerPage(tab.id, signal);
                 const request = (url, options) => schedulePeakbaggerRequest(
                     (target, init) => requestThroughPeakbaggerPage(tab.id, target, init), url, options,
                 );
-                const cid = await peakbaggerLogin({ request });
+                const cid = await peakbaggerLogin({ request, signal });
                 if (cid && (!expectedCid || String(cid) === String(expectedCid))) return { cid, request, tabId: tab.id };
-            } catch { /* leave the durable item waiting for a usable page */ }
+            } catch (error) {
+                failure = error;
+                if (['cloudflare', 'rate-limit'].includes(error.code)) throw error;
+            }
         }
-        throw new GarminError('peakbagger');
+        throw failure || new GarminError('peakbagger');
     };
     const garminImports = createGarminImports({
         ext, settings: Settings, binding: garminBinding,
@@ -3975,12 +3979,20 @@ import { GarminError } from '../garmin/garmin-api.js';
             await serializeLifecycle(sourceTabId, () => cleanupRemovedTab(tabId));
         });
     });
+    const resumeGarminOnVisit = async tabId => {
+        if (!globalThis.indexedDB) return;
+        const tab = await ext.tabs.get(tabId);
+        if (!tab.active || tab.status !== 'complete' || !canonicalPeakbaggerTab(tab)) return;
+        await garminImports.peakbaggerVisited(tabId);
+    };
     ext.tabs.onActivated?.addListener(({ tabId }) => {
+        runDetachedCleanup('Garmin queue on Peakbagger visit', () => resumeGarminOnVisit(tabId));
         rememberRecentHelperEvent(recentHelperActivations, tabId, true);
         runDetachedCleanup('temporary Peakbagger tab adoption', () =>
             markPeakbaggerHelperAdopted(tabId));
     });
     ext.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+        if (changeInfo?.status === 'complete') runDetachedCleanup('Garmin queue on Peakbagger load', () => resumeGarminOnVisit(tabId));
         if (changeInfo?.status === 'loading') {
             runDetachedCleanup('photo source navigation cleanup', () =>
                 photoRoutes.forgetSourceTab(tabId));

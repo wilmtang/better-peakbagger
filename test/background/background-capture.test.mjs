@@ -426,6 +426,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 return { id: windowId, ...structuredClone(patch) };
             },
         },
+        permissions: { contains: async () => true },
         alarms: { create: () => {}, clear: async () => {}, onAlarm: alarmEvent }
     };
 
@@ -463,7 +464,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         console: workerConsole,
         structuredClone,
         btoa,
-        AbortController,
+        AbortController, AbortSignal,
         TextEncoder,
         TextDecoder,
         crypto: globalThis.crypto,
@@ -4371,5 +4372,28 @@ test('Garmin inbox recreates a private handoff and reuses it without duplicating
     const expired = await harness.send(message, sender);
     assert.equal(expired.ok, false); assert.equal(expired.error.code, 'handoff');
     assert.equal((await store.read()).items['123'].phase, 'ready', 'Durable inbox draft does not expire with delivery');
+    await store.close();
+});
+
+test('a completed active Peakbagger visit wakes the durable Garmin queue without opening a tab', async () => {
+    const database = new IDBFactory();
+    const h = createHarness({ garminDatabase: database });
+    const store = createGarminStore(database);
+    await store.mutate(state => {
+        state.connection = { owner: '1234', cid: '77', key: 'fictional-key-for-queue-test', enabled: true };
+        state.peakbaggerBlocked = { code: 'cloudflare', retryAt: 0 };
+        state.items['123'] = { id: '123', phase: 'waiting', summary: { type: 'hiking' } };
+    });
+    const tab = { id: 42, active: false, status: 'complete', url: 'https://www.peakbagger.com/Default.aspx' };
+    h.tabs.set(tab.id, tab);
+    h.tabUpdated.listeners[0](42, { status: 'complete' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(h.fetchCalls.filter(url => url.includes('personal.connectapi')).length, 0);
+    const beforeTabs = h.tabs.size;
+    tab.active = true;
+    h.tabActivated.listeners[0]({ tabId: 42 });
+    await waitForCondition(() => h.fetchCalls.some(url => url.includes('personal.connectapi')));
+    assert.equal(h.tabs.size, beforeTabs, 'resuming must reuse the visited page');
+    assert.equal(h.windowCreates.length, 0);
     await store.close();
 });

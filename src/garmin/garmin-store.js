@@ -7,6 +7,8 @@ const empty = () => ({ version: 1, epoch: 0, connection: null, items: {}, receip
 export const garminPublicSummary = state => ({ revision: state.revision || 0, configured: !!state.connection?.key,
     enabled: state.connection?.enabled === true, cid: state.connection?.cid || null,
     connectedDate: state.connection?.connectedDate || null,
+    queued: Object.values(state.items).filter(item => !item.analysis && ['waiting', 'error'].includes(item.phase)).length,
+    peakbaggerBlocked: state.peakbaggerBlocked || null,
     pending: Object.values(state.items).filter(item => item.phase !== 'dismissed').length,
     lastCheck: state.lastCheck, lastFull: state.lastFull, retryAt: state.retryAt, error: state.error, historyIncomplete: !!state.scan,
     undoDue: Math.min(...Object.values(state.items).filter(item => item.phase === 'dismissed').map(item => item.undoUntil), Infinity) });
@@ -40,7 +42,7 @@ export function createGarminStore(indexedDB = globalThis.indexedDB) {
             const tx = database.transaction('state', 'readonly'); const request = tx.objectStore('state').get('summary');
             request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error('Garmin inbox summary is unavailable.'));
         });
-        return result || garminPublicSummary(await read());
+        return Number.isInteger(result?.queued) ? result : garminPublicSummary(await read());
     };
     return { read, summary,
         mutate: mutate => transaction(true, mutate),

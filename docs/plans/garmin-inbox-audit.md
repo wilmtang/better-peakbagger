@@ -2,6 +2,19 @@
 
 ## Fixed and verified
 
+- **Blocked summit lookups now retain a durable queue.** Discovery continues;
+  peak preparation pauses after a challenge, missing session or rate limit.
+  Loading or selecting a completed active Peakbagger page resumes bounded
+  preparation batches without rescanning Garmin history or opening a helper
+  tab. The inbox and popup expose the waiting count. Manual-only discovery
+  remains manual; visiting Peakbagger can finish previously queued activities.
+  Verified: 335 Garmin, worker and popup tests; focused ESLint; the real
+  unpacked extension in hidden Chrome 156 at 1000×760; all 12 hidden Garmin
+  UI cases in Chrome 156 and Firefox 157. Both themes at 1180×1000 and
+  390×1000 preserve the button, heading, list, footer and scroll geometry
+  through challenge → rate-limit feedback. The narrow rendered queue was
+  inspected. Provider replies are stubbed; these are DOM/CSS checks.
+
 - **Expanded default activity group.** Mountain activities now includes rock
   climbing and backcountry skiing alongside hikes, walks, trail runs and
   mountaineering. The existing stored preference is preserved; inbox titles
@@ -84,6 +97,9 @@ Final process inspection found no remaining Garmin UI verifier processes.
 - Business enrollment and publishing remain outside this local implementation.
 
 ## Changed but not fully proven
+
+- Queue recovery uses synthetic challenge and cooldown responses in tests;
+  completion of a real interactive Cloudflare challenge remains unverified.
 
 - The added sport filters use recorded Garmin type keys; their live recordings
   have not been downloaded in this follow-up. Garmin uses the combined

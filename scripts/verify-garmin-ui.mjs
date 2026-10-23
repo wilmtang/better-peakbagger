@@ -45,6 +45,11 @@ try {
             const row = { id: '123', owner: '1234', cid: '5678', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
                 analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], hasTimestamps: false } };
             window.fixture = { mode: 'success', checks: 0, connects: 0, enables: 0, opens: 0, captures: 0, state: { configured: true, enabled: !window.location.pathname.endsWith('/options/options.html'), pending: 1, cid: '5678', items: [row], history: [], connectedDate: '2026-10-23' } };
+            if (window.location.search.includes('queued')) {
+                row.analysis = null; row.phase = 'waiting';
+                window.fixture.state.queued = 1;
+                window.fixture.state.peakbaggerBlocked = { code: 'cloudflare' };
+            }
             window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => ({ bpbSettings: prefs }) }, onChanged: { addListener() {}, removeListener() {} } },
                 tabs: { query: async () => [{ id: 1 }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
                     if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
@@ -165,6 +170,16 @@ try {
             await page.locator('#garmin-settings-status').filter({ hasText: 'Garmin drafts enabled.' }).waitFor();
             assert(await enable.isHidden(), 'Successful setup deliberately removes the enable action');
             assert.equal(await page.evaluate(() => window.fixture.enables), 2);
+            await page.goto(`${origin}/options/inbox.html?queued`);
+            await page.locator('#inbox-queue').filter({ hasText: '1 activity waiting' }).waitFor();
+            await page.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
+            assert.match(await page.locator('#inbox-status').textContent(), /human check/);
+            assert(await page.locator('#inbox-resume-peaks').isVisible());
+            const queuedGeometry = await geometry(['#inbox-check', 'h1', '#inbox-list', 'footer']);
+            await page.evaluate(() => { window.fixture.state.peakbaggerBlocked = { code: 'rate-limit' }; });
+            await page.locator('#inbox-status').filter({ hasText: 'asked us to wait' }).waitFor();
+            stable(queuedGeometry, await geometry(['#inbox-check', 'h1', '#inbox-list', 'footer']));
+            if (name === 'chromium') await page.screenshot({ path: path.join(output, `queued-${width}-${theme}.png`) });
             await page.goto(`${origin}/options/inbox.html`);
             await page.locator('.garmin-activity').waitFor();
             await page.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);

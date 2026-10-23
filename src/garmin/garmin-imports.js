@@ -23,7 +23,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     decode = decodeGarminRecording, prepare, binding, openDrafts, clock = Date.now, date = today } = {}) {
     const trusted = createPackagedPageMatcher(ext, ['options/options.html', 'options/inbox.html']);
     const popup = createPackagedPageMatcher(ext, ['popup/popup.html']);
-    let running = null; let queuedFull = null; let controller = null; let opening = null; let client = null; let clientEpoch = -1; let publicCache = null;
+    let visiting = null; let running = null; let queuedFull = null; let controller = null; let opening = null; let client = null; let clientEpoch = -1; let publicCache = null;
     const mutateEpoch = (epoch, mutate) => store.mutate(state => {
         if (state.epoch !== epoch) throw new GarminError('cancelled'); return mutate(state);
     });
@@ -39,7 +39,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         const [state, prefs] = await Promise.all([store.read(), settings.requireCurrent()]);
         if (!state.connection?.key || !state.connection.enabled || !prefs.garminCheckHours || state.error?.code === 'key-rejected' || !await permission()
             || (state.error?.code === 'capacity' && !state.preparePending)) return;
-        const continuing = state.scan || state.preparePending;
+        const continuing = state.scan || (state.preparePending && !state.peakbaggerBlocked);
         const due = continuing ? Math.max(clock() + 60000, state.retryAt || 0) : Math.max(clock() + 60000, state.lastCheck + prefs.garminCheckHours * 3600000, state.retryAt || 0);
         await ext.alarms.create(GARMIN_ALARM, { when: due });
     };
@@ -113,7 +113,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             nextCheck: prefs.garminCheckHours ? Math.max(meta.retryAt || 0, meta.lastCheck + prefs.garminCheckHours * 3600000) : null,
             manual: prefs.garminCheckHours === 0, ...(includeItems ? { items: publicCache.items, history: publicCache.history.map(item => ({ ...item, undoAvailable: item.undoUntil > clock() })) } : {}) };
     };
-    const runCheck = async (full, continuation = false) => {
+    const runCheck = async (full, continuation = false, { prepareOnly = false, resume = false, tabId = null } = {}) => {
         controller = new AbortController(); clientEpoch = -1;
         const state = await store.read(); const connection = state.connection;
         if (!connection?.key || !connection.enabled) return;
@@ -133,7 +133,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             : importRange(prefs, connection.connectedDate, state.lastCheck, fullScan, date());
         const signature = JSON.stringify({ ...range, types: prefs.garminActivityTypes });
         let scan = state.scan?.signature === signature ? state.scan : { ...range, scope, signature, offset: 0, full: fullScan, head: null };
-        const skipDiscovery = continuation && (state.error?.code === 'capacity' || (!state.scan && clock() - state.lastCheck < prefs.garminCheckHours * 3600000));
+        const skipDiscovery = prepareOnly || continuation && (state.error?.code === 'capacity' || (!state.scan && clock() - state.lastCheck < prefs.garminCheckHours * 3600000));
         for (let page = 0; page < (skipDiscovery ? 0 : 3); page++) {
             const rows = await service.list({ ...range, start: scan.offset });
             const fingerprint = rows.map(row => row.id).join(',');
@@ -166,16 +166,25 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             scan = { ...scan, offset: scan.offset + 45 };
             await mutateEpoch(epoch, current => { current.scan = scan; });
         }
-        const items = Object.values((await store.read()).items).filter(item => ['waiting', 'error'].includes(item.phase) && !(item.retryAt > clock())).slice(0, 3);
-        if (!items.length) { await mutateEpoch(epoch, current => { current.preparePending = false; }); return; }
-        let context;
-        try { context = await binding(connection.cid); } catch {
-            await mutateEpoch(epoch, current => { current.preparePending = false; }); return; }
-        for (const [index, item] of items.entries()) {
+        const queuedState = await store.read();
+        if (queuedState.peakbaggerBlocked && (!resume || queuedState.peakbaggerBlocked.retryAt > clock())) return;
+        const items = Object.values(queuedState.items).filter(item => !item.handoff && ['waiting', 'error'].includes(item.phase) && !(item.retryAt > clock())).slice(0, 3);
+        if (!items.length) { await mutateEpoch(epoch, next => { next.preparePending = false; }); return; }
+        const pausePeaks = async error => {
+            if (controller.signal.aborted) throw error;
+            await mutateEpoch(epoch, next => {
+                next.peakbaggerBlocked = { code: error.code === 'cloudflare' ? 'cloudflare' : error.code === 'rate-limit' ? 'rate-limit' : 'peakbagger',
+                    retryAt: Number.isFinite(error.retryAt) ? error.retryAt : 0 };
+                next.preparePending = false;
+            });
+        };
+        for (const item of items) {
             controller.signal.throwIfAborted();
-            if (index > 0) { try { context = await binding(connection.cid); } catch {
-                await mutateEpoch(epoch, current => { current.preparePending = false; }); return;
-            } }
+            let context;
+            try {
+                context = await binding(connection.cid, { tabId, signal: controller.signal });
+                await mutateEpoch(epoch, next => { next.peakbaggerBlocked = null; });
+            } catch (error) { await pausePeaks(error); return; }
             let stage = 'download';
             try {
                 const bytes = await service.recording(item.id, connection.owner);
@@ -194,6 +203,9 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
                 });
             } catch (error) {
                 if (controller.signal.aborted || ['key-rejected', 'rate', 'identity', 'capacity'].includes(error.code)) throw error;
+                if (stage === 'prepare' && (['cloudflare', 'rate-limit', 'network', 'server'].includes(error.code) || error.code?.startsWith('peakbagger-'))) {
+                    await pausePeaks(error); return;
+                }
                 await mutateEpoch(epoch, current => {
                     if (current.items[item.id] && !current.items[item.id].handoff
                         && current.items[item.id].phase !== 'dismissed'
@@ -208,17 +220,35 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         }
         await mutateEpoch(epoch, current => { current.preparePending = Object.values(current.items).some(item => item.phase === 'waiting'); });
     };
-    const check = (full = false, continuation = false) => {
+    const check = (full = false, continuation = false, options = {}) => {
         if (running) {
             if (full) return queuedFull ||= running.then(() => check(true)).finally(() => { queuedFull = null; });
             return running;
         }
-        running = runCheck(full, continuation).catch(async error => {
+        running = runCheck(full, continuation, options).catch(async error => {
             if (controller?.signal.aborted) return;
             const failure = error instanceof GarminError ? error : new GarminError('offline');
             await store.mutate(state => { state.error = { code: failure.code, message: failure.message }; state.retryAt = failure.retryAt || 0; });
         }).finally(async () => { running = null; await reconcile(); });
         return running;
+    };
+    // Visits only prepare durable items; they never widen or rescan Garmin history.
+    const peakbaggerVisited = tabId => {
+        if (visiting) return visiting;
+        visiting = (async () => {
+            await running;
+            let previous = Infinity;
+            for (;;) {
+                const state = await store.read();
+                const count = Object.values(state.items).filter(item => !item.handoff && ['waiting', 'error'].includes(item.phase) && !(item.retryAt > clock())).length;
+                if (!state.connection?.key || !state.connection.enabled || !count || count >= previous
+                    || state.peakbaggerBlocked?.retryAt > clock() || state.error?.code === 'key-rejected') return;
+                previous = count;
+                await check(false, false, { prepareOnly: true, resume: true, tabId });
+                if ((await store.read()).peakbaggerBlocked) return;
+            }
+        })().finally(() => { visiting = null; });
+        return visiting;
     };
     const openInbox = () => {
         if (opening) return opening;
@@ -247,7 +277,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
                 state.credentialEpoch = (state.credentialEpoch || 0) + 1; });
             await reconcile(); return { ok: true, ...await snapshot() };
         },
-        GARMIN_CHECK: async message => { void check(message.full === true); return { ok: true }; },
+        GARMIN_CHECK: async message => { void check(message.full === true, false, { resume: true }); return { ok: true }; },
         GARMIN_DISMISS: async message => {
             await store.mutate(state => { const item = state.items[message.id]; if (!item) return;
                 if (item.handoff) throw new GarminError('handoff');
@@ -272,11 +302,11 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             await store.mutate(state => { const item = state.items[message.id];
                 if (item?.handoff) throw new GarminError('handoff');
                 if (item && item.phase !== 'dismissed') { item.revision = (item.revision || 0) + 1; item.phase = 'waiting'; item.retryAt = 0; } });
-            void check(); return { ok: true };
+            void check(false, false, { resume: true }); return { ok: true };
         },
         GARMIN_OPEN_DRAFTS: (message, sender) => openDrafts(message, sender),
     };
-    return { store, connect, disconnect, check, reconcile, snapshot, settingsChanged,
+    return { store, connect, disconnect, check, reconcile, snapshot, settingsChanged, peakbaggerVisited,
         async accessChanged() {
             if (await permission()) return reconcile();
             controller?.abort(); client = null; clientEpoch = -1;
