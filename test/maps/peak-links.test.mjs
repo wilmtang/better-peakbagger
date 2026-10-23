@@ -8,14 +8,18 @@ import { JSDOM } from 'jsdom';
 import { loadPage, PAGE_FIXTURES, makeChromeStub } from '../helpers/load-page.mjs';
 import { enablePeakLinkOrder } from '../../src/maps/peak-link-order.js';
 import { settingsSchema } from '../../src/settings/settings-schema.js';
+import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
+import { readPeakNations } from '../../src/avalanche/avalanche-location.js';
+import { selectedReportTable } from '../../src/favorites/report-adapters.js';
 
 // The built bundle (IIFE) stands in for the injected content script.
 const source = await readFile(new URL('../../dist/content/peak-links.js', import.meta.url), 'utf8');
 
-const loadPeak = fixture => loadPage(fixture, {
+const loadPeak = (fixture, options = {}) => loadPage(fixture, {
     url: 'https://www.peakbagger.com/Peak.aspx?pid=1',
     bundles: ['content/peak-links.js'],
-    fixtures: PAGE_FIXTURES
+    fixtures: PAGE_FIXTURES,
+    ...options,
 });
 
 const linkByText = (document, text) => Array.from(document.querySelectorAll('#bpb-peak-links a'))
@@ -48,6 +52,76 @@ test('web map additions identify BPB, preserve native links and target the displ
         assert.equal(doc.querySelectorAll('#bpb-peak-map-links').length, 1);
         assert.deepEqual(nativeLinks.map(link => link.outerHTML), originalLinks);
         dom.window.close();
+    }
+});
+
+test('map links survive column layout in either content-script startup order', async () => {
+    for (const fixture of ['peak-rainier.html', 'peak-garibaldi.html']) {
+        for (const bundles of [
+            ['content/peak-cards.js', 'content/peak-links.js'],
+            ['content/peak-links.js', 'content/peak-cards.js'],
+        ]) {
+            let native;
+            const dom = await loadPeak(fixture, { bundles, prepare: ({ window }) => {
+                const doc = window.document;
+                const weather = readPeakWeatherSubject(doc, window.location.href);
+                native = { weather, reports: selectedReportTable(doc), map: doc.getElementById('Gmap'),
+                    nations: readPeakNations([...doc.querySelectorAll('tr')].find(row =>
+                        row.cells[0]?.textContent.trim() === 'Latitude/Longitude (WGS84)').closest('table')) };
+                assert.ok(native.weather && native.reports?.records.length, 'exercise summit and report readers');
+            } });
+            try {
+                const doc = dom.window.document;
+                assert.ok(doc.getElementById('bpb-peak-table-split'), 'exercise the actual column owner');
+                const group = doc.getElementById('bpb-peak-map-links');
+                assert.ok(group, `${fixture}: ${bundles.join(' before ')}`);
+                assert.equal(group.closest('table').parentElement.id, 'bpb-peak-map-column');
+                assert.equal(doc.getElementById('Gmap'), native.map, 'preserve the native frame');
+                assert.deepEqual(readPeakWeatherSubject(doc, dom.window.location.href), native.weather);
+                assert.deepEqual(selectedReportTable(doc), native.reports);
+                assert.deepEqual(readPeakNations(doc.querySelector('#bpb-peak-details-column > table')), native.nations);
+                assert.deepEqual([...group.querySelectorAll('a')].map(link => link.textContent),
+                    ['Gaia GPS', 'AllTrails', 'onX Backcountry']);
+                assert.ok(doc.querySelector('#bpb-peak-links a[href^="https://www.windy.com/"]'));
+                dom.window.eval(source);
+                assert.equal(doc.querySelectorAll('#bpb-peak-map-links').length, 1);
+            } finally { dom.window.close(); }
+        }
+    }
+});
+
+test('map links retain mapless support and ignore tables outside the owning split', async () => {
+    for (const mapless of [false, true]) {
+        const dom = await loadPeak('peak-rainier.html', {
+            bundles: ['content/peak-cards.js', 'content/peak-links.js'],
+            prepare: ({ window: { document: doc } }) => {
+                if (mapless) doc.getElementById('Gmap').remove();
+                const decoy = doc.createElement('div');
+                decoy.innerHTML = '<table class="gray" align="right"><tr><td>Web Map Links</td><td>Unrelated</td></tr></table>';
+                doc.body.append(decoy);
+            },
+        });
+        try {
+            const doc = dom.window.document;
+            assert.equal(Boolean(doc.getElementById('bpb-peak-table-split')), !mapless);
+            assert.equal(doc.querySelectorAll('#bpb-peak-map-links').length, 1);
+            assert.ok(doc.getElementById('bpb-peak-map-links').parentElement.textContent.includes('CalTopo'));
+        } finally { dom.window.close(); }
+    }
+});
+
+test('split map links fail closed for ambiguous rows or unrelated column wrappers', async () => {
+    for (const invalid of ['duplicate row', 'unrelated wrapper']) {
+        const dom = await loadPeak('peak-rainier.html', { bundles: ['content/peak-cards.js'] });
+        try {
+            const doc = dom.window.document;
+            const row = [...doc.querySelectorAll('tr')].find(row => row.cells[0]?.textContent.trim() === 'Web Map Links');
+            if (invalid === 'duplicate row') row.after(row.cloneNode(true));
+            else doc.getElementById('bpb-peak-table-split').removeAttribute('id');
+            dom.window.eval(source);
+            assert.equal(doc.getElementById('bpb-peak-map-links'), null, invalid);
+            assert.ok(doc.getElementById('bpb-peak-links'), 'general links remain independent');
+        } finally { dom.window.close(); }
     }
 });
 

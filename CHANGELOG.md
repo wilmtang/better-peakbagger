@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Restore peak map links.** Gaia GPS, AllTrails and onX Backcountry remain
+  available when the resizable peak columns initialize before the link feature.
+
 - **Keep keyboard actions steady.** Capture, map access, GPX transfers, Settings
   and photo backup retain focus through progress, failures and retries. Repeated
   activation cannot start duplicate work, and completion respects focus moved

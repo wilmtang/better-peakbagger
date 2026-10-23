@@ -60,6 +60,7 @@ import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
 import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mjs';
@@ -4133,6 +4134,7 @@ try {
         peakPage.on('pageerror', error => peakErrors.push(String(error)));
         await peakPage.goto(`https://www.peakbagger.com:${port}/Peak.aspx?pid=2829`, { waitUntil: 'load' });
         const peakSunPlacement = await peakPage.waitForFunction(readPeakSunPlacement).then(handle => handle.jsonValue());
+        assertPeakMapLinks(await peakPage.evaluate(readPeakMapLinks));
         const peakState = await peakPage.waitForFunction(() => {
             const button = document.getElementById('bpb-terrain-toggle');
             const mount = document.getElementById('bpb-map-viewport');

@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
+import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
 
 export async function verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings,
     setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, writeLocal, networkErrors, firefoxMode, placementOnly = false }) {
@@ -44,6 +45,27 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         await evaluate(() => document.querySelector('#bpb-peak-weather').scrollIntoView({ block: 'start' }));
         await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'forecast data');
         await evaluate(() => document.querySelector('#bpb-peak-snow').scrollIntoView({ block: 'center' })); await ready();
+        assertPeakMapLinks(await evaluate(readPeakMapLinks));
+    };
+    const inspectMapLinks = async label => {
+        await evaluate(() => document.getElementById('bpb-peak-map-links').scrollIntoView({ block: 'center' }));
+        const geometry = () => evaluate(() => {
+            const group = document.getElementById('bpb-peak-map-links');
+            const rect = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+            return { group: rect(group), cell: rect(group.parentElement),
+                links: [...group.querySelectorAll('a')].map(rect), scroll: window.scrollY };
+        });
+        const before = await geometry();
+        for (const link of before.links) {
+            assert.ok(link.width > 0 && link.height > 0 && link.x >= before.group.x - 1
+                && link.x + link.width <= before.group.x + before.group.width + 1,
+            `map link must fit its inset (${label}): ${JSON.stringify(before)}`);
+        }
+        await evaluate(() => document.querySelector('#bpb-peak-map-links a').focus({ preventScroll: true }));
+        await press(key('Tab'));
+        assert.equal(await evaluate(() => document.activeElement?.textContent), 'AllTrails');
+        stable(before, await geometry(), 'map-link keyboard focus preserves layout');
+        await image(`${label}-map-links`);
     };
     const focus = (id, control) => evaluate(({ id, control }) => {
         const card = document.querySelector(`[data-bpb-peak-card="${id}"]`), target = card.querySelector(control);
@@ -189,6 +211,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
+        await inspectMapLinks(`${width}-${theme}`);
         const divider = await evaluate(() => {
             const handle = document.getElementById('bpb-peak-table-resize-handle');
             return { visible: handle.getBoundingClientRect().width > 0, role: handle.getAttribute('role') };
@@ -430,6 +453,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     await pointerUp(); await saved('peakCardOrder', ['weather', 'sun', 'snow']);
     cases.push({ states: ['expanded-card-drag', 'edge-autoscroll'] });
     await setZoom(2);
+    await inspectMapLinks('200-percent');
     await press(key('Tab')); await focus('snow', '.bpb-peak-card-toggle');
     const keyboardFocus = await evaluate(() => ({ control: document.activeElement.className,
         visible: document.activeElement.matches(':focus-visible'), outline: getComputedStyle(document.activeElement).outlineStyle }));

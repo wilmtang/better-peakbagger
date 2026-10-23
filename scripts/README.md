@@ -63,6 +63,7 @@ independent of the existing targets.
 - [chrome-launch-guard.mjs](chrome-launch-guard.mjs)
 - [firefox-content-viewport.mjs](firefox-content-viewport.mjs)
 - [firefox-verifier-processes.mjs](firefox-verifier-processes.mjs)
+- [peak-map-links-verification.mjs](peak-map-links-verification.mjs)
 - [resource-stack.mjs](resource-stack.mjs)
 - [verification-browser-identity.mjs](verification-browser-identity.mjs)
 - [verification-repetitions.mjs](verification-repetitions.mjs)

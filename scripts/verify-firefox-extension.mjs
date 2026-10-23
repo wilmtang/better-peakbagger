@@ -37,6 +37,7 @@ import {
     webdriverScript,
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
+import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
 import { TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS } from '../src/terrain/terrain-coordinator.js';
 import {
     isRetryableFirefoxStartup,
@@ -2214,6 +2215,7 @@ async function main() {
         await driver.wait(until.elementLocated(By.css(surfaceSelectors.terrainToggle)), 10_000);
         const peakSunPlacement = await waitForScript(driver, webdriverScript(readPeakSunPlacement),
             'the independent Peak Sun card row with its native map link', 10_000);
+        assertPeakMapLinks(await driver.executeScript(webdriverScript(readPeakMapLinks)));
         const peakState = await waitForScript(driver, `
       const button = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
       const mount = document.getElementById("bpb-map-viewport");

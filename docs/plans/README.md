@@ -31,6 +31,12 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [peak-column regression audit](../archive/peak-column-regression-audit-2026-10-22.md)
+restores BPB map links after column initialization, adds combined startup-order
+coverage, repairs the generic native fixture and requires the links in both
+browser smoke checks and the card matrix. It records the earlier test gaps,
+neighboring-feature audit and retained live/native proof limits.
+
 The [October 22 UX audit](../archive/ux-audit-2026-10-22.md)
 records seven confirmed findings fixed in six focused runtime commits: capture
 state and focus, map permission/transfer focus, Settings recovery, photo backup

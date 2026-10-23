@@ -51,10 +51,16 @@ import { enablePeakLinkOrder } from './peak-link-order.js';
 
     // Web Map Links lives in the other native details table. Keep these
     // additions distinct, and do not depend on the general Links section.
+    // The column layout may already have moved the native pair into separate
+    // wrappers. Accept only that owned pair or the original shared parent.
+    const detailsParent = peakTable.parentElement;
+    const split = detailsParent?.id === 'bpb-peak-details-column' && detailsParent.parentElement;
+    const mapParent = split?.id === 'bpb-peak-table-split'
+        ? split.querySelector(':scope > #bpb-peak-map-column') : detailsParent;
     const mapRows = Array.from(document.querySelectorAll('tr')).filter(row =>
         row.cells.length === 2 && normalize(row.cells[0].textContent).toLowerCase() === 'web map links'
         && row.closest('table')?.matches('table.gray[align="right" i]')
-        && row.closest('table').parentElement === peakTable.parentElement);
+        && row.closest('table').parentElement === mapParent);
     if (mapRows.length === 1 && !document.getElementById('bpb-peak-map-links')) {
         const group = document.createElement('div');
         group.id = 'bpb-peak-map-links';

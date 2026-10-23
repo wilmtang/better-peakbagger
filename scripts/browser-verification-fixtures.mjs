@@ -481,12 +481,17 @@ const peakBigMapHtml = `<!doctype html><html><head><title>Full Screen Peak Map</
 
 const peakHtml = `<!doctype html><html><head><title>Mount Shuksan</title></head><body>
 <h1>Mount Shuksan, Washington</h1>
-<table>
+<table class="gray" align="left">
   <tr><td>Latitude/Longitude (WGS84)</td><td>48.83115, -121.60214 (Dec Deg)</td></tr>
   <tr><td>Nation</td><td>United States</td></tr>
   <tr><td colspan="2"><b>Links</b><br><br>Native links</td></tr>
 </table>
-<table style="width:760px"><tr><td style="text-align:center">
+<table class="gray" align="right" style="width:760px">
+<tr><td>Web Map Links</td><td>
+<a href="https://www.peakfinder.org/?lat=48.83115&lng=-121.60214">Peakfinder Panorama</a><br>
+<a href="https://caltopo.com/map.html#ll=48.83115,-121.60214&z=14">CalTopo</a>
+</td></tr>
+<tr><td colspan="2" style="text-align:center">
 <b>Dynamic Map</b><br>
 <iframe id="Gmap" src="/map/MasterMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300"
   width="100%" height="425px"></iframe><br>

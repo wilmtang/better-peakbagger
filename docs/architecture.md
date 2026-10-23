@@ -1069,9 +1069,13 @@ in Peakbagger page-local storage. Double-click resets the native starting size.
 The compact Sun & Moon panel follows the map without overlaying it.
 `src/maps/peak-links.js` separately owns user-invoked weather, avalanche,
 fire/smoke, and imagery links. They remain ordinary external anchors, separate
-from the map coordinator, without fetching provider data. Its ordering
-controller, `src/maps/peak-link-order.js`, saves validated link IDs as the
-`peakLinkOrder` extension setting through the settings worker. That order is
+from the map coordinator, without fetching provider data.
+Map additions beneath the native Web Map Links row recognize both the original
+table pair and the pair inside BPB's resizable columns; unrelated tables and
+ambiguous rows remain excluded. The peak-card and both real-extension smoke
+checks require these additions alongside the general planning links.
+Its ordering controller, `src/maps/peak-link-order.js`, saves validated link IDs
+as the `peakLinkOrder` extension setting through the settings worker. That order is
 included in browser sync, settings file transfer, and GitHub settings backups.
 See [Peak planning link order](development.md#peak-planning-link-order) for
 stable IDs, future-link compatibility, and the mixed-version sync limitation.
