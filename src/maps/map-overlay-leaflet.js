@@ -58,8 +58,13 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         set(id, state) {
             if (id === 'snotel') return;
             states.set(id, { ...state });
-            if (id === 'land') tiles.landCooldowns(state.providerCooldowns);
-            if (!state.enabled || state.opacity === 0) { remove(id); return; }
+            if (id === 'land') {
+                tiles.landCooldowns(state.providerCooldowns);
+                // An explicit filter change must remove deselected pixels,
+                // even if a replacement fails. Ordinary pans retain tiles.
+                if (tiles.setLandTypes(state.landTypes)) remove(id);
+            }
+            if (!state.enabled || state.opacity === 0 || id === 'land' && state.landTypes?.length === 0) { remove(id); return; }
             if (state.retryAt > Date.now() && !layers.has(id) && !(id === 'land' && Object.keys(state.providerCooldowns || {}).length)) return;
             if (id === 'sentinel' && !hasScenes) return; // Wait for a validated capture.
             (layers.get(id) || add(id)).setOpacity(state.opacity / 100);
@@ -76,7 +81,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         clearSentinel() { remove('sentinel'); hasScenes = false; tiles.setScenes([]); },
         retry(id) {
             const state = states.get(id);
-            if (!state?.enabled || state.opacity === 0 || state.retryAt > Date.now() || id === 'sentinel' && !hasScenes) return;
+            if (!state?.enabled || state.opacity === 0 || state.retryAt > Date.now() || id === 'land' && state.landTypes?.length === 0 || id === 'sentinel' && !hasScenes) return;
             if (!tiles.retry(id)) return;
             if (!layers.has(id)) { add(id).setOpacity(state.opacity / 100); return; }
             const visible = [...records.values()].filter(record => record.id === id);

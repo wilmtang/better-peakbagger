@@ -42,7 +42,7 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
             if (message.type === 'BC_LAND_TILE_GET' && !coordinates) return;
             if (message.type === 'BC_LAND_TILE_GET') bcRequests.add(message.requestId); else bcRequests.delete(message.requestId);
             try {
-                const reply = await chrome.runtime.sendMessage({ type: message.type, requestId: message.requestId, coordinates });
+                const reply = await chrome.runtime.sendMessage({ type: message.type, requestId: message.requestId, coordinates, landTypes: Schema.mapLandTypes(message.landTypes) });
                 if (active && message.type === 'BC_LAND_TILE_GET') post({ type: 'bcTileReply', requestId: message.requestId, reply });
             } catch { if (active) post({ type: 'bcTileReply', requestId: message.requestId, reply: { ok: false } }); }
             finally { bcRequests.delete(message.requestId); }

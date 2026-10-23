@@ -6,6 +6,7 @@ import { readBCTileCoordinates } from '../maps/bc-land-client.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { temporaryHttpStatus } from '../net/retry-transient.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = () => false, fetchImpl = globalThis.fetch }) {
     const jobs = new Map();
@@ -27,7 +28,7 @@ export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = 
         try {
             if (!await deadline.run(ext.permissions.contains(BC_LAND_PERMISSION))) return { ok: false, code: 'bc-permission-required' };
             if (deadline.signal.aborted) return { ok: false };
-            response = await deadline.run(fetchImpl(bcLandTileUrl(bbox), { signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' }));
+            response = await deadline.run(fetchImpl(bcLandTileUrl(bbox, Schema.mapLandTypes(message.landTypes)), { signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' }));
             if (response.status === 429) {
                 // Retry-After can be absent or invalid. Share a local backoff
                 // across tabs, and never let an older flight shorten it.

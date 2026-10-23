@@ -5,6 +5,7 @@ import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { temporaryHttpStatus } from '../net/retry-transient.js';
 import regionData from './canadian-land-regions.json' with { type: 'json' };
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 export const BC_LAND_ORIGIN = 'https://maps.gov.bc.ca';
 export const BC_LAND_PERMISSION = { origins: [`${BC_LAND_ORIGIN}/*`] };
@@ -77,25 +78,29 @@ export function landCoverage(bounds) {
             : (id !== 'ab' || intersectsLandBounds(candidate, ALBERTA_PARCEL_EXTENT)) && provinceIntersects(candidate, id, 0.05, 0.05);
     }));
 }
-export function bcLandTileUrl(bbox) {
+export function bcLandTileUrl(bbox, landTypes) {
+    const selected = Schema.mapLandTypes(landTypes), owners = Object.entries(bcTypes).filter(([, category]) => selected.includes(category));
     const url = new URL(`${BC_LAND_ORIGIN}/arcgis/rest/services/whse/bcgw_pub_whse_cadastre/MapServer/export`);
     const params = { bbox: bbox.join(','), bboxSR: '3857', imageSR: '3857', size: '256,256', format: 'png32', f: 'image', transparent: 'true',
         dynamicLayers: JSON.stringify([{ id: 0, source: { type: 'mapLayer', mapLayerId: 0 }, minScale: 0, maxScale: 0,
-            drawingInfo: { renderer: BC_LAND_RENDERER, showLabels: false } }]) };
+            definitionExpression: owners.length ? `OWNER_TYPE IN (${owners.map(([value]) => `'${value}'`).join(',')})` : '1=0',
+            drawingInfo: { renderer: { ...BC_LAND_RENDERER, uniqueValueInfos: BC_LAND_RENDERER.uniqueValueInfos.filter(item => selected.includes(bcTypes[item.value])) }, showLabels: false } }]) };
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value)); return url.href;
 }
 
 // Alberta's published layer is regional, not a province-wide ownership fabric.
 // Fetch only ownership class and geometry, never owner names or addresses.
-export function albertaLandTileUrl(bbox, offset = 0) {
+export function albertaLandTileUrl(bbox, offset = 0, landTypes) {
+    const selected = Schema.mapLandTypes(landTypes), owners = [['CROWN', 'Provincial'], ['LOC', 'Municipal']].filter(([id]) => selected.includes(id));
     const url = new URL(`${AB_LAND_SERVICE}/query`);
-    const params = { f: 'json', where: "crownclass IN ('Provincial','Municipal')", outFields: 'objectid,crownclass',
+    const params = { f: 'json', where: owners.length ? `crownclass IN (${owners.map(([, value]) => `'${value}'`).join(',')})` : '1=0', outFields: 'objectid,crownclass',
         geometry: bbox.join(','), geometryType: 'esriGeometryEnvelope', spatialRel: 'esriSpatialRelIntersects', inSR: '3857', outSR: '3857',
         returnGeometry: 'true', returnZ: 'false', returnM: 'false', maxAllowableOffset: String((bbox[2] - bbox[0]) / 512),
         orderByFields: 'objectid ASC', resultRecordCount: '500', resultOffset: String(offset) };
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value)); return url.href;
 }
-export async function drawAlbertaLand({ context, bbox, fetchImpl, signal }) {
+export async function drawAlbertaLand({ context, bbox, fetchImpl, signal, landTypes }) {
+    const selected = Schema.mapLandTypes(landTypes);
     const deadline = requestDeadline.createRequestDeadline();
     const abort = () => deadline.abort(); signal.addEventListener('abort', abort, { once: true });
     let vertices = 0; const seen = new Set(), span = bbox[2] - bbox[0];
@@ -103,7 +108,7 @@ export async function drawAlbertaLand({ context, bbox, fetchImpl, signal }) {
     try {
         for (let page = 0; page < 4; page++) {
             if (signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
-            response = await deadline.run(fetchImpl(albertaLandTileUrl(bbox, page * 500), {
+            response = await deadline.run(fetchImpl(albertaLandTileUrl(bbox, page * 500, selected), {
                 signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
             }));
             if (response.status === 429) throw rateLimitError('Alberta map service', response);
@@ -114,6 +119,7 @@ export async function drawAlbertaLand({ context, bbox, fetchImpl, signal }) {
                 const id = feature.attributes?.objectid, category = feature.attributes?.crownclass;
                 if (!Number.isSafeInteger(id) || seen.has(id)) throw new Error('Invalid Alberta parcel identity.'); seen.add(id);
                 if (!['Provincial', 'Municipal'].includes(category)) continue;
+                if (!selected.includes(category === 'Provincial' ? 'CROWN' : 'LOC')) continue;
                 const rings = feature.geometry?.rings;
                 if (!Array.isArray(rings) || rings.length > 5000) throw new Error('Invalid Alberta parcel geometry.');
                 context.beginPath();

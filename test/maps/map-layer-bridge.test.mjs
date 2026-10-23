@@ -34,7 +34,7 @@ test('opacity announcements wait for saved preferences as well as settings', asy
         finish({ bpbMapOverlayOpacityV1: { sentinel: 31, slope: 42, land: 73 } }); await tick();
         const announcements = env.messages.filter(message => message.type === 'preferences');
         assert.equal(announcements.length, 1);
-        assert.deepEqual(JSON.parse(JSON.stringify(announcements[0].preferences)), { sentinel: 31, slope: 42, land: 73, snotel: 100 });
+        assert.deepEqual(JSON.parse(JSON.stringify(announcements[0].preferences)), { sentinel: 31, slope: 42, land: 73, snotel: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
         assert.equal(announcements[0].snotel, true);
     } finally { env.close(); }
 });
@@ -83,12 +83,12 @@ test('a late startup settings read cannot overwrite a newer SNOTEL opt-out', asy
         assert.equal(env.requests.length, 0, 'the newer privacy choice continues to block station requests');
     } finally { env.close(); }
 });
-test('the isolated map service persists bounded opacity only and rejects foreign requests', async () => {
+test('the isolated map service persists bounded preferences only and rejects foreign requests', async () => {
     const env = setup();
     try {
         await tick(); env.send({ type: 'preferences' }); await tick(); assert.equal(env.requests.length, 0);
         env.send({ type: 'save', preferences: { sentinel: 150, slope: -5, land: 33.8, snotel: 5, enabled: true, url: 'https://example.com' } }); await tick();
-        assert.deepEqual(JSON.parse(JSON.stringify(env.local.bpbMapOverlayOpacityV1)), { sentinel: 100, slope: 0, land: 34, snotel: 100 });
+        assert.deepEqual(JSON.parse(JSON.stringify(env.local.bpbMapOverlayOpacityV1)), { sentinel: 100, slope: 0, land: 34, snotel: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
         const request = { type: 'stations', requestId: 1, bounds: [-122, 46, -121, 47] };
         env.send(request, 'https://example.com'); env.send(request, env.win.location.origin, null); env.send({ ...request, bounds: [-122, -200, -121, 47] });
         await tick(); assert.equal(env.requests.length, 0);
@@ -99,11 +99,12 @@ test('the BC relay narrows coordinate requests, rejects foreign senders and neve
     const env = setup(), calls = [];
     env.win.chrome.runtime = { sendMessage: async message => { calls.push(message); return { ok: false, code: 'bc-permission-required' }; } };
     try {
-        const message = { type: 'BC_LAND_TILE_GET', requestId: 'one', coordinates: { z: 12, x: 637, y: 1315 }, url: 'https://evil.example/' };
+        const message = { type: 'BC_LAND_TILE_GET', requestId: 'one', coordinates: { z: 12, x: 637, y: 1315 }, url: 'https://evil.example/', landTypes: ['CROWN', 'CROWN', 'private'] };
         env.send({ type: 'bcTile', message }, 'https://evil.example/');
         env.send({ type: 'bcTile', message: { ...message, coordinates: { z: 1, x: 0, y: 0 } } });
         env.send({ type: 'bcTile', message }); await tick();
         assert.equal(calls.length, 1); assert.equal(Object.hasOwn(calls[0], 'url'), false);
+        assert.deepEqual(JSON.parse(JSON.stringify(calls[0].landTypes)), ['CROWN']);
         assert.ok(env.messages.some(reply => reply.type === 'bcTileReply' && reply.reply.code === 'bc-permission-required'));
         const button = env.win.document.createElement('button'); button.dataset.bpbBcPermission = 'true'; env.win.document.body.append(button); button.click(); await tick();
         assert.ok(!calls.some(call => call.type === 'BC_LAND_PERMISSION_REQUEST'));
@@ -191,4 +192,19 @@ test('full-screen handoffs are bounded, expiring, one-use and bound to destinati
     assert.equal(result.snapshot.cooldowns.slope, snapshot.cooldowns.slope);
     assert.equal((await service.consume({}, target)).ok, false);
     await service.prepare({ destination, snapshot }, source); time += 30001; assert.equal((await service.consume({}, target)).ok, false);
+});
+
+
+test('land filter saves preserve explicit empty selection and survive later preference announcements', async () => {
+    const env = setup();
+    try {
+        await tick();
+        for (const landTypes of [['USFS', 'BLM', 'USFS', 'private'], []]) {
+            env.send({ type: 'save', preferences: { landTypes } }); await tick();
+            env.send({ type: 'preferences' });
+            const expected = landTypes.length ? ['BLM', 'USFS'] : [];
+            assert.deepEqual(JSON.parse(JSON.stringify(env.local.bpbMapOverlayOpacityV1.landTypes)), expected);
+            assert.deepEqual(JSON.parse(JSON.stringify(env.messages.filter(message => message.type === 'preferences').at(-1).preferences.landTypes)), expected);
+        }
+    } finally { env.close(); }
 });

@@ -80,3 +80,25 @@ test('terrain feedback preserves a provider cooldown through first load, opacity
         assert.equal(posts.filter(item => item.id === 'land').at(-1).retryAt, retryAt); assert.equal(sources.size, 0, 'replaying feedback never clears a known service wait or creates blocked work');
     } finally { owner.dispose(); }
 });
+
+test('terrain filter changes invalidate old tile identities while opacity and menu updates retain the source', async () => {
+    const sources = new Map(), layers = new Map(); let protocol;
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getLayer: id => layers.get(id), getSource: id => sources.get(id),
+        addLayer: layer => layers.set(layer.id, layer), addSource: (id, source) => sources.set(id, source),
+        removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), setPaintProperty() {}, moveLayer() {} };
+    const owner = createTerrainOverlays({ map, document: {}, maplibre: { addProtocol: (_name, handler) => { protocol = handler; }, removeProtocol() {} }, post() {} });
+    const value = { revision: 1, state: { land: { enabled: true, opacity: 25 }, slope: { enabled: true, opacity: 60 } } };
+    try {
+        owner.update(value); const original = [...sources.entries()], stale = original.find(([id]) => id.includes('land'))[1].tiles[0].replace('{z}/{x}/{y}', '10/163/359');
+        owner.update({ ...value, revision: 2, landTypes: ['BLM'] });
+        const filtered = [...sources.entries()], land = filtered.find(([id]) => id.includes('land'));
+        assert.notEqual(land[0], original.find(([id]) => id.includes('land'))[0]);
+        assert.equal(filtered.find(([id]) => id.includes('slope'))[1], original.find(([id]) => id.includes('slope'))[1]);
+        assert.match(land[1].tiles[0], /land\/1\//);
+        await assert.rejects(protocol({ url: stale }, new AbortController()), { name: 'AbortError' });
+        owner.update({ ...value, revision: 3, menuOpen: true, landTypes: ['BLM'], state: { ...value.state, land: { enabled: true, opacity: 50 } } });
+        assert.equal(sources.get(land[0]), land[1], 'pan, opacity and disclosure snapshots never remove painted tiles');
+        owner.update({ ...value, revision: 4, landTypes: [] });
+        assert.equal([...sources.keys()].some(id => id.includes('land')), false, 'empty selection immediately removes old land pixels');
+    } finally { owner.dispose(); }
+});

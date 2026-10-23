@@ -15,3 +15,11 @@ test('provider cooldowns crossing the frame or handoff boundary are named, finit
     assert.equal(readLayerStatus({ id: 'sentinel', partial: true }).partial, true);
     assert.equal(readLayerStatus({ id: 'snotel', partial: true }).partial, false);
 });
+
+
+test('land type snapshots preserve empty choices and normalize only known types', () => {
+    assert.deepEqual(readLayerSnapshot({ revision: 1, landTypes: ['USFS', 'BLM', 'BLM', 'private'] }).landTypes, ['BLM', 'USFS']);
+    assert.deepEqual(readLayerSnapshot({ revision: 1, landTypes: [] }).landTypes, []);
+    assert.deepEqual(readLayerSnapshot({ revision: 1, landTypes: 'BLM' }).landTypes, []);
+    assert.ok(readLayerSnapshot({ revision: 1 }).landTypes.includes('BLM'), 'legacy snapshots retain existing all-types behavior');
+});

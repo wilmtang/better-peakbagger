@@ -132,3 +132,14 @@ test('a rejected web-page permission gesture opens and reuses an explicit packag
     await state.routes.BC_LAND_PERMISSION_REQUEST({}, owner); assert.equal(created.length, 1); assert.deepEqual(updated, [[7, { active: true }]]);
     state.cancelTab(7); await state.routes.BC_LAND_PERMISSION_REQUEST({}, owner); assert.equal(created.length, 2);
 });
+
+test('BC client and worker independently allowlist selected land types in their fixed query', async () => {
+    const state = setup();
+    const fetchTile = createBCTileFetch(message => state.routes[message.type](message, sender));
+    await fetchTile(coordinates, { signal: new AbortController().signal, landTypes: ['CROWN', 'CROWN', "Federal') OR 1=1"] });
+    let layer = JSON.parse(new URL(state.calls[0].url).searchParams.get('dynamicLayers'))[0];
+    assert.equal(layer.definitionExpression, "OWNER_TYPE IN ('Crown Provincial')");
+    await state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'direct', landTypes: ["Federal') OR 1=1"] }, sender);
+    layer = JSON.parse(new URL(state.calls[1].url).searchParams.get('dynamicLayers'))[0];
+    assert.equal(layer.definitionExpression, '1=0');
+});

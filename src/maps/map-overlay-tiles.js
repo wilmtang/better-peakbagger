@@ -7,6 +7,7 @@ import { drawAlbertaLand } from './canadian-land.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 const abortError = () => new DOMException('Cancelled.', 'AbortError');
 const tileKey = ({ z, x, y }) => `${z}/${(x % 2 ** z + 2 ** z) % 2 ** z}/${y}`;
@@ -14,6 +15,7 @@ const tileKey = ({ z, x, y }) => `${z}/${(x % 2 ** z + 2 ** z) % 2 ** z}/${y}`;
 // tiles; decoded images and scene mosaics never survive this owner.
 export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch, fetchBCTile, onError = () => {}, onActivity = () => {}, retryDelayMs = 350 }) {
     let scenes = [], generation = 0, disposed = false;
+    let landTypes = Schema.mapLandTypes();
     const flights = new Set(), blocked = new Map();
     const retainLimit = (key, error) => {
         // Reuse the recorded error so earlier tile outcomes see an extended
@@ -54,13 +56,13 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
         }
         abortFlights(id);
     };
-    const bitmap = async (url, signal, bcCoordinates) => {
+    const bitmap = async (url, signal, bcCoordinates, selected) => {
         const deadline = requestDeadline.createRequestDeadline();
         const abort = () => deadline.abort(); signal.addEventListener('abort', abort, { once: true });
         let response;
         try {
             if (signal.aborted) throw abortError();
-            response = await deadline.run(bcCoordinates && fetchBCTile ? fetchBCTile(bcCoordinates, { signal: deadline.signal })
+            response = await deadline.run(bcCoordinates && fetchBCTile ? fetchBCTile(bcCoordinates, { signal: deadline.signal, landTypes: selected })
                 : fetchImpl(url, { signal: deadline.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }));
             if (response.status === 429) throw rateLimitError('Map service', response);
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw Object.assign(new Error('Map tiles unavailable.'),
@@ -88,6 +90,11 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
     };
     return {
         setScenes(next) { generation++; scenes = next.slice(0, 8); cancel('sentinel'); },
+        setLandTypes(value) {
+            const next = Schema.mapLandTypes(value);
+            if (JSON.stringify(next) === JSON.stringify(landTypes)) return false;
+            landTypes = next; cancel('land'); return true;
+        },
         cancel,
         retry(id) {
             if (blocked.get(id)?.retryAt > Date.now()) return false;
@@ -115,7 +122,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
             if (disposed || signal?.aborted) throw abortError();
             const limit = blocked.get(id);
             if (limit?.retryAt > Date.now()) throw limit;
-            const controller = new AbortController(), flight = { id, controller }, revision = generation;
+            const controller = new AbortController(), flight = { id, controller }, revision = generation, selected = landTypes;
             const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true }); flights.add(flight);
             const batch = activity.get(id) || { outcomes: new Map() };
             const key = tileKey(coordinates), outcome = { state: 'pending' };
@@ -138,7 +145,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                 // all of them at full alpha, then let the engine fade this ONE
                 // mosaic. Two overlapping scenes at 50% still mean 50%.
                 const supported = mapOverlayCoverage([west, south, east, north])?.[id] !== false;
-                const sources = !supported ? [] : id === 'land' ? publicLandTileSources(coordinates)
+                const sources = !supported ? [] : id === 'land' ? publicLandTileSources(coordinates, selected)
                     : (id === 'sentinel' ? intersecting.map(scene => sentinelTileUrl(scene.id)
                         .replace('{z}', coordinates.z).replace('{x}', coordinates.x).replace('{y}', coordinates.y)) : [overlayTileUrl(id, coordinates)])
                         .map(url => ({ url }));
@@ -149,11 +156,11 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                         if (source.kind === 'parcels') {
                             const parcelCanvas = await retryTransient(async () => {
                                 const tile = doc.createElement('canvas'); tile.width = tile.height = 256;
-                                await drawAlbertaLand({ context: tile.getContext('2d'), bbox: source.bbox, fetchImpl, signal: controller.signal }); return tile;
+                                await drawAlbertaLand({ context: tile.getContext('2d'), bbox: source.bbox, fetchImpl, signal: controller.signal, landTypes: selected }); return tile;
                             }, { signal: controller.signal, delayMs: retryDelayMs });
                             context.drawImage(parcelCanvas, 0, 0);
                         } else {
-                            const image = await retryTransient(() => bitmap(source.url, controller.signal, source.provider === 'bc' ? coordinates : undefined),
+                            const image = await retryTransient(() => bitmap(source.url, controller.signal, source.provider === 'bc' ? coordinates : undefined, selected),
                                 { signal: controller.signal, delayMs: retryDelayMs });
                             try {
                                 if (disposed || controller.signal.aborted || id === 'sentinel' && revision !== generation) throw abortError();

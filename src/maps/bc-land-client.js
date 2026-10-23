@@ -1,5 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 export function readBCTileCoordinates(value) {
     if (!value || ![value.z, value.x, value.y].every(Number.isSafeInteger) || value.z < 8 || value.z > 15
@@ -7,7 +8,7 @@ export function readBCTileCoordinates(value) {
     const n = 2 ** value.z; return { z: value.z, x: (value.x % n + n) % n, y: value.y };
 }
 export function createBCTileFetch(send) {
-    return async (coordinates, { signal }) => {
+    return async (coordinates, { signal, landTypes }) => {
         const requestId = crypto.randomUUID();
         let rejectAbort;
         const cancelled = new Promise((_, reject) => { rejectAbort = reject; });
@@ -18,7 +19,7 @@ export function createBCTileFetch(send) {
         if (signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
         signal.addEventListener('abort', abort, { once: true });
         try {
-            const reply = await Promise.race([send({ type: 'BC_LAND_TILE_GET', coordinates: readBCTileCoordinates(coordinates), requestId }), cancelled]);
+            const reply = await Promise.race([send({ type: 'BC_LAND_TILE_GET', coordinates: readBCTileCoordinates(coordinates), landTypes: Schema.mapLandTypes(landTypes), requestId }), cancelled]);
             if (signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
             if (!reply?.ok && reply?.code === 'rate-limit') throw Object.assign(new Error('BC map service is busy. Try again later.'), {
                 code: 'rate-limit', retryAt: Number.isFinite(reply.retryAt) && reply.retryAt > Date.now() && reply.retryAt < Date.now() + 86400000 ? reply.retryAt : Date.now() + 300000,
@@ -31,7 +32,7 @@ export function createBCTileFetch(send) {
         } finally { signal.removeEventListener('abort', abort); }
     };
 }
-// MAIN-world maps use a narrow coordinate-only relay, never extension APIs.
+// MAIN-world maps relay coordinates and allowlisted classes, never provider queries.
 export function createPageBCTileFetch(win) {
     const pending = new Map();
     const send = message => {

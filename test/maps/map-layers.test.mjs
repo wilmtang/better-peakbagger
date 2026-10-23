@@ -212,3 +212,23 @@ test('turning SNOTEL off rejects late reveal data, while retry retains unfulfill
         env.send({ type: 'stations', requestId: retry.requestId, stations: [station], nearby: true }); assert.equal(env.moves.length, 1);
     } finally { env.close(); }
 });
+
+for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} land filters save and travel in validated renderer snapshots`, () => {
+    const env = setup(terrain), doc = env.win.document;
+    try {
+        env.send({ type: 'preferences', snotel: true, preferences: { landTypes: ['USFS'], land: 35 } });
+        doc.querySelector('[data-layer="land"] input').click();
+        assert.equal(doc.querySelector('[aria-label="USFS land"]').checked, true);
+        assert.equal(doc.querySelector('[aria-label="BLM land"]').checked, false);
+        doc.querySelector('[aria-label="Show only BLM land"]').click();
+        assert.deepEqual(env.messages.filter(message => message.type === 'save').at(-1).preferences.landTypes, ['BLM']);
+        assert.deepEqual(env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.landTypes, ['BLM']);
+        const saves = env.messages.filter(message => message.type === 'save').length;
+        doc.querySelector('[aria-label="Show only BLM land"]').click();
+        assert.equal(env.messages.filter(message => message.type === 'save').length, saves, 'reselecting Only neither restarts work nor clears provider feedback');
+        const all = doc.querySelector('[aria-label="All land types"]'); all.click(); all.click();
+        assert.deepEqual(env.messages.filter(message => message.type === 'save').at(-1).preferences.landTypes, []);
+        env.send({ type: 'preferences', snotel: true, preferences: { landTypes: ['USFS'] } });
+        assert.equal(doc.querySelector('[aria-label="USFS land"]').checked, false, 'late saved preferences cannot overwrite a new choice');
+    } finally { env.close(); }
+});

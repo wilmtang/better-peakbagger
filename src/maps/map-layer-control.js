@@ -15,7 +15,7 @@ const LAND_GUIDANCE = {
 
 // Presentation only. The owner supplies validated state and performs all I/O.
 export function createMapLayerControl({ document: doc, onToggle = () => {}, onOpacity = () => {},
-    onCommit = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {} }) {
+    onCommit = () => {}, onLandTypes = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {} }) {
     const win = doc.defaultView;
     const node = (tag, className, text) => {
         const element = doc.createElement(tag);
@@ -64,7 +64,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         label.append(copy); disclosure.append(chevron('bpb-layers-chevron'));
         row.append(label, disclosure); panel.append(row);
         const detail = node('section', 'bpb-layers-detail'); detail.hidden = true;
-        detail.setAttribute('aria-label', `${NAMES[key]} settings`); detail.append(node('div', 'bpb-layers-detail-title', NAMES[key]));
+        detail.dataset.overlay = key;
+        detail.setAttribute('aria-label', `${NAMES[key]} settings`);
+        if (key !== 'land') detail.append(node('div', 'bpb-layers-detail-title', NAMES[key]));
         let slider = null, output = null, capture = null;
         if (key !== 'snotel') {
             const caption = node('label', 'bpb-layers-opacity'); caption.append(node('span', '', 'Opacity'));
@@ -73,7 +75,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             slider.id = `${id}-${key}`; slider.setAttribute('aria-label', `${NAMES[key]} opacity`); caption.htmlFor = slider.id;
             const ends = node('div', 'bpb-layers-opacity-ends'); ends.setAttribute('aria-hidden', 'true');
             ends.append(node('span', '', 'Clear'), node('span', '', 'Solid'));
-            detail.append(caption, slider, ends);
+            if (key === 'land') {
+                const line = node('div', 'bpb-layers-opacity-line'); line.append(caption, slider, output); detail.append(line);
+            } else detail.append(caption, slider, ends);
             slider.addEventListener('input', () => onOpacity(key, Number(slider.value)));
             slider.addEventListener('change', () => onCommit());
         }
@@ -84,9 +88,28 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 onCapture(capture.value);
             }); detail.append(capture);
         }
-        const legend = node('div', 'bpb-layers-legend'); detail.append(legend);
+        let types = null, allTypes = null, typeCount = null;
+        const typeRows = new Map();
+        if (key === 'land') {
+            const group = node('fieldset', 'bpb-layers-land-types');
+            const groupName = node('legend', 'bpb-layers-live', 'Land types'); group.append(groupName);
+            const allRow = node('label', 'bpb-layers-land-all');
+            allTypes = node('input'); allTypes.type = 'checkbox'; allTypes.setAttribute('aria-label', 'All land types');
+            typeCount = node('span', 'bpb-layers-land-count');
+            allRow.append(allTypes, doc.createTextNode('All types'), typeCount);
+            types = node('div'); group.append(allRow, types); detail.append(group);
+            allTypes.addEventListener('change', () => {
+                const selected = new Set(Schema.mapLandTypes(model.landTypes));
+                for (const type of typeRows.keys()) { if (allTypes.checked) selected.add(type); else selected.delete(type); }
+                onLandTypes([...selected]);
+            });
+        }
+        const legend = node('div', 'bpb-layers-legend');
         const guidance = key === 'land' ? node('div', 'bpb-layers-guidance-links') : null;
-        if (guidance) detail.append(guidance);
+        if (guidance) {
+            const footer = node('div', 'bpb-layers-land-footer'), sources = node('details', 'bpb-layers-sources');
+            sources.append(node('summary', '', 'Sources'), legend); footer.append(sources, guidance); detail.append(footer);
+        } else detail.append(legend);
         const feedback = node('div', 'bpb-layers-feedback');
         const status = node('span'), action = node('span', 'bpb-layers-recovery');
         const retry = node('button', 'bpb-layers-retry', 'Retry'); retry.type = 'button'; retry.hidden = true;
@@ -114,7 +137,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             paint();
         });
         rows.set(key, { row, checkbox, disclosure, value, amount, spinner, rowStatus });
-        details.set(key, { detail, slider, output, capture, legend, guidance, feedback, status, retry, captureKey: '', guidanceKey: '', legendKey: '' });
+        details.set(key, { detail, slider, output, capture, legend, guidance, types, allTypes, typeCount, typeRows, feedback, status, retry, captureKey: '', guidanceKey: '', legendKey: '', typesKey: '' });
     }
     panel.append(well); element.append(trigger, panel, live);
     const position = () => {
@@ -148,16 +171,20 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         panel.hidden = !open; well.hidden = !open || !expanded;
         trigger.setAttribute('aria-expanded', String(open));
         const state = Schema.mapOverlayState(model.state);
+        const landTypes = Schema.mapLandTypes(model.landTypes);
+        const landEntries = model.statuses?.land?.legendEntries;
+        const hasLandTypes = landTypes.length > 0 && (!Array.isArray(landEntries) || landEntries.some(entry => landTypes.includes(entry.value)));
         const needsZoom = key => Number.isFinite(model.zoom) && (key === 'sentinel' ? model.zoom < SENTINEL_MIN_ZOOM
             : (key === 'slope' || key === 'land') && Math.round(model.zoom) < OVERLAY_MIN_ZOOM);
         const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled && model.coverage?.[key] !== false);
-        const failed = active.some(key => !needsZoom(key) && (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
+        const failed = active.some(key => (key !== 'land' || hasLandTypes) && !needsZoom(key) && (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
         trigger.setAttribute('aria-label', `Overlays${active.length ? `, ${active.length} active` : ''}${failed ? ', overlay unavailable' : ''}`);
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
             const unavailable = model.coverage?.[key] === false;
-            const shown = !unavailable && current.enabled && (key === 'snotel' || current.opacity > 0);
+            const noTypes = key === 'land' && !hasLandTypes;
+            const shown = !unavailable && current.enabled && !noTypes && (key === 'snotel' || current.opacity > 0);
             const zoomedOut = shown && needsZoom(key);
             const kind = unavailable ? 'coverage' : !shown ? '' : zoomedOut ? 'zoom' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
             const cooldown = status.retryAt > Date.now();
@@ -183,9 +210,42 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent opacity`); detail.output.value = `${current.opacity}%`;
             }
             const legendKey = JSON.stringify([status.legendEntries || [], status.legend || '']);
+            if (detail.types) {
+                const entries = (status.legendEntries || []).filter(entry => Schema.MAP_LAND_TYPE_IDS.includes(entry.value));
+                const typesKey = JSON.stringify(entries);
+                if (typesKey !== detail.typesKey) {
+                    const focused = [...detail.typeRows].find(([, item]) => [item.checkbox, item.only].includes(doc.activeElement));
+                    detail.typesKey = typesKey; detail.typeRows.clear();
+                    detail.types.replaceChildren(...entries.map(entry => {
+                        const item = node('div', 'bpb-layers-land-type'); item.dataset.landType = entry.value;
+                        const label = node('label'), checkbox = node('input'); checkbox.type = 'checkbox';
+                        checkbox.setAttribute('aria-label', `${entry.label} land`);
+                        const swatch = node('i'); swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
+                        label.append(checkbox, swatch, doc.createTextNode(entry.label));
+                        const only = node('button', 'bpb-layers-land-only', 'Only'); only.type = 'button'; only.setAttribute('aria-label', `Show only ${entry.label} land`);
+                        checkbox.addEventListener('change', () => {
+                            const selected = new Set(Schema.mapLandTypes(model.landTypes));
+                            if (checkbox.checked) selected.add(entry.value); else selected.delete(entry.value);
+                            onLandTypes([...selected]);
+                        });
+                        only.addEventListener('click', () => onLandTypes([entry.value]));
+                        detail.typeRows.set(entry.value, { checkbox, only }); item.append(label, only); return item;
+                    }));
+                    if (focused) (unavailable || !entries.length ? row.disclosure : detail.typeRows.get(focused[0])?.checkbox || detail.allTypes).focus({ preventScroll: true });
+                }
+                const count = entries.filter(entry => landTypes.includes(entry.value)).length;
+                detail.allTypes.checked = count > 0 && count === entries.length;
+                detail.allTypes.indeterminate = count > 0 && count < entries.length;
+                detail.typeCount.textContent = `${count} of ${entries.length}`;
+                detail.allTypes.disabled = unavailable || !current.enabled || !entries.length;
+                for (const [value, item] of detail.typeRows) {
+                    item.checkbox.checked = landTypes.includes(value);
+                    item.checkbox.disabled = item.only.disabled = unavailable || !current.enabled;
+                }
+            }
             if (legendKey !== detail.legendKey) {
                 detail.legendKey = legendKey;
-                detail.legend.replaceChildren(...(status.legendEntries || []).map(entry => {
+                detail.legend.replaceChildren(...(key === 'land' ? [] : status.legendEntries || []).map(entry => {
                     const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');
                     swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
                     item.append(swatch, doc.createTextNode(entry.label)); return item;
@@ -193,7 +253,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
             detail.status.textContent = unavailable ? 'No coverage here.' : !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
-                : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in for ${key === 'sentinel' ? 'imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
+                : noTypes ? 'Select a land type.' : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in for ${key === 'sentinel' ? 'imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
                     : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
@@ -201,7 +261,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 if (signature !== detail.guidanceKey) {
                     detail.guidanceKey = signature;
                     detail.guidance.replaceChildren(...keys.map(guide => {
-                        const [label, url] = LAND_GUIDANCE[guide], link = node('a', 'bpb-layers-guidance', label);
+                        const [label, url] = LAND_GUIDANCE[guide], link = node('a', 'bpb-layers-guidance', keys.length === 1 ? 'Check camping rules' : label);
+                        link.setAttribute('aria-label', label);
                         link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; return link;
                     }));
                 }

@@ -24,7 +24,7 @@ export function installMapLayers(win = window) {
     try { if (win.parent !== win && MAP_PAGES.test(win.parent.location.pathname)) return null; } catch { /* Standalone owner. */ }
     const locationMenu = createMapLocationMenu({ window: win });
     const state = Schema.mapOverlayState();
-    let touched = false, preferencesReady = false, revision = 1, capture = null;
+    let touched = false, preferencesReady = false, revision = 1, capture = null, landTypes = Schema.mapLandTypes();
     let binding = null, polling = null, frameMode = false, booting = false, active = true, disposed = false;
     let terrainView = null, snotelAllowed = false, requestId = 0, stations = [], coverage = null;
     let stationTimer = null, relayFrame = null;
@@ -55,10 +55,10 @@ export function installMapLayers(win = window) {
             if (statuses.land.permission && !info.guidanceKeys.includes('bc')) statuses.land = { ...statuses.land, permission: false, pending: false, error: false, retry: false, message: '' };
             statuses.land = { ...statuses.land, ...info };
         }
-        control.render({ state, statuses, coverage, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
+        control.render({ state, landTypes, statuses, coverage, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
         position();
     };
-    const snapshot = () => ({ revision, state, capture, menuOpen: control.isOpen(), landCooldowns: statuses.land.providerCooldowns,
+    const snapshot = () => ({ revision, state, landTypes, capture, menuOpen: control.isOpen(), landCooldowns: statuses.land.providerCooldowns,
         cooldowns: Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id, statuses[id]?.retryAt || 0])) });
     const relay = () => {
         if (relayFrame !== null) return;
@@ -66,7 +66,7 @@ export function installMapLayers(win = window) {
         // briefly reactivate an overlay the user turned off while in 2D.
         relayFrame = win.requestAnimationFrame(() => { relayFrame = null; terrain('layers', { snapshot: snapshot() }); });
     };
-    const save = () => post({ type: 'save', preferences: Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id, state[id].opacity])) });
+    const save = () => post({ type: 'save', preferences: { ...Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id, state[id].opacity])), landTypes } });
     const stationView = () => {
         if (frameMode) return terrainView?.bounds;
         const bounds = binding?.map.getBounds();
@@ -119,7 +119,7 @@ export function installMapLayers(win = window) {
         if (!opacityId) reconcileCoverage();
         relay();
         if (!frameMode && !booting && active && binding) {
-            for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
+            for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], landTypes, retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
             if (!opacityId || opacityId === 'sentinel') {
                 binding.sentinel.cooldown(statuses.sentinel.retryAt);
                 if (state.sentinel.enabled && state.sentinel.opacity > 0) binding.sentinel.activate(capture);
@@ -144,6 +144,13 @@ export function installMapLayers(win = window) {
             changed(); if (id === 'snotel' && enabled) loadStations();
         },
         onOpacity(id, opacity) { state[id].opacity = opacity; changed(id); }, onCommit: save,
+        onLandTypes(value) {
+            const selected = Schema.mapLandTypes(value);
+            if (JSON.stringify(selected) === JSON.stringify(landTypes)) return;
+            landTypes = selected;
+            statuses.land = { ...statuses.land, pending: false, error: false, retry: false, partial: false, permission: false, message: '', retryAt: 0 };
+            changed('land'); save();
+        },
         onCapture(value) {
             if (coverage?.sentinel === false) return;
             if (frameMode) terrain('layerAction', { action: 'capture', id: 'sentinel', capture: value });
@@ -279,14 +286,14 @@ export function installMapLayers(win = window) {
                 const next = readLayerSnapshot(data.snapshot);
                 if (next) {
                     statuses.land.providerCooldowns = mergeLandCooldowns(statuses.land.providerCooldowns, next.landCooldowns);
-                    Object.assign(state, next.state); capture = next.capture;
+                    Object.assign(state, next.state); capture = next.capture; landTypes = next.landTypes;
                     for (const id of Schema.MAP_OVERLAY_IDS) if (next.cooldowns[id] > Date.now()) statuses[id] = { ...statuses[id], retryAt: Math.max(statuses[id].retryAt || 0, next.cooldowns[id]), error: true, retry: true, message: 'Map service is busy. Try again later.' };
                     changed(); loadStations();
                 }
             } else if (data.type === 'preferences') {
                 locationMenu.setUnits({ units: data.units, elevationUnits: data.elevationUnits });
                 preferencesReady = true;
-                if (!touched) { const preferences = Schema.mapOverlayPreferences(data.preferences); for (const id of Schema.MAP_OVERLAY_IDS) state[id].opacity = preferences[id]; }
+                if (!touched) { const preferences = Schema.mapOverlayPreferences(data.preferences); for (const id of Schema.MAP_OVERLAY_IDS) state[id].opacity = preferences[id]; landTypes = preferences.landTypes; }
                 const wasAllowed = snotelAllowed; snotelAllowed = data.snotel === true;
                 statuses.snotel.unavailable = !snotelAllowed;
                 if (!snotelAllowed) statuses.snotel.message = 'Enable Show SNOTEL in settings.';

@@ -44,10 +44,13 @@ const ROUTE_STYLE = { color: '#d9483b', width: 5, casingColor: '#ffffff', casing
 const VIEWPORT = { width: 450, height: 450 };
 const MAP_OVERLAY_OPACITY = Object.freeze({ sentinel: 100, slope: 60, land: 25, snotel: 100 });
 const MAP_OVERLAY_IDS = Object.freeze(Object.keys(MAP_OVERLAY_OPACITY));
-const mapOverlayPreferences = value => Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id,
+const MAP_LAND_TYPE_IDS = Object.freeze(['BLM', 'USFS', 'FED', 'STAT', 'LOC', 'TRIB', 'CROWN', 'AGENCY', 'FIRST_NATIONS']);
+const mapLandTypes = value => value === undefined ? [...MAP_LAND_TYPE_IDS]
+    : Array.isArray(value) && value.length <= 64 ? MAP_LAND_TYPE_IDS.filter(id => value.includes(id)) : [];
+const mapOverlayPreferences = value => ({ ...Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id,
     id !== 'snotel' && Number.isFinite(value?.[id])
         ? Math.round(Math.max(0, Math.min(100, value[id]))) : MAP_OVERLAY_OPACITY[id],
-]));
+])), landTypes: mapLandTypes(value?.landTypes) });
 const mapOverlayState = value => {
     const preferences = mapOverlayPreferences(Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id, value?.[id]?.opacity])));
     return Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id, {
@@ -290,6 +293,8 @@ const clean = raw => {
 const API = {
     MAP_OVERLAY_IDS,
     MAP_OVERLAY_OPACITY,
+    MAP_LAND_TYPE_IDS,
+    mapLandTypes,
     mapOverlayPreferences,
     mapOverlayState,
     UNIT_KEYS,

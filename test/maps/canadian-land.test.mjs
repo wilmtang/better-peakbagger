@@ -73,3 +73,19 @@ test('Alberta pages ordered parcels with bounded count and carries cancellation 
     const controller = new AbortController(); controller.abort();
     await assert.rejects(drawAlbertaLand({ ...setup(), signal: controller.signal, fetchImpl: () => assert.fail('cancelled requests never start') }), { name: 'AbortError' });
 });
+
+
+test('regional type selection excludes unused providers and filters BC and Alberta records', async () => {
+    for (const point of [[-124, 54], [-114.5, 51.5], [-121.7, 46.8]]) assert.deepEqual(publicLandTileSources(tile(...point), []), []);
+    assert.deepEqual(publicLandTileSources(tile(-124, 54), ['BLM']), []);
+    assert.deepEqual(publicLandTileSources(tile(-121.7, 46.8), ['CROWN']), []);
+    const bc = JSON.parse(new URL(publicLandTileSources(tile(-124, 54), ['CROWN'])[0].url).searchParams.get('dynamicLayers'))[0];
+    assert.equal(bc.definitionExpression, "OWNER_TYPE IN ('Crown Provincial')");
+    assert.deepEqual(bc.drawingInfo.renderer.uniqueValueInfos.map(item => item.value), ['Crown Provincial']);
+    const state = setup();
+    await drawAlbertaLand({ ...state, landTypes: ['LOC'], fetchImpl: async url => {
+        assert.equal(new URL(url).searchParams.get('where'), "crownclass IN ('Municipal')");
+        return response([polygon(1), polygon(2, 'Municipal')]);
+    } });
+    assert.deepEqual(state.calls.filter(call => call[0] === 'fill'), [['fill', 'evenodd', 'rgb(174,133,150)']]);
+});

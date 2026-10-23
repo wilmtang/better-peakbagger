@@ -100,3 +100,18 @@ test('BLM and USFS lead the land palette with distinct saturated colors and agen
             `${category.label} keeps the requested visual priority`);
     }
 });
+
+
+test('US filters hide unchecked agencies from the federal fallback and group local districts', () => {
+    const layers = selected => JSON.parse(new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 }, selected)).searchParams.get('dynamicLayers'));
+    const federal = layers(['FED']);
+    assert.equal(federal.length, 1);
+    assert.match(federal[0].definitionExpression, /Mang_Name NOT IN \('BLM','USFS'\)/);
+    assert.deepEqual(federal[0].drawingInfo.renderer.uniqueValueInfos.map(item => item.value), ['FED']);
+    const local = layers(['LOC']);
+    assert.deepEqual(local[0].drawingInfo.renderer.uniqueValueInfos.map(item => item.value), ['LOC', 'DIST']);
+    const blm = layers(['BLM']);
+    assert.equal(blm[0].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'BLM'");
+    assert.equal(blm[1].definitionExpression, '1=0');
+    assert.equal(layers(["FED' OR 1=1"])[0].definitionExpression, '1=0', 'untrusted categories cannot become query expressions');
+});

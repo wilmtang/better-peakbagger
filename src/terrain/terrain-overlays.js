@@ -10,7 +10,7 @@ import { createBCTileFetch } from '../maps/bc-land-client.js';
 // The authorized renderer searches its own catalog. No scene geometry, remote
 // tile URLs or executable styles cross the page/frame boundary.
 export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
-    let snapshot = null, scenes = [], sceneRevision = 0, sourceRevision = 0, disposed = false, registered = false;
+    let snapshot = null, scenes = [], sceneRevision = 0, landRevision = 0, sourceRevision = 0, disposed = false, registered = false;
     let sentinelStatus = {};
     const rasterStatus = {};
     const loadingMessage = id => id === 'land' ? 'Loading public lands' : 'Loading slope shading';
@@ -46,11 +46,11 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         const match = /^bpb-overlay:\/\/(sentinel|slope|land)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(request.url);
         if (!match || disposed) throw new Error('Invalid overlay tile.');
         const [, id, revision, z, x, y] = match;
-        if (id === 'sentinel' && Number(revision) !== sceneRevision) throw new DOMException('Cancelled.', 'AbortError');
+        if (id === 'sentinel' && Number(revision) !== sceneRevision || id === 'land' && Number(revision) !== landRevision) throw new DOMException('Cancelled.', 'AbortError');
         const canvas = tiles.canvas();
         await tiles.draw(id, { z: Number(z), x: Number(x), y: Number(y) }, canvas, controller.signal);
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        if (!blob || controller.signal.aborted || disposed) throw new DOMException('Cancelled.', 'AbortError');
+        if (!blob || controller.signal.aborted || disposed || id === 'land' && Number(revision) !== landRevision) throw new DOMException('Cancelled.', 'AbortError');
         return { data: await blob.arrayBuffer() };
     };
     const remove = id => {
@@ -65,13 +65,13 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         if (!snapshot || disposed) return;
         for (const id of ['sentinel', 'land', 'slope']) {
             const state = snapshot.state[id];
-            if (!state.enabled || state.opacity === 0 || id === 'sentinel' && !scenes.length) { remove(id); continue; }
+            if (!state.enabled || state.opacity === 0 || id === 'land' && !snapshot.landTypes.length || id === 'sentinel' && !scenes.length) { remove(id); continue; }
             let source = layers.get(id);
             if (snapshot.cooldowns[id] > Date.now() && !source && !(id === 'land' && Object.keys(snapshot.landCooldowns).length)) continue;
             if (!source) {
                 if (!registered) { maplibre.addProtocol(protocol, tileProtocol); registered = true; }
                 source = `bpb-overlay-${id}-${++sourceRevision}`;
-                map.addSource(source, { type: 'raster', tiles: [`${protocol}://${id}/${id === 'sentinel' ? sceneRevision : 0}/{z}/{x}/{y}`],
+                map.addSource(source, { type: 'raster', tiles: [`${protocol}://${id}/${id === 'sentinel' ? sceneRevision : id === 'land' ? landRevision : 0}/{z}/{x}/{y}`],
                     tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : 15,
                     attribution: id === 'sentinel' ? SENTINEL_ATTRIBUTION : OVERLAY_ATTRIBUTION[id] });
                 const before = beforeVectors();
@@ -115,6 +115,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             }
             snapshot = next;
             tiles.landCooldowns(next.landCooldowns);
+            if (tiles.setLandTypes(next.landTypes)) { landRevision++; remove('land'); rasterStatus.land = {}; }
             for (const id of ['land', 'slope']) if (!next.state[id].enabled || next.state[id].opacity === 0) rasterStatus[id] = {};
             sentinel.cooldown(next.cooldowns.sentinel);
             if (next.state.sentinel.enabled && next.state.sentinel.opacity > 0) sentinel.activate(next.capture);
@@ -135,11 +136,11 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         action({ id, action, capture }) {
             if (action === 'capture' && id === 'sentinel' && typeof capture === 'string') sentinel.select(capture);
             if (action === 'retry' && (id === 'sentinel' ? sentinelStatus.pending : rasterStatus[id]?.pending)) return;
-            if (action === 'retry' && snapshot?.state[id]?.enabled && snapshot.cooldowns[id] <= Date.now()) {
+            if (action === 'retry' && snapshot?.state[id]?.enabled && !(id === 'land' && !snapshot.landTypes.length) && snapshot.cooldowns[id] <= Date.now()) {
                 if (id === 'sentinel') sentinel.retry(); else if (tiles.retry(id)) {
                     reportRaster(id, { pending: true, error: false, permission: false, retry: true, message: loadingMessage(id) });
                     const source = map.getSource(layers.get(id));
-                    if (source?.setTiles) source.setTiles([`${protocol}://${id}/0/{z}/{x}/{y}`]);
+                    if (source?.setTiles) source.setTiles([`${protocol}://${id}/${id === 'land' ? landRevision : 0}/{z}/{x}/{y}`]);
                     else { remove(id); paint(); }
                 }
             }

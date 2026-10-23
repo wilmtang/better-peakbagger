@@ -75,7 +75,7 @@ permission to read device location. It covers:
 | --- | --- | --- |
 | `storage.sync` | Theme, units, chart, map, weather-card, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
 | `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, weather-model choices, ascent-weather column, summit-weather data-tab selection, and automatic-backup state | Device-local; never browser-synced. |
-| `storage.local` map overlay opacity | Raster opacity percentages only | Device-local; excluded from settings sync, exports and backups. Enabled layers remain in page memory. |
+| `storage.local` map overlay preferences | Raster opacity percentages and selected public-land type IDs | Device-local; excluded from settings sync, exports and backups. Enabled layers remain in page memory. |
 | `storage.local` public snow catalog | Public SNOTEL station metadata only, with a fetch timestamp | Refreshed after seven days when next used; expired metadata can remain until replaced or extension data is cleared. No peak/location query or observations; excluded from settings exports, sync and backups. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
@@ -475,12 +475,12 @@ optional `maps.gov.bc.ca` permission, requested only through the explicit
 if the browser requires activation from extension UI, Allow opens a packaged
 permission page whose second explicit click requests access. That page carries
 only the source tab ID, transiently, so a grant can refresh the same map.
-Page messages contain tile coordinates, never an arbitrary URL. Alberta requests
+Page messages contain tile coordinates and allowlisted land-type IDs, never an arbitrary URL. Alberta requests
 include tile bounds and only parcel geometry, object IDs and ownership classes,
 never owner names or addresses. Neither service receives account credentials,
 GPX or route data. Canadian coverage is partial; clear areas mean unknown.
 These requests contain no GPX, route, Peakbagger identity or account data.
-Opacity preferences are device-local and excluded from sync/settings backups.
+Opacity and public-land type preferences are device-local and excluded from sync/settings backups.
 Enabled selections remain in page memory, except an explicit native Full Screen
 action: a one-use, destination- and tab-bound session handoff lasts 30 seconds
 and contains only validated layer state and a Sentinel pass identity.

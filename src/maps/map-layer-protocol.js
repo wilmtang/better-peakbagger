@@ -16,7 +16,7 @@ export function readLayerSnapshot(value) {
     const cooldowns = Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id,
         Number.isFinite(value.cooldowns?.[id]) && value.cooldowns[id] > Date.now() && value.cooldowns[id] <= Date.now() + 86400000 ? value.cooldowns[id] : 0]));
     return { revision: value.revision, state: Schema.mapOverlayState(value.state), capture: sentinelTarget(value.capture), menuOpen: value.menuOpen === true, cooldowns,
-        landCooldowns: readLandCooldowns(value.landCooldowns) };
+        landCooldowns: readLandCooldowns(value.landCooldowns), landTypes: Schema.mapLandTypes(value.landTypes) };
 }
 export function readLayerStatus(value) {
     if (!value || !Schema.MAP_OVERLAY_IDS.includes(value.id)) return null;

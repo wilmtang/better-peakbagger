@@ -42,14 +42,15 @@ try {
             {id:'older',label:'2026-10-06 18:27 · ☁ 100%',title:'2026-10-06 18:27 PDT · Clouds 100%'},
             {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]},
             land:publicLandInfo(null),snotel:{legend:'NRCS active stations in the visible map. Station observations may differ from route conditions.'}};
-        const toggles=[];
+        const toggles=[];let landTypes=schema.mapLandTypes();
         const control=createMapLayerControl({document,
             onToggle:(id,enabled)=>{toggles.push([id,enabled]);state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
+            onLandTypes:value=>{landTypes=schema.mapLandTypes(value);paint()},
             onCapture:value=>{const status=statuses.sentinel;status.capture=value;status.message='Coverage 100% · Clouds '+status.captures.find(choice=>choice.id===value).title.split(' · Clouds ')[1];paint()},
             onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:id==='snotel'?'Loading stations':'Loading map tiles'};paint()}});
         document.body.append(control.element);
-        function paint(){control.render({state,statuses,coverage:window.fixture?.coverage,zoom:window.fixture?.zoom??17,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
+        function paint(){control.render({state,landTypes,statuses,coverage:window.fixture?.coverage,zoom:window.fixture?.zoom??17,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
         window.fixture={control,state,statuses,paint,toggles,landInfo:publicLandInfo,showPopup:scale=>{
             control.dispose();
             const station={id:'679:WA:SNTL',name:'Paradise SNOTEL station',latitude:46.78,longitude:-121.74,elevation:1570};
@@ -248,10 +249,35 @@ try {
                 assert.equal(await guidance.isVisible(), true);
                 await guidance.focus(); assert.equal(await guidance.evaluate(element => document.activeElement === element), true);
                 assert.equal(await guidance.getAttribute('href'), 'https://www.blm.gov/programs/recreation/camping');
-                assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local', 'Tribal']);
+                assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) [data-land-type] label').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local / district', 'Tribal']);
                 const detailBox = await page.locator('.bpb-layers-detail:not([hidden])').boundingBox();
                 assert.ok(detailBox.x >= box.x && detailBox.x + detailBox.width <= box.x + box.width, 'land detail stays within compact width');
                 if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-land.png`) });
+                await page.locator('[data-layer="land"] input').check();
+                const all = page.getByRole('checkbox', { name: 'All land types', exact: true });
+                const only = page.getByRole('button', { name: 'Show only BLM land', exact: true });
+                await only.scrollIntoViewIfNeeded(); await only.focus();
+                const typeGeometry = () => page.evaluate(() => ({
+                    boxes: ['.bpb-layers-panel', '[data-overlay="land"]', '[data-land-type="BLM"]', '[data-land-type="USFS"]', '#map', 'h2'].map(selector => {
+                        const r = document.querySelector(selector).getBoundingClientRect(); return [r.x,r.y,r.width,r.height];
+                    }), scroll: [window.scrollY, document.querySelector('.bpb-layers-panel').scrollTop]
+                }));
+                const typeBefore = await typeGeometry();
+                await only.press('Enter');
+                assert.equal(await all.evaluate(input => input.indeterminate), true);
+                assert.equal(await page.getByRole('checkbox', { name: 'BLM land', exact: true }).isChecked(), true);
+                assert.equal(await page.getByRole('checkbox', { name: 'USFS land', exact: true }).isChecked(), false);
+                for (const status of [{pending:true,message:'Loading public lands'}, {error:true,retry:true,message:'Land coverage couldn’t load. Try again.'}, {message:''}]) {
+                    await page.evaluate(status => { window.fixture.statuses.land = {...window.fixture.landInfo(null),...status}; window.fixture.paint(); }, status);
+                    assert.deepEqual(await typeGeometry(), typeBefore, 'filter rows, panel and reading position stay anchored through provider feedback');
+                    assert.equal(await only.evaluate(element => document.activeElement === element), true);
+                }
+                if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-land-filter.png`) });
+                await all.focus(); await all.press('Space'); assert.equal(await all.isChecked(), true);
+                await all.press('Space'); assert.equal(await all.isChecked(), false);
+                await page.getByText('Select a land type.', {exact:true}).waitFor();
+                assert.deepEqual(await typeGeometry(), typeBefore, 'empty selection retains the compact panel geometry');
+                await all.press('Space');
                 await page.evaluate(() => {
                     window.fixture.state.land.enabled = true;
                     window.fixture.statuses.land = { ...window.fixture.landInfo([-125, 53, -124, 54]), permission: true, retry: true, message: 'Allow BC parcel maps.' };

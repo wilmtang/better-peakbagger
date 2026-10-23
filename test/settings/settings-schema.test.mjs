@@ -264,6 +264,7 @@ test('known route, viewport, and theme defaults and bounds stay schema-owned', a
         { pattern: /\b(?:1,\s*12|3,\s*20|240,\s*720)\b/, what: 'a route/viewport bound pair' },
         { pattern: /\blet\s+pref\s*=\s*['"]system['"]/, what: 'the default theme preference' },
         { pattern: /\b(?:showSunMoon|showWeather|showSnotel)\s*:\s*(?:true|false)\b/, what: 'a section display default' },
+        { pattern: /\['BLM',\s*'USFS',\s*'FED',\s*'STAT',\s*'LOC',\s*'TRIB',\s*'CROWN'/, what: 'the default land type selection' },
     ];
 
     const leaks = [];
@@ -303,4 +304,14 @@ test('peak-card columns reject unknown destinations and return independent valid
     assert.deepEqual(cleaned.peakCardColumns, { sun: 'details', weather: 'map', snow: 'details-bottom' });
     assert.deepEqual(Schema.clean(cleaned), cleaned);
     assert.notEqual(Schema.clean({}).peakCardColumns, Schema.DEFAULTS.peakCardColumns);
+});
+
+
+test('device-local land preferences preserve legacy defaults and explicit empty selection', () => {
+    assert.deepEqual(Schema.mapOverlayPreferences({ land: 35 }).landTypes, [...Schema.MAP_LAND_TYPE_IDS]);
+    for (const invalid of [null, {}, 'BLM', Array(65).fill('BLM')]) assert.deepEqual(Schema.mapLandTypes(invalid), []);
+    const saved = Schema.mapOverlayPreferences({ landTypes: ['USFS', 'BLM', 'BLM', 'unknown'], land: 40 });
+    assert.deepEqual(saved.landTypes, ['BLM', 'USFS']);
+    assert.deepEqual(Schema.mapOverlayPreferences(saved), saved);
+    assert.deepEqual(Schema.mapOverlayPreferences({ landTypes: [] }).landTypes, []);
 });

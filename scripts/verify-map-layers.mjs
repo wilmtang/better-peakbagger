@@ -77,14 +77,14 @@ try {
     })));
     const tile = color => Buffer.from(tiles[color], 'base64');
     // One composed service tile contains BLM, USFS and other federal parcels.
-    const landTile = Buffer.from(await page.evaluate(() => {
+    const landTiles = await page.evaluate(() => Object.fromEntries(Array.from({length:8}, (_, mask) => {
         const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
         const context = canvas.getContext('2d');
-        for (const [color, x, width] of [['#e69f00', 0, 96], ['#0072b2', 96, 96], ['#919191', 192, 64]]) {
-            context.fillStyle = color; context.fillRect(x, 0, width, 256);
+        for (const [index, [color, x, width]] of [['#e69f00', 0, 96], ['#0072b2', 96, 96], ['#919191', 192, 64]].entries()) {
+            if (mask & (1 << index)) { context.fillStyle = color; context.fillRect(x, 0, width, 256); }
         }
-        return canvas.toDataURL().split(',')[1];
-    }), 'base64');
+        return [mask, canvas.toDataURL().split(',')[1]];
+    })));
     const countImageColors = (png, colors) => page.evaluate(async ({ data, colors }) => {
         const image = new Image(); image.src = 'data:image/png;base64,' + data; await image.decode();
         const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
@@ -131,14 +131,15 @@ try {
     resources.defer('held public-land tiles', () => { landMode = 'ready'; heldLand.splice(0).forEach(resolve => resolve()); });
     await context.route('https://edits.nationalmap.gov/**', async route => {
         const layers = JSON.parse(new URL(route.request().url()).searchParams.get('dynamicLayers'));
-        assert.equal(layers[0].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'BLM'");
-        assert.deepEqual(layers[0].drawingInfo.renderer.symbol.color, [230, 159, 0, 255]);
-        assert.equal(layers[1].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'USFS'");
-        assert.deepEqual(layers[1].drawingInfo.renderer.symbol.color, [0, 114, 178, 255]);
-        assert.equal(layers[2].drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
+        const base = layers.find(layer => layer.id === 0);
+        assert.equal(base.drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
+        assert.match(base.definitionExpression, /Mang_Name NOT IN|1=0|Own_Type IN/);
+        const mask = (layers.some(layer => layer.definitionExpression === "Own_Type = 'FED' AND Mang_Name = 'BLM'") ? 1 : 0)
+            | (layers.some(layer => layer.definitionExpression === "Own_Type = 'FED' AND Mang_Name = 'USFS'") ? 2 : 0)
+            | (base.drawingInfo.renderer.uniqueValueInfos.some(item => item.value === 'FED') ? 4 : 0);
         if (landMode === 'hold') await new Promise(resolve => heldLand.push(resolve));
         if (landMode === 'error') return route.fulfill({ status: 503, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'Unavailable' });
-        return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: landTile });
+        return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: Buffer.from(landTiles[mask], 'base64') });
     });
     let bcRequests = 0, albertaRequests = 0;
     const canadianTile = Buffer.from(await page.evaluate(() => {
@@ -295,7 +296,8 @@ try {
             'the native route remains attached through raster refreshes');
         await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
         await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
-        assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local', 'Tribal']);
+        await page.getByRole('checkbox', { name: 'All land types', exact: true }).check();
+        assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) [data-land-type] label').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local / district', 'Tribal']);
         assert.equal(await page.getByRole('link', { name: 'BLM camping rules', exact: true }).isVisible(), true);
         const landOpacity = page.getByRole('slider', { name: 'Public lands opacity' });
         const setLandOpacity = async value => { await landOpacity.fill(String(value)); await landOpacity.dispatchEvent('input'); };
@@ -303,6 +305,15 @@ try {
         const landPixels = async colors => countImageColors(await (pathname.includes('MasterMap') ? page.locator('#map') : page.locator('iframe#if')).screenshot(), colors);
         await setLandOpacity(100);
         await waitForCondition(() => landPixels(palette), { description: `BLM, USFS and other federal colors on ${pathname}`, isReady: counts => counts.every(count => count > 1000) });
+        await page.getByRole('button', { name: 'Show only BLM land', exact: true }).click();
+        await waitForCondition(() => landPixels(palette), { description: `Only BLM removes USFS and other federal pixels on ${pathname}`, isReady: counts => counts[0] > 1000 && counts[1] < 100 && counts[2] < 100 });
+        await page.getByRole('checkbox', { name: 'USFS land', exact: true }).check();
+        await waitForCondition(() => landPixels(palette), { description: 'independent agency selection colors both requested types', isReady: counts => counts[0] > 1000 && counts[1] > 1000 && counts[2] < 100 });
+        const allTypes = page.getByRole('checkbox', { name: 'All land types', exact: true });
+        await allTypes.check(); await allTypes.uncheck();
+        await waitForCondition(() => landPixels(palette), { description: 'empty filter clears every public-land color', isReady: counts => counts.every(count => count < 100) });
+        await allTypes.check();
+        await waitForCondition(() => landPixels(palette), { description: 'all types restores all public-land colors', isReady: counts => counts.every(count => count > 1000) });
         await setLandOpacity(0);
         await waitForCondition(() => landPixels(palette), { description: 'zero land opacity exposes lower layers', isReady: counts => counts.every(count => count < 1000) });
         const under = await pixel();
@@ -381,7 +392,10 @@ try {
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         if (output) { await mkdir(output,{recursive:true}); await page.screenshot({path:path.join(output,`map-${cases.length}.png`)}); }
         if(pathname.startsWith('/Peak.aspx')){
-            await page.getByRole('button',{name:/^Overlays/}).click();await page.getByRole('button',{name:/^Adjust Sentinel/}).click();
+            await page.getByRole('button',{name:/^Overlays/}).click();
+            await page.getByRole('button',{name:/^Adjust Public lands/}).click();
+            await page.getByRole('button',{name:'Show only BLM land',exact:true}).click();
+            await page.getByRole('button',{name:/^Adjust Sentinel/}).click();
             const picker=page.locator('[aria-label="Sentinel-2 capture"]');const chosen=await picker.locator('option').nth(1).getAttribute('value');await picker.selectOption(chosen);
             await page.getByRole('button',{name:/^Overlays/}).click();
             const [destination]=await Promise.all([context.waitForEvent('page'),page.locator('#fullscreen').click()]);await destination.waitForLoadState();
@@ -390,8 +404,19 @@ try {
             assert.equal(await destination.locator('[data-layer="sentinel"] input').isChecked(),true);
             await destination.locator('.bpb-layers-trigger').click();await destination.locator('[data-layer="sentinel"] button').click();
             await destination.waitForFunction(expected=>document.querySelector('[aria-label="Sentinel-2 capture"]')?.value===expected,chosen);
+            await destination.locator('[data-layer="land"] button').click();
+            assert.equal(await destination.getByRole('checkbox',{name:'BLM land',exact:true}).isChecked(),true);
+            assert.equal(await destination.getByRole('checkbox',{name:'USFS land',exact:true}).isChecked(),false,'Full Screen retains the selected types');
             await destination.reload();await destination.waitForFunction(()=>!!document.querySelector('[data-layer="slope"] input'));
-            assert.equal(await destination.locator('[data-layer="slope"] input').isChecked(),false,'consumed handoff is not replayed on reload');await destination.close();
+            assert.equal(await destination.locator('[data-layer="slope"] input').isChecked(),false,'consumed handoff is not replayed on reload');
+            await destination.locator('.bpb-layers-trigger').click();await destination.locator('[data-layer="land"] button').click();
+            assert.equal(await destination.getByRole('checkbox',{name:'BLM land',exact:true}).isChecked(),true);
+            assert.equal(await destination.getByRole('checkbox',{name:'USFS land',exact:true}).isChecked(),false,'device-local filter persists after reload with layers off');
+            await destination.getByRole('checkbox',{name:'Public lands',exact:true}).check();
+            await destination.getByRole('checkbox',{name:'All land types',exact:true}).check();
+            await waitForCondition(() => context.serviceWorkers()[0].evaluate(async () => (await chrome.storage.local.get('bpbMapOverlayOpacityV1')).bpbMapOverlayOpacityV1?.landTypes?.includes('USFS')),
+                {description:'restored type selection reaches device-local storage before closing its page'});
+            await destination.close();
         }
         cases.push(pathname);
     }
@@ -505,6 +530,7 @@ try {
         const opacity = page.getByRole('slider', { name: 'Public lands opacity' });
         await opacity.fill('100'); await opacity.dispatchEvent('input');
         await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).waitFor();
+        await page.getByRole('checkbox', { name: 'All land types', exact: true }).check();
         if (index === 0) {
             const allow = page.getByRole('button', { name: 'Allow BC land maps', exact: true });
             await allow.waitFor(); assert.equal(bcRequests, 0, 'no BC provider traffic before consent');
@@ -662,6 +688,7 @@ try {
     await terrain.locator('canvas.maplibregl-canvas').screenshot();
     await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
     assert.equal(await page.getByRole('slider', { name: 'Public lands opacity' }).isVisible(), true, 'terrain layer activation selects its own opacity detail');
+    await page.getByRole('checkbox', { name: 'All land types', exact: true }).check();
     assert.equal(await page.getByRole('link', { name: 'BLM camping rules', exact: true }).isVisible(), true);
     const landOpacity = page.getByRole('slider', { name: 'Public lands opacity' });
     await landOpacity.fill('100'); await landOpacity.dispatchEvent('input');
@@ -670,6 +697,16 @@ try {
     // Terrain lighting shifts blue toward cyan. Require its cool tint here,
     // then prove the colored surface disappears when opacity reaches zero.
     const blue = await waitForCondition(() => coloredPixels('usfs'), { description: 'blue USFS pixels over hardware terrain', timeoutMs: 30000, isReady: count => count > 1000 });
+    await page.getByRole('button', { name: 'Show only BLM land', exact: true }).click();
+    await waitForCondition(() => coloredPixels('usfs'), { description: 'terrain filter removes unchecked USFS', timeoutMs: 30000, isReady: count => count < blue / 5 });
+    await waitForCondition(() => coloredPixels('gold'), { description: 'terrain filter retains selected BLM', timeoutMs: 30000, isReady: count => count > 1000 });
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
+    assert.equal(await page.getByRole('checkbox', { name: 'BLM land', exact: true }).isChecked(), true);
+    assert.equal(await page.getByRole('checkbox', { name: 'USFS land', exact: true }).isChecked(), false, 'filter survives terrain-to-native switch');
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true');
+    await waitForCondition(() => coloredPixels('usfs'), { description: 'parked terrain resumes the current filter', timeoutMs: 30000, isReady: count => count < blue / 5 });
+    await page.getByRole('checkbox', { name: 'All land types', exact: true }).check();
+    await waitForCondition(() => coloredPixels('usfs'), { description: 'terrain select all restores USFS', timeoutMs: 30000, isReady: count => count > 1000 });
     landMode = 'error'; await page.getByRole('checkbox', { name: 'Public lands', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
     await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-row-status')?.textContent === 'Couldn’t load', 'terrain public-land failure is explained');
@@ -704,6 +741,7 @@ try {
     await canadianNative.evaluate(() => { mapsPlaceholder.setView([54,-124],12,{animate:false}); });
     await landOpacity.fill('100'); await landOpacity.dispatchEvent('input');
     await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).waitFor();
+    await page.getByRole('checkbox', { name: 'All land types', exact: true }).check();
     const before3DBC = bcRequests;
     await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true');
     await waitForCondition(() => coloredPixels('gold'), { description: 'BC Crown parcels through the packaged terrain sender', timeoutMs: 30000, isReady: count => count > 1000 });

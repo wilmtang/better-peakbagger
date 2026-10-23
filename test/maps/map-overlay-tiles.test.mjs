@@ -195,3 +195,22 @@ test('a late offscreen slope failure cannot poison the new view', async t => {
         assert.equal(states.at(-1).error, false); assert.equal(errors.length, 0);
     } finally { tiles.dispose(); }
 });
+
+
+test('changing land types cancels stale pixels and empty selection contacts no provider', async t => {
+    mockBitmap(t);
+    const held = []; let published = 0;
+    const tiles = createOverlayTiles({ document, fetchImpl: (url, options) => new Promise(resolve => held.push({ url, options, resolve })) });
+    const output = { getContext: () => ({ clearRect() { published++; }, drawImage() { published++; } }) };
+    try {
+        const old = tiles.draw('land', { z: 10, x: 163, y: 359 }, output).catch(error => error.name);
+        await tick(); assert.equal(held.length, 1);
+        assert.equal(tiles.setLandTypes(['BLM']), true); assert.equal(held[0].options.signal.aborted, true);
+        held[0].resolve(new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } }));
+        assert.equal(await old, 'AbortError'); assert.equal(published, 0, 'old selection cannot recolor a visible tile');
+        assert.equal(tiles.setLandTypes(['BLM']), false, 'opacity and pan updates leave the current filter attached');
+        tiles.setLandTypes([]);
+        await tiles.draw('land', { z: 10, x: 163, y: 359 }, output);
+        assert.equal(held.length, 1); assert.equal(published, 2, 'empty selection commits a clear tile without a request');
+    } finally { tiles.dispose(); }
+});

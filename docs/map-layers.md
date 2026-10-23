@@ -16,7 +16,7 @@ Raster percentages are explicitly labelled **Opacity**. The slider runs from
 **Clear** (see the base map) to **Solid** (show the overlay at full strength).
 Turning a layer off leaves its own disabled settings selected. Provider updates
 do not change the selected detail or move keyboard focus.
-Each row has a short secondary line: opacity or station count when ready,
+Each row has a compact status: opacity or station count when ready,
 **Loading** with a small spinner during work, **Couldn’t load** on failure, or
 **Needs access** for BC permission. Detailed explanations and **Retry**/**Allow**
 stay in that layer's settings. Turning a layer off hides stale loading/errors.
@@ -69,10 +69,22 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 | Public lands | 25% | USGS PAD-US 4.1 fee ownership, ParcelMap BC ownership records and southwestern Alberta regional parcels. BLM and Canadian provincial Crown land are gold; USFS is deep blue; other recorded ownership uses muted colors. Canadian coverage is partial. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
 | SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, reveal up to three nearby stations within 50 km once. Visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
 
+Public-land settings have individual checkboxes for the types available in the
+visible region. **All types** controls the visible categories, with a mixed state
+when some are selected; selections for other regions stay saved. **Only** beside
+a type selects just that type. US local and district land share one checkbox.
+All types are selected by default. Clearing every type clears the land overlay
+and makes no tile requests. Filtering applies to provider queries in both 2D and
+3D; unchecked BLM/USFS parcels cannot reappear as Other federal. A filter change
+cancels old requests and removes deselected pixels immediately, while ordinary
+pans retain loaded tiles. Selections survive renderer switches, Full Screen and
+page reloads. **Sources** expands the provider notes; **Check camping rules**
+opens official regional guidance without adding another map preset.
+
 Opacity updates immediately and changes only the edited raster; station markers
 and unrelated overlays stay untouched. Unchanged legends are reused, and
 regional land metadata is recalculated only when the viewport changes.
-Only opacity preferences are saved on this device. Startup waits for both saved
+Opacity and public-land type preferences are saved on this device. Startup waits for both saved
 opacity and settings before announcing them, and a
 late startup read cannot replace a newer save.
 Unrelated map sessions start with overlays off. A native Full Screen link carries
@@ -215,7 +227,7 @@ once to that single image. Sources:
 BC uses a transparent, explicitly classified export from the
 [provincial parcel service](https://maps.gov.bc.ca/arcgis/rest/services/whse/bcgw_pub_whse_cadastre/MapServer/0).
 Its CORS policy requires optional extension host access in both renderers. The
-worker accepts only validated BC tile coordinates from Peakbagger content
+worker accepts only validated BC tile coordinates and allowlisted land-type IDs from Peakbagger content
 scripts or the packaged terrain frame embedded in a Peakbagger tab. It builds
 the fixed provider URL, checks permission, bounds PNGs to 1 MiB and 256 square
 pixels, limits concurrent jobs to 16, and cancels on owner/tab teardown. No
@@ -285,7 +297,8 @@ screen-reader speech remain outside these hidden fixtures.
 unpacked Chrome integration with pinned Leaflet, synthetic provider responses
 and hardware MapLibre. It checks all native map surfaces, independent rasters,
 overlap pixels at 0/50/100%, a failing per-scene-alpha negative control, native
-layer preservation, BLM/USFS classification/legend/guidance and opacity pixels,
+layer preservation, BLM/USFS classification/checklist/guidance and opacity pixels,
+individual type selection, empty filters, saved preferences and Full Screen filters,
 station rendering, pinned captures, 2D/3D suspend/resume
 and a real one-use Full Screen handoff. Canadian checks exercise BC's
 MAIN/isolated/worker relay, Allow pending/denial/retry geometry, both provincial

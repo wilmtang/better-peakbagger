@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, intersectsLandBounds, regionCoverage, US_TERRITORY_BOUNDS } from './canadian-land.js';
 import { SENTINEL_LATITUDES } from './sentinel-core.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 export const OVERLAY_MIN_ZOOM = 8;
 const SNOW_REGIONS = ['ak', 'az', 'ca', 'co', 'id', 'mt', 'nm', 'nv', 'or', 'sd', 'ut', 'wa', 'wy'].map(state => `us_${state}`);
@@ -79,7 +80,7 @@ export function tileBounds({ z, x, y }) {
     return [-20037508.342789244 + wrapped * span, 20037508.342789244 - (y + 1) * span,
         -20037508.342789244 + (wrapped + 1) * span, 20037508.342789244 - y * span];
 }
-export function overlayTileUrl(id, coordinates) {
+export function overlayTileUrl(id, coordinates, landTypes) {
     const bbox = tileBounds(coordinates).join(',');
     let url;
     const params = { bbox, bboxSR: '3857', imageSR: '3857', size: '256,256', format: 'png32', f: 'image' };
@@ -88,6 +89,8 @@ export function overlayTileUrl(id, coordinates) {
         params.renderingRule = JSON.stringify(SLOPE_RULE);
         params.interpolation = 'RSP_NearestNeighbor';
     } else if (id === 'land') {
+        const selected = Schema.mapLandTypes(landTypes);
+        const owners = LAND_CLASSES.filter(category => !landAgencies.includes(category) && selected.includes(category.value === 'DIST' ? 'LOC' : category.value));
         url = new URL('https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US_4_1/MapServer/export');
         params.transparent = 'true';
         // ArcGIS draws the first layer on top. All passes are one opaque image;
@@ -95,32 +98,39 @@ export function overlayTileUrl(id, coordinates) {
         // Fee ownership plus manager avoids treating designation boundaries or
         // holdings managed by another agency as BLM/USFS-managed land.
         params.dynamicLayers = JSON.stringify([
-            ...landAgencies.map((category, index) => ({ id: index + 1, source: { type: 'mapLayer', mapLayerId: 0 },
+            ...landAgencies.filter(category => selected.includes(category.value)).map((category, index) => ({ id: index + 1, source: { type: 'mapLayer', mapLayerId: 0 },
                 definitionExpression: `Own_Type = 'FED' AND Mang_Name = '${category.value}'`,
                 drawingInfo: { renderer: { type: 'simple', symbol: symbol(category.color) } } })),
-            { id: 0, source: { type: 'mapLayer', mapLayerId: 0 }, drawingInfo: { renderer: LAND_RENDERER } },
+            { id: 0, source: { type: 'mapLayer', mapLayerId: 0 },
+                // Otherwise deselected BLM/USFS parcels would reappear as gray
+                // "Other federal" through the generic federal ownership pass.
+                definitionExpression: owners.length ? `Own_Type IN (${owners.map(item => `'${item.value}'`).join(',')})`
+                    + (selected.includes('FED') ? " AND (Own_Type <> 'FED' OR Mang_Name NOT IN ('BLM','USFS') OR Mang_Name IS NULL)" : '') : '1=0',
+                drawingInfo: { renderer: { ...LAND_RENDERER, uniqueValueInfos: LAND_RENDERER.uniqueValueInfos.filter(item => owners.some(owner => owner.value === item.value)) } } },
         ]);
     } else throw new Error('Unknown overlay.');
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
     return url.href;
 }
 
-export function publicLandTileSources(coordinates) {
+export function publicLandTileSources(coordinates, landTypes) {
     const bbox = tileBounds(coordinates), longitude = value => value / 20037508.342789244 * 180;
     const latitude = value => Math.atan(Math.sinh(value / 6378137)) * 180 / Math.PI;
     const geographic = [longitude(bbox[0]), latitude(bbox[1]), longitude(bbox[2]), latitude(bbox[3])];
-    const coverage = landCoverage(geographic);
+    const selected = Schema.mapLandTypes(landTypes);
+    const coverage = landCoverage(geographic).filter(provider => (provider === 'us' ? LAND_CLASSES : provider === 'bc' ? CANADIAN_LAND_CLASSES
+        : CANADIAN_LAND_CLASSES.filter(item => ['CROWN', 'LOC'].includes(item.value))).some(item => selected.includes(item.value === 'DIST' ? 'LOC' : item.value)));
     return coverage.map(provider => ({ provider, bbox, kind: provider === 'ab' ? 'parcels' : 'raster',
-        url: provider === 'us' ? overlayTileUrl('land', coordinates) : provider === 'bc' ? bcLandTileUrl(bbox) : albertaLandTileUrl(bbox) }));
+        url: provider === 'us' ? overlayTileUrl('land', coordinates, selected) : provider === 'bc' ? bcLandTileUrl(bbox, selected) : albertaLandTileUrl(bbox, 0, selected) }));
 }
 export function publicLandInfo(bounds) {
     const coverage = landCoverage(bounds), us = coverage.includes('us'), bc = coverage.includes('bc'), ab = coverage.includes('ab');
     const classes = [...(us ? LAND_CLASSES.filter(item => item.value !== 'DIST') : []),
         ...CANADIAN_LAND_CLASSES.filter(item => (bc || ab && ['CROWN', 'LOC'].includes(item.value)) && (!us || !['FED', 'LOC'].includes(item.value)))];
     const names = [us && 'US PAD-US', bc && 'BC parcel records', ab && 'SW Alberta parcels'].filter(Boolean);
-    return { legend: `${names.join(' · ') || 'No public-land coverage here'}. ${bc || ab ? 'Canadian coverage is partial. ' : ''}Clear areas are unknown. Check local access and camping rules.`,
+    return { legend: `${names.join(' · ') || 'No public-land coverage here'}. ${bc || ab ? 'Canadian coverage is partial. ' : ''}Clear areas are unknown. Ownership does not grant camping permission. Check local access and camping rules.`,
         uncovered: coverage.length === 0,
-        legendEntries: classes.map(item => ({ label: item.label, color: `rgb(${item.color.join(',')})` })),
+        legendEntries: classes.map(item => ({ value: item.value, label: item.value === 'LOC' && us ? 'Local / district' : item.label, color: `rgb(${item.color.join(',')})` })),
         guidanceKeys: [us && 'blm', bc && 'bc', ab && 'ab'].filter(Boolean) };
 }
 

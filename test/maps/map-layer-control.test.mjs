@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { publicLandInfo } from '../../src/maps/map-overlay-providers.js';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.js';
 
 test('overlay schema bounds device-local alpha and fails closed on enablement', () => {
@@ -99,7 +100,7 @@ test('opacity summaries name the property and sliders explain their direction', 
     for (const id of ['sentinel', 'slope', 'land']) assert.equal(doc.querySelector(`[data-layer="${id}"] .bpb-layers-value-label`)?.textContent, 'Opacity');
     assert.equal(doc.querySelector('[data-layer="snotel"] .bpb-layers-value-label'), null, 'station counts are not called opacity');
     doc.querySelector('[data-layer="land"] button').click();
-    assert.deepEqual([...doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-opacity-ends').children].map(element => element.textContent), ['Clear', 'Solid']);
+    assert.equal(doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-opacity-line')?.textContent, 'Opacity35%');
     assert.equal(doc.querySelector('[aria-label="Public lands opacity"]').getAttribute('aria-valuetext'), '35 percent opacity');
     control.dispose(); dom.window.close();
 });
@@ -245,7 +246,8 @@ test('Public lands details offer official camping guidance without enlarging the
     control.trigger.click();
     const guidance = doc.querySelector('a[href="https://www.blm.gov/programs/recreation/camping"]');
     assert.ok(guidance, 'BLM ownership is not a camping-permission map');
-    assert.equal(guidance.textContent, 'BLM camping rules');
+    assert.equal(guidance.textContent, 'Check camping rules');
+    assert.equal(guidance.getAttribute('aria-label'), 'BLM camping rules');
     assert.equal(guidance.closest('section').hidden, true, 'guidance stays in the collapsed detail');
     doc.querySelector('[data-layer="land"] button').click();
     assert.equal(guidance.closest('section').hidden, false);
@@ -348,5 +350,35 @@ test('Canadian land guidance keeps focus through permission states and Allow can
     assert.equal(action.getAttribute('aria-disabled'), 'true');
     control.render({ state, statuses: { land: { ...statuses.land, permission: false, error: true } } });
     assert.equal(action.textContent, 'Retry'); action.click(); assert.deepEqual(retries, ['land']);
+    control.dispose(); dom.window.close();
+});
+
+
+test('land checkboxes support mixed selection, Only, empty selection and regional categories without losing focus', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
+    let landTypes = Schema.mapLandTypes(), region = null, status = {};
+    const state = Schema.mapOverlayState({ land: { enabled: true } });
+    const paint = () => control.render({ state, landTypes, statuses: { land: { ...publicLandInfo(region), ...status } } });
+    const control = createMapLayerControl({ document: doc, onLandTypes(value) { landTypes = Schema.mapLandTypes(value); paint(); } });
+    doc.body.append(control.element); paint(); control.trigger.click(); doc.querySelector('[data-layer="land"] button').click();
+    const all = doc.querySelector('[aria-label="All land types"]');
+    assert.equal(all.checked, true);
+    const usfs = doc.querySelector('[aria-label="USFS land"]'); usfs.focus(); usfs.click();
+    assert.equal(all.indeterminate, true); assert.equal(all.checked, false);
+    assert.equal(doc.activeElement, usfs); assert.equal(landTypes.includes('USFS'), false);
+    const only = doc.querySelector('[aria-label="Show only BLM land"]'); only.focus(); only.click();
+    assert.deepEqual(landTypes, ['BLM']); assert.equal(doc.activeElement, only);
+    for (const next of [{ pending: true }, { error: true, retry: true }, {}]) {
+        status = next; paint(); assert.equal(doc.activeElement, only, 'provider replies cannot replace a focused type action');
+    }
+    all.click(); assert.equal(all.checked, true); assert.equal(all.indeterminate, false);
+    all.click(); assert.deepEqual(landTypes, []); assert.match(doc.querySelector('[data-overlay="land"] .bpb-layers-feedback').textContent, /Select a land type/);
+    assert.equal(doc.querySelector('[data-overlay="land"] .bpb-layers-retry').hidden, true);
+    region = [-125, 53, -124, 54]; paint();
+    assert.deepEqual([...doc.querySelectorAll('[data-land-type]')].map(item => item.dataset.landType), ['CROWN', 'FED', 'AGENCY', 'LOC', 'FIRST_NATIONS']);
+    all.click(); assert.equal(landTypes.includes('BLM'), false, 'select all applies to the visible region');
+    region = null; paint(); assert.equal(all.indeterminate, true, 'shared federal/local choices persist across borders');
+    state.land.enabled = false; paint();
+    assert.ok([...doc.querySelectorAll('.bpb-layers-land-types input, .bpb-layers-land-only')].every(input => input.disabled));
     control.dispose(); dom.window.close();
 });
