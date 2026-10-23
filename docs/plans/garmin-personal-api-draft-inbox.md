@@ -20,13 +20,14 @@ user actions.
 
 | When | What is scanned |
 | --- | --- |
-| Every **four hours** by default | The last **30 days of activity dates**, within the user's chosen history. Widen this window after a long offline period to catch up. |
-| About once a week | The user's **full chosen history**, to find older activities uploaded late. Large histories and provider delays can take longer. |
+| Every **four hours** by default | The user-configurable **Recent check range**, default **last 30 days of activity dates**, within the full history range. Widen after a long offline period to catch up. |
+| About once a week | The user-configurable **Full history range**, to find older activities uploaded late. Large histories and provider delays can take longer. |
 | On demand | **Check now** runs the recent scan; **Check full history** runs the full chosen-history scan. |
 
-“Chosen history” begins at the date selected during setup; by default, the day
-the user connects Garmin. Users can include earlier dates or all available
-history. A scan does not import dates they have excluded. Frequency is editable;
+“Full history range” begins at an editable start date; by default, the day the
+user connects Garmin, continuing through today. Users can choose any earlier
+date or all available history. The recent lookback and check frequency are
+separate editable settings. A scan does not import dates users have excluded;
 **Manual only** disables both automatic scans. This is a proposed design, not
 implemented behavior.
 
@@ -104,6 +105,10 @@ The connected state exposes the four-hour default, manual checks, activity
 types and history scope in familiar setting rows. Manual only turns scheduled
 checks off; Custom reveals an hours field. This image shows the state after
 Enable Garmin drafts has been selected.
+
+This earlier rendered mock predates the separate configurable ranges. The
+[settings labels and descriptions below](#scan-settings-copy) are the current
+design; the range controls still need a rendered mock and visual verification.
 
 ![Connected Garmin settings mock showing Every 4 hours, activity choices, history scope and Check now](mocks/garmin-api/images/02-schedule.png)
 
@@ -240,9 +245,10 @@ provides an upload timestamp in activity details, but does not document an
 uploaded-after search filter. Having the timestamp does not mean the list can
 be sorted or filtered by it. Activity-ID ordering was inconclusive too.
 
-**The design remains a rolling 30-day scan every four hours**, using activity
-dates and staying inside the user's chosen history. A separate weekly scan of
-that full chosen history catches older activities uploaded late. For example,
+**The defaults remain a rolling 30-day scan every four hours.** Users can change
+both the recent lookback and the full history range. Checks use activity dates
+and stay inside that history range. A separate weekly scan of the full range
+catches older activities uploaded late. For example,
 a July hike uploaded in October can be found by the weekly scan if July is
 included in the chosen history. Known activity IDs prevent duplicate imports.
 
@@ -353,8 +359,9 @@ After connection, show one compact setup screen:
 ```text
 Garmin drafts
 Activities: Hikes, walks and trail runs                     [Change]
-Start with: Activities from today                           [Change]
 Check every: 4 hours                                        [Change]
+Recent check range: Last 30 days                            [Change]
+Full history range: Oct 23, 2026 → Today                     [Change]
 Peakbagger: Signed in as your selected climber
 
 While your browser is running, we check Garmin for new activities
@@ -373,11 +380,36 @@ activity types are a proposed convenience, not proof of GPS or summits. Offer
 other types, including cycling, in Change; validate Garmin's parent/subtype
 taxonomy before shipping. Never filter solely on a high elevation-gain value.
 
-Resolve “today” to an explicit activity-local date in the setup confirmation.
-This is the user's import boundary, not a last-pull timestamp. Change offers
-the last 30 days, a chosen date, or all available history. Historical preparation
-must be previewed and queued in bounded batches; do not open a tab per recording.
-**Import earlier activities** can later extend the selected date scope.
+#### Scan settings copy
+
+Expose these separately in setup and Settings → Capture & reports. Replace
+the vague **Start with** row with **Full history range**; keep frequency and
+lookback separate.
+
+| Setting | Default and choices | Short description shown below the label |
+| --- | --- | --- |
+| **Check every** | **4 hours**; existing interval choices, Custom or Manual only | “How often to check while your browser is running.” |
+| **Recent check range** | **Last 30 days**; 7, 14, 30, 60, 90 days or Custom days | “How far back each regular check looks.” |
+| **Full history range** | **From connection date to today**; editable start date or All available history | “Checked weekly to find older activities uploaded late.” |
+
+Shared note: **“Ranges use activity dates. Recent checks stay within your full
+history range. Changing ranges keeps your existing drafts.”** In Manual only,
+use **“How far back Check now looks.”** and **“Used when you choose Check full
+history.”** for the two range descriptions.
+
+Show the actual full-history start date, rather than a moving “today” label;
+only its end advances with today. If it shortens the recent window, show the
+effective range, for example **“Currently checking Oct 23–today.”** Custom
+lookback accepts whole days from 1 to 365. A chosen start date must be valid and
+not in the future; show validation beside its field. These are product bounds.
+
+Changing either range starts fresh coverage tracking for affected scans.
+Expanding full history previews and queues the added dates in bounded batches;
+narrowing it stops new imports outside the range without deleting drafts or
+duplicate-prevention records. **Import earlier activities** edits this same
+full-history setting, rather than creating a second scope.
+
+#### Schedule behavior
 
 Check every **four hours** by default. Offer **Manual only**, **1 hour**,
 **4 hours**, **12 hours**, **24 hours**, and **Custom…** with validated whole-hour
@@ -600,8 +632,8 @@ the existing explanation that exported files are not encrypted. With the
 checkbox off, the background export path must neither read the Garmin credential
 store nor serialize any Garmin credential. With it on, include the saved personal
 key in the versioned credential payload. The short-lived bearer token is always
-omitted. Frequency/type/date preferences may travel as ordinary settings;
-device permission and consent to start background processing do not.
+omitted. Frequency, activity types and both scan ranges may travel as ordinary
+settings; device permission and consent to start background processing do not.
 
 The current schema is version 3 and `cleanApiKeys` recognizes only `imgbb`.
 Extend the schema and compatibility tests deliberately: an absent Garmin key
@@ -778,15 +810,16 @@ For example, a July hike uploaded in October is invisible to a query filtering
 activity start after the previous October check. A watermark alone misses it.
 The initial proposal uses this discovery strategy:
 
-1. Every four hours (or the chosen interval), scan the last 30 days of activity
-   dates within the user's chosen history. After a long offline period,
-   widen the range to cover the time since the last completed pass, with overlap.
+1. Every four hours (or the chosen interval), scan the configured **Recent check
+   range** (default 30 days) within the configured **Full history range**. After
+   a long offline period, widen the range to cover the time since the last
+   completed pass, with overlap.
 2. Deduplicate by source account and activity ID before requesting files. Skip
    durable prepared items and tombstones. An interrupted analysis resumes; it
    is not marked completed just because its summary was seen.
-3. Spread a full metadata reconciliation of the selected scope over scheduled
-   checks, targeting once a week. A large account or provider backoff may take
-   longer; show its coverage/progress separately from the recent check. This
+3. Spread a full metadata reconciliation of the configured **Full history range**
+   over scheduled checks, targeting once a week. A large account or provider
+   backoff may take longer; show its coverage/progress separately from the recent check. This
    finds delayed uploads with old dates inside the user's scope without
    downloading every original recording again.
 4. **Check full history** runs the scoped metadata reconciliation on demand.
@@ -893,7 +926,8 @@ performed during this research.
    changes, capacity limits, disconnect, single- and multi-summit Save
    reconciliation, and cross-entry-point duplicate behavior.
 4. Add opt-in scheduled discovery/preparation with bounded catch-up, rate-limit
-   handling, four-hour default and editable frequency, manual-only behavior,
+   handling, four-hour default, editable frequency and both configurable scan
+   ranges, manual-only behavior,
    account/key replacement, permission revocation and cancellation. Cover
    late uploads, shifted pagination, incomplete scans and history reconciliation.
 
@@ -909,13 +943,19 @@ the new behavior when it is implemented.
 The UI verification matrix must cover 390px popup, narrow inbox and desktop
 inbox; light/dark themes and enlarged text; connect success/error/permission
 denial; slow and repeated sync; no results; long activity/error labels; expired
-keys; frequency changes and manual checks; storage-full, disconnect-with-drafts,
+keys; frequency/range changes and manual checks; storage-full, disconnect-with-drafts,
 and credential-file import; Peakbagger sign-out/challenge; open/reopen/save
 recovery. Compare action, heading, following-content and scroll geometry across
 states. Test keyboard
 focus and duplicate activation in both browsers. Use masked HTTPS fixtures
 and hidden real browsers under the repository's non-interruption rules. Before
 implementation, confirm the selected harness can load the target UI.
+
+For range settings, verify presets/custom-day bounds, explicit-date/all-history
+choices, effective-range clipping, Manual only descriptions, and changing scope
+during a scan. Expanded ranges must receive new coverage; narrowed ranges must
+retain drafts and duplicate-prevention records. Keep both preferences in the
+shared settings schema and settings export/import without silently enabling sync.
 
 For the popup specifically, cover counts 0, 1, 99, 100+ and unknown; retained
 counts during checking/reconnect; account switches; supported and unrelated
