@@ -1,0 +1,57 @@
+{
+  "bundles": {
+    "raw": {
+      "minifiedBytes": 5166,
+      "gzipBytes": 2164,
+      "inputs": [
+        "docs/plans/experiments/fit-decoders/projection.mjs",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/raw-message-reader.js",
+        "docs/plans/experiments/fit-decoders/raw-worker.mjs"
+      ]
+    },
+    "full": {
+      "minifiedBytes": 296824,
+      "gzipBytes": 62396,
+      "inputs": [
+        "docs/plans/experiments/fit-decoders/projection.mjs",
+        "<temporary-packages>/node_modules/base64-js/index.js",
+        "<temporary-packages>/node_modules/ieee754/index.js",
+        "<temporary-packages>/node_modules/buffer/index.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/profile-lookup-data.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/profile.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/fit.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/messages.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/raw-message-reader.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/binary.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/helper.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/fit-encoder.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/profile-lookup.js",
+        "<temporary-packages>/node_modules/fit-file-parser/dist/fit-parser.js",
+        "docs/plans/experiments/fit-decoders/full-worker.mjs"
+      ]
+    },
+    "decoder": {
+      "minifiedBytes": 106644,
+      "gzipBytes": 31951,
+      "inputs": [
+        "docs/plans/experiments/fit-decoders/projection.mjs",
+        "<temporary-packages>/node_modules/fit-decoder/dist/index.js",
+        "docs/plans/experiments/fit-decoders/decoder-worker.mjs"
+      ]
+    }
+  },
+  "browsers": [
+    {
+      "name": "chromium",
+      "version": "156.0.8078.4",
+      "syntheticExecutions": 66,
+      "corpusExecutions": 36
+    },
+    {
+      "name": "firefox",
+      "version": "157.0",
+      "syntheticExecutions": 66,
+      "corpusExecutions": 36
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+[
+  {
+    "file": "Activity_20220406_017_000_Hiking_Fenix7_f84ddb27c8203ed7aaa4b0b87447974b.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2022/Activity_20220406_017_000_Hiking_Fenix7_f84ddb27c8203ed7aaa4b0b87447974b.fit",
+    "bytes": 29180,
+    "sha256": "5de4ed0005fcebb9dfd44adc4400f43b9db51ca4f66b31039b05e725c46b9244"
+  },
+  {
+    "file": "Activity_20230610_017_003_Hiking_Trail_Suunto-Vertical_d149673ba8d0667bef7a9fb68d91925d.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2023/Activity_20230610_017_003_Hiking_Trail_Suunto-Vertical_d149673ba8d0667bef7a9fb68d91925d.fit",
+    "bytes": 292834,
+    "sha256": "26f915fb0703b892a79a19e3ff025694930bb31d856f4cd84a5669bd6c74f408"
+  },
+  {
+    "file": "Activity_20230912_011_000_Walking_Fr645m_9e6e9614db368ac380c10214cf8b38ac.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2023/Activity_20230912_011_000_Walking_Fr645m_9e6e9614db368ac380c10214cf8b38ac.fit",
+    "bytes": 91028,
+    "sha256": "c2fbcc189642b7aa79800d71a70e349fcea296111934b6650cbea804d40551d9"
+  },
+  {
+    "file": "Activity_20260215_001_003_Running_Trail_Fenix7x_a790a6293770eda5fbd090ebfe8203b6.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2026/Activity_20260215_001_003_Running_Trail_Fenix7x_a790a6293770eda5fbd090ebfe8203b6.fit",
+    "bytes": 367741,
+    "sha256": "a218ad9bc55301114df338b5745841891b4d3ca08e0025a112ee62561840a87d"
+  },
+  {
+    "file": "Activity_20260208_001_000_Running_Fenix7x_31f85d1ad3c4bb3dd3e786abe9fd651a.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2026/Activity_20260208_001_000_Running_Fenix7x_31f85d1ad3c4bb3dd3e786abe9fd651a.fit",
+    "bytes": 500049,
+    "sha256": "17bfb7492bf805f480f700af00292d9d97416add789b29786043c19db48f405c"
+  },
+  {
+    "file": "Activity_20260217_002_007_Cycling_Road_Edge1050_7941c9691ae19ad740a6673e95ea837d.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2026/Activity_20260217_002_007_Cycling_Road_Edge1050_7941c9691ae19ad740a6673e95ea837d.fit",
+    "bytes": 443770,
+    "sha256": "0815e27ce7e849c0c03b0f71795492ab4a4f2d5b91858755b594771350ae6289"
+  },
+  {
+    "file": "Activity_20260114_002_008_Cycling_Mountain_EdgeMtb_da6a5e2deec8f950a983c0dd81ab28c0.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2026/Activity_20260114_002_008_Cycling_Mountain_EdgeMtb_da6a5e2deec8f950a983c0dd81ab28c0.fit",
+    "bytes": 410254,
+    "sha256": "45f04052d62f810d316defb674fd61c469ca67b82676cf1aea76aed69f85d57c"
+  },
+  {
+    "file": "Activity_20251119_002_000_Cycling_Karoo-2_f596048b2f0e5f2f73f6b10e8cedca16.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2025/Activity_20251119_002_000_Cycling_Karoo-2_f596048b2f0e5f2f73f6b10e8cedca16.fit",
+    "bytes": 311844,
+    "sha256": "7bc316c6307f2ff39c7a643b66fa5d6a9f739f726bbd13441311f536e3079a9e"
+  },
+  {
+    "file": "Activity_20231205_001_001_Running_Treadmill_Fenix7x_96a02d9fe4ae9518cb3932907f8b8465.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2023/Activity_20231205_001_001_Running_Treadmill_Fenix7x_96a02d9fe4ae9518cb3932907f8b8465.fit",
+    "bytes": 234817,
+    "sha256": "4875583aa409360f8df14ac929cb490ac1a5166a8530ea968f799282602db874"
+  },
+  {
+    "file": "Activity_20250224_005_017_Swimming_Lap-Swimming_Fenix6x_e7bd1e42e76b937ad3e30a1c3110ab58.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2025/Activity_20250224_005_017_Swimming_Lap-Swimming_Fenix6x_e7bd1e42e76b937ad3e30a1c3110ab58.fit",
+    "bytes": 128926,
+    "sha256": "968525f3a9d1ce6c9d69c4f22ab1f4850d905d865723c6b5a08166e1708db491"
+  },
+  {
+    "file": "Activity_20140118_000_018_Open-Water_Fr310xt_3d912d931e795fe047986ebc1012a1f9.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2014/Activity_20140118_000_018_Open-Water_Fr310xt_3d912d931e795fe047986ebc1012a1f9.fit",
+    "bytes": 3606,
+    "sha256": "77eefa61e9a6e540b67d8d7798c25a818b70cb95cbf130beb9bbe0a798eff7e4"
+  },
+  {
+    "file": "Activity_20100407_002_Cycling_Edge500_20a3834ec2a90ba03e3cf9ca0c18036d.fit",
+    "url": "https://raw.githubusercontent.com/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/Activity/2010/Activity_20100407_002_Cycling_Edge500_20a3834ec2a90ba03e3cf9ca0c18036d.fit",
+    "bytes": 90582,
+    "sha256": "4f1ded9705afbfad74f2fe652d1028f1013462ba5463ee7e3d3c51196ee1aa32"
+  }
+]

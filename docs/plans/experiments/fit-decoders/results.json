@@ -1,0 +1,1344 @@
+{
+  "date": "2026-10-23",
+  "versions": {
+    "fit-file-parser": "6.2.3",
+    "fit-decoder": "1.0.5"
+  },
+  "synthetic": [
+    {
+      "name": "ordinary-enhanced-altitude",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "12-byte-header",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "zero-header-crc",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "big-endian",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "mixed-endian-definitions",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 2
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 2
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 2
+        }
+      }
+    },
+    {
+      "name": "developer-and-unknown-fields",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "invalid-enhanced-falls-back",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "invalid-gps-keeps-gap",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 3,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 3
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 3,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 3
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 3,
+          "gps": 2,
+          "elevation": 3,
+          "timestamps": 3
+        }
+      }
+    },
+    {
+      "name": "indoor-no-gps",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 1
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 1
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "invalid-timestamp",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 0
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 0
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "compressed-declared-rollover",
+      "expected": "exact route values",
+      "raw": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 2
+        }
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 2
+        }
+      },
+      "decoder": {
+        "ok": false,
+        "pass": false,
+        "error": "Offset is outside the bounds of the DataView"
+      }
+    },
+    {
+      "name": "compressed-omitted-rollover",
+      "expected": "exact route values",
+      "raw": {
+        "ok": false,
+        "pass": false,
+        "error": "invalid_structure"
+      },
+      "full": {
+        "ok": true,
+        "pass": true,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 2
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "bad-data-crc",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_crc"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "File CRC mismatch"
+      },
+      "decoder": {
+        "ok": false,
+        "pass": true,
+        "error": "Data Records CRC mismatch. Expecting 48085, calculated 31508"
+      }
+    },
+    {
+      "name": "bad-header-crc",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_crc"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "Header CRC mismatch"
+      },
+      "decoder": {
+        "ok": false,
+        "pass": true,
+        "error": "Header CRC mismatch. Expecting 62794, calculated 62795"
+      }
+    },
+    {
+      "name": "truncated-crc",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_header"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "File CRC missing"
+      },
+      "decoder": {
+        "ok": false,
+        "pass": true,
+        "error": "Offset is outside the bounds of the DataView"
+      }
+    },
+    {
+      "name": "wrong-signature-valid-crc",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_header"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "Missing '.FIT' in header"
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "declared-length-too-large",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_header"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "File data exceeds input length"
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "undefined-local-message",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_structure"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "FIT data record has no local definition"
+      },
+      "decoder": {
+        "ok": false,
+        "pass": true,
+        "error": "Cannot find local Message type 1 for record 4 at pointer 25"
+      }
+    },
+    {
+      "name": "invalid-field-width",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_structure"
+      },
+      "full": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 0
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 0
+        }
+      }
+    },
+    {
+      "name": "reserved-header-bit",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_structure"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "Invalid FIT data record header"
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    },
+    {
+      "name": "concatenated-files-policy",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_header"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "Unexpected bytes after FIT file"
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 2,
+          "gps": 2,
+          "elevation": 2,
+          "timestamps": 2
+        }
+      }
+    },
+    {
+      "name": "trailing-byte",
+      "expected": "reject",
+      "raw": {
+        "ok": false,
+        "pass": true,
+        "error": "invalid_header"
+      },
+      "full": {
+        "ok": false,
+        "pass": true,
+        "error": "Unexpected bytes after FIT file"
+      },
+      "decoder": {
+        "ok": true,
+        "pass": false,
+        "summary": {
+          "records": 1,
+          "gps": 1,
+          "elevation": 1,
+          "timestamps": 1
+        }
+      }
+    }
+  ],
+  "corpus": [
+    {
+      "file": "Activity_20220406_017_000_Hiking_Fenix7_f84ddb27c8203ed7aaa4b0b87447974b.fit",
+      "bytes": 29180,
+      "raw": {
+        "ok": true,
+        "ms": 3.9715839999998934,
+        "summary": {
+          "records": 249,
+          "gps": 248,
+          "elevation": 249,
+          "timestamps": 249
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 7.921750000000088,
+        "summary": {
+          "records": 249,
+          "gps": 248,
+          "elevation": 249,
+          "timestamps": 249
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 5.077083000000016,
+        "summary": {
+          "records": 249,
+          "gps": 248,
+          "elevation": 249,
+          "timestamps": 249
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 248,
+          "lon": 247,
+          "ele": 249,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.00001794443857505712,
+          "lon": 0.000017814490914425107,
+          "ele": 27.470000000000024,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20230610_017_003_Hiking_Trail_Suunto-Vertical_d149673ba8d0667bef7a9fb68d91925d.fit",
+      "bytes": 292834,
+      "raw": {
+        "ok": true,
+        "ms": 45.54008299999998,
+        "summary": {
+          "records": 14378,
+          "gps": 4197,
+          "elevation": 14366,
+          "timestamps": 14378
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 23.526250000000005,
+        "summary": {
+          "records": 14378,
+          "gps": 4197,
+          "elevation": 14366,
+          "timestamps": 14378
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 24.00683300000003,
+        "summary": {
+          "records": 14378,
+          "gps": 4197,
+          "elevation": 14366,
+          "timestamps": 14378
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 4152,
+          "lon": 4154,
+          "ele": 14366,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.000017997877833408893,
+          "lon": 0.000017998261928386938,
+          "ele": 1283.15,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20230912_011_000_Walking_Fr645m_9e6e9614db368ac380c10214cf8b38ac.fit",
+      "bytes": 91028,
+      "raw": {
+        "ok": true,
+        "ms": 11.104583999999932,
+        "summary": {
+          "records": 1905,
+          "gps": 1905,
+          "elevation": 1905,
+          "timestamps": 1905
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 13.228999999999928,
+        "summary": {
+          "records": 1905,
+          "gps": 1905,
+          "elevation": 1905,
+          "timestamps": 1905
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 11.751166999999896,
+        "summary": {
+          "records": 1905,
+          "gps": 1905,
+          "elevation": 1905,
+          "timestamps": 1905
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 1895,
+          "lon": 1896,
+          "ele": 1905,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.000017986344339249172,
+          "lon": 0.000017986911899470215,
+          "ele": 3282.9,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20260215_001_003_Running_Trail_Fenix7x_a790a6293770eda5fbd090ebfe8203b6.fit",
+      "bytes": 367741,
+      "raw": {
+        "ok": true,
+        "ms": 31.502707999999984,
+        "summary": {
+          "records": 4128,
+          "gps": 4128,
+          "elevation": 4128,
+          "timestamps": 4128
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 36.650249999999915,
+        "summary": {
+          "records": 4128,
+          "gps": 4128,
+          "elevation": 4128,
+          "timestamps": 4128
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 39.22304200000008,
+        "summary": {
+          "records": 4128,
+          "gps": 4128,
+          "elevation": 4128,
+          "timestamps": 4128
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 4102,
+          "lon": 4101,
+          "ele": 4128,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.0000179916368736599,
+          "lon": 0.00001798989558210451,
+          "ele": 14.739999999999988,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20260208_001_000_Running_Fenix7x_31f85d1ad3c4bb3dd3e786abe9fd651a.fit",
+      "bytes": 500049,
+      "raw": {
+        "ok": true,
+        "ms": 51.58783299999982,
+        "summary": {
+          "records": 5698,
+          "gps": 5698,
+          "elevation": 5698,
+          "timestamps": 5698
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 50.539375000000064,
+        "summary": {
+          "records": 5698,
+          "gps": 5698,
+          "elevation": 5698,
+          "timestamps": 5698
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 54.69116700000018,
+        "summary": {
+          "records": 5698,
+          "gps": 5698,
+          "elevation": 5698,
+          "timestamps": 5698
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 5668,
+          "lon": 5666,
+          "ele": 5698,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.0000179941957014762,
+          "lon": 0.000017991728067379142,
+          "ele": 23.86000000000001,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20260217_002_007_Cycling_Road_Edge1050_7941c9691ae19ad740a6673e95ea837d.fit",
+      "bytes": 443770,
+      "raw": {
+        "ok": true,
+        "ms": 42.24691699999994,
+        "summary": {
+          "records": 6198,
+          "gps": 6198,
+          "elevation": 6198,
+          "timestamps": 6198
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 44.72966599999995,
+        "summary": {
+          "records": 6198,
+          "gps": 6198,
+          "elevation": 6198,
+          "timestamps": 6198
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 47.82024999999999,
+        "summary": {
+          "records": 6198,
+          "gps": 6198,
+          "elevation": 6198,
+          "timestamps": 6198
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 6162,
+          "lon": 6163,
+          "ele": 6198,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.00001799915992961587,
+          "lon": 0.00001799962448956194,
+          "ele": 20.82000000000002,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20260114_002_008_Cycling_Mountain_EdgeMtb_da6a5e2deec8f950a983c0dd81ab28c0.fit",
+      "bytes": 410254,
+      "raw": {
+        "ok": true,
+        "ms": 34.078583999999864,
+        "summary": {
+          "records": 7251,
+          "gps": 7251,
+          "elevation": 7249,
+          "timestamps": 7251
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 31.441584000000148,
+        "summary": {
+          "records": 7251,
+          "gps": 7251,
+          "elevation": 7249,
+          "timestamps": 7251
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 42.80916599999978,
+        "summary": {
+          "records": 7251,
+          "gps": 7251,
+          "elevation": 7251,
+          "timestamps": 7251
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 7229,
+          "lon": 7222,
+          "ele": 7251,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.000017997552753001855,
+          "lon": 0.000017996117232854658,
+          "ele": 587.3699999999999,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20251119_002_000_Cycling_Karoo-2_f596048b2f0e5f2f73f6b10e8cedca16.fit",
+      "bytes": 311844,
+      "raw": {
+        "ok": true,
+        "ms": 35.630292000000054,
+        "summary": {
+          "records": 8356,
+          "gps": 8330,
+          "elevation": 8356,
+          "timestamps": 8356
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 29.894667000000027,
+        "summary": {
+          "records": 8356,
+          "gps": 8330,
+          "elevation": 8356,
+          "timestamps": 8356
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 25.821332999999868,
+        "summary": {
+          "records": 8356,
+          "gps": 8330,
+          "elevation": 8356,
+          "timestamps": 8356
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 8272,
+          "lon": 8283,
+          "ele": 8356,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.000017999566551907265,
+          "lon": 0.00001799588227413551,
+          "ele": 265.89000000000004,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20231205_001_001_Running_Treadmill_Fenix7x_96a02d9fe4ae9518cb3932907f8b8465.fit",
+      "bytes": 234817,
+      "raw": {
+        "ok": true,
+        "ms": 26.98845899999992,
+        "summary": {
+          "records": 3722,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 3722
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 24.467750000000024,
+        "summary": {
+          "records": 3722,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 3722
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 24.979542000000038,
+        "summary": {
+          "records": 3722,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 3722
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20250224_005_017_Swimming_Lap-Swimming_Fenix6x_e7bd1e42e76b937ad3e30a1c3110ab58.fit",
+      "bytes": 128926,
+      "raw": {
+        "ok": true,
+        "ms": 14.407999999999902,
+        "summary": {
+          "records": 4450,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 4450
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 14.054000000000087,
+        "summary": {
+          "records": 4450,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 4450
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 23.735165999999936,
+        "summary": {
+          "records": 4450,
+          "gps": 0,
+          "elevation": 0,
+          "timestamps": 4450
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20140118_000_018_Open-Water_Fr310xt_3d912d931e795fe047986ebc1012a1f9.fit",
+      "bytes": 3606,
+      "raw": {
+        "ok": true,
+        "ms": 1.5289580000001024,
+        "summary": {
+          "records": 130,
+          "gps": 130,
+          "elevation": 130,
+          "timestamps": 130
+        }
+      },
+      "full": {
+        "ok": true,
+        "ms": 2.545082999999977,
+        "summary": {
+          "records": 130,
+          "gps": 130,
+          "elevation": 130,
+          "timestamps": 130
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 1.1723750000001019,
+        "summary": {
+          "records": 130,
+          "gps": 130,
+          "elevation": 130,
+          "timestamps": 130
+        }
+      },
+      "rawVsFull": {
+        "mismatches": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0,
+          "lon": 0,
+          "ele": 0,
+          "time": 0
+        }
+      },
+      "rawVsDecoder": {
+        "mismatches": {
+          "lat": 129,
+          "lon": 130,
+          "ele": 130,
+          "time": 0
+        },
+        "maxDifference": {
+          "lat": 0.00001783654940368251,
+          "lon": 0.00001778764092819074,
+          "ele": 26.520000000000024,
+          "time": 0
+        }
+      }
+    },
+    {
+      "file": "Activity_20100407_002_Cycling_Edge500_20a3834ec2a90ba03e3cf9ca0c18036d.fit",
+      "bytes": 90582,
+      "raw": {
+        "ok": false,
+        "error": "invalid_header"
+      },
+      "full": {
+        "ok": true,
+        "ms": 12.976000000000113,
+        "summary": {
+          "records": 2689,
+          "gps": 2689,
+          "elevation": 2689,
+          "timestamps": 2689
+        }
+      },
+      "decoder": {
+        "ok": true,
+        "ms": 11.039374999999836,
+        "summary": {
+          "records": 2689,
+          "gps": 2689,
+          "elevation": 2689,
+          "timestamps": 2689
+        }
+      }
+    }
+  ]
+}

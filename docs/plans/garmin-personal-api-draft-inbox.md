@@ -536,12 +536,15 @@ not a routine dependency addition. A separate file alone does not establish
 compatibility. This is an engineering licensing assessment, not a legal opinion.
 
 Two third-party JavaScript candidates were checked against their actual license
-files and current source documentation on October 23:
+files and tested on October 23. The reproducible
+[decoder evaluation](experiments/fit-decoders/README.md) includes 22 independent
+synthetic fixtures, 12 public recordings, two authorized private Garmin downloads,
+and hidden Chrome/Firefox Worker checks. No runtime dependency was added.
 
 | Candidate | License and technical fit | Recommendation / remaining evidence |
 | --- | --- | --- |
-| [fit-file-parser](https://github.com/jimmykane/fit-parser) | [MIT](https://github.com/jimmykane/fit-parser/blob/main/LICENSE); ESM/CommonJS, TypeScript, ArrayBuffer input, developer fields, and a standalone strict raw reader. Current repository package version is 6.2.3; npm publication was not verified. | Evaluate first. Its raw entry point is attractive for the narrow position/time/elevation adapter; validate browser bundle, exact release contents, provenance and route fidelity. |
-| [fit-decoder](https://github.com/ask77nl/fit-decoder) | [MIT](https://github.com/ask77nl/fit-decoder/blob/main/LICENSE); browser/Node support and no runtime dependencies, with separate binary and semantic decoding. | Alternative for a small adapter. Its README describes profile 21.47.00 and tables based on Garmin's SDK spreadsheet; investigate table provenance and malformed-input behavior before selection. |
+| [fit-file-parser](https://github.com/jimmykane/fit-parser) | [MIT](https://github.com/jimmykane/fit-parser/blob/main/LICENSE); pinned npm 6.2.3, published October 20, 2026. Both raw and full paths work in the tested browsers and agree exactly on the selected route fields across 56,465 shared public records and 10,027 private records. | Prefer the raw reader plus an owned activity adapter, after resolving its omitted-field compressed timestamp and legacy protocol compatibility gaps. Raw bundle plus projection: 5,166 bytes minified; full: 296,824 bytes. The full parser's strict mode still accepted a malformed field-width fixture. |
+| [fit-decoder](https://github.com/ask77nl/fit-decoder) | [MIT](https://github.com/ask77nl/fit-decoder/blob/main/LICENSE); pinned npm 1.0.5, published February 25, 2021. Browser/Node loading worked, but correct parsing did not follow from file acceptance. | Reject for this integration: confirmed wrong altitude scaling, reduced coordinate precision, leaked byte order between definitions, broken compressed timestamps and incomplete structural validation. A known 1,000 m elevation became 75 m. |
 
 MIT permits reuse and distribution with its copyright/license notices preserved;
 the combined application remains subject to this repository's AGPL obligations.
@@ -551,23 +554,31 @@ profile with focused interoperability sources in
 [PROFILE.md](https://github.com/jimmykane/fit-parser/blob/main/PROFILE.md); this is
 useful evidence, not a completed historical provenance audit.
 
-Prefer evaluating `fit-file-parser/raw` first: its reader exposes numeric fields,
+Prefer `fit-file-parser/raw` once the evaluation's adoption gates are closed: its reader exposes numeric fields,
 compressed timestamps, selective message retention and an input-byte limit,
 without importing the semantic profile. The adapter must still implement and
 test field scaling, sentinels, segment semantics and the small permitted field
 mapping. If the full parser is needed, explicitly select
 `{ force: false, strict: true }`; its documented defaults allow checksum bypass
 and partial recovery. Reject ambiguous concatenated activities rather than
-silently using only the first file. These are documented/source-reviewed
-capabilities, not locally exercised decoder behavior.
+silently using only the first file. Do not automatically retry raw-reader
+rejections through the full parser: classify the reason first so a compatibility
+fallback cannot bypass integrity checks.
 
-No candidate was installed or run against the private recording, and the small
-structural scanner from the API investigation is not a production decoder.
-Pin and inspect the selected release and its license/provenance before adoption;
-then test integrity failures, GPS gaps, multisport, timestamps, elevation, memory
-limits and agreement with known GPX fixtures in Chrome and Firefox. Choosing a
-third-party decoder does not settle Garmin Personal API distribution terms;
-the API agreement and decoder license are separate questions.
+The experimental projection and the earlier structural scanner are not production
+activity adapters. Real segmentation/multisport, resource stress, GPX agreement,
+fuzzing and extension lifecycle integration remain unproven; see the evaluation's
+explicit proof gaps. Browser Worker compatibility does not prove a Chrome MV3
+service worker can use the same processing architecture.
+
+An owned route-only decoder is feasible: estimate 1–2 days for a happy-path
+prototype, 1–2 weeks for robust protocol handling, and another 1–2 weeks for
+production hardening. An adapter over the raw reader is closer to 2–4 days once
+reader fixes land. These estimates exclude the API/inbox feature and upstream
+response time. Prefer owning the narrow adapter over replacing a whole FIT SDK.
+Pin and review license/provenance before adoption. Choosing a third-party decoder
+does not settle Garmin Personal API distribution terms; the API agreement and
+decoder license are separate questions.
 
 ### Discovery, persistence and idempotency
 
@@ -771,8 +782,11 @@ and hidden real browsers under the repository's non-interruption rules. Before
 implementation, confirm the selected harness can load the target UI.
 
 Evidence status: live Garmin token/list/detail/ZIP reads, FIT field presence,
-and a separate oldest-activity/original-file read were verified. Decoder source
-and licenses were inspected; no third-party decoder was installed or exercised.
+and a separate oldest-activity/original-file read were verified. Pinned third-party
+decoders were exercised against public, synthetic and private inputs; browser
+Worker bundles were checked in hidden Chrome and Firefox. The
+[decoder evaluation](experiments/fit-decoders/README.md) records defects, bundle
+sizes, an owned-decoder estimate and the remaining adoption gates.
 Browser extension networking, production FIT decoding, full summit/draft
 integration and scheduled operation have not been implemented or verified.
 The documentation prototype was rendered and exercised as described under
