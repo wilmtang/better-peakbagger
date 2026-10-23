@@ -3,6 +3,7 @@
 export const GARMIN_ORIGIN = 'https://personal.connectapi.garmin.com';
 export const GARMIN_PERMISSION = `${GARMIN_ORIGIN}/*`;
 export const GARMIN_KEY_PAGE = 'https://connect.garmin.com/app/settings/personalApiToken';
+export const garminActivityLabel = type => ({ hiking: 'Hike', walking: 'Walk', trail_running: 'Trail run', mountaineering: 'Climb', cycling: 'Ride', running: 'Run' })[type] || 'Activity';
 export const cleanGarminKey = value => typeof value === 'string' && value.trim().length >= 20
     && value.trim().length <= 2048 && !/[\s\u0000-\u001f\u007f]/.test(value.trim()) ? value.trim() : null;
 export class GarminError extends Error {

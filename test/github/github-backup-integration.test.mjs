@@ -12,6 +12,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { IDBFactory } from 'fake-indexeddb';
+import { createGarminStore } from '../../src/garmin/garmin-store.js';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
@@ -50,7 +52,7 @@ const settleQuietly = () =>
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
     local: sharedLocal = null, failLocalGetAfterClear = false, localGetHook = null,
     localSetHook = null, syncReadFailures = [], ignoredSync = false,
-    fastAscentOperationTimeout = false, clockNow = null,
+    fastAscentOperationTimeout = false, clockNow = null, garminDB = null,
     peakbaggerLoginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=900001">My Home Page</a></div>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
@@ -90,6 +92,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const alarms = {
         created: [],
         create(name, info) { this.created.push({ name, info: info || null }); },
+        clear: async () => true,
         onAlarm: event(),
     };
     const browser = {
@@ -149,7 +152,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         return setTimeout(callback, delay, ...args);
     };
     const context = vm.createContext({
-        browser, fetch, URL, URLSearchParams, Math,
+        browser, fetch, URL, URLSearchParams, Math, ...(garminDB ? { indexedDB: garminDB } : {}),
         Date: clockNow == null ? Date : class extends Date { static now() { return clockNow; } },
         console, structuredClone, AbortController,
         TextEncoder, TextDecoder, atob, btoa, crypto: globalThis.crypto,
@@ -848,7 +851,12 @@ test('favorites restore reports an absent file and ignores the ascent-backup fea
 });
 
 test('the built worker keeps credentials out of manual settings files unless explicitly included', async () => {
+    const garminDB = new IDBFactory();
+    const garmin = createGarminStore(garminDB);
+    await garmin.mutate(state => { state.connection = { key: 'fictional-personal-key-for-export', enabled: false }; });
+    await garmin.close();
     const worker = createWorker({
+        garminDB,
         settings: { theme: 'dark', units: 'imperial' },
         local: {
             bpbImgbbAuth: { key: 'old-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' },
@@ -861,7 +869,7 @@ test('the built worker keeps credentials out of manual settings files unless exp
     assert.equal(exported.ok, true);
     const parsed = Transfer.parse(exported.content);
     assert.equal(parsed.settings.theme, 'dark');
-    // One opt-in covers both device-local credentials; without it the built
+    // One opt-in covers all device-local credentials; without it the built
     // worker emits neither.
     assert.equal('apiKeys' in parsed, false);
     assert.equal('githubConnection' in parsed, false);
@@ -870,6 +878,9 @@ test('the built worker keeps credentials out of manual settings files unless exp
         type: 'SETTINGS_FILE_EXPORT', includeCredentials: true,
     }, EXTENSION_SENDER);
     assert.equal(sensitive.ok, true);
+    assert.deepEqual(Transfer.parse(sensitive.content).apiKeys, {
+        imgbb: 'old-imgbb-key', garmin: 'fictional-personal-key-for-export',
+    });
     assert.deepEqual(Transfer.parse(sensitive.content).githubConnection, {
         token: 'gho_secret',
         repository: { owner: 'me', name: 'backup' },

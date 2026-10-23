@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settings as Settings } from '../src/settings/settings.js';
 import { matchLabel } from '../src/capture/match-confidence.js';
+import { garminActivityLabel, positiveId } from '../src/garmin/garmin-api.js';
 const ext = globalThis.browser || globalThis.chrome;
 const $ = selector => document.querySelector(selector);
 const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Your inbox could not be updated. Try again.'); return result; };
@@ -10,7 +11,7 @@ const rows = new Map();
 function showReview(id) {
     review = items.get(id); if (!review) return;
     $('#inbox-list').hidden = true; $('#inbox-review').hidden = false;
-    $('#inbox-review-title').textContent = `${review.summary.type.replace(/_/g, ' ')} · ${review.summary.date}`;
+    $('#inbox-review-title').textContent = `${garminActivityLabel(review.summary.type)} · ${review.summary.date}`;
     $('#inbox-matches').replaceChildren();
     for (const match of review.analysis?.matches || []) {
         const label = document.createElement('label'); label.className = 'garmin-match';
@@ -18,12 +19,15 @@ function showReview(id) {
         checkbox.checked = match.classification === 'strong' && !review.saved.includes(String(match.id));
         checkbox.disabled = review.saved.includes(String(match.id)) || !!review.handoff;
         const text = document.createElement('div'); text.textContent = match.name;
-        const detail = document.createElement('span'); detail.textContent = `${matchLabel(match.classification)}${review.saved.includes(String(match.id)) ? ' · Saved and verified' : ''}`;
+        const detail = document.createElement('span'); detail.textContent = `${matchLabel(match.classification)}${Number.isFinite(match.confidence) ? ` · ${Math.round(match.confidence * (match.confidence <= 1 ? 100 : 1))}% confidence` : ''}${review.saved.includes(String(match.id)) ? ' · Saved and verified' : ''}`;
         text.append(detail); label.append(checkbox, text); $('#inbox-matches').append(label);
     }
     $('#inbox-open').hidden = !review.analysis;
     $('#inbox-review-status').textContent = review.handoff ? 'Draft forms were opened. Review their saved state before continuing.' : 'Strong matches are selected. Review any Probable matches before opening drafts.';
-    void Settings.get().then(prefs => { $('#inbox-timestamp-row').hidden = !prefs.removeGpxTimestamps || !review?.analysis?.route.some(segment => segment.some(point => point.time !== null)); });
+    $('#inbox-refresh').setAttribute('aria-disabled', String(!!review.handoff || !current.configured || ['key-rejected', 'permission'].includes(current.error?.code)));
+    $('#inbox-saved').hidden = !review.handoff || !positiveId(current.cid);
+    if (positiveId(current.cid)) $('#inbox-saved').href = `https://www.peakbagger.com/climber/ClimbListC.aspx?cid=${current.cid}`;
+    void Settings.get().then(prefs => { $('#inbox-timestamp-row').hidden = !prefs.removeGpxTimestamps || !review?.analysis?.hasTimestamps; });
 }
 const busyAction = async (button, status, operation) => {
     if (busy || button.getAttribute('aria-disabled') === 'true') return;
@@ -46,7 +50,7 @@ function paintList() {
             button.addEventListener('click', () => showReview(item.id)); element.append(body, button); rows.set(item.id, element); $('#inbox-list').append(element);
         }
         element.querySelector('p').textContent = item.summary.date;
-        element.querySelector('h2').textContent = item.summary.type.replace(/_/g, ' ') || 'Activity';
+        element.querySelector('h2').textContent = garminActivityLabel(item.summary.type);
         element.querySelectorAll('p')[1].textContent = item.analysis
             ? `${item.analysis.matches.filter(match => match.classification === 'strong').length} Strong · ${item.analysis.matches.filter(match => match.classification === 'probable').length} Probable`
             : item.phase === 'no-matches' ? 'No matching summits' : item.phase === 'no-gps' ? 'No usable GPS route' : item.error || 'Waiting for Peakbagger — open Peakbagger, sign in, then Check now.';
@@ -61,6 +65,23 @@ async function refresh(initial = false) {
         review = items.get(review.id);
         if (review.handoff) for (const checkbox of document.querySelectorAll('#inbox-matches input')) checkbox.disabled = true;
     }
+    const history = current.history || [];
+    for (const receipt of history) {
+        let row = document.getElementById(`history-${receipt.id}`);
+        if (!row) {
+            row = document.createElement('div'); row.id = `history-${receipt.id}`; row.className = 'garmin-activity';
+            const label = document.createElement('p'); row.append(label);
+            const link = document.createElement('a'); link.textContent = 'View in Garmin'; link.target = '_blank'; link.rel = 'noopener noreferrer';
+            if (positiveId(receipt.id)) link.href = `https://connect.garmin.com/app/activity/${receipt.id}`;
+            row.append(link);
+            if (receipt.dismissed) { const undo = document.createElement('button'); undo.className = 'secondary'; undo.textContent = 'Undo';
+                undo.addEventListener('click', () => void busyAction(undo, $('#inbox-status'), async () => { await send({ type: 'GARMIN_UNDO', id: receipt.id }); accepted.add(receipt.id); await refresh(); })); row.append(undo); }
+            $('#inbox-history-list').append(row);
+        }
+        row.querySelector('p').textContent = `${receipt.date ? `${receipt.date} · ` : ''}${receipt.dismissed ? 'Dismissed' : receipt.complete ? 'Completed' : 'Draft review in progress'}`;
+        row.querySelector('button')?.setAttribute('aria-disabled', String(!receipt.undoAvailable));
+    }
+    for (const row of document.querySelectorAll('#inbox-history-list>div')) if (!history.some(receipt => row.id === `history-${receipt.id}`)) row.remove();
     if (initial) accepted = new Set(items.keys());
     const arrivals = [...items.keys()].filter(id => !accepted.has(id)); $('#inbox-new').hidden = !arrivals.length;
     $('#inbox-description').textContent = current.manual ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
@@ -80,6 +101,9 @@ $('#inbox-open').addEventListener('click', () => void busyAction($('#inbox-open'
     await send({ type: 'GARMIN_OPEN_DRAFTS', id: review.id, tabId: tab.id, selectedIds, includeTimestampsOnce: $('#inbox-timestamps').checked });
     $('#inbox-review-status').textContent = 'Drafts opened. Review each ascent and click Save in Peakbagger.';
     await refresh();
+}));
+$('#inbox-refresh').addEventListener('click', () => void busyAction($('#inbox-refresh'), $('#inbox-review-status'), async () => {
+    await send({ type: 'GARMIN_RETRY', id: review.id }); $('#inbox-review-status').textContent = 'Refreshing from Garmin. Your saved draft stays available.';
 }));
 for (const [selector, type] of [['#inbox-dismiss', 'GARMIN_DISMISS'], ['#inbox-done', 'GARMIN_DONE']]) $(selector).addEventListener('click', () => void busyAction($(selector), $('#inbox-review-status'), async () => {
     if (type === 'GARMIN_DONE' && !confirm('Mark this activity done? It will leave the inbox and will not be imported again.')) return;

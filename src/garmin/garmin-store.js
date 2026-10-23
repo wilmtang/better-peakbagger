@@ -4,6 +4,12 @@
 export const GARMIN_DB = 'bpb-garmin-v1';
 const empty = () => ({ version: 1, epoch: 0, connection: null, items: {}, receipts: {}, scan: null,
     lastCheck: 0, lastFull: 0, retryAt: 0, error: null });
+export const garminPublicSummary = state => ({ revision: state.revision || 0, configured: !!state.connection?.key,
+    enabled: state.connection?.enabled === true, cid: state.connection?.cid || null,
+    connectedDate: state.connection?.connectedDate || null,
+    pending: Object.values(state.items).filter(item => item.phase !== 'dismissed').length,
+    lastCheck: state.lastCheck, lastFull: state.lastFull, retryAt: state.retryAt, error: state.error, historyIncomplete: !!state.scan,
+    undoDue: Math.min(...Object.values(state.items).filter(item => item.phase === 'dismissed').map(item => item.undoUntil), Infinity) });
 export function createGarminStore(indexedDB = globalThis.indexedDB) {
     let opening;
     const db = () => opening ||= new Promise((resolve, reject) => {
@@ -19,14 +25,24 @@ export function createGarminStore(indexedDB = globalThis.indexedDB) {
             const store = tx.objectStore('state'); const request = store.get('current'); let result;
             request.onsuccess = () => {
                 try { const state = request.result || empty(); result = mutate(state);
-                    if (write) store.put(state, 'current'); }
+                    if (write) { state.revision = (state.revision || 0) + 1; store.put(state, 'current');
+                        store.put(garminPublicSummary(state), 'summary'); } }
                 catch (error) { tx.abort(); reject(error); }
             };
             tx.oncomplete = () => resolve(result);
             tx.onerror = tx.onabort = () => reject(new Error('Garmin storage could not be updated.'));
         });
     };
-    return { read: () => transaction(false, state => state),
+    const read = () => transaction(false, state => state);
+    const summary = async () => {
+        const database = await db();
+        const result = await new Promise((resolve, reject) => {
+            const tx = database.transaction('state', 'readonly'); const request = tx.objectStore('state').get('summary');
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error('Garmin inbox summary is unavailable.'));
+        });
+        return result || garminPublicSummary(await read());
+    };
+    return { read, summary,
         mutate: mutate => transaction(true, mutate),
         async close() { if (opening) (await opening).close(); opening = null; } };
 }

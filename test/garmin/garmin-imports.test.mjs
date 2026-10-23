@@ -12,9 +12,10 @@ async function setup(overrides = {}) {
     const row = { id: '12', owner: '123', date: '2026-10-23', localStart: '2026-10-23 08:00:00', type: 'hiking' };
     const counts = { lists: 0, downloads: 0, preparations: 0 };
     const imports = createGarminImports({ ext: { runtime: { id: 'test', getURL: path => `chrome-extension://test/${path}` },
-        permissions: { contains: async () => true, remove: async () => true }, alarms: { clear: async key => alarms.delete(key), create: async (key, value) => alarms.set(key, value) } },
+        permissions: { contains: async () => overrides.permission ? overrides.permission() : true, remove: async () => true }, alarms: { clear: async key => alarms.delete(key), create: async (key, value) => alarms.set(key, value) } },
     store, settings: { requireCurrent: async () => prefs },
-    clientFactory: () => ({ owner: async () => '123', list: async () => { counts.lists++; return [row]; }, recording: async () => { counts.downloads++; return new Uint8Array(); }, ...overrides.api }),
+    clientFactory: options => { overrides.onClient?.(options); return { owner: async () => '123', list: async () => { counts.lists++; return [row]; }, recording: async () => { counts.downloads++; return new Uint8Array(); }, ...overrides.api }; },
+    clock: overrides.clock || Date.now, date: overrides.date,
     binding: async () => ({ cid: '456' }), decode: async () => ({ segments: [] }),
     prepare: async () => { counts.preparations++; return { analysis: { matches: [{ id: 987 }] } }; },
     });
@@ -76,4 +77,51 @@ test('credential imports preserve consent and ignore independent scope epochs', 
     await imports.connect('newer-fictional-key');
     assert.equal((await imports.replaceIfSnapshot(before, next)).replaced, false);
     assert.equal((await store.read()).connection.key, 'newer-fictional-key'); await store.close();
+});
+
+test('dismissal offers durable Undo, then frees the snapshot while retaining its tombstone', async () => {
+    let now = Date.now(); const { imports, store } = await setup({ clock: () => now }); await imports.check();
+    await imports.handle({ type: 'GARMIN_DISMISS', id: '12' }, sender);
+    assert.equal((await imports.snapshot()).pending, 0); assert.equal((await imports.snapshot()).history[0].undoAvailable, true);
+    await imports.handle({ type: 'GARMIN_UNDO', id: '12' }, sender);
+    assert.equal((await imports.snapshot()).pending, 1);
+    await imports.handle({ type: 'GARMIN_DISMISS', id: '12' }, sender); now += 60001;
+    assert.equal((await imports.snapshot()).history[0].undoAvailable, false);
+    assert.equal((await store.read()).items['12'], undefined);
+    await imports.check(); assert.equal((await imports.snapshot()).pending, 0); await store.close();
+});
+test('public list and summary never serialize retained routes, draft fields or credentials', async () => {
+    const { imports, store } = await setup(); await imports.check();
+    await store.mutate(s => { s.items['12'].analysis = { matches: [{ id: 1, name: 'Peak', draftFields: { private: 'derived-fields' } }], route: [[{ lat: 12.3456789, lon: -12, time: 123 }]], waypoints: [] }; });
+    const serialized = JSON.stringify(await imports.snapshot());
+    assert(!serialized.includes('12.3456789')); assert(!serialized.includes('derived-fields')); assert(!serialized.includes('fictional-personal-key'));
+    const summary = await store.summary(); assert.equal(summary.pending, 1); assert.equal(summary.items, undefined); await store.close();
+});
+test('bounded continuation drains queued preparation without rescanning completed metadata', async () => {
+    const { imports, store, counts } = await setup(); await imports.check(); const lists = counts.lists;
+    await store.mutate(s => { for (let i = 20; i < 25; i++) s.items[i] = { ...s.items['12'], id: String(i), phase: 'waiting', analysis: null }; s.preparePending = true; });
+    await imports.check(false, true);
+    assert.equal(counts.lists, lists); assert.equal(counts.preparations, 4); assert.equal((await store.read()).preparePending, true);
+    await imports.check(false, true); assert.equal((await store.read()).preparePending, false); await store.close();
+});
+test('capacity pauses intake without starving already queued preparation', async () => {
+    const { imports, store, counts, row } = await setup();
+    await store.mutate(s => { for (let i = 1000; i < 1200; i++) s.items[i] = { id: String(i), owner: '123', cid: '456', summary: row, phase: 'waiting', saved: [] }; });
+    await imports.check(); assert.equal(counts.preparations, 3); assert.equal((await store.read()).error.code, 'capacity');
+    const lists = counts.lists; await imports.check(false, true); assert.equal(counts.preparations, 6); assert.equal(counts.lists, lists); await store.close();
+});
+test('permission removal cancels an active read and preserves pending drafts', async () => {
+    let granted = true, signal, started;
+    const ready = new Promise(resolve => { started = resolve; });
+    const { imports, store, alarms } = await setup({ permission: () => granted, onClient: options => { signal = options.signal; },
+        api: { recording: async () => { started(); return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })); } } });
+    const active = imports.check(); await ready; granted = false; await imports.accessChanged(); await active;
+    assert.equal(signal.aborted, true); assert.equal((await store.read()).error.code, 'permission'); assert.equal(alarms.size, 0);
+    assert.equal((await imports.snapshot()).pending, 1); await store.close();
+});
+test('resumable coverage keeps its declared end date across midnight', async () => {
+    let date = '2026-10-23'; const queries = [];
+    const { imports, store } = await setup({ date: () => date, api: { list: async query => { queries.push(query); return Array.from({ length: 50 }, (_, i) => ({ id: String(i + 1), owner: '123', date: '2026-10-23', type: 'hiking' })); } } });
+    await imports.check(); date = '2026-10-24'; await imports.check(false, true);
+    assert.equal(queries.at(-1).to, '2026-10-23'); assert.equal((await store.read()).scan.offset, 270); await store.close();
 });

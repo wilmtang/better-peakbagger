@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settings as Settings } from '../src/settings/settings.js';
 import { GARMIN_PERMISSION, GARMIN_KEY_PAGE } from '../src/garmin/garmin-api.js';
-import { validImportDate } from '../src/garmin/garmin-imports.js';
+import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
 const ext = globalThis.browser || globalThis.chrome;
 export async function initGarminSettings(root) {
     if (!root) return;
@@ -30,10 +30,13 @@ export async function initGarminSettings(root) {
     const $ = selector => root.querySelector(selector);
     root.addEventListener('submit', event => event.preventDefault());
     const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Garmin could not finish this action. Try again.'); return result; };
-    let state; let busy = false;
+    let state; let busy = false; let keyError = false; let settingsError = false;
     const perform = async (button, status, operation) => {
-        if (busy) return; busy = true; button.setAttribute('aria-disabled', 'true'); button.setAttribute('aria-busy', 'true'); status.textContent = 'Working…';
-        try { await operation(); } catch (error) { status.textContent = error.message; }
+        if (busy) return; busy = true;
+        if (status.id === 'garmin-key-status') keyError = false; else settingsError = false;
+        button.setAttribute('aria-disabled', 'true'); button.setAttribute('aria-busy', 'true'); status.textContent = 'Working…';
+        try { await operation(); } catch (error) { status.textContent = error.message;
+            if (status.id === 'garmin-key-status') keyError = true; else settingsError = true; }
         finally { busy = false; button.removeAttribute('aria-disabled'); button.removeAttribute('aria-busy'); }
     };
     const updateChoices = () => {
@@ -48,10 +51,10 @@ export async function initGarminSettings(root) {
         state = await send({ type: 'GARMIN_STATUS' });
         $('#garmin-preferences').hidden = !state.configured && !state.pending;
         $('#garmin-connect').textContent = state.configured || state.pending ? 'Reconnect Garmin' : 'Connect Garmin';
-        $('#garmin-enable').hidden = state.enabled;
+        $('#garmin-enable').hidden = state.enabled && state.error?.code !== 'permission';
         $('#garmin-history option[value="connection"]').textContent = `From ${state.connectedDate} to today`;
-        $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
-        $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
+        if (!keyError) $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
+        if (!settingsError) $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
             : state.error?.message || (state.enabled ? 'Garmin drafts enabled. Your activity inbox is ready.' : 'Open Peakbagger and sign in before enabling drafts.');
     };
     let prefs;
@@ -70,6 +73,7 @@ export async function initGarminSettings(root) {
     for (const selector of ['#garmin-frequency', '#garmin-recent', '#garmin-history']) $(selector).addEventListener('change', updateChoices);
     updateChoices();
     $('#garmin-show-key').addEventListener('click', () => { const show = $('#garmin-key').type === 'password'; $('#garmin-key').type = show ? 'text' : 'password'; $('#garmin-show-key').textContent = show ? 'Hide' : 'Show'; $('#garmin-show-key').setAttribute('aria-pressed', String(show)); });
+    $('#garmin-key').addEventListener('input', () => { keyError = false; });
     $('.garmin-key-form').addEventListener('submit', event => {
         event.preventDefault();
         void perform($('#garmin-connect'), $('#garmin-key-status'), async () => {
@@ -84,9 +88,10 @@ export async function initGarminSettings(root) {
         const hours = Number($('#garmin-frequency').value === 'custom' ? $('#garmin-custom-hours').value : $('#garmin-frequency').value);
         const days = Number($('#garmin-recent').value === 'custom' ? $('#garmin-custom-days').value : $('#garmin-recent').value);
         const history = $('#garmin-history').value === 'date' ? $('#garmin-date').value : $('#garmin-history').value === 'all' ? 'all' : '';
-        if (!Number.isInteger(hours) || hours < 0 || hours > 168 || ($('#garmin-frequency').value === 'custom' && hours === 0)) throw new Error('Choose a whole interval from 1 to 168 hours, or Manual only.');
-        if (!Number.isInteger(days) || days < 1 || days > 365) throw new Error('Choose a whole recent range from 1 to 365 days.');
-        if ($('#garmin-history').value === 'date' && (!validImportDate(history) || history > new Date().toLocaleDateString('en-CA'))) throw new Error('Choose a valid history start date that is not in the future.');
+        const cleaned = Settings.clean({ garminCheckHours: hours, garminRecentDays: days });
+        if (cleaned.garminCheckHours !== hours || ($('#garmin-frequency').value === 'custom' && hours === 0)) throw new Error(`Choose a whole interval from 1 to ${Schema.BOUNDS.garminCheckHours.max} hours, or Manual only.`);
+        if (cleaned.garminRecentDays !== days) throw new Error(`Choose a whole recent range from 1 to ${Schema.BOUNDS.garminRecentDays.max} days.`);
+        if ($('#garmin-history').value === 'date' && (!Schema.validCalendarDate(history) || history > new Date().toLocaleDateString('en-CA'))) throw new Error('Choose a valid history start date that is not in the future.');
         const result = await ext.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { garminCheckHours: hours, garminRecentDays: days, garminHistoryStart: history, garminActivityTypes: $('#garmin-types').value } });
         if (!result || result.ok === false) throw new Error('Preferences could not be saved.');
         $('#garmin-settings-status').textContent = 'Preferences saved. Your existing drafts stay in the inbox.';
@@ -94,6 +99,8 @@ export async function initGarminSettings(root) {
     for (const [selector, type, extra] of [['#garmin-enable', 'GARMIN_ENABLE', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-disconnect', 'GARMIN_DISCONNECT', {}], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]]) {
         $(selector).addEventListener('click', () => void perform($(selector), $('#garmin-settings-status'), async () => {
             if (extra.deleteData && !confirm(`Delete ${state?.pending || 0} local Garmin drafts and their import history?`)) return;
+            if (type === 'GARMIN_ENABLE' && state?.error?.code === 'permission'
+                && !await ext.permissions.request({ origins: [GARMIN_PERMISSION] })) throw new Error('Garmin access was not granted.');
             await send({ type, ...extra }); await refresh();
         }));
     }

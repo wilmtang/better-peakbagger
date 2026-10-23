@@ -27,3 +27,42 @@ test('recording rejects oversized input and cancellation', async () => {
     const controller = new AbortController(); controller.abort();
     await assert.rejects(decodeGarminRecording(new Uint8Array(20), { signal: controller.signal }));
 });
+
+test('timer events break geometry, multisport is explicit, and ZIP CRC is checked independently', async () => {
+    const fixture = fixtures().find(f => f.name === 'ordinary-enhanced-altitude');
+    const { crc } = await import('../../docs/plans/experiments/fit-decoders/fixtures.mjs');
+    const append = extra => {
+        const source = fixture.bytes, header = source[0], end = source.length - 2;
+        const out = new Uint8Array(source.length + extra.length); out.set(source.subarray(0, end)); out.set(extra, end);
+        const view = new DataView(out.buffer); view.setUint32(4, out.length - header - 2, true);
+        if (header === 14) view.setUint16(12, crc(out.subarray(0, 12)), true);
+        view.setUint16(out.length - 2, crc(out.subarray(0, -2)), true); return out;
+    };
+    const lastRecord = fixture.bytes.slice(-21, -2);
+    const event = [0x41, 0, 0, 21, 0, 2, 0, 1, 0, 1, 1, 0, 1, 0, 1];
+    const route = decodeFitActivity(append([...event, ...lastRecord]));
+    assert.equal(route.segments.length, 2, 'Timer stop cannot join the route across a pause');
+    const session = [0x42, 0, 0, 18, 0, 1, 5, 1, 0, 2, 17];
+    assert.throws(() => decodeFitActivity(append([...session, ...session])), /Multisport/);
+    const zip = new JSZip(); zip.file('activity.fit', fixture.bytes);
+    const bytes = await zip.generateAsync({ type: 'uint8array' });
+    const central = bytes.findIndex((value, i) => value === 0x50 && bytes[i + 1] === 0x4b && bytes[i + 2] === 1 && bytes[i + 3] === 2);
+    bytes[central + 16] ^= 1;
+    await assert.rejects(decodeGarminRecording(bytes), /damaged/);
+});
+
+test('FIT course points retain only permitted waypoint fields and respect opt-out', async () => {
+    const fixture = fixtures().find(f => f.name === 'ordinary-enhanced-altitude');
+    const { crc } = await import('../../docs/plans/experiments/fit-decoders/fixtures.mjs');
+    // Independent wire definition: timestamp, semicircle lat/lon, type, name.
+    const extra = Uint8Array.from([0x43, 0, 0, 32, 0, 5, 1, 4, 0x86, 2, 4, 0x85, 3, 4, 0x85, 5, 1, 0, 6, 6, 7,
+        3, 42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 80, 101, 97, 107, 0, 0]);
+    const bytes = new Uint8Array(fixture.bytes.length + extra.length);
+    bytes.set(fixture.bytes.subarray(0, -2)); bytes.set(extra, fixture.bytes.length - 2);
+    const view = new DataView(bytes.buffer); view.setUint32(4, bytes.length - bytes[0] - 2, true);
+    if (bytes[0] === 14) view.setUint16(12, crc(bytes.subarray(0, 12)), true);
+    view.setUint16(bytes.length - 2, crc(bytes.subarray(0, -2)), true);
+    assert.deepEqual(decodeFitActivity(bytes).waypoints, [{ lat: 0, lon: 0, name: 'Peak' }]);
+    assert.deepEqual(decodeFitActivity(bytes, { retainWaypoints: false }).waypoints, []);
+    assert.equal(decodeFitActivity(bytes).segments.flat().length, 1, 'Course points do not become track points');
+});

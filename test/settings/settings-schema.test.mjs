@@ -315,3 +315,18 @@ test('device-local land preferences preserve legacy defaults and explicit empty 
     assert.deepEqual(Schema.mapOverlayPreferences(saved), saved);
     assert.deepEqual(Schema.mapOverlayPreferences({ landTypes: [] }).landTypes, []);
 });
+
+test('Garmin scope and schedule use the shared schema with explicit manual mode', () => {
+    const defaults = Schema.clean({});
+    assert.equal(defaults.garminCheckHours, 4); assert.equal(defaults.garminRecentDays, 30);
+    assert.equal(Schema.clean({ garminCheckHours: 0 }).garminCheckHours, 0);
+    for (const value of [-1, 169, 0.5, '4', null]) assert.equal(Schema.clean({ garminCheckHours: value }).garminCheckHours, defaults.garminCheckHours);
+    for (const value of [0, 366, 1.5, '30']) assert.equal(Schema.clean({ garminRecentDays: value }).garminRecentDays, defaults.garminRecentDays);
+    assert.equal(Schema.clean({ garminHistoryStart: '2026-02-30' }).garminHistoryStart, '');
+    assert.equal(Schema.clean({ garminHistoryStart: '2024-02-29' }).garminHistoryStart, '2024-02-29');
+    assert.equal(Schema.clean({ garminHistoryStart: 'all' }).garminHistoryStart, 'all');
+    for (const [min, max] of [[Schema.BOUNDS.garminRecentDays.min, Schema.BOUNDS.garminRecentDays.max]]) {
+        assert.equal(Schema.clean({ garminRecentDays: min }).garminRecentDays, min);
+        assert.equal(Schema.clean({ garminRecentDays: max }).garminRecentDays, max);
+    }
+});

@@ -4003,7 +4003,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     Settings.subscribe(() => { if (globalThis.indexedDB) runDetachedCleanup('Garmin preferences', garminImports.settingsChanged); });
     if (globalThis.indexedDB) runDetachedCleanup('Garmin startup', garminImports.reconcile);
     ext.permissions?.onRemoved?.addListener(() => {
-        if (globalThis.indexedDB) runDetachedCleanup('Garmin permission change', garminImports.reconcile);
+        if (globalThis.indexedDB) runDetachedCleanup('Garmin permission change', garminImports.accessChanged);
     });
     runDetachedCleanup('capture payload recovery', reconcileCapturePayloads);
     runDetachedCleanup('temporary Peakbagger tab recovery', () =>
@@ -4020,7 +4020,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     if (ext.alarms) {
         ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
         ext.alarms.onAlarm.addListener(alarm => {
-            if (alarm.name === GARMIN_ALARM) { void garminImports.check(); return; }
+            if (alarm.name === GARMIN_ALARM) { void garminImports.check(false, true); return; }
             if (alarm.name === CLEANUP_ALARM) {
                 runDetachedCleanup('expired capture cleanup', cleanup);
             }

@@ -32,6 +32,7 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const origin = `https://www.peakbagger.com:${server.address().port}`;
     for (const name of ['chromium', 'firefox']) {
+        assertChromeLaunchAllowed();
         const browser = name === 'chromium' ? await chromium.launch({ channel: 'chromium', headless: true,
             args: ['--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1', ...certificate.chromeTrustArgs], ignoreDefaultArgs: ['--enable-unsafe-swiftshader'] })
             : await firefox.launch({ headless: true, firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } });
@@ -41,13 +42,16 @@ try {
             const prefs = { ...defaults };
             const row = { id: '123', owner: '1234', cid: '5678', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
                 analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], route: [[{ lat: 45, lon: -120, ele: 1000, time: 1 }]] } };
-            window.fixture = { mode: 'success', checks: 0, connects: 0, state: { configured: true, enabled: true, pending: 1, items: [row], connectedDate: '2026-10-23' } };
+            window.fixture = { mode: 'success', checks: 0, connects: 0, opens: 0, captures: 0, state: { configured: true, enabled: true, pending: 1, items: [row], history: [], connectedDate: '2026-10-23' } };
             window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => ({ bpbSettings: prefs }) }, onChanged: { addListener() {}, removeListener() {} } },
                 tabs: { query: async () => [{ id: 1 }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
                     if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
                     if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 1 };
                     if (message.type === 'CAPTURE_STATUS') return null;
-                    if (message.type === 'GARMIN_INBOX_OPEN') { await new Promise(resolve => setTimeout(resolve, 300)); return { ok: false }; }
+                    if (message.type === 'CAPTURE_START') window.fixture.captures++;
+                    if (message.type === 'GARMIN_INBOX_OPEN') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 300)); return { ok: false }; }
+                    if (message.type === 'GARMIN_DISMISS') { window.fixture.state.items = []; window.fixture.state.history = [{ id: row.id, date: row.summary.date, dismissed: true, undoAvailable: true }]; }
+                    if (message.type === 'GARMIN_UNDO') { window.fixture.state.items = [row]; window.fixture.state.history = []; }
                     if (message.type === 'GARMIN_CONNECT') { window.fixture.connects++; await new Promise(resolve => setTimeout(resolve, 350));
                         if (window.fixture.mode !== 'success') return { ok: false, error: { message: 'Garmin didn’t accept this key. Copy the full key or get a new one.' } }; }
                     if (message.type === 'GARMIN_CHECK') { window.fixture.checks++; window.fixture.state.checking = true;
@@ -104,6 +108,11 @@ try {
             await page.locator('.garmin-activity button').click();
             assert.equal(await page.locator('#inbox-matches input:checked').count(), 1);
             assert.equal(await page.locator('#inbox-matches input:not(:checked)').count(), 1);
+            await page.locator('#inbox-dismiss').click();
+            await page.waitForFunction(() => document.querySelectorAll('#inbox-list .garmin-activity').length === 0);
+            await page.locator('#inbox-history summary').click();
+            await page.locator('#inbox-history-list button').click();
+            await page.locator('#inbox-list .garmin-activity').waitFor();
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
             cases++;
         }
@@ -111,11 +120,28 @@ try {
         await page.goto(`${origin}/options/inbox.html`); await page.locator('.garmin-activity').waitFor();
         await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+        for (const theme of ['light', 'dark']) {
+            await page.setViewportSize({ width: 390, height: 700 });
+            await page.goto(`${origin}/popup/popup.html`);
+            await page.locator('#inbox-count').filter({ hasText: '1' }).waitFor();
+            await page.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
+            const inbox = page.locator('#activity-inbox'); await inbox.focus();
+            const selectors = ['#activity-inbox', '.brand', '#state']; const before = await geometry(selectors);
+            await inbox.press('Enter');
+            await page.waitForFunction(() => document.querySelector('#activity-inbox').getAttribute('aria-busy') === 'true');
+            stable(before, await geometry(selectors)); await inbox.press('Enter');
+            await page.locator('#activity-inbox-status').filter({ hasText: 'Couldn’t open inbox' }).waitFor();
+            stable(before, await geometry(selectors));
+            assert.equal(await page.evaluate(() => window.fixture.opens), 1);
+            assert.equal(await page.evaluate(() => window.fixture.captures), 0);
+            if (name === 'chromium') await page.screenshot({ path: path.join(output, `popup-${theme}.png`) });
+            cases++;
+        }
         assert.deepEqual(errors, []);
         console.log(`${name} ${browser.version()}: settings/rejected-key, manual descriptions, inbox pending/rejection/retry, Strong/Probable selection; both themes at 1180/390px, 200% CSS zoom. Hidden DOM/CSS; transport/session replies stubbed.`);
         await context.close();
     }
-    assert.equal(cases, 8); console.log(`Garmin UI checks passed: ${cases} cases. Images: ${output}`);
+    assert.equal(cases, 12); console.log(`Garmin UI checks passed: ${cases} cases. Images: ${output}`);
 } finally {
     const closed = await Promise.allSettled(browsers.reverse().map(browser => browser.close()));
     await new Promise(resolve => { server.closeAllConnections(); server.close(resolve); });

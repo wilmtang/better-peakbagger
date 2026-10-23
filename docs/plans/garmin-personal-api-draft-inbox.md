@@ -11,10 +11,11 @@ Implementation ledger (updated with each completed unit):
 
 | Unit | Status / evidence |
 | --- | --- |
-| Strict FIT route adapter | Implemented; 24 focused tests and ESLint pass. Vendored MIT raw reader with bounded streaming projection and compressed-timestamp fix. Legacy protocol 0 and multisport remain explicit unsupported cases. |
+| Strict FIT route adapter | Implemented; 26 focused tests and ESLint pass. Vendored MIT raw reader with bounded streaming projection, compressed-timestamp fix, timer segment breaks and narrowly retained course points. Legacy protocol 0 and multisport remain explicit unsupported cases. |
 | Device-local credentials, API and discovery | Implemented; tests cover bounded renewal, projection, ID deduplication, resumable scans, rejected-key pause and Manual only. Live client identity/list/detail/recording read passed; native browser permission/networking validation remains open. |
 | Durable inbox and short-lived draft handoff | Implemented; bundled-worker test verifies retained snapshots, single-summit Save verification, handoff reuse and fail-closed expired delivery. Cross-entry receipts reserve toolbar imports too. |
-| Settings, inbox and popup UI | Implemented; 54 popup tests, settings/inbox behavior tests and eight hidden Chrome/Firefox fixture cases. Real unpacked Chrome startup passed. Native permission prompts and live provider integration remain open. |
+| Settings, inbox and popup UI | Implemented; 54 popup tests and 12 hidden Chrome/Firefox fixture cases. Rejected-key errors survive polling; dismissal Undo, refresh and completed/dismissed history are available. Layout and keyboard checks cover pending/error/retry at 1180/390px, both themes and 200% CSS zoom. Native permission prompts and live provider integration remain open. |
+| Bounded continuation and recovery | Implemented; focused regressions cover backlog draining, capacity, permission removal, midnight cursor recovery, public summary privacy and Undo expiry. Public UI responses omit stored routes and draft payloads. A new key-error assertion failed against the old implementation and passed after the fix. |
 | Credential-file export/import | Implemented in schema 4; export checkbox, legacy omission, explicit null, permission refusal, failed validation, rollback and concurrent replacement covered. New devices do not inherit import consent. |
 | Browser integration, privacy and documentation | Privacy contract updated; actual Chrome manifest/worker check passed. Firefox extension integration and complete final suite remain pending. |
 | Distribution / business program | External agreement review remains open; no business account application or release is authorized by implementation. |

@@ -63,8 +63,12 @@ const BOUNDS = {
     viewportWidth: { min: 320, max: 4096 },
     viewportHeight: { min: 240, max: 720 },
     terrainCacheLimitMb: { min: 0, max: 2048 },
-    reportImageWidth: { min: 64, max: 1600 }
+    reportImageWidth: { min: 64, max: 1600 },
+    garminCheckHours: { min: 0, max: 168 },
+    garminRecentDays: { min: 1, max: 365 }
 };
+const validCalendarDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 const DEFAULTS = {
     units: 'auto', theme: 'system',
@@ -274,13 +278,10 @@ const clean = raw => {
     s.betaPeakFilterOrder = s.betaPeakFilterOrder == null ? null : orderedIds(s.betaPeakFilterOrder, PEAK_FILTER_ORDER);
     s.betaPersonalFilterOrder = s.betaPersonalFilterOrder == null ? null : orderedIds(s.betaPersonalFilterOrder, PERSONAL_FILTER_ORDER);
     s.chartDefaultSeries = chartDefaultSeries(s.chartDefaultSeries);
-    s.garminCheckHours = Number.isInteger(s.garminCheckHours) && s.garminCheckHours >= 0 && s.garminCheckHours <= 168 ? s.garminCheckHours : DEFAULTS.garminCheckHours;
-    s.garminRecentDays = Number.isInteger(s.garminRecentDays) && s.garminRecentDays >= 1 && s.garminRecentDays <= 365 ? s.garminRecentDays : DEFAULTS.garminRecentDays;
+    s.garminCheckHours = Number.isInteger(s.garminCheckHours) && s.garminCheckHours >= BOUNDS.garminCheckHours.min && s.garminCheckHours <= BOUNDS.garminCheckHours.max ? s.garminCheckHours : DEFAULTS.garminCheckHours;
+    s.garminRecentDays = Number.isInteger(s.garminRecentDays) && s.garminRecentDays >= BOUNDS.garminRecentDays.min && s.garminRecentDays <= BOUNDS.garminRecentDays.max ? s.garminRecentDays : DEFAULTS.garminRecentDays;
     s.garminActivityTypes = s.garminActivityTypes === 'all' ? 'all' : 'walking';
-    s.garminHistoryStart = s.garminHistoryStart === 'all' || (typeof s.garminHistoryStart === 'string'
-        && /^\d{4}-\d{2}-\d{2}$/.test(s.garminHistoryStart)
-        && Number.isFinite(Date.parse(`${s.garminHistoryStart}T00:00:00Z`))
-        && new Date(`${s.garminHistoryStart}T00:00:00Z`).toISOString().slice(0, 10) === s.garminHistoryStart)
+    s.garminHistoryStart = s.garminHistoryStart === 'all' || validCalendarDate(s.garminHistoryStart)
         ? s.garminHistoryStart : '';
     s.favoritesSource = favoritesSource(s.favoritesSource);
     s.reportEditorMode = reportEditorMode(s.reportEditorMode);
@@ -321,6 +322,7 @@ const API = {
     ROUTE_STYLE,
     VIEWPORT,
     BOUNDS,
+    validCalendarDate,
     DEFAULTS,
     clean,
     chartDefaultSeries,

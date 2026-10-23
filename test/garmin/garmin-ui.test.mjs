@@ -9,6 +9,7 @@ const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve
 test('Garmin setup links directly to key creation and requests permission only on Connect', async () => {
     const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
     const messages = []; let permissions = 0;
+    const intervals = []; dom.window.setInterval = callback => { intervals.push(callback); return intervals.length; };
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
         storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
         runtime: { sendMessage: async message => {
@@ -25,6 +26,9 @@ test('Garmin setup links directly to key creation and requests permission only o
     await tick(); assert.equal(permissions, 1); assert.equal(messages.filter(m => m.type === 'GARMIN_CONNECT').length, 1);
     assert.match(document.querySelector('#garmin-key-status').textContent, /didn’t accept/);
     assert.equal(document.querySelector('#garmin-key').value, 'fictional-personal-api-key');
+    Object.defineProperty(document, 'hidden', { value: false });
+    intervals[0](); await tick();
+    assert.match(document.querySelector('#garmin-key-status').textContent, /didn’t accept/, 'Background refresh preserves the rejected replacement message');
     dom.window.close();
 });
 test('inbox keeps drafts visible during a rejected-key state', async () => {
