@@ -1,5 +1,10 @@
 # Active plans
 
+- [Garmin Personal API and automatic draft inbox](garmin-personal-api-draft-inbox.md)
+  — researched and proposed; live token, activity and FIT-download reads verified,
+  with personal-key onboarding, automatic preparation, durable inbox design,
+  business-tier comparison and explicit distribution/decoder/verification gaps.
+
 - [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)
   — four runtime findings fixed and verified locally in focused commits:
   capture cooldown, keyboard focus, metadata stability and chart efficiency.
