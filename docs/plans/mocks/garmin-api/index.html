@@ -1,0 +1,92 @@
+<!-- Copyright (C) 2026 wilmtang <wilm.tang@outlook.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!doctype html>
+<html lang="en" data-bpb-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>Garmin drafts — workflow prototype</title>
+  <link rel="stylesheet" href="../../../../src/theme/panel.css">
+  <link rel="stylesheet" href="mock.css">
+  <script src="mock.js" defer></script>
+</head>
+<body>
+  <div class="prototype-tools" aria-label="Prototype controls">
+    <div><strong>Workflow prototype</strong><span>Fictional data · no connections or downloads</span></div>
+    <label>Screen <select id="screen"><option value="connect">1 · Connect</option><option value="settings">2 · Schedule</option><option value="inbox">3 · Inbox</option><option value="review">4 · Review</option><option value="export">5 · Export</option></select></label>
+    <label>Theme <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+    <label>Response <select id="response"><option value="success">Success</option><option value="error">Offline error</option></select></label>
+  </div>
+  <div class="app">
+    <aside class="side-nav">
+      <header class="brand"><img src="../../../../icons/icon-48.png" width="36" height="36" alt=""><div><strong>Better Peakbagger</strong><span>Your routes. Your summits.</span></div></header>
+      <nav aria-label="Workspace"><a class="nav-item" href="#inbox" data-nav="inbox">Activity inbox <span class="nav-count" aria-label="2 ready to review">2</span></a><a class="nav-item" href="#settings" data-nav="settings">Capture &amp; reports</a><a class="nav-item" href="#export" data-nav="export">Backup &amp; sync</a></nav>
+      <p class="sidebar-note">Stored on this device.<br>You choose what to save.</p>
+    </aside>
+    <main>
+      <section data-screen="connect">
+        <p class="eyebrow">Settings / Capture &amp; reports</p>
+        <h1>Capture &amp; reports</h1>
+        <p class="lede">Connect Garmin to prepare drafts from your activities.</p>
+        <div class="card connection">
+          <div class="card-heading"><h2>Garmin connection</h2><span class="quiet-tag">Not connected</span></div>
+          <ol class="connect-steps"><li><strong>Create a personal key</strong><p>In Garmin Connect, open Settings → Personal API.</p><span class="link-text">Create a key in Garmin Connect ↗</span></li><li><label for="personal-key"><strong>Paste your personal key</strong></label><div class="key-field"><input id="personal-key" type="password" value="fictional-demo-key" autocomplete="off" spellcheck="false" readonly aria-describedby="key-note"><button id="show-key" class="secondary" type="button">Show</button></div><p id="key-note">Your key is stored on this device.</p></li></ol>
+          <div class="card-footer"><button id="connect" class="primary">Connect Garmin</button><div class="feedback"><span aria-hidden="true">Could not reach Garmin. Check your connection, then try again.</span><span id="connect-status" role="status">You’ll choose which activities to prepare next.</span></div></div>
+        </div>
+        <p class="footnote">Connecting never saves an ascent. You review every draft in Peakbagger.</p>
+      </section>
+
+      <section data-screen="settings" hidden>
+        <p class="eyebrow">Settings / Capture &amp; reports</p><h1>Garmin drafts</h1><p class="lede">New activities, ready when you are.</p>
+        <div class="card">
+          <div class="card-heading"><h2>Garmin connection</h2><span class="connected"><span aria-hidden="true">●</span> Connected on this device</span></div>
+          <div class="setting-row"><label for="frequency"><strong>Check for activities</strong><span>While your browser is running.</span></label><select id="frequency"><option value="manual">Manual only</option><option value="1">Every hour</option><option value="4" selected>Every 4 hours</option><option value="12">Every 12 hours</option><option value="24">Every day</option><option value="custom">Custom…</option></select></div>
+          <div class="setting-row" id="custom-row" hidden><label for="custom-hours"><strong>Custom interval</strong><span>Between 1 and 168 hours.</span></label><div class="inline"><input id="custom-hours" type="number" min="1" max="168" value="6" required><span>hours</span></div></div>
+          <div class="setting-row"><label for="activity-types"><strong>Activities</strong><span>Recordings with a GPS route.</span></label><select id="activity-types"><option>Hikes, walks &amp; trail runs</option><option>All outdoor activities</option></select></div>
+          <div class="setting-row"><label for="history"><strong>Start with</strong><span>Based on when the activity was recorded.</span></label><select id="history"><option selected>Activities from today</option><option>Last 30 days</option><option>All available history</option></select></div>
+          <div class="setting-row"><div><strong>Peakbagger account</strong><span>Drafts are prepared for this climber.</span></div><span>Alex Morgan <span class="connected" aria-label="verified">✓</span></span></div>
+          <div class="card-footer"><div class="actions"><button id="settings-primary" class="primary">Open activity inbox</button><button class="secondary" id="settings-check">Check now</button></div><div class="feedback"><span aria-hidden="true">Could not reach Garmin. Check your connection, then try again.</span><span id="settings-status" role="status">Last checked 10:40 AM · Next check about 2:40 PM</span></div></div>
+        </div>
+        <p class="footnote">Drafts and reduced routes stay here until completed or removed.</p>
+        <details class="connection-details"><summary>Connection details</summary><p>Older uploads are checked gradually within your selected history. Manual checks respect Garmin’s cooldowns.</p><div class="actions"><button class="secondary" id="full-history">Check full history</button><a href="#connect" class="secondary">Replace key</a></div><p>Disconnecting keeps your prepared drafts. Deleting local Garmin data also removes drafts and import history.</p></details>
+      </section>
+
+      <section data-screen="inbox" hidden>
+        <p class="eyebrow">Garmin / Activity inbox</p>
+        <div class="page-heading"><div><h1>Activity inbox</h1><p class="lede">2 ready to review · 1 waiting for sign-in</p></div><button id="inbox-check" class="secondary">Check now</button></div>
+        <div class="sync-line"><span class="connected">● Garmin connected</span><span>Every 4 hours</span><a href="#settings">Settings</a></div>
+        <div class="feedback inbox-feedback"><span aria-hidden="true">Could not reach Garmin. Your drafts are safe. Check your connection and try again.</span><span id="inbox-status" role="status">Last checked today at 10:40 AM</span></div>
+        <div class="inbox-list">
+          <article class="activity card"><div class="activity-body"><p class="date">OCT 22, 2026</p><h2>Hike</h2><p class="metrics">12.4 km <span>·</span> 890 m gain <span>·</span> 4 h 12 min</p><div class="badges"><span class="badge strong">2 Strong</span><span class="badge probable">1 Probable</span></div></div><a href="#review" class="primary-button">Review activity</a></article>
+          <article class="activity card"><div class="activity-body"><p class="date">OCT 20, 2026</p><h2>Trail run</h2><p class="metrics">8.6 km <span>·</span> 420 m gain</p><p class="waiting">Waiting for Peakbagger sign-in</p></div><button id="sign-in" class="secondary">Open Peakbagger</button></article>
+          <article class="activity card"><div class="activity-body"><p class="date">SEP 04, 2026</p><h2>Hike</h2><p class="metrics">6.2 km <span>·</span> 510 m gain</p><div class="badges"><span class="badge strong">1 Strong</span><span class="muted">Ready whenever you are</span></div></div><a href="#review" class="secondary">Review activity</a></article>
+        </div>
+        <div class="inbox-footer"><button id="earlier" class="text-button">Import earlier activities</button><span>Drafts don’t expire.</span></div>
+        <div id="history-picker" class="card history-picker" hidden><h2>Import earlier activities</h2><label for="history-scope">Choose a period <select id="history-scope"><option>Last year</option><option>All available history</option></select></label><p>Previously saved or dismissed activities stay excluded.</p><button id="history-check" class="secondary">Check activities</button></div>
+      </section>
+
+      <section data-screen="review" hidden>
+        <a href="#inbox" class="back">‹ Activity inbox</a><div class="page-heading review-heading"><div><h1>Hike · October 22</h1><p class="lede">12.4 km · 890 m gain · 4 h 12 min</p></div><span class="quiet-tag">Ready to review</span></div>
+        <div class="review-grid">
+          <div class="route-card card"><div class="route-image"><svg viewBox="0 0 400 290" role="img" aria-label="Illustrative route with two strong summit matches and one probable match; fictional geography"><g class="contours" fill="none"><path d="M-20 70Q80-40 190 60T430 60M-20 95Q80-15 190 85T430 85M-20 120Q80 10 190 110T430 110M-20 145Q80 35 190 135T430 135M-20 170Q80 60 190 160T430 160M-20 195Q80 85 190 185T430 185M-20 220Q80 110 190 210T430 210M-20 245Q80 135 190 235T430 235"/></g><path class="route" d="M45 246 72 209 108 198 125 159 161 118 181 63 206 110 238 135 280 119 319 155 286 181 246 181 213 211 168 204 120 230 84 237 45 246"/><g class="summit"><circle cx="181" cy="63" r="12"/><circle cx="280" cy="119" r="12"/></g><circle class="possible" cx="334" cy="155" r="12"/><g class="map-number"><text x="181" y="67">1</text><text x="280" y="123">2</text><text x="334" y="159">3</text></g><circle class="start" cx="45" cy="246" r="6"/></svg><span class="map-caption">Route overview</span></div><div class="route-caption"><strong>A saved draft snapshot</strong><p>Prepared Oct 23 · Stored on this device</p><button id="refresh-route" class="text-button">Refresh from Garmin</button></div></div>
+          <div class="matches"><h2>Choose your summits</h2><p class="muted">Matches suggest a summit. You confirm the ascent.</p>
+            <label class="peak-row strong"><input type="checkbox" class="summit-check" checked><span><span class="peak-title">1. Cedar Peak <span class="badge strong">Strong</span></span><span class="peak-evidence">18 m from summit · Elevation agrees</span></span></label>
+            <label class="peak-row strong"><input type="checkbox" class="summit-check" checked><span><span class="peak-title">2. North Knoll <span class="badge strong">Strong</span></span><span class="peak-evidence">24 m from summit · Elevation agrees</span></span></label>
+            <label class="peak-row probable"><input type="checkbox" class="summit-check"><span><span class="peak-title">3. West Ridge <span class="badge probable">Probable</span></span><span class="peak-evidence">96 m away · Check whether you reached it</span></span></label>
+            <p class="privacy-note">GPX privacy follows your capture settings.</p>
+          </div>
+        </div>
+        <div class="review-actions"><div class="actions"><button id="open-drafts" class="primary">Open 2 drafts</button><button id="dismiss" class="secondary">Dismiss activity</button></div><div class="feedback"><span aria-hidden="true">Could not prepare the forms. Your draft is safe. Check your connection and try again.</span><span id="review-status" role="status">Review each form in Peakbagger, then save it yourself.</span></div></div>
+      </section>
+
+      <section data-screen="export" hidden>
+        <p class="eyebrow">Settings / Backup &amp; sync</p><h1>Backup &amp; sync</h1><p class="lede">Export a settings file for another browser or a personal backup.</p>
+        <div class="card export-card"><div class="card-heading"><h2>Settings file</h2></div><div class="export-body"><h3>What’s included</h3><div class="file-row"><span>Appearance &amp; capture preferences</span><span>Included</span></div><div class="file-row"><span>Garmin check frequency &amp; activity choices</span><span>Included</span></div><div class="file-row"><span>Saved credentials</span><span id="credentials-state">Not included</span></div>
+          <label class="export-choice"><input id="include-credentials" type="checkbox"><span><strong>Include saved credentials</strong><span>ImgBB API key, GitHub connection and Garmin personal key.</span></span></label><p class="export-warning">Settings files are not encrypted. Keep a file containing keys private.</p><p class="muted">Activity drafts, routes and temporary access tokens stay out of this file.</p></div><div class="card-footer"><button id="export-settings" class="primary">Export settings</button><div class="feedback"><span aria-hidden="true">Settings file ready, including saved credentials. Keep this file private.</span><span id="export-status" role="status">Your current settings will be exported.</span></div></div></div>
+        <div class="import-note"><h2>On another device</h2><p>Import the file, confirm the Garmin connection, then choose whether to enable automatic drafts.</p></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

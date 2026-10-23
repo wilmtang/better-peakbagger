@@ -4,6 +4,7 @@
   — researched and proposed; live token, activity and deep-history FIT reads
   verified, with a four-hour editable schedule, opt-in key export, persistent
   inbox snapshots, incremental discovery rules and decoder-license comparison.
+  Includes visual workflow mocks and an interactive documentation prototype.
   Business terms, production decoding and runtime/UX verification remain open.
 
 - [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)

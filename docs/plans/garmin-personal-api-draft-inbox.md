@@ -4,8 +4,8 @@ Status: research and proposed workflow, revised October 23, 2026. Runtime
 implementation has not started. Initial source review used commit `61b07643`;
 the revision also inspected the current settings credential export/import path.
 The user authorized bounded read-only tests of their personal key; no key,
-token, activity identifier,
-activity name, coordinate, or original activity file is included in this plan.
+token, activity identifier, activity name, coordinate, or original activity file
+is included in this plan.
 
 ## Recommendation
 
@@ -32,6 +32,93 @@ Business Starter is the alternative for a supported multi-user integration, but
 its published push-only delivery implies a hosted receiving service. That would
 change Better Peakbagger's current no-developer-server privacy model. Choose it
 deliberately rather than assuming it is just another authentication method.
+
+## Visual workflow mocks
+
+These are documentation prototypes using the extension's actual panel palette,
+typography, controls, and Strong/Probable colors. All names, routes, activity
+values and credentials are fictional. They do not connect to Garmin, open
+Peakbagger forms, export a file or implement the proposed feature.
+
+The [HTML prototype](mocks/garmin-api/index.html) includes screen, theme and
+simulated-response selectors. The [mock guide](mocks/garmin-api/README.md)
+describes the interactions and reproducible screenshot checks.
+
+### Connect a personal key
+
+Keep setup in Capture & reports, with one primary action and a masked key.
+Connection leads to an explicit Enable Garmin drafts step; it does not silently
+enable scheduled imports. The create-key destination is represented as text in
+this offline mock, and the key field contains only a read-only demo value.
+
+![Garmin connection mock with create-key guidance, a masked personal-key field and Connect Garmin action](mocks/garmin-api/images/01-connect.png)
+
+### Set the schedule
+
+The connected state exposes the four-hour default, manual checks, activity
+types and history scope in familiar setting rows. Manual only turns scheduled
+checks off; Custom reveals an hours field. This image shows the state after
+Enable Garmin drafts has been selected.
+
+![Connected Garmin settings mock showing Every 4 hours, activity choices, history scope and Check now](mocks/garmin-api/images/02-schedule.png)
+
+### Keep a durable activity inbox
+
+Use a full page for review. Waiting items explain the next action, and the older
+September draft demonstrates that pending work does not disappear after a few
+days. A refresh keeps the list in place. Import earlier activities is a separate,
+deliberate expansion of the selected history.
+
+![Activity inbox mock showing ready summit matches, a Peakbagger sign-in dependency and an older retained draft](mocks/garmin-api/images/03-inbox.png)
+
+### Review before opening Peakbagger forms
+
+Show the retained route snapshot beside the candidates. Strong matches are
+selected and Probable matches require a choice. Refresh is explicit. Open drafts
+hands off to Peakbagger; Save remains the user's action there. The route graphic
+is a local schematic, not a basemap or a real recording.
+
+![Activity review mock with a route schematic, two selected Strong summits, one unchecked Probable summit and Open 2 drafts](mocks/garmin-api/images/04-review.png)
+
+### Include the key only when requested
+
+Extend the existing credential-export checkbox. This image deliberately shows
+it checked; the prototype starts unchecked. The included-fields summary changes
+without moving Export settings. Retain the existing unencrypted-file disclosure
+beside the credential choice.
+
+![Settings export mock with Include saved credentials checked and Garmin personal key listed in the credential scope](mocks/garmin-api/images/05-export-key.png)
+
+<details>
+<summary>Checking, offline recovery, narrow layout and dark mode</summary>
+
+Checking replaces only the reserved feedback text; the heading, Check now
+button, list and footer keep their positions.
+
+![Inbox mock while a check is pending, retaining the existing activities](mocks/garmin-api/images/03b-inbox-checking.png)
+
+At 390px, navigation wraps above the content and each activity action follows
+its details. The offline state preserves every draft and offers the same Check
+now action after recovery.
+
+![Narrow dark-mode inbox mock with an offline error and retained drafts](mocks/garmin-api/images/06-narrow-dark-error.png)
+
+The review becomes a single column. Summit choices and Open drafts remain
+available below the route, without horizontal scrolling.
+
+![Narrow dark-mode activity review mock with stacked route and summit choices](mocks/garmin-api/images/07-narrow-dark-review.png)
+
+</details>
+
+Mock verification: hidden Chrome for Testing 156.0.8078.4 and Firefox 157.0;
+1180 × 900 and 390 × 1000 viewports, both themes. The prototype's inbox preserved
+button, heading, list and footer geometry within 1px and kept keyboard focus
+through pending, error, retry and success. Connection, schedule, selection and
+export interactions were checked; Chromium screenshots were visually inspected.
+Enlarged settings were checked at 200% CSS zoom, with wrapping controls. This
+used DOM/CSS rendering, with no WebGL or live API calls. Native browser zoom,
+permission prompts, window focus and production extension behavior remain
+unverified by these mocks.
 
 ## Verified API findings
 
@@ -687,6 +774,8 @@ Evidence status: live Garmin token/list/detail/ZIP reads, FIT field presence,
 and a separate oldest-activity/original-file read were verified. Decoder source
 and licenses were inspected; no third-party decoder was installed or exercised.
 Browser extension networking, production FIT decoding, full summit/draft
-integration, scheduled operation and rendered UX have not been
-implemented or verified. The text wireframes specify behavior; they are not
-evidence of layout stability or native browser polish.
+integration and scheduled operation have not been implemented or verified.
+The documentation prototype was rendered and exercised as described under
+[Visual workflow mocks](#visual-workflow-mocks); those results establish only
+the mock's layout and simulated behavior. They do not prove production
+integration, native permission/focus behavior or the future extension UI.
