@@ -31,9 +31,12 @@ Activity IDs and saved/dismissed history prevent repeat imports on this device.
 Ascents entered manually or imported independently elsewhere are not guaranteed
 to be detected as duplicates.
 
-**Activities:** the default includes hiking, walking, trail running and
-mountaineering. **All activities** also admits skiing, rock climbing and other
-types, including indoor workouts. Draft preparation needs a usable GPS track.
+**Activities:** the default **Mountain activities** group includes hiking,
+walking, trail running, rock climbing, mountaineering and backcountry skiing.
+Garmin's backcountry type also includes snowboarding. **All activities** admits
+other types, including resort skiing and indoor workouts. Draft preparation
+needs a usable GPS track. Existing default-group preferences gain the added
+types automatically; choose **Check full history** to find older activities now.
 
 ## Review and recover
 

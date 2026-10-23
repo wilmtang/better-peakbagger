@@ -27,6 +27,20 @@ test('date scopes clip recent checks and widen for catch-up', () => {
     assert.deepEqual(importRange({ garminRecentDays: 30, garminHistoryStart: '2026-10-20' }, '', 0, false, '2026-10-23'), { from: '2026-10-20', to: '2026-10-23' });
     assert.equal(importRange({ garminRecentDays: 7, garminHistoryStart: 'all' }, '', Date.parse('2026-09-01'), false, '2026-10-23').from, '2026-08-31');
 });
+test('default mountain group imports climbing and backcountry skiing without admitting unrelated sports', async () => {
+    const included = ['hiking', 'walking', 'trail_running', 'mountaineering', 'rock_climbing', 'backcountry_skiing_snowboarding'];
+    const excluded = ['resort_skiing_snowboarding', 'cross_country_skiing', 'indoor_climbing', 'cycling', 'other'];
+    const rows = [...included, ...excluded].map((type, i) => ({ id: String(i + 1), owner: '123', date: '2026-10-23', type }));
+    const { imports, store, prefs, counts } = await setup({ date: () => '2026-10-23', api: { list: async () => rows } });
+    try {
+        await imports.check();
+        assert.deepEqual(Object.values((await store.read()).items).map(item => item.summary.type), included);
+        await imports.check(); await imports.check();
+        assert.equal(counts.downloads, included.length, 'overlapping checks do not redownload the expanded group');
+        prefs.garminActivityTypes = 'all'; await imports.settingsChanged(); await imports.check();
+        assert.deepEqual(Object.values((await store.read()).items).map(item => item.summary.type), [...included, ...excluded]);
+    } finally { await store.close(); }
+});
 test('durable activity IDs avoid duplicate downloads and survive disconnect', async () => {
     const { imports, counts, store } = await setup();
     await imports.check(); await imports.check();

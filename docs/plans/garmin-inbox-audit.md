@@ -2,6 +2,18 @@
 
 ## Fixed and verified
 
+- **Expanded default activity group.** Mountain activities now includes rock
+  climbing and backcountry skiing alongside hikes, walks, trail runs and
+  mountaineering. The existing stored preference is preserved; inbox titles
+  identify the added sports. The importer regression failed before the change
+  because both new types were missing, then passed with duplicate protection
+  and the All activities alternative checked. All 77 Garmin/schema tests and
+  focused ESLint pass. All 12 hidden Garmin fixture cases passed in Chrome 156
+  and Firefox 157, including stable group switching and saving in both themes
+  at 1180×1000 and 390×1000, plus group switching at 200% CSS zoom on desktop.
+  Desktop, narrow and enlarged settings screenshots were inspected.
+  The rebuilt unpacked extension passed its hidden Chrome 156 check. These
+  static DOM/CSS checks stub provider replies and do not prove native menus.
 - **P2: oversized, inconsistent action buttons.** Garmin now uses the shared
   compact panel button component; Reconnect is secondary when connected.
   The [panel button audit](panel-button-audit.md) records the migration,
@@ -73,6 +85,10 @@ Final process inspection found no remaining Garmin UI verifier processes.
 
 ## Changed but not fully proven
 
+- The added sport filters use recorded Garmin type keys; their live recordings
+  have not been downloaded in this follow-up. Garmin uses the combined
+  `backcountry_skiing_snowboarding` key, also present in the
+  [tapiriik Garmin adapter](https://github.com/cpfair/tapiriik/blob/master/tapiriik/services/GarminConnect/garminconnect.py).
 - Native permission prompts, a truly expired Garmin key, and live browser
   provider/Peakbagger sessions have not been verified. The authorized live Node
   API test verified identity, 12 activity summaries and one FIT recording.

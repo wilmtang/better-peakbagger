@@ -7,6 +7,8 @@ import { createPackagedPageMatcher } from '../background/sender-policy.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 export const GARMIN_ALARM = 'bpb-garmin-check';
+// The stored "walking" preference remains compatible with existing installations.
+const MOUNTAIN_ACTIVITY_TYPES = ['hiking', 'walking', 'trail_running', 'mountaineering', 'rock_climbing', 'backcountry_skiing_snowboarding'];
 const DAY = 86400000;
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const validImportDate = Schema.validCalendarDate;
@@ -139,7 +141,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             try { await mutateEpoch(epoch, current => {
                 for (const row of rows) {
                     if (row.owner && row.owner !== connection.owner) throw new GarminError('identity');
-                    if (row.date < range.from || row.date > range.to || (prefs.garminActivityTypes === 'walking' && !['hiking', 'walking', 'trail_running', 'mountaineering'].includes(row.type))) continue;
+                    if (row.date < range.from || row.date > range.to || (prefs.garminActivityTypes === 'walking' && !MOUNTAIN_ACTIVITY_TYPES.includes(row.type))) continue;
                     if (current.items[row.id] || current.receipts[row.id]) continue;
                     if (Object.keys(current.items).length >= 200) throw new GarminError('capacity');
                     current.items[row.id] = { id: row.id, owner: connection.owner, cid: connection.cid, summary: row, phase: 'waiting', createdAt: clock(), saved: [] };

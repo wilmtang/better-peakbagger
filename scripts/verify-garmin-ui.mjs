@@ -114,7 +114,16 @@ try {
             assert.equal(await page.locator('.garmin-key-label a').getAttribute('href'), 'https://connect.garmin.com/app/settings/personalApiToken');
             await page.locator('#garmin-frequency').selectOption('0');
             assert.equal(await page.locator('#garmin-recent-help').textContent(), 'How far back Check now looks.');
-            await page.locator('#garmin-types').selectOption('all');
+            const types = page.locator('#garmin-types');
+            assert.equal(await types.inputValue(), 'walking');
+            assert.equal(await types.locator('option:checked').textContent(), 'Mountain activities');
+            assert.match(await page.locator('label[for="garmin-types"] small').textContent(), /rock climbing, mountaineering and backcountry skiing/);
+            await types.scrollIntoViewIfNeeded();
+            const beforeTypes = await geometry(['#garmin-types', '#garmin-save', '#garmin-scope-note']);
+            await types.selectOption('all');
+            stable(beforeTypes, await geometry(['#garmin-types', '#garmin-save', '#garmin-scope-note']));
+            await types.selectOption('walking');
+            stable(beforeTypes, await geometry(['#garmin-types', '#garmin-save', '#garmin-scope-note']));
             const save = page.locator('#garmin-save'); await save.focus();
             const beforeSave = await geometry(['#garmin-save', '#garmin-scope-note', '#garmin-preferences > details']);
             await save.press('Enter');
@@ -124,6 +133,21 @@ try {
                 await page.screenshot({ path: path.join(output, `settings-${width}-${theme}-top.png`) });
                 await page.locator('#garmin-save').scrollIntoViewIfNeeded();
                 await page.screenshot({ path: path.join(output, `settings-${width}-${theme}-actions.png`) });
+            }
+            if (width === 1180) {
+                await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+                await types.scrollIntoViewIfNeeded();
+                assert(await page.evaluate(() => {
+                    const content = document.querySelector('.content');
+                    return content.scrollWidth <= content.clientWidth + 1;
+                }), 'The expanded activity description must wrap at 200% zoom');
+                const enlarged = await geometry(['#garmin-types', '#garmin-save', '#garmin-scope-note']);
+                await types.selectOption('all');
+                stable(enlarged, await geometry(['#garmin-types', '#garmin-save', '#garmin-scope-note']));
+                await types.selectOption('walking');
+                stable(enlarged, await geometry(['#garmin-types', '#garmin-save', '#garmin-scope-note']));
+                if (name === 'chromium') await page.screenshot({ path: path.join(output, `settings-${theme}-zoom.png`) });
+                await page.evaluate(() => { document.documentElement.style.zoom = ''; });
             }
             const enable = page.locator('#garmin-enable'); await enable.focus();
             const beforeEnable = await geometry(['#garmin-enable', '#garmin-save', '.garmin-inbox-link', '#garmin-preferences > details']);
