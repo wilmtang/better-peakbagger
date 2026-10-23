@@ -1,10 +1,10 @@
 # Active plans
 
 - [Signed-out Peakbagger feature gates and remediation](signed-out-peakbagger-audit-2026-10-23.md)
-  — audited; four findings cover Buddy-filter recovery/focus, inconsistent
-  account parsing, cached Buddy protection feedback and My Ascents session
-  verification. Includes a feature inventory and hidden Chrome evidence;
-  runtime fixes, owner-choice policy and remaining proof gaps stay explicit.
+  — all four findings implemented and locally verified: Buddy-filter recovery,
+  shared account parsing, cached Buddy feedback and My Ascents session checks.
+  Includes the feature inventory, live reproduction, Chrome/Firefox evidence
+  and closure ledger; live cookie isolation and native-UI proof gaps remain.
 
 - [Garmin Personal API and automatic draft inbox](garmin-personal-api-draft-inbox.md)
   — researched and proposed; live token, activity and deep-history FIT reads

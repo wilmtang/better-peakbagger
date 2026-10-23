@@ -334,8 +334,8 @@ proof of pending/error transitions, focus, or terrain rendering.
   ascent, provider-export or GitHub write was performed.
 - The A4 comparison did not establish a false sign-out: fresh first-party and
   extension account requests were both refused by Cloudflare. Its conditional
-  transport regression still needs deterministic coverage; do not claim a live
-  cookie-isolation reproduction.
+  transport regression therefore needed the deterministic coverage recorded
+  below; no live cookie-isolation reproduction is claimed.
 - A2's new regression assertion failed on the original reader with an off-site
   CID accepted as 17. The shared reader now scopes evidence to native account
   navigation before the page heading, validates all account links consistently,
@@ -410,8 +410,19 @@ proof of pending/error transitions, focus, or terrain rendering.
   eight documented upstream/cross-browser warnings; the final account and
   verifier edits also passed targeted ESLint. Real-manifest hidden Chrome
   156.0.8078.4 and Firefox 158.0.1 passed at 1000 × 760 (plus their existing
-  narrow/header cases), with teardown reported by both. Firefox's BFCache
-  probe did not establish a restored document; Chrome's did.
+  narrow/header cases), with teardown reported by both. An earlier Firefox
+  BFCache probe did not restore a document; both final probes did.
+- Step 5 is complete: maintained docs now include account requirements and
+  recovery behavior. Both real-manifest browser gates run the same anonymous
+  peak fixture with Buddy/custom sources, verify sign-in/custom recovery,
+  preserve public reports, hide the Buddy write action and persist a keyboard
+  Favorite through the actual worker/storage APIs. The fixture's Buddy read and
+  mutation counters remain unchanged. This complements the renderer matrices;
+  it is a controlled HTTPS fixture, not live endpoint authorization proof.
+  The initial Chrome smoke setup referred to a tab a prior check had closed;
+  it now creates its own Settings tab. The final Chrome/Firefox gates and full
+  lint passed. Documentation, fixture contracts and script inventory passed
+  14 focused checks in the isolated snapshot. `git diff --check` passed.
 
 ### Fixed and verified
 

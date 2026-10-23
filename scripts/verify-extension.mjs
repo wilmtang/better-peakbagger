@@ -55,6 +55,7 @@ import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
+import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mjs';
 import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
@@ -6665,6 +6666,20 @@ try {
         await sourcePage.close();
     }
     await verifyTerminalAnalyzerFailures();
+    const signedOutOptions = await context.newPage();
+    await signedOutOptions.goto(`chrome-extension://${extensionId}/options/options.html`);
+    const signedOutPage = await context.newPage();
+    await verifySignedOutExtension({
+        configure: source => signedOutOptions.evaluate(prepareSignedOut, source),
+        navigate: () => signedOutPage.goto(`https://www.peakbagger.com:${port}/Peak.aspx?pid=2296&signed-out=1`),
+        evaluate: fn => signedOutPage.evaluate(fn),
+        wait: fn => signedOutPage.waitForFunction(fn),
+        press: (selector, key) => signedOutPage.locator(selector).press(key),
+        readFavorites: () => signedOutOptions.evaluate(async () => (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers.entries),
+        requests: fixture.requests,
+    });
+    await signedOutPage.close();
+    await signedOutOptions.close();
 } catch (error) {
     primaryError = error;
 }

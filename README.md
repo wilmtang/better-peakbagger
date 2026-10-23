@@ -221,6 +221,20 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 **Settings → About** links to feedback, bug reports, source code, the license,
 and the rating page for your browser's store.
 
+### Which tools require a Peakbagger login?
+
+| Tools | Account requirement |
+| --- | --- |
+| Public peak planning, maps, weather, snow, saved-track analysis and ordinary report filters | No extension login gate; Peakbagger must make the underlying page or track available. |
+| Custom favorites, local ignored climbers, settings and standalone Photo Topos | No Peakbagger login. Saved Buddy membership and unresolved changes can still protect a climber from Ignore. |
+| Buddy filters and Buddy changes | Your verified Peakbagger account. An unavailable filter offers sign-in or custom favorites and preserves your filter choice. |
+| Activity capture and ascent drafts | Provider ownership plus a verified Peakbagger account; you review and Save each draft. |
+| Ascent/report editing and ascent backup | Your own writable Peakbagger records. |
+| GitHub backup, ImgBB uploads and map-service transfers | Separate authorization for the chosen service. |
+
+[Climber lists and account recovery](docs/climber-lists.md) explains saved Buddy
+protection and local-list behavior across account changes.
+
 ### How can Better Peakbagger offer 3D maps for free? What's the catch?
 
 Most elevation data is public or openly licensed; the costly part is turning it

@@ -436,13 +436,22 @@ being mistaken for track absence.
 Profile backup mounts only on `ClimbListC.aspx`. The parser requires:
 
 - a numeric `cid` in the page URL;
-- a **My Ascents** or **Add Ascent** account link with the same climber id;
+- native **Logged in:** navigation with valid Peakbagger account links that
+  agree on that climber id;
 - a valid ascent link and peak link for every included row; and
 - an owner-only edit link on every ascent record.
 
 Failure clears the work list rather than treating a public or mismatched list as
 the user. Starting on a one-year page fetches the same climber's all-years URL
 with `j=-1`, `y=9999`, and a default `sort=AscentDate`.
+
+Settings' **Open My Ascents** verifies the first-party Peakbagger session through
+the existing bounded page helper. An existing tab requires a fresh account read;
+a newly navigated helper can use corroborated native account-bar evidence.
+Temporary helper tabs open inactive and are released through their ownership
+lease. A confirmed login form offers sign-in; missing or invalid account evidence
+and challenges offer a site check without claiming the user signed out. This
+navigation check does not replace deletion confirmation's separate fresh proof.
 
 The worker preflight returns only root backup folder leaves. The work-list diff
 extracts exact terminal `-a<aid>` identities:

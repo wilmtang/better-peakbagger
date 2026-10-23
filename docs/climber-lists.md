@@ -54,6 +54,12 @@ on site pages only when its owner matches the signed-in account; a stale matchin
 cache stays usable if refresh fails. Missing or failed data is distinct from a
 valid empty list.
 
+Without a verified Peakbagger account, an active Buddy filter offers **Sign in
+to Peakbagger** and **Use custom favorites…**. It keeps the saved filter choice;
+**Show all reports** remains available. A temporary read failure offers Retry
+and retains keyboard focus while checking. Changing to custom favorites updates
+the current page without a reload.
+
 Opening or refreshing your own signed-in Buddy List updates the saved members
 and their displayed update time from that page, without another network request.
 If the background service is unavailable, the page asks you to reload the
@@ -98,6 +104,12 @@ Refresh your Buddy List after changing it elsewhere. Changes through other
 Peakbagger surfaces, another browser, or another device can still introduce an
 overlap; the extension does not silently edit the server or provide a global
 transaction across Peakbagger and local storage.
+
+When a saved Buddy List belongs to a previous or currently unverified account,
+Ignore explains that protection and offers **Open saved account**. Sign in to
+that account and refresh its list in Settings to check membership. Local Favorite
+removal and Unignore remain available. Signing out does not discard the cache or
+resolve an uncertain Buddy write.
 
 Ignored climbers are saved on this device, across browser restarts and Peakbagger
 account changes. Each entry contains a climber ID, displayed name and date added.

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Make signed-out account recovery clear.** Buddy filters offer sign-in or
+  custom favorites, transient Retry keeps keyboard focus, and cached Buddy
+  protection identifies its saved account. Account readers share strict identity
+  validation in both browsers. Open My Ascents verifies the Peakbagger page
+  session and distinguishes sign-out from an unavailable account check.
+
 - **Restore peak map links.** Gaia GPS, AllTrails and onX Backcountry remain
   available when the resizable peak columns initialize before the link feature.
 

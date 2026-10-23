@@ -109,6 +109,7 @@ independent of the existing targets.
 - [buddy-tab-diagnostics.mjs](buddy-tab-diagnostics.mjs)
 - [climber-card-close-diagnostics.mjs](climber-card-close-diagnostics.mjs)
 - [climber-regression-baseline.mjs](climber-regression-baseline.mjs)
+- [signed-out-extension-verification.mjs](signed-out-extension-verification.mjs) — real-manifest Buddy recovery and signed-out local Favorite persistence in both browser gates.
 - [verify-climber-hover-card.mjs](verify-climber-hover-card.mjs)
 - [verify-climber-list-ui.mjs](verify-climber-list-ui.mjs)
 - [verify-climber-membership.mjs](verify-climber-membership.mjs)

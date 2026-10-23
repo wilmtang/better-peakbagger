@@ -879,6 +879,9 @@ export async function createBrowserFixtureServer({
             return send('text/html; charset=utf-8', peakListHtml);
         }
         if (/peak\.aspx/i.test(url.pathname)) {
+            if (url.searchParams.has('signed-out')) {
+                return send('text/html; charset=utf-8', ignoredPeakHtml.replace(/<div style="color:navy">[\s\S]*?<\/div>/i, ''));
+            }
             if (url.searchParams.has('week-weather')) {
                 let html = ignoredPeakHtml.replaceAll('/map/BigMap.aspx?t=P&amp;d=2296&amp;c=900001', '/map/BigMap.aspx?cy=46.851731&amp;cx=-121.760395&amp;z=10&amp;t=P&amp;d=2296&amp;c=900001');
                 if (url.searchParams.get('week-weather') === 'no-map') html = html.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, '');

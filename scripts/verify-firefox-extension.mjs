@@ -49,6 +49,7 @@ import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
+import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mjs';
 import { installClimberCardCloseProbe } from './climber-card-close-diagnostics.mjs';
 import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
@@ -3275,6 +3276,21 @@ async function main() {
         await driver.close();
         await driver.switchTo().window(controlHandle);
 
+        await verifySignedOutExtension({
+            configure: async source => {
+                await driver.get(optionsUrl);
+                await driver.executeScript(webdriverScript(prepareSignedOut, source));
+            },
+            navigate: () => driver.get(`https://${fixtureHost}:${fixture.port}/Peak.aspx?pid=2296&signed-out=1`),
+            evaluate: fn => driver.executeScript(webdriverScript(fn)),
+            wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox signed-out smoke'),
+            press: (selector, key) => driver.findElement(By.css(selector)).sendKeys(key === 'Enter' ? Key.ENTER : key),
+            readFavorites: async () => {
+                await driver.get(optionsUrl);
+                return driver.executeScript('return browser.storage.local.get("bpbFavoriteClimbers").then(values => values.bpbFavoriteClimbers.entries);');
+            },
+            requests: fixture.requests,
+        });
         verificationSummary = {
             verification: 'extension', browser: capabilities.getBrowserName(), version: capabilities.getBrowserVersion(),
             hidden: true, viewport: verificationViewport, bfcache: firefoxBfcacheResult,
