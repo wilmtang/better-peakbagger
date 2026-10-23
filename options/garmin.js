@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settings as Settings } from '../src/settings/settings.js';
-import { GARMIN_PERMISSION, GARMIN_KEY_PAGE } from '../src/garmin/garmin-api.js';
+import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.js';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
 const ext = globalThis.browser || globalThis.chrome;
 export async function initGarminSettings(root) {
@@ -10,7 +10,7 @@ export async function initGarminSettings(root) {
     root.innerHTML = `<h3 class="subsection-title">Garmin connection</h3>
       <p>Bring your Garmin activities into your inbox automatically.</p>
       <form class="garmin-key-form">
-        <div class="garmin-key-label"><label for="garmin-key">Personal API key</label><a href="${GARMIN_KEY_PAGE}" target="_blank" rel="noopener noreferrer" aria-label="Get a Garmin API key (opens in a new tab)">Get a Garmin API key ↗</a></div>
+        <div class="garmin-key-label"><label for="garmin-key">Personal API key</label><a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer" aria-label="Get a Garmin API key (opens in a new tab)">Get a Garmin API key ↗</a></div>
         <p class="garmin-helper" id="garmin-key-help">Create a key in Garmin, then paste it below. Stored only on this device. Keys last up to one year.</p>
         <div class="garmin-key-entry"><input id="garmin-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="garmin-key-help garmin-key-status"><button id="garmin-show-key" type="button" class="secondary" aria-pressed="false">Show</button></div>
         <button id="garmin-connect" type="submit" class="primary">Connect Garmin</button>
@@ -52,6 +52,7 @@ export async function initGarminSettings(root) {
         $('#garmin-preferences').hidden = !state.configured && !state.pending;
         $('#garmin-connect').textContent = state.configured || state.pending ? 'Reconnect Garmin' : 'Connect Garmin';
         $('#garmin-enable').hidden = state.enabled && state.error?.code !== 'permission';
+        $('#garmin-enable').textContent = state.error?.code === 'permission' ? 'Allow Garmin access' : 'Enable Garmin drafts';
         $('#garmin-history option[value="connection"]').textContent = `From ${state.connectedDate} to today`;
         if (!keyError) $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
         if (!settingsError) $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'

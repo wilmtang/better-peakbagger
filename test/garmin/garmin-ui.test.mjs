@@ -46,3 +46,29 @@ test('inbox keeps drafts visible during a rejected-key state', async () => {
     assert.match(dom.window.document.querySelector('#inbox-matches').textContent, /Example Peak/);
     dom.window.close();
 });
+
+test('review exposes refreshed results explicitly and updates handoff recovery without reopening', async () => {
+    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const intervals = []; dom.window.setInterval = fn => { intervals.push(fn); return intervals.length; };
+    Object.defineProperty(dom.window.document, 'hidden', { value: false });
+    const item = { id: '123', phase: 'waiting', saved: [], summary: { date: '2026-10-23', type: 'hiking' }, analysis: null };
+    const state = { configured: true, enabled: true, cid: '456', items: [item] }; const calls = [];
+    dom.window.chrome = { tabs: { getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
+        calls.push(message);
+        if (message.type === 'GARMIN_OPEN_DRAFTS') item.handoff = true;
+        return { ok: true, ...structuredClone(state) };
+    } }, storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    dom.window.eval(inboxSource); await tick(); const d = dom.window.document;
+    d.querySelector('.garmin-activity button').click();
+    item.phase = 'ready'; item.analysis = { matches: [{ id: 1, name: 'Ready Peak', classification: 'strong' }] };
+    intervals[0](); await tick();
+    assert.match(d.querySelector('#inbox-refresh').textContent, /Review updated matches/);
+    d.querySelector('#inbox-refresh').click(); await tick();
+    assert.match(d.querySelector('#inbox-matches').textContent, /Ready Peak/);
+    assert.equal(calls.filter(call => call.type === 'GARMIN_RETRY').length, 0);
+    d.querySelector('#inbox-open').click(); await tick();
+    assert.equal(d.querySelector('#inbox-saved').hidden, false);
+    assert.equal(d.querySelector('#inbox-refresh').getAttribute('aria-disabled'), 'true');
+    assert.equal(d.querySelector('#inbox-dismiss').getAttribute('aria-disabled'), 'true');
+    dom.window.close();
+});

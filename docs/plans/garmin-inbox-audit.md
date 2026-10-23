@@ -14,10 +14,21 @@
   selection before recording a handoff and recheck the live item during the
   transaction. The bundled-worker test verifies that invalid selections leave
   the activity unlocked, valid opening succeeds, and repetition reuses forms.
+- **P2: refreshed results and recovery controls stayed stale.** Review now offers
+  updated matches explicitly, preserves selection until accepted, shows the
+  saved-ascent link after opening drafts and disables incompatible actions.
+  Explicit navigation transfers focus; background polling does not. The new
+  stale-review regression failed before the fix and passes afterward.
+- **P2: recovery copy could mislead.** Disconnected users see connection guidance;
+  removed permission offers Allow Garmin access instead of Update key.
+  Transport errors survive background status polls.
 
-Validation so far: 16 coordinator tests, the bundled-worker handoff test and
-focused ESLint pass. Final browser and complete-suite results are recorded below
-when finished.
+Validation: 3,368 tests passed. Hidden Chrome 156 and Firefox 158 real-extension
+checks passed. Twelve Garmin fixture cases passed in Chrome 156 and Firefox 157,
+including both themes at 390×1000 and 1180×1000, popup at 390×700, 200% CSS zoom,
+updated-match acceptance and pending → handoff recovery. Button, heading,
+following-content and scroll geometry use a 1px tolerance; keyboard focus and
+duplicate activation are checked. Review screenshots were visually inspected.
 
 ## Intentionally not changed
 
@@ -30,8 +41,8 @@ when finished.
 
 ## Changed but not fully proven
 
-- UX audit: stale review results, recovery controls and status copy are being
-  corrected and still require rendered transition checks.
+- Packaging lint found JSZip's legacy string-evaluation scheduler fallback.
+  Removing it is in progress; the warning is not allowlisted.
 - Native permission prompts, a truly expired Garmin key, and live browser
   provider/Peakbagger sessions have not been verified. The authorized live Node
   API test verified identity, 12 activity summaries and one FIT recording.

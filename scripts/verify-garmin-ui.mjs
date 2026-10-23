@@ -33,16 +33,18 @@ try {
     const origin = `https://www.peakbagger.com:${server.address().port}`;
     for (const name of ['chromium', 'firefox']) {
         assertChromeLaunchAllowed();
-        const browser = name === 'chromium' ? await chromium.launch({ channel: 'chromium', headless: true,
+        console.log(`Starting hidden ${name} Garmin UI checks`);
+        const browser = name === 'chromium' ? await chromium.launch({ channel: 'chromium', headless: true, timeout: 30000,
             args: ['--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1', ...certificate.chromeTrustArgs], ignoreDefaultArgs: ['--enable-unsafe-swiftshader'] })
-            : await firefox.launch({ headless: true, firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } });
+            : await firefox.launch({ headless: true, timeout: 30000, firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } });
         browsers.push(browser);
         const context = await browser.newContext({ ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
+        context.setDefaultTimeout(15000);
         await context.addInitScript(defaults => {
             const prefs = { ...defaults };
             const row = { id: '123', owner: '1234', cid: '5678', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
-                analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], route: [[{ lat: 45, lon: -120, ele: 1000, time: 1 }]] } };
-            window.fixture = { mode: 'success', checks: 0, connects: 0, opens: 0, captures: 0, state: { configured: true, enabled: true, pending: 1, items: [row], history: [], connectedDate: '2026-10-23' } };
+                analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], hasTimestamps: false } };
+            window.fixture = { mode: 'success', checks: 0, connects: 0, opens: 0, captures: 0, state: { configured: true, enabled: true, pending: 1, cid: '5678', items: [row], history: [], connectedDate: '2026-10-23' } };
             window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => ({ bpbSettings: prefs }) }, onChanged: { addListener() {}, removeListener() {} } },
                 tabs: { query: async () => [{ id: 1 }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
                     if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
@@ -52,6 +54,7 @@ try {
                     if (message.type === 'GARMIN_INBOX_OPEN') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 300)); return { ok: false }; }
                     if (message.type === 'GARMIN_DISMISS') { window.fixture.state.items = []; window.fixture.state.history = [{ id: row.id, date: row.summary.date, dismissed: true, undoAvailable: true }]; }
                     if (message.type === 'GARMIN_UNDO') { window.fixture.state.items = [row]; window.fixture.state.history = []; }
+                    if (message.type === 'GARMIN_OPEN_DRAFTS') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 350)); row.handoff = true; }
                     if (message.type === 'GARMIN_CONNECT') { window.fixture.connects++; await new Promise(resolve => setTimeout(resolve, 350));
                         if (window.fixture.mode !== 'success') return { ok: false, error: { message: 'Garmin didn’t accept this key. Copy the full key or get a new one.' } }; }
                     if (message.type === 'GARMIN_CHECK') { window.fixture.checks++; window.fixture.state.checking = true;
@@ -66,6 +69,7 @@ try {
         }) }), selectors);
         const stable = (before, after) => { assert.deepEqual(after.scroll, before.scroll); before.boxes.forEach((box, i) => Object.keys(box).forEach(key => assert(Math.abs(box[key] - after.boxes[i][key]) <= 1, `${name} shifted ${i}.${key}: ${box[key]} → ${after.boxes[i][key]}`))); };
         for (const theme of ['light', 'dark']) for (const width of [1180, 390]) {
+            console.log(`${name}: ${theme}/${width}`);
             await page.setViewportSize({ width, height: 1000 });
             await page.goto(`${origin}/options/options.html#capture-garmin`);
             await page.locator('#garmin-key-status').filter({ hasText: 'Connected on this device' }).waitFor();
@@ -113,6 +117,24 @@ try {
             await page.locator('#inbox-history summary').click();
             await page.locator('#inbox-history-list button').click();
             await page.locator('#inbox-list .garmin-activity').waitFor();
+            await page.locator('#inbox-list .garmin-activity button').click();
+            await page.evaluate(() => { window.fixture.state.items[0].analysis.matches[0].name = 'Updated Mountain'; });
+            await page.locator('#inbox-refresh').filter({ hasText: 'Review updated matches' }).waitFor();
+            assert(await page.locator('#inbox-matches').textContent().then(text => text.includes('Example Mountain')));
+            const refresh = page.locator('#inbox-refresh'); await refresh.focus(); await refresh.press('Enter');
+            await page.locator('#inbox-matches').filter({ hasText: 'Updated Mountain' }).waitFor();
+            assert(await refresh.evaluate(el => document.activeElement === el));
+            const open = page.locator('#inbox-open'); await open.focus();
+            const reviewSelectors = ['#inbox-open', '#inbox-refresh', '#inbox-review-title', '#inbox-history', 'footer'];
+            const beforeOpen = await geometry(reviewSelectors);
+            await open.press('Enter'); await page.waitForFunction(() => document.querySelector('#inbox-open').getAttribute('aria-busy') === 'true');
+            stable(beforeOpen, await geometry(reviewSelectors)); await open.press('Enter');
+            await page.locator('#inbox-saved').waitFor(); stable(beforeOpen, await geometry(reviewSelectors));
+            assert.equal(await page.evaluate(() => window.fixture.opens), 1);
+            assert.equal(await refresh.getAttribute('aria-disabled'), 'true');
+            assert.equal(await page.locator('#inbox-dismiss').getAttribute('aria-disabled'), 'true');
+            assert(await open.evaluate(el => document.activeElement === el));
+            if (name === 'chromium') await page.screenshot({ path: path.join(output, `review-${width}-${theme}.png`) });
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
             cases++;
         }

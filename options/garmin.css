@@ -35,3 +35,5 @@
 .garmin-recovery-link { min-height:1.6em; line-height:1.6; margin:0 0 14px; }
 .garmin-inbox button[aria-disabled=true],.garmin-settings button[aria-disabled=true] { opacity:.55; cursor:default; }
 @media(max-width:550px) { .garmin-workspace { margin:28px auto; padding:0 18px; } .garmin-heading,.garmin-activity { flex-direction:column; align-items:flex-start; } .garmin-heading { gap:12px; } .garmin-brand { padding:18px; } }
+
+#inbox-refresh { width:220px; }
