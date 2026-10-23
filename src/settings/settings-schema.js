@@ -87,6 +87,10 @@ const DEFAULTS = {
     // Put the captured Garmin/Strava activity link into the ascent form's
     // "URL Link to External Trip Report" field when it is empty.
     fillExternalUrl: true,
+    garminCheckHours: 4,
+    garminRecentDays: 30,
+    garminHistoryStart: '',
+    garminActivityTypes: 'walking',
     // Which GPX-chart series is shown by default: 'both', or only
     // 'distance' / 'time'. A legend click can still reveal the hidden one
     // for the current view without changing this preference.
@@ -270,6 +274,14 @@ const clean = raw => {
     s.betaPeakFilterOrder = s.betaPeakFilterOrder == null ? null : orderedIds(s.betaPeakFilterOrder, PEAK_FILTER_ORDER);
     s.betaPersonalFilterOrder = s.betaPersonalFilterOrder == null ? null : orderedIds(s.betaPersonalFilterOrder, PERSONAL_FILTER_ORDER);
     s.chartDefaultSeries = chartDefaultSeries(s.chartDefaultSeries);
+    s.garminCheckHours = Number.isInteger(s.garminCheckHours) && s.garminCheckHours >= 0 && s.garminCheckHours <= 168 ? s.garminCheckHours : DEFAULTS.garminCheckHours;
+    s.garminRecentDays = Number.isInteger(s.garminRecentDays) && s.garminRecentDays >= 1 && s.garminRecentDays <= 365 ? s.garminRecentDays : DEFAULTS.garminRecentDays;
+    s.garminActivityTypes = s.garminActivityTypes === 'all' ? 'all' : 'walking';
+    s.garminHistoryStart = s.garminHistoryStart === 'all' || (typeof s.garminHistoryStart === 'string'
+        && /^\d{4}-\d{2}-\d{2}$/.test(s.garminHistoryStart)
+        && Number.isFinite(Date.parse(`${s.garminHistoryStart}T00:00:00Z`))
+        && new Date(`${s.garminHistoryStart}T00:00:00Z`).toISOString().slice(0, 10) === s.garminHistoryStart)
+        ? s.garminHistoryStart : '';
     s.favoritesSource = favoritesSource(s.favoritesSource);
     s.reportEditorMode = reportEditorMode(s.reportEditorMode);
     s.reportImageWidth = reportImageWidth(s.reportImageWidth);
