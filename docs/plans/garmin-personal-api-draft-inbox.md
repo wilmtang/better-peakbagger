@@ -268,6 +268,51 @@ alias. Do not base synchronization on a guessed sort field or interpret that
 empty response as evidence that the account has no activities. The probe printed
 only status/count comparisons and retained no credentials or activity payloads.
 
+#### Expanded upload-sort verification
+
+A further October 23 probe tested eight upload/creation-field spellings, plus
+two ID-field candidates, against working and invalid controls. Each used
+`start=0&limit=5`, both `asc` and `desc`, and no activity-date filters. Response
+values were compared in memory; only counts and ordering checks were printed.
+
+| `sortBy` | Each direction | Ordering evidence |
+| --- | --- | --- |
+| `startLocal` | HTTP 200, five items | Activity dates followed the requested direction. |
+| `distance` | HTTP 200, five items | Distances followed the requested direction and IDs differed from the date-sorted control. This verifies that a supported sort can change the result. |
+| `uploadedDate`, `uploadDate`, `uploadTime`, `uploadTimestamp`, `dateUploaded`, `metadataDTO.uploadedDate`, `createdDate`, `createdTimestamp` | HTTP 200, zero items for every spelling | Same behavior as the deliberately invalid sort; no usable upload ordering established. |
+| `activityId` | HTTP 200, five items | IDs and detail upload timestamps followed the requested direction, but returned IDs exactly matched the activity-date control. This sample cannot distinguish upload/ID sorting from date sorting. |
+| `id` | HTTP 200, five items | Neither activity IDs nor detail upload timestamps followed the requested direction. A nonempty result is insufficient proof too. |
+| Deliberately invalid sort field | HTTP 200, zero items | Negative control. |
+
+The final `startLocal` control returned the same IDs as at the start. That probe
+made 48 requests: one token exchange, 27 list reads and 20 detail reads. No
+activity files were downloaded and nothing was uploaded or modified.
+
+An adaptive follow-up compared `startLocal` with `activityId`, both directions,
+at `limit=100`: all four requests returned 100 items, monotonically ordered by
+both activity date and activity ID, with identical ID sequences for each
+direction. It made five requests including authentication. There were no
+date/ID inversions to inspect, so it fetched no further details. These samples
+contain no distinguishing late-upload case; **they do not independently prove
+that `activityId` sorting is honored, or that ID order guarantees upload order**.
+The OpenAPI describes `activityId` only as a unique identifier. Do not replace
+an upload-time checkpoint with a maximum-ID cutoff on this evidence.
+
+The rechecked public schema still has 32 list query parameters, with no
+uploaded-after filter or complete supported-sort enum. It defines
+`metadataDTO.uploadedDate` as UTC despite omitting `Z` or an offset; parse that
+documented field explicitly as UTC, never as the browser's local time.
+
+**Decision:** upload-date incremental discovery remains unverified and must not
+be the correctness boundary. The tested spellings are unusable on this account;
+this does not exclude every undocumented alias or future API change. A usable
+sort needs evidence from records whose activity-date and upload-date orders
+differ, plus tied timestamps and page boundaries. A supported uploaded-after
+filter additionally needs a cutoff test that demonstrably excludes older
+uploads. A controlled late-upload fixture remains unverified; these read-only
+probes did not create or modify an activity. Preserve the reconciliation strategy
+below meanwhile.
+
 An upload-based product mode remains possible through client-side reconciliation:
 enumerate activity IDs across all accessible history, compare them with a durable
 baseline, and obtain details for newly discovered IDs to inspect `uploadedDate`.
@@ -832,6 +877,36 @@ scans if it changes. Periodic reconciliation remains necessary because the API
 does not promise snapshot isolation. A failed page leaves the old committed
 checkpoint intact. Never equate maximum activity ID or last start date with a
 complete set of new/modified activities. Historical imports use the same rules.
+
+#### Conditional upload-time optimization
+
+If Garmin later confirms a usable upload-date sort/filter, the proposed
+optimization is appropriate, with these boundaries:
+
+1. Keep an account-bound **last fully discovered upload time**, separate from
+   per-activity processing state. Persist every discovered ID and its pending
+   work before advancing this checkpoint. The newest successful import alone
+   cannot establish it: an older import may still have failed or be queued.
+2. A verified uploaded-after filter can reduce the server-side result. With
+   only verified descending upload sorting, start at the first page and stop
+   after passing an overlapping checkpoint boundary; sorting alone does not
+   create an API filter. If upload timestamps remain detail-only, each previously
+   unknown item may require a detail read to decide where that boundary lies.
+3. Include the timestamp boundary and a bounded overlap, deduplicating by
+   account/activity ID. Equal upload times may span pages; never use a strict
+   `uploadedDate > checkpoint` rule that drops tied records. Finish the entire
+   boundary group, and require validated ordering before stopping early. A
+   failed/incomplete discovery pass retains its prior committed checkpoint;
+   prepared items and failed analyses retain their independent resumable state.
+4. Keep periodic reconciliation until the API promises stable pagination and
+   bounded indexing delay. Upload order does not reveal edits or deletions to
+   existing activities. Missing/invalid timestamps, changed query semantics or
+   a source-account change invalidate the shortcut. Apply the user's selected
+   activity-date scope separately; an upload cursor must not silently expand
+   consent to previously excluded history.
+
+This is a conditional design, not the current discovery algorithm. The expanded
+probe above did not establish the required upload-date ordering/filter contract.
 
 Allow one active import analysis at a time initially and reuse the existing
 origin-wide Peakbagger scheduler/cooldown. Never persist a retry loop that
