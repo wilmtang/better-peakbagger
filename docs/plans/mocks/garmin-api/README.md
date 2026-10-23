@@ -50,6 +50,9 @@ screen. The prototype
 simulates auth expiry and recovery but does not verify Garmin's actual error
 responses, credential validation, API quotas, storage migration, cross-device
 import, Save reconciliation or the complete permission/account flow.
+Live [authentication probes](../../experiments/garmin-key-expiry.md) verified
+rejected keys but not an expiry-specific signal. The **Expired key** fixture is
+illustrative; use **New key needed** as the default production recovery state.
 The popup navigates in the same page to simulate opening the inbox; it does not
 reuse/create a real extension tab, close a native popup or capture an activity.
 Its context selector stands in for a read-only lookup of the current tab/job.

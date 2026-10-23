@@ -105,7 +105,12 @@ read-only demo value; the mock makes no API requests.
 
 ### Recover from an expired key
 
-Show **“Garmin API key expired. Imports paused; your drafts are safe.”** with
+The expiry-specific scene below is illustrative. Live testing verified key
+rejection, not expiry specifically; use the generic **“Garmin needs a new API
+key”** state by default. See [authentication findings](experiments/garmin-key-expiry.md).
+
+Only with confirmed expiry, show **“Garmin API key expired. Imports paused;
+your drafts are safe.”** with
 **Update key**. Keep the inbox and its draft count available. The action opens
 the replacement form, with the same direct Garmin link and **Reconnect Garmin**.
 
@@ -231,6 +236,14 @@ The first token attempt, using Python with `Accept: application/json`, returned
 read test. This is consistent with content negotiation, but the precise cause
 was not isolated. Implement the documented request and handle the token as
 text; do not interpret every non-200 response as an invalid key.
+
+**Key expiry:** a valid key returned a 24-hour JWT with no key-expiry date in
+the token or response headers.
+Malformed and altered keys both returned **401 with an empty body**. These
+tests establish rejection, not its cause. Neither the published OpenAPI nor
+Garmin's reference client supplies an expiry-specific contract. Default to
+**Update key**, without claiming expiry; a genuinely expired key is still needed
+to verify that response. [Test results](experiments/garmin-key-expiry.md)
 
 ### Live sample, with private values omitted
 
@@ -382,7 +395,7 @@ and cannot outlive the key. [Garmin FAQ](https://developer.garmin.com/gc-develop
 
 | Situation | Message | Action |
 | --- | --- | --- |
-| Expiry is confirmed | **Garmin API key expired. Imports paused; your drafts are safe.** | **Update key** |
+| Expiry is confirmed (not yet verified; do not enable from HTTP 401 alone) | **Garmin API key expired. Imports paused; your drafts are safe.** | **Update key** |
 | Credentials rejected, exact reason unknown | **Garmin needs a new API key. Imports paused; your drafts are safe.** | **Update key** |
 | A replacement key is rejected | **Garmin didn’t accept this key. Copy the full key or get a new one.** | Keep the field and direct Garmin link available |
 
@@ -393,7 +406,9 @@ expiry is confirmed. A generic rejection says **“Garmin needs a new key. Open
 inbox to reconnect.”** Do not erase the pending count or redirect users away
 from drafts.
 
-Allow one bounded access-token renewal before declaring reconnect required.
+On an activity 401, exchange the key for a fresh token once and retry once.
+A token-exchange 401 requires reconnect, with the generic rejected-key message.
+If exchange succeeds but the activity still fails, report an access failure.
 An offline response, timeout or rate limit must keep its own recovery message,
 not claim key expiry. Persist the paused state across browser restarts. Show an
 expiry date/countdown only from authoritative key-expiry information; JWT expiry
