@@ -32,7 +32,7 @@ for (const terrain of [false, true]) {
         assert.equal(env.reveal.show(stations), true);
         const { bounds, options } = env.calls[0];
         const lngLatBounds = terrain ? bounds : bounds.map(([lat, lon]) => [lon, lat]);
-        assert.deepEqual(lngLatBounds, [[-121.76, 46.78], [-121.33, 46.9]], 'frame the current center and first three nearby stations');
+        assert.deepEqual(lngLatBounds, [[-121.76, 46.78], [-121.75, 46.85]], 'frame the current center and nearest station');
         assert.equal(options.maxZoom, 14);
         assert.equal(terrain ? options.duration : options.duration * 1000, 450);
         if (terrain) { assert.equal(options.pitch, 55); assert.equal(options.bearing, 30); assert.equal(options.linear, true); }
@@ -63,4 +63,58 @@ test('Alaska stations across the date line use the nearby world copy', () => {
     env.reveal.show([{ latitude: 65.1, longitude: -179.9 }]);
     const { bounds } = env.calls[0];
     assert.ok(bounds[1][0] - bounds[0][0] < 1, 'do not zoom out across the entire world');
+});
+
+test('a farther station must not force a wider discovery view than the nearest station needs', () => {
+    const env = setup(); env.reveal.show(stations);
+    const bounds = env.calls[0].bounds.map(([lat, lon]) => [lon, lat]);
+    assert.deepEqual(bounds, [[-121.76, 46.78], [-121.75, 46.85]], 'reveal the nearest station and current location, without fitting distant alternatives');
+});
+
+
+for (const terrain of [false, true]) {
+    test(`${terrain ? '3D' : '2D'} treats a station behind the open menu as hidden and fits into free space`, () => {
+        const env = setup({ terrain, visible: true });
+        assert.equal(env.reveal.show(stations, [[0, 0, .75, 1]]), true);
+        const options = env.calls[0].options;
+        assert.equal(terrain ? options.padding.left : options.paddingTopLeft[0], 252);
+        assert.equal(options.maxZoom, 14);
+        const clear = setup({ terrain, visible: true });
+        assert.equal(clear.reveal.show(stations, [[.6, 0, 1, .5]]), false, 'an unobscured existing station needs no camera change');
+    });
+    test(`${terrain ? '3D' : '2D'} skips a fully covered map, distant coverage and a moving camera`, () => {
+        const env = setup({ terrain });
+        assert.equal(env.reveal.show(stations, [[0, 0, 1, 1]]), false, 'never fit into an unusable sliver');
+        assert.equal(env.reveal.show([{ id: 'far', latitude: 40, longitude: -111 }]), false, 'discovery stays inside 50 km');
+        env.map.isMoving = () => true;
+        assert.equal(env.reveal.show(stations), false); assert.deepEqual(env.calls, []);
+    });
+    test(`${terrain ? '3D' : '2D'} sorts discovery by current camera distance rather than incoming station order`, () => {
+        const env = setup({ terrain }); env.reveal.show([...stations].reverse());
+        const bounds = terrain ? env.calls[0].bounds : env.calls[0].bounds.map(([lat, lon]) => [lon, lat]);
+        assert.deepEqual(bounds, [[-121.76, 46.78], [-121.75, 46.85]]);
+    });
+}
+
+test('native map chrome also makes a geographically visible station unusable', () => {
+    const env = setup({ visible: true });
+    const control = { getBoundingClientRect: () => ({ left: 80, top: 90, right: 140, bottom: 150, width: 60, height: 60 }) };
+    env.map.getContainer = () => ({ getBoundingClientRect: () => ({ left: 0, top: 0 }), ownerDocument: { querySelectorAll: () => [control, control] } });
+    assert.equal(env.reveal.show(stations), true, 'basemap and zoom controls count as obstructions too');
+    const { paddingTopLeft: [left, top], paddingBottomRight: [right, bottom] } = env.calls[0].options;
+    assert.ok(left >= 152 || top >= 162 || 320 - right <= 68 || 240 - bottom <= 78, 'both geographic anchors fit clear of the control');
+});
+
+for (const terrain of [false, true]) test(`${terrain ? '3D' : '2D'} accepts a station exactly on the fitted safe boundary without repeating the reveal`, () => {
+    const env = setup({terrain});
+    env.map.project = env.map.latLngToContainerPoint = () => ({x:252,y:120});
+    assert.equal(env.reveal.show(stations, [[0,0,.75,1]]), false);
+    assert.deepEqual(env.calls, []);
+});
+
+test('small supported maps retain the same full-marker safety inset used by visibility checks', () => {
+    const env = setup(); env.map.getSize = () => ({x:80,y:80});
+    assert.equal(env.reveal.show(stations), true);
+    assert.deepEqual(env.calls[0].options.paddingTopLeft, [24,24]);
+    assert.deepEqual(env.calls[0].options.paddingBottomRight, [24,24]);
 });

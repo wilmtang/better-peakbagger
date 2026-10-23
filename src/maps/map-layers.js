@@ -29,10 +29,27 @@ export function installMapLayers(win = window) {
     let terrainView = null, snotelAllowed = false, requestId = 0, stations = [], coverage = null;
     let stationTimer = null, relayFrame = null;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
-    let revealPending = false;
+    let revealPending = false, terrainMoving = false;
     let landViewKey = '', landInfo = null;
-    const nativeReveal = createSnotelMapReveal({ window: win, getMap: () => binding?.map });
+    const revealOcclusions = () => {
+        const target = frameMode ? doc.getElementById('bpb-terrain-frame') : binding?.frame || binding?.map.getContainer?.();
+        const bounds = target?.getBoundingClientRect();
+        if (!bounds?.width || !bounds.height || control.element.hidden) return [];
+        const menu = control.element.querySelector('.bpb-layers-panel');
+        const trigger = control.trigger.getBoundingClientRect(), rect = control.isOpen() ? menu.getBoundingClientRect() : trigger;
+        const overlay = {left:Math.min(rect.left,trigger.left),top:Math.min(rect.top,trigger.top),right:Math.max(rect.right,trigger.right),bottom:Math.max(rect.bottom,trigger.bottom)};
+        const chrome = [...doc.querySelectorAll('#bpb-terrain-toggle, .bpb-map-compass')].map(node => node.getBoundingClientRect())
+            .filter(box => box.width > 0 && box.height > 0);
+        return [overlay, ...chrome].slice(0, 8).map(box => [(box.left - bounds.left) / bounds.width, (box.top - bounds.top) / bounds.height,
+            (box.right - bounds.left) / bounds.width, (box.bottom - bounds.top) / bounds.height].map(value => Math.max(0, Math.min(1, value))))
+            .filter(box => box[0] < box[2] && box[1] < box[3]);
+    };
+    const nativeReveal = createSnotelMapReveal({ window: win, getMap: () => binding?.map, getOcclusions: revealOcclusions });
     const cancelReveal = () => { revealPending = false; nativeReveal.cancel(); };
+    const navigationStarted = () => {
+        if (!revealPending) return;
+        cancelReveal(); requestId++; post({ type: 'cancel' });
+    };
     const selectable = new Set();
     const statuses = {
         sentinel: { legend: 'Copernicus Sentinel-2 · Microsoft Planetary Computer. Scene clouds can obscure coverage.' },
@@ -87,7 +104,7 @@ export function installMapLayers(win = window) {
     };
     const sendStations = (reveal = false) => {
         const shown = state.snotel.enabled && active ? stations : [];
-        if (frameMode) terrain('snowStations', { snowStations: shown, reveal: reveal && shown.length > 0,
+        if (frameMode) terrain('snowStations', { snowStations: shown, reveal: reveal && shown.length > 0, occlusions: revealOcclusions(),
             conditions: shown.filter(station => selectable.has(station.id)).map(station => station.id) });
         else {
             binding?.engine.stations(shown, { selectable, onSelect: stationId => snowCard({ type: 'select', stationId }) });
@@ -108,6 +125,7 @@ export function installMapLayers(win = window) {
         post({ type: 'stations', requestId, bounds, reveal: revealPending });
     };
     const refresh = event => {
+        if (event && binding) binding.moving = false;
         if (event && revealPending) { cancelReveal(); requestId++; post({ type: 'cancel' }); }
         apply();
         if (!frameMode && !booting) binding?.sentinel.refresh();
@@ -136,7 +154,7 @@ export function installMapLayers(win = window) {
             if (coverage?.[id] === false) { paint(); return; }
             state[id].enabled = enabled;
             if (id === 'snotel') {
-                cancelReveal(); revealPending = enabled;
+                cancelReveal(); revealPending = enabled && !(frameMode ? terrainMoving : binding?.moving);
                 requestId++; post({ type: 'cancel' }); stations = [];
                 statuses.snotel.saved = false; statuses.snotel.overflow = false; statuses.snotel.count = 0;
                 if (!enabled) { nearbyPending = false; nearbyRequest++; snowCard({ type: 'cancel' }); statuses.snotel.pending = false; }
@@ -186,6 +204,7 @@ export function installMapLayers(win = window) {
         nativeReveal.cancel();
         if (!binding) return;
         binding.map.off('moveend', refresh);
+        binding.map.off('movestart', binding.moveStarted);
         binding.unbindLocation();
         binding.observer?.disconnect(); binding.sentinel.dispose(); binding.engine.dispose();
         binding = null;
@@ -231,7 +250,9 @@ export function installMapLayers(win = window) {
                     onCapture: target => { capture = target; revision++; relay(); post({ type: 'handoffState', snapshot: snapshot() }); },
                 });
                 const unbindLocation = bindMapLocationMenu({ ownerWindow: owner, map, frame: candidate.frame, menu: locationMenu });
-                binding = { ...candidate, map, engine, sentinel, unbindLocation };
+                const moveStarted = () => { if (binding?.map === map) binding.moving = true; navigationStarted(); };
+                binding = { ...candidate, map, engine, sentinel, unbindLocation, moveStarted, moving: false };
+                map.on('movestart', moveStarted);
                 map.on('moveend', refresh);
                 if (win.ResizeObserver) { binding.observer = new win.ResizeObserver(position); binding.observer.observe(candidate.frame || map.getContainer()); }
                 apply(); refresh(); return true;
@@ -329,9 +350,11 @@ export function installMapLayers(win = window) {
             if (binding) { unbind(); start(); }
             requestId++; post({ type: 'cancel' });
         } else if (data.dir === 'toPage' && data.type === 'loaded') {
-            frameMode = true; booting = false; revision++; apply(); loadStations();
+            frameMode = true; terrainMoving = false; booting = false; revision++; apply(); loadStations();
         } else if (data.dir === 'toPage' && ['destroyed', 'error'].includes(data.type)) {
-            frameMode = booting = false; terrainView = null; revision++; apply(); refresh();
+            frameMode = booting = terrainMoving = false; terrainView = null; revision++; apply(); refresh();
+        } else if (data.dir === 'toPage' && data.type === 'layerMoveStart' && frameMode) {
+            terrainMoving = true; navigationStarted();
         } else if (data.dir === 'toPage' && data.type === 'layerStatus' && frameMode) {
             const status = readLayerStatus(data); if (status && status.revision === revision) {
                 const previous = statuses[status.id].retryAt, previousLand = JSON.stringify(statuses.land.providerCooldowns);
@@ -346,6 +369,7 @@ export function installMapLayers(win = window) {
             // the revision here would discard its immediately-following status.
             capture = sentinelTarget(data.target); relay(); post({ type: 'handoffState', snapshot: snapshot() });
         } else if (data.dir === 'toPage' && data.type === 'layerView' && frameMode) {
+            terrainMoving = false;
             const bounds = overlayBounds(data.bounds);
             if (bounds) {
                 if (revealPending && terrainView && bounds.some((value, i) => Math.abs(value - terrainView.bounds[i]) > 1e-7)) {

@@ -205,9 +205,9 @@ try {
             resources.defer('weather live BiDi listener', () => bidi.off('network.beforeRequestSent', listener));
         }
         evaluate = (fn, ...args) => driver.executeScript(webdriverScript(fn, ...args));
-        evaluateTerrain = async fn => {
+        evaluateTerrain = async (fn, ...args) => {
             await driver.switchTo().frame(await driver.findElement(By.id('bpb-terrain-frame')));
-            try { return await driver.executeScript(webdriverScript(fn)); }
+            try { return await driver.executeScript(webdriverScript(fn, ...args)); }
             finally { await driver.switchTo().defaultContent(); }
         };
         navigate = url => driver.get(url);
@@ -346,7 +346,7 @@ try {
             } finally { await options.close(); await page.bringToFront(); }
         };
         evaluate = (fn, arg) => page.evaluate(fn, arg);
-        evaluateTerrain = fn => page.frames().find(frame => /\/terrain\/terrain.html/.test(frame.url())).evaluate(fn);
+        evaluateTerrain = (fn, arg) => page.frames().find(frame => /\/terrain\/terrain.html/.test(frame.url())).evaluate(fn, arg);
         // Only the isolated headless context is affected. An install-time
         // extension tab must not leave the fixture's compositor inactive.
         navigate = async url => { await page.bringToFront(); return page.goto(url, { waitUntil: 'load' }); };

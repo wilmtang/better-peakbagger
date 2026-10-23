@@ -67,7 +67,7 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 | Sentinel-2 (experimental) | 100% | Natural-color imagery from a selected satellite pass in the past 30 days. Clouds and gaps can obscure terrain. |
 | Slope angle | 60% | USGS 3DEP ground slope. Yellow 20–30°, orange 30–35°, red 35–40°, purple 40–45°, dark purple ≥45°. Below 20° and missing data are clear. Resolution varies; this is not an avalanche forecast. |
 | Public lands | 25% | USGS PAD-US 4.1 fee ownership, ParcelMap BC ownership records and southwestern Alberta regional parcels. BLM and Canadian provincial Crown land are gold; USFS is deep blue; other recorded ownership uses muted colors. Canadian coverage is partial. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
-| SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, reveal up to three nearby stations within 50 km once. Visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
+| SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, frame the nearest station within 50 km once. Unobscured visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
 
 Public-land settings have individual checkboxes for the types available in the
 visible region. **All types** controls the visible categories, with a mixed state
@@ -121,10 +121,19 @@ observation requests keep their existing behavior. A failed refresh preserves
 loaded markers, says **Refresh failed** with **Showing loaded locations**, and
 recounts only known locations still in view. This is distinct from a confirmed
 empty result. An overflow says **Zoom in**, rather than claiming zero stations.
-Explicit activation reveals the nearest three stations
-within 50 km when none are visible, using the original one-time zoom-out and
-reduced-motion behavior. Later pans and renderer changes do not repeat it;
-moving the map while the catalog loads cancels pending auto-zoom.
+Explicit activation reveals the nearest station within 50 km when none are
+usable in the visible map. The camera frames that station and the previous map
+center, never zooms in, and avoids the expanded overlay menu, basemap picker and
+zoom controls. Further stations do not widen this discovery view; they appear
+when the resulting viewport includes them. A station already clear of controls
+keeps the camera unchanged. A fully covered or tiny map does not start an
+unusable camera move.
+The reveal uses one brief transition, or no animation with reduced motion.
+Later pans, retries after a completed reveal, and renderer changes do not repeat
+it. Navigation start cancels pending discovery before a late response can move
+the camera; toggling SNOTEL during an ongoing gesture does not schedule a reveal.
+Alaska uses the nearest wrapped longitude copy. The catalog and 50 km search
+remain local and use the existing device cache.
 **Show conditions** appears only for stations authorized
 by the current peak's Nearby snow card, within its existing 50 km membership.
 Other stations have an official NRCS link. **Settings → General → Show SNOTEL**
@@ -327,3 +336,13 @@ speech. The [archived implementation ledger](archive/map-layers-and-overlays-202
 retains the exact evidence and open proof gaps.
 The [October 21 follow-up audit](archive/map-overlays-audit-2026-10-21.md)
 records the label, zoom feedback, settings races and popup-membership fixes.
+
+
+`BPB_VERIFY_SNOW_MAP_CASE=camera npm run verify -- snow-map` selects the focused
+camera audit matrix in both browsers: closest-station framing, usable-marker
+visibility beside open controls, unchanged already-visible/empty cameras,
+passive pan behavior, navigation-start cancellation, and stable surrounding
+layout at 1440/375 × 1100 in light/dark native and hardware 3D views. Unknown
+case selections and zero executed cases fail. The
+[SNOTEL camera audit ledger](archive/snotel-map-camera-audit-2026-10-22.md)
+records the findings and the broader popup-theme verification limitation.

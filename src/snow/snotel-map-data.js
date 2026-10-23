@@ -19,3 +19,17 @@ export function readSnotelMapStations(value) {
     }
     return stations;
 }
+
+// The outer menu's normalized screen rectangle, revalidated at each relay.
+// The renderer converts it to its own CSS pixels.
+export function readSnotelMapOcclusion(value) {
+    return Array.isArray(value) && value.length === 4 && value.every(number => Number.isFinite(number) && number >= 0 && number <= 1)
+        && value[0] < value[2] && value[1] < value[3] ? value.slice() : null;
+}
+
+
+export function readSnotelMapOcclusions(value) {
+    if (!Array.isArray(value) || value.length > 8) return [];
+    const rectangles = value.map(readSnotelMapOcclusion);
+    return rectangles.every(Boolean) ? rectangles : [];
+}

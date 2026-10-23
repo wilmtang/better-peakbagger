@@ -7,7 +7,7 @@
 
 import { settings } from '../settings/settings.js';
 import { terrainCamera } from './terrain-camera.js';
-import { readSnotelMapStations } from '../snow/snotel-map-data.js';
+import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
 import { readLayerSnapshot, readLayerStatus, readBasemapChoices } from '../maps/map-layer-protocol.js';
 import { sentinelTarget } from '../maps/sentinel-core.js';
 import { overlayBounds } from '../maps/map-overlay-providers.js';
@@ -527,7 +527,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                     pending.snowStations = snowStations; pending.revealSnowStations = reveal;
                     pending.conditions = (conditions || pending.conditions).filter(id => snowStations.some(station => station.id === id));
                 }
-                postToFrame('snowStations', { snowStations, reveal, conditions });
+                postToFrame('snowStations', { snowStations, reveal, conditions, occlusions: readSnotelMapOcclusions(data.occlusions) });
             } else if (data.type === 'update') {
                 const pending = pendingLaunch || pendingInit;
                 if (pending) {
@@ -577,6 +577,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         } else if (data.type === 'layerBasemaps') {
             const choices = readBasemapChoices(data.choices);
             if (!suspended && choices.some(choice => choice.id === data.selection)) postToPage('layerBasemaps', { choices, selection: data.selection });
+        } else if (data.type === 'layerMoveStart') {
+            if (!suspended && frameLoaded) postToPage('layerMoveStart', {});
         } else if (data.type === 'layerView') {
             const bounds = overlayBounds(data.bounds);
             if (!suspended && frameLoaded && bounds && Number.isFinite(data.zoom) && data.zoom >= 0 && data.zoom <= 25) postToPage('layerView', { bounds, zoom: data.zoom });

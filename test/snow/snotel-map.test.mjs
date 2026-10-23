@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createSnotelMapSource } from '../../src/snow/snotel-map-source.js';
-import { readSnotelMapStations } from '../../src/snow/snotel-map-data.js';
+import { readSnotelMapStations, readSnotelMapOcclusion, readSnotelMapOcclusions } from '../../src/snow/snotel-map-data.js';
 import { createTerrainSnotelMarkers } from '../../src/snow/snotel-map-marker.js';
 import { validateSnotelStations, nearbySnotelStations } from '../../src/snow/snotel-data.js';
 import { snotelStations } from '../helpers/snotel-fixture.mjs';
@@ -131,4 +131,19 @@ test('terrain membership updates keep an existing station popup and its focused 
         popups[0].node.querySelector('button').focus(); allowed = false; renderer.replace({}, stations);
         assert.equal(popups[0].node.querySelector('button'), null); assert.equal(doc.activeElement, link);
     } finally { renderer.clear(); env.window.close(); }
+});
+
+
+test('map occlusion is a copied normalized screen rectangle at each renderer boundary', () => {
+    const rect = [.02, .1, .7, .9];
+    const clean = readSnotelMapOcclusion(rect); assert.deepEqual(clean, rect); assert.notEqual(clean, rect);
+    for (const invalid of [undefined, null, {}, [0, 0, 1], [0, 0, 1, 1, 0], [0, 0, Infinity, 1], [-1, 0, 1, 1], [0, 0, 2, 1], [.9, 0, .1, 1]]) {
+        assert.equal(readSnotelMapOcclusion(invalid), null);
+    }
+});
+
+
+test('outer map chrome rectangles are bounded and revalidated together', () => {
+    assert.deepEqual(readSnotelMapOcclusions([[0,0,.6,.8],[.8,.6,1,.9]]), [[0,0,.6,.8],[.8,.6,1,.9]]);
+    for (const invalid of [undefined, {}, Array(9).fill([0,0,1,1]), [[0,0,.5,.5],[0,0,2,1]]]) assert.deepEqual(readSnotelMapOcclusions(invalid), []);
 });

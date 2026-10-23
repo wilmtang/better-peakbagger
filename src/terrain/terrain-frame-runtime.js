@@ -13,7 +13,7 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { createTerrainOverlays } from './terrain-overlays.js';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
 import { rateLimitMessage } from '../net/rate-limit.js';
-import { readSnotelMapStations } from '../snow/snotel-map-data.js';
+import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
 import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 
@@ -2117,7 +2117,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 terrainMap.on('move', () => {
                     if (map === terrainMap && !suspended) scheduleView();
                 });
-                terrainMap.on('movestart', cancelTiltWarm);
+                terrainMap.on('movestart', () => {
+                    cancelTiltWarm();
+                    if (map === terrainMap && !suspended) post('layerMoveStart', {});
+                });
                 loaded = true;
                 if (!snowMarkers.replace(terrainMap, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
                 try {
@@ -2327,7 +2330,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (Array.isArray(data.conditions)) snowConditions = new Set(data.conditions.filter(id => stations.some(station => station.id === id)));
             if (loaded && !snowMarkers.replace(map, stations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
             if (!stations.length) snowReveal.cancel();
-            else if (loaded && data.reveal === true) snowReveal.show(stations);
+            else if (loaded && data.reveal === true) snowReveal.show(stations, readSnotelMapOcclusions(data.occlusions));
         } else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
             if (data.routeStyle !== undefined) setRoutePaint(data.routeStyle);

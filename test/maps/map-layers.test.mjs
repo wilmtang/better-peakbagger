@@ -33,8 +33,9 @@ function setup(terrain = false, { preferences = true } = {}) {
     if (terrain) { send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input').click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
+    const panStart = () => { for (const handler of events.get('movestart') || []) handler({ target: map }); };
     const pan = () => { for (const handler of events.get('moveend') || []) handler({ target: map }); };
-    return { win, messages, moves, removed, popups, rasterPaints, send, toggle, request, pan,
+    return { win, messages, moves, removed, popups, rasterPaints, send, toggle, request, pan, panStart,
         view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner.dispose(); win.close(); } };
 }
@@ -230,5 +231,33 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} land fil
         assert.deepEqual(env.messages.filter(message => message.type === 'save').at(-1).preferences.landTypes, []);
         env.send({ type: 'preferences', snotel: true, preferences: { landTypes: ['USFS'] } });
         assert.equal(doc.querySelector('[aria-label="USFS land"]').checked, false, 'late saved preferences cannot overwrite a new choice');
+    } finally { env.close(); }
+});
+
+
+for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} navigation start cancels discovery before a late response can interrupt the gesture`, () => {
+    const env = setup(terrain);
+    const start = () => terrain ? env.send({ type: 'layerMoveStart' }, '__bpbTerrain') : env.panStart();
+    try {
+        env.toggle(); const request = env.request(); start();
+        env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true });
+        assert.equal(env.moves.length, 0);
+        assert.equal(env.messages.some(message => message.type === 'snowStations' && message.reveal === true), false);
+        env.toggle(); env.toggle();
+        assert.equal(env.request().reveal, false, 'activation during a gesture must not schedule a delayed camera move');
+    } finally { env.close(); }
+});
+
+test('terrain discovery receives the union of the overlay trigger and expanded menu', () => {
+    const env = setup(true), doc = env.win.document;
+    try {
+        const frame = doc.createElement('div'); frame.id = 'bpb-terrain-frame'; doc.body.append(frame);
+        frame.getBoundingClientRect = () => ({left:20,top:40,bottom:440,width:800,height:400});
+        doc.querySelector('.bpb-layers-trigger').getBoundingClientRect = () => ({left:30,top:50,right:140,bottom:82});
+        doc.querySelector('.bpb-layers-panel').getBoundingClientRect = () => ({left:30,top:88,right:262,bottom:360});
+        doc.querySelector('.bpb-layers-trigger').click(); env.toggle();
+        const request = env.request(); env.send({type:'stations',requestId:request.requestId,stations:[station],nearby:true});
+        const reveal = env.messages.filter(message => message.type === 'snowStations' && message.reveal).at(-1);
+        assert.deepEqual(reveal.occlusions, [[.0125,.025,.3025,.8]]);
     } finally { env.close(); }
 });
