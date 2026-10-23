@@ -1,6 +1,8 @@
 # Garmin Personal API and automatic draft inbox
 
-Status: implementation in progress, October 23, 2026. Initial source review used commit `61b07643`;
+Status: implemented and locally audited, October 23, 2026. See the concise
+[setup guide](../garmin-inbox.md) and [audit closure ledger](garmin-inbox-audit.md).
+Initial source review used commit `61b07643`;
 the revision also inspected the current settings credential export/import path
 and toolbar popup startup, layout and capture controls.
 The user authorized bounded read-only tests of their personal key; no key,
@@ -17,7 +19,7 @@ Implementation ledger (updated with each completed unit):
 | Settings, inbox and popup UI | Implemented; 54 popup tests and 12 hidden Chrome/Firefox fixture cases. Rejected-key errors survive polling; dismissal Undo, refresh and completed/dismissed history are available. Layout and keyboard checks cover pending/error/retry at 1180/390px, both themes and 200% CSS zoom. Native permission prompts and live provider integration remain open. |
 | Bounded continuation and recovery | Implemented; focused regressions cover backlog draining, capacity, permission removal, midnight cursor recovery, public summary privacy and Undo expiry. Public UI responses omit stored routes and draft payloads. A new key-error assertion failed against the old implementation and passed after the fix. |
 | Credential-file export/import | Implemented in schema 4; export checkbox, legacy omission, explicit null, permission refusal, failed validation, rollback and concurrent replacement covered. New devices do not inherit import consent. |
-| Browser integration, privacy and documentation | Privacy contract updated; actual Chrome manifest/worker check passed. Firefox extension integration and complete final suite remain pending. |
+| Browser integration, privacy and documentation | Privacy contract and setup guide updated. Actual hidden Chrome/Firefox manifest and worker checks passed; final validation and external proof gaps are tracked in the audit ledger. |
 | Distribution / business program | External agreement review remains open; no business account application or release is authorized by implementation. |
 
 ## Recommendation
@@ -40,8 +42,7 @@ user actions.
 user connects Garmin, continuing through today. Users can choose any earlier
 date or all available history. The recent lookback and check frequency are
 separate editable settings. A scan does not import dates users have excluded;
-**Manual only** disables both automatic scans. This is a proposed design, not
-implemented behavior.
+**Manual only** disables both automatic scans. These controls are implemented.
 
 Pending inbox drafts have **no automatic expiry**. Keep their small,
 privacy-filtered route snapshot on this device until completion or explicit
@@ -89,7 +90,7 @@ Manual only, and **“Connect Garmin to import your activities.”** before setu
 The inbox remains available on every website, before Garmin setup, and during a
 capture or connection failure. Credentials and the activity list belong in the
 full extension page. The prototype navigates within the page to demonstrate the
-handoff; actual tab creation/reuse and popup dismissal remain implementation work.
+handoff; tab creation/reuse is implemented in the extension.
 
 <details>
 <summary>Popup on another website, dark mode and opening-error recovery</summary>
@@ -139,7 +140,8 @@ Enable Garmin drafts has been selected.
 
 This earlier rendered mock predates the separate configurable ranges. The
 [settings labels and descriptions below](#scan-settings-copy) are the current
-design; the range controls still need a rendered mock and visual verification.
+design; the implemented range controls have now been rendered and checked in
+Chrome and Firefox at desktop and narrow sizes, in both themes.
 
 ![Connected Garmin settings mock showing Every 4 hours, activity choices, history scope and Check now](mocks/garmin-api/images/02-schedule.png)
 

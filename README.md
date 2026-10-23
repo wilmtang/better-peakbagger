@@ -285,6 +285,7 @@ to prepare activities in the **Activity inbox**. Enable imports explicitly,
 choose automatic checks or Manual only, then review the detected peaks and open
 drafts. Pending drafts stay on this device until completed or removed. Keys can
 expire; reconnect from Settings when Garmin rejects a key.
+See the [Garmin inbox guide](docs/garmin-inbox.md) for setup, scan ranges and recovery.
 
 The Garmin connection uses the optional Personal API permission. The toolbar
 workflow still captures an activity from its signed-in provider page. Strava

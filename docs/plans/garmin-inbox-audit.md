@@ -27,12 +27,19 @@
   decoding passes with VM dynamic code generation disabled; string callbacks
   are rejected. Packaging lint passes without increasing warning allowances.
 
-Validation: 3,368 tests passed. Hidden Chrome 156 and Firefox 158 real-extension
+Validation: all **3,370 tests** passed; `npm run lint` passed with the existing
+eight owned warnings and no new allowances. Hidden Chrome 156 and Firefox 158 real-extension
 checks passed. Twelve Garmin fixture cases passed in Chrome 156 and Firefox 157,
 including both themes at 390×1000 and 1180×1000, popup at 390×700, 200% CSS zoom,
 updated-match acceptance and pending → handoff recovery. Button, heading,
 following-content and scroll geometry use a 1px tolerance; keyboard focus and
 duplicate activation are checked. Review screenshots were visually inspected.
+Documentation/inventory checks passed 46 cases. Browser checks used static
+DOM/CSS surfaces (no WebGL renderer claim), and fixture transport/session replies
+were stubbed. They do not prove native browser permission dialogs or OS focus.
+The two stalled UI-verifier process trees and their exact disposable profiles
+and certificates were removed; subsequent completed checks reported teardown.
+Final process inspection found no remaining Garmin UI verifier processes.
 
 ## Intentionally not changed
 
