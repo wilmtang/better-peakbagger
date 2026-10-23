@@ -144,6 +144,7 @@ independent of the existing targets.
 - [verify-ascent-backup-lifecycle.mjs](verify-ascent-backup-lifecycle.mjs)
 - [verify-firefox-terrain.mjs](verify-firefox-terrain.mjs)
 - [verify-layout-stability.mjs](verify-layout-stability.mjs)
+- [verify-ascent-column-widths.mjs](verify-ascent-column-widths.mjs) — nested summary/map and card edge alignment, run by `layout-stability`.
 - [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
 - [verify-photo-editor.mjs](verify-photo-editor.mjs)
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)

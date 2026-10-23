@@ -17,6 +17,7 @@ import { darkCss } from '../src/theme/site-dark-css.js';
 import { verifySettingsActions } from './verify-settings-actions.mjs';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
 import { verifyReportCaptionStability } from './verify-report-caption-stability.mjs';
+import { verifyAscentColumnWidths } from './verify-ascent-column-widths.mjs';
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
@@ -1259,6 +1260,7 @@ async function reportCase(page, origin, variant) {
 }
 const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, 'photo-backup': photoBackupCase, weather: weatherCase,
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
+    'ascent-columns': (page, origin, variant) => verifyAscentColumnWidths(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
     captions: (page, origin, variant) => verifyReportCaptionStability(page, origin, variant, { asset, capture }) };
 for (const argument of process.argv.slice(2)) {
@@ -1284,7 +1286,7 @@ try {
             : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }) });
         try {
             for (const theme of ['light', 'dark']) for (const width of [390, 1280])
-                for (const zoom of selected === 'timestamps' ? [1, 1.5] : [1]) {
+                for (const zoom of ['timestamps', 'ascent-columns'].includes(selected) ? [1, 1.5] : [1]) {
                     for (const [surface, check] of Object.entries(cases)) {
                         if (selected && selected !== surface) continue;
                         const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: Math.floor(width / zoom), height: Math.floor(900 / zoom) }, deviceScaleFactor: zoom, colorScheme: theme });

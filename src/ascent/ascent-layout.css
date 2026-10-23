@@ -31,6 +31,12 @@
     container: bpb-ascent-column / inline-size;
 }
 
+/* The nested map's preferred pixel width must not become the native table's
+ * minimum width and push its edge past the GPS and weather cards below it. */
+#bpb-ascent-summary-column > .bpb-ascent-table-split__summary {
+    table-layout: fixed;
+}
+
 /* Saved dimensions are preferred sizes, not minimum table widths. Let images
  * shrink with their cell and recover their authored size when it grows. */
 #bpb-ascent-report-column > .bpb-ascent-table-split__table img,
