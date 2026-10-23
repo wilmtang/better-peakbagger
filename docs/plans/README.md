@@ -1,9 +1,10 @@
 # Active plans
 
 - [Garmin Personal API and automatic draft inbox](garmin-personal-api-draft-inbox.md)
-  — researched and proposed; live token, activity and FIT-download reads verified,
-  with personal-key onboarding, automatic preparation, durable inbox design,
-  business-tier comparison and explicit distribution/decoder/verification gaps.
+  — researched and proposed; live token, activity and deep-history FIT reads
+  verified, with a four-hour editable schedule, opt-in key export, persistent
+  inbox snapshots, incremental discovery rules and decoder-license comparison.
+  Business terms, production decoding and runtime/UX verification remain open.
 
 - [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)
   — four runtime findings fixed and verified locally in focused commits:

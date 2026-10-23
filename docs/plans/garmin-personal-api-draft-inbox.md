@@ -1,8 +1,10 @@
 # Garmin Personal API and automatic draft inbox
 
-Status: research and proposed workflow, October 22, 2026. Runtime implementation
-has not started. Source review used commit `61b07643`. The user authorized a
-bounded read-only test of their personal key; no key, token, activity identifier,
+Status: research and proposed workflow, revised October 23, 2026. Runtime
+implementation has not started. Initial source review used commit `61b07643`;
+the revision also inspected the current settings credential export/import path.
+The user authorized bounded read-only tests of their personal key; no key,
+token, activity identifier,
 activity name, coordinate, or original activity file is included in this plan.
 
 ## Recommendation
@@ -12,6 +14,13 @@ discover activities, download their recordings, and prepare summit suggestions
 without visiting Garmin activity pages. Present those suggestions in an
 **Activity inbox**. Opening Peakbagger forms and saving ascents remain explicit
 user actions.
+
+Accepted product direction: check every **four hours** by default, allow manual
+checks and a user-selected interval, include the personal key in a settings file
+only when **Include saved credentials** is checked, and give pending inbox
+drafts **no automatic expiry**. Keep their small, privacy-filtered route snapshot
+on this device until completion or explicit removal. The 30-minute form-delivery
+transaction remains separate from inbox retention.
 
 For distribution, resolve Garmin's terms for a free, locally executed,
 user-supplied-key extension before treating this as an approved integration.
@@ -26,7 +35,7 @@ deliberately rather than assuming it is just another authentication method.
 
 ## Verified API findings
 
-Primary sources, checked October 22:
+Primary sources, checked October 22–23:
 
 - [Current program tiers](https://developer.garmin.com/gc-developer-program/overview/)
 - [Personal API setup](https://developer.garmin.com/gc-developer-program/personal/personal-api/)
@@ -77,6 +86,34 @@ gaps indiscriminately. Raw response bytes stayed in process memory and were
 discarded when the test exited. Only field names, types, counts and sizes were
 printed. The public OpenAPI schema was inspected separately.
 
+### Historical access and change tracking
+
+A second bounded live test on October 23 requested the oldest activity using
+`start=0&limit=1&sortOrder=asc&sortBy=startLocal`, read its detail, and downloaded
+its original file. All four requests, including authentication, returned 200.
+The activity was more than five years old; the ZIP was 135,760 bytes and held
+one 373,159-byte FIT file. Private dates and identifiers are omitted here.
+This verifies deep-history access for this account, not a guaranteed retention
+period for every account or recording. No historical maximum was established
+from the inspected Personal API reference. A 30-day polling window below is an
+extension efficiency choice, not a Garmin history limit.
+
+The documented list API uses offset pagination (`start`, `limit`) and filters
+`startDate` / `endDate` by the activity's local start date. It does not document
+an opaque continuation token, uploaded-since / modified-since filter, changes
+feed, or deletion feed. Repeating a search can return the same activities;
+reading an activity does not consume it or mark it imported at Garmin.
+
+The old activity's detail response contained `metadataDTO.uploadedDate` and
+`metadataDTO.lastUpdateDate`. Its list summary had no upload/update/modified/
+created field names. Those detail timestamps may help compare known items, but
+their presence does not create a server-side incremental-query contract. A
+newly uploaded recording can have an old activity date, and an old activity can
+be edited after the last check. The synchronization design must handle those
+cases explicitly; see [Discovery, persistence and idempotency](#discovery-persistence-and-idempotency).
+
+### Data shape and projection
+
 Illustrative field shape below uses invented values, not the user's activity:
 
 ```json
@@ -111,10 +148,11 @@ scope was established by the reviewed public documentation.
 | --- | --- | --- |
 | Existing capture is tied to a clicked activity tab. | `admitCapture`, `startCapture`, and `cleanupRemovedTab` in [background.js](../../src/background/background.js); [provider-page.js](../../src/capture/provider-page.js) | An alarm cannot safely impersonate a toolbar click or manufacture a source tab ID. Introduce a distinct import coordinator. |
 | The analysis engine already consumes narrow parsed fields. | `analyzeTrack` in [background.js](../../src/background/background.js), [capture-core.js](../../src/capture/capture-core.js), [gpx-metrics.js](../../src/gpx/gpx-metrics.js) | Reuse scoring, complete corridor lookup, metrics and reduction after adding a FIT-to-analysis adapter. |
-| Prepared jobs and tracks expire after 30 minutes. | [Privacy contract](../../PRIVACY.md#activity-capture), [capture architecture](../architecture.md#deep-dive-garminstrava-capture-and-local-gpx-processing) | Durable inbox suggestions must be distinct from short-lived prepared forms and track payloads. Extending the existing TTL would silently expand retention. |
+| Prepared jobs and tracks expire after 30 minutes. | [Privacy contract](../../PRIVACY.md#activity-capture), [capture architecture](../architecture.md#deep-dive-garminstrava-capture-and-local-gpx-processing) | Add a consented durable inbox snapshot and retain the existing short-lived form handoff. Existing capture retention does not already authorize durable storage. |
 | Save verification is currently conditional. | `savedDraftContext` requires `waitForSave`; selected multi-summit drafts use this path in [background.js](../../src/background/background.js). | A universal inbox “Saved” state requires verification for single-summit imports too. Tab creation, Preview, or closing a form is insufficient. |
 | Background Garmin access and persistent import history are new permissions/data uses. | [manifest](../../manifest.json), [Privacy](../../PRIVACY.md) | Add a separate optional API-origin grant, consent and documented retention. Preserve the existing toolbar path. |
 | Feed export is a separate proposed feature. | [Owned activity feed export plan](activity-feed-export.md) | Share analysis and confidence presentation, but do not make API import depend on provider DOM or combine the implementations. |
+| Settings files already have an opt-in credential export and sensitive import confirmation. | [settings-file-routes.js](../../src/background/settings-file-routes.js), [settings-transfer.js](../../src/settings/settings-transfer.js), [settings-backup.js](../../options/settings-backup.js) | Extend the existing checkbox and versioned payload for the Garmin key; preserve omission semantics and keep automated backups credential-free. |
 
 ## User workflow
 
@@ -147,7 +185,7 @@ Prepare Peakbagger drafts from your Garmin activities.
 2. Paste your key
    [••••••••••••••••••••••••••••] [Show]
 
-The key stays on this device. Better Peakbagger reads activity data.
+The key is stored on this device. Better Peakbagger reads activity data.
 [Connect Garmin]
 ```
 
@@ -170,35 +208,52 @@ account's history or pending drafts.
 After connection, show one compact setup screen:
 
 ```text
-Automatic drafts
+Garmin drafts
 Activities: Hikes, walks and trail runs                     [Change]
-Start with: New activities                                  [Change]
+Start with: Activities from today                           [Change]
+Check every: 4 hours                                        [Change]
 Peakbagger: Signed in as your selected climber
 
 While your browser is running, we check Garmin for new activities
-and use their routes to find peaks on Peakbagger. Draft suggestions
-stay on this device. You decide what to save.
+and use their routes to find peaks on Peakbagger. Drafts and their
+reduced routes stay on this device until saved or removed.
+You decide what to save.
 
-[Start automatic drafts]
+[Enable Garmin drafts]
 ```
 
 Connection alone does not authorize background route processing. The final
-action enables it and records the selected Peakbagger account. The default
+action enables the chosen mode and records the selected Peakbagger account;
+Manual only permits user-started imports and creates no discovery alarm. Its
+helper text describes Check now instead of automatic checks. The default
 activity types are a proposed convenience, not proof of GPS or summits. Offer
 other types, including cycling, in Change; validate Garmin's parent/subtype
 taxonomy before shipping. Never filter solely on a high elevation-gain value.
 
-“New activities” seeds a baseline of existing IDs in the scheduled lookback
-window; it does not bulk-import the account. Offer an explicit **Import earlier
-activities** date-range flow for history. Scheduled checks inspect a rolling
-30-day window; state this in connection details so delayed uploads older than
-that are not falsely promised. The date-range history importer is separately
-bounded and user-started.
+Resolve “today” to an explicit activity-local date in the setup confirmation.
+This is the user's import boundary, not a last-pull timestamp. Change offers
+the last 30 days, a chosen date, or all available history. Historical preparation
+must be previewed and queued in bounded batches; do not open a tab per recording.
+**Import earlier activities** can later extend the selected date scope.
 
-Proposed cadence: once per hour while the browser runs, a coalesced check on
-startup, and **Check now**. This cadence is a product choice, not a Garmin quota.
-Honor rate limits and backoff. Browser closure, sleep and offline periods delay
-checks; show the last successful check. No “instant sync” promise.
+Check every **four hours** by default. Offer **Manual only**, **1 hour**,
+**4 hours**, **12 hours**, **24 hours**, and **Custom…** with validated whole-hour
+intervals from 1 to 168. These are product choices, not published Garmin quotas.
+Keep **Check now** available in Settings and the inbox. Manual checks share the
+active request and respect provider cooldowns; repeated clicks cannot start
+parallel scans. Changing frequency replaces the existing alarm, and a manual
+check schedules the next automatic check relative to its completion.
+
+On startup, perform one coalesced check if due, without replaying missed alarms.
+Browser closure, sleep and offline periods delay checks; show the last successful
+check and the next planned check when automatic mode is enabled. Manual only
+disables all scheduled discovery, including background history reconciliation.
+
+The fast check covers recent activity dates, with overlap and catch-up after
+long offline periods. A slower scan of the selected date scope finds delayed
+uploads outside that window. Explain this under connection details and provide
+**Check full history** there; keep the normal inbox action focused on Check now.
+The engineering contract below specifies the coverage and its limits.
 
 ### 3. An Activity inbox, with a small popup entry point
 
@@ -210,7 +265,7 @@ and unsolicited tab creation in the first version.
 
 ```text
 Activity inbox                                  [Check now]
-Garmin connected · Last checked 10:40 AM
+Garmin connected · Last checked 10:40 AM · Every 4 hours
 
 Oct 22 · Hike              2 Strong · 1 Probable      [Review]
 Oct 21 · Trail run         Waiting for Peakbagger     [Open Peakbagger]
@@ -255,9 +310,15 @@ Preserve encounter-order suffixes, activity-local dates, multi-peak trip naming,
 the per-capture timestamp exception, 3,000-point combined track/waypoint budget,
 exactly-once Preview and manual Save. Provide expandable route/metric details.
 
-Before opening, reverify Peakbagger identity and refresh an expired recording.
-If the recording or candidate set changed, show the changes and require renewed
-selection; never replace an existing form or replay an uncertain Preview.
+Before opening, reverify Peakbagger identity and create a fresh 30-minute delivery
+transaction from the durable, validated inbox snapshot. Opening a prepared item
+does not require a still-valid Garmin key or downloading the recording again.
+The snapshot is a point-in-time draft, with its preparation date in Details.
+Offer **Refresh from Garmin** explicitly. If refreshing changes the recording
+or candidate set, show the changes and require renewed selection; retain the
+previous snapshot until refresh succeeds. Never replace an existing form or
+replay an uncertain Preview. An expired form handoff requires checking existing
+open/save state before offering another form, not silently issuing a new one.
 After opening, the primary action becomes **View drafts**. Use **Saved** only
 after verifying the persisted ascent. If outcome is uncertain, use **Check save
 status**, not **Try again**, and do not create replacement ascents automatically.
@@ -273,7 +334,8 @@ status**, not **Try again**, and do not create replacement ascents automatically
 | Challenge | Peakbagger needs a browser check | Open the relevant check; never automate the challenge |
 | Incomplete summit lookup | Could not finish finding peaks | Resume/retry the bounded analysis; never show partial results as complete |
 | Missing route / unsupported original format | This activity has no usable route / this file format is not supported | Open activity or use the existing GPX workflow |
-| Expired temporary track | Updating this activity before opening drafts | Refetch and revalidate without losing the inbox item |
+| Expired form handoff | Draft is still in your inbox | Check open/save state, then create a fresh handoff from the retained snapshot |
+| Local storage capacity reached | Make room to prepare more activities | Pause intake; keep existing drafts and offer review/removal |
 | Ambiguous previous Save | Check whether this ascent was saved | Verify status before offering another draft |
 
 The shared error policy should own these states. Keep Check now, Connect and
@@ -300,8 +362,11 @@ announce every polled update, move focus after a background check, or auto-scrol
   default; changing an entire area's access level requires auditing existing
   users. Verify Firefox behavior too. See [Chrome storage documentation](https://developer.chrome.com/docs/extensions/reference/api/storage).
 - This is device-local storage, not an OS keychain or an encryption-at-rest
-  guarantee. Exclude credentials and import history from browser sync, settings
-  export, GitHub backup, telemetry, diagnostics, URLs and DOM attributes.
+  guarantee. Exclude credentials and import history from browser sync,
+  automated GitHub backup, telemetry, diagnostics, URLs and DOM attributes.
+  A manually exported settings file can include the personal key only through
+  the existing explicit credential checkbox, as specified below. Never export
+  cached access tokens, inbox recordings or import history with settings.
 - Cache bearer tokens only in trusted session storage/memory. Coalesce token
   renewal, account for expiry, and allow at most one renewal/retry on a 401.
   Validate the authenticated response; decoded JWT fields alone must not grant
@@ -313,6 +378,37 @@ announce every polled update, move focus after a background check, or auto-scrol
   activity owner consistently across list/detail responses; fail closed on
   mismatches. Do not infer ownership from a display name. An empty account is
   a valid connection with no activities, not an ownership error.
+
+### Settings export and import
+
+Reuse **Include saved credentials**, off by default. Update its label to mention
+ImgBB, GitHub and Garmin; do not add a second Garmin-only export switch. Retain
+the existing explanation that exported files are not encrypted. With the
+checkbox off, the background export path must neither read the Garmin credential
+store nor serialize any Garmin credential. With it on, include the saved personal
+key in the versioned credential payload. The short-lived bearer token is always
+omitted. Frequency/type/date preferences may travel as ordinary settings;
+device permission and consent to start background processing do not.
+
+The current schema is version 3 and `cleanApiKeys` recognizes only `imgbb`.
+Extend the schema and compatibility tests deliberately: an absent Garmin key
+field leaves an existing connection untouched, while explicit `null` represents
+a deliberate removal. Importing an older export must never erase the Garmin
+connection merely because that format did not know about it. Distinguish missing
+credentials from a request to replace them throughout validation and rollback.
+
+On import, use the existing sensitive-file confirmation, naming the Garmin key.
+Obtain any missing optional API-origin permission from that user gesture and
+validate the new key before committing it. Preserve the previous credential if
+validation fails, and use the current snapshot/conditional rollback pattern so
+a concurrent Replace key cannot be overwritten by an older import. Bind the
+verified account before associating history. On a new device, finish with the
+explicit automatic-drafts setup instead of silently enabling an imported alarm.
+
+Relevant boundaries: [background settings-file routes](../../src/background/settings-file-routes.js),
+[settings transfer schema](../../src/settings/settings-transfer.js),
+[settings import UI](../../options/settings-backup.js), and
+[the existing checkbox](../../options/options.html).
 
 ### FIT adapter and shared analysis
 
@@ -339,17 +435,52 @@ applicable and define compressed/inflated limits explicitly. Original uploaded
 formats other than FIT need an explicit adapter or an actionable unsupported
 result; a successful ZIP download does not prove a usable track.
 
-Garmin provides a browser-compatible
-[JavaScript FIT SDK](https://github.com/garmin/fit-javascript-sdk), but its
-[custom license](https://github.com/garmin/fit-javascript-sdk/blob/main/LICENSE.txt)
-includes a copyleft-related distribution restriction in section 2(d). This
-repository is AGPL-3.0-or-later. Do not assume the SDK is a compatible npm
-dependency. Review that boundary before selecting it. The MIT-labelled
-[fit-file-parser project](https://github.com/jimmykane/fit-parser) is an evaluation
-candidate, not an audited recommendation; verify provenance, licensing,
-malformed-file handling, browser bundling and parse fidelity before adoption.
-The small structural scanner used in this investigation is not a production
-decoder.
+### Decoder licensing and selection
+
+Garmin's [JavaScript FIT SDK](https://github.com/garmin/fit-javascript-sdk) uses a
+[custom FIT Protocol License](https://github.com/garmin/fit-javascript-sdk/blob/main/LICENSE.txt),
+not MIT or Apache. Section 1 grants limited royalty-free use; 2(c) restricts
+redistribution except as otherwise permitted, and 2(d) prohibits distribution
+that subjects the SDK or derivatives to source-disclosure or modification-rights
+requirements. Section 2(f) prohibits benchmarking/competitive analysis, and
+section 3 requires interoperable modifications. For this AGPL-3.0-or-later
+extension, treat bundling the SDK as a licensing conflict requiring resolution,
+not a routine dependency addition. A separate file alone does not establish
+compatibility. This is an engineering licensing assessment, not a legal opinion.
+
+Two third-party JavaScript candidates were checked against their actual license
+files and current source documentation on October 23:
+
+| Candidate | License and technical fit | Recommendation / remaining evidence |
+| --- | --- | --- |
+| [fit-file-parser](https://github.com/jimmykane/fit-parser) | [MIT](https://github.com/jimmykane/fit-parser/blob/main/LICENSE); ESM/CommonJS, TypeScript, ArrayBuffer input, developer fields, and a standalone strict raw reader. Current repository package version is 6.2.3; npm publication was not verified. | Evaluate first. Its raw entry point is attractive for the narrow position/time/elevation adapter; validate browser bundle, exact release contents, provenance and route fidelity. |
+| [fit-decoder](https://github.com/ask77nl/fit-decoder) | [MIT](https://github.com/ask77nl/fit-decoder/blob/main/LICENSE); browser/Node support and no runtime dependencies, with separate binary and semantic decoding. | Alternative for a small adapter. Its README describes profile 21.47.00 and tables based on Garmin's SDK spreadsheet; investigate table provenance and malformed-input behavior before selection. |
+
+MIT permits reuse and distribution with its copyright/license notices preserved;
+the combined application remains subject to this repository's AGPL obligations.
+An MIT label does not independently establish the provenance of every bundled
+profile table. `fit-file-parser` now documents a static, community-maintained
+profile with focused interoperability sources in
+[PROFILE.md](https://github.com/jimmykane/fit-parser/blob/main/PROFILE.md); this is
+useful evidence, not a completed historical provenance audit.
+
+Prefer evaluating `fit-file-parser/raw` first: its reader exposes numeric fields,
+compressed timestamps, selective message retention and an input-byte limit,
+without importing the semantic profile. The adapter must still implement and
+test field scaling, sentinels, segment semantics and the small permitted field
+mapping. If the full parser is needed, explicitly select
+`{ force: false, strict: true }`; its documented defaults allow checksum bypass
+and partial recovery. Reject ambiguous concatenated activities rather than
+silently using only the first file. These are documented/source-reviewed
+capabilities, not locally exercised decoder behavior.
+
+No candidate was installed or run against the private recording, and the small
+structural scanner from the API investigation is not a production decoder.
+Pin and inspect the selected release and its license/provenance before adoption;
+then test integrity failures, GPS gaps, multisport, timestamps, elevation, memory
+limits and agreement with known GPX fixtures in Chrome and Firefox. Choosing a
+third-party decoder does not settle Garmin Personal API distribution terms;
+the API agreement and decoder license are separate questions.
 
 ### Discovery, persistence and idempotency
 
@@ -359,32 +490,101 @@ owner independent of a browser tab. Only when the user opens drafts should a
 new short-lived draft transaction bind the inbox, selected peaks, climber,
 generation and actual destination tabs.
 
-Proposed retention:
+Retention direction:
 
 | Data | Storage and retention |
 | --- | --- |
 | Personal key | Device-local credential store until replacement/disconnect |
 | Raw ZIP/FIT and full API objects | Transient memory; discard after projection/processing |
-| Reduced track and prepared form payload | Existing private session storage; 30 minutes |
-| Pending inbox metadata, public summit IDs/confidence and derived draft summary | Device-local, up to 30 days and a bounded 200 pending activities; no route coordinate arrays |
-| Opened/verified/dismissed receipts | Minimal activity/peak/ascent identity and outcome; proposed 60-day bounded retention; excluded from backup/sync |
+| Pending inbox item and sanitized reduced route snapshot | Extension-origin durable storage; no time-based expiry; retain until the activity is completed or explicitly removed; saving one summit must not discard unresolved suggestions |
+| Active form-delivery payload | Existing private session storage; 30 minutes; recreated from the durable snapshot only after identity and previous-outcome checks |
+| Dismissed/deleted activity tombstones and verified-save receipts | Minimal account/activity/peak/ascent identity and outcome; no route or health data; no automatic expiry; excluded from backup/sync |
+| Sync checkpoints and resumable scan state | Device-local; retain with the connection history; never treat incomplete work as a successful scan |
 
-Disclose the new metadata retention during enablement. Display generic type/date
-unless the current activity-name preference permits names. If a cap is reached,
-pause intake visibly rather than silently evicting pending work. Refresh the
-recording and analysis before using expired payloads; an inbox suggestion is
-not a guarantee that a 30-day-old route is unchanged. Disconnect cancels work,
-deletes the local key/tokens/history and removes the API grant; it never changes
-already-saved Peakbagger ascents. Explain that deleting the Garmin key itself
-requires Garmin's key-management page.
+Store one reduced route per activity, referenced by its summit drafts. Apply the
+existing 3,000 combined track/waypoint point budget and narrow field allowlist
+before persistence. Persist the full-resolution analysis results separately from
+the simplified geometry; do not recompute distance/gain from a reduced track.
+Never persist raw FIT, full API objects or wellness fields. Serialize a fresh,
+validated Preview payload from the stored fields; do not persist arbitrary XML
+or reuse an old form payload as authority.
 
-Pagination must finish the selected window before claiming a successful check.
-Use small pages and a bounded request budget; yield/resume large scans. Offset
-pagination can shift during new uploads, so deduplicate IDs, overlap scans and
-restart interrupted scans conservatively. The documented API has no verified
-modified-since cursor; do not equate maximum activity ID or last start date with
-all newly uploaded/edited activities. Activity-local date filters are not UTC
-upload timestamps. Historical imports need the same completeness contract.
+Disclose persistent reduced-route storage during enablement and update Privacy
+before shipping. Display generic type/date unless the current name preference
+permits names. Apply tighter current privacy settings again at opening, and
+scrub retained optional fields when the user disables their retention. Relaxing
+a preference cannot recover discarded data without an explicit Garmin refresh.
+Keep per-capture timestamp exceptions explicit when opening drafts.
+
+Use item and byte budgets rather than a time-to-live: initially cap preparation
+at 200 pending activities and choose a measured byte budget before implementation.
+When a budget/quota is reached, pause preparation visibly and preserve every
+existing item. Discovery must also respect its metadata budget; retain the scan
+position without claiming the remainder was checked. An activity is complete
+when every suggestion is saved/dismissed, or the user explicitly marks it done;
+unselected Probable matches remain unresolved. Removing or completing an item
+frees its snapshot. Dismiss retains the snapshot during its offered Undo window,
+then keeps only a small tombstone so the next scan does not recreate it. Restoring
+after that window requires a fresh import. Uninstalling or clearing extension data
+still removes these local drafts; no cross-device inbox backup is proposed.
+
+**Disconnect** cancels work, deletes the key/tokens and removes API permission,
+but keeps prepared drafts and minimal history. State this beside the action.
+Offer **Delete local Garmin data** separately with a concrete count of drafts
+to be removed; this also disconnects and clears scan/history state. **Forget
+import history**, if offered separately, must explain that old activities may
+be proposed again. Neither action deletes Peakbagger ascents or Garmin records.
+Deleting the Garmin key itself requires Garmin's key-management page. Retained
+items remain bound to their original source and Peakbagger account; switching
+accounts must not silently reassign them.
+
+#### Checkpoints, IDs and tombstones
+
+These are separate records with separate purposes:
+
+| Record | Meaning | What it cannot prove |
+| --- | --- | --- |
+| Import start date / selected date ranges | The user's chosen activity-date scope | When an activity reached Garmin |
+| Last successful check time and covered range | When a complete scoped discovery pass finished; used for scheduling/catch-up | That Garmin has no later upload or edit with an older activity date |
+| Account + activity ID and imported revision | Seen/prepared state, preventing repeated downloads and duplicate inbox items | That every other activity was scanned |
+| Per-activity or per-peak tombstone | A user dismissed/deleted an item, or an ascent was verified saved | A global timestamp beyond which older records are irrelevant |
+| In-progress offset and scan generation | Bounded work that can resume after interruption | A committed completion checkpoint or a stable Garmin snapshot |
+
+For example, a July hike uploaded in October is invisible to a query filtering
+activity start after the previous October check. A watermark alone misses it.
+The initial proposal uses this discovery strategy:
+
+1. Every four hours (or the chosen interval), list recent activity dates with a
+   30-day overlap, clipped to the selected scope. After a long offline period,
+   widen the range to cover the time since the last completed pass, with overlap.
+2. Deduplicate by source account and activity ID before requesting files. Skip
+   durable prepared items and tombstones. An interrupted analysis resumes; it
+   is not marked completed just because its summary was seen.
+3. Spread a full metadata reconciliation of the selected scope over scheduled
+   checks, targeting once a week. A large account or provider backoff may take
+   longer; show its coverage/progress separately from the recent check. This
+   finds delayed uploads with old dates inside the user's scope without
+   downloading every original recording again.
+4. **Check full history** runs the scoped metadata reconciliation on demand.
+   **Import earlier activities** extends scope with a date range or all available
+   history. Neither bypasses tombstones without an explicit Restore/re-import
+   decision and duplicate review.
+
+The weekly scan finds unseen IDs; it does not guarantee detecting every edit to
+an existing activity. Compare available summary fields, fetch details when a
+known item needs refreshing, and expose Refresh from Garmin. A route-only edit
+with unchanged list fields has no documented automatic delta signal. Never
+present a retained snapshot as continuously synchronized. Absence from one page
+or scan is not proof of deletion and must not erase an inbox draft.
+
+Pagination must finish its declared range before committing a successful
+checkpoint. Use small pages and bounded request budgets; yield/resume large
+scans. Offset pagination can shift during concurrent uploads, so deduplicate,
+overlap pages and recheck the leading page before completion; restart affected
+scans if it changes. Periodic reconciliation remains necessary because the API
+does not promise snapshot isolation. A failed page leaves the old committed
+checkpoint intact. Never equate maximum activity ID or last start date with a
+complete set of new/modified activities. Historical imports use the same rules.
 
 Allow one active import analysis at a time initially and reuse the existing
 origin-wide Peakbagger scheduler/cooldown. Never persist a retry loop that
@@ -395,17 +595,17 @@ can be delayed by sleep and need lifecycle handling.
 
 Prevent duplicates across repeated polls and the existing Garmin toolbar/feed
 path with a shared source identity receipt. Strava mirrors, manually entered
-ascents and re-imports beyond receipt retention require conservative duplicate
-review. Same date plus peak alone is not proof of a duplicate. A route change
-creates a revision to review, never an automatic second set of ascents.
+ascents and re-imports after history is explicitly forgotten require conservative
+duplicate review. Same date plus peak alone is not proof of a duplicate. A route
+change creates a revision to review, never an automatic second set of ascents.
 
 ## Business alternative
 
-The current tier overview says:
+The current tier overview and the Personal API test support this comparison:
 
 | Tier | Delivery | History | Capacity | Fit here |
 | --- | --- | --- | --- | --- |
-| Personal | Pull | Activity search supports date ranges; deep-history coverage not tested | Own data | Simplest local prototype; user supplies and renews a key |
+| Personal | Pull | Date-range search; an original recording more than five years old was retrieved; universal limit not established | Own data | Simplest local prototype; user supplies and renews a key |
 | Business Starter | Push only | Not included | Limited, numerical limit not published on the overview | Hosted receiving service and a supported multi-user connection flow |
 | Business Enterprise | Push or Ping/Pull | “1 month +” | Unlimited | Negotiated integration for scale/history/support |
 
@@ -454,10 +654,19 @@ performed during this research.
 2. Implement Connect and an explicit one-activity import first. Prove direct
    optional-origin requests in real Chrome and Firefox, owner binding, FIT
    fidelity and the existing draft pipeline before adding background work.
-3. Add the inbox and persistent receipts. Verify restart, expiry, single- and
-   multi-summit Save reconciliation and cross-entry-point duplicate behavior.
+3. Add the inbox, persistent reduced snapshots and minimal receipts. Verify
+   restart, no automatic inbox expiry, short-lived form handoffs, privacy
+   changes, capacity limits, disconnect, single- and multi-summit Save
+   reconciliation, and cross-entry-point duplicate behavior.
 4. Add opt-in scheduled discovery/preparation with bounded catch-up, rate-limit
-   handling, account/key replacement, permission revocation and cancellation.
+   handling, four-hour default and editable frequency, manual-only behavior,
+   account/key replacement, permission revocation and cancellation. Cover
+   late uploads, shifted pagination, incomplete scans and history reconciliation.
+
+Extend the existing settings-file tests for checkbox off/on, legacy exports,
+absent versus null keys, invalid/expired imported keys, permission refusal and
+concurrent replacement. Prove that automated backups and browser settings sync
+never include the key, and a restored preference cannot silently enable import.
 
 Keep each implementation unit separately verified and committed. Runtime
 settings, manifest/build wiring, Privacy and store disclosures must describe
@@ -466,14 +675,18 @@ the new behavior when it is implemented.
 The UI verification matrix must cover 390px popup, narrow inbox and desktop
 inbox; light/dark themes and enlarged text; connect success/error/permission
 denial; slow and repeated sync; no results; long activity/error labels; expired
-keys; Peakbagger sign-out/challenge; open/reopen/save recovery. Compare action,
-heading, following-content and scroll geometry across states. Test keyboard
+keys; frequency changes and manual checks; storage-full, disconnect-with-drafts,
+and credential-file import; Peakbagger sign-out/challenge; open/reopen/save
+recovery. Compare action, heading, following-content and scroll geometry across
+states. Test keyboard
 focus and duplicate activation in both browsers. Use masked HTTPS fixtures
 and hidden real browsers under the repository's non-interruption rules. Before
 implementation, confirm the selected harness can load the target UI.
 
-Evidence status: live Garmin token/list/detail/ZIP reads and FIT field presence
-were verified. Browser extension networking, production FIT decoding, full
-summit/draft integration, scheduled operation and rendered UX have not been
+Evidence status: live Garmin token/list/detail/ZIP reads, FIT field presence,
+and a separate oldest-activity/original-file read were verified. Decoder source
+and licenses were inspected; no third-party decoder was installed or exercised.
+Browser extension networking, production FIT decoding, full summit/draft
+integration, scheduled operation and rendered UX have not been
 implemented or verified. The text wireframes specify behavior; they are not
 evidence of layout stability or native browser polish.
