@@ -19,7 +19,7 @@ const asset = name => historicalAssets?.has(name) ? historicalAssets.get(name) :
 export function climberCheckOptions(args) {
     const checks = args.find(value => value.startsWith('--checks='))?.slice('--checks='.length) || 'all';
     const onlyVariant = args.find(value => value.startsWith('--variant='))?.slice('--variant='.length);
-    assert.ok(['all', 'profile', 'buddy', 'pending', 'card', 'card-retry', 'card-links', 'baseline', 'regressions'].includes(checks), `Unknown climber checks: ${checks}`);
+    assert.ok(['all', 'profile', 'buddy', 'pending', 'card', 'card-retry', 'card-links', 'cached-account', 'baseline', 'regressions'].includes(checks), `Unknown climber checks: ${checks}`);
     for (const argument of args) assert.match(argument, /^--(?:checks|variant)=.+$/, `Unknown argument: ${argument}`);
     if (onlyVariant) assert.match(onlyVariant, /^(chrome|firefox)-(light|dark)-(390|768|1280)-(1|2)$/, 'Unknown climber variant');
     assert.ok(!onlyVariant || !['baseline', 'regressions'].includes(checks), 'Regression contracts use their own explicit viewports');
@@ -188,6 +188,51 @@ async function boot(page, origin, variant) {
     await page.addScriptTag({ content: await asset('content/climber-favorite.js') });
     await page.waitForFunction(() => document.getElementById('bpb-climber-favorite')?.disabled === false && document.getElementById('bpb-climber-ignore')?.disabled === false);
 }
+export async function verifyCachedAccount(page, origin, variant) {
+    await boot(page, origin, variant);
+    await page.evaluate(() => {
+        for (const div of document.querySelectorAll('div')) if (/^\s*Logged in:/.test(div.textContent)) div.remove();
+        document.getElementById('AddBuddy').remove();
+        globalThis.__climber.publish({ bpbBuddyCache: { ownerCid: 900099,
+            entries: [{ cid: 900002, name: 'Damon Up' }], fetchedAt: Date.now() } });
+    });
+    await page.waitForFunction(() => document.getElementById('bpb-climber-ignore').disabled
+        && document.getElementById('bpb-climber-membership-note').textContent.includes('previous Peakbagger account'));
+    await visibleProfileFeedback(page);
+    await page.addStyleTag({ content: await asset('css/climber-hover-card.css') });
+    if (variant.textScale === 2) await page.addStyleTag({ content: '#bpb-climber-card{font-size:28px}#bpb-climber-card .bpb-climber-card-name{font-size:34px}#bpb-climber-card :is(.bpb-climber-card-detail,.bpb-climber-card-feedback){font-size:24px}' });
+    await page.addScriptTag({ content: await asset('content/climber-hover-card.js') });
+    const trigger = page.locator('#transition-person + .bpb-climber-actions-trigger');
+    await trigger.scrollIntoViewIfNeeded(); await trigger.click();
+    await page.waitForFunction(() => { const card = document.getElementById('bpb-climber-card');
+        return !card.hidden && getComputedStyle(card).opacity === '1' && card.getAnimations().every(a => a.playState === 'finished'); });
+    const favorite = page.locator('#bpb-climber-card-favorite');
+    for (const adding of [true, false]) {
+        await favorite.press('Enter');
+        await page.waitForFunction(() => globalThis.__climber.pending.has('favorite'));
+        const before = await frame(page, ['#bpb-climber-card-favorite', '#bpb-climber-card-ignore', '#TitleLabel h1', '#transition-content']);
+        await page.evaluate(() => globalThis.__climber.release('favorite'));
+        await page.waitForFunction(adding => document.getElementById('bpb-climber-card-favorite').textContent === (adding ? 'Remove favorite climber' : 'Add favorite climber'), adding);
+        const after = await frame(page, ['#bpb-climber-card-favorite', '#bpb-climber-card-ignore', '#TitleLabel h1', '#transition-content']);
+        stable(before, after, 'cached-account local save');
+        assert.equal(after.focus, 'bpb-climber-card-favorite', 'local completion retains the active action');
+    }
+    const state = await page.evaluate(() => {
+        const card = document.getElementById('bpb-climber-card'), detail = document.getElementById('bpb-climber-card-ignore-detail');
+        const link = card.querySelector('.bpb-climber-card-cache-recovery');
+        const r = card.getBoundingClientRect(), d = detail.getBoundingClientRect(), l = link.getBoundingClientRect();
+        return { detail: detail.textContent, detailVisible: !detail.hidden, href: link.href, linkHidden: link.hidden,
+            disabled: document.getElementById('bpb-climber-card-ignore').disabled,
+            fits: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight
+                && d.top >= r.top && d.bottom <= r.bottom && l.top >= r.top && l.bottom <= r.bottom,
+            owner: globalThis.__climber.store.bpbBuddyCache.ownerCid };
+    });
+    assert.equal(state.disabled, true); assert.equal(state.detailVisible, true); assert.equal(state.linkHidden, false);
+    assert.match(state.detail, /previous Peakbagger account/); assert.equal(new URL(state.href).searchParams.get('cid'), '900099');
+    assert.equal(state.owner, 900099); assert.equal(state.fits, true, JSON.stringify(state));
+    await capture(page, variant, 'cached-account');
+}
+
 export async function verifyBuddyPresentation(page, origin, variant) {
     await boot(page, origin, variant);
     const selectors = [...regions, '#AddBuddy, #RemoveBuddy', '#BuddyLabel'];
@@ -694,6 +739,7 @@ async function run() {
                     try {
                         const page = await context.newPage(); page.setDefaultTimeout(10000);
                         const variant = { theme, width, textScale, name: `${name}-${theme}-${width}-${textScale}` };
+                        if (checks === 'cached-account') await verifyCachedAccount(page, origin, variant);
                         if (checks === 'profile' || checks === 'all') await verifyProfileFeedback(page, origin, variant);
                         if (checks === 'buddy' || checks === 'all') {
                             const buddyPage = await context.newPage(); buddyPage.setDefaultTimeout(10000);

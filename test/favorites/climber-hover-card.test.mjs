@@ -472,3 +472,23 @@ test('Ignore shows a Peakbagger limit without saving an unverified absence', asy
     assert.equal(dom.chrome._localStore[ignoredKey], undefined);
     assert.match(card.querySelector('.bpb-climber-card-feedback').textContent, /Try again after/);
 });
+
+test('a previous account cache explains blocked Ignore even after a local Favorite save', async t => {
+    const dom = await load({ local: { bpbBuddyCache: { ownerCid: 900099, entries: [{ cid: 900002, name: 'Casey Alpine' }], fetchedAt: Date.now() } },
+        prepare: page => [...page.window.document.querySelectorAll('div')].filter(div => /^\s*Logged in:/.test(div.textContent)).forEach(div => div.remove()) });
+    t.after(() => dom.window.close());
+    const card = await open(dom), favorite = card.querySelector('#bpb-climber-card-favorite');
+    await waitFor(dom, () => !favorite.disabled);
+    fireTrustedEvent(favorite, 'click');
+    await waitFor(dom, () => favorite.textContent === 'Remove favorite climber' && !favorite.disabled);
+    fireTrustedEvent(favorite, 'click');
+    await waitFor(dom, () => favorite.textContent === 'Add favorite climber' && !favorite.disabled);
+    assert.equal(card.querySelector('#bpb-climber-card-ignore').disabled, true);
+    const detail = card.querySelector('#bpb-climber-card-ignore-detail');
+    assert.equal(detail.hidden, false);
+    assert.match(detail.textContent, /previous Peakbagger account/);
+    const recovery = card.querySelector('.bpb-climber-card-cache-recovery');
+    assert.equal(recovery.hidden, false);
+    assert.equal(new URL(recovery.href).searchParams.get('cid'), '900099');
+    assert.equal(dom.chrome._localStore.bpbBuddyCache.ownerCid, 900099);
+});

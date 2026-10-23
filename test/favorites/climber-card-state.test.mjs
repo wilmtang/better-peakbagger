@@ -83,7 +83,8 @@ test('account-mismatched cache is protected without being presented as a current
         buddies: { ownerCid: 900003, entries: [entry] }, pendingIds: new Set(), error: '' } });
     assert.equal(view.buddy, false);
     assert.equal(view.ignoreDisabled, true);
-    assert.equal(view.ignoreDetail, 'Refresh your Buddy List before ignoring');
+    assert.match(view.ignoreDetail, /previous Peakbagger account/);
+    assert.equal(view.savedBuddyOwnerCid, 900003);
     assert.equal(state({ buddy: true }, { ownerCid: null }).buddy, false);
     assert.equal(state({}, { nativeBuddy: true }).ignoreDisabled, true);
     assert.equal(state({}, { buddyPending: true }).ignoreDisabled, true);

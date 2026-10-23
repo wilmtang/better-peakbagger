@@ -12,7 +12,7 @@ import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { mutateIgnored } from './ignored-client.js';
-import { climberCardTarget, climberCardState, climberProfileLists } from './climber-card-state.js';
+import { climberCardTarget, climberCardState, climberProfileLists, SAVED_BUDDY_ACCOUNT_MESSAGE } from './climber-card-state.js';
 import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
 import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 
@@ -67,15 +67,17 @@ const mount = () => {
         'Remove from your Buddy List to ignore', 'Refresh your Buddy List before ignoring', 'Ignored climbers can hold up to 1,500 entries.', 'Hide their reports',
         'Checking lists…', 'Check buddy status.', "Couldn't finish.", 'Settings unavailable.', 'Lists unavailable.', 'Loading lists…',
         'Buddy change in progress.', 'Check original account.', 'Unignore to add to lists.', 'Finish list sync first.',
-        'Favorites are full.', 'Saved; check lists.', 'Saved.']);
+        'Favorites are full.', 'Saved; check lists.', 'Saved.', SAVED_BUDDY_ACCOUNT_MESSAGE]);
     const summaryText = D.element('div', { class: 'bpb-climber-card-feedback-summary' });
     const retry = button('Retry', { class: 'bpb-climber-card-retry', hidden: '' });
+    const cacheRecovery = D.element('a', { class: 'bpb-climber-card-cache-recovery',
+        text: 'Open saved account ↗', hidden: '', target: '_blank', rel: 'noopener noreferrer' });
     const retryText = createStableText(retry); retryText.reserve(['Check status', 'Check lists']);
     const failureText = D.element('p');
     const failureDetails = D.element('details', { class: 'bpb-climber-card-feedback-details', hidden: '' }, [
         D.element('summary', { text: 'Details' }), failureText,
     ]);
-    const recovery = D.element('div', { class: 'bpb-climber-card-recovery', hidden: '' }, [retry, failureDetails]);
+    const recovery = D.element('div', { class: 'bpb-climber-card-recovery', hidden: '' }, [retry, failureDetails, cacheRecovery]);
     const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' }, [
         D.element('div', { class: 'bpb-climber-card-context' }, [detail, summaryText]), recovery,
     ]);
@@ -168,7 +170,8 @@ const mount = () => {
                     : !membership?.ignored ? 'Loading lists…' : view.buddyInFlight ? 'Buddy change in progress.'
                         : view.buddyCheckBlocked ? 'Check original account.' : view.buddyIntent?.status !== 'confirmed' && view.buddyIntent ? 'Check buddy status.'
                             : view.ignored ? 'Unignore to add to lists.' : view.pending ? 'Finish list sync first.'
-                                : view.favoriteLimit ? 'Favorites are full.' : noticeNeedsCheck ? 'Saved; check lists.' : notice ? 'Saved.' : '';
+                                : view.favoriteLimit ? 'Favorites are full.' : noticeNeedsCheck ? 'Saved; check lists.'
+                                    : view.cachedBuddyBlocked ? '' : notice ? 'Saved.' : '';
         summaryText.hidden = !summaryText.textContent;
         detail.hidden = !summaryText.hidden;
         if (failure) { fullFailure = failure; failureText.textContent = failure; }
@@ -177,7 +180,9 @@ const mount = () => {
         feedback.hidden = view.self;
         feedbackSizing.hidden = view.self;
         retry.hidden = !(error || settingsError || membership?.error || view.buddyIntent?.status === 'confirmed' || (operation && !retry.hidden));
-        recovery.hidden = retry.hidden && failureDetails.hidden;
+        cacheRecovery.hidden = !view.cachedBuddyBlocked || !!failure;
+        if (view.savedBuddyOwnerCid) cacheRecovery.href = F.climberPageUrl(view.savedBuddyOwnerCid);
+        recovery.hidden = retry.hidden && failureDetails.hidden && cacheRecovery.hidden;
         unavailable(retry, !!operation || !!view.buddyIntent && (view.buddyInFlight || view.buddyCheckBlocked),
             operation?.kind === 'check' || operation?.recovery);
         retry.setAttribute('aria-busy', String(operation?.kind === 'check' || !!operation?.recovery));

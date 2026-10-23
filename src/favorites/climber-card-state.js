@@ -4,6 +4,8 @@
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import * as I from './ignored-climbers.js';
 
+export const SAVED_BUDDY_ACCOUNT_MESSAGE = 'Saved Buddy List belongs to a previous Peakbagger account. Sign in to that account, then refresh its list in Settings.';
+
 // A visible name is presentation; the validated profile URL owns identity.
 export const climberCardTarget = (href, label, base) => {
     const cid = I.profileId(href, base);
@@ -57,6 +59,7 @@ export const climberCardState = ({ cid, ownerCid, settings, membership, busy = f
     const protectedBuddy = nativeBuddy || savedBuddy;
     const pending = !!membership?.pendingIds?.has(cid);
     const { buddyIntent, buddyInFlight, buddyCheckBlocked } = buddyIntentState({ cid, ownerCid, membership });
+    const cachedBuddyBlocked = !ignored && !favorite && !buddyIntent && !buddyPending && savedBuddy && !buddy;
     const unavailable = !membership?.ignored || !!membership.error;
     const self = ownerCid != null && cid === ownerCid;
     const blocked = unavailable || ignored || pending;
@@ -69,6 +72,7 @@ export const climberCardState = ({ cid, ownerCid, settings, membership, busy = f
     if (!note && pending) note = 'Finish the pending ignored-climber sync before adding to favorites.';
     return {
         self, custom, favorite, ignored, buddy, pending, note, buddyIntent, buddyInFlight, buddyCheckBlocked,
+        cachedBuddyBlocked, savedBuddyOwnerCid: cachedBuddyBlocked ? membership.buddies.ownerCid : null,
         buddyBlocked: !buddy && (blocked || buddyPending),
         favoriteDisabled: self || busy || !settings || (favorite ? false : blocked
             || membership.favorites.entries.length >= F.LIMIT),
@@ -76,7 +80,8 @@ export const climberCardState = ({ cid, ownerCid, settings, membership, busy = f
             || buddyPending || !!buddyIntent || membership.ignored.entries.length >= I.LIMIT),
         ignoreDetail: ignored ? 'Show their reports again' : favorite && protectedBuddy
             ? 'Remove from both lists to ignore' : favorite ? 'Remove from favorites to ignore'
-                : protectedBuddy ? (buddy ? 'Remove from your Buddy List to ignore' : 'Refresh your Buddy List before ignoring')
+                : protectedBuddy ? (buddy ? 'Remove from your Buddy List to ignore'
+                    : SAVED_BUDDY_ACCOUNT_MESSAGE)
                     : membership?.ignored?.entries.length >= I.LIMIT ? 'Ignored climbers can hold up to 1,500 entries.'
                         : 'Hide their reports',
         favoriteLimit: !favorite && membership?.favorites?.entries.length >= F.LIMIT,

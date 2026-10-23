@@ -221,3 +221,16 @@ test('own profile has no ignore control', async () => {
     assert.equal(dom.window.document.getElementById('bpb-climber-ignore'), null);
     dom.window.close();
 });
+
+test('signed-out profile Ignore identifies the saved account and offers recovery without changing its cache', async t => {
+    const cache = { ownerCid: 900099, entries: [entry], fetchedAt: Date.now() };
+    const dom = await load('custom', 900002, { local: { bpbBuddyCache: cache }, prepare: page => {
+        [...page.window.document.querySelectorAll('div')].filter(div => /^\s*Logged in:/.test(div.textContent)).forEach(div => div.remove());
+    } });
+    t.after(() => dom.window.close());
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-membership-note').textContent.includes('previous Peakbagger account'));
+    const button = dom.window.document.getElementById('bpb-climber-ignore');
+    assert.equal(button.disabled, true); assert.match(button.title, /previous Peakbagger account/);
+    assert.equal(dom.window.document.getElementById('bpb-climber-profile-retry').textContent, 'Open saved account');
+    assert.deepEqual(dom.chrome._localStore.bpbBuddyCache, cache);
+});

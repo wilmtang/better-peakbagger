@@ -1,6 +1,6 @@
 # Signed-out Peakbagger users: feature gates and remediation plan
 
-Status: **Remediation in progress. A1 and A2 implemented and verified locally.**
+Status: **Remediation in progress. A1–A3 implemented and verified locally.**
 
 ## Findings first
 
@@ -364,12 +364,26 @@ proof of pending/error transitions, focus, or terrain rendering.
   Chrome light/dark desktop/narrow screenshots were visually inspected. This
   focused renderer uses explicit storage/network stubs and shipped bundles;
   native browser zoom, WebGL and live account-write behavior are not established.
+- A3 identifies a previous account's saved Buddy List, offers **Open saved
+  account**, and keeps its blocking explanation visible after a local Favorite
+  save. The same explanation/recovery appears on profiles. Cache membership and
+  unresolved intent protection are unchanged; the recovery opens a public
+  profile and never retries a write or discards a cache. The hidden-explanation
+  assertion failed before the fix. Verification: 49 focused tests and targeted
+  ESLint passed; `node scripts/verify-climber-transitions.mjs
+  --checks=cached-account` passed 24 hidden Chrome/Firefox variants at widths
+  390/768/1280, height 900, light/dark and normal/doubled text. Local Favorite
+  pending/completion preserved action geometry, native content, scroll and
+  keyboard focus; account recovery and wrapped explanations fit the viewport.
+  Chrome and Firefox screenshots were visually inspected. These renderer cases
+  use explicit operation/storage stubs, not live Buddy writes.
 
 ### Fixed and verified
 
 A1: actionable filter recovery, retry focus/stability and live source switching.
-A2: shared account validation and adapters. Local evidence is recorded above.
-A3 and A4 remain in progress.
+A2: shared account validation and adapters.
+A3: truthful cached-account feedback and public-profile recovery. Local evidence
+is recorded above. A4 remains in progress.
 
 ### Intentionally not changed
 

@@ -62,7 +62,7 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
         const unavailable = busy || !list || (!active && view.ignoreDisabled);
         button.disabled = unavailable && !busy;
         button.setAttribute('aria-disabled', String(unavailable));
-        button.title = reason || (!active && buddyIntent ? view.buddyCheckBlocked ? 'Check from the original account.'
+        button.title = (view.cachedBuddyBlocked ? view.ignoreDetail : reason) || (!active && buddyIntent ? view.buddyCheckBlocked ? 'Check from the original account.'
             : view.buddyInFlight ? 'Buddy change in progress.' : 'Check buddy status before ignoring.'
             : active ? "Show this climber's reports again." : "Hide this climber's reports on peak and ascent pages.");
         button.setAttribute('aria-pressed', String(active));
@@ -74,12 +74,15 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
             : favoriteSaving ? 'Saving favorites…' : buddyPending ? 'Buddy List change pending.'
                 : !active && buddyIntent ? view.buddyInFlight ? 'Buddy change in progress.'
                     : buddyIntent.ownerCid === ownerClimberId(document) ? 'Check buddy status.' : 'Check from the original account.'
-                    : active ? 'Unignore to add to lists.' : membership?.pendingIds?.has(cid) ? 'Sync pending · Finish list sync.' : '',
+                    : view.cachedBuddyBlocked ? view.ignoreDetail
+                        : active ? 'Unignore to add to lists.' : membership?.pendingIds?.has(cid) ? 'Sync pending · Finish list sync.' : '',
         error: failure, busy, disabled: retryWrite && button.disabled && !busy, priority: busy ? 100 : failure ? 80 : 30,
-        retryLabel: !failure && canCheck ? 'Check status' : 'Retry',
-        retryName: !failure && canCheck ? 'Check buddy status' : 'Retry',
+        retryLabel: !failure && view.cachedBuddyBlocked ? 'Open saved account' : !failure && canCheck ? 'Check status' : 'Retry',
+        retryName: !failure && view.cachedBuddyBlocked ? 'Open saved account' : !failure && canCheck ? 'Check buddy status' : 'Retry',
         retry: !failure && canCheck ? event => feedback.checkBuddy(event) : failure || busy && retryWrite ? () => {
             if (retryWrite) void toggle(); else { void observer.refresh(); void membershipObserver.refresh(); }
+        } : view.cachedBuddyBlocked ? () => {
+            window.open(F.climberPageUrl(view.savedBuddyOwnerCid), '_blank', 'noopener,noreferrer');
         } : null });
         if (failure || notice) feedback.announce(failure || notice);
     };
