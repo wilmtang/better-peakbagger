@@ -17,11 +17,12 @@
     <label>Screen <select id="screen"><option value="connect">1 · Connect</option><option value="settings">2 · Schedule</option><option value="inbox">3 · Inbox</option><option value="review">4 · Review</option><option value="export">5 · Export</option></select></label>
     <label>Theme <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
     <label>Response <select id="response"><option value="success">Success</option><option value="error">Offline error</option></select></label>
+    <a href="popup.html">Toolbar popup prototype</a>
   </div>
   <div class="app">
     <aside class="side-nav">
       <header class="brand"><img src="../../../../icons/icon-48.png" width="36" height="36" alt=""><div><strong>Better Peakbagger</strong><span>Your routes. Your summits.</span></div></header>
-      <nav aria-label="Workspace"><a class="nav-item" href="#inbox" data-nav="inbox">Activity inbox <span class="nav-count" aria-label="2 ready to review">2</span></a><a class="nav-item" href="#settings" data-nav="settings">Capture &amp; reports</a><a class="nav-item" href="#export" data-nav="export">Backup &amp; sync</a></nav>
+      <nav aria-label="Workspace"><a class="nav-item" href="#inbox" data-nav="inbox">Activity inbox <span class="nav-count" aria-label="3 pending activities">3</span></a><a class="nav-item" href="#settings" data-nav="settings">Capture &amp; reports</a><a class="nav-item" href="#export" data-nav="export">Backup &amp; sync</a></nav>
       <p class="sidebar-note">Stored on this device.<br>You choose what to save.</p>
     </aside>
     <main>
@@ -62,6 +63,7 @@
           <article class="activity card"><div class="activity-body"><p class="date">OCT 20, 2026</p><h2>Trail run</h2><p class="metrics">8.6 km <span>·</span> 420 m gain</p><p class="waiting">Waiting for Peakbagger sign-in</p></div><button id="sign-in" class="secondary">Open Peakbagger</button></article>
           <article class="activity card"><div class="activity-body"><p class="date">SEP 04, 2026</p><h2>Hike</h2><p class="metrics">6.2 km <span>·</span> 510 m gain</p><div class="badges"><span class="badge strong">1 Strong</span><span class="muted">Ready whenever you are</span></div></div><a href="#review" class="secondary">Review activity</a></article>
         </div>
+        <article id="inbox-empty" class="card empty-inbox" hidden><h2>No activities to review</h2><p>Your saved and dismissed activities stay out of this inbox.</p><a id="inbox-connect" href="#connect" class="primary-button" hidden>Connect Garmin</a></article>
         <div class="inbox-footer"><button id="earlier" class="text-button">Import earlier activities</button><span>Drafts don’t expire.</span></div>
         <div id="history-picker" class="card history-picker" hidden><h2>Import earlier activities</h2><label for="history-scope">Choose a period <select id="history-scope"><option>Last year</option><option>All available history</option></select></label><p>Previously saved or dismissed activities stay excluded.</p><button id="history-check" class="secondary">Check activities</button></div>
       </section>

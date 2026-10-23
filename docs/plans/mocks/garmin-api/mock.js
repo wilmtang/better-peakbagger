@@ -109,4 +109,25 @@ $('#export-settings').addEventListener('click', () => {
     $('#export-status').textContent = $('#include-credentials').checked ? 'Settings file ready, including saved credentials. Keep this file private.' : 'Settings file ready, without saved credentials.';
 });
 addEventListener('pagehide', () => clearTimeout(timer));
+// Popup links simulate opening the full workspace, without creating actual tabs.
+const inboxMode = new URLSearchParams(location.search).get('inbox');
+if (inboxMode === 'empty' || inboxMode === 'disconnected') {
+    $('.inbox-list').hidden = true;
+    $('#inbox-empty').hidden = false;
+    $('.nav-count').hidden = true;
+    $('[data-screen="inbox"] .lede').textContent = 'Your activity drafts appear here.';
+    if (inboxMode === 'disconnected') {
+        $('#inbox-empty h2').textContent = 'Connect Garmin to prepare drafts';
+        $('#inbox-empty p').textContent = 'Choose which activities to import. You review every ascent before saving.';
+        $('#inbox-connect').hidden = false;
+        $('#inbox-check').hidden = true;
+        $('[data-screen="inbox"] .sync-line').hidden = true;
+        $('.inbox-feedback').hidden = true;
+        $('#earlier').hidden = true;
+    }
+} else if (inboxMode === 'attention') {
+    $('#inbox-status').textContent = 'Reconnect Garmin in Settings to check for new activities. Your drafts remain available.';
+} else if (inboxMode === 'checking') {
+    $('#inbox-status').textContent = 'Checking Garmin… Your existing drafts are ready to review.';
+}
 showScreen();

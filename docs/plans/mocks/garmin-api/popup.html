@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-bpb-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>Toolbar inbox — workflow prototype</title>
+  <link rel="stylesheet" href="../../../../src/theme/panel.css">
+  <link rel="stylesheet" href="../../../../popup/popup.css">
+  <link rel="stylesheet" href="popup-mock.css">
+  <script src="popup-mock.js" defer></script>
+</head>
+<body>
+  <main id="popup-surface">
+    <header class="brand">
+      <img src="../../../../icons/icon-48.png" width="28" height="28" alt="">
+      <div><h1>Peakbagger Drafts</h1><p id="provider-label">Garmin Connect activity</p></div>
+      <button id="open-settings" class="settings-button" type="button" aria-label="Open Settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M10.06 4.76 10.44 2.12 13.56 2.12 13.94 4.76 15.75 5.50 17.88 3.91 20.09 6.12 18.50 8.25 19.24 10.06 21.88 10.44 21.88 13.56 19.24 13.94 18.50 15.75 20.09 17.88 17.88 20.09 15.75 18.50 13.94 19.24 13.56 21.88 10.44 21.88 10.06 19.24 8.25 18.50 6.12 20.09 3.91 17.88 5.50 15.75 4.76 13.94 2.12 13.56 2.12 10.44 4.76 10.06 5.50 8.25 3.91 6.12 6.12 3.91 8.25 5.50Z"/><circle cx="12" cy="12" r="3.25"/></svg>
+      </button>
+    </header>
+
+    <nav class="inbox-shortcut" aria-label="Your activities">
+      <button id="popup-inbox" class="inbox-entry" type="button" aria-label="Activity inbox, 3 pending activities" aria-describedby="popup-inbox-status">
+        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16l2 10v6H2v-6L4 4Z M2 14h6l2 3h4l2-3h6"/></svg>
+        <span id="popup-inbox-label">Activity inbox</span>
+        <span class="inbox-count-slot" aria-hidden="true"><span id="popup-count">3</span></span>
+        <span class="inbox-indicator" aria-hidden="true"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m7 4 6 6-6 6"/></svg><span class="inbox-spinner" hidden></span></span>
+      </button>
+      <div class="inbox-feedback"><span aria-hidden="true">Couldn’t open inbox. Try again.</span><span aria-hidden="true">Drafts stay until saved or removed.</span><span id="popup-inbox-status" role="status" aria-atomic="true">Drafts stay until saved or removed.</span></div>
+      <span id="popup-count-status" class="visually-hidden" role="status" aria-atomic="true"></span>
+    </nav>
+
+    <section id="capture-scene" aria-label="Current activity">
+      <div class="state-card" id="popup-capture-card">
+        <h2 class="state-title" id="popup-capture-title">Prepare this activity</h2>
+        <p class="state-detail" id="popup-capture-detail">Find summit matches from the activity open in this tab.</p>
+        <button id="popup-capture" class="primary" type="button">Capture this activity</button>
+      </div>
+      <p class="privacy-note" id="popup-capture-note">Review the suggested peaks before opening drafts. Save is always yours.</p>
+    </section>
+  </main>
+
+  <aside class="demo-controls" aria-label="Prototype controls">
+    <strong>Popup prototype</strong><p>Fictional states · no Garmin access or tab creation</p>
+    <label>Current tab <select id="popup-context"><option value="activity">Garmin activity</option><option value="unsupported">Any other website</option><option value="working">Capture in progress</option><option value="capture-error">Capture error</option></select></label>
+    <label>Inbox <select id="popup-state"><option value="ready">3 pending activities</option><option value="empty">Empty</option><option value="disconnected">Not connected</option><option value="checking">Checking · 3 pending</option><option value="attention">Reconnect · 3 pending</option><option value="unknown">Count unavailable</option><option value="many">125 pending activities</option></select></label>
+    <label>Open result <select id="popup-response"><option value="success">Open inbox</option><option value="error">Opening fails</option></select></label>
+    <label>Theme <select id="popup-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+    <a href="index.html#inbox">Full workflow prototype</a>
+  </aside>
+</body>
+</html>

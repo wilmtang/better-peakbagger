@@ -13,7 +13,9 @@ import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from '.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../../..');
 const preflight = process.argv.slice(2).includes('--preflight');
-assert(process.argv.slice(2).every(arg => arg === '--preflight'), 'Unknown argument');
+const popupOnly = process.argv.slice(2).includes('--popup-only');
+assert(process.argv.slice(2).every(arg => ['--preflight', '--popup-only'].includes(arg)), 'Unknown argument');
+assert(!(preflight && popupOnly), 'Choose preflight or popup-only');
 assertChromeLaunchAllowed();
 await access(chromium.executablePath());
 await access(firefox.executablePath());
@@ -27,7 +29,8 @@ const server = createServer({ key: certificate.key, cert: certificate.cert }, as
             return;
         }
         if (!pathname.startsWith('/docs/plans/mocks/garmin-api/')
-            && pathname !== '/src/theme/panel.css' && pathname !== '/icons/icon-48.png') {
+            && pathname !== '/src/theme/panel.css' && pathname !== '/icons/icon-48.png'
+            && pathname !== '/popup/popup.css') {
             response.writeHead(404); response.end(); return;
         }
         const file = await resolveFixtureFile(pathname, root);
@@ -44,6 +47,7 @@ try {
     });
     const origin = `https://www.peakbagger.com:${server.address().port}`;
     const browser = await chromium.launch({ channel: 'chromium', headless: true,
+        ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
         args: ['--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1', ...certificate.chromeTrustArgs] });
     browsers.push(browser);
     const page = await browser.newPage({ viewport: { width: 1180, height: 900 }, reducedMotion: 'reduce' });
@@ -54,12 +58,15 @@ try {
     if (!preflight) {
         const { verifyAndCapture } = await import('./verify.mjs');
         await mkdir(path.join(here, 'images'), { recursive: true });
-        await verifyAndCapture({ page, origin, output: path.join(here, 'images'), capture: true });
+        if (!popupOnly) await verifyAndCapture({ page, origin, output: path.join(here, 'images'), capture: true });
+        const { verifyPopup } = await import('./verify-popup.mjs');
+        await verifyPopup({ page, origin, output: path.join(here, 'images'), capture: true });
         const ff = await firefox.launch({ headless: true,
             firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } });
         browsers.push(ff);
         const ffPage = await ff.newPage({ viewport: { width: 1180, height: 900 }, ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
-        await verifyAndCapture({ page: ffPage, origin, capture: false });
+        if (!popupOnly) await verifyAndCapture({ page: ffPage, origin, capture: false });
+        await verifyPopup({ page: ffPage, origin, capture: false });
         console.log(`Verified hidden Chromium ${browser.version()} and Firefox ${ff.version()}; DOM/CSS only, no WebGL.`);
     }
 } finally {

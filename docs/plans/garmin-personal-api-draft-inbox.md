@@ -2,7 +2,8 @@
 
 Status: research and proposed workflow, revised October 23, 2026. Runtime
 implementation has not started. Initial source review used commit `61b07643`;
-the revision also inspected the current settings credential export/import path.
+the revision also inspected the current settings credential export/import path
+and toolbar popup startup, layout and capture controls.
 The user authorized bounded read-only tests of their personal key; no key,
 token, activity identifier, activity name, coordinate, or original activity file
 is included in this plan.
@@ -41,8 +42,39 @@ values and credentials are fictional. They do not connect to Garmin, open
 Peakbagger forms, export a file or implement the proposed feature.
 
 The [HTML prototype](mocks/garmin-api/index.html) includes screen, theme and
-simulated-response selectors. The [mock guide](mocks/garmin-api/README.md)
-describes the interactions and reproducible screenshot checks.
+simulated-response selectors. A separate [toolbar popup prototype](mocks/garmin-api/popup.html)
+uses the actual popup stylesheet and adds context, badge and opening-error
+scenarios. The [mock guide](mocks/garmin-api/README.md) describes the interactions
+and reproducible screenshot checks.
+
+### Open the inbox from the extension toolbar
+
+Place a persistent **Activity inbox** button immediately below the existing
+brand header. Its badge counts pending activities, including items waiting for
+attention. The label stays the same at zero; opening the inbox does not clear
+the count. Keep capture as the primary action for the current Garmin or Strava
+activity, with an explicit **Capture this activity** button.
+
+![Toolbar popup with Activity inbox, a count of three pending activities and a separate Capture this activity action](mocks/garmin-api/images/10-popup-activity.png)
+
+The inbox remains available on every website, before Garmin setup, and during a
+capture or connection failure. Credentials and the activity list belong in the
+full extension page. The prototype navigates within the page to demonstrate the
+handoff; actual tab creation/reuse and popup dismissal remain implementation work.
+
+<details>
+<summary>Popup on another website, dark mode and opening-error recovery</summary>
+
+![Toolbar popup on an unrelated website with an available Activity inbox and guidance for capturing an activity](mocks/garmin-api/images/13-popup-any-site.png)
+
+![Dark toolbar popup with the same inbox entry and explicit capture action](mocks/garmin-api/images/11-popup-dark.png)
+
+Keep the label and control dimensions stable while opening. If opening fails,
+retain focus and show a short error below the same button so it can be retried.
+
+![Dark popup showing Couldn’t open inbox, Try again below the unchanged inbox button](mocks/garmin-api/images/12-popup-open-error.png)
+
+</details>
 
 ### Connect a personal key
 
@@ -119,6 +151,17 @@ Enlarged settings were checked at 200% CSS zoom, with wrapping controls. This
 used DOM/CSS rendering, with no WebGL or live API calls. Native browser zoom,
 permission prompts, window focus and production extension behavior remain
 unverified by these mocks.
+
+The popup prototype additionally passed nine cases per browser, including
+390 × 600 and 320 × 600 in both themes; seven badge states; open/error/retry;
+duplicate activation; retained keyboard focus; unrelated websites; active/error
+captures; and empty/setup destinations. Header, inbox entry, capture section,
+following content and scroll geometry stayed within 1px through count and open
+state updates. A 200% CSS zoom case at 390 × 1000 also exercised opening/error
+feedback. Visual inspection caught fragmented words in the enlarged inbox
+label; a new assertion failed on that defect and passed after the constrained
+layout hid only the decorative inbox icon. The label, count and progress slot
+remain readable. See the [enlarged popup](mocks/garmin-api/images/15-popup-enlarged.png).
 
 ## Verified API findings
 
@@ -268,6 +311,7 @@ scope was established by the reviewed public documentation.
 | Finding | Evidence | Design consequence |
 | --- | --- | --- |
 | Existing capture is tied to a clicked activity tab. | `admitCapture`, `startCapture`, and `cleanupRemovedTab` in [background.js](../../src/background/background.js); [provider-page.js](../../src/capture/provider-page.js) | An alarm cannot safely impersonate a toolbar click or manufacture a source tab ID. Introduce a distinct import coordinator. |
+| Opening the popup currently starts a capture automatically. | The startup call to `beginCapture(false)` in [popup.js](../../popup/popup.js); header and state layout in [popup.html](../../popup/popup.html) and [popup.css](../../popup/popup.css) | An inbox visit must not start unrelated provider work. Make new capture explicit, while looking up and presenting existing capture progress/results without restarting it. |
 | The analysis engine already consumes narrow parsed fields. | `analyzeTrack` in [background.js](../../src/background/background.js), [capture-core.js](../../src/capture/capture-core.js), [gpx-metrics.js](../../src/gpx/gpx-metrics.js) | Reuse scoring, complete corridor lookup, metrics and reduction after adding a FIT-to-analysis adapter. |
 | Prepared jobs and tracks expire after 30 minutes. | [Privacy contract](../../PRIVACY.md#activity-capture), [capture architecture](../architecture.md#deep-dive-garminstrava-capture-and-local-gpx-processing) | Add a consented durable inbox snapshot and retain the existing short-lived form handoff. Existing capture retention does not already authorize durable storage. |
 | Save verification is currently conditional. | `savedDraftContext` requires `waitForSave`; selected multi-summit drafts use this path in [background.js](../../src/background/background.js). | A universal inbox “Saved” state requires verification for single-summit imports too. Tab creation, Preview, or closing a form is insufficient. |
@@ -287,6 +331,7 @@ flowchart TD
     user --> session
     session -- Yes --> prepare["Read recording and find summit candidates"]
     prepare --> inbox["Inbox: ready to review"]
+    toolbar["Toolbar popup: Activity inbox"] --> inbox
     inbox --> review["Review Strong and Probable matches"]
     review --> open["Open selected drafts"]
     open --> save["User reviews each form and clicks Save"]
@@ -376,13 +421,83 @@ uploads outside that window. Explain this under connection details and provide
 **Check full history** there; keep the normal inbox action focused on Check now.
 The engineering contract below specifies the coverage and its limits.
 
-### 3. An Activity inbox, with a small popup entry point
+### 3. An Activity inbox, with a persistent popup button
 
-Use a full extension page for the list and review. The popup gets one compact
-entry such as **3 activities ready to review**; preserve its existing capture
-action when opened on a Garmin or Strava activity. Badge counts reflect
-reviewable activities, not an unverified count of ascents. Avoid OS notifications
+Use a full extension page for the list and review. The toolbar popup gets a
+full-width secondary **Activity inbox** button directly below the brand header
+and above the changing capture state. Keep the existing settings gear in the
+header. Use the extension's current typography, colors and outline icons;
+credentials, settings and the full activity list stay out of this compact surface.
+
+```text
+Peakbagger Drafts                                      [Settings]
+Garmin Connect activity
+
+[ Inbox icon  Activity inbox                         3  › ]
+Drafts stay until saved or removed.
+
+Prepare this activity
+Find summit matches from the activity open in this tab.
+[Capture this activity]
+```
+
+**Opening the popup:** read the active-tab context, any existing capture job,
+and the local inbox summary. The current startup call to `beginCapture(false)`
+must be split so this read-only initialization cannot start a new capture,
+fetch a provider recording or run summit lookup. On a supported activity show
+**Capture this activity**; clicking it starts the existing explicit capture
+transaction. An existing job still shows its progress or results. On other
+sites show neutral guidance to open a Garmin or Strava activity, while keeping
+the inbox available. An inbox visit never requests Garmin API permission or
+requires a Garmin/Peakbagger tab. This is an intentional change to the current
+one-purpose popup, required by its new navigation role.
+
+**What the badge means:** count pending activity rows for the selected
+Peakbagger account binding, including ready, preparing and waiting/attention
+items. Count each activity once regardless of how many summit candidates or
+forms it contains. Saved and dismissed activities leave this count. Opening or
+reading the inbox does not. Use the same definition in the inbox sidebar; the
+mock's three rows therefore show **3**, although only two are ready to review.
+
+Read the count from a small durable local summary; opening the popup must not
+fetch Garmin or decode files just to populate it. Hide the zero badge without
+removing its layout slot. Show **99+** above 99, with the exact count in the
+accessible name. While the local summary is unavailable show **—**, never a
+false zero. Keep the last known count while refreshing; connection expiry or a
+failed Garmin check must not erase it. Bind asynchronous updates to the selected
+account/generation so a switch cannot expose another account's count or items.
+
+**Opening the inbox:** on the button's explicit activation, reuse and focus an
+existing eligible extension inbox tab, or create one if absent. Keep one
+worker-owned open operation so repeated clicks or concurrent popup requests
+cannot create several tabs. Validate the destination as the extension-owned
+inbox; include no credentials or private activity data in its URL. Only dismiss
+the popup after a confirmed handoff. If opening fails, leave it usable with
+**Couldn’t open inbox. Try again.** below the unchanged button. If the popup
+closes before acknowledgement, the worker finishes the same operation; a later
+attempt looks for its resulting tab before creating another.
+
+Garmin checking, disconnection, expired credentials and capture failures do not
+disable the inbox button. Retained drafts remain reviewable. A connected empty
+inbox explains there is nothing to review and keeps **Check now** available; an
+unconfigured empty inbox offers **Connect Garmin**. Neither state redirects
+silently into setup. Avoid OS notifications, an additional toolbar-icon badge,
 and unsolicited tab creation in the first version.
+
+**Interaction and accessibility:** use a minimum 44px target (48px in the mock),
+a persistent label, and fixed count/indicator slots. A small spinner replaces
+the chevron while opening; guard mouse, Enter and Space re-entry while retaining
+keyboard focus with `aria-disabled`. Reserve a compact wrapping feedback line
+for idle, opening and error copy so neither the entry nor the capture controls
+move. Decorative icons/count text stay out of the accessibility tree; name the
+button with its contextual count and announce meaningful count/status changes
+politely without moving focus. Respect reduced motion. Preserve the native
+popup's intrinsic 390px width contract; a fixture's constrained-width workaround
+is not a production fix for native popup sizing. At constrained widths, hide
+the decorative inbox icon before squeezing the action label into word fragments;
+retain the count and opening indicator.
+
+The destination remains the full inbox:
 
 ```text
 Activity inbox                                  [Check now]
@@ -786,8 +901,12 @@ performed during this research.
 2. Implement Connect and an explicit one-activity import first. Prove direct
    optional-origin requests in real Chrome and Firefox, owner binding, FIT
    fidelity and the existing draft pipeline before adding background work.
-3. Add the inbox, persistent reduced snapshots and minimal receipts. Verify
-   restart, no automatic inbox expiry, short-lived form handoffs, privacy
+3. Add the inbox, persistent reduced snapshots and minimal receipts. Add the
+   toolbar popup's **Activity inbox** button, account-bound local count, safe tab
+   reuse and explicit capture initialization together. Verify inbox access on
+   unrelated sites, without a Garmin connection, during capture and after
+   connection failures; opening the popup/inbox must not start a new capture.
+   Verify restart, no automatic inbox expiry, short-lived form handoffs, privacy
    changes, capacity limits, disconnect, single- and multi-summit Save
    reconciliation, and cross-entry-point duplicate behavior.
 4. Add opt-in scheduled discovery/preparation with bounded catch-up, rate-limit
@@ -814,6 +933,18 @@ states. Test keyboard
 focus and duplicate activation in both browsers. Use masked HTTPS fixtures
 and hidden real browsers under the repository's non-interruption rules. Before
 implementation, confirm the selected harness can load the target UI.
+
+For the popup specifically, cover counts 0, 1, 99, 100+ and unknown; retained
+counts during checking/reconnect; account switches; supported and unrelated
+tabs; active capture progress and long results; worker suspension; concurrent
+opens; closing the popup during a tab handoff; and opening failure/retry. Prove
+that tab reuse preserves the inbox's current review/scroll position, opens its
+existing browser window only on user activation, and never starts capture.
+Check entry, header, capture controls, following content and scroll geometry at
+390 × 600 and constrained 320px, both themes, with enlarged text and slow count
+updates. Native extension popup sizing and tab/window focus need separate
+verification: the documentation prototype is an ordinary page and cannot prove
+those browser-chrome behaviors.
 
 Evidence status: live Garmin token/list/detail/ZIP reads, FIT field presence,
 and a separate oldest-activity/original-file read were verified. Pinned third-party
