@@ -64,6 +64,19 @@ const generalLanded = () => {
         && content.scrollTop <= 10;
 };
 
+const garminLanded = () => {
+    const content = document.querySelector('.content');
+    const target = document.getElementById('capture-garmin');
+    return location.hash === '#capture-garmin'
+        && document.querySelector('.side-nav a[href="#capture-garmin"]')?.hasAttribute('aria-current')
+        && document.querySelector('.nav-parent-active')?.getAttribute('href') === '#capture'
+        && !!document.getElementById('garmin-key')
+        && target.getBoundingClientRect().top >= content.getBoundingClientRect().top - 1
+        && target.getBoundingClientRect().top < content.getBoundingClientRect().bottom
+        && content.style.scrollBehavior === ''
+        && content.dataset.verificationScrolling !== 'true';
+};
+
 export async function verifySettingsNavigation({ navigate, evaluate, resize, click, back, forward, wait, screenshot }) {
     const landing = async (condition, label) => {
         try {
@@ -139,6 +152,22 @@ export async function verifySettingsNavigation({ navigate, evaluate, resize, cli
                 : () => { document.documentElement.dataset.bpbTheme = 'light'; });
             await landing(aboutLanded, `${label}-deep-link`);
             await checkFrame(before, `${label}-deep-link`);
+            // The established narrow layout exposes parent chips only.
+            if (width > 720) {
+                await click('.side-nav a[href="#capture-garmin"]');
+                await landing(garminLanded, `${label}-garmin-click`);
+                await checkFrame(before, `${label}-garmin-click`);
+                await back();
+                await landing(aboutLanded, `${label}-garmin-back`);
+                await forward();
+                await landing(garminLanded, `${label}-garmin-forward`);
+            }
+            await navigate('#capture-garmin');
+            await evaluate(theme === 'dark'
+                ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
+                : () => { document.documentElement.dataset.bpbTheme = 'light'; });
+            await landing(garminLanded, `${label}-garmin-deep-link`);
+            await checkFrame(before, `${label}-garmin-deep-link`);
         }
     }
 }

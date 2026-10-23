@@ -375,12 +375,12 @@ test('settings are grouped by the surface they affect', async () => {
     // Capture & reports → GPX capture / Report editor
     assert.deepEqual(
         [...capture.querySelectorAll('.subsection-title')].map(heading => heading.textContent),
-        ['GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
+        ['Garmin connection', 'GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
     );
     assert.deepEqual(
         [...dom.window.document.querySelectorAll('.side-nav a.nav-subitem[href^="#capture-"],'
             + ' .side-nav a.nav-subitem[href="#drafts"]')].map(link => link.textContent),
-        ['GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
+        ['Garmin connection', 'GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
     );
     assert.equal(capture.querySelector('#capture-report .title').textContent, 'Report editor');
     for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights', 'fill-external-url']) {
@@ -1042,7 +1042,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const doc = dom.window.document;
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
-        ['#general-units', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
+        ['#general-units', '#capture-garmin', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
             '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
@@ -1055,7 +1055,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     }
     assert.deepEqual(
         Array.from(doc.querySelectorAll('#github > .subsection'), section => `#${section.id}`),
-        subLinks.slice(9).map(link => link.getAttribute('href')),
+        subLinks.filter(link => link.hash.startsWith('#github-')).map(link => link.getAttribute('href')),
         'Backup & sync subsections should follow their sidebar order',
     );
     const ascentBackupLink = doc.querySelector('.nav-subitem[href="#github-backup"]');
@@ -1260,4 +1260,25 @@ test('Garmin credential import names the key and requires API permission before 
     assert.deepEqual(requested, [{ origins: ['https://personal.connectapi.garmin.com/*'] }]);
     assert.equal(messages.some(message => message.type === 'SETTINGS_FILE_IMPORT'), false);
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark'); dom.window.close();
+});
+
+test('Garmin connection has a labelled sidebar entry and honors its deep link', async () => {
+    const dom = await loadOptions({}, { hash: '#capture-garmin' });
+    const doc = dom.window.document;
+    const link = doc.querySelector('.side-nav a[href="#capture-garmin"]');
+    assert.ok(link, 'Garmin connection must be discoverable in the settings sidebar');
+    assert.equal(link.textContent, 'Garmin connection');
+    assert.equal(link.getAttribute('aria-current'), 'true');
+    assert.equal(doc.querySelector('.nav-parent-active')?.getAttribute('href'), '#capture');
+    const section = doc.getElementById('capture-garmin');
+    assert.equal(section.getAttribute('role'), 'group');
+    assert.equal(section.getAttribute('aria-labelledby'), section.querySelector('h3').id);
+    assert.ok(section.querySelector('#garmin-key'), 'The fixture must load the Garmin controller too');
+});
+
+test('every settings subsection has exactly one sidebar entry in document order', async () => {
+    const dom = await loadOptions({});
+    const doc = dom.window.document;
+    assert.deepEqual([...doc.querySelectorAll('.side-nav .nav-subitem')].map(link => link.hash),
+        [...doc.querySelectorAll('.content .subsection')].map(section => `#${section.id}`));
 });

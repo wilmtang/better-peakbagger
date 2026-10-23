@@ -2,6 +2,17 @@
 
 ## Fixed and verified
 
+- **P2: Garmin connection was missing from settings navigation.** Added its
+  sidebar entry and accessible heading association. The earlier isolated Garmin
+  fixture disabled the main options controller, and the options fixture omitted
+  the Garmin bundle. Options tests now load both and require one sidebar link
+  per subsection; both new regressions failed against the missing-link version.
+  All 211 options/Garmin UI tests pass. Hidden Chrome 156 and Firefox 158 checks
+  load the real extension and verify Garmin clicks, deep links, active states,
+  Back/Forward and stable navigation/content frames in both themes at
+  1982×1000, 1000×760, 1000×420 and 480×760. Desktop and narrow screenshots were
+  inspected. The established narrow layout shows parent chips only; Garmin
+  deep links still work there. These checks do not prove native browser focus.
 - **P1: background completion could undo dismissal.** The retained item now has
   a revision; both successful and failed preparation check it and the dismissal
   and handoff state before writing. The regression failed with one visible item

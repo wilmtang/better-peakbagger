@@ -7,7 +7,7 @@ const ext = globalThis.browser || globalThis.chrome;
 export async function initGarminSettings(root) {
     if (!root) return;
     root.classList.add('garmin-settings');
-    root.innerHTML = `<h3 class="subsection-title">Garmin connection</h3>
+    root.innerHTML = `<h3 class="subsection-title" id="capture-garmin-heading">Garmin connection</h3>
       <p>Bring your Garmin activities into your inbox automatically.</p>
       <form class="garmin-key-form">
         <div class="garmin-key-label"><label for="garmin-key">Personal API key</label><a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer" aria-label="Get a Garmin API key (opens in a new tab)">Get a Garmin API key ↗</a></div>

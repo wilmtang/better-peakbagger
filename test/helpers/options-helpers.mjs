@@ -109,6 +109,7 @@ export const loadOptions = async (settings = {}, {
     await evalBundle(dom.window, 'options/options-head.js');
     dom.initialTheme = dom.window.document.documentElement.getAttribute('data-bpb-theme');
     await evalBundle(dom.window, 'options/options.js');
+    await evalBundle(dom.window, 'options/garmin.js');
     await new Promise(r => dom.window.setTimeout(r, 20)); // S.get().then(populate)
     return dom;
 };
