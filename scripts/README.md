@@ -154,4 +154,5 @@ independent of the existing targets.
 - [verify-report-photos.mjs](verify-report-photos.mjs)
 - [verify-settings-actions.mjs](verify-settings-actions.mjs) — held Settings actions and restore focus, run by `layout-stability`.
 - [verify-settings-navigation.mjs](verify-settings-navigation.mjs)
+- [verify-signed-out.mjs](verify-signed-out.mjs) — signed-out recovery and held filter retries in Chrome/Firefox; run with `npm run verify -- signed-out`.
 
