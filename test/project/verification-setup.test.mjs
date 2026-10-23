@@ -112,7 +112,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.ok(gpu.steps.some(step => step.if === 'failure()' && step.with?.path === 'browser-evidence/'));
 });
 
-test('the CI surface step selects the requested engine and preserves either verifier failure', async () => {
+test('the CI surface step selects the requested engine and preserves each verifier failure', async () => {
     const ordinary = await load('workflows/test.yml');
     const step = ordinary.jobs.layout.steps.find(step => step.name === 'Verify snow and independent peak cards');
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-surface-ci-'));
@@ -120,7 +120,8 @@ test('the CI surface step selects the requested engine and preserves either veri
     try {
         await writeFile(executable, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$BPB_SURFACE_COMMANDS"\nif [ "$2" = "$BPB_SURFACE_FAIL" ]; then exit 9; fi\n');
         await chmod(executable, 0o755);
-        for (const browser of ['chrome', 'firefox', 'missing']) for (const fail of ['', '--snow', '--cards', '--interactions']) {
+        const modes = ['snow', 'cards', 'cards-placement', 'interactions'];
+        for (const browser of ['chrome', 'firefox', 'missing']) for (const fail of ['', ...modes.map(mode => `--${mode}`)]) {
             await rm(commands, { force: true });
             const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', 'mkdir -p browser-evidence\n' + step.run], {
                 cwd: directory, encoding: 'utf8', timeout: 5000,
@@ -129,9 +130,8 @@ test('the CI surface step selects the requested engine and preserves either veri
             });
             const calls = (await readFile(commands, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);
             assert.equal(result.status === 0, browser !== 'missing' && !fail, result.stderr);
-            const modes = browser === 'missing' ? [] : fail === '--snow' ? ['snow']
-                : fail === '--cards' ? ['snow', 'cards'] : ['snow', 'cards', 'interactions'];
-            assert.deepEqual(calls, modes.map(mode => `scripts/verify-ascent-weather.mjs --${mode}${browser === 'firefox' ? ' --firefox' : ''}`));
+            const executed = browser === 'missing' ? [] : fail ? modes.slice(0, modes.indexOf(fail.slice(2)) + 1) : modes;
+            assert.deepEqual(calls, executed.map(mode => `scripts/verify-ascent-weather.mjs --${mode}${browser === 'firefox' ? ' --firefox' : ''}`));
         }
     } finally { await rm(directory, { recursive: true, force: true }); }
 });
