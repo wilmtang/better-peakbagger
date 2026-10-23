@@ -1,6 +1,6 @@
 # Signed-out Peakbagger users: feature gates and remediation plan
 
-Status: **Remediation in progress. A2 implemented and verified locally.**
+Status: **Remediation in progress. A1 and A2 implemented and verified locally.**
 
 ## Findings first
 
@@ -347,11 +347,29 @@ proof of pending/error transitions, focus, or terrain rendering.
   Verification: 411 focused tests, targeted ESLint, and hidden real-manifest
   Chrome verification passed. A2's parser rejection is not a demonstrated
   successful remote authorization bypass.
+- A1 now keeps a typed account-unavailable reason, offers sign-in and custom
+  favorites, and preserves the selected filter. Retry coalesces activation and
+  retains its error/action while the read is pending. Controls precede the
+  changing status; focused recovery remains usable after completion. Full-list
+  callbacks are installed before the initial missing-account result, and its
+  settings snapshot follows later source changes. The missing-link assertion
+  failed before the fix; a current-list source-switch regression also exposed
+  the stale settings snapshot. Verification: 73 focused tests, targeted ESLint,
+  and `npm run verify -- signed-out` passed 64 cases in hidden Chrome
+  156.0.8078.4 and Firefox 157.0. Both native peak/full-list fixtures were checked
+  at widths 1000/375 and height 900, light/dark, CSS zoom 1/2, through held
+  retry → repeated error → success and duplicate Enter/Space activation.
+  Retry/error action, toolbar, heading, document height and scroll stayed stable;
+  success kept the action and focus while allowing the result/status to change.
+  Chrome light/dark desktop/narrow screenshots were visually inspected. This
+  focused renderer uses explicit storage/network stubs and shipped bundles;
+  native browser zoom, WebGL and live account-write behavior are not established.
 
 ### Fixed and verified
 
-A2: shared account validation and adapters, locally verified as recorded above.
-A1, A3 and A4 remain in progress.
+A1: actionable filter recovery, retry focus/stability and live source switching.
+A2: shared account validation and adapters. Local evidence is recorded above.
+A3 and A4 remain in progress.
 
 ### Intentionally not changed
 

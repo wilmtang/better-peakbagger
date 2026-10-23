@@ -483,7 +483,8 @@ test('buddy mode reads the owner-scoped local cache', async () => {
         prepare: page => {
             const owner = page.window.document.createElement('a');
             owner.href = '/climber/ClimbListC.aspx?cid=900001'; owner.textContent = 'My Ascents';
-            page.window.document.body.prepend(owner);
+            const account = page.window.document.createElement('div'); account.textContent = 'Logged in: Test | ';
+            account.append(owner); page.window.document.body.prepend(account);
         } });
     const expected = dataRows(dom).filter(row => customCids.includes(rowCid(row))).length;
     assert.equal(chipCount(dom, 'Climbing buddies'), String(expected));
@@ -503,7 +504,8 @@ test('a cache from another signed-in account is treated as absent', async () => 
             const owner = page.window.document.createElement('a');
             owner.href = '/climber/ClimbListC.aspx?cid=900001';
             owner.textContent = 'My Ascents';
-            page.window.document.body.prepend(owner);
+            const account = page.window.document.createElement('div'); account.textContent = 'Logged in: Test | ';
+            account.append(owner); page.window.document.body.prepend(account);
         },
     });
     const buddyChip = chip(dom, 'Climbing buddies');
@@ -528,7 +530,8 @@ test('an active stale buddy cache filters immediately and revalidates once', asy
             const owner = page.window.document.createElement('a');
             owner.href = '/climber/ClimbListC.aspx?cid=900001';
             owner.textContent = 'My Ascents';
-            page.window.document.body.prepend(owner);
+            const account = page.window.document.createElement('div'); account.textContent = 'Logged in: Test | ';
+            account.append(owner); page.window.document.body.prepend(account);
             page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
                 beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
             }));
@@ -563,7 +566,8 @@ test('a refreshed Buddy List from another account is rejected while the stale ca
             const owner = page.window.document.createElement('a');
             owner.href = '/climber/ClimbListC.aspx?cid=900001';
             owner.textContent = 'My Ascents';
-            page.window.document.body.prepend(owner);
+            const account = page.window.document.createElement('div'); account.textContent = 'Logged in: Test | ';
+            account.append(owner); page.window.document.body.prepend(account);
             page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
                 beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
             }));
@@ -589,7 +593,8 @@ test('a refreshed Buddy List stays usable when only the local cache write fails'
             const owner = page.window.document.createElement('a');
             owner.href = '/climber/ClimbListC.aspx?cid=900001';
             owner.textContent = 'My Ascents';
-            page.window.document.body.prepend(owner);
+            const account = page.window.document.createElement('div'); account.textContent = 'Logged in: Test | ';
+            account.append(owner); page.window.document.body.prepend(account);
             page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
                 beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
             }));
@@ -1503,4 +1508,14 @@ test('compact PeakAscents ignores authors while preserving its beta guidance', a
     utility(dom, 'Show ignored').click();
     assert.equal(visibleRows(dom).length, dataRows(dom).length);
     dom.window.close();
+});
+
+test('choosing custom favorites while the Buddy account is unavailable updates the current list', async t => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, settings: { favoritesSource: 'buddies' },
+        local: { [FAVORITES_KEY]: favoriteStore(customCids) }, prepare: page => rememberFilterState(page, { fav: true }) });
+    t.after(() => dom.window.close());
+    await waitFor(dom, () => bar(dom).textContent.includes('could not be verified'));
+    await dom.chrome.storage.sync.set({ bpbSettings: { favoritesSource: 'custom' } });
+    await waitFor(dom, () => chip(dom, 'Fav climbers') && visibleRows(dom).length > 0);
+    assert.equal(bar(dom).querySelector('.bpb-account-recovery').hidden, true);
 });

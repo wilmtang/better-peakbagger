@@ -14,7 +14,7 @@ import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import * as I from '../favorites/ignored-climbers.js';
 import { observeIgnored } from '../favorites/ignored-client.js';
 import { createFavoriteSource } from '../favorites/favorite-source.js';
-import { reportStyle, utilityButton, paintReveal } from '../favorites/report-controls.js';
+import { reportStyle, utilityButton, paintReveal, accountRecovery } from '../favorites/report-controls.js';
 import { authorInCell } from '../favorites/report-adapters.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
@@ -42,8 +42,11 @@ let updateIgnored = () => {}, updateFavoriteSource = () => {};
 const ignoredReader = isPeakAscentsPage ? observeIgnored(chrome, state => {
     ignoredState = state; updateIgnored();
 }) : null;
+let favoriteSettings = settingsPromise;
 const favoriteSource = isPeakAscentsPage ? createFavoriteSource({ api: chrome, doc: document,
-    settings: { requireCurrent: () => settingsPromise, subscribe: S.subscribe },
+    settings: { requireCurrent: () => favoriteSettings, subscribe: listener => S.subscribe(config => {
+        favoriteSettings = Promise.resolve(config); listener(config);
+    }) },
     onState: state => { favoriteSourceState = state; updateFavoriteSource(); } }) : null;
 
 // Chip toggles and the word threshold remain page-local. Order is synced;
@@ -1360,7 +1363,7 @@ const init = async () => {
     reportStyle(document);
     const ignoreTools = document.createElement('span'); ignoreTools.className = 'bpb-report-tools';
     const ignoredStatus = document.createElement('span'); ignoredStatus.className = 'bpb-report-status';
-    const ignoreError = document.createElement('span'); ignoreError.setAttribute('role', 'status');
+    const ignoreError = document.createElement('span'); ignoreError.className = 'bpb-list-error'; ignoreError.setAttribute('role', 'status');
     if (!table.id) table.id = 'bpb-ascent-list';
     const revealButton = utilityButton(document, 'Show ignored', () => {
         fullList = false; revealIgnored = !revealIgnored; render();
@@ -1368,10 +1371,18 @@ const init = async () => {
     revealButton.setAttribute('aria-controls', table.id);
     const fullButton = utilityButton(document, 'View full list', () => { fullList = true; revealIgnored = true; render(); });
     const restoreFilters = utilityButton(document, 'Restore filters', () => { fullList = false; revealIgnored = false; render(); });
-    const retryLists = utilityButton(document, 'Retry', () => { void ignoredReader?.refresh(); void favoriteSource?.retry(); });
+    let retryBusy = false;
+    const retryLists = utilityButton(document, 'Retry', async () => {
+        if (retryBusy) return;
+        retryBusy = true; render();
+        try { await Promise.all([ignoredReader?.refresh(), favoriteSource?.retry()]); }
+        finally { retryBusy = false; render(); }
+    });
+    retryLists.addEventListener('blur', () => render());
+    const accountLinks = accountRecovery(document, chrome);
     ignoreTools.append(revealButton);
     const resultUtilities = document.createElement('span'); resultUtilities.className = 'bpb-report-tools pbaf-result-utilities';
-    const auxiliaryControls = [resetButton, ignoredStatus, ignoreError, retryLists, fullButton, restoreFilters];
+    const auxiliaryControls = [resetButton, retryLists, accountLinks, fullButton, restoreFilters, ignoredStatus, ignoreError];
     const results = document.createElement('span'); results.className = 'pbaf-results';
     if (isPeakAscentsPage) {
         resultUtilities.append(...auxiliaryControls);
@@ -1422,8 +1433,13 @@ const init = async () => {
         if (isPeakAscentsPage) {
             paintReveal(revealButton, ignoredStatus, result, revealIgnored, 'ascents');
             ignoreError.textContent = ignoredState.error || (state.fav ? favoriteSourceState?.error || '' : '');
-            if (state.fav && favoriteSourceState?.loading) ignoreError.textContent = 'Loading climbing buddies…';
-            retryLists.hidden = !ignoreError.textContent || ignoreError.textContent === 'Loading climbing buddies…';
+            if (state.fav && favoriteSourceState?.loading && !retryBusy) ignoreError.textContent = 'Loading climbing buddies…';
+            accountLinks.hidden = !(state.fav && favoriteSourceState?.accountRequired);
+            retryLists.hidden = !retryBusy && document.activeElement !== retryLists
+                && ((!accountLinks.hidden && !ignoredState.error)
+                    || !ignoreError.textContent || ignoreError.textContent === 'Loading climbing buddies…');
+            retryLists.setAttribute('aria-busy', String(retryBusy));
+            retryLists.setAttribute('aria-disabled', String(retryBusy));
             fullButton.hidden = shown > 0 || fullList;
             restoreFilters.hidden = !fullList;
             emptyBody.hidden = shown > 0;
@@ -1473,6 +1489,8 @@ const init = async () => {
         });
     };
 
+    updateIgnored = render;
+    updateFavoriteSource = () => { refreshFavorites(); render(); };
     table.parentNode.insertBefore(bar, table);
     containAscentTable(table);
     render();
@@ -1483,8 +1501,6 @@ const init = async () => {
         renderFrame = null;
     }, { once: true });
 
-    updateIgnored = render;
-    updateFavoriteSource = () => { refreshFavorites(); render(); };
     window.addEventListener('pageshow', event => { if (event.persisted) {
         revealIgnored = false; fullList = false; render(); void ignoredReader?.refresh(); void favoriteSource?.resume();
     } });

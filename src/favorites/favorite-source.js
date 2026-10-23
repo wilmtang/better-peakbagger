@@ -12,6 +12,7 @@ import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 export const createFavoriteSource = ({ api, settings, doc, onState,
     fetchDocument = fetchPeakbaggerDocument } = {}) => {
     let mode = null, favorites = null, cache = null, error = '', loading = true;
+    let errorCode = '', retrying = false;
     let generation = 0, requestGeneration = 0, controller = null, needed = false, stopped = false, paused = false;
     const owner = () => ownerClimberId(doc);
     const validCache = value => {
@@ -20,17 +21,24 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
     };
     const emit = () => onState({ mode, ids: F.favoriteSet(mode, favorites, validCache(cache)),
         available: mode === 'custom' ? favorites !== null : validCache(cache) !== null,
-        loading, error, stale: mode === 'buddies' && !!validCache(cache) && !F.isFresh(cache) });
+        loading, error, errorCode, retrying,
+        accountRequired: ['account-required', 'signed-out'].includes(errorCode),
+        stale: mode === 'buddies' && !!validCache(cache) && !F.isFresh(cache) });
     const cancel = () => { requestGeneration++; controller?.abort(); controller = null; };
     const refresh = async ({ force = false, active = needed } = {}) => {
         needed = active;
         if (stopped || paused || mode !== 'buddies' || !needed || (F.isFresh(validCache(cache)) && !force)
             || controller || (error && !force)) return;
         const ownCid = owner();
-        if (ownCid == null) { error = 'Sign in to Peakbagger to load your climbing buddies.'; loading = false; emit(); return; }
+        if (ownCid == null) {
+            error = 'Your Peakbagger account could not be verified on this page.';
+            errorCode = 'account-required'; loading = false; emit(); return;
+        }
         const token = ++requestGeneration;
         const beforeRead = generation;
-        controller = new AbortController(); loading = true; error = ''; emit();
+        controller = new AbortController(); loading = true;
+        if (!retrying) { error = ''; errorCode = ''; }
+        emit();
         try {
             const snapshot = await beginBuddyCacheRead(api);
             if (stopped || token !== requestGeneration) return;
@@ -45,40 +53,48 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
             }
             const next = { ownerCid: ownCid, entries: F.parseBuddyDocument(result.document), fetchedAt: Date.now() };
             const beforePublish = generation;
+            error = ''; errorCode = '';
             try { await publishBuddyCache(api, snapshot, next); }
             catch (failure) {
                 if (failure.code !== 'storage') throw failure;
                 if (beforeRead === generation && token === requestGeneration) cache = next;
                 error = 'Your Buddy List loaded, but Better Peakbagger could not save it. Try again.';
+                errorCode = 'storage';
                 return;
             }
             // A storage notification may already carry an even newer result.
             if (beforePublish === generation && token === requestGeneration) cache = next;
         } catch (failure) {
-            if (token === requestGeneration) error = validCache(cache)
-                ? `Using your saved Buddy List (saved climbing buddies). ${failure.message}` : failure.message;
+            if (token === requestGeneration) {
+                error = validCache(cache)
+                    ? `Using your saved Buddy List (saved climbing buddies). ${failure.message}` : failure.message;
+                errorCode = failure.code || 'unavailable';
+            }
         } finally {
             if (token === requestGeneration) { controller = null; loading = false; emit(); }
         }
     };
     const acceptFavorites = value => {
         if (value !== undefined && (!value || value.schemaVersion !== 1 || !Array.isArray(value.entries))) {
-            error = "Couldn't load your favorites."; return;
+            error = "Couldn't load your favorites."; errorCode = 'storage'; return;
         }
         favorites = F.cleanFavorites(value);
     };
-    const read = async () => {
+    const read = async ({ preserveError = false } = {}) => {
         const token = ++generation;
         try {
             const [config, stored] = await Promise.all([settings.requireCurrent(),
                 api.storage.local.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY])]);
             if (stopped || token !== generation) return;
             const nextMode = Schema.favoritesSource(config.favoritesSource);
-            if (mode !== nextMode) cancel();
-            mode = nextMode; error = ''; acceptFavorites(stored[F.FAVORITES_KEY]);
+            const changedMode = mode !== nextMode;
+            if (changedMode) cancel();
+            mode = nextMode;
+            if (!preserveError || changedMode || mode === 'custom') { error = ''; errorCode = ''; }
+            acceptFavorites(stored[F.FAVORITES_KEY]);
             cache = F.cleanBuddyCache(stored[F.BUDDY_CACHE_KEY]); loading = false; emit(); void refresh();
         } catch {
-            if (!stopped && token === generation) { loading = false; error = "Couldn't load climber lists."; emit(); }
+            if (!stopped && token === generation) { loading = false; error = "Couldn't load climber lists."; errorCode = 'storage'; emit(); }
         }
     };
     const changed = (changes, area) => {
@@ -94,10 +110,16 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
     api.storage.onChanged.addListener(changed);
     const unsubscribe = settings.subscribe(config => {
         const nextMode = Schema.favoritesSource(config.favoritesSource);
-        if (mode !== nextMode) { cancel(); mode = nextMode; error = ''; void read(); }
+        if (mode !== nextMode) { cancel(); mode = nextMode; error = ''; errorCode = ''; void read(); }
     });
+    const retry = async () => {
+        if (stopped || retrying) return;
+        retrying = true; emit();
+        try { await read({ preserveError: true }); await refresh({ force: true }); }
+        finally { retrying = false; emit(); }
+    };
     const ready = read();
-    return { ready, refresh, retry: () => read().then(() => refresh({ force: true })),
+    return { ready, refresh, retry,
         reconcile: () => { emit(); void refresh(); },
         pause: () => { paused = true; cancel(); loading = false; },
         resume: () => { paused = false; return read(); },

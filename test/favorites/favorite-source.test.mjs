@@ -130,3 +130,27 @@ test('a delayed report response cannot undo a confirmed Buddy change or weaken I
         assert.equal(ignore.ok, false);
     } finally { source.stop(); h.close(); }
 });
+
+test('retry retains its typed failure through a held read and coalesces duplicate activation', async () => {
+    const h = harness(null); let requests = 0, release;
+    const source = createFavoriteSource({ ...h, fetchDocument: async () => {
+        if (++requests === 1) return { kind: 'transient', error: { source: 'peakbagger', code: 'server', status: 503 } };
+        return new Promise(resolve => { release = resolve; });
+    } });
+    try {
+        await source.ready; await source.refresh({ active: true });
+        const original = h.states.at(-1).error;
+        const pending = source.retry();
+        const deadline = Date.now() + 2000;
+        while (!release && Date.now() < deadline) await new Promise(resolve => setImmediate(resolve));
+        assert.equal(typeof release, 'function', 'retry must reach the held Buddy read');
+        assert.equal(h.states.at(-1).retrying, true);
+        assert.equal(h.states.at(-1).error, original);
+        assert.equal(h.states.at(-1).errorCode, 'server');
+        await source.retry(); assert.equal(requests, 2);
+        release({ kind: 'ok', document: h.doc }); await pending;
+        assert.equal(h.states.at(-1).error, '');
+        assert.equal(h.states.at(-1).retrying, false);
+        assert.equal(h.states.at(-1).available, true);
+    } finally { source.stop(); h.close(); }
+});

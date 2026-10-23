@@ -58,3 +58,23 @@ test('an active preference with empty favorites is honest, and malformed ignores
     assert.ok(dom.window.document.querySelector('#bpb-peak-report-tools').textContent.includes("Couldn't load ignored climbers."));
     dom.window.close();
 });
+
+test('an unverified Buddy source offers sign-in and local favorites without discarding the saved filter', async t => {
+    const dom = await loadPage('peak-rainier.html', { fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/peak.aspx?pid=2296', bundles: ['content/peak-report-filter.js'],
+        settings: { favoritesSource: 'buddies' },
+        local: { bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: true } },
+        prepare: dom => {
+            for (const div of dom.window.document.querySelectorAll('div')) {
+                if (/^\s*Logged in:/.test(div.textContent)) div.remove();
+            }
+        } });
+    t.after(() => dom.window.close());
+    const tools = dom.window.document.getElementById('bpb-peak-report-tools');
+    await waitFor(dom, () => tools?.textContent.includes('Peakbagger'));
+    const links = [...tools.querySelectorAll('a')];
+    assert.ok(links.some(a => a.textContent === 'Sign in to Peakbagger' && new URL(a.href).pathname === '/Default.aspx'));
+    assert.ok(links.some(a => a.textContent === 'Use custom favorites…'));
+    assert.equal(dom.chrome._localStore.bpbPeakReportFilter.favoritesOnly, true);
+    assert.ok([...tools.querySelectorAll('button')].find(b => b.textContent === 'Retry').hidden);
+});

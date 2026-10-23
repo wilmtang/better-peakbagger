@@ -4,7 +4,7 @@ import * as I from './ignored-climbers.js';
 import { observeIgnored } from './ignored-client.js';
 import { createFavoriteSource } from './favorite-source.js';
 import { selectedReportTable } from './report-adapters.js';
-import { reportStyle, utilityButton, paintReveal } from './report-controls.js';
+import { reportStyle, utilityButton, paintReveal, accountRecovery } from './report-controls.js';
 import { settings } from '../settings/settings.js';
 import { createStableText } from '../ui/stable-text.js';
 
@@ -54,11 +54,11 @@ const mount = () => {
     const { table, records } = target;
     if (!table.id) table.id = 'bpb-selected-reports';
     const displays = new Map(records.map(record => [record.row, record.row.style.display]));
-    let reveal = false, full = false, busy = false;
+    let reveal = false, full = false, busy = false, retryBusy = false;
     const tools = document.createElement('div'); tools.className = 'bpb-report-tools'; tools.id = 'bpb-peak-report-tools';
     const status = document.createElement('span'); status.className = 'bpb-report-status'; status.setAttribute('role', 'status');
     const revealStatus = document.createElement('span'); revealStatus.className = 'bpb-report-status';
-    const error = document.createElement('span'); error.setAttribute('role', 'status');
+    const error = document.createElement('span'); error.className = 'bpb-list-error'; error.setAttribute('role', 'status');
     const savePreference = async value => {
         full = false; preference = { schemaVersion: 1, favoritesOnly: value }; busy = true; preferenceError = ''; render();
         try {
@@ -75,10 +75,16 @@ const mount = () => {
     favoriteText.reserve(['★', '☆'].flatMap(star => ['Favorite climbers', 'Climbing buddies'].map(label => `${star} ${label} · ${countSize}`)));
     const revealButton = utilityButton(document, 'Show ignored', () => { full = false; reveal = !reveal; render(); });
     revealButton.setAttribute('aria-controls', table.id);
-    const retry = utilityButton(document, 'Retry', () => {
-        void ignoreObserver.refresh(); void source.retry();
-        if (preferenceError) void savePreference(preference?.favoritesOnly || false);
+    const retry = utilityButton(document, 'Retry', async () => {
+        if (retryBusy) return;
+        retryBusy = true; render();
+        try {
+            await Promise.all([ignoreObserver.refresh(), source.retry(),
+                ...(preferenceError ? [savePreference(preference?.favoritesOnly || false)] : [])]);
+        } finally { retryBusy = false; render(); }
     });
+    retry.addEventListener('blur', () => render());
+    const accountLinks = accountRecovery(document, chrome);
     const showAll = utilityButton(document, 'Show all reports', () => { void savePreference(false); });
     showAll.title = 'Turn off the climber filter and remember this choice; ignored reports stay hidden.';
     const fullButton = utilityButton(document, 'View full list', () => { full = true; reveal = true; render(); });
@@ -87,7 +93,7 @@ const mount = () => {
     const manage = document.createElement('a'); manage.href = chrome.runtime.getURL('options/favorites.html');
     manage.textContent = 'Manage climber lists'; manage.target = '_blank'; manage.rel = 'noopener noreferrer';
     const utilities = document.createElement('span'); utilities.className = 'bpb-report-utilities';
-    utilities.append(revealButton, revealStatus, status, error, retry, showAll, fullButton, restoreFilters, manage);
+    utilities.append(revealButton, retry, accountLinks, showAll, fullButton, restoreFilters, manage, revealStatus, status, error);
     tools.append(favorites, utilities);
     table.before(tools);
     const emptyRow = table.insertRow(); emptyRow.className = 'bpb-report-empty';
@@ -108,14 +114,19 @@ const mount = () => {
         paintReveal(revealButton, revealStatus, counts, reveal);
         status.textContent = `${counts.visible.length} of ${records.length} selected reports shown`;
         error.textContent = ignoredError || preferenceError || (active ? sourceState?.error || '' : '');
-        if (active && sourceState?.loading) error.textContent = 'Loading climbing buddies…';
+        if (active && sourceState?.loading && !retryBusy) error.textContent = 'Loading climbing buddies…';
         emptyRow.hidden = counts.visible.length > 0;
         empty.textContent = active && !sourceState?.available ? sourceState?.loading ? 'Loading climbing buddies…'
             : "Couldn't load your climber list." : counts.ignoreHidden === records.length
             ? `All ${records.length} selected reports are from ignored climbers.`
             : active && counts.ignoredMatches > 0 ? `Your ${label.toLowerCase()}' reports on this page are hidden.`
                 : `No selected reports from your ${label.toLowerCase()}.`;
-        retry.hidden = (!error.textContent || error.textContent === 'Loading climbing buddies…') && !(busy && !retry.hidden);
+        accountLinks.hidden = !(active && sourceState?.accountRequired);
+        retry.hidden = !retryBusy && document.activeElement !== retry
+            && ((!accountLinks.hidden && !ignoredError && !preferenceError)
+                || !error.textContent || error.textContent === 'Loading climbing buddies…');
+        retry.setAttribute('aria-busy', String(retryBusy));
+        retry.setAttribute('aria-disabled', String(retryBusy));
         showAll.hidden = !active || counts.visible.length > 0;
         fullButton.hidden = counts.visible.length > 0 || full;
         restoreFilters.hidden = !full;

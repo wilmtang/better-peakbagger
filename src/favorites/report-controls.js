@@ -8,6 +8,10 @@ export const reportStyle = doc => {
 .bpb-report-tools button { min-height:32px; padding:5px 8px; border:0; border-radius:5px; background:transparent; color:#354c3c; font:inherit; cursor:pointer; }
 .bpb-report-tools button:focus-visible { outline:2px solid #2f6b3f; outline-offset:2px; }
 .bpb-report-tools button:disabled { cursor:wait; }
+.bpb-report-tools button[aria-busy="true"] { cursor:wait; }
+.bpb-account-recovery { display:inline-flex; flex-wrap:wrap; gap:4px 10px; }
+.bpb-account-recovery a { min-height:32px; display:inline-flex; align-items:center; }
+.bpb-list-error { flex-basis:100%; }
 #bpb-ascent-report-tools button[aria-controls] { min-inline-size:9em; flex-shrink:0; white-space:nowrap; }
 .bpb-report-tools .bpb-report-reveal { min-inline-size:calc(9em + var(--bpb-report-count-width, 0ch)); flex-shrink:0; white-space:nowrap; }
 /* The site's dark-theme button repaint must not promote this secondary action. */
@@ -35,6 +39,15 @@ html[data-bpb-theme="dark"] .bpb-report-tools button:focus-visible { outline-col
 export const utilityButton = (doc, label, handler) => {
     const button = doc.createElement('button'); button.type = 'button'; button.textContent = label;
     button.addEventListener('click', handler); return button;
+};
+export const accountRecovery = (doc, api) => {
+    const group = doc.createElement('span'); group.className = 'bpb-account-recovery'; group.hidden = true;
+    const signIn = doc.createElement('a'); signIn.textContent = 'Sign in to Peakbagger';
+    signIn.href = new URL('/Default.aspx', doc.location.href).href;
+    const custom = doc.createElement('a'); custom.textContent = 'Use custom favorites…';
+    custom.href = api.runtime.getURL('options/favorites.html');
+    for (const link of [signIn, custom]) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+    group.append(signIn, custom); return group;
 };
 export const paintReveal = (button, status, counts, reveal, noun = 'reports') => {
     const n = counts.ignored.length;
