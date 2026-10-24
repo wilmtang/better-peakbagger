@@ -5,9 +5,9 @@ the detected peaks and click Save in Peakbagger yourself.
 
 ## Turn the inbox on or off
 
-**Settings → General → Garmin activity inbox** is on by default. Turning it off
-stops imports and queued peak checks and hides the inbox entry and Garmin
-connection settings. Your key, drafts and import history stay on this device.
+**Settings → General → Automatically detect Garmin activities** is on by default.
+Turning it off stops imports and queued peak checks and hides the inbox entry
+and Garmin connection settings. Your key, drafts and import history stay on this device.
 Turn it back on to restore them. Connecting Garmin and enabling drafts still
 require your consent; the master switch alone never starts a new connection.
 

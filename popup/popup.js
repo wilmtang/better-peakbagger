@@ -215,7 +215,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     const errorState = error => {
         const code = error?.code || 'capture-failed';
         if (code === 'garmin-inbox-activity' && !garminInboxEnabled) {
-            stateCard('Activity already imported', 'Enable Garmin activity inbox in General settings to review the saved draft.', { action: { label: 'Open General settings', primary: true, onClick: () => { void ext.tabs.create({ url: ext.runtime.getURL('options/options.html#general') }); } } });
+            stateCard('Activity already imported', 'Enable automatic Garmin activity detection in General settings to review the saved draft.', { action: { label: 'Open General settings', primary: true, onClick: () => { void ext.tabs.create({ url: ext.runtime.getURL('options/options.html#general') }); } } });
             return;
         }
         if (code === 'garmin-inbox-activity') {

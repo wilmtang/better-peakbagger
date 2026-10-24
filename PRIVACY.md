@@ -91,9 +91,10 @@ automatic backups, diagnostics and URLs. A manual settings export includes it
 only when **Include saved credentials** is checked; that file is not encrypted.
 Access tokens stay in worker memory and are never exported.
 
-The General **Garmin activity inbox** switch defaults on. Turning it off hides
-the feature and stops imports and queued peak checks, preserving the key,
-drafts and import history. Turning it on does not grant Garmin access or consent.
+The General **Automatically detect Garmin activities** switch defaults on.
+Turning it off hides the feature and stops imports and queued peak checks,
+preserving the key, drafts and import history. Turning it on does not grant
+Garmin access or consent.
 
 Connection alone does not enable imports. **Enable Garmin drafts** records your
 chosen Peakbagger account and consent to local route processing. Checks run
