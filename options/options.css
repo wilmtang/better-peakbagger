@@ -161,6 +161,9 @@ button.secondary, a.secondary { align-self: flex-end; }
     border-top: 1px solid var(--danger-border);
 }
 .settings-backup-confirmation[hidden] { display: none; }
+.settings-backup-confirmation.backup-replacement { display: block; }
+.backup-replacement p { margin: 0 0 12px; }
+.backup-replacement .settings-backup-confirmation-actions { flex-wrap: wrap; }
 .photos-restore-confirmation[hidden] { display: none; }
 .settings-backup-confirmation-title,
 .photos-restore-title { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }

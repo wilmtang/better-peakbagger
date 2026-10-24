@@ -555,7 +555,7 @@ const createGithubClient = ({
             if (typeof file.content !== 'string') {
                 throw new TypeError('github client requires string content and a commit message');
             }
-            return { path, content: file.content };
+            return { path, content: file.content, ...(typeof file.verify === 'function' ? { verify: file.verify } : {}) };
         });
     };
 
@@ -606,7 +606,18 @@ const createGithubClient = ({
         const resolved = await resolveRepo();
         const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
         const state = await inspectRootTree(head.root);
-        return commitRootEntries({ entries, message, resolved, head, state });
+        for (const entry of entries) {
+            if (!entry.verify) continue;
+            const existing = (head.root.tree || []).find(node => node.path === entry.path);
+            if (existing && existing.type !== 'blob') throw new GithubError(ERROR_CODES.REPO_CONFLICT, 'The backup path is not a file.');
+            const current = existing ? await readBoundedRawBlobText(existing.sha, {
+                maxBytes: 2 * 1024 * 1024, expectedSize: existing.size ?? null,
+            }) : null;
+            await entry.verify(current);
+        }
+        // Ref-conflict retries rerun every verifier against the new head.
+        return commitRootEntries({ entries, message, resolved, head, state,
+            beforeCommit: async () => { for (const entry of entries) await entry.verify?.(undefined); } });
     };
 
     const putRootFiles = (files, commitMessage) =>

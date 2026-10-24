@@ -22,7 +22,7 @@ import { readIgnoredSyncState } from '../../src/background/climber-list-sync.js'
 import { SYNC_KEY as IGNORED_SYNC_KEY, IGNORED_KEY, serializeBackup as serializeIgnoredBackup,
     parseBackup as parseIgnoredBackup } from '../../src/favorites/ignored-climbers.js';
 
-const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
+const workerBundle = await fs.readFile(process.env.BPB_GITHUB_WORKER_BUNDLE || new URL('../../dist/background.js', import.meta.url), 'utf8');
 
 const event = () => { const listeners = []; return { listeners, addListener: l => listeners.push(l) }; };
 const respond = (status, body) => ({
@@ -222,6 +222,25 @@ const gitDataBackend = () => {
         return null;
     };
     return { handler, state };
+};
+
+// A persistent root-file view: unlike the minimal ascent writer fixture, every
+// later read sees previous commits and out-of-band changes from another device.
+const rootDataBackend = () => {
+    const backend = gitDataBackend();
+    return { state: backend.state, handler(method, path, body) {
+        if (method === 'GET' && path.endsWith('/git/trees/T0')) return respond(200, { tree:
+            Object.entries(backend.state.contents).map(([name, content]) => ({
+                path: name, type: 'blob', sha: encodeURIComponent(name), size: Buffer.byteLength(content),
+            })) });
+        if (method === 'GET' && path.includes('/git/blobs/')) {
+            const name = decodeURIComponent(path.split('/git/blobs/')[1]);
+            const text = backend.state.contents[name];
+            return respond(200, name === '.better-peakbagger.json'
+                ? { encoding: 'base64', content: Buffer.from(text).toString('base64') } : text);
+        }
+        return backend.handler(method, path, body);
+    } };
 };
 
 const AUTH = { token: 'gho_secret', repo: { owner: 'me', name: 'backup', branch: 'main', fullName: 'me/backup' }, account: { login: 'me' } };
@@ -737,7 +756,7 @@ test('an empty favorite list is a valid worker-built backup', async () => {
 
 test('enabling or changing favorites schedules one automatic backup and restore does not push', async () => {
     const backend = gitDataBackend();
-    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual' }];
+    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual', source: 'manual' }];
     const local = {
         bpbGithubAuth: structuredClone(AUTH),
         [Favorites.FAVORITES_KEY]: { schemaVersion: 1, entries },
@@ -783,7 +802,7 @@ test('enabling or changing favorites schedules one automatic backup and restore 
 
 test('favorites auto backup stays inert while off and retries failures only twice', async () => {
     const favorite = { schemaVersion: 1, entries: [{
-        cid: 7, name: 'Seven', addedAt: 10, source: 'manual',
+        cid: 7, name: 'Seven', addedAt: 10, source: 'manual', source: 'manual',
     }] };
     const off = createWorker({
         settings: { autoFavoritesBackup: false },
@@ -1078,7 +1097,7 @@ test('settings auto backup preserves the remote file when its gate-read succeeds
 });
 
 test('default-on root backups start without a page notification and recover changed settings after a restart', async () => {
-    const backend = gitDataBackend();
+    const backend = rootDataBackend();
     const worker = createWorker({ settings: {}, auth: AUTH, github: backend.handler });
     await waitFor(() => worker.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup')
         && worker.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'));
@@ -1144,7 +1163,7 @@ test('settings auto backup debounces changes, commits once, and skips an equal s
 // read/commit/update-ref round trips and two commits seconds apart.
 test('settings and favorites automatic backups fired together commit once', async () => {
     const backend = gitDataBackend();
-    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual' }];
+    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual', source: 'manual' }];
     const worker = createWorker({
         settings: { autoSettingsBackup: true, autoFavoritesBackup: true, theme: 'dark' },
         auth: AUTH,
@@ -1674,7 +1693,7 @@ test('a queued ascent write is superseded by repository replacement before it st
     };
     worker.local.bpbGithubAuthEpoch = 1;
     held.resolve(backend.handler(heldRequest.method, heldRequest.normalized, heldRequest.body));
-    assert.equal((await blocker).ok, true);
+    assert.equal((await blocker).error.code, 'superseded', 'root writes also recheck connection before committing');
 
     const stale = await queued;
     assert.equal(stale.ok, false);
@@ -2602,4 +2621,47 @@ test('an old in-flight root backup cannot stamp success for a replacement connec
     held.resolve(respond(200, { object: { sha: 'C1' } }));
     assert.equal((await writing).ok, true);
     assert.equal(worker.local.bpbSettingsBackupState, undefined);
+});
+
+
+test('a fresh profile cannot replace an existing settings or favorites backup without review', async () => {
+    for (const [type, path, original] of [
+        ['GITHUB_SETTINGS_BACKUP', 'settings.json', Transfer.serialize(Transfer.buildPayload({ theme: 'dark' }))],
+        ['GITHUB_FAVORITES_BACKUP', 'favorite-climbers.json', Favorites.serializeBackup(Favorites.buildBackupPayload({ schemaVersion: 1, entries: [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual' }] }, { exportedAt: '2026-10-23T12:00:00Z' }))],
+    ]) {
+        const backend = rootDataBackend(); backend.state.contents[path] = original;
+        const worker = createWorker({ auth: AUTH, github: backend.handler });
+        const result = await worker.send({ type }, EXTENSION_SENDER);
+        assert.equal(result.ok, false, 'an existing remote snapshot must not be replaced before review');
+        assert.equal(result.error.code, 'backup-review');
+        assert.equal(backend.state.contents[path], original);
+        assert.equal(backend.state.commits, 0);
+        const confirmed = await worker.send({ type, review: result.review }, EXTENSION_SENDER);
+        assert.equal(confirmed.ok, true);
+        assert.equal(backend.state.commits, 1);
+    }
+});
+
+test('automatic backup preserves another device and stale replacement reviews cannot overwrite newer content', async () => {
+    const backend = rootDataBackend();
+    const original = Transfer.serialize(Transfer.buildPayload({ theme: 'dark' }));
+    backend.state.contents['settings.json'] = original;
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    worker.fireAlarm('bpb-settings-backup');
+    await waitFor(() => worker.local.bpbSettingsBackupState?.needsReview);
+    assert.equal(backend.state.commits, 0);
+    const review = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
+    const newer = Transfer.serialize(Transfer.buildPayload({ theme: 'light', units: 'metric' }));
+    backend.state.contents['settings.json'] = newer;
+    const stale = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP', review: review.review }, EXTENSION_SENDER);
+    assert.equal(stale.error.code, 'backup-review');
+    assert.equal(backend.state.contents['settings.json'], newer);
+    assert.equal(backend.state.commits, 0);
+    assert.equal((await worker.send({ type: 'GITHUB_SETTINGS_BACKUP', review: stale.review }, EXTENSION_SENDER)).ok, true);
+    backend.state.contents['settings.json'] = original;
+    worker.sync.bpbSettings.theme = 'light';
+    worker.fireAlarm('bpb-settings-backup');
+    await waitFor(() => worker.local.bpbSettingsBackupState?.needsReview);
+    assert.equal(backend.state.contents['settings.json'], original);
+    assert.equal(backend.state.commits, 1, 'an established device also preserves subsequent remote edits');
 });

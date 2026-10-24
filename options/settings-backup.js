@@ -3,6 +3,7 @@
 //
 // Better Peakbagger — settings file transfer and GitHub backup controls.
 
+import { createBackupReview } from './backup-review.js';
 import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
@@ -260,7 +261,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 }));
             }
         } else if (connected) {
-            githubStatusEl.textContent = githubBackupResult?.repo === repoName()
+            githubStatusEl.textContent = githubStatus.settingsBackupNeedsReview ? 'GitHub has a different backup. Review before replacing it.' : githubBackupResult?.repo === repoName()
                 ? 'Newer changes need backup.' : `Stored as settings.json in ${repoName()}.`;
         } else {
             githubStatusEl.textContent = 'Connect GitHub above to back up settings.';
@@ -283,13 +284,15 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         setBusy: value => { githubBusy = value; renderGithub(); },
     }, operation);
 
-    githubBackupEl.addEventListener('click', () => {
+    const backupReview = createBackupReview({ anchor: githubBackupEl, submit: review => backupSettings(review) });
+    const backupSettings = (review = null) => {
         if (githubBusy) return;
         githubOperation = 'backup';
-        void withGithubBusy(async () => {
-            const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });
+        return withGithubBusy(async () => {
+            const response = await send({ type: 'GITHUB_SETTINGS_BACKUP', ...(review ? { review } : {}) });
             if (!response?.ok) {
                 githubBackupResult = null;
+                if (response.review?.path === Transfer.BACKUP_PATH) backupReview.show(response.review);
                 flash(GithubError.message(response?.error), { error: true });
                 return;
             }
@@ -302,11 +305,14 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             githubBackupResult = result;
             flash(result.superseded || result.signature !== settingsSignature
                 ? 'Newer changes need backup.' : `Settings backed up to ${result.repo}`);
+            backupReview.clear();
+            return true;
         }).finally(() => {
             githubOperation = null;
             renderGithub();
         });
-    });
+    };
+    githubBackupEl.addEventListener('click', () => { void backupSettings(); });
 
     githubRestoreEl.addEventListener('click', () => withGithubBusy(async () => {
         const response = await send({ type: 'GITHUB_SETTINGS_RESTORE' });
@@ -335,6 +341,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     if (extensionApi.storage.onChanged) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
             if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithub();
+            if (area === 'local' && changes.bpbSettingsBackupState) void refreshGithub();
         });
     }
     observeGithubAccess(extensionApi, () => { void refreshGithub(); });

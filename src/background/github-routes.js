@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { guardRootBackup } from '../github/root-backup-guard.js';
 import { createClimberListSync } from './climber-list-sync.js';
 import * as Ignored from '../favorites/ignored-climbers.js';
 import { createIgnoredStore } from './ignored-store.js';
@@ -174,7 +175,10 @@ export function createGithubRoutes({
     const githubStatus = async () => {
         const auth = await GithubAuth.authStore.read();
         const settings = await Settings.get();
-        return publicGithubStatus(auth, settings);
+        const states = await ext.storage.local.get([SETTINGS_BACKUP_STATE_KEY, FAVORITES_BACKUP_STATE_KEY]);
+        return { ...publicGithubStatus(auth, settings),
+            settingsBackupNeedsReview: states[SETTINGS_BACKUP_STATE_KEY]?.needsReview === true,
+            favoritesBackupNeedsReview: states[FAVORITES_BACKUP_STATE_KEY]?.needsReview === true };
     };
 
     const supersededGithubAuth = () => ({
@@ -1152,6 +1156,24 @@ export function createGithubRoutes({
             return { signature, scope: connectionScope(access), syncedAt: new Date().toISOString() };
         });
 
+        const put = async (access, { text, signature }, review, automatic = false) => {
+            const scope = connectionScope(access);
+            return writeQueue.putFile({ path, content: text, message: commitMessage, scope,
+                verify: async remoteText => {
+                    await queuedGithubAccess(scope);
+                    if (automatic && !(await enabled())) throw new GithubAccessError({ code: 'disabled' });
+                    if (remoteText === undefined) return; // pre-ref ownership check
+                    let remoteSignature = null;
+                    if (remoteText !== null) {
+                        const parsed = path === Transfer.BACKUP_PATH ? Transfer.parse(remoteText) : Favorites.parseBackup(remoteText);
+                        if (!parsed.ok) throw new GithubAccessError({ code: 'backup-invalid', message: 'The existing backup is invalid or newer. It was not replaced.' });
+                        remoteSignature = path === Transfer.BACKUP_PATH ? Transfer.signature(parsed.settings) : Favorites.backupSignature(parsed.favorites);
+                    }
+                    guardRootBackup({ path, localSignature: signature, remoteSignature, scope,
+                        baseline: await readState(), review });
+                } });
+        };
+
         const schedule = () => {
             if (!ext.alarms) return;
             ext.alarms.create(alarmName, {
@@ -1190,11 +1212,15 @@ export function createGithubRoutes({
             try {
                 const { text, signature } = await build();
                 if (state?.scope === connectionScope(access) && state.signature === signature) return;
-                const result = await writeQueue.putFile({ path, content: text, message: commitMessage, scope: connectionScope(access) });
+                const result = await put(access, { text, signature }, null, true);
                 // A newer write to this path won the batch, so this signature
                 // does not describe what the repository now holds.
                 if (!result.superseded) await markSynced(signature, access);
-            } catch {
+            } catch (error) {
+                if (error.code === 'backup-review') {
+                    await updateState(latest => ({ ...latest, needsReview: true }));
+                    return;
+                }
                 // Silent bounded retry; the manual buttons remain the loud path.
                 let attempts = null;
                 await updateState(async latest => {
@@ -1212,7 +1238,7 @@ export function createGithubRoutes({
             }
         };
 
-        return { schedule, fire, markSynced, startWatchdog };
+        return { schedule, fire, markSynced, startWatchdog, put };
     };
 
     const buildSettingsBackup = async () => {
@@ -1262,20 +1288,17 @@ export function createGithubRoutes({
         build: buildFavoritesBackup
     });
 
-    const backupSettings = async () => {
+    const backupSettings = async (message = {}) => {
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
             const { text, signature } = await buildSettingsBackup();
-            const result = await writeQueue.putFile({
-                path: Transfer.BACKUP_PATH, content: text, message: 'Back up settings', scope: connectionScope(access),
-            });
+            const result = await settingsAutoBackup.put(access, { text, signature }, message.review);
             if (!result.superseded) await settingsAutoBackup.markSynced(signature, access);
             return { ok: true, result: { ...result, signature, repo: `${access.repo.owner}/${access.repo.name}` } };
         } catch (error) {
-            if (PublicErrors.isPublic(error)) {
-                return { ok: false, error: PublicErrors.expose(error) };
-            }
+            if (error.code === 'backup-review') return { ok: false, error: { code: error.code }, review: error.review };
+            if (PublicErrors.isPublic(error)) return { ok: false, error: PublicErrors.expose(error) };
             return { ok: false, error: writeError(error, 'The settings backup failed.') };
         }
     };
@@ -1292,7 +1315,7 @@ export function createGithubRoutes({
 
     // The worker owns serialization for both manual and automatic backups; the
     // options page still owns restore validation and reversible replacement.
-    const backupFavorites = async () => {
+    const backupFavorites = async (message = {}) => {
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
@@ -1301,12 +1324,11 @@ export function createGithubRoutes({
             // contract rather than rejecting into the worker's generic handler,
             // which replies in the unrelated { phase: 'error' } shape.
             const { text, signature } = await buildFavoritesBackup();
-            const result = await writeQueue.putFile({
-                path: FAVORITE_CLIMBERS_BACKUP_PATH, content: text, message: 'Back up favorite climbers', scope: connectionScope(access),
-            });
+            const result = await favoritesAutoBackup.put(access, { text, signature }, message.review);
             if (!result.superseded) await favoritesAutoBackup.markSynced(signature, access);
             return { ok: true, result: { ...result, signature, repo: `${access.repo.owner}/${access.repo.name}` } };
         } catch (error) {
+            if (error.code === 'backup-review') return { ok: false, error: { code: error.code }, review: error.review };
             return { ok: false, error: writeError(error, 'The favorites backup failed.') };
         }
     };
@@ -1909,9 +1931,9 @@ export function createGithubRoutes({
         GITHUB_BACKUP_PROFILE_STATUS: peakbaggerPage((_message, sender) => githubProfileBackupStatus(sender)),
         GITHUB_BACKUP_PROFILE_BATCH: peakbaggerPage((message, sender) => backupProfileBatch(message, sender)),
         GITHUB_IGNORED_LIST: extensionPage(ignoredListAction, climberPages),
-        GITHUB_FAVORITES_BACKUP: extensionPage(() => backupFavorites(), climberPages),
+        GITHUB_FAVORITES_BACKUP: extensionPage(message => backupFavorites(message), climberPages),
         GITHUB_FAVORITES_RESTORE: extensionPage(() => restoreFavorites(), climberPages),
-        GITHUB_SETTINGS_BACKUP: extensionPage(() => backupSettings()),
+        GITHUB_SETTINGS_BACKUP: extensionPage(message => backupSettings(message)),
         GITHUB_SETTINGS_RESTORE: extensionPage(() => restoreSettings()),
         GITHUB_PHOTOS_STATUS: extensionPage((message, sender) => photoBackupStatus(message, sender), photoPages),
         GITHUB_PHOTOS_BACKUP: extensionPage((_message, sender) => backupPhotoLibrary({ sender }), photoPages),

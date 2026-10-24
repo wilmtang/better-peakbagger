@@ -103,6 +103,40 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             if (selector === '#ignored-backup' || selector === '#imgbb-key-save') await capture(page, `${variant.name}-settings-${selector.slice(1)}-${textScale}`);
         }
     }
+    // First-device replacement is a deliberate disclosure. Once open, its
+    // pending/error/retry states must retain geometry, focus and reading position.
+    for (const [selector, type, path] of [
+        ['#settings-backup-github-backup', 'GITHUB_SETTINGS_BACKUP', 'settings.json'],
+        ['#favorites-backup', 'GITHUB_FAVORITES_BACKUP', 'favorite-climbers.json'],
+    ]) {
+        const action = page.locator(selector);
+        await action.scrollIntoViewIfNeeded();
+        await page.evaluate(type => { globalThis.__hold = type; globalThis.__finish = null; }, type);
+        await action.press('Enter');
+        await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+        await page.evaluate(path => globalThis.__finish({ ok: false, error: { code: 'backup-review' },
+            review: { path, scope: 'fixture', localSignature: 'local', remoteSignature: 'remote' } }), path);
+        const panel = action.locator('xpath=ancestor::*[contains(@class,"subsection")][1]').locator('.backup-replacement');
+        await panel.waitFor({ state: 'visible' });
+        const accept = panel.getByRole('button', { name: 'Replace GitHub backup with this device’s copy', exact: true });
+        await accept.scrollIntoViewIfNeeded();
+        const before = await accept.boundingBox();
+        const scroll = await page.locator('.content').evaluate(element => element.scrollTop);
+        await accept.press('Enter');
+        await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+        await accept.press('Space');
+        const during = await accept.boundingBox();
+        for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(before[key] - during[key]) <= 1, `replacement ${key}`);
+        assert.equal(await accept.evaluate(element => document.activeElement === element), true);
+        await page.evaluate(() => globalThis.__finish({ ok: false, error: { code: 'network' } }));
+        await page.waitForFunction(() => !document.querySelector('.backup-replacement:not([hidden])')?.hasAttribute('aria-busy'));
+        assert.equal(await page.locator('.content').evaluate(element => element.scrollTop), scroll);
+        await capture(page, `${variant.name}-${path}-replacement-retry`);
+        await accept.press('Enter');
+        await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+        await page.evaluate(() => globalThis.__finish({ ok: true, result: { repo: 'fixture/backup', signature: 'fixture' } }));
+        await panel.waitFor({ state: 'hidden' });
+    }
     // Removing a key intentionally removes its own action; continue at Save.
     await page.evaluate(() => { globalThis.__hold = 'PHOTO_IMGBB_REMOVE_KEY'; globalThis.__finish = null; });
     await page.locator('#imgbb-key-remove').press('Enter');

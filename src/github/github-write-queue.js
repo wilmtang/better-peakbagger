@@ -73,7 +73,7 @@ const createGithubWriteQueue = ({
         return chain(write);
     };
 
-    const putFile = ({ path, content, message, scope = null }) => {
+    const putFile = ({ path, content, message, scope = null, verify }) => {
         if (!collecting || collecting.scope !== scope) {
             const batch = { entries: [], lastIndex: new Map(), promise: null, scope };
             collecting = batch;
@@ -81,13 +81,13 @@ const createGithubWriteQueue = ({
                 await delay(coalesceWindowMs);
                 if (collecting === batch) collecting = null;
                 const files = squash(batch.entries);
-                return commitFiles(files.map(({ path: filePath, content: fileContent }) =>
-                    ({ path: filePath, content: fileContent })), batchMessage(files), batch.scope);
+                return commitFiles(files.map(({ path: filePath, content: fileContent, verify: check }) =>
+                    ({ path: filePath, content: fileContent, ...(check ? { verify: check } : {}) })), batchMessage(files), batch.scope);
             });
         }
         const batch = collecting;
         const index = batch.entries.length;
-        batch.entries.push({ path, content, message });
+        batch.entries.push({ path, content, message, verify });
         batch.lastIndex.set(path, index);
         return batch.promise.then(commit => ({
             sha: commit && commit.sha,

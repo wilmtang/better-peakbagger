@@ -13,6 +13,7 @@
 // clobbered), and offers its own 6-second undo. The list page, if open, redraws
 // itself from the resulting storage change.
 
+import { createBackupReview } from './backup-review.js';
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.js';
@@ -95,7 +96,7 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
                 }));
             }
         } else if (connected) {
-            statusEl.textContent = backupResult?.repo === githubRepoName()
+            statusEl.textContent = githubStatus.favoritesBackupNeedsReview ? 'GitHub has a different backup. Review before replacing it.' : backupResult?.repo === githubRepoName()
                 ? 'Newer changes need backup.' : `Backs up to ${githubRepoName()}`;
         } else {
             statusEl.textContent = 'Connect GitHub above to back up your custom favorites.';
@@ -203,9 +204,11 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
         setBusy: value => { githubBusy = value; renderGithub(); },
     }, operation);
 
-    const backupFavorites = () => withGithubBusy(async () => {
-        const response = await send({ type: 'GITHUB_FAVORITES_BACKUP' });
+    const backupReview = createBackupReview({ anchor: backupEl, submit: review => backupFavorites(review) });
+    const backupFavorites = (review = null) => withGithubBusy(async () => {
+        const response = await send({ type: 'GITHUB_FAVORITES_BACKUP', ...(review ? { review } : {}) });
         if (!response?.ok) {
+            if (response.review?.path === 'favorite-climbers.json') backupReview.show(response.review);
             flash(GithubError.message(response?.error), { error: true });
             return;
         }
@@ -218,6 +221,8 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
         backupResult = result;
         flash(result.superseded || result.signature !== signatureOf()
             ? 'Newer changes need backup.' : `Favorites backed up to ${result.repo}`);
+        backupReview.clear();
+        return true;
     });
 
     const restoreFavorites = () => withGithubBusy(async () => {
@@ -288,6 +293,7 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
     if (extensionApi.storage.onChanged) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
             if (area === 'local' && changes[F.FAVORITES_KEY]) void readFavorites();
+            if (area === 'local' && changes.bpbFavoritesBackupState) void refreshGithubStatus();
             if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithubStatus();
         });
     }
