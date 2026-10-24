@@ -155,6 +155,7 @@ independent of the existing targets.
 - [verify-report-caption-stability.mjs](verify-report-caption-stability.mjs)
 - [verify-report-draft-ownership.mjs](verify-report-draft-ownership.mjs)
 - [verify-report-photos.mjs](verify-report-photos.mjs)
+- [verify-climber-files.mjs](verify-climber-files.mjs) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
 - [verify-settings-actions.mjs](verify-settings-actions.mjs) — held Settings actions and restore focus, run by `layout-stability`.
 - [verify-settings-navigation.mjs](verify-settings-navigation.mjs)
 - [verify-signed-out.mjs](verify-signed-out.mjs) — signed-out recovery and held filter retries in Chrome/Firefox; run with `npm run verify -- signed-out`.

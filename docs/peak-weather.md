@@ -73,9 +73,9 @@ another day leaves existing panels and the surrounding reading position in
 place, without scrolling the page; only explicit collapse closes a day. Each
 day retains its own data tab, pinned reading and hourly-table scroll through
 refresh, unit changes and period switches. **Conditions** is the
-initial data tab; the last explicit data-tab selection is saved in extension-local
-storage on this device and restored across peak pages and reloads. Missing or
-invalid saved selections fall back to Conditions. Temperature, rain/snow,
+initial data tab; the last explicit selection is a portable setting, restored
+across peak pages and reloads and included in browser sync, files and backups.
+Missing or invalid saved selections fall back to Conditions. Temperature, rain/snow,
 freezing level, clouds, wind and gusts use responsive line graphs; Conditions
 shows a horizontally scrollable hourly table of condition icons,
 cloud cover, temperature, feels-like, rain/snow, freezing level,
@@ -134,9 +134,9 @@ The forecast view warns that estimates may be inaccurate, especially farther
 ahead or at mountain summits, and prompts users to check local mountain forecasts.
 Each period has a **Weather model** dropdown, initially set to **GFS** for its
 sixteen-day forecast horizon. Each period's last selected model is saved
-in extension-local storage on this device, separate from synced settings and
-backups. A saved regional model that does not cover a newly opened summit falls
-back to GFS at startup; an explicit choice on an open page never silently changes.
+in portable settings, included in browser sync, settings files and GitHub
+settings backups. Legacy local choices migrate only if no synced choice exists.
+A saved regional model that does not cover a newly opened summit falls back to GFS at startup; an explicit choice on an open page never silently changes.
 
 **Best Match (Open-Meteo)** is the first option in both period lists. It uses
 `models=best_match` on the [Forecast API](https://open-meteo.com/en/docs), which

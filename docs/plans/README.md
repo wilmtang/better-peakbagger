@@ -44,6 +44,12 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [settings portability remediation](../archive/settings-portability-remediation.md)
+is complete locally: guarded GitHub root replacements, portable weather/overlay/
+photo-tool preferences, device-local transfer consent and standalone list files.
+The ledger retains live multi-device/GitHub and native chooser proof gaps; the
+[storage report](../settings-storage-and-sync.md) describes current policy.
+
 The [peak-column regression audit](../archive/peak-column-regression-audit-2026-10-22.md)
 restores BPB map links after column initialization, adds combined startup-order
 coverage, repairs the generic native fixture and requires the links in both

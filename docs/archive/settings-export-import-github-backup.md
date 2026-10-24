@@ -3,7 +3,7 @@
 This completed plan introduced settings file export/import, fixed-root GitHub
 settings backup, and optional automatic settings/favorites backup. Detailed
 implementation instructions are superseded by the maintained
-[GitHub backup guide](../github-ascent-backup.md#settingsjson-schema-version-3)
+[GitHub backup guide](../github-ascent-backup.md#settingsjson-schema-version-5)
 and [privacy contract](../../PRIVACY.md). The decisions below describe the
 original scope; later credential-file support is documented in those guides.
 

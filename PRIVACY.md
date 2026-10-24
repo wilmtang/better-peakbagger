@@ -73,9 +73,9 @@ permission to read device location. It covers:
 
 | Storage | Contents | Retention and sync |
 | --- | --- | --- |
-| `storage.sync` | Theme, units, chart, map, weather-card, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
-| `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, weather-model choices, ascent-weather column, summit-weather data-tab selection, and automatic-backup state | Device-local; never browser-synced. |
-| `storage.local` map overlay preferences | Raster opacity percentages and selected public-land type IDs | Device-local; excluded from settings sync, exports and backups. Enabled layers remain in page memory. |
+| `storage.sync` | Theme, units, chart, route/map appearance, weather models/metric/card placement, capture, editor, beta-filter, favorite-source and photo-tool appearance preferences | May sync through the browser account; included in settings files and optional GitHub settings backup. No coordinates, weather results or annotation contents. |
+| `storage.local` | Device settings (map dimensions, terrain cache budget and GitHub transfer consent), DEM cache index, custom favorites, ignored climbers, Buddy cache/intents, GitHub token/repository, ImgBB API key, report drafts and backup/sync state | Device-local; never browser-synced. |
+| `storage.sync` map overlay preferences | Raster opacity percentages and selected public-land type IDs | Included in settings sync, exports and backups. Enabled layers remain in page memory. |
 | `storage.local` public snow catalog | Public SNOTEL station metadata only, with a fetch timestamp | Refreshed after seven days when next used; expired metadata can remain until replaced or extension data is cleared. No peak/location query or observations; excluded from settings exports, sync and backups. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
@@ -237,8 +237,9 @@ date. That happens entirely locally.
 
 - The GPX Analyzer fetches only the GPX linked from the current Peakbagger
   ascent and processes it locally.
-- Cross-page preferences use `storage.sync`; page-specific filter state and the
-  early theme mirror use Peakbagger's `localStorage`.
+- Portable preferences use `storage.sync`; map dimensions and terrain cache
+  budget stay in the device settings record. Page-specific filter state and
+  the early theme mirror use Peakbagger's `localStorage`.
 
 ### Send to CalTopo
 
@@ -333,9 +334,9 @@ date. That happens entirely locally.
   report/ascent presentations; it does not block network requests. Native pages
   and remote media may load before the local preference is applied. Concealed
   players are suspended, and iframe players can restart on reveal.
-- GitHub backup/restore is explicit. Two-way sync defaults on once GitHub is
-  connected, using the repository's `ignored-climbers.json`. Its toggle is
-  device-local; an explicit opt-out is preserved. Initial sync keeps both lists,
+- GitHub backup/restore is explicit. Two-way sync starts off on new devices
+  and uses the repository's `ignored-climbers.json` after local opt-in. An
+  existing installation retains its choice. Initial sync keeps both lists,
   and conflicting changes require review before transfer.
   Browser startup, rate-limited manager checks, trailing local-change alarms and
   periodic alarms check only when enabled. Visiting a peak does not request sync.
@@ -378,6 +379,11 @@ does not alter the original published image.
 Saving the TR uploads its remaining local images before submitting the report. Source image
 bytes can contain camera metadata; they stay local and are never uploaded by
 Better Peakbagger.
+
+Remembered tool color, opacity and allowlisted appearance defaults are portable
+settings included in browser sync, settings files and GitHub settings backup.
+These defaults contain no annotation text, pitch content, coordinates or image
+data. Canvas dimensions remain local.
 
 Before upload, the editor creates a new JPEG or PNG containing only flattened
 pixels. It excludes EXIF and other source metadata, the source file name,
@@ -442,12 +448,12 @@ page on Peakbagger, then requests model estimates from Open-Meteo when the card
 approaches the viewport. This works without a GPX and for other climbers’
 viewable ascents. Invalid or incomplete dates make no weather request.
 The ascent weather card remembers the last explicitly selected archive model
-on this device, separately from peak-page forecast/history choices. Only a
-packaged model identifier is saved, not an ascent ID, date, coordinates or
+as a portable preference, separately from peak-page forecast/history choices.
+Only a packaged model identifier is saved, not an ascent ID, date, coordinates or
 weather data. An unsupported model uses Best Match for that visit without
 erasing the saved preference. The card can also move between the report and
-summary columns. The model identifier and column choice use extension-local
-storage and are excluded from browser sync, settings exports and GitHub backups.
+summary columns. The model identifier, column and placement slot use
+`storage.sync` and are included in settings exports and GitHub settings backups.
 Moving the card reuses the loaded weather and sends no new request.
 
 On peak pages, **Summit weather** reads summit coordinates and elevation
@@ -456,9 +462,9 @@ completed summit-local days and up to sixteen forecast days (today plus fifteen
 days), with UTC padding capped at the API's forecast horizon, when the card
 approaches the viewport. Switching periods or hourly graphs makes no additional
 request. Each period offers a named-model dropdown, initially GFS. The last
-choice for each period is saved locally on this device; only model identifiers
-are persisted, separate from synced settings and backups. Changing models or using **Refresh** makes
-another request unless that exact selection is cached. Returning to a visible
+choice for each period and the hourly metric tab are portable settings; only
+model/metric identifiers are persisted and included in settings files and backups.
+Changing models or using **Refresh** makes another request unless that exact selection is cached. Returning to a visible
 card after five minutes refreshes expired data unless the previous request failed.
 
 On peak pages, right-clicking the map and choosing **Forecast and archive for
@@ -528,7 +534,8 @@ include tile bounds and only parcel geometry, object IDs and ownership classes,
 never owner names or addresses. Neither service receives account credentials,
 GPX or route data. Canadian coverage is partial; clear areas mean unknown.
 These requests contain no GPX, route, Peakbagger identity or account data.
-Opacity and public-land type preferences are device-local and excluded from sync/settings backups.
+Opacity and public-land type preferences use browser sync and are included in
+settings files and GitHub settings backups; they contain no map location.
 Enabled selections remain in page memory, except an explicit native Full Screen
 action: a one-use, destination- and tab-bound session handoff lasts 30 seconds
 and contains only validated layer state and a Sentinel pass identity.
@@ -583,8 +590,9 @@ parked and idle for a few minutes before release, and the cache is not cleared.
 GitHub is disconnected by default. Connecting requires the user to grant host
 access, authorize the extension, and select one repository. Ascent and TR backup
 is off by default; enabling it also enables backup after each save. Automatic
-backups for settings, favorites, and photo metadata default on once GitHub is
-connected. Each has its own opt-out, and saved opt-outs are preserved. Backup
+backups for settings, favorites, and photo metadata start off on new devices.
+Each requires its own device-local opt-in; upgrading an existing local connection
+preserves its previous choices. Settings imports cannot enable transfers. Backup
 never blocks or changes Peakbagger Save.
 
 ### What a backup contains
@@ -604,11 +612,11 @@ never blocks or changes Peakbagger Save.
   time. Existing repository folders act as resume checkpoints.
 - **Settings and favorites:** after an explicit backup, or after a change when
   that data type's automatic-backup toggle is enabled.
-  Both default on once GitHub is connected; explicit opt-outs are
-  preserved. Favorites include buddies saved to custom favorites, not the native
-  Peakbagger Buddy List cache. Restoring favorites remains a manual action.
+  Both start off on new devices; existing local connections retain their choices.
+  Favorites include buddies saved to custom favorites, not the native Peakbagger
+  Buddy List cache. Restoring favorites remains a manual action.
 - **Photo metadata:** after an explicit backup, or after a catalog change when
-  its separate automatic toggle is enabled (on by default once connected).
+  its separate device-local automatic toggle is enabled (off on new devices).
 - **Recovery checks:** periodic worker alarms retry pending settings, favorites,
   and photo metadata, including changes missed while a page or worker was closed.
 - **Restore:** always requires an explicit Settings action and confirmation.
@@ -618,8 +626,10 @@ never blocks or changes Peakbagger Save.
 Backups go only to the selected repository. Ascents use named mountain folders
 plus a small repository marker; other data uses the fixed root files above. A
 populated repository is inspected and requires confirmation before selection,
-and unrelated files are preserved. Automatic ascent and TR backup never changes the
-three root recovery files.
+and unrelated files are preserved. Settings and favorites also require review
+before replacing a first-seen or changed remote backup; approvals are bound to
+the reviewed snapshots and connection. Invalid remote files are not replaced.
+Automatic ascent and TR backup never changes the three root recovery files.
 
 ### Deletion, ownership, and authorization
 
@@ -642,17 +652,32 @@ three root recovery files.
 The user can export and import settings without GitHub:
 
 - **Export settings** downloads an unencrypted JSON file only after a click. By
-  default it contains validated settings and no credentials.
-- **Include saved credentials** adds the ImgBB API key and, when connected, the
-  GitHub token and selected repository in plain text. The Settings page warns
-  the user to keep the file private and resets the checkbox after each export.
+  default it contains validated portable settings and no credentials. Device
+  dimensions, cache budget and automatic-transfer consent are excluded.
+- **Include saved credentials** adds the saved ImgBB and Garmin API keys and,
+  when connected, the GitHub token and selected repository in plain text.
+  The Settings page warns the user to keep the file private and resets the checkbox after each export.
 - Import validates the file and requires confirmation before replacing
-  settings, the API key, or an included GitHub connection.
+  portable settings, included API keys, or an included GitHub connection.
+  Device settings remain unchanged even when importing an older settings file.
 - Before accepting imported GitHub credentials, the extension requests host
   access if needed and verifies the token, account, repository grant,
   writability, branch, and backup-path safety with GitHub.
-- A file without GitHub credentials leaves the current connection unchanged.
-  The extension never uploads the settings file.
+- A file without credential fields leaves those destination credentials
+  unchanged. Explicit null API keys remove those keys. A Garmin key requires
+  Garmin host access and validation; it does not copy processing consent or
+  the source device's Peakbagger account binding. Access tokens and inbox data
+  are excluded. The extension never uploads the settings file.
+
+## Manual climber-list files
+
+Climber lists offers separate JSON export/import for custom favorites and ignored
+climbers. Files contain only the list kind/schema/export date and climber IDs,
+names, added dates and favorite source where applicable. Import requires a
+replacement preview and confirmation, preserves membership rules, and requires
+renewed review after concurrent local edits. It does not change Peakbagger Buddy
+membership. No GitHub connection is needed; already-enabled automatic list
+backup or sync may later transfer the imported change.
 
 ## Third-party services
 
@@ -669,7 +694,7 @@ The user can export and import settings without GitHub:
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | AllTrails, CalTopo, Gaia GPS, and onX Backcountry | The saved Peakbagger GPX after the matching **Send** click, including CalTopo's server-side parsing; review and final Upload, Import, and Save actions remain manual. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
-| GitHub | User-triggered backups, automatic ascent backups when enabled, and default-on settings/favorites/photo metadata backups with opt-outs, all to the selected repository; validation reads for an imported connection; explicit restores. |
+| GitHub | User-triggered backups, automatic ascent backups when enabled, and device-opted-in settings/favorites/photo metadata backups and ignored-list sync, all to the selected repository; validation reads for an imported connection; explicit restores. |
 | Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |
 | Avalanche forecast and backcountry conditions sites | Only when the user opens a planning link. Canada links include the summit coordinates; EAWS map links include a small area around the summit. Other configured destinations are gateways without coordinates. |
 

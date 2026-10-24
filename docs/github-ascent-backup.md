@@ -34,8 +34,8 @@ writer are shared.
 
 Settings, the custom favorite-climber list, and the photo library are separate
 fixed root-file operations. Each has a manual backup and restore action plus an
-independent automatic backup toggle, on by default once GitHub is connected.
-Explicit opt-outs remain off. They share the worker's
+independent device-local automatic backup toggle, off on new installations.
+Upgrading an existing local connection preserves its previous choices. They share the worker's
 credential gate, write queue, repository marker validation, atomic commit, and
 conflict retry, but never enter an ascent payload or the ascent
 automatic-backup path. Photo recovery is metadata-only and performs a semantic
@@ -666,14 +666,14 @@ preference, and settings-page search/sort state are never exported or changed by
 restore. A missing file is reported as an empty backup state, not treated as an
 empty list to restore.
 
-### `settings.json` schema version 3
+### `settings.json` schema version 5
 
 ```jsonc
 {
   "kind": "better-peakbagger-settings",
-  "schemaVersion": 3,
-  "exportedAt": "2026-07-22T18:04:05.000Z",
-  "extensionVersion": "3.0.0",
+  "schemaVersion": 5,
+  "exportedAt": "2026-10-23T18:04:05.000Z",
+  "extensionVersion": "4.0.2",
   "settings": {
     "theme": "system",
     "units": "auto"
@@ -681,25 +681,33 @@ empty list to restore.
 }
 ```
 
-The example abbreviates `settings`; the real file is a complete, deterministic
-pick of every key owned by `settings-schema.js`, after that schema cleans values
-and fills defaults. Unknown keys are excluded. GitHub `settings.json` never
-includes the GitHub token/repository or the ImgBB API key. An explicit manual
-file export uses the same schema plus `apiKeys.imgbb`; it always records either
-the validated key or `null`. When the user checks **Include GitHub connection**,
-it additionally writes `githubConnection.token` and the selected repository's
-owner, name, and available numeric id. The file is not encrypted, the checkbox
-resets after a successful download, and the Settings page warns that the file
-is private. Import requests GitHub host permission if needed, then validates the
-token, current account, granted repository, writability, branch, and repository
-root before transactionally replacing the stored connection. A file without
-`githubConnection` preserves the destination connection. Favorite climbers,
-drafts, caches, and other local/session data remain excluded. Import and GitHub
-restore reject another kind or a newer schema, re-clean every value, and require
-inline confirmation before wholesale replacement. Versions 1 and 2 remain
-accepted; version 1 without `apiKeys` leaves the destination API key unchanged,
-and neither legacy version can carry a GitHub connection. A missing GitHub file
-is reported without changing settings.
+The example abbreviates `settings`; the real file is a deterministic pick of
+all 67 `PORTABLE_KEYS` in `settings-schema.js`, after cleaning and filling
+portable defaults. Unknown keys and the nine device settings (dimensions,
+cache budget and GitHub transfer choices) are excluded. Weather model/placement,
+overlay appearance and photo-tool defaults are now portable preferences.
+
+GitHub `settings.json` never includes credentials. Manual files omit credentials
+by default too. The single **Include saved credentials (ImgBB, GitHub and Garmin)**
+checkbox adds `apiKeys.imgbb` and `apiKeys.garmin` (validated keys or explicit
+null), plus a complete `githubConnection` token/repository. These files are
+unencrypted; the checkbox resets after export. Missing credential fields
+preserve the destination; explicit null API keys remove the corresponding key.
+
+GitHub credential import requests host access and validates the token, account,
+repository grant, writability, branch and root before transactional replacement.
+Garmin key import requires its host permission and validation without copying
+source-device processing consent, account binding or inbox data. Browser
+permissions and temporary access tokens never transfer. Destination automatic
+transfer choices remain local even when importing a connection.
+
+Import and GitHub restore reject another kind or a newer schema, re-clean
+portable values and require confirmation before replacement. Supported v1–v4
+files remain readable, but their old device/transfer keys are discarded. Missing
+portable keys receive defaults; destination device settings remain unchanged.
+A missing GitHub file changes nothing. Lists, drafts, caches and photo projects
+have separate transfer paths; see [the storage report](settings-storage-and-sync.md).
+
 During a manual GitHub write, the Settings row reports that the backup is in
 progress; after GitHub accepts the commit, it keeps **Settings backed up ✓** and
 a commit link visible until the backed-up settings change or the repository is
@@ -708,8 +716,9 @@ changed.
 ### Debounced settings and favorites backup
 
 The two automatic root-file writers share one worker helper but remain separate
-preferences, both on by default once connected. A settings change replaces the `bpb-settings-backup` alarm; a
-`bpbFavoriteClimbers` change replaces `bpb-favorites-backup`. Each named alarm
+device-local preferences, both off on new devices. A settings change replaces
+the `bpb-settings-backup` alarm; a `bpbFavoriteClimbers` change replaces
+`bpb-favorites-backup`. Each named alarm
 fires after one minute, then every 30 minutes, which gives a durable trailing-edge
 debounce and recovers missed notifications across MV3 worker shutdowns. Worker
 startup installs missing watchdogs. The alarm authoritatively rechecks the toggle and device-local GitHub
@@ -721,6 +730,15 @@ a write. Connection changes schedule enabled backups, and late completions from
 an old connection cannot stamp the replacement as backed up. Manual backup
 records the same scoped signature; timestamps do not defeat the content check.
 Local success/retry updates are serialized to preserve newer bookkeeping.
+Before a root-file replacement, the writer reads the remote blob from the
+current head. It accepts an absent file with no prior baseline, the current
+local signature, or this connection's last acknowledged remote signature.
+Otherwise it returns a replacement review bound to the local/remote signatures,
+path and connection. Automatic work records `needsReview`; an invalid/newer
+remote file is never treated as absent. Git ref retries reread and revalidate
+the remote blob, and the pre-ref check revalidates connection and automatic
+consent. A reviewed old snapshot cannot overwrite a newer remote file.
+
 Manual settings/favorites replies include the worker's snapshot signature and
 repository identity. Settings shows a current-content success and commit link
 only when both still match the displayed state and the queue did not supersede
@@ -825,8 +843,8 @@ below the advertised capacity. The worker checks the tree's declared blob size,
 streams at most 8 MiB of raw bytes, requires strict UTF-8, and routes backup,
 preview, and restore through that same reader.
 
-Automatic photo backup is a third independent preference, on by default once
-connected. Catalog
+Automatic photo backup is a third independent device-local preference, off on
+new devices. Existing local connections retain their previous choice. Catalog
 mutations atomically advance an IndexedDB generation and request the one-minute
 trailing-edge run; an installed 30-minute watchdog also checks that durable
 generation, so a lost page-to-worker notification does not strand a change.
@@ -979,7 +997,8 @@ transfer. Restore reads the fixed file from the selected branch through
 GitHub's Contents endpoint, validates file/base64/UTF-8 shape in the worker
 client, and leaves payload-schema validation to the options-page owner.
 
-Settings export and backup require an authoritative sync-storage snapshot.
+Settings export and backup require an authoritative settings snapshot, including
+unmigrated legacy personal preferences; serialized payloads contain only portable keys.
 Local export creates no Blob or download, and manual or automatic GitHub backup
 performs no repository write, when that read fails. The existing local/remote
 artifact remains untouched and the manual surfaces retain a retry state;
@@ -1215,16 +1234,17 @@ in masked fixtures and scripted GitHub backends.
 - GitHub host access is optional: `https://github.com/*` for device flow and
   `https://api.github.com/*` for repository APIs.
 - `enableGithubBackup`, `autoGithubBackup`, and
-  `removeGithubBackupOnDelete` are synced ascent and TR backup booleans. Disabling the
+  `removeGithubBackupOnDelete` are device-local ascent and TR backup booleans. Disabling the
   parent gate forces both subordinate choices off; `autoGithubBackup` is a
   compatibility field derived from `enableGithubBackup`. Neither gates settings or
   favorite transfer.
-- `autoSettingsBackup` and `autoPhotoLibraryBackup` are independent, synced,
-  default-on booleans. `autoFavoritesBackup` is synced and defaults on.
-  Ignored-climber sync also defaults on, with its preference stored locally.
+- `autoSettingsBackup`, `autoPhotoLibraryBackup` and `autoFavoritesBackup` are
+  independent device-local booleans, off on new devices. Ignored-climber sync
+  also starts off and keeps its consent in local sync state.
   Without the device-local connection and GitHub host access these choices are
   inert. Both climber checkboxes show their saved preferences and stay disabled
-  before setup; explicit opt-outs survive disconnects and reconnects.
+  before setup; existing choices survive disconnects and reconnects. Settings
+  files, GitHub restore and browser sync cannot grant consent on a new device.
 - Token and chosen repository are local auth state, not sync-schema settings.
 - The options page presents that local auth/repository state as one shared
   GitHub connection used by ascent, settings, favorite, ignored-climber, and

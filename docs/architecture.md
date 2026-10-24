@@ -162,10 +162,10 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
-| Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.js`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; no GPX or worker dependency |
-| Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices remembered locally, bounded combined requests and tab-memory results |
+| Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.js`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
+| Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices saved in portable settings, bounded combined requests and tab-memory results |
 | Nearby snow | `src/snow/peak-snow.js`, `src/snow/snotel-client.js`, `src/snow/snotel-data.js`, `src/snow/snotel-map-source.js`, `src/maps/map-layer-bridge.js` | Independent isolated western-US/Alaska peak card, local station matching within 50 km, bounded credential-free NRCS requests with fixed station time offsets, seven-day public catalog cache and page-memory observations. Opt-in 2D/3D station overlay receives at most 50 public station records through a read-only bridge, revalidated in each renderer; the independent `showSnotel` gate controls all SNOTEL surfaces and requests, retaining legacy weather opt-outs |
-| Map Layers menu | `src/maps/map-layers.js`, `src/maps/map-layer-control.js`, `src/maps/map-overlay-leaflet.js`, `src/terrain/terrain-overlays.js`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Device-local opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
+| Map Layers menu | `src/maps/map-layers.js`, `src/maps/map-layer-control.js`, `src/maps/map-overlay-leaflet.js`, `src/terrain/terrain-overlays.js`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Portable opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
 | Map location menu | `src/maps/map-location-menu.js`, `src/maps/map-elevation.js`, `src/maps/peak-weather-map.js` | Shared MAIN-world coordinates and approximate terrain elevation on native and 3D maps; explicit right-click, bounded credential-free Mapterhorn reads and tab-memory tiles. Independent of weather/3D opt-outs; forecast requests stay with the isolated peak weather card. |
 | Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.js` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
@@ -174,7 +174,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.js` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
-| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `src/theme/panel-theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
+| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `src/theme/panel-theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.js`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.js`, `src/onx/onx-import.js`, `src/alltrails/alltrails-import.js`, `src/caltopo/caltopo-import.js` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
@@ -331,8 +331,20 @@ data it can observe; it is an architecture change, not a packaging detail.
 `src/settings/settings-schema.js` is the only source of settings defaults, bounds, and
 validators. It is pure so storage writers, MAIN-world readers, and the terrain
 frame can all import the same checks. `src/settings/settings.js` adds
-`chrome.storage.sync` access and subscription behavior; it does not redefine
-the schema.
+storage access and subscriptions; it does not redefine the schema. Its 67
+portable preferences use `storage.sync.bpbSettings`; nine device values use
+`storage.local.bpbDeviceSettings` (version 1): map dimensions, terrain-cache
+budget and GitHub transfer choices. Schema v5 files select only portable keys,
+even when importing older files. The [storage report](settings-storage-and-sync.md)
+contains the complete inventory and migration policy.
+
+An upgrade migrates legacy local weather, overlay and tool defaults only where
+no synced choice exists. Fresh installation does not publish default-filled
+sync settings. Existing local GitHub connections retain legacy transfer choices;
+new devices start with automatic transfers off. Worker mutations serialize both
+stores and roll back the local half when the sync write fails. Privacy gates
+read current settings without waiting for legacy UI preferences; export and
+migration explicitly request those legacy preferences.
 
 Passive reads through `get()` are deliberately fail-soft: a surface can render
 schema defaults when sync storage is temporarily unavailable. Privacy gates,
@@ -913,7 +925,7 @@ summit, then reads the matching peak page through the existing Peakbagger
 transport. The card defaults below Summary Total Data and the GPS links in the
 resizable right column. Its grip supports insertion above or below the report,
 summary, or dedicated GPS links, using pointer dragging, a click menu, or arrow
-keys. Device-local `bpbAscentWeatherColumn` and `bpbAscentWeatherSlot` store only
+keys. Portable `bpbAscentWeatherColumn` and `bpbAscentWeatherSlot` store only
 these bounded layout identifiers; old column-only preferences remain valid.
 The existing card, chart selection, and native GPS controls survive movement,
 including when GPX analysis mounts later. GPS controls stay in the summary
@@ -930,12 +942,13 @@ at the saved ascent date and stopping at today's local date. Pending or failed
 navigation retains the displayed day. Hourly charts and the horizontal Conditions
 table share keyboard sampling and the optional GPX cursor.
 
-The archive's explicit model ID is remembered in device-local
+The archive's explicit model ID is remembered in portable settings as
 `bpbAscentWeatherModel`, independently of peak forecast/history choices. A
 bounded startup read restores an eligible choice before the first request;
 an ineligible saved model uses Best Match for that ascent without rewriting
-the preference. Explicit selections serialize local writes. No ascent ID,
-date, coordinates or weather payload enters this preference or sync/exports.
+the preference. Explicit selections use the settings worker. Only the model ID
+travels through browser sync, files and GitHub backup; ascent IDs, dates,
+coordinates and weather payloads remain excluded.
 
 The weather client accepts only packaged model endpoints, omits credentials
 and referrers, and has bounded requests and a small tab-memory cache. It needs
@@ -950,8 +963,8 @@ present, without moving native content or waiting for the MAIN-world enhancer.
 It reuses the strict summit-coordinate reader, offline timezone, daily summary
 and private transport, but uses a fixed forecast endpoint and a separate
 792-hour response cap. Each period has an independent named-model selector,
-defaulting to GFS and remembering its choice in extension-local storage outside
-settings sync and backups. One padded UTC request for at most two allowlisted
+defaulting to GFS and remembering its model/metric choices in portable settings
+that travel through browser sync, settings files and GitHub backup. One padded UTC request for at most two allowlisted
 models supplies both sixteen completed local days and today plus fifteen
 forecast days, capped at the API's sixteen UTC-day forecast horizon. Shorter-range
 models show their available days; explicit choices never silently fall back.
@@ -1590,42 +1603,33 @@ sync.
 
 ### GitHub transfer and privacy boundary
 
-Custom favorites are device-local by default. When GitHub is connected, the
-options page can explicitly serialize:
+Custom favorites stay in local storage. The manager now provides bounded,
+kind-checked JSON export/import through `src/favorites/climber-files.js` and
+`options/climber-files.js`; ignored climbers have a separate file. Imports
+preview replacement counts, then use the existing worker signature/revision
+checks and list membership policy. Concurrent local changes require a new
+review. No file operation changes Peakbagger Buddy membership.
 
-```js
-{
-  schemaVersion: 1,
-  exportedAt: "2026-07-21T21:04:05.000Z",
-  entries: [/* cleaned custom entries */]
-}
-```
+GitHub transfer is separate. The worker reads the authoritative custom list,
+cleans and serializes it, and writes `favorite-climbers.json` through the shared
+repository marker, exact base tree, non-forced ref update and queue. Root files
+can share a commit. Before replacing a different first-seen or externally
+changed file, the worker requires review bound to the exact local/remote
+signatures and connection; retries reread that remote snapshot. Invalid/newer
+files remain untouched. See [GitHub recovery](github-ascent-backup.md).
 
-It sends that string in `GITHUB_FAVORITES_BACKUP`; it never receives the GitHub
-token. The worker accepts those messages only from an extension page, reuses the
-shared GitHub connection and selected repository, and writes the fixed root
-path `favorite-climbers.json` through the same repository-marker check, exact base tree,
-non-forced ref update, shared write queue, and bounded conflict retry as
-ascent and TR backup. Because it is a root file rather than an ascent folder, that
-write can share one commit with a settings backup submitted at the same moment. Restore is an extension-only read; a missing file is reported as
-“no backup” and does not become an empty replacement.
+Favorites support explicit backup/restore and device-opted-in automatic push;
+settings use the same policy. Neither is two-way sync. Ignored climbers have a
+separate optional three-way reconciliation controller. All automatic transfer
+choices start off on new devices, independent of the ascent/TR backup gate.
+A successful manual write reports its current snapshot and commit without
+exposing the token. Missing remote files are not empty restore snapshots.
 
-The options page, not the worker, owns serialization and restore validation.
-`exportedAt` is informational; restore authority comes from `schemaVersion` and
-the exact validity of every entry. Buddy cache entries, `ownerCid`, `fetchedAt`,
-filter-chip state, and the selected source are never exported. Automatic ascent
-backup does not read or write `favorite-climbers.json`; favorite transfer happens only
-after the explicit options-page action. A successful write leaves an affirmative
-status and the worker-returned commit link visible without exposing the token.
-
-The GitHub connection is independent of the ascent and TR backup setting. Turning
-ascent and TR backup off removes ascent capture and backup affordances without
-disconnecting GitHub or disabling explicit favorite backup and restore.
-
-Peakbagger HTML and authenticated cookies remain within the Peakbagger/browser
-boundary. The extension persists only the ids, displayed names, provenance and
-timestamps described above. Of those, only an explicitly backed-up custom list
-leaves the browser for the user-selected GitHub repository.
+Exports exclude Buddy cache owner/fetch metadata, native Buddy membership,
+filter state and settings. The selected source and Buddy-removal behavior are
+portable settings; entry membership and source provenance travel only with the
+list's own JSON/GitHub transfer. Peakbagger HTML and authenticated cookies remain
+within the Peakbagger/browser boundary.
 
 ### Failure semantics and troubleshooting
 
@@ -1756,8 +1760,8 @@ comparison, first-visit compromises, and lockstep invariant are in
 
 | Store | Owned data | Lifecycle rule |
 | --- | --- | --- |
-| `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
-| `storage.local` | GitHub token/repository, ImgBB API key, custom favorites, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; credentials leave it only for their explicit manual settings-file export, favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
+| `storage.sync` | Portable preferences and feature gates, excluding automatic-transfer consent | Validated by the single settings schema; no secrets |
+| `storage.local` | Device settings and transfer consent, GitHub token/repository, ImgBB API key, custom favorites, ignored climbers, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; credentials leave it only for their explicit manual settings-file export, favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
 | `storage.session` | Capture-job metadata and generation-scoped reduced GPX payloads, prepared drafts, Peakbagger helper leases and validated rate-limit cooldown, pending report-save intents, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/report-save/backup/delete records expire after 30 minutes, helper leases expire, and cooldown is discarded at its validated retry time |
 | IndexedDB `betterPeakbaggerPhotos` | Photo catalog, annotation projects, original/thumbnail blobs, upload journal, ImgBB delete URLs, tombstones | Authoritative device-local photo library; deleted assets are eligible for pruning after 30 days, tombstones remain |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |

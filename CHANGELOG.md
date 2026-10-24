@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Keep shared backups safe.** Settings and favorites require review before
+  replacing a different first-seen or externally changed GitHub file. Approval
+  applies only to the reviewed snapshots and connection, including retries.
+- **Carry personal preferences between browsers.** Weather choices, overlay
+  appearance and photo-tool defaults now travel with settings. Map dimensions,
+  cache budget and automatic GitHub transfer choices stay on each device.
+  Automatic transfers start off on new devices; existing connections retain
+  their choices. Settings files use schema v5 and exclude device settings.
+- **Move climber lists without GitHub.** Custom favorites and ignored climbers
+  have separate JSON export/import with replacement previews, concurrent-edit
+  protection and the existing membership rules.
+
 - **Make signed-out account recovery clear.** Buddy filters offer sign-in or
   custom favorites, transient Retry keeps keyboard focus, and cached Buddy
   protection identifies its saved account. Account readers share strict identity

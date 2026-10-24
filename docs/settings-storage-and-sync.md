@@ -1,318 +1,218 @@
-# Settings storage, export, and sync audit
+# Settings storage, export, and sync
 
-Audited **2026-10-23** against source commit
-`34cd0588a3a446376b8a22ac2106016d1325e3f7` (package version **4.0.2**).
-This describes the checked-out implementation, not the version installed in a
-particular browser. No runtime behavior was changed for this audit.
+Maintained report, updated **2026-10-23** for the implementation following the
+storage audit (package version **4.0.2**, unreleased changes). This describes the
+repository, not necessarily the extension installed in a particular browser.
+The [remediation ledger](archive/settings-portability-remediation.md) records
+commits, verification, intentional boundaries and remaining live checks.
 
-## Findings
+## Current policy
 
-1. **All 59 recognized core settings have the same portability:** they live in
-   `storage.sync.bpbSettings`, are included in manual settings JSON files, and
-   can be backed up to GitHub's `settings.json`. There is no separate export or
-   GitHub allowlist that omits some of these 59 keys.
-2. **Several real preferences are outside that core object.** Weather models,
-   map overlay opacity and land-type choices, Photo Topos tool defaults, some
-   layout dimensions, active list filters, and the ignored-climber sync switch
-   are local. Settings export and GitHub settings backup do not preserve them.
-3. **GitHub settings backup is an automatic push plus an explicit restore, not
-   two-way settings sync.** A second connected profile can replace the shared
-   backup with its own settings. Custom favorites use the same push/restore
-   model. Ignored climbers have a separate, genuine two-way sync implementation.
-4. **Credentials are local but optionally portable.** The manual export's
-   unchecked-by-default **Include saved credentials (ImgBB, GitHub and Garmin)**
-   option includes saved API keys and a complete GitHub connection in plain
-   text. GitHub settings backups never include those credential fields.
-5. **Existing documentation has drifted.** The GitHub guide still describes
-   schema version 3, unconditional ImgBB-key file export, and a GitHub-only
-   checkbox. Runtime uses schema version 4 and one opt-in for all three services.
-   Details and follow-up checks appear below.
+- **67 portable preferences** live in `storage.sync.bpbSettings`, travel in
+  settings JSON files, and can be backed up to GitHub's `settings.json`.
+- **Nine device settings** live in `storage.local.bpbDeviceSettings`. Map size,
+  terrain cache budget and GitHub transfer choices stay on this installation;
+  settings files and GitHub restores cannot enable them on another device.
+- **Weather, overlay and photo-tool preferences now travel with settings.**
+  Their legacy local values migrate only when no synced choice exists.
+- **Automatic GitHub transfers start off on new installations.** Existing local
+  connections preserve their previous choices. Settings and favorites backups
+  require review before replacing a first-seen or externally changed remote file.
+- **Custom favorites and ignored climbers have independent JSON files.** They
+  remain separate from settings; importing them needs no GitHub connection.
+- **Credentials remain local.** Manual settings files include them only with
+  the unchecked-by-default **Include saved credentials (ImgBB, GitHub and Garmin)**
+  option. GitHub settings backups never include credentials.
 
-## What each transfer mechanism means
+## Transfer matrix
 
-**Browser sync** means the browser's extension-storage service. Chrome syncs
-this area across signed-in Chrome instances when sync is enabled; when disabled,
-it behaves locally. [Chrome storage documentation](https://developer.chrome.com/docs/extensions/reference/api/storage#sync)
-describes that prerequisite. Desktop Firefox uses the Mozilla account and
-requires **Add-ons** sync; see [Mozilla's storage.sync documentation](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/sync).
-These are separate browser services: this extension does not bridge Chrome
-settings into Firefox through `storage.sync`. File transfer or an explicit
-GitHub restore supplies that route.
+“Local” means one browser profile or site origin, not every browser on the same
+computer. “Settings file” means **Export settings**, not a complete profile backup.
 
-**Local** means a browser profile or site origin, not every browser on the same
-computer. Extension `storage.local`, extension IndexedDB, Peakbagger
-`localStorage`, and transient session state are different stores. A shared
-schema validator does not make a value synced: the storage writer determines
-that, which matters for map overlay preferences.
-
-**Export settings** is a user-triggered JSON download. It is not a complete
-extension/profile backup. **Back up settings** writes a separate,
-credential-free JSON payload to the selected GitHub repository. **Restore from
-GitHub** reads that payload and requires confirmation before applying settings.
-
-| Category | Stored in | Browser sync | Manual settings export | GitHub transfer |
+| Data | Storage | Browser sync | Settings file | GitHub / separate file |
 | --- | --- | --- | --- | --- |
-| All 59 core preferences | `storage.sync.bpbSettings` | Yes, subject to browser sync prerequisites | Yes | `settings.json`; manual/automatic push, manual restore |
-| Local UI preferences listed below | `storage.local` or site `localStorage` | No | No | No |
-| ImgBB API key | `storage.local.bpbImgbbAuth` | No | Only with credential opt-in | Never in settings backup |
-| GitHub token and selected repository | `storage.local.bpbGithubAuth` | No | Only with credential opt-in and a complete connection | Never in settings backup |
-| Garmin Personal API key | Extension IndexedDB `bpb-garmin-v1` | No | Only with credential opt-in | Never in settings backup |
-| Garmin account binding and import consent | Same Garmin database | No | No; importing a key does not copy source-device consent | No |
-| Custom favorite climbers | `storage.local.bpbFavoriteClimbers` | No | No | Separate `favorite-climbers.json`; manual/automatic push, manual restore |
-| Ignored climbers | `storage.local.bpbIgnoredClimbers` | No | No | Separate `ignored-climbers.json`; backup/restore and two-way sync |
-| Photo library and annotation projects | Extension IndexedDB `betterPeakbaggerPhotos` | No | No; separate per-photo project downloads exist | Separate `photo-library.json`; metadata/projects, not image bytes |
-| Drafts, caches, job state, and transfer bookkeeping | Local, session, IndexedDB, or memory | No | No | Excluded from settings backup; saved ascent/report backup is a separate feature |
+| 67 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
+| Nine device settings | `storage.local.bpbDeviceSettings` | No | No | No |
+| ImgBB API key | `storage.local.bpbImgbbAuth` | No | Credential opt-in only | Never in GitHub settings backup |
+| GitHub token and repository | `storage.local.bpbGithubAuth` | No | Credential opt-in and complete connection only | Never in GitHub settings backup |
+| Garmin Personal API key | IndexedDB `bpb-garmin-v1` | No | Credential opt-in only | Never in GitHub settings backup |
+| Garmin account binding, import consent, inbox/history | Same Garmin database | No | No | No |
+| Custom favorite climbers | `storage.local.bpbFavoriteClimbers` | No | No | Standalone JSON; `favorite-climbers.json` push/restore |
+| Ignored climbers | `storage.local.bpbIgnoredClimbers` | No | No | Standalone JSON; `ignored-climbers.json` backup/restore and optional two-way sync |
+| Photo catalog and annotation projects | IndexedDB `betterPeakbaggerPhotos` | No | No | Per-photo project files; `photo-library.json` metadata/project recovery |
+| Original/thumbnail image bytes and ImgBB deletion URLs | Same photo database | No | No | Excluded from GitHub photo recovery; rendered image downloads are separate |
+| Report drafts | Extension-local draft store | No | No | Separate draft download; saved ascent/report backup is another workflow |
+| Page layout/filter state, caches, job state, bookkeeping | Local, session, IndexedDB or memory | No | No | Excluded from settings and list files |
 
-Source boundaries: [settings store](../src/settings/settings.js) (lines 19–20,
-36–48, 63–71), [settings serializer](../src/settings/settings-transfer.js)
-(lines 11–34, 81–105), [manual file routes](../src/background/settings-file-routes.js)
-(lines 80–108), and [GitHub settings writer](../src/background/github-routes.js)
-(lines 1218–1289). Local exceptions are traced individually below.
+Browser sync is the browser's extension-storage service. Chrome requires Chrome
+sync; desktop Firefox requires its Mozilla account's **Add-ons** sync. They are
+separate services, so Chrome-to-Firefox transfer uses files or GitHub restore.
+See the [Chrome storage documentation](https://developer.chrome.com/docs/extensions/reference/api/storage#sync)
+and [Mozilla storage.sync documentation](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/sync).
 
-## Complete core-settings inventory
+The extension still writes portable preferences as one storage item. Its worker
+serializes local patches, but does not implement a cross-device, per-field
+merge. Simultaneous edits on different devices remain subject to browser sync
+conflict semantics; see [Mozilla's synchronization process](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/sync#synchronization_process).
+This limitation is distinct from the guarded GitHub file replacement below.
 
-**Every key in this table is browser-sync eligible, file-exportable, and
-GitHub-backup eligible.** The table contains all 59 keys in
-[the schema's defaults](../src/settings/settings-schema.js) (lines 73–154).
-File and GitHub serialization both iterate those defaults, after validation.
+## Complete portable-settings inventory
 
-| Setting group | Exact stored keys | Meaning / important distinction |
+Every key below is browser-sync eligible, settings-file exportable, and
+GitHub-settings-backup eligible. The inventory is the 67-key `PORTABLE_KEYS`
+allowlist in the [single settings schema](../src/settings/settings-schema.js).
+
+| Group | Exact keys |
+| --- | --- |
+| Theme and units (7) | `theme`, `units`, `distanceUnits`, `elevationUnits`, `temperatureUnits`, `precipitationUnits`, `windUnits` |
+| Peak cards (8) | `showSunMoon`, `showWeather`, `showSnotel`, `peakCardOrder`, `peakCardColumns`, `peakSunCollapsed`, `peakWeatherCollapsed`, `peakSnowCollapsed` |
+| Capture and draft filling (6) | `retainWaypoints`, `removeGpxTimestamps`, `fillAscentDetails`, `fillTripInfo`, `fillWildernessNights`, `fillExternalUrl` |
+| Garmin inbox preferences (5) | `enableGarminInbox`, `garminCheckHours`, `garminRecentDays`, `garminHistoryStart`, `garminActivityTypes` |
+| GPX chart (1) | `chartDefaultSeries` |
+| Report editor (4) | `enableReportEditor`, `addReportCredit`, `reportEditorMode`, `reportImageWidth` |
+| Route appearance (4) | `mapRouteColor`, `mapRouteWidth`, `mapRouteCasingColor`, `mapRouteCasingWidth` |
+| Terrain (1) | `enable3dMap` |
+| Remembered base layer (2) | `rememberMapLayer`, `mapLastLayer` |
+| Map providers and peak links (3) | `mapProviderOrder`, `mapProvidersEnabled`, `peakLinkOrder` |
+| Ascent-list ordering (3) | `betaPeakFilterOrder`, `betaPersonalFilterOrder`, `betaSortDateDesc` |
+| Favorites behavior (2) | `favoritesSource`, `removeFavoriteWhenBuddyRemoved` |
+| Definition of “Has beta” (4) | `betaTr`, `betaTrMinWords`, `betaGps`, `betaLink` |
+| Weather model, metric and placement (6) | `bpbPeakWeatherModelPast`, `bpbPeakWeatherModelForecast`, `bpbPeakWeatherHourlyMetric`, `bpbAscentWeatherModel`, `bpbAscentWeatherColumn`, `bpbAscentWeatherSlot` |
+| Overlay opacity and public-land categories (1) | `bpbMapOverlayOpacityV1` |
+| Photo-tool appearance defaults (10) | `bpbPhotoSharedStyle`, `bpbPhotoTool:route`, `bpbPhotoTool:drawing`, `bpbPhotoTool:bolt`, `bpbPhotoTool:anchor`, `bpbPhotoTool:piton`, `bpbPhotoTool:rappel`, `bpbPhotoTool:belay`, `bpbPhotoTool:pitch`, `bpbPhotoTool:text` |
+
+These preferences contain bounded identifiers, style values and choices, not
+weather coordinates/results, activity data, annotations or credentials.
+Garmin's synced feature gate does not replace its local key, Peakbagger account
+binding or processing consent. Active overlays and selected weather map points
+remain page state. Photo styles already applied to a project also travel with
+that project's separate transfer.
+
+## Device settings and other local preferences
+
+The versioned device record contains these nine schema-owned values:
+
+| Group | Exact keys | Policy |
 | --- | --- | --- |
-| Theme and units (7) | `theme`, `units`, `distanceUnits`, `elevationUnits`, `temperatureUnits`, `precipitationUnits`, `windUnits` | Theme, overall unit preference, and measurement overrides |
-| Peak cards (8) | `showSunMoon`, `showWeather`, `showSnotel`, `peakCardOrder`, `peakCardColumns`, `peakSunCollapsed`, `peakWeatherCollapsed`, `peakSnowCollapsed` | Visibility, card order/column, and collapsed state; weather model choices are separate local preferences |
-| Activity capture (6) | `retainWaypoints`, `removeGpxTimestamps`, `fillAscentDetails`, `fillTripInfo`, `fillWildernessNights`, `fillExternalUrl` | Capture/privacy and draft-filling preferences; does not transfer any activity or GPX |
-| Garmin inbox preferences (5) | `enableGarminInbox`, `garminCheckHours`, `garminRecentDays`, `garminHistoryStart`, `garminActivityTypes` | Feature gate, schedule, history range, and activity selection; key, account binding, consent, and inbox contents stay separate |
-| GPX chart (1) | `chartDefaultSeries` | Initial distance/time series selection |
-| Report editor (4) | `enableReportEditor`, `addReportCredit`, `reportEditorMode`, `reportImageWidth` | Editor enablement, credit, last mode, and inserted photo width; not report contents or Photo Topos viewport size |
-| GitHub ascent/report backup (3) | `enableGithubBackup`, `autoGithubBackup`, `removeGithubBackupOnDelete` | Ascent backup and optional deletion mirroring; `autoGithubBackup` is a derived compatibility field, not an independent choice |
-| Automatic companion backups (3) | `autoSettingsBackup`, `autoFavoritesBackup`, `autoPhotoLibraryBackup` | All default to true; each requires a local GitHub connection. Ignored-climber sync has its own local switch |
-| Route appearance (4) | `mapRouteColor`, `mapRouteWidth`, `mapRouteCasingColor`, `mapRouteCasingWidth` | Route line and outline appearance |
-| Ascent map size (2) | `mapViewportWidth`, `mapViewportHeight` | GPX/ascent map dimensions; the peak-page map uses a different, local size |
-| Terrain (2) | `enable3dMap`, `terrainCacheLimitMb` | 3D gate and cache budget; cached tiles themselves do not transfer |
-| Remembered base layer (2) | `rememberMapLayer`, `mapLastLayer` | Remember-layer toggle and saved supported layer; overlay opacity and enabled overlays are different state |
-| Map providers and peak links (3) | `mapProviderOrder`, `mapProvidersEnabled`, `peakLinkOrder` | Provider order/visibility and peak-link order |
-| Ascent-list ordering (3) | `betaPeakFilterOrder`, `betaPersonalFilterOrder`, `betaSortDateDesc` | Filter-chip order and default newest-first behavior; not the currently active filter chips |
-| Favorite-list behavior (2) | `favoritesSource`, `removeFavoriteWhenBuddyRemoved` | Buddy/custom source choice and removal coupling; not list membership |
-| Definition of “Has beta” (4) | `betaTr`, `betaTrMinWords`, `betaGps`, `betaLink` | Signals counted as beta; separate from the active Trip report chip's local word threshold |
+| Ascent map dimensions (2) | `mapViewportWidth`, `mapViewportHeight` | Retain per-device sizing |
+| Terrain cache budget (1) | `terrainCacheLimitMb` | Retain per-device capacity; actual tiles stay local |
+| Ascent/report GitHub backup (3) | `enableGithubBackup`, `autoGithubBackup`, `removeGithubBackupOnDelete` | Default off; `autoGithubBackup` follows `enableGithubBackup`; disabling backup clears deletion mirroring |
+| Companion automatic backups (3) | `autoSettingsBackup`, `autoFavoritesBackup`, `autoPhotoLibraryBackup` | Independent, default off on new devices |
 
-Important normalization rules:
+Other local state has separate owners and does not belong in a settings file:
 
-- `autoGithubBackup` follows `enableGithubBackup`; disabling ascent backup also
-  clears `removeGithubBackupOnDelete`. See [schema cleaning](../src/settings/settings-schema.js)
-  (lines 266–271).
-- Older site-local chip orders migrate into the two core order settings on a
-  list visit when those settings are unset. Export substitutes explicit default
-  orders for still-unset values; it does not read an unmigrated site's local
-  storage. See [list migration](../src/ascent/ascent-filter.js) (lines 930–937)
-  and [transfer selection](../src/settings/settings-transfer.js) (lines 26–34).
-- Imports contain a full cleaned settings snapshot, not a sparse preference
-  patch. Missing known keys receive schema defaults/migrations. Unknown keys
-  are excluded from transfer, although the runtime settings cleaner preserves
-  unknown fields already present in storage. See [transfer parsing](../src/settings/settings-transfer.js)
-  (lines 130–150) and [store mutation](../src/settings/settings.js) (lines 63–71).
-- Import/restore writes the same sync store. Applied settings can therefore
-  propagate to other signed-in profiles; they are not a device-only override.
-  See [file import](../src/background/settings-file-routes.js) (lines 196–215)
-  and [GitHub restore confirmation](../options/settings-backup.js) (lines
-  193–220, 311–327).
-
-## Preferences that remain local and are not exportable
-
-Here, “not exportable” means no supported settings-file or GitHub-settings
-transfer path. It does not mean the storage is technically inaccessible to
-developer tools. These exclusions are established by tracing the writers and
-the schema-based export allowlist, not just by searching preference labels.
-
-| Preference | Exact key / store | Evidence |
+| State | Exact key / owner | Reason |
 | --- | --- | --- |
-| Summit recent-weather and forecast model choices | `bpbPeakWeatherModelPast`, `bpbPeakWeatherModelForecast` in `storage.local` | [Peak weather](../src/weather/peak-weather.js), lines 22–23, 391, 461 |
-| Summit hourly weather metric tab | `bpbPeakWeatherHourlyMetric` in `storage.local` | [Peak weather](../src/weather/peak-weather.js), lines 23, 238, 461 |
-| Historical ascent weather model and card placement | `bpbAscentWeatherModel`, `bpbAscentWeatherColumn`, `bpbAscentWeatherSlot` in `storage.local` | [Ascent weather](../src/ascent/ascent-weather.js), lines 26–28, 562, 676, 690 |
-| Raster overlay opacity and selected public-land types | `bpbMapOverlayOpacityV1` in `storage.local` | [Overlay bridge](../src/maps/map-layer-bridge.js), lines 15–17, 52–55, 124; validation in [schema helpers](../src/settings/settings-schema.js), lines 45–58, outside `DEFAULTS` |
-| Photo Topos viewport dimensions | `bpbPhotoViewport` in `storage.local` | [Photo editor](../photos/photos.js), lines 213, 293–299, 371–378 |
-| Photo Topos drawing/marker/text defaults and shared color/opacity | `bpbPhotoTool:<type>`, `bpbPhotoSharedStyle` in `storage.local` | [Photo editor](../photos/photos.js), lines 346–386; the nine types are route, drawing, bolt, anchor, piton, rappel, belay, pitch, and text |
-| Peak-page report “favorites only” filter | `bpbPeakReportFilter.favoritesOnly` in `storage.local` | [Preference schema](../src/favorites/ignored-climbers.js), lines 6–8, 54–57; [writer](../src/background/ignored-store.js), lines 64–68 |
-| Ignored-climber two-way sync enabled/disabled | `bpbIgnoredSyncState.enabled` in `storage.local` | [GitHub wiring](../src/background/github-routes.js), lines 841–843; [sync controller](../src/background/climber-list-sync.js), lines 13–15, 345–361 |
-| Active ascent filter chips and Trip report chip's minimum words | `pbAscentBetaFilter.v1` in Peakbagger `localStorage` | [Ascent filter](../src/ascent/ascent-filter.js), lines 52–97, 918–937; old order fields remain as migration inputs, but current order is core settings |
-| Ascent table column split | `pbAscentTableSplit.v1` in Peakbagger `localStorage` | [Ascent split](../src/ascent/ascent-table-split.js), lines 17, 117; [shared persistence](../src/ui/column-resize.js), lines 12–37 |
-| Peak-page column split | `pbPeakTableSplit.v1` in Peakbagger `localStorage` | [Peak split](../src/ui/peak-table-split.js), line 25; same shared persistence |
-| Peak-page map viewport dimensions | `pbPeakMapViewport.v1` in Peakbagger `localStorage` | [Peak map](../src/maps/peak-map.js), lines 94–144 |
-| Garmin import consent and selected Peakbagger account | `connection.enabled`, `connection.cid` and connection metadata in extension IndexedDB `bpb-garmin-v1` | [Garmin store](../src/garmin/garmin-store.js), lines 4–19; [enable/import paths](../src/garmin/garmin-imports.js), lines 276–283, 321–338 |
+| Ignored-list sync consent and baseline | `bpbIgnoredSyncState` in `storage.local`; [sync controller](../src/background/climber-list-sync.js) | Device connection, reviewed merge baseline and interrupted-transfer state; new consent defaults off |
+| Photo canvas dimensions | `bpbPhotoViewport` in `storage.local`; [photo editor](../photos/photos.js) | Device layout |
+| Peak report favorites-only filter | `bpbPeakReportFilter.favoritesOnly` in `storage.local`; [ignored store](../src/background/ignored-store.js) | Current viewing preference, separate from list membership |
+| Active ascent chips and Trip report chip threshold | `pbAscentBetaFilter.v1` in Peakbagger `localStorage`; [ascent filter](../src/ascent/ascent-filter.js) | Current page-view state; chip order and “Has beta” definition are portable |
+| Ascent and peak table splits | `pbAscentTableSplit.v1`, `pbPeakTableSplit.v1`; [column persistence](../src/ui/column-resize.js) | Device layout |
+| Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.js) | Device layout |
+| Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.js), [panel theme](../src/theme/panel-theme.js) | Mirror of portable `theme`, not a separate theme choice |
+| Garmin consent and account | `connection.enabled`, `connection.cid` in [Garmin store](../src/garmin/garmin-store.js) | Per-device authorization; key transfer does not copy it |
 
-Photo annotation styles already applied to a project can travel with that
-project through the photo backup or project download. That does not transfer
-the editor's remembered defaults for the next drawing or photo.
+## Migration and settings files
 
-The `bpbThemePref` site/extension-page `localStorage` entries are startup mirrors
-of the **synced** `theme` setting, not separate local theme choices. See
-[page theme](../src/theme/theme.js) (lines 73–76) and
-[extension-panel theme](../src/theme/panel-theme.js) (lines 10–21).
+[Settings storage](../src/settings/settings.js) reads the portable and device
+records through the same schema. Worker-owned writes serialize the two stores,
+retain device choices on replacement, and report persistence failures. Failed
+authoritative reads cannot become default-filled export or preservation data.
 
-## Credentials and device migration
+On upgrade, existing local weather, overlay and tool defaults migrate into
+portable settings only when their synced key is absent. Existing synced choices
+win. Unset legacy chip orders still migrate on a list visit; a settings export
+uses explicit default orders when no order has been chosen. Old local preference
+keys may remain as migration inputs, but current edits use the portable store.
+Fresh installation does not publish a default-filled `bpbSettings` item.
 
-The default file download has no `apiKeys` or `githubConnection` field. Opting
-in adds `apiKeys.imgbb` and `apiKeys.garmin`, including explicit `null` for an
-absent saved key. A complete GitHub connection adds `githubConnection.token`
-and `repository.owner`, `repository.name`, and an available numeric repository
-ID. It does not copy the auth epoch, cached account metadata, or selected branch;
-the GitHub import validates the connection and resolves repository state again.
+Legacy GitHub toggles are preserved only for an existing local token/repository
+when creating the device record. Fresh devices cannot inherit transfer consent
+from browser sync. An existing ignored-sync record retains its choice. Legacy
+map dimensions/cache budget seed the device record; later sync changes cannot
+replace it. [Settings migration](../src/settings/settings.js) and
+[connection selection](../src/background/github-routes.js) enforce this boundary.
 
-Source: [file export](../src/background/settings-file-routes.js) (lines 36–49,
-80–108), [credential payload validation](../src/settings/settings-transfer.js)
-(lines 37–78), [GitHub local storage](../src/github/github-auth.js) (lines
-320–339), and [ImgBB local storage](../src/photos/imgbb-auth.js) (lines 9–23).
+[Settings transfer schema v5](../src/settings/settings-transfer.js) exports only
+portable keys. It still reads supported v1–v4 files, but strips their old device
+and transfer values too. Import replaces the portable snapshot after
+confirmation: missing portable keys receive cleaned defaults, unknown keys are
+excluded, and destination device settings stay unchanged. Applied portable
+settings can subsequently propagate through browser sync.
 
-On import:
+The default settings file has no `apiKeys` or `githubConnection`. Credential
+opt-in adds `apiKeys.imgbb` and `apiKeys.garmin` (including explicit null for a
+missing key), and a complete GitHub connection's token and repository owner,
+name and available numeric ID. These are unencrypted secrets. Account caches,
+authorization epochs, access tokens, browser permission grants and Garmin
+processing consent do not transfer.
 
-- Absent credential fields preserve the destination credentials. An explicit
-  null API key removes that service's saved key. Null Garmin credentials
-  disable that connection while retaining inbox data.
-- Included GitHub and non-null Garmin credentials require host access and
-  validation. Browser permission grants are not serialized in the file.
-- A Garmin key imported onto a fresh profile does **not** enable imports or
-  copy the source Peakbagger account binding. Existing destination consent is
-  preserved only when already present. Garmin access tokens remain in memory
-  and are not exported.
-- These are unencrypted files. GitHub backup uses a newly built settings-only
-  payload, rather than uploading the credential-bearing file.
+On import, omitted credentials preserve the destination; an explicit null API
+key removes that key. Included GitHub and non-null Garmin credentials require
+host access and validation. A fresh Garmin key import leaves import consent off;
+existing destination consent remains its own choice. GitHub connection imports
+retain destination transfer settings. See the [manual file routes](../src/background/settings-file-routes.js)
+and [Garmin import handling](../src/garmin/garmin-imports.js).
 
-Evidence: [import preflight and writes](../src/background/settings-file-routes.js)
-(lines 123–238), [permission request](../options/settings-backup.js) (lines
-193–220), [Garmin imported-key handling](../src/garmin/garmin-imports.js)
-(lines 321–338), and [Garmin privacy contract](../PRIVACY.md) (lines 86–92).
+## Climber-list files
 
-## GitHub behavior and cross-device limitations
+**Climber lists → Favorites → Custom list** and **Climber lists → Ignored** each
+provide **Export JSON** and **Import JSON…**. Each file contains one complete
+list, capped at 1,500 entries and 2 MiB. No GitHub connection is needed.
 
-| File / feature | Automatic behavior | Restore / reconciliation | Control location |
-| --- | --- | --- | --- |
-| `settings.json` | Push current cleaned core settings; default on when connected | Explicit restore replaces known settings after confirmation; no automatic pull or per-setting merge | Synced `autoSettingsBackup` |
-| `favorite-climbers.json` | Push current custom favorites; default on when connected | Explicit list replacement with guarded Undo; no automatic pull or cross-device list merge | Synced `autoFavoritesBackup` |
-| `ignored-climbers.json` | Two-way sync; default on when connected | Initial combination preserves both lists when compatible; subsequent three-way comparison propagates additions/removals and pauses for unresolved conflicts | Local `bpbIgnoredSyncState.enabled` |
-| `photo-library.json` | Push/merge catalog metadata and projects; default on when connected | Explicit restore preview and conflict handling; does not restore local image bytes from GitHub | Synced `autoPhotoLibraryBackup` |
-| Saved ascent/report folders | Backup after saves when ascent backup is enabled; manual backup also available | Separate ascent archive workflow, not settings sync or automatic Peakbagger form saving | Synced `enableGithubBackup`; deletion mirroring separately opt-in |
+Import validates the kind, schema, every entry and duplicates, then previews the
+replacement counts. **Replace list** uses the worker's expected signature (and
+ignored-list revision). A concurrent edit requires renewed review. Favorite /
+ignored / Buddy membership rules still apply. Empty files are valid intentional
+replacements; a wrong-list file, even empty, is rejected. Existing GitHub favorite
+files without a `kind` field remain compatible.
 
-Settings and favorites have a one-minute trailing alarm and a 30-minute
-watchdog. Writes skip an unchanged local content signature within the same
-repository/branch/auth epoch. Connection changes schedule enabled backups.
-This signature is a local acknowledgement, not evidence that no other device
-has subsequently changed the remote file. See [automatic backup controller](../src/background/github-routes.js)
-(lines 1134–1263, 1937–1952).
+List files exclude Buddy cache/owner metadata, native Buddy membership, settings,
+credentials, sync baselines and filter state. Import never edits Peakbagger's
+Buddy List. Existing automatic backups or ignored sync, if already enabled on
+this device, can transfer the resulting list change. See [file formats](../src/favorites/climber-files.js),
+[file controls](../options/climber-files.js), and [list policy](../src/background/climber-list-policy.js).
 
-**Practical consequence:** connecting a fresh profile with default
-`autoSettingsBackup: true` can upload its default/different preferences over an
-existing repository's `settings.json` before the user restores it. The same
-reasoning applies to custom favorites. This is a source-derived consequence of
-the documented push-only design; this audit did not reproduce an overwrite
-against a live repository. The root writer preserves unrelated files and
-retries Git ref conflicts, but does not merge the settings JSON content. See
-[root-file writer](../src/github/github-client.js) (lines 600–613) and the
-[original transfer boundaries](archive/settings-export-import-github-backup.md)
-(lines 29–51).
+## GitHub behavior and overwrite protection
 
-For a deliberate migration through an existing GitHub backup, disable automatic
-settings/favorites backup on the destination before connecting, then restore
-the desired data before enabling automatic backup. Because those toggles are
-themselves synced, changing them can affect other profiles in the same browser
-account. A manual settings file avoids needing to connect GitHub just to
-transfer the core preferences.
-
-Browser sync itself is also not a field-level merge implemented by Better
-Peakbagger. The worker serializes local patches, but writes the entire
-`bpbSettings` object as one storage item. Concurrent edits on different devices
-are resolved by the browser's sync semantics; local queuing does not guarantee
-both changes survive. [Mozilla documents key-level conflict resolution](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/sync#synchronization_process).
-No multi-device collision was tested here.
-
-## Related data that a settings export does not cover
-
-- **Custom favorites and ignored lists:** separate GitHub JSON files. The
-  inspected list controls offer GitHub transfer, not a standalone local JSON
-  download/import. Neither list is inside the settings download. Buddy List
-  membership belongs to Peakbagger; the local Buddy cache/intents are not
-  exported. A Buddy-derived entry already copied into custom favorites can be
-  in the favorites backup. See [favorites UI](../options/favorites-backup.js),
-  [ignored UI](../options/ignored-backup.js), and
-  [climber-list design](climber-lists.md).
-- **Photo originals and projects:** **Download project** creates a separate
-  `.bpb-photo` bundle containing the original and project; a matching import
-  path exists. This is not an export of global photo-tool preferences or the
-  entire extension. GitHub photo backup contains allowlisted metadata,
-  annotation projects, public URLs, and deletion tombstones, not original or
-  thumbnail blobs, API keys, delete URLs, or upload journals. See
-  [project transfer](../photos/photos.js) (lines 2824–2950) and
-  [photo backup serializer](../src/photos/photo-backup.js) (lines 36–78, 118–141).
-- **Unsaved report drafts:** local records with **Copy Markdown**, not settings
-  transfer or automatic GitHub draft recovery. Saved ascent/report backup is a
-  different path. See [draft manager](../options/drafts.js) (lines 272–279) and
-  [draft storage routes](../src/background/report-draft-routes.js).
-- **Garmin inbox/history:** retained activity analyses, drafts, verified-save
-  receipts, dismissals, scan cursors, and retry state stay in local IndexedDB.
-  Exporting the Garmin key does not transfer them. See
-  [Garmin state](../src/garmin/garmin-store.js) (lines 4–19).
-- **Caches and transient state:** DEM tiles/index, public SNOTEL catalog,
-  browser/session capture jobs, handshakes, backup signatures/retry records,
-  and theme mirrors are not settings backups. Active overlay selections,
-  temporary weather locations/stations, chart interactions, and current editor
-  camera/selection state are not portable preferences. See
-  [privacy storage inventory](../PRIVACY.md) (lines 74–83),
-  [terrain cache](../src/terrain/terrain-cache.js), and
-  [SNOTEL client](../src/snow/snotel-client.js).
-
-## Audit follow-ups and status
-
-| ID | Finding / decision | Status and acceptance check |
+| File / feature | Automatic behavior after device opt-in | Restore / reconciliation |
 | --- | --- | --- |
-| S1 | Core settings backup is push-only; a newly connected profile can replace the shared backup | Documented design boundary, unchanged. If automatic cross-device settings reconciliation is desired, specify conflict and first-connection behavior separately; verify with two isolated profiles and distinct values before claiming two-way sync |
-| S2 | A settings migration omits the local preferences listed above, including the ignored-sync opt-out | Confirmed coverage boundary, unchanged. Decide which choices should be portable before implementation; geometry and local service consent should not silently become globally synced |
-| S3 | Transfer documentation is stale | Open documentation defect: [GitHub guide](github-ascent-backup.md) lines 669–701 describes v3, always-exported ImgBB, and “Include GitHub connection”; [serializer comment](../src/settings/settings-transfer.js) lines 81–84 repeats the old unconditional API-key story. Update both against the actual file routes and test credential-free/default, opted-in, and legacy import cases |
-| S4 | Manual-file privacy summary omits Garmin from its credential list | Open documentation omission: [manual settings files](../PRIVACY.md#manual-settings-files) names ImgBB/GitHub, while the separate Garmin section and current UI correctly describe opt-in Garmin export. Align the summary without widening the existing runtime boundary |
+| `settings.json` | Push portable settings | Explicit replacement of portable settings; no automatic pull or per-key merge |
+| `favorite-climbers.json` | Push custom list | Explicit guarded replacement; no automatic pull or two-way list merge |
+| `ignored-climbers.json` | Two-way sync after setup | Review initial merge and conflicting changes; later three-way comparison propagates additions/removals |
+| `photo-library.json` | Push/merge catalog metadata and projects | Explicit restore preview; excludes original pixels, thumbnails and deletion URLs |
+| Saved ascent/report folders | Backup after saves when locally enabled | Separate archive workflow; never clicks Peakbagger Save |
 
-These are report findings, not authorization to change runtime storage policy.
-The local weather/overlay exclusions and push-only settings/favorites behavior
-are already documented design choices; they are not presented as newly
-discovered implementation bugs.
+Settings/favorites retain trailing alarms and watchdogs, but remote replacement
+now compares the remote file with the current local signature and this device's
+last acknowledged baseline. A first-seen different file or a changed remote file
+pauses for explicit replacement review. Automatic work records a review-needed
+state. Malformed/newer remote files cannot be overwritten as if they were empty.
 
-Closure ledger:
+Review is bound to the exact local/remote signatures and connection. The queue
+rereads the relevant remote file on Git ref conflict retries and rechecks
+connection/consent before advancing the branch. A stale approval cannot replace
+a newer remote version. Settings/favorites still use push plus explicit restore;
+these safeguards do not turn them into two-way sync.
 
-- **Fixed and verified:** no runtime fixes in this audit. This report and its
-  documentation-index entry were added; local verification is recorded below.
-- **Intentionally not changed:** all storage scopes, credential boundaries,
-  backup directions, defaults, and local-only preferences.
-- **Changed but not fully proven:** none in runtime. Live browser-account sync,
-  live GitHub transfers/collisions, and device migration remain untested.
-  S3/S4 remain open documentation findings outside this report.
+For migration, connect the destination with automatic transfers off, restore the
+desired settings/lists, then choose which automatic transfers to enable locally.
+Changing those choices no longer changes other browser profiles. See
+[root-backup guard](../src/github/root-backup-guard.js),
+[GitHub routes](../src/background/github-routes.js), and
+[GitHub client](../src/github/github-client.js).
 
-## Verification performed
+## Verification and remaining limits
 
-- Searched persistence call sites across `src/`, `options/`, `photos/`, and
-  `popup/`, then traced the core serializer, manual file routes, GitHub writers,
-  list sync controller, and Garmin credential import path.
-- A direct Node probe enumerated **59** defaults and asserted exact key equality
-  with the exported settings, unknown-key exclusion, and absence of credential
-  fields in the default payload. Current transfer schema is **4**.
-- A second probe checked this report's inventory against the schema: all 59
-  keys appear exactly once. Documentation checks passed **3/3** after correcting
-  an invalid privacy-section link; `git diff --check` passed.
-- `npm run build` passed, producing 52 bundles. The following focused command
-  completed successfully, including bundled-worker tests with scripted network
-  responses and local storage/IndexedDB substitutes:
+The [closure ledger](archive/settings-portability-remediation.md) records unit,
+full-suite and browser evidence. The overwrite regression was reproduced against
+the prior worker. Deterministic tests cover remote conflicts, snapshot-bound
+review, migration, old-file exclusions and guarded list imports. Hidden Chrome
+and Firefox checks cover the changed Settings and list-file controls, both themes,
+narrow/desktop layouts, enlarged text, keyboard focus and asynchronous geometry.
 
-  ```sh
-  node --test --test-reporter=dot \
-    test/settings/settings-schema.test.mjs \
-    test/settings/settings-store.test.mjs \
-    test/settings/settings-transfer.test.mjs \
-    test/background/background-settings-file.test.mjs \
-    test/background/climber-list-sync.test.mjs \
-    test/github/github-backup-integration.test.mjs \
-    test/garmin/garmin-imports.test.mjs \
-    test/photos/photo-backup.test.mjs \
-    test/options/options-settings.test.mjs \
-    test/options/options-ignored-backup.test.mjs
-  ```
-
-- Browser-account behavior was checked against the linked official Chrome and
-  Mozilla documentation. No live credentials or user storage were read.
-- No browser window was launched. No real Chrome/Firefox account sync, live
-  GitHub write, credential import, visual rendering, or multi-device collision
-  was exercised. These automated results establish local code behavior only.
+Real browser-account synchronization across physical devices, simultaneous live
+GitHub writers, native file chooser appearance, and native window/focus behavior
+remain unproven. No real account settings or GitHub repository were changed for
+verification. The browser's whole-item sync conflict behavior remains an explicit
+product limitation; local queues and tests cannot prove cross-device merging.

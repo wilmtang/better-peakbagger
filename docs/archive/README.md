@@ -8,6 +8,11 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [Settings portability remediation — 2026-10-23](settings-portability-remediation.md) —
+  guarded shared root backups, portable personal preferences, device-local
+  transfer consent and standalone climber files. Includes focused commits,
+  browser evidence and retained live/native proof limits. The maintained
+  [storage report](../settings-storage-and-sync.md) owns current behavior.
 - [CascadeClimbers weather feature gaps — 2026-10-21](cascadeclimbers-weather-feature-gaps-2026-10-21.md) —
   Chrome inspection of Weather Research and Weather Lab compared with the
   plugin source, separating missing comparisons, atmospheric data, inline

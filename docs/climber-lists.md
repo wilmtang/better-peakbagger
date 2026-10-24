@@ -165,6 +165,21 @@ media. Embedded iframe sources, including `srcdoc`, are suspended and restored
 on the same outer nodes; their players can restart on reveal. This is a display
 preference, not a network blocker: native pages and media may load before hiding.
 
+## Standalone JSON files
+
+The custom-favorites and ignored tabs each offer **Export JSON** and **Import
+JSON…** without a GitHub connection. Each file contains one list, up to 1,500
+climbers and 2 MiB, excluding credentials, Buddy cache, sync state and settings.
+Favorites files include a kind marker; older GitHub favorite files without one
+remain accepted. A wrong-list file, even empty, is rejected.
+
+Import previews additions/removals and requires **Replace list**. It replaces
+entry metadata too. The existing worker signature/revision checks and membership
+rules apply; a concurrent edit requires a new review before replacement. An
+empty valid file may intentionally clear a list. Imports do not modify native
+Buddy membership. If automatic GitHub transfer was already enabled locally,
+the resulting list change follows that existing policy.
+
 ## Optional GitHub backup and two-way sync
 
 Use **Settings → Backup & sync → Climber lists backup & sync**. Connect your
@@ -178,8 +193,10 @@ and offers guarded whole-list Undo. A missing file means no backup exists; a val
 empty file can intentionally clear the list after review. Concurrent local or
 remote changes invalidate the preview instead of overwriting them.
 
-Both climber-list sync checkboxes default to checked and remain disabled until
-GitHub is connected with its required permission. Saved opt-outs remain intact.
+Automatic favorites backup and ignored-climber two-way sync are separate
+device-local choices. Both start off on new devices and remain disabled until
+GitHub is connected with its required permission. Existing installations retain
+their previous choices; settings files and browser sync cannot enable them.
 First ignored-sync setup previews **Merge lists**, **Use GitHub's list**, or
 **Use this device's list**.
 Merge keeps currently ignored IDs from both sides. Conflicting versions require

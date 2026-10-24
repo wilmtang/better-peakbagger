@@ -79,9 +79,9 @@ const cleanGithubConnection = value => {
 };
 
 // Credential fields are opt-in so GitHub settings backups keep their
-// established credential-free contract. Manual file export always passes the
-// API-key object (including an explicit null) and passes `githubConnection`
-// only after the user selects the sensitive-file option.
+// established credential-free contract. Manual file export passes API keys
+// (including explicit nulls) and a complete GitHub connection only after the
+// user selects the single sensitive-file option.
 const buildPayload = (settings, {
     extensionVersion = '', exportedAt, apiKeys, githubConnection,
 } = {}) => {

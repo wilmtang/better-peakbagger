@@ -15,10 +15,12 @@ API upload will appear in an ImgBB profile. See the
 
 ## Tool preferences and freehand drawing
 
-All tools share the last chosen color and opacity, saved on this device under
-`bpbPhotoSharedStyle`. Other appearance preferences stay per tool under
-`bpbPhotoTool:<type>`. New text labels reuse the last label width, including Auto;
-the initial width is Auto so labels grow with their text. The project model
+All tools share the last chosen color and opacity under `bpbPhotoSharedStyle`.
+Other appearance preferences stay per tool under `bpbPhotoTool:<type>`. These
+validated preferences use `storage.sync.bpbSettings` and travel in settings files
+and GitHub settings backups. Legacy local defaults migrate only when the synced
+choice is absent; photo canvas dimensions remain device-local. New text labels
+reuse the last label width, including Auto; the initial width is Auto so labels grow with their text. The project model
 validates the saved style; annotation text, pitch content, and coordinates are
 never stored as tool preferences.
 
@@ -545,9 +547,9 @@ An over-capacity generation stays pending with its exact measured size and a
 stable cleanup action; automatic backup does not rebuild the same hopeless
 generation until the catalog changes.
 
-Automatic photo recovery is a separate setting, on by default once GitHub is
-connected; an explicit opt-out stays off. A local catalog
-change arms a one-minute trailing-edge alarm, while a recurring 30-minute
+Automatic photo recovery is a separate device-local setting, off on new
+devices; existing local connections preserve their previous choice. A local
+catalog change arms a one-minute trailing-edge alarm, while a recurring 30-minute
 watchdog remains installed but performs no backup while the option is disabled.
 The watchdog authoritatively reads the preference and compares
 the durable local and confirmed generations, so losing the page's fast runtime

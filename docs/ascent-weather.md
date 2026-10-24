@@ -25,10 +25,9 @@ provide a keyboard alternative. Only the weather card has dragging enabled.
 The shared opt-in controller in `src/ui/card-drag.js` can support other BPB
 cards without registering or moving them automatically.
 
-The chosen column is remembered for subsequent ascent pages in extension-local
-storage (`bpbAscentWeatherColumn`). It is device-local, contains no ascent
-identity or activity data, and is excluded from synced settings, settings files
-and GitHub backups. Unavailable storage keeps the current visit usable.
+The chosen column and slot are portable settings (`bpbAscentWeatherColumn`,
+`bpbAscentWeatherSlot`). They contain no ascent identity or activity data and
+travel through browser sync, settings files and GitHub settings backups. Unavailable storage keeps the current visit usable.
 The card keeps its loaded day, model, hourly disclosure and readings when moved;
 moving does not request weather. Narrow layouts retain the chosen column in the
 stacked flow. Reduced motion disables the settling animation.
@@ -62,13 +61,15 @@ ERA5-Land according to available dates and variables, with coverage back to 1940
 Source details identify this as a blend and do not invent per-value provenance.
 The ascent archive no longer applies the extension's country recommendation chain.
 
-An explicit model choice is remembered on this device in `storage.local` as
+An explicit model choice is remembered in `storage.sync.bpbSettings` as
 `bpbAscentWeatherModel`, independently of peak forecast/history preferences.
-Startup waits for a bounded local read before its first request. If the saved
+Startup waits for a bounded preference read before its first request. If the saved
 model does not cover the new ascent's date or region, Best Match is used for
 that visit without overwriting the preference. An explicit request failure
 never switches models. Only model IDs are persisted, not dates, ascent IDs,
-coordinates or weather data; this choice is outside sync, exports and backups.
+coordinates or weather data. The model preference travels through browser sync,
+settings files and GitHub settings backups; legacy local values migrate when
+no synced choice exists.
 
 The dropdown includes global alternatives, overlapping regional candidates,
 with **Best Match (Open-Meteo)** first among eligible choices,

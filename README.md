@@ -96,7 +96,8 @@ Keep trusted climbers close with your Peakbagger Buddy List or a searchable
 favorites list. Favorite, Ignore, and Buddy actions are a hover or **⋯** click
 away. Hide reports from ignored climbers and reveal them whenever you choose.
 
-Ignored lists stay local unless you choose GitHub backup or two-way sync.
+Export and import custom favorites or ignored climbers as separate JSON files.
+Lists stay local unless you choose GitHub backup or two-way sync.
 [Climber lists guide](docs/climber-lists.md)
 
 Peak pages also put weather, satellite imagery, fire and smoke information,
@@ -182,7 +183,8 @@ sync. Backups never change your Peakbagger records.
 
 You can also back up and restore settings, climber lists, and photo-library
 recovery data. Photo recovery includes annotations and links; keep project
-downloads for original images. [Backup guide](docs/github-ascent-backup.md)
+downloads for original images. Automatic transfers start off on new devices;
+existing connections retain their choices. [Backup guide](docs/github-ascent-backup.md)
 
 ## Make Peakbagger feel like yours
 

@@ -23,7 +23,7 @@ subsystem changes.
 - [Trip-report editor: markup, Markdown, and safety](trip-report-editor.md)
 - [Photo topo editor, ImgBB upload, and local library](photo-topo-editor.md)
 - [GitHub backup: ascents, TRs, root files, and recovery](github-ascent-backup.md)
-- [Settings storage, export, and sync audit](settings-storage-and-sync.md)
+- [Settings storage, export, and sync](settings-storage-and-sync.md)
 - [Climber lists, quick actions, and report visibility](climber-lists.md)
 - [Gaia saved-GPX handoff](gaia-import.md)
 - [onX Backcountry saved-GPX handoff](onx-import.md)
