@@ -16,8 +16,8 @@ export const readDisconnectedGithubControls = () => {
         favoritesStatus: document.getElementById('favorites-github-status').textContent,
         ignoredStatus: document.getElementById('ignored-github-status').textContent,
     };
-    return { ...state, ready: state.favorites.checked && state.favorites.disabled
-        && state.ignored.checked && state.ignored.disabled && state.settingsHidden && state.photosHidden
+    return { ...state, ready: !state.favorites.checked && state.favorites.disabled
+        && !state.ignored.checked && state.ignored.disabled && state.settingsHidden && state.photosHidden
         && /Connect GitHub/.test(state.favoritesStatus) && /Connect GitHub/.test(state.ignoredStatus) };
 };
 

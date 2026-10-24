@@ -42,4 +42,4 @@ const clean = (type, value) => {
     };
 };
 
-export const photoToolPreferences = { defaults, clean };
+export const photoToolPreferences = { defaults, clean, TYPES: Project.OBJECT_TYPES };

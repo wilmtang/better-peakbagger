@@ -8,7 +8,7 @@ import { settingsTransfer } from '../src/settings/settings-transfer.js';
 export async function verifySettingsActions(page, origin, variant, { capture }) {
     await page.addInitScript(({ theme }) => {
         const settings = { theme, enableGithubBackup: true, enableReportEditor: true };
-        const area = { get: async () => ({ bpbSettings: settings }), set: async () => {}, remove: async () => {} };
+        const area = { get: async () => ({ bpbSettings: settings, bpbDeviceSettings: { schemaVersion: 1, settings } }), set: async () => {}, remove: async () => {} };
         const repo = { owner: 'fixture', name: 'backup', fullName: 'fixture/backup' };
         globalThis.__calls = 0;
         globalThis.__openedTabs = [];
@@ -34,7 +34,7 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
         };
     }, variant);
     await page.goto(`${origin}/dist/options/options.html#github`);
-    await page.locator('#photos-github-status').filter({ hasText: 'No photo-library backup' }).waitFor();
+    await page.locator('#photos-github-status').filter({ hasText: /No photo-library backup|Ready to back up/ }).waitFor();
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const cases = [
         ['#settings-backup-github-backup', 'GITHUB_SETTINGS_BACKUP'],

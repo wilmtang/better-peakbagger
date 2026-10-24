@@ -270,7 +270,7 @@ async function main() {
             throw new Error(`Firefox background did not answer CAPTURE_STATUS: ${runtimeProbe?.error || 'no reply'}`);
         }
         await waitForScript(driver, webdriverScript(readDisconnectedGithubControls),
-            'default-on, disabled GitHub climber sync before setup', 5000, state => state?.ready);
+            'opt-in GitHub climber sync disabled before setup', 5000, state => state?.ready);
 
         const extensionState = await driver.executeAsyncScript(done => {
             const api = globalThis.browser || globalThis.chrome;
@@ -1776,10 +1776,8 @@ async function main() {
         await driver.get(optionsUrl);
         const originalHeightSettings = await driver.executeAsyncScript(done => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
-                api.storage.sync.set({
-                    bpbSettings: { ...bpbSettings, mapViewportHeight: 720 },
-                }).then(() => done(bpbSettings))).catch(error => done({ error: String(error) }));
+            api.storage.local.get('bpbDeviceSettings').then(({ bpbDeviceSettings }) =>
+                api.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: 720 } }).then(() => done(bpbDeviceSettings.settings))).catch(error => done({ error: String(error) }));
         });
         assertState(!originalHeightSettings?.error,
             'Firefox could not stage the maximum route-explorer height', originalHeightSettings);
@@ -1876,7 +1874,7 @@ async function main() {
         const persistedEffectiveHeight = await driver.executeAsyncScript((expected, done) => {
             const api = globalThis.browser || globalThis.chrome;
             const deadline = Date.now() + 5000;
-            const read = () => api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) => {
+            const read = () => api.storage.local.get('bpbDeviceSettings').then(({ bpbDeviceSettings: { settings: bpbSettings } }) => {
                 if (bpbSettings.mapViewportHeight === expected) done(bpbSettings.mapViewportHeight);
                 else if (Date.now() >= deadline) done({ value: bpbSettings.mapViewportHeight });
                 else setTimeout(read, 25);
@@ -1899,7 +1897,7 @@ async function main() {
         });
         await driver.executeAsyncScript((original, done) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.set({ bpbSettings: original })
+            api.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: original.mapViewportHeight } })
                 .then(() => done(true), error => done({ error: String(error) }));
         }, originalHeightSettings);
         await driver.close();

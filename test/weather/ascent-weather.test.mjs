@@ -26,7 +26,7 @@ const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July
     if (now !== undefined) win.Date.now = () => now;
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
     configureWindow?.(win);
-    win.chrome = { storage: { local: { get: async key => key === 'bpbAscentWeatherModel'
+    win.chrome = { storage: { local: { get: async key => Array.isArray(key) && key.includes('bpbDeviceSettings') ? {} : key === 'bpbAscentWeatherModel'
         ? (readModels ? readModels() : localModels) : (readPositions ? readPositions() : localPositions), set: async values => {
         if ('bpbAscentWeatherModel' in values) {
             modelWrites.push(values);
@@ -37,6 +37,12 @@ const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July
         if (savePositions) return savePositions(values);
         Object.assign(localPositions, values);
     } }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
+    win.chrome.runtime = { sendMessage: async message => {
+        if (message.type !== 'SETTINGS_PATCH') return;
+        await win.chrome.storage.local.set(message.patch); // controlled persistence hooks for these UI tests
+        Object.assign(storedSettings, message.patch);
+        return { ok: true, settings: { units: 'imperial', ...storedSettings } };
+    } };
     win.fetch = async (url, init) => {
         requests.push({ url, init });
         if (new URL(url).host === 'www.peakbagger.com' && fetchPeak) return fetchPeak(url, init);
@@ -104,7 +110,7 @@ test('delayed archive preference reads make no premature default request or requ
     const optedOut = setup({ readModels: () => new Promise(resolve => { finish = resolve; }) });
     try {
         await waitFor(() => !optedOut.doc.querySelector('#bpb-ascent-weather').hidden);
-        optedOut.listeners.forEach(listener => listener({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        optedOut.listeners.forEach(listener => listener({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         finish({ bpbAscentWeatherModel: 'gfs_global' }); await pause();
         assert.equal(optedOut.requests.length, 0);
     } finally { optedOut.close(); }
@@ -223,7 +229,7 @@ test('negative daily temperatures stay distinct across zero and unit changes wit
             const value = env.doc.querySelector('[data-weather-value="temperature"]');
             assert.equal(value.textContent, `${low}° / ${high}°C`.replaceAll('-', '−'));
             const requests = env.requests.length;
-            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'imperial' } } }, 'sync'));
+            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'imperial' } } }, 'sync')); await pause();
             assert.equal(value.textContent, fahrenheit);
             assert.equal(env.requests.length, requests);
         } finally { env.close(); }
@@ -242,7 +248,7 @@ test('archive cards, hourly tables and axes use independent measurement units wi
         assert.match(env.doc.querySelector('.bpb-weather-chart').getAttribute('aria-label'), /Temperature.*°C/);
         assert.match(env.doc.querySelector('[data-weather-row="temperature"] td').textContent, /°C/);
         const requests = env.requests.length;
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, windUnits: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, windUnits: 'metric' } } }, 'sync')); await pause();
         assert.match(env.doc.querySelector('[data-weather-value="wind"]').textContent, /km\/h/);
         env.doc.querySelector('[data-metric="precipitation"]').click();
         assert.match(env.doc.querySelector('.bpb-weather-chart').getAttribute('aria-label'), /precipitation.*mm/);
@@ -296,7 +302,7 @@ test('pending and failed archive navigation retain the old date, chart bounds an
         assert.equal(env.doc.activeElement, previous);
         const pendingRequests = env.requests.length; previous.click(); await pause(); assert.equal(env.requests.length, pendingRequests);
         assert.match(date.textContent, /July 12, 2024/);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         env.doc.querySelector('.bpb-weather-chart-frame').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
         assert.match(env.doc.querySelector('.bpb-weather-readout').textContent, /12:00 AM PDT/);
         finish();
@@ -539,7 +545,7 @@ test('weather opt-out hides the archive and skips summit lookup until enabled, i
         assert.equal(card.hidden, false);
         assert.equal(download.parentNode.id, 'bpb-ascent-gpx-details');
         const count = env.requests.length;
-        update(false); assert.equal(card.hidden, true);
+        update(false); await pause(); assert.equal(card.hidden, true);
         assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
         assert.equal(download.parentNode, originalParent); assert.equal(download.nextSibling, originalNext);
         card.querySelector('.bpb-weather-retry').click();
@@ -547,7 +553,7 @@ test('weather opt-out hides the archive and skips summit lookup until enabled, i
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
         assert.equal(env.requests.length, count);
         assert.equal(download.parentNode, originalParent);
-        update(true); await waitFor(() => card.getAttribute('aria-busy') === 'false');
+        update(true); await waitFor(() => !card.hidden && card.getAttribute('aria-busy') === 'false');
         assert.equal(card.hidden, false); assert.equal(env.doc.querySelectorAll('#bpb-ascent-weather').length, 1);
         assert.equal(env.doc.querySelectorAll('#bpb-ascent-gpx-details').length, 1);
     } finally { env.close(); }
@@ -558,7 +564,7 @@ test('disabling the archive aborts its lookup before any weather-provider reques
     const env = setup({ fetchPeak: () => new Promise(resolve => { finish = resolve; }) });
     try {
         await waitFor(() => env.requests.length === 1);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         assert.equal(env.requests[0].init.signal.aborted, true);
         finish(new Response(peak, { headers: { 'content-type': 'text/html' } })); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-weather').hidden, true); assert.equal(env.requests.length, 1);
@@ -569,7 +575,7 @@ test('a late startup read cannot override the archive opt-out and failed setting
     let finish;
     const env = setup({ readSettings: () => new Promise(resolve => { finish = resolve; }) });
     try {
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         finish({ bpbSettings: { showWeather: true } }); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-weather').hidden, true); assert.equal(env.requests.length, 0);
         assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
@@ -605,7 +611,7 @@ test('weather cursor previews GPX hover and restores selection without rebuildin
         assert.equal(line.dataset.time, String(selectionTime));
         assert.match(svg.getAttribute('aria-label'), /Wind.*Selected/);
         assert.equal(env.requests.length, before, 'cursor movement does not request route weather');
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         assert.equal(line.dataset.time, String(selectionTime));
         assert.match(svg.getAttribute('aria-label'), /km\/h/);
         const model = env.doc.querySelector('.bpb-weather-model select');
@@ -737,7 +743,7 @@ test('horizontal archive values retain their time contract and scroll when units
         assert.match(gusts[0].title, /12:00 AM PDT.*Instantaneous gust estimate/);
         assert.ok(gusts.every(cell => !cell.textContent.includes('311 mph')), 'closing midnight gust is excluded');
         grid.scrollLeft = 340; grid.focus();
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         assert.equal(grid.scrollLeft, 340); assert.equal(env.doc.activeElement, grid);
         assert.equal(grid.querySelector('[data-weather-row="gust"] td').textContent, '60 km/h');
         assert.equal(env.requests.length, 2);
@@ -805,7 +811,7 @@ test('bundled independent card loads on a visitor ascent without GPX or map', as
         assert.equal(env.doc.querySelector('select').options[0].value, 'best_match');
         assert.match(env.doc.querySelector('.bpb-weather-source-text').textContent, /combines ECMWF IFS, ERA5 and ERA5-Land/);
         assert.equal(new URL(transfer.url).searchParams.has('aid'), false);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         assert.match(env.doc.querySelector('[data-weather-value="temperature"]').textContent, /°C$/);
     } finally { env.close(); }
 });
@@ -914,10 +920,10 @@ test('weather placement survives opt-out and BFCache and ignores position reads 
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true })); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-weather').hidden, true);
         assert.equal(env.doc.querySelector('.bpb-card-drag-handle').hidden, true);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync')); await pause();
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync')); await pause(); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
     } finally { env.close(); }
     let finish;
@@ -985,12 +991,12 @@ test('native GPS note and download controls move together above weather without 
         await pause();
         assert.equal(env.doc.querySelectorAll('#bpb-ascent-gpx-details').length, 1);
         assert.equal(details.nextElementSibling, card);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
         assert.equal(note.closest('table').id, 'nativegps');
         assert.equal(note.nextElementSibling, download);
         button.click(); assert.equal(clicks, 2);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync')); await pause();
         await waitFor(() => env.doc.getElementById('bpb-ascent-gpx-details'));
         assert.equal(env.doc.getElementById('gpxlinks'), download);
         assert.equal(env.doc.getElementById('gpsnote'), note);

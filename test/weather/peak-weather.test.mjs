@@ -13,6 +13,7 @@ const [peak, bundle] = await Promise.all([
     readFile(new URL('../../dist/content/peak-weather.js', import.meta.url), 'utf8'),
 ]);
 const menuBundle = (await build({ entryPoints: ['src/maps/map-location-menu.js'], bundle: true, write: false, format: 'iife', globalName: 'testMapMenu' })).outputFiles[0].text;
+const pause = () => new Promise(resolve => setImmediate(resolve));
 const waitFor = async predicate => {
     const deadline = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > deadline) throw new Error('Peak weather did not settle'); await new Promise(resolve => setTimeout(resolve, 0)); }
@@ -31,9 +32,15 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
     win.Date.now = () => clock;
     win.scrollBy = () => {};
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { local: { get: readModels || (async () => localModels), set: saveModels || (async values => Object.assign(localModels, values)) }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
+    win.chrome = { storage: { local: { get: async key => Array.isArray(key) && key.includes('bpbDeviceSettings') ? {} : (readModels ? readModels() : localModels), set: saveModels || (async values => Object.assign(localModels, values)) }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
         addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1),
     } } };
+    win.chrome.runtime = { sendMessage: async message => {
+        if (message.type !== 'SETTINGS_PATCH') return;
+        await win.chrome.storage.local.set(message.patch); // controlled persistence hooks for these UI tests
+        Object.assign(storedSettings, message.patch);
+        return { ok: true, settings: { units: 'imperial', ...storedSettings } };
+    } };
     if (lazy) win.IntersectionObserver = class {
         constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
@@ -195,7 +202,7 @@ test('an open menu becomes usable when the known cooldown expires without reopen
         openLocationMenu(env); const menu = env.doc.querySelector('#bpb-peak-weather-menu'), action = menu.querySelector('button');
         assert.equal(action.disabled, true); assert.equal(env.doc.activeElement, menu);
         env.setNow('2024-11-05T12:03:00Z');
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'imperial' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'imperial' } } }, 'sync')); await pause();
         assert.equal(action.disabled, false); assert.equal(action.title, ''); assert.equal(env.doc.activeElement, action);
         limited = false; action.click();
         await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000');
@@ -308,7 +315,7 @@ test('Conditions is the initial hourly tab and rendering never writes a local pr
         assert.equal(day.querySelector('.bpb-week-chart').hidden, true);
         assert.ok(day.querySelector('.bpb-weather-hourly-table'));
         env.doc.querySelector('.bpb-week-day:nth-child(2) > summary').click();
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'code');
         assert.deepEqual(writes, []);
     } finally { env.close(); }
@@ -329,7 +336,7 @@ test('every hourly data tab survives navigation; keyboard choices persist withou
             env.doc.querySelector('.bpb-week-day:nth-child(2) > summary').click();
             env.doc.querySelector('[data-period="past"]').click();
             env.doc.querySelector('.bpb-week-day > summary').click();
-            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
             assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, metric);
             assert.equal(writes.length, 1);
             assert.equal(env.requests.length, 1);
@@ -556,7 +563,7 @@ for (const [heading, system] of peakUnitHeadings) {
             assert.match(env.doc.querySelector('.bpb-week-metrics').textContent, system === 'metric' ? /mm.*km\/h/ : /in.*mph/);
             assert.match(env.doc.querySelector('.bpb-week-sub').textContent, system === 'metric' ? /4391 m/ : /14406 ft/);
             const count = env.requests.length;
-            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'auto', temperatureUnits: 'imperial', elevationUnits: 'metric' } } }, 'sync'));
+            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'auto', temperatureUnits: 'imperial', elevationUnits: 'metric' } } }, 'sync')); await pause();
             assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /°F/);
             assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /4391 m/);
             assert.equal(env.requests.length, count, 'unit changes reuse canonical data');
@@ -577,7 +584,7 @@ test('mixed weather units update live without changing the default or refetching
         day.querySelector('[data-metric="precipitation"]').click();
         assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /mm/);
         const requests = env.requests.length;
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, temperatureUnits: 'imperial', elevationUnits: 'imperial', windUnits: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, temperatureUnits: 'imperial', elevationUnits: 'imperial', windUnits: 'metric' } } }, 'sync')); await pause();
         assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /°F/);
         assert.match(env.doc.querySelector('.bpb-week-metrics').textContent, /mm.*km\/h/);
         assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /\d+ ft\b/);
@@ -790,7 +797,7 @@ test('each expanded day preserves its own tab, pinned reading and scroll through
         env.doc.querySelector('.bpb-week-day > summary').click();
         env.doc.querySelector('[data-period="forecast"]').click(); verify();
         const before = env.requests.length;
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]').length, 2);
         assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'temperature');
         assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]')[1].querySelector('[aria-selected="true"]').dataset.metric, 'code');
@@ -815,9 +822,9 @@ test('multiple open days release every chart on close, opt-out and page lifecycl
         assert.equal(count(), 3);
         assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-day[open] [aria-selected="true"]')].map(tab => tab.dataset.metric), ['temperature', 'gust', 'code']);
         env.doc.querySelector('.bpb-week-day > summary').click(); assert.equal(count(), 2);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         assert.equal(count(), 0);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync')); await pause();
         await settled(env, { past: false }); assert.equal(count(), 2);
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide')); assert.equal(count(), 0);
     } finally { env.close(); }
@@ -833,10 +840,10 @@ test('unrelated settings keep nodes and pinned readings; units and refresh resto
         let frame = env.doc.querySelector('.bpb-week-chart'); frame.focus();
         frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
         const readout = env.doc.querySelector('.bpb-week-readout'), pinned = readout.textContent;
-        update({ units: 'imperial', fillTripInfo: false });
+        update({ units: 'imperial', fillTripInfo: false }); await pause();
         assert.equal(env.doc.querySelector('.bpb-week-chart'), frame); assert.equal(env.doc.activeElement, frame);
         assert.equal(readout.textContent, pinned);
-        update({ units: 'metric', fillTripInfo: false });
+        update({ units: 'metric', fillTripInfo: false }); await pause();
         frame = env.doc.querySelector('.bpb-week-chart');
         assert.equal(env.doc.activeElement, frame); assert.match(env.doc.querySelector('.bpb-week-readout').textContent, /12:00 AM PST.*°C/);
         assert.ok(env.doc.querySelector('.bpb-week-cursor'));
@@ -845,9 +852,9 @@ test('unrelated settings keep nodes and pinned readings; units and refresh resto
         assert.equal(env.doc.activeElement, env.doc.querySelector('.bpb-week-chart'));
         assert.match(env.doc.querySelector('.bpb-week-readout').textContent, /12:00 AM PST.*°C/);
         const wind = env.doc.querySelector('[data-metric="wind"]'); wind.click(); wind.focus();
-        update({ units: 'imperial' });
+        update({ units: 'imperial' }); await pause();
         assert.equal(env.doc.activeElement, env.doc.querySelector('[data-metric="wind"]'));
-        update({ showWeather: false });
+        update({ showWeather: false }); await pause();
         assert.equal(env.doc.querySelector('#bpb-peak-weather').hidden, true);
     } finally { env.close(); }
 });
@@ -877,14 +884,14 @@ test('weather opt-out hides the whole table row, skips requests and updates live
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
         assert.equal(env.requests.length, 0);
-        update(true); await settled(env);
+        update(true); await waitFor(() => !card.hidden); await settled(env);
         assert.equal(card.hidden, false); assert.equal(row.hidden, false);
         const count = env.requests.length;
-        update(false); assert.equal(card.hidden, true); assert.equal(row.hidden, true);
+        update(false); await waitFor(() => card.hidden); assert.equal(card.hidden, true); assert.equal(row.hidden, true);
         card.querySelector('.bpb-week-refresh').click();
         env.win.dispatchEvent(new env.win.Event('visibilitychange'));
         assert.equal(env.requests.length, count);
-        update(true); await settled(env);
+        update(true); await waitFor(() => !card.hidden); await settled(env);
         assert.equal(env.doc.querySelectorAll('#bpb-peak-weather').length, 1);
     } finally { env.close(); }
 });
@@ -894,7 +901,7 @@ test('disabling weather aborts an in-flight forecast and ignores a late result',
     const env = setup({ fetchFn: url => new Promise(resolve => { finish = () => resolve(reply(url)); }) });
     try {
         await waitFor(() => env.requests.length === 1);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         assert.equal(env.requests[0].init.signal.aborted, true);
         finish(); await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.doc.getElementById('bpb-peak-weather').hidden, true);
@@ -907,7 +914,7 @@ test('a late startup read cannot override a weather opt-out and a failed read st
     let finish;
     const env = setup({ readSettings: () => new Promise(resolve => { finish = resolve; }) });
     try {
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         finish({ bpbSettings: { showWeather: true } });
         await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.doc.getElementById('bpb-peak-weather').hidden, true); assert.equal(env.requests.length, 0);
@@ -986,7 +993,7 @@ test('independent hourly disclosures retain local DST folds and change units wit
         assert.equal(fold.open, true);
         assert.equal(previous.querySelector('[aria-selected="true"]').dataset.metric, 'code');
         previous.querySelector('[data-metric="temperature"]').click();
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         const next = env.doc.querySelector('[data-date="2024-11-02"]');
         assert.equal(next.open, true); assert.match(next.textContent, /°C/); assert.match(next.textContent, /km\/h/);
         assert.match(next.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /°C/);
@@ -1119,7 +1126,7 @@ test('horizontal Conditions exposes all measurements, interval values and retain
         assert.match(rain[0].title, /12:00 AM PST.*01:00 AM PST/);
         assert.match(rain.at(-1).title, /11:00 PM PST.*12:00 AM PST/);
         grid.scrollLeft = 340; grid.focus();
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         const next = env.doc.querySelector('.bpb-week-conditions');
         assert.equal(next.scrollLeft, 340); assert.equal(env.doc.activeElement, next);
         assert.match(next.querySelector('[data-weather-row="apparent"]').textContent, /−8°C/);
@@ -1163,7 +1170,7 @@ test('a dry day plots a flat rain line with distinct axis labels in both unit sy
             assert.equal(new Set([...graph.querySelectorAll('.bpb-week-axis')].slice(0, 3).map(node => node.textContent)).size, 3);
         };
         assertDry();
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         assertDry(); assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
@@ -1534,7 +1541,7 @@ test('selected-model update requests stay bounded, cancel on opt-out and do not 
         env.doc.querySelector('.bpb-week-source').open = true;
         await waitFor(() => env.metadataRequests.length === 2);
         assert.equal(maximum, 2);
-        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         assert.ok(env.metadataRequests.every(({ init }) => init.signal.aborted));
         held = []; await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.metadataRequests.length, 2); assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, days);

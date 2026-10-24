@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import * as I from '../../src/favorites/ignored-climbers.js';
 import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
 
-test('fresh connected sync defaults on and initializes by preserving both lists', async () => {
+test('explicitly enabled connected sync initializes by preserving both lists', async () => {
     for (const remote of [null, [], [entry(2)]]) {
-        const h = harness({ remote, syncEnabled: null });
+        const h = harness({ remote, syncEnabled: true });
         assert.equal((await h.engine.status()).state.enabled, true);
         const result = await h.engine.start();
         assert.equal(result.ok, true);
@@ -18,7 +18,7 @@ test('fresh connected sync defaults on and initializes by preserving both lists'
 });
 test('fresh sync requires a connected repository and preserves explicit opt-outs across connection changes', async () => {
     const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
-    const fresh = harness({ syncEnabled: null });
+    const fresh = harness({ syncEnabled: true });
     const offline = createClimberListSync({ ...fresh.engineOptions, getAccess: async () => ({ error: { code: 'not-connected' } }) });
     assert.equal((await offline.start()).skipped, true);
     assert.equal(fresh.reads, 0); assert.equal(fresh.writes, 0);
@@ -28,7 +28,7 @@ test('fresh sync requires a connected repository and preserves explicit opt-outs
     assert.equal(disabled.reads, 0); assert.equal(disabled.writes, 0);
 });
 test('fresh metadata conflicts keep sync enabled and pause without writing or replacing either list', async () => {
-    const h = harness({ remote: [entry(1, 'Other name')], syncEnabled: null });
+    const h = harness({ remote: [entry(1, 'Other name')], syncEnabled: true });
     const result = await h.engine.start();
     assert.equal(result.preview.conflicts.length, 1);
     assert.equal((await h.engine.status()).state.enabled, true);
@@ -39,7 +39,7 @@ test('fresh metadata conflicts keep sync enabled and pause without writing or re
 });
 test('an automatic check delayed behind manual review preserves the reviewed preview', async () => {
     const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
-    const h = harness({ remote: [entry(2)], syncEnabled: null });
+    const h = harness({ remote: [entry(2)], syncEnabled: true });
     let releaseCheck, checkReachedAccess;
     const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
     const reachedAccess = new Promise(resolve => { checkReachedAccess = resolve; });
@@ -63,7 +63,7 @@ test('an automatic check delayed behind manual review preserves the reviewed pre
 });
 test('an automatic check delayed behind disabling sync retains the opt-out', async () => {
     const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
-    const h = harness({ remote: [entry(2)], syncEnabled: null });
+    const h = harness({ remote: [entry(2)], syncEnabled: true });
     let releaseCheck, checkReachedAccess;
     const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
     const reachedAccess = new Promise(resolve => { checkReachedAccess = resolve; });
@@ -96,14 +96,14 @@ test('turning sync on persists immediately and new connections retain the prefer
     assert.equal((await h.engine.status()).state.enabled, false);
 });
 test('disabling during first automatic setup prevents an upload and retains the opt-out', async () => {
-    const h = harness({ syncEnabled: null });
+    const h = harness({ syncEnabled: true });
     h.readHook = () => h.engine.action({ action: 'disable' });
     assert.equal((await h.engine.start()).ok, false);
     assert.equal(h.writes, 0);
     assert.equal((await h.engine.status()).state.enabled, false);
 });
 test('disabling between automatic setup and confirmation cannot re-enable sync', async () => {
-    const h = harness({ syncEnabled: null });
+    const h = harness({ syncEnabled: true });
     const save = h.storage.set;
     let disabled;
     h.storage.set = async patch => {
@@ -289,4 +289,13 @@ test('sync refuses a union over capacity and preserves baseline after storage an
     const blocked = await h.engine.action({ action: 'sync' }); assert.equal(blocked.ok, false); assert.match(blocked.error.message, /1,500/);
     const base = h.values[I.SYNC_KEY].base; h.failGet = true;
     assert.equal((await h.engine.action({ action: 'sync' })).ok, false); assert.deepEqual(h.values[I.SYNC_KEY].base, base);
+});
+
+test('a fresh device does not transfer ignored climbers until explicitly enabled', async () => {
+    const h = harness({ syncEnabled: null, remote: [entry(2)] });
+    assert.equal((await h.engine.status()).state.enabled, false);
+    await h.engine.start(); await h.engine.connectionChanged();
+    assert.equal(h.reads, 0); assert.equal(h.writes, 0);
+    await h.engine.action({ action: 'enable' });
+    assert.equal((await h.engine.status()).state.enabled, true);
 });

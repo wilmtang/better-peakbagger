@@ -14,8 +14,11 @@ function setup({ catalog = snotelStations(), held = false, runtime, localGet, sy
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', runScripts: 'outside-only' });
     const win = dom.window, messages = [], requests = [], local = {}, listeners = [];
     win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder; win.AbortController = AbortController;
-    win.chrome = { runtime, storage: { sync: { get: syncGet },
-        local: { get: localGet || (async () => local), set: async value => Object.assign(local, value) },
+    win.chrome = { runtime: { ...runtime, sendMessage: async message => {
+        if (message.type === 'SETTINGS_PATCH') { Object.assign(local, message.patch); return { ok: true, settings: Schema.clean({ ...(await syncGet()).bpbSettings, ...message.patch }) }; }
+        return runtime?.sendMessage?.(message);
+    } }, storage: { sync: { get: syncGet },
+        local: { get: async key => Array.isArray(key) && key.includes('bpbDeviceSettings') ? {} : (localGet ? localGet(key) : local), set: async value => Object.assign(local, value) },
         onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     const response = () => new Response(JSON.stringify(catalog));
     win.fetch = (url, options) => { const entry = { url, options }; requests.push(entry); return held ? new Promise(resolve => { entry.resolve = () => resolve(response()); }) : Promise.resolve(response()); };
@@ -59,7 +62,8 @@ test('unavailable preference storage settles startup with usable defaults', asyn
 });
 test('loading opacity preferences cannot publish a false SNOTEL opt-out before settings are known', async () => {
     let finish;
-    const env = setup({ syncGet: () => new Promise(resolve => { finish = resolve; }) });
+    const pending = new Promise(resolve => { finish = resolve; });
+    const env = setup({ syncGet: () => pending });
     try {
         await tick(); env.send({ type: 'preferences' }); await tick();
         assert.equal(env.messages.filter(message => message.type === 'preferences').length, 0,
@@ -72,7 +76,8 @@ test('loading opacity preferences cannot publish a false SNOTEL opt-out before s
 });
 test('a late startup settings read cannot overwrite a newer SNOTEL opt-out', async () => {
     let finish;
-    const env = setup({ syncGet: () => new Promise(resolve => { finish = resolve; }) });
+    const pending = new Promise(resolve => { finish = resolve; });
+    const env = setup({ syncGet: () => pending });
     try {
         await tick();
         env.listeners.forEach(listener => listener({ bpbSettings: { newValue: { showSnotel: false } } }, 'sync'));

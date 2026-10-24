@@ -125,7 +125,7 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
     assert.equal(auto.checked, false);
     auto.checked = true;
     auto.dispatchEvent(new dom.window.Event('change'));
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.autoFavoritesBackup === true);
+    await waitFor(dom, () => dom.chrome._localStore.bpbDeviceSettings?.settings.autoFavoritesBackup === true);
 
     await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
     el(dom, 'favorites-restore').focus();
@@ -288,14 +288,14 @@ test('the favorites auto-backup checkbox populates from synced settings', async 
     assert.equal(el(dom, 'favorites-auto-backup').checked, true);
 });
 
-test('favorites sync defaults on and an explicit opt-out survives reloading settings', async () => {
+test('favorites backup starts off and explicit choices survive reloading settings', async () => {
     const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ connected: true, repo: { owner: 'me', name: 'backup' } }) });
     await waitFor(dom, () => !el(dom, 'favorites-auto-backup').disabled);
-    assert.equal(el(dom, 'favorites-auto-backup').checked, true);
+    assert.equal(el(dom, 'favorites-auto-backup').checked, false);
     el(dom, 'favorites-auto-backup').click();
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.autoFavoritesBackup === false);
-    const reloaded = await loadOptions(dom.chrome._store.bpbSettings);
-    assert.equal(el(reloaded, 'favorites-auto-backup').checked, false);
+    await waitFor(dom, () => dom.chrome._localStore.bpbDeviceSettings?.settings.autoFavoritesBackup === true);
+    const reloaded = await loadOptions(dom.chrome._store.bpbSettings, { local: dom.chrome._localStore });
+    assert.equal(el(reloaded, 'favorites-auto-backup').checked, true);
 });
 
 test('favorites restore fails closed on an unknown backup schema', async () => {
@@ -846,7 +846,7 @@ test('enabling ascent and TR backup persists only the ascent gate and leaves Git
     toggle.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(requested, null);
-    assert.equal(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+    assert.equal(dom.chrome._localStore.bpbDeviceSettings?.settings.enableGithubBackup, true);
     assert.equal(el(dom, 'github-ascent-detail').hidden, false);
     assert.match(el(dom, 'github-ascent-panel').textContent,
         /Connect GitHub above to back up ascents and TRs/);
@@ -859,7 +859,7 @@ test('the shared Connect GitHub action requests host permission and keeps denial
     connect.click();
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(el(dom, 'enable-github-backup').checked, false);
-    assert.notEqual(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+    assert.notEqual(dom.chrome._localStore.bpbDeviceSettings?.settings.enableGithubBackup, true);
     assert.equal(el(dom, 'github-detail').hidden, false);
     assert.match(el(dom, 'github-panel').textContent, /GitHub access wasn’t granted/);
     assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
@@ -911,7 +911,7 @@ test('the shared Connect GitHub action grants permission without enabling ascent
         origins: ['https://github.com/*', 'https://api.github.com/*'],
     }));
     assert.equal(began, true);
-    assert.notEqual(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+    assert.notEqual(dom.chrome._localStore.bpbDeviceSettings?.settings.enableGithubBackup, true);
     dom.window.close();
 });
 
@@ -1559,7 +1559,7 @@ test('the connected state makes enabled ascent backup automatic and keeps deleti
     deleteEl.checked = false;
     deleteEl.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 30));
-    assert.equal(dom.chrome._store.bpbSettings.removeGithubBackupOnDelete, false);
+    assert.equal(dom.chrome._localStore.bpbDeviceSettings?.settings.removeGithubBackupOnDelete, false);
 });
 
 test('an unverified My Ascents session offers a site check without claiming sign-out', async t => {

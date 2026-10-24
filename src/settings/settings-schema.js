@@ -14,6 +14,8 @@
 //
 // src/settings/settings.js owns storage access and layers it on top of this module.
 
+import { photoToolPreferences as ToolPreferences } from '../photos/photo-tool-preferences.js';
+
 const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
 const CHART_DEFAULT_SERIES = Object.freeze(['both', 'distance', 'time']);
 const FAVORITES_SOURCES = Object.freeze(['buddies', 'custom']);
@@ -72,6 +74,11 @@ const validCalendarDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d
 
 const DEFAULTS = {
     units: 'auto', theme: 'system',
+    bpbPeakWeatherModelPast: null, bpbPeakWeatherModelForecast: null,
+    bpbPeakWeatherHourlyMetric: null, bpbAscentWeatherModel: null,
+    bpbAscentWeatherColumn: null, bpbAscentWeatherSlot: null,
+    bpbMapOverlayOpacityV1: null, bpbPhotoSharedStyle: null,
+    ...Object.fromEntries(ToolPreferences.TYPES.map(type => [`bpbPhotoTool:${type}`, null])),
     distanceUnits: 'default', elevationUnits: 'default',
     temperatureUnits: 'default', precipitationUnits: 'default', windUnits: 'default',
     showSunMoon: true,
@@ -109,8 +116,7 @@ const DEFAULTS = {
     // `null` is the user's explicit Original choice; uploaded pixels remain
     // full resolution either way.
     reportImageWidth: 640,
-    // GitHub ascent and TR backup. The feature gate is an ordinary synced boolean
-    // like the others; the token and chosen repo deliberately do NOT live
+    // GitHub ascent and TR backup. The feature gate is device-local; the token and chosen repo deliberately do NOT live
     // in this schema (they must never sync) — src/github/github-auth.js owns those
     // in storage.local. Enabling backup also enables automatic save backup;
     // `autoGithubBackup` remains a derived compatibility field. Deletion mirroring is
@@ -122,13 +128,13 @@ const DEFAULTS = {
     // Automatic GitHub push of the settings backup file on change.
     // Deliberately independent of enableGithubBackup (that gate belongs to
     // ascent and TR backup); inert without a device-local token/repository.
-    autoSettingsBackup: true,
-    // Climber-list transfer defaults on, but needs a device-local GitHub
-    // connection. An explicitly saved false remains an opt-out.
-    autoFavoritesBackup: true,
+    autoSettingsBackup: false,
+    // Climber-list transfer needs explicit consent on this device and a local
+    // GitHub connection. Existing installations retain their choices.
+    autoFavoritesBackup: false,
     // Metadata-only photo-library recovery. Independent of ascent and TR backup;
     // the ImgBB key, deletion URLs, and pixels never enter this setting.
-    autoPhotoLibraryBackup: true,
+    autoPhotoLibraryBackup: false,
     mapRouteColor: ROUTE_STYLE.color, mapRouteWidth: ROUTE_STYLE.width,
     mapRouteCasingColor: ROUTE_STYLE.casingColor, mapRouteCasingWidth: ROUTE_STYLE.casingWidth,
     mapViewportWidth: VIEWPORT.width, mapViewportHeight: VIEWPORT.height,
@@ -152,6 +158,14 @@ const DEFAULTS = {
     // always wins; sort=ascentdate is the default order, not a chosen sort.
     betaSortDateDesc: false
 };
+
+// These values describe this installation, never another device.
+const DEVICE_KEYS = Object.freeze(['mapViewportWidth', 'mapViewportHeight', 'terrainCacheLimitMb',
+    'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete',
+    'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup']);
+const TRANSFER_KEYS = Object.freeze(DEVICE_KEYS.filter(key => !['mapViewportWidth', 'mapViewportHeight', 'terrainCacheLimitMb'].includes(key)));
+const PERSONAL_KEYS = Object.freeze(Object.keys(DEFAULTS).filter(key => key.startsWith('bpb')));
+const PORTABLE_KEYS = Object.freeze(Object.keys(DEFAULTS).filter(key => !DEVICE_KEYS.includes(key)));
 
 const orderedIds = (value, allowed) => {
     const unique = Array.isArray(value) ? [...new Set(value.filter(id => allowed.includes(id)))] : [];
@@ -301,10 +315,27 @@ const clean = raw => {
     s.betaTrMinWords = beta.trMinWords;
     s.betaGps = beta.gps;
     s.betaLink = beta.link;
+    for (const key of ['bpbPeakWeatherModelPast', 'bpbPeakWeatherModelForecast', 'bpbAscentWeatherModel']) {
+        s[key] = typeof s[key] === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(s[key]) ? s[key] : null;
+    }
+    for (const [key, allowed] of Object.entries({
+        bpbPeakWeatherHourlyMetric: ['code', 'temperature', 'precipitation', 'snowfall', 'wind', 'gust', 'cloud', 'freezing'],
+        bpbAscentWeatherColumn: ['report', 'summary'], bpbAscentWeatherSlot: ['before', 'gps', 'after'],
+    })) s[key] = allowed.includes(s[key]) ? s[key] : null;
+    s.bpbMapOverlayOpacityV1 = s.bpbMapOverlayOpacityV1 == null ? null : mapOverlayPreferences(s.bpbMapOverlayOpacityV1);
+    if (s.bpbPhotoSharedStyle != null) {
+        const { color, opacity } = ToolPreferences.clean('route', { style: s.bpbPhotoSharedStyle }).style;
+        s.bpbPhotoSharedStyle = { color, opacity };
+    }
+    for (const type of ToolPreferences.TYPES) {
+        const key = `bpbPhotoTool:${type}`;
+        s[key] = s[key] == null ? null : ToolPreferences.clean(type, s[key]);
+    }
     return s;
 };
 
 const API = {
+    DEVICE_KEYS, TRANSFER_KEYS, PERSONAL_KEYS, PORTABLE_KEYS,
     MAP_OVERLAY_IDS,
     MAP_OVERLAY_OPACITY,
     MAP_LAND_TYPE_IDS,

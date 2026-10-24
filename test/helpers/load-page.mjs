@@ -1,3 +1,4 @@
+import { createSettingsStore } from '../../src/settings/settings.js';
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
@@ -42,7 +43,8 @@ export const evalBundle = async (target, ...bundles) => {
 // Minimal in-memory chrome.storage.sync + onChanged, enough for settings.js.
 export const makeChromeStub = (initial = {}, localInitial = {}, { getSender = () => ({}) } = {}) => {
     const store = { ...initial };
-    const localStore = { ...localInitial };
+    const localStore = { ...(settingsSchema.DEVICE_KEYS.some(key => Object.hasOwn(initial.bpbSettings || {}, key))
+        ? { bpbDeviceSettings: { schemaVersion: 1, settings: Object.fromEntries(settingsSchema.DEVICE_KEYS.map(key => [key, settingsSchema.clean(initial.bpbSettings)[key]])) } } : {}), ...localInitial };
     const listeners = new Set();
     const makeStorageArea = (values, area) => ({
         get: async key => {
@@ -58,7 +60,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}, { getSender = ()
                 changes[key] = { oldValue: values[key], newValue: value };
                 values[key] = value;
             }
-            for (const fn of listeners) fn(changes, area);
+            await Promise.all([...listeners].map(fn => fn(changes, area)));
         },
         remove: async key => {
             const keys = Array.isArray(key) ? key : [key];
@@ -94,7 +96,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}, { getSender = ()
         }
     };
     let delegatedSendMessage = async () => undefined;
-    let settingsPatchQueue = Promise.resolve();
+    const settingsStore = createSettingsStore({ area: chrome.storage.sync, localArea: chrome.storage.local, sendMessage: null });
     let terrainActivationSequence = 0;
     const favoriteMutations = createFavoritesStore({ storage: chrome.storage.local });
     const ignoredMutations = createIgnoredStore({ storage: chrome.storage.local });
@@ -131,13 +133,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}, { getSender = ()
         } else if (DRAFT_MUTATION_TYPES.has(message?.type)) {
             operation = draftRoutes.handlers[message.type](message, getSender());
         } else if (message?.type === 'SETTINGS_PATCH') {
-            operation = settingsPatchQueue.then(async () => {
-                const current = settingsSchema.clean(store.bpbSettings);
-                const next = settingsSchema.clean({ ...current, ...Object.fromEntries(Object.entries(message.patch || {}).filter(([key]) => !message.onlyIfUnset || current[key] == null)) });
-                await chrome.storage.sync.set({ bpbSettings: next });
-                return { ok: true, settings: next };
-            });
-            settingsPatchQueue = operation.catch(() => {});
+            operation = settingsStore.applyPatch(message.patch, { onlyIfUnset: message.onlyIfUnset }).then(settings => ({ ok: true, settings }));
         } else if (message?.type === 'TERRAIN_ACTIVATION_ISSUE'
             && (message.action === 'init' || message.action === 'prefetch')) {
             terrainActivationSequence++;

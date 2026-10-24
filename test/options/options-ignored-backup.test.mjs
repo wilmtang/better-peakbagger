@@ -8,7 +8,7 @@ import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
 import { createGithubRoutes } from '../../src/background/github-routes.js';
 import * as I from '../../src/favorites/ignored-climbers.js';
 registerCleanup();
-test('fresh connected settings default both climber toggles on and preserve an ignored opt-out on reload', async () => {
+test('fresh connected settings keep both climber transfers off until opted in', async () => {
     const h = harness({ syncEnabled: null });
     const prepareChrome = chrome => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
@@ -20,8 +20,11 @@ test('fresh connected settings default both climber toggles on and preserve an i
         };
     };
     const dom = await loadOptions({}, { local: h.values, prepareChrome });
-    await waitFor(dom, () => el(dom, 'ignored-sync-enable').checked && !el(dom, 'favorites-auto-backup').disabled);
-    assert.equal(el(dom, 'favorites-auto-backup').checked, true);
+    await waitFor(dom, () => !el(dom, 'ignored-sync-enable').disabled && !el(dom, 'favorites-auto-backup').disabled);
+    assert.equal(el(dom, 'favorites-auto-backup').checked, false);
+    assert.equal(el(dom, 'ignored-sync-enable').checked, false);
+    el(dom, 'ignored-sync-enable').click();
+    await waitFor(dom, () => el(dom, 'ignored-sync-enable').checked && !el(dom, 'ignored-github').hasAttribute('aria-busy'));
     el(dom, 'ignored-sync-enable').click();
     await waitFor(dom, () => !el(dom, 'ignored-sync-enable').checked && !el(dom, 'ignored-github').hasAttribute('aria-busy'));
     const reloaded = await loadOptions({}, { local: dom.chrome._localStore, prepareChrome });

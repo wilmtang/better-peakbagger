@@ -17,6 +17,7 @@
     window.chrome = {
       runtime: { getURL: path => new URL(`/dist/${path}`, location.origin).href },
       storage: {
+        local: { get: async () => ({}) },
         sync: { get: async () => ({ bpbSettings: { enable3dMap: true, theme, terrainCacheLimitMb: 256 } }) },
         onChanged: { addListener: () => {}, removeListener: () => {} }
       }

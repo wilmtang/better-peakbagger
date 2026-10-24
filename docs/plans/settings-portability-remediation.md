@@ -15,11 +15,22 @@ Each independent unit is committed after its focused checks.
 - **Fixed and verified:** root-backup regression reproduced on the previous
   worker; guarded writes and snapshot-bound replacement confirmation added.
   Focused unit and browser results are recorded with the implementation commit.
+  The settings policy now has 67 portable preferences and nine device-local
+  values (dimensions, cache budget and GitHub transfer choices). Schema v5
+  excludes device values even when importing older files. Weather, overlay and
+  photo-tool preferences migrate only when no synced choice exists. Fresh
+  installs publish no default-filled sync item. Existing local connections
+  preserve legacy transfer choices; new connections and ignored sync start off.
+  Verification: 3,392 full-suite tests passed, plus the added fresh-install
+  regression in the 11-test settings-store suite. ESLint passed. Hidden Chrome
+  156 and Firefox 157 Settings checks passed at 390×900 and 1280×900 in both
+  themes, including enlarged controls, pending/error/retry and focus retention;
+  narrow and desktop screenshots were inspected.
 - **Intentionally not changed:** GitHub settings/favorites remain push plus
   explicit restore. Credentials remain local and excluded from GitHub; manual
   credential export remains explicit. Peakbagger Buddy List is not replaced by
   custom-list import. No remote publishing or writes are part of verification.
 - **Changed but not fully proven:** live GitHub concurrency and real browser
   account sync across physical devices need release verification. Hidden
-  fixture checks do not establish native window/focus behavior. Units 2–4 are
+  fixture checks do not establish native window/focus behavior. Units 3–4 are
   pending.

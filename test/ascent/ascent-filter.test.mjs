@@ -1394,6 +1394,7 @@ test('legacy orders migrate, synced orders win, and keyboard changes reach setti
     await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[0] === 'beta');
     assert.deepEqual(Array.from(dom.chrome._store.bpbSettings.betaPersonalFilterOrder), ['beta', 'link', 'tr', 'gps']);
     await dom.chrome.storage.sync.set({ bpbSettings: { betaPeakFilterOrder: ['gps', 'fav', 'tr', 'link', 'beta'] } });
+    await waitFor(dom, () => filterLabels(dom)[0] === 'GPS track');
     assert.deepEqual(filterLabels(dom), ['GPS track', 'Climbing buddies', 'Trip report', 'Link', 'Has beta']);
     chip(dom, 'Has beta').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[3] === 'beta');

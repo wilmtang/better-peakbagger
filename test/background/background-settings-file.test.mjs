@@ -51,7 +51,7 @@ const harness = ({
         } : {}),
         ...(github ? { [GithubAuth.STORAGE_KEY]: github } : {}),
     });
-    const settingsStore = createSettingsStore({ area: sync, onChanged: null, sendMessage: null });
+    const settingsStore = createSettingsStore({ area: sync, localArea: local, onChanged: null, sendMessage: null });
     const keyStore = ImgbbAuth.createKeyStore(local);
     const authStore = GithubAuth.createAuthStore(local);
     const ext = {

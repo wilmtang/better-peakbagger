@@ -17,7 +17,7 @@ const syncControls = [
 ];
 
 const controlPage = async ({ connected = false, granted = false, settings = {}, local } = {}) => {
-    const h = harness({ syncEnabled: null });
+    const h = harness({ syncEnabled: true });
     h.connected = connected; h.granted = granted;
     h.authReads = 0;
     h.permissionListeners = { added: new Set(), removed: new Set() };
@@ -25,7 +25,7 @@ const controlPage = async ({ connected = false, granted = false, settings = {}, 
         getAccess: async () => h.connected && h.granted ? h.engineOptions.getAccess()
             : { error: { code: 'not-connected' } },
     });
-    h.dom = await loadOptions(settings, { local: local || h.values, prepareChrome: chrome => {
+    h.dom = await loadOptions({ autoFavoritesBackup: true, autoSettingsBackup: true, autoPhotoLibraryBackup: true, ...settings }, { local: local || h.values, prepareChrome: chrome => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
         chrome.permissions = { contains: async () => h.granted,
             onAdded: { addListener: listener => h.permissionListeners.added.add(listener) },
@@ -40,7 +40,7 @@ const controlPage = async ({ connected = false, granted = false, settings = {}, 
                 ? h.engine.status() : h.engine.action(message);
             if (message.type === 'GITHUB_PHOTOS_STATUS' && h.photosReply) return h.photosReply();
             if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true,
-                auto: chrome._store.bpbSettings.autoPhotoLibraryBackup === true, state: null };
+                auto: chrome._localStore.bpbDeviceSettings.settings.autoPhotoLibraryBackup === true, state: null };
             if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') return { ok: true, count: 0 };
             return { ok: true };
         };
@@ -57,7 +57,7 @@ test('disconnected and permission-denied GitHub controls retain preferences with
             removeGithubBackupOnDelete: true } });
         for (const id of ['favorites-auto-backup', 'ignored-sync-enable']) {
             const toggle = el(h.dom, id);
-            assert.equal(toggle.checked, true, `${id} preserves the default-on preference`);
+            assert.equal(toggle.checked, true, `${id} preserves the configured preference`);
             assert.equal(toggle.disabled, true, `${id} needs both connection and permission`);
             toggle.click();
             assert.equal(toggle.checked, true, `${id} cannot silently opt out before setup`);
@@ -213,12 +213,12 @@ test('a photo status snapshot cannot overwrite a newer automatic backup preferen
     h.dom.window.dispatchEvent(new h.dom.window.Event('focus'));
     await waitFor(h.dom, () => !!resolve);
     el(h.dom, 'photos-auto-backup').click();
-    await waitFor(h.dom, () => h.dom.chrome._store.bpbSettings.autoPhotoLibraryBackup === true
+    await waitFor(h.dom, () => h.dom.chrome._localStore.bpbDeviceSettings.settings.autoPhotoLibraryBackup === true
         && el(h.dom, 'photos-auto-backup').checked);
     resolve({ ok: true, auto: false, state: null });
     await nextTask(0);
     assert.equal(el(h.dom, 'photos-auto-backup').checked, true);
-    assert.equal(h.dom.chrome._store.bpbSettings.autoPhotoLibraryBackup, true);
+    assert.equal(h.dom.chrome._localStore.bpbDeviceSettings.settings.autoPhotoLibraryBackup, true);
 });
 
 test('connected optional GitHub choices toggle both ways and preserve opt-outs on reload', async () => {
@@ -230,7 +230,7 @@ test('connected optional GitHub choices toggle both ways and preserve opt-outs o
         assert.equal(el(h.dom, id).checked, initial, `${id} has the intended default`);
         for (const next of [!initial, initial, false]) {
             if (el(h.dom, id).checked !== next) el(h.dom, id).click();
-            await waitFor(h.dom, () => h.dom.chrome._store.bpbSettings[key] === next
+            await waitFor(h.dom, () => h.dom.chrome._localStore.bpbDeviceSettings.settings[key] === next
                 && el(h.dom, id)?.checked === next);
         }
     }
@@ -252,7 +252,7 @@ test('failed writes restore every optional GitHub setting and report the error',
         autoGithubBackup: true, removeGithubBackupOnDelete: true } });
     await waitFor(h.dom, () => accessSettled(h, true));
     const preferences = JSON.stringify(h.dom.chrome._store.bpbSettings);
-    h.dom.chrome.storage.sync.set = async () => { throw new Error('storage write failed'); };
+    h.dom.chrome.storage.local.set = async () => { throw new Error('storage write failed'); };
     for (const [id] of [...syncControls, ['enable-github-backup']]) {
         el(h.dom, id).click();
         await waitFor(h.dom, () => el(h.dom, id)?.checked === true

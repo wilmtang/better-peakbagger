@@ -202,7 +202,7 @@ export function mountAscentWeather() {
     const modelReady = (async () => {
         const revision = modelRevision;
         try {
-            const saved = (await modelReadDeadline.run(chrome.storage.local.get(MODEL_KEY)))?.[MODEL_KEY];
+            const saved = (await modelReadDeadline.run(settings.preferences(MODEL_KEY)))?.[MODEL_KEY];
             if (modelRevision === revision && lifecycle?.state !== 'disposed'
                 && WEATHER_MODELS.some(model => model.id === saved)) rememberedModel = saved;
         } catch { /* Missing, invalid or unavailable storage keeps Best Match usable. */ }
@@ -559,7 +559,7 @@ export function mountAscentWeather() {
         const revision = ++modelRevision, choice = rememberedModel;
         // Persist explicit model IDs only, independently of sync and of the
         // other weather surfaces. Serialize rapid selections in intent order.
-        modelWrites = modelWrites.catch(() => {}).then(() => chrome.storage.local.set({ [MODEL_KEY]: choice })).catch(() => {
+        modelWrites = modelWrites.catch(() => {}).then(() => settings.set({ [MODEL_KEY]: choice })).catch(() => {
             if (revision === modelRevision && lifecycle.state !== 'disposed') {
                 modelSaveError = 'For this visit only · Model choice could not be saved';
                 updateModelDescription();
@@ -673,7 +673,7 @@ export function mountAscentWeather() {
             moveStatus.classList.remove('bpb-card-drag-status-visible');
             column = nextColumn; slot = nextSlot; const revision = ++positionRevision;
             place(); drawChart();
-            positionWrites = positionWrites.catch(() => {}).then(() => chrome.storage.local.set({ [POSITION_KEY]: nextColumn, [SLOT_KEY]: nextSlot })).catch(() => {
+            positionWrites = positionWrites.catch(() => {}).then(() => settings.set({ [POSITION_KEY]: nextColumn, [SLOT_KEY]: nextSlot })).catch(() => {
                 if (revision === positionRevision && lifecycle.state !== 'disposed') {
                     moveStatus.textContent = 'Weather moved for this visit. Position could not be saved.';
                     moveStatus.classList.add('bpb-card-drag-status-visible');
@@ -682,12 +682,12 @@ export function mountAscentWeather() {
             return true;
         },
     });
-    // A delayed read cannot undo a gesture or completed move. Only this device-local
-    // column identifier is stored; it never enters sync or settings exports.
+    // A delayed read cannot undo a gesture or completed move. Only the portable
+    // column identifier is stored; ascent data never enters preferences.
     const startupPositionRevision = positionRevision;
     void (async () => {
         try {
-            const saved = await chrome.storage.local.get([POSITION_KEY, SLOT_KEY]);
+            const saved = await settings.preferences([POSITION_KEY, SLOT_KEY]);
             if (positionRevision !== startupPositionRevision || lifecycle.state === 'disposed' || cardDrag.dragging) return;
             if (saved?.[POSITION_KEY] === 'report' || saved?.[POSITION_KEY] === 'summary') column = saved[POSITION_KEY];
             if (['before', 'gps', 'after'].includes(saved?.[SLOT_KEY])) slot = saved[SLOT_KEY];

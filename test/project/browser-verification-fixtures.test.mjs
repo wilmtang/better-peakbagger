@@ -50,7 +50,10 @@ test('verifier theme changes preserve a pending page settings patch', async () =
         },
         set: async values => { stored = values[STORAGE_KEY]; },
     };
-    const worker = createSettingsStore({ area, sendMessage: null });
+    const local = {};
+    const localArea = { get: async keys => Object.fromEntries(keys.map(key => [key, local[key]])),
+        set: async patch => Object.assign(local, patch), remove: async key => { delete local[key]; } };
+    const worker = createSettingsStore({ area, localArea, sendMessage: null });
     const page = { evaluate: (fn, patch) => executePageFunction(fn, { chrome: {
         storage: { sync: area },
         runtime: { sendMessage: async message => {
@@ -67,7 +70,7 @@ test('verifier theme changes preserve a pending page settings patch', async () =
     releaseRead();
     await Promise.all([pendingMapWrite, themeWrite]);
     assert.equal(stored.theme, 'dark', 'a pending map patch must not restore the old light theme');
-    assert.equal(stored.mapViewportWidth, 520, 'the theme patch must preserve the page mutation');
+    assert.equal(local.bpbDeviceSettings.settings.mapViewportWidth, 520, 'the theme patch must preserve the page mutation');
 });
 
 test('verifier settings patches fail closed when the worker refuses the write', async () => {

@@ -45,7 +45,7 @@ test('popup paints from the cached theme and reconciles the synced preference', 
     dom.window.localStorage.setItem('bpbThemePref', 'dark');
     dom.window.matchMedia = query => ({ matches: query === '(prefers-color-scheme: dark)' });
     dom.window.chrome = {
-        storage: {
+        storage: { local: { get: async () => ({}) },
             sync: { get: async () => ({ bpbSettings: { theme: 'light' } }) },
             onChanged: { addListener() {}, removeListener() {} }
         }
@@ -134,7 +134,7 @@ const loadPopupWithUnits = async (units, overrides = {}) => {
     });
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
-        storage: {
+        storage: { local: { get: async () => ({}) },
             sync: { get: async () => ({ bpbSettings: { units, ...overrides } }), set: async () => {} },
             onChanged: { addListener() {}, removeListener() {} }
         },
@@ -199,7 +199,7 @@ test('popup reads cached results before units resolve and delays the first resul
     dom.window.console.debug = (...args) => diagnostics.push(args);
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
-        storage: {
+        storage: { local: { get: async () => ({}) },
             sync: { get: async () => settings, set: async () => {} },
             onChanged: { addListener() {}, removeListener() {} }
         },
@@ -1483,7 +1483,7 @@ test('a failed capture deletion preserves the current summit selection', async t
 test('opening popup and inbox never starts a capture', async () => {
     const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
     const messages = [];
-    dom.window.chrome = { storage: { sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async message => {
+    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async message => {
         messages.push(message);
         if (message.type === 'CAPTURE_STATUS') return null;
         if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 3 };
@@ -1505,7 +1505,7 @@ test('the master switch hides the popup inbox and blocks opening it', async () =
     const messages = [], listeners = []; let settings = { enableGarminInbox: false };
     dom.window.chrome = { tabs: { query: async () => [] }, runtime: { sendMessage: async message => {
         messages.push(message); return { ok: true, configured: true, pending: 3, queued: 2 };
-    } }, storage: { sync: { get: async () => ({ bpbSettings: settings }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } } };
+    } }, storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: settings }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } } };
     try {
         dom.window.eval(source); await new Promise(resolve => setTimeout(resolve, 0));
         const entry = dom.window.document.querySelector('.inbox-entry');

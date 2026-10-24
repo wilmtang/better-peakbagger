@@ -104,7 +104,7 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
     const auto = el(dom, 'settings-backup-auto');
     auto.checked = true;
     auto.dispatchEvent(new dom.window.Event('change'));
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.autoSettingsBackup === true);
+    await waitFor(dom, () => dom.chrome._localStore.bpbDeviceSettings.settings.autoSettingsBackup === true);
 });
 
 test('settings backup reports in-row progress before its persistent success state', async () => {
@@ -333,18 +333,18 @@ test('map viewport settings preserve and reset to Peakbagger\'s original size', 
     width.value = '900';
     width.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 10));
-    assert.equal(dom.chrome._store.bpbSettings.mapViewportWidth, 900);
+    assert.equal(dom.chrome._localStore.bpbDeviceSettings.settings.mapViewportWidth, 900);
 
     const height = el(dom, 'map-viewport-height');
     height.value = '560';
     height.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 10));
-    assert.equal(dom.chrome._store.bpbSettings.mapViewportHeight, 560);
+    assert.equal(dom.chrome._localStore.bpbDeviceSettings.settings.mapViewportHeight, 560);
 
     el(dom, 'map-viewport-reset').dispatchEvent(new dom.window.Event('click'));
     await new Promise(r => dom.window.setTimeout(r, 10));
-    assert.equal(dom.chrome._store.bpbSettings.mapViewportWidth, 450);
-    assert.equal(dom.chrome._store.bpbSettings.mapViewportHeight, 450);
+    assert.equal(dom.chrome._localStore.bpbDeviceSettings.settings.mapViewportWidth, 450);
+    assert.equal(dom.chrome._localStore.bpbDeviceSettings.settings.mapViewportHeight, 450);
     assert.equal(el(dom, 'status').textContent, 'Map size reset');
 });
 
@@ -414,7 +414,7 @@ test('3D terrain cache limit remains bounded and persists edits', async () => {
     limit.value = '0';
     limit.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 10));
-    assert.equal(dom.chrome._store.bpbSettings.terrainCacheLimitMb, 0);
+    assert.equal(dom.chrome._localStore.bpbDeviceSettings.settings.terrainCacheLimitMb, 0);
 });
 
 test('the removed "minimum trip-report words" control is gone', async () => {

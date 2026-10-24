@@ -9,7 +9,7 @@ import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { cleanGarminKey } from '../garmin/garmin-api.js';
 
 const KIND = 'better-peakbagger-settings';
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const BACKUP_PATH = 'settings.json';
 const API_KEY_NAMES = Object.freeze(['imgbb', 'garmin']);
 const IMPORT_MAX_BYTES = 1024 * 1024;
@@ -26,7 +26,7 @@ const IMPORT_STRUCTURE_LIMITS = Object.freeze({
 const pick = settings => {
     const cleaned = Schema.clean(settings);
     const picked = {};
-    for (const key of Object.keys(Schema.DEFAULTS)) picked[key] = cleaned[key];
+    for (const key of Schema.PORTABLE_KEYS) picked[key] = cleaned[key];
     // Exports are explicit: importing onto a device with legacy local order
     // must not reinterpret an unconfigured source preference as that old order.
     picked.betaPeakFilterOrder ??= [...Schema.PEAK_FILTER_ORDER];

@@ -11,7 +11,7 @@ test('Garmin setup links directly to key creation and requests permission only o
     const messages = []; let permissions = 0;
     const intervals = []; dom.window.setInterval = callback => { intervals.push(callback); return intervals.length; };
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
-        storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
+        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
         runtime: { sendMessage: async message => {
             messages.push(message);
             if (message.type === 'GARMIN_CONNECT') return { ok: false, error: { message: 'Garmin didn’t accept this key.' } };
@@ -37,7 +37,7 @@ test('inbox keeps drafts visible during a rejected-key state', async () => {
         error: { code: 'key-rejected', message: 'Garmin needs a new API key. Imports paused; your drafts are safe.' },
         items: [{ id: '123', summary: { date: '2026-10-23', type: 'hiking' }, phase: 'ready', saved: [],
             analysis: { matches: [{ id: 1, name: 'Example Peak', classification: 'strong' }] } }] }) },
-    storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
     dom.window.eval(inboxSource); await tick();
     assert.equal(dom.window.document.querySelectorAll('.garmin-activity').length, 1);
     assert.equal(dom.window.document.querySelector('#inbox-update-key').hidden, false);
@@ -57,7 +57,7 @@ test('review exposes refreshed results explicitly and updates handoff recovery w
         calls.push(message);
         if (message.type === 'GARMIN_OPEN_DRAFTS') item.handoff = true;
         return { ok: true, ...structuredClone(state) };
-    } }, storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    } }, storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
     dom.window.eval(inboxSource); await tick(); const d = dom.window.document;
     d.querySelector('.garmin-activity button').click();
     item.phase = 'ready'; item.analysis = { matches: [{ id: 1, name: 'Ready Peak', classification: 'strong' }] };
@@ -77,7 +77,7 @@ test('inbox identifies queued activities and preserves them during a human check
     const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
     dom.window.chrome = { runtime: { sendMessage: async () => ({ ok: true, configured: true, enabled: true,
         queued: 2, peakbaggerBlocked: { code: 'cloudflare' }, history: [], items: [1, 2].map(id => ({ id: String(id), phase: 'waiting', summary: { date: '2026-10-23', type: 'hiking' } })) }) },
-    storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
     try {
         dom.window.eval(inboxSource); await tick();
         const d = dom.window.document;
@@ -92,7 +92,7 @@ test('a bookmarked inbox stays hidden while disabled and does not poll its data'
     const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
     let messages = 0;
     dom.window.chrome = { runtime: { sendMessage: async () => { messages++; return { ok: true, items: [] }; } },
-        storage: { sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } } };
+        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } } };
     try {
         dom.window.eval(inboxSource); await tick();
         assert.equal(dom.window.document.querySelector('#inbox-content').hidden, true);

@@ -705,12 +705,12 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
     assert.equal(forbidden.error, 'forbidden');
 });
 
-test('connected worker defaults sync both climber lists without the ascent backup gate', async () => {
+test('explicit local ignored sync and legacy favorites backup work without the ascent backup gate', async () => {
     const backend = gitDataBackend();
     const ignored = cid => ({ cid, name: `Climber ${cid}`, addedAt: 1 });
     const favorites = [{ cid: 3, name: 'Buddy', addedAt: 1, source: 'buddy' }];
     const worker = createWorker({ settings: { enableGithubBackup: false }, auth: AUTH, ignoredSync: null,
-        local: { bpbGithubAuth: structuredClone(AUTH),
+        local: { bpbGithubAuth: structuredClone(AUTH), [IGNORED_SYNC_KEY]: { ...readIgnoredSyncState(undefined), enabled: true },
             [IGNORED_KEY]: { schemaVersion: 1, revision: 1, entries: [ignored(1)] },
             [Favorites.FAVORITES_KEY]: { schemaVersion: 1, entries: favorites } },
         github: (method, path, body) => {
@@ -1017,7 +1017,7 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
     assert.equal(committed.settings.theme, 'dark');
     assert.equal(committed.settings.showSunMoon, false);
     assert.equal(committed.settings.showWeather, false);
-    assert.deepEqual(Object.keys(committed.settings), Object.keys(Schema.DEFAULTS));
+    assert.deepEqual(Object.keys(committed.settings), Schema.PORTABLE_KEYS);
     assert.equal('apiKeys' in committed, false,
         'GitHub settings backup must remain credential-free even when a local API key exists');
     assert.equal('githubConnection' in committed, false,
@@ -1149,7 +1149,7 @@ test('settings auto backup debounces changes, commits once, and skips an equal s
     assert.equal(backend.state.commits, 1);
     const payload = JSON.parse(backend.state.contents['settings.json']);
     assert.equal(payload.settings.theme, 'dark');
-    assert.equal(payload.settings.autoSettingsBackup, true);
+    assert.equal(payload.settings.autoSettingsBackup, undefined);
     assert.equal(payload.settings.showSunMoon, false);
     assert.equal(payload.settings.showWeather, false);
 
@@ -1299,7 +1299,7 @@ test('backup fails closed when the feature is off, disconnected, or the sender i
     const noAuth = await createWorker({ auth: null, github: backend.handler }).send({
         type: 'GITHUB_BACKUP_ASCENT', page: { ascent: { id: 1 }, peak: { id: 2, name: 'X' } },
     }, PEAK_SENDER);
-    assert.equal(noAuth.error.code, 'not-connected');
+    assert.equal(noAuth.error.code, 'disabled');
 
     // Feature disabled.
     const off = await createWorker({ settings: { enableGithubBackup: false }, auth: AUTH, github: backend.handler }).send({

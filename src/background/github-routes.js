@@ -460,6 +460,9 @@ export function createGithubRoutes({
             },
             installationId: r.installationId ?? null,
         };
+        // Freeze this device's choices before the new connection can enable
+        // any legacy automatic-transfer preferences inherited from sync.
+        await Settings.migrate();
         const installed = await GithubAuth.authStore.replaceIfSnapshot(snapshot, replacement);
         if (!installed.replaced) return supersededGithubAuth();
         const settings = await Settings.get();
@@ -1244,7 +1247,7 @@ export function createGithubRoutes({
     const buildSettingsBackup = async () => {
         let settings;
         try {
-            settings = await Settings.requireCurrent();
+            settings = await Settings.requireCurrent({ includeLegacy: true });
         } catch (cause) {
             console.error('Better Peakbagger: settings backup read failed', cause);
             throw PublicErrors.exception(

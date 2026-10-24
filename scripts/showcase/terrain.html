@@ -40,6 +40,7 @@
         }
       },
       storage: {
+        local: { get: async () => ({}) },
         sync: { get: async () => ({ bpbSettings: fixtureSettings }) },
         onChanged: { addListener: () => {}, removeListener: () => {} }
       }

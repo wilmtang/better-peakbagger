@@ -4024,6 +4024,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     runDetachedCleanup('capture payload recovery', reconcileCapturePayloads);
     runDetachedCleanup('temporary Peakbagger tab recovery', () =>
         cleanupExpiredPeakbaggerHelperLeases(now()));
+    ext.runtime.onInstalled?.addListener(() => { runDetachedCleanup('settings storage migration', Settings.migrate); });
     runDetachedCleanup('automatic backup watchdog startup', () =>
         githubRoutes.startAutomaticBackups());
 

@@ -39,7 +39,7 @@ function setup({ source = html, url = 'https://www.peakbagger.com/peak.aspx?pid=
     win.fetch = (url, init) => { requests.push({ url, init }); return fetchFn(url, init); };
     win.eval(bundle);
     return { win, doc, requests, local, observers, listeners,
-        settings: patch => listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...saved, ...patch } } }, 'sync')),
+        settings: patch => Promise.all(listeners.map(fn => fn({ bpbSettings: { newValue: { ...saved, ...patch } } }, 'sync'))),
         close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
 const settled = env => waitFor(() => env.doc.querySelector('#bpb-peak-snow')?.getAttribute('aria-busy') === 'false'
@@ -70,7 +70,7 @@ test('disabling SNOTEL aborts catalog work for both card and map and ignores lat
     try {
         await waitFor(() => held.length === 1);
         mapMessage(env, { type: 'get', requestId: 1 });
-        env.settings({ showSnotel: false, showWeather: true });
+        await env.settings({ showSnotel: false, showWeather: true });
         assert.ok(held.every(request => request.init.signal.aborted));
         held.forEach(request => request.resolve(reply(request.url)));
         await new Promise(resolve => setTimeout(resolve, 0));
@@ -115,7 +115,7 @@ test('map conditions can reveal the lazy card and select a station beyond the de
         const requests = env.requests.length;
         mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
         assert.equal(select.value, '999:WA:SNTL'); assert.equal(env.requests.length, requests, 'map selection respects NRCS cooldown');
-        env.settings({ showSnotel: false }); mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
+        await env.settings({ showSnotel: false }); mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
         assert.equal(env.requests.length, requests);
     } finally { env.close(); }
 });
@@ -149,7 +149,7 @@ for (const [heading, system] of peakUnitHeadings) {
             assert.match(station(), system === 'metric' ? /km away.*1570 m/ : /mi away.*5150 ft/);
             assert.match(depth(), system === 'metric' ? /91\.4 cm/ : /36\.0 in/);
             const count = env.requests.length;
-            env.settings({ units: 'auto', precipitationUnits: 'imperial', elevationUnits: 'metric' });
+            await env.settings({ units: 'auto', precipitationUnits: 'imperial', elevationUnits: 'metric' });
             assert.match(station(), /1570 m/); assert.match(depth(), /36\.0 in/);
             assert.equal(env.requests.length, count, 'unit changes reuse canonical data');
         } finally { env.close(); }
@@ -180,7 +180,7 @@ test('snow-depth trend labels observation dates and each plotted reading', async
             [dates[0], dates[4], dates[7]], 'the horizontal axis shows daily observation dates');
         const dot = env.doc.querySelector('.bpb-snow-graph circle');
         assert.match(dot.querySelector('title').textContent, new RegExp(`${dates[0]}.*in`));
-        env.settings({ units: 'metric' });
+        await env.settings({ units: 'metric' });
         assert.match(env.doc.querySelector('.bpb-snow-graph circle title').textContent, /cm/);
     } finally { env.close(); }
 });
@@ -199,7 +199,7 @@ test('snow-depth chart supports keyboard readings without requests and clears se
         assert.equal(env.doc.querySelectorAll('.bpb-snow-cursor').length, 1);
         key('ArrowRight'); assert.match(reading(), /Oct 11.*33\.0 in/);
         key('End'); assert.match(reading(), /Oct 17.*39\.0 in/);
-        env.settings({ units: 'metric' }); assert.match(reading(), /Oct 17.*99\.1 cm/);
+        await env.settings({ units: 'metric' }); assert.match(reading(), /Oct 17.*99\.1 cm/);
         assert.equal(env.requests.length, requests);
         key('Escape'); assert.match(reading(), /Hover, tap or use ← →/);
         assert.equal(env.doc.querySelectorAll('.bpb-snow-cursor').length, 0);
@@ -272,7 +272,7 @@ test('SWE is explicitly named and keeps its own measurement, timestamp and daily
         assert.equal(dailySwe(), '12.70 in');
         assert.match(env.doc.querySelector('.bpb-snow-details').textContent, /Snow water equivalent \(SWE\) is the water held in the snowpack/);
         const requests = env.requests.length;
-        env.settings({ units: 'metric' });
+        await env.settings({ units: 'metric' });
         assert.equal(metrics[1].querySelector('strong').textContent, '312.4 mm');
         assert.equal(dailySwe(), '322.6 mm');
         assert.equal(env.requests.length, requests, 'SWE unit changes use the original observation');
@@ -285,8 +285,8 @@ test('weather setting must resolve and card must approach viewport before any re
         await waitFor(() => env.observers.length === 1);
         assert.equal(env.requests.length, 0);
         env.observers[0].callback([{ isIntersecting: true }]); await settled(env);
-        env.settings({ showSnotel: false }); assert.equal(env.doc.querySelector('#bpb-peak-snow-row').hidden, true);
-        env.settings({ showSnotel: true }); await waitFor(() => env.observers.length === 2);
+        await env.settings({ showSnotel: false }); assert.equal(env.doc.querySelector('#bpb-peak-snow-row').hidden, true);
+        await env.settings({ showSnotel: true }); await waitFor(() => env.observers.length === 2);
         env.observers[1].callback([{ isIntersecting: true }]); await settled(env);
         assert.equal(env.requests.length, 3, 'reenabling reuses cached observations');
     } finally { env.close(); }
@@ -313,7 +313,7 @@ test('a queued visibility callback from a disabled generation cannot start work 
     const env = setup({ lazy: true });
     try {
         await waitFor(() => env.observers.length === 1);
-        env.settings({ showSnotel: false }); env.settings({ showSnotel: true });
+        await env.settings({ showSnotel: false }); await env.settings({ showSnotel: true });
         await waitFor(() => env.observers.length === 2);
         env.observers[0].callback([{ isIntersecting: true }]);
         await new Promise(resolve => setTimeout(resolve, 0)); assert.equal(env.requests.length, 0);
@@ -403,9 +403,9 @@ test('Refresh stays focused and cannot duplicate work while pending; failure ret
         hold = true; button.focus(); button.click(); button.click();
         await waitFor(() => held); assert.equal(env.requests.length, 4); assert.equal(env.doc.activeElement, button);
         assert.equal(button.disabled, false); assert.equal(button.getAttribute('aria-disabled'), 'true');
-        env.settings({ showSnotel: false }); assert.equal(env.requests[3].init.signal.aborted, true);
+        await env.settings({ showSnotel: false }); assert.equal(env.requests[3].init.signal.aborted, true);
         held.resolve(reply(held.url)); hold = false; fail = true;
-        env.settings({ showSnotel: true }); await settled(env);
+        await env.settings({ showSnotel: true }); await settled(env);
         button.click(); await waitFor(() => env.doc.querySelector('.bpb-snow-status').textContent.includes('Could not load'));
         assert.equal(env.doc.querySelector('.bpb-snow-metrics').textContent, before);
         assert.equal(env.doc.activeElement, button); assert.equal(button.getAttribute('aria-disabled'), 'false');
@@ -456,7 +456,7 @@ test('missing sensors and null readings remain unavailable, while zero remains v
         assert.equal(env.doc.querySelector('.bpb-snow-graph p').hidden, false);
         assert.equal(env.doc.querySelectorAll('.bpb-snow-graph circle').length, 0);
         assert.equal(env.doc.querySelector('.bpb-snow-graph').tabIndex, -1);
-        env.settings({ units: 'metric' });
+        await env.settings({ units: 'metric' });
         assert.equal(env.doc.querySelectorAll('.bpb-snow-metric strong')[1].textContent, '0.0 mm');
         assert.equal(env.requests.length, 3, 'unit changes use the loaded data');
     } finally { env.close(); }

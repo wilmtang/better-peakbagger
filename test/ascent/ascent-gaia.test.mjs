@@ -208,8 +208,10 @@ test('provider preferences reorder and hide buttons live, including all off', as
     fireTrustedEvent(button(h.dom, 'onx'), 'click');
     assert.equal(h.sent.length, 0);
     await h.dom.window.chrome.storage.sync.set({ bpbSettings: { mapProvidersEnabled: [] } });
+    await waitFor(h.dom, () => control(h.dom).hidden);
     assert.equal(control(h.dom).hidden, true);
     await h.dom.window.chrome.storage.sync.set({ bpbSettings: { mapProvidersEnabled: ['onx'] } });
+    await waitFor(h.dom, () => !control(h.dom).hidden && visible()[0] === 'onx');
     assert.equal(control(h.dom).hidden, false);
     assert.deepEqual(visible(), ['onx']);
     h.dom.window.close();

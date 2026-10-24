@@ -240,7 +240,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         chromeVerifier.indexOf('const grownInteractedHeight ='),
     );
     assert.match(heightPersistence,
-        /waitForCondition\(async[\s\S]*await chrome\.storage\.sync\.get[\s\S]*persistedEffectiveHeight === firstPointerHeight\.contentHeight/,
+        /waitForCondition\(async[\s\S]*await chrome\.storage\.local\.get[\s\S]*persistedEffectiveHeight === firstPointerHeight\.contentHeight/,
         'map resize persistence must await the exact asynchronous storage result');
     assert.match(heightPersistence, /current value: \$\{persistedEffectiveHeight\}/,
         'storage timeout diagnostics must include the latest observed height');

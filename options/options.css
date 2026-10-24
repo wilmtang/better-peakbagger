@@ -175,8 +175,8 @@ button.secondary, a.secondary { align-self: flex-end; }
 .photos-restore-actions button.secondary { align-self: auto; }
 
 .beta-signals { display: flex; flex-direction: column; gap: 9px; }
-.check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
-.check input[type="checkbox"] { width: 15px; height: 15px; margin: 0; }
+.check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: normal; }
+.check input[type="checkbox"] { width: 15px; height: 15px; margin: 0; flex: 0 0 auto; }
 .beta-tr-signal { cursor: default; }
 .beta-tr-signal > label { cursor: pointer; }
 .beta-tr-threshold { display: flex; align-items: center; gap: 7px; }

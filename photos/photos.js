@@ -365,12 +365,13 @@ const rememberTool = (type, patch) => {
         [preferenceKey(type)]: toolPreferences[type],
         ...(Object.keys(shared).length ? { [SHARED_STYLE_KEY]: { color, opacity } } : {}),
     });
-    preferenceWrites = preferenceWrites.then(() => ext.storage.local.set(saved))
-        .catch(() => toast('Tool settings apply now, but could not be saved on this device.'));
+    preferenceWrites = preferenceWrites.then(() => Settings.set(saved))
+        .catch(() => toast('Tool settings apply now, but could not be remembered.'));
 };
 const loadToolPreferences = async () => {
     try {
-        const stored = await ext.storage.local.get([...Project.OBJECT_TYPES.map(preferenceKey), VIEWPORT_KEY, SHARED_STYLE_KEY]);
+        const [preferences, local] = await Promise.all([Settings.preferences([...Project.OBJECT_TYPES.map(preferenceKey), SHARED_STYLE_KEY]), ext.storage.local.get(VIEWPORT_KEY)]);
+        const stored = { ...preferences, ...local };
         viewportSize = {
             width: cleanViewportDimension(stored[VIEWPORT_KEY]?.width, 280, 2400),
             height: cleanViewportDimension(stored[VIEWPORT_KEY]?.height, 240, 1400),

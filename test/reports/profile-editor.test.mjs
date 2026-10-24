@@ -121,7 +121,13 @@ test('profile edits never read or overwrite ascent drafts, upload photos, or sna
         settings: { addReportCredit: true, enableGithubBackup: true },
         prepare: d => {
             d.chrome._localStore[key] = draft;
-            d.chrome.storage.local.get = async () => { localReads++; throw new Error('Profile must not read local report drafts'); };
+            const readLocal = d.chrome.storage.local.get;
+            d.chrome.storage.local.get = async keys => {
+                if (keys == null || (Array.isArray(keys) ? keys : [keys]).some(name => name.startsWith('bpbReportDraft:'))) {
+                    localReads++; throw new Error('Profile must not read local report drafts');
+                }
+                return readLocal(keys);
+            };
             d.chrome.runtime.sendMessage = async message => { messages.push(message); return { ok: true }; };
             const nativeTimeout = d.window.setTimeout.bind(d.window);
             d.window.setTimeout = (callback, delay, ...args) => {

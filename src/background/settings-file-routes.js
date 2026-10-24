@@ -88,7 +88,7 @@ export function createSettingsFileRoutes({
         const includeCredentials = message?.includeCredentials === true;
         try {
             const [currentSettings, imgbb, auth, garminSnapshot] = await Promise.all([
-                settings.requireCurrent(),
+                settings.requireCurrent({ includeLegacy: true }),
                 includeCredentials ? keyStore.read() : null,
                 includeCredentials ? authStore.read() : null,
                 includeCredentials && garmin ? garmin.readSnapshot() : null,
@@ -177,7 +177,7 @@ export function createSettingsFileRoutes({
         let previousGithubSnapshot;
         try {
             [previousSettings, previousImgbb, previousGithubSnapshot] = await Promise.all([
-                settings.requireCurrent(),
+                settings.requireCurrent({ includeLegacy: true }),
                 keyStore.read(),
                 importsGithubConnection ? authStore.readSnapshot() : null,
             ]);

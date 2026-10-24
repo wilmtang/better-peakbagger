@@ -31,6 +31,7 @@
       document.documentElement.dataset.bpbTheme = settings.theme;
       // The isolated bridge imports settings and reads chrome.storage now.
       window.chrome.storage = {
+        local: { get: async () => ({}) },
         sync: { get: async () => ({ bpbSettings: settings }) },
         onChanged: { addListener: () => {}, removeListener: () => {} }
       };

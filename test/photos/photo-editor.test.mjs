@@ -56,7 +56,7 @@ const loadEditor = async ({
     storageEstimate = undefined,
     subtle = globalThis.crypto.subtle,
     imageSize = IMAGE,
-    localPreferences = {},
+    localPreferences = {}, syncedPreferences = {},
 } = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
@@ -145,7 +145,7 @@ const loadEditor = async ({
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
     if (fetchImpl) win.fetch = fetchImpl;
-    const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640 } }, localPreferences);
+    const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640, ...syncedPreferences } }, localPreferences);
     chrome.runtime.sendMessage = async message => {
         if (message?.type === 'PHOTO_IMGBB_STATUS') return imgbbStatus;
         if (message?.type === 'PHOTO_IMGBB_LEASE_KEY') return { ok: true, key: 'test-imgbb-key' };
@@ -1334,9 +1334,7 @@ test('PNG can stay lossless or switch to a quality-controlled JPEG with real siz
     assert.doesNotMatch(note.textContent, /GitHub/i,
         'an ascent-backup warning is noise while that feature is off');
 
-    await chrome.storage.sync.set({
-        bpbSettings: { ...chrome._store.bpbSettings, enableGithubBackup: true },
-    });
+    await chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { enableGithubBackup: true } });
     await waitFor(page.dom, () => /GitHub may not show.+backed-up reports/i.test(note.textContent));
     assert.equal(estimate.parentElement.classList.contains('is-warning'), true);
 
@@ -3300,7 +3298,7 @@ test('tools share color and opacity but keep their other preferences after reope
     change('label-background', false, 'change');
     change('text-align', 'right', 'change');
     await page.settle();
-    const reopened = await loadEditor({ localPreferences: page.chrome._localStore });
+    const reopened = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
     reopened.tool('route');
     assert.equal(reopened.doc.getElementById('object-color').value, '#1e88e5');
     assert.equal(reopened.doc.getElementById('object-opacity').value, '40');
@@ -3420,7 +3418,7 @@ test('viewport dimensions persist independently of image zoom and reject invalid
     }
     page.click(doc.getElementById('zoom-in'));
     await page.settle();
-    const next = await loadEditor({ localPreferences: page.chrome._localStore });
+    const next = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
     assert.equal(next.doc.getElementById('viewport-width').value, '600');
     assert.equal(next.doc.getElementById('viewport-height').value, '480');
     assert.equal(next.doc.getElementById('photo-zoom').value, 'fit');
@@ -3617,7 +3615,7 @@ test('text labels remember explicit and Auto width across placements and reopeni
     page.pointer('pointerdown', 300, 300);
     assert.equal(width.value, '275');
     await page.settle();
-    const reopened = await loadEditor({ localPreferences: page.chrome._localStore });
+    const reopened = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
     t.after(() => reopened.win.close());
     reopened.tool('text'); reopened.pointer('pointerdown', 100, 100);
     assert.equal(reopened.doc.getElementById('text-width').value, '275');
@@ -3625,7 +3623,7 @@ test('text labels remember explicit and Auto width across placements and reopeni
     page.pointer('pointerdown', 400, 400);
     assert.equal(width.value, '');
     await page.settle();
-    const auto = await loadEditor({ localPreferences: page.chrome._localStore });
+    const auto = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
     t.after(() => auto.win.close());
     auto.tool('text'); auto.pointer('pointerdown', 100, 100);
     assert.equal(auto.doc.getElementById('text-width').value, '');

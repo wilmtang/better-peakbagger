@@ -235,7 +235,7 @@ export function mountPeakWeather() {
                 hourlyMetric = metric;
                 // Persist explicit choices only; mounting or redrawing a day
                 // must not overwrite a newer choice from another open page.
-                try { void chrome.storage.local.set({ [hourlyMetricKey]: metric }).catch(() => {}); } catch { /* Storage failure keeps the tabs usable. */ }
+                try { void settings.set({ [hourlyMetricKey]: metric }).catch(() => {}); } catch { /* Storage failure keeps the tabs usable. */ }
             }, state });
         hourlyCharts.set(detail, chart);
     };
@@ -388,7 +388,7 @@ export function mountPeakWeather() {
         choices[period] = select.value;
         // Separate keys avoid overwriting the other period's choice from a
         // concurrently open tab. Store only the allowlisted model identifier.
-        try { void chrome.storage.local.set({ [modelKeys[period]]: select.value }).catch(() => {}); } catch { /* Storage failure keeps the page usable. */ }
+        try { void settings.set({ [modelKeys[period]]: select.value }).catch(() => {}); } catch { /* Storage failure keeps the page usable. */ }
         cancelUpdates(); cancel(); void load();
     });
     select.addEventListener('pointerdown', event => { if (cooldown.active()) event.preventDefault(); });
@@ -458,7 +458,7 @@ export function mountPeakWeather() {
     // settings read/notification. Regional choices may not cover this summit.
     void (async () => {
         try {
-            const saved = await chrome.storage.local.get([...Object.values(modelKeys), hourlyMetricKey]);
+            const saved = await settings.preferences([...Object.values(modelKeys), hourlyMetricKey]);
             hourlyMetric = resolvePeakHourlyMetric(saved?.[hourlyMetricKey]);
             const window = weatherPeakWindow(zone);
             for (const key of Object.keys(modelKeys)) {

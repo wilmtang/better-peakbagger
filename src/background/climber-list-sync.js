@@ -10,7 +10,7 @@ const remoteSignature = entries => entries === null ? null : I.signature(entries
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 export const IGNORED_SYNC_ALARM = 'bpb-ignored-sync';
 export const IGNORED_CHANGE_ALARM = 'bpb-ignored-sync-changes';
-const initialState = () => ({ schemaVersion: 1, enabled: true, controlRevision: 0,
+const initialState = () => ({ schemaVersion: 1, enabled: false, controlRevision: 0,
     scope: null, base: null, pending: null, review: null, phase: 'local', error: '',
     lastBackup: null, lastSuccess: null, lastChecked: 0, retryAt: 0, head: null });
 const automaticSyncBlocked = state => !state.enabled

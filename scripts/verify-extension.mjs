@@ -306,7 +306,7 @@ try {
         check(storageProbe.onChanged && storageProbe.values.join(',') === 'sync,local,session',
             `Chrome storage areas or storage.onChanged did not round-trip: ${JSON.stringify(storageProbe)}`);
         await waitForCondition(async () => (await optionsPage.evaluate(readDisconnectedGithubControls)).ready, {
-            description: 'default-on, disabled GitHub climber sync before setup',
+            description: 'opt-in GitHub climber sync disabled before setup',
         });
         const imgbbSaved = await optionsPage.evaluate(async () => {
             const response = await chrome.runtime.sendMessage({
@@ -3380,11 +3380,9 @@ try {
     const effectiveHeightSettingsPage = await context.newPage();
     await effectiveHeightSettingsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
     const originalHeightSettings = await effectiveHeightSettingsPage.evaluate(async () => {
-        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
-        await chrome.storage.sync.set({
-            bpbSettings: { ...bpbSettings, mapViewportHeight: 720 },
-        });
-        return bpbSettings;
+        const { bpbDeviceSettings } = await chrome.storage.local.get('bpbDeviceSettings');
+        await chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: 720 } });
+        return bpbDeviceSettings.settings;
     });
     const effectiveHeightViewport = offPage.viewportSize();
     const mapResizeGeometry = await offPage.evaluate(() => {
@@ -3484,8 +3482,8 @@ try {
     let persistedEffectiveHeight;
     await waitForCondition(async () => {
         persistedEffectiveHeight = await effectiveHeightSettingsPage.evaluate(async () => {
-            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
-            return bpbSettings.mapViewportHeight;
+            const { bpbDeviceSettings } = await chrome.storage.local.get('bpbDeviceSettings');
+            return bpbDeviceSettings.settings.mapViewportHeight;
         });
         return persistedEffectiveHeight === firstPointerHeight.contentHeight;
     }, { description: 'the resized map height to persist', timeoutMs: 5000 }).catch(error => {
@@ -3513,7 +3511,7 @@ try {
         final: await readEffectiveMapHeight(),
     })}`);
     await effectiveHeightSettingsPage.evaluate(async original => {
-        await chrome.storage.sync.set({ bpbSettings: original });
+        await chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: original.mapViewportHeight } });
     }, originalHeightSettings);
     await effectiveHeightSettingsPage.close();
     if (effectiveHeightViewport) await offPage.setViewportSize(effectiveHeightViewport);

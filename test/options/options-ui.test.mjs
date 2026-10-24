@@ -436,7 +436,7 @@ test('settings are grouped by the surface they affect', async () => {
         const card = el(dom, cardId);
         assert.equal(card.querySelectorAll('.climber-sync-row').length, 1);
         assert.equal(card.querySelector('.climber-sync-row .check input').id, toggleId);
-        assert.match(card.querySelector('.check').textContent, /Sync .* climbers with GitHub/);
+        assert.match(card.querySelector('.check').textContent, /Back up favorites automatically on this device|Sync ignored climbers from this device/);
         assert.equal(card.querySelector('button[id$="-restore"]').textContent, 'Restore…');
     }
 });

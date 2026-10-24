@@ -157,14 +157,14 @@ test('removing a Buddy from custom favorites is opt-in', () => {
     assert.equal(Schema.clean({ removeFavoriteWhenBuddyRemoved: 'yes' }).removeFavoriteWhenBuddyRemoved, false);
 });
 
-test('automatic settings backup defaults on, preserves opt-outs, and is independent of ascent and TR backup', () => {
-    assert.equal(Schema.DEFAULTS.autoSettingsBackup, true);
-    assert.equal(Schema.clean({}).autoSettingsBackup, true);
+test('automatic settings backup defaults off, preserves choices, and is independent of ascent and TR backup', () => {
+    assert.equal(Schema.DEFAULTS.autoSettingsBackup, false);
+    assert.equal(Schema.clean({}).autoSettingsBackup, false);
     assert.equal(Schema.clean({
         enableGithubBackup: false,
         autoSettingsBackup: true
     }).autoSettingsBackup, true);
-    assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, true);
+    assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, false);
     assert.equal(Schema.clean({ autoSettingsBackup: false }).autoSettingsBackup, false);
 });
 
@@ -174,25 +174,25 @@ test('enabling ascent backup also enables automatic saves, including legacy manu
     assert.equal(Schema.clean({ enableGithubBackup: false, autoGithubBackup: true }).autoGithubBackup, false);
 });
 
-test('automatic favorites backup defaults on, preserves opt-outs, and is independent of ascent and TR backup', () => {
-    assert.equal(Schema.DEFAULTS.autoFavoritesBackup, true);
-    assert.equal(Schema.clean({}).autoFavoritesBackup, true);
+test('automatic favorites backup defaults off, preserves choices, and is independent of ascent and TR backup', () => {
+    assert.equal(Schema.DEFAULTS.autoFavoritesBackup, false);
+    assert.equal(Schema.clean({}).autoFavoritesBackup, false);
     assert.equal(Schema.clean({
         enableGithubBackup: false,
         autoFavoritesBackup: true
     }).autoFavoritesBackup, true);
     assert.equal(Schema.clean({ autoFavoritesBackup: false }).autoFavoritesBackup, false);
-    assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, true);
+    assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, false);
 });
 
-test('automatic photo-library metadata backup defaults on, preserves opt-outs, and is independent of ascent and TR backup', () => {
-    assert.equal(Schema.DEFAULTS.autoPhotoLibraryBackup, true);
-    assert.equal(Schema.clean({}).autoPhotoLibraryBackup, true);
+test('automatic photo-library metadata backup defaults off, preserves choices, and is independent of ascent and TR backup', () => {
+    assert.equal(Schema.DEFAULTS.autoPhotoLibraryBackup, false);
+    assert.equal(Schema.clean({}).autoPhotoLibraryBackup, false);
     assert.equal(Schema.clean({
         enableGithubBackup: false,
         autoPhotoLibraryBackup: true
     }).autoPhotoLibraryBackup, true);
-    assert.equal(Schema.clean({ autoPhotoLibraryBackup: 'yes' }).autoPhotoLibraryBackup, true);
+    assert.equal(Schema.clean({ autoPhotoLibraryBackup: 'yes' }).autoPhotoLibraryBackup, false);
     assert.equal(Schema.clean({ autoPhotoLibraryBackup: false }).autoPhotoLibraryBackup, false);
 });
 

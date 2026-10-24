@@ -52,7 +52,7 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
         if (data.type === 'save') {
             preferencesRevision++;
             preferences = Schema.mapOverlayPreferences(data.preferences);
-            try { await storage.set({ [OVERLAY_PREFERENCES_KEY]: preferences }); } catch { /* Paint works without storage. */ }
+            try { await settings.set({ [OVERLAY_PREFERENCES_KEY]: preferences }); } catch { /* Paint works without storage. */ }
             return;
         }
         if (data.type === 'cancel') { cancel(); return; }
@@ -116,13 +116,18 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
             const snapshot = reply?.ok && readLayerSnapshot(reply.snapshot); if (snapshot) post({ type: 'handoff', snapshot });
         }, () => {});
     }
-    const unsubscribe = settings.subscribe(next => { unitSettings = next; settingsReady = true; allowed = next.showSnotel === true; if (!allowed) cancel(); announce(); });
+    const unsubscribe = settings.subscribe(next => {
+        unitSettings = next; settingsReady = true;
+        if (next[OVERLAY_PREFERENCES_KEY] != null) preferences = Schema.mapOverlayPreferences(next[OVERLAY_PREFERENCES_KEY]);
+        allowed = next.showSnotel === true; if (!allowed) cancel(); announce();
+    });
     void settings.requireCurrent().then(next => {
-        if (settingsReady) return; // A storage change already supplied newer settings.
-        unitSettings = next; settingsReady = true; allowed = next.showSnotel === true; announce();
+        if (settingsReady) return;
+        unitSettings = next; settingsReady = true;
+        allowed = next.showSnotel === true; announce();
     }, () => { if (!settingsReady) { settingsReady = true; allowed = false; announce(); } });
-    void Promise.resolve().then(() => storage.get(OVERLAY_PREFERENCES_KEY)).then(value => {
-        if (preferencesRevision === 0) preferences = Schema.mapOverlayPreferences(value?.[OVERLAY_PREFERENCES_KEY]);
+    void settings.preferences(OVERLAY_PREFERENCES_KEY).then(next => {
+        if (preferencesRevision === 0) preferences = Schema.mapOverlayPreferences(next[OVERLAY_PREFERENCES_KEY]);
     }, () => {}).finally(() => { preferencesReady = true; announce(); });
     const lifecycle = createPageLifecycle({ ownerWindow,
         onSuspend: () => { active = false; cancel(); cancelBC(); },

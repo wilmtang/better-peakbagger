@@ -58,7 +58,7 @@ test('settings transfer payload round-trips known cleaned settings', () => {
     assert.equal(payload.settings.theme, 'dark');
     assert.equal(payload.settings.mapRouteWidth, Schema.BOUNDS.routeWidth.max);
     assert.equal('unknownSetting' in payload.settings, false);
-    assert.deepEqual(Object.keys(payload.settings), Object.keys(Schema.DEFAULTS));
+    assert.deepEqual(Object.keys(payload.settings), Schema.PORTABLE_KEYS);
 
     const parsed = Transfer.parse(Transfer.serialize(payload));
     assert.deepEqual(parsed, { ok: true, settings: payload.settings });
@@ -158,9 +158,9 @@ test('settings transfer strips unknown input keys and cleans imported values', (
 
     assert.equal(parsed.ok, true);
     assert.equal(parsed.settings.theme, Schema.DEFAULTS.theme);
-    assert.equal(parsed.settings.mapViewportHeight, Schema.BOUNDS.viewportHeight.max);
+    assert.equal(parsed.settings.mapViewportHeight, undefined);
     assert.equal('futureSetting' in parsed.settings, false);
-    assert.deepEqual(Object.keys(parsed.settings), Object.keys(Schema.DEFAULTS));
+    assert.deepEqual(Object.keys(parsed.settings), Schema.PORTABLE_KEYS);
 });
 
 test('legacy settings files leave API keys untouched and malformed keys reject the whole file', () => {
