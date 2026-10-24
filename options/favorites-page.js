@@ -12,6 +12,7 @@
 import { settings as S } from '../src/settings/settings.js';
 import { initFavorites } from './favorites.js';
 import { initIgnored } from './ignored.js';
+import { initClimberFiles } from './climber-files.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
@@ -60,6 +61,7 @@ if (!OptionsUtils.logMissingElements('favorite climbers page', {
 
     const favorites = initFavorites({ extensionApi, flash, dismissStatus, save });
     initIgnored(extensionApi);
+    initClimberFiles(extensionApi);
     S.subscribe(accept);
     const initialRevision = settingsRevision;
     void S.get().then(settings => {

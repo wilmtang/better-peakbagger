@@ -184,6 +184,13 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .check input[type="number"]:disabled { opacity: .45; }
 
 /* Favorite climbers manager. */
+.climber-file-transfer { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.climber-file-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.climber-file-actions button.secondary { align-self: auto; }
+.climber-file-transfer > .desc { margin: 8px 0; }
+.climber-file-preview { padding: 12px; background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: 8px; }
+.climber-file-preview[hidden], .climber-file-transfer input[hidden] { display: none; }
+.climber-file-preview p { margin: 0 0 12px; }
 .favorites-source { display: flex; flex-direction: column; gap: 9px; border: 0; margin: 0; padding: 0; }
 .favorites-source label { display: flex; align-items: center; gap: 7px; white-space: nowrap; cursor: pointer; }
 .favorites-source input { width: 15px; height: 15px; margin: 0; }

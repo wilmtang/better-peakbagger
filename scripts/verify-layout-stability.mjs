@@ -15,6 +15,7 @@ import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
 import { verifySettingsActions } from './verify-settings-actions.mjs';
+import { verifyClimberFiles } from './verify-climber-files.mjs';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
 import { verifyReportCaptionStability } from './verify-report-caption-stability.mjs';
 import { verifyAscentColumnWidths } from './verify-ascent-column-widths.mjs';
@@ -1259,6 +1260,7 @@ async function reportCase(page, origin, variant) {
     await capture(page, `${variant.name}-report-feedback`);
 }
 const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, 'photo-backup': photoBackupCase, weather: weatherCase,
+    'climber-files': (page, origin, variant) => verifyClimberFiles(page, origin, variant, { capture }),
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'ascent-columns': (page, origin, variant) => verifyAscentColumnWidths(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
