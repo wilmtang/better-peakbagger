@@ -1,5 +1,11 @@
 # Active plans
 
+- [Wildfire map overlay](wildfire-map-overlay.md)
+  — proposed; opt-in reported US wildfire locations and perimeters in the
+  shared native/3D Overlays menu, followed by Canadian locations after proving
+  the new service's current-record queries. Includes source probes, bounded
+  request design, lifecycle/UX checks and explicit live/browser proof gaps.
+
 - [Repository bugs, performance, engineering, and UX audit — October 24](codebase-audit-2026-10-24.md)
   — confirmed runtime fixes implemented in focused commits after independent
   verification and local checks. The closure ledger retains intentional
