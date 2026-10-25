@@ -143,14 +143,16 @@ provider label. One pure schema owns all of these bounds.
 1. **Overlays → Add custom overlay** opens an extension-owned editor associated
    with that map. **Manage custom overlays** in Settings opens the same editor
    without a map target. Map opening and Settings listing perform no provider
-   request; remote work starts only with **Preview** or explicit enablement.
+   request; remote work starts only with **Preview**, **Test source** or explicit
+   enablement.
 2. Show **Name**, **Source type** and **URL**. Offer **Raster tiles**, **Vector
    tiles** and **GeoJSON** explicitly; a pasted suffix may suggest a type but
    cannot silently change it. Accept templates or TileJSON for the tiled types.
-3. **Details** contains native tile zoom range, tile size where applicable,
-   reversed Y for TMS, optional bounds, and attribution text/link. Read metadata
-   only after Preview. Fill absent metadata with visibly described form defaults
-   (initial tiled suggestion: 0–18), not an assertion of provider availability.
+3. **Details** contains tile size where applicable, reversed Y for TMS, optional
+   bounds, and attribution text/link. Put **Available tile zoom range** under
+   **Advanced**, with metadata-first filling and a manual override. Read metadata
+   only after Preview or Test source; distinguish provider declarations, protocol
+   defaults and user values as described below.
 4. Vector sources add an **Appearance** section. TileJSON `vector_layers` can
    populate selectable layer names; otherwise let the user enter a layer ID.
    An explicitly requested sample tile can suggest IDs. An empty sample cannot
@@ -171,6 +173,77 @@ extension frame so the host page cannot write the registry through a general
 settings message. The map's outer page owns its placement; do not add a second
 full map for preview. The editor must not receive GPX, account data or an entire
 page snapshot. It needs an opaque initiating-map handle and typed preview replies.
+
+### Zoom setup: metadata first, manual override and bounded testing
+
+Keep a zoom-range setting for tiled sources, but do not require users to discover
+it manually when the provider supplies metadata. Label it **Available tile zoom
+range**, with one concise explanation: **Zooming in further enlarges the last
+available tile.** This configures native data availability, not the map's zoom
+controls or a layer's independent visibility range.
+
+| Input | Setup behavior |
+| --- | --- |
+| TileJSON with explicit `minzoom`/`maxzoom` | Fill the available range from validated metadata; show **From source metadata** and allow a manual override under Advanced. |
+| TileJSON omitting one or both zoom fields | Preserve any explicit bound. Resolve omitted fields through the declared TileJSON version and the product's supported limits; identify these as defaults, not a provider declaration or tested coverage. |
+| Raw raster/MVT template | Show editable min/max values under Advanced, initially suggesting 0–18 with **Default — not checked**. Permit Preview and optional Test source without claiming these are the source's actual limits. |
+| GeoJSON | Omit the native tile-range controls and tile probes. A future display-only zoom filter is a separate setting. |
+
+Validate the final effective range through the shared schema. Retain provenance
+per bound (provider metadata, default or manual override). A TileJSON default
+above BPB's supported maximum is constrained to BPB's limit and labelled as a
+client limit, not the provider's maximum. An explicitly declared range entirely
+outside supported zooms gets a compatibility error. For a declared range that
+overlaps but exceeds client limits, preserve the provider bounds as metadata and
+label the constrained effective range. Do not derive a source-wide range from
+one vector sublayer's optional zoom metadata.
+
+A late metadata response must not overwrite a bound the user has edited. Offer
+**Use source values** when valid metadata is available to restore automatic
+values deliberately. Changing the URL/type invalidates metadata and test results;
+retained manual values are unchecked for the new source. Empty, failed or
+partially loaded tiles never silently rewrite either configured bound.
+
+**Test source** is an optional diagnostic action, separate from ordinary Preview.
+For tiled sources it checks a small sample at the initiating map's current
+location, with the same direct CORS transport, format validation and origin
+approval as normal rendering. It does not search the world or guess a TileJSON,
+capabilities or metadata URL from a raw template. In Settings without a map
+target, explain that tile testing needs an existing map; do not choose a hidden
+location, use device location or move a map to find data.
+
+- Allow at most one explicit metadata request and six distinct tile GETs per
+  activation, with at most two test requests in flight within the tab's shared
+  budget. Select valid levels from the effective range, prioritizing the current
+  level, nearby levels and configured minimum/maximum levels; deduplicate
+  overlaps. Requests use the canonical tile containing the map center at each
+  level, inside any declared bounds. Respect provider cooldowns and existing
+  response/decode limits.
+- Disable parent fallback and automatic retries for these probes: a parent
+  tile must not make a missing requested level appear to work, and the request
+  cap includes every tile attempt. Cancel on another test, URL/type/map change,
+  editor close or navigation. CORS/access failure pauses the probe and uses the
+  existing URL/CORS prompt; do not scan more zooms to diagnose access denial.
+- Report the exact sampled levels and results: loaded/decoded, valid empty
+  vector tile, not found, or could not check. Only use an interval such as
+  **Tiles loaded at zooms 12–15 in this area. Other zooms and locations remain
+  unchecked.** if every level in that interval was actually checked successfully.
+  Show separated levels individually rather than implying unchecked gaps passed.
+- Explain in the expanded result that missing tiles may reflect geographic
+  coverage, legitimate empty vector data, permissions or transient failure.
+  Conversely, a successful image may be a blank placeholder or server-resampled
+  tile. Neither status codes nor decoded images establish the true native-detail
+  limit. Probes assist setup; they cannot conclusively discover the whole range.
+- Keep results scoped to the tested source revision, mode and map view, in
+  temporary editor memory. Do not persist probe locations/results in the source
+  registry, logs or backups, auto-enable the layer, label the source globally
+  verified, or change its min/max. Saving remains possible after an inconclusive
+  test; only valid configuration is required.
+
+Keep Test source anchored through pending/result/retry, announce one aggregate
+result and guard duplicate activation. Probe results are separate from the
+Preview's actual rendering status; a successful sample cannot clear an existing
+error elsewhere in the viewport or in the other renderer.
 
 ### Use and manage
 
@@ -214,7 +287,8 @@ Name every input, expose type/visibility/busy states, associate field errors,
 announce aggregate status without per-tile chatter and respect reduced motion.
 Escape closes the editor and restores its trigger; it does not change the
 existing rule that Escape leaves the Overlays menu expanded. Only an explicit
-Preview/visibility action starts provider access, never typing or validation.
+Preview, Test source or visibility action starts provider access, never typing
+or validation.
 
 ## Direct-request and CORS policy
 
@@ -578,6 +652,7 @@ them only with explicit fixture/performance evidence.
 | Registry / URL / name | 256 KiB serialized; 4,096 URL characters; 80 name characters |
 | Tile endpoints / approved origins | At most 4 equivalent endpoints and 4 origins per source; use one endpoint per canonical tile, not four requests |
 | TileJSON | 256 KiB streamed body, bounded depth/fields, no recursive metadata |
+| Explicit Test source | At most 1 metadata GET plus 6 distinct tile GETs, 2 in flight within the tab budget; no fallback or automatic retry |
 | Raster tile | 4 MiB body; declared 256/512 dimensions and at most a documented 2× pixel-ratio variant |
 | MVT tile | 2 MiB decoded HTTP body; 32 data layers, 10,000 features, 100,000 vertices, bounded tags/strings/command counts |
 | GeoJSON collection | 5 MiB body, 10,000 features, 100,000 positions, bounded properties/depth |
@@ -624,6 +699,7 @@ map coverage checklist are part of this design's requested scope.
    origin review, zoom/bounds semantics, rate limits and parent fallback in both
    renderers. Keep the feature unreleased until the editor/activation path exists.
 4. **Editor and menu management.** Add the packaged editor, local listing,
+   metadata-first zoom setup/manual overrides, bounded Test source diagnostics,
    preview transaction and stable row controls; verify real extension loading
    and narrow/zoomed layouts before claiming the UI implemented.
 5. **GeoJSON overlays.** Add the shared geometry/style contract, bounded parser
@@ -660,6 +736,7 @@ has visual proof; those are implementation gates.
 | Pure schema/storage | Unknown IDs/types, hostile URLs, query preservation, malformed/deep JSON, oversized metadata, duplicate IDs, stale editors, failed startup/storage, serialized writes and corrupt-record preservation |
 | Direct requests | CORS success and denial from actual Peakbagger and extension origins; no new permission/proxy/worker fetch; credentials/referrers absent; redirects rejected; metadata cannot silently add a host |
 | CORS/configuration prompts | Denied metadata and denied tiles after successful metadata; raster/MVT/GeoJSON; mode-specific and partial failures; visible URL/CORS help, Edit/Retry and one accessible announcement; generic fetch rejection does not falsely claim confirmed CORS, repeat requests or become empty data; known HTTP errors retain their specific copy |
+| Zoom setup and probing | Explicit versus omitted TileJSON bounds, version/client defaults, manual overrides surviving late metadata, Use source values, raw-template defaults and GeoJSON without tile controls; probe request/concurrency caps, no fallback/retry, exact sampled-level results, empty/404/placeholder responses, cancellation and stale map/mode/source results; no automatic range changes or persisted probe locations |
 | Tile selection | Both raster sizes, fractional zoom, maximum overzoom, below-minimum silence, TMS rows, equal-view 2D/3D canonical coordinates, bounds and antimeridian copies |
 | Missing tiles | 404/410 parent crop/clip, two-level stop, shared-parent deduplication, no fallback on 200-transparent/empty, auth/rate limits/network/invalid data, truthful lower-detail/partial status |
 | Vector correctness | Real packaged parser plus real Leaflet/MapLibre; MVT layer IDs, missing/empty sublayers, polygon holes, buffered tile seams, overzoom stroke widths, Multi* data and shared opacity/style ordering |
