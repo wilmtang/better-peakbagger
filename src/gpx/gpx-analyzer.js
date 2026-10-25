@@ -603,6 +603,7 @@ const run = async () => {
                 if (unavailable) resetSun('No selected track point is available.');
                 else showDefaultSun();
             }
+            if (hasSelection && !hintText.dataset.state) setCoordinateStatus(selectedCoordinateAnnouncement());
             canvas.setAttribute('aria-label', hasSelection
                 ? `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
                 : `Interactive ${chartDescription()}. Use Left and Right Arrow keys to select a point.`);

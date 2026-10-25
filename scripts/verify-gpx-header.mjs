@@ -128,6 +128,15 @@ export async function verifyGpxHeader({ evaluate, resize, click, press, wait, sc
         await wait(() => /Show all source segments/.test(document.querySelector('.bpb-gpx-segment-view').textContent));
         await click('.bpb-gpx-segment-disclosure');
     }
+    await press('#bpb-gpx-analysis canvas', 'ArrowRight');
+    const originalUnits = await evaluate(() => {
+        const units = document.getElementById('bpb-gpx-units'), previous = units.value;
+        units.value = 'imperial'; units.dispatchEvent(new Event('change'));
+        return previous;
+    });
+    await wait(() => /(?:miles|ft)/.test(document.getElementById('bpb-gpx-coordinate-status').textContent));
+    await evaluate(new Function(`const units = document.getElementById('bpb-gpx-units'); units.value = ${JSON.stringify(originalUnits)}; units.dispatchEvent(new Event('change'));`));
+
 }
 
 async function main() {

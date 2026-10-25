@@ -1415,6 +1415,7 @@ test('GPX analyzer renders timed coordinate-only data as route progress', async 
     units.dispatchEvent(new dom.window.Event('change'));
     assert.match(analysisText(), /Route Progress: 0\.09 miles/);
     assert.equal(chartConfig().options.scales.yDistance.title.text, 'Distance traveled (miles)');
+    assert.match(dom.window.document.getElementById('bpb-gpx-coordinate-status').textContent, /Distance traveled: 0\.00 miles/);
 
     dom.window.close();
 });

@@ -301,6 +301,11 @@ Independent commits for drag ownership and report/observer surfaces:
   42 astronomy tests, build and ESLint passed. Eight hidden Chrome/Firefox
   light/dark 390/1280 px rendered cases passed; the expanded panel was inspected.
 
+- F12 GPX units: selected coordinate status follows unit changes while retaining
+  copy/error feedback. The regression failed before the fix; 61 analyzer tests,
+  build and ESLint passed. Hidden real-extension Chrome checked the announcement
+  and header geometry across themes, 1600/800/390 px and doubled narrow text.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
