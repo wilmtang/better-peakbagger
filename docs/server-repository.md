@@ -11,20 +11,28 @@ attribution, loading/failure states and integration with native and terrain maps
 The proposed connection is a versioned data catalog; cloud serving and quota
 controls still require implementation and verification.
 
-## Extraction and retained research
+## Extraction and completed ownership transfer
 
 Six FCC-directory commits through extension commit `d7bae265` were extracted
 with `git subtree split`. Authors and messages are preserved; extracted commit
 IDs differ because the directory becomes the new repository root. The server's
 extraction record maps each original commit to its extracted counterpart.
 
-The [hosting research](plans/cell-coverage-cloudflare-hosting.md) and
-[rendered comparison](plans/experiments/fcc-browser-coverage/comparison/README.md)
-remain available here. Existing FCC experiment paths were retained because
-concurrent compaction work was still changing the shared checkout during the
-extraction. The two repositories are not automatically synchronized: subsequent
-changes here must be reviewed and ported before retiring the original tooling.
-New server work should use the independent repository.
+The follow-up transfer ports the final compaction policy, service template,
+installer and deployment evidence from extension commit `08098e95`. Server
+commit `7f53451` records hashes for all 61 source-directory files and the full
+research report, preserving standalone browser-harness adaptations. The
+extension's duplicate scripts, tests, images and receipts have been retired;
+the [FCC directory](plans/experiments/fcc-browser-coverage/README.md) retains a
+pointer and the [coverage plan](plans/cell-coverage-cloudflare-hosting.md) keeps
+client integration requirements.
+
+In the server checkout, `full-conversion/README.md` is the runbook,
+`~/Dev/better-peakbagger-server/docs/research.md` contains the complete hosting investigation, and
+`comparison/README.md` contains the rendered comparison. The provenance record
+is `~/Dev/better-peakbagger-server/docs/ownership-transfer.json`. Unqualified paths are server-relative. The two
+repositories are not automatically synchronized; new backend work belongs in
+the server repository, with no executable copy maintained here.
 
 ## Running jobs and data
 

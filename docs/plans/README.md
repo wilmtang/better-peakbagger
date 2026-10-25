@@ -17,16 +17,14 @@
   cloud usage and cross-card/page cache work remain open in its ledger.
 
 - [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
-  — conversion code, actual national-layer sizes and a rendered raw-polygon/H3
-  comparison; local batch stopped at 122/460 sources, then resumed on build-host.
-  Full US size, production settings and live Cloudflare behavior remain unverified.
-  Server tooling now has an [independent local repository](../server-repository.md);
-  existing research paths remain during concurrent compaction work.
+  — extension integration requirements and the
+  [independent server repository](../server-repository.md), which owns conversion,
+  compaction, measured sizes, the complete research report and rendered comparison.
+  Full US size, production rendering and live Cloudflare behavior remain unverified.
 
-- [Cell coverage in-browser feasibility experiment](experiments/fcc-browser-coverage/README.md)
-  — bounded FCC-derived sample decoded and rendered in hidden Chrome/Firefox;
-  later authenticated downloads and national-layer rendering are linked in the plan.
-  Records authentication requirements, parser compatibility, timings and proof gaps.
+- [FCC tooling migration pointer](experiments/fcc-browser-coverage/README.md)
+  — executable experiments and their evidence moved to better-peakbagger-server;
+  this directory retains a pointer to the maintained server checkout.
 
 - [Wildfire map overlay](wildfire-map-overlay.md)
   — US implementation verified locally; opt-in reported locations and perimeters in the
