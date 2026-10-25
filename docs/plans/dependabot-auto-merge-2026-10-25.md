@@ -27,6 +27,22 @@ connection during the narrow analyzer case.
 
 ### Fixed and verified
 
+- **Final fixture follow-up:** [the third published run](https://github.com/wilmtang/better-peakbagger/actions/runs/40239868354)
+  passed Chrome current/128, Firefox current/152, Node/scale, and both browsers'
+  terrain and snow GPU checks. Its layout jobs exposed timestamp stubs missing
+  `storage.local`, correctly rejected by Settings. Complete the API stubs rather
+  than relaxing readiness. All 16 hidden Chrome/Firefox timestamp cases passed,
+  including slow/error/retry paths, both themes, 390/1280px and simulated 150%
+  zoom. Reports and captions also passed all eight cases each.
+  Proactively running the later gates exposed obsolete Snow/Weather adjacency
+  and an offscreen forecast wait. Require their ordering in the same stack and
+  visit the lazy forecast before waiting. Two focused placement tests and the
+  full 28-case snow matrix passed in both browsers at 375/681/1440px, both themes
+  and 200% zoom. Finally, finish the expanded forecast read before the next
+  placement case measures collapsed-card requests. Both browsers passed the
+  full card, placement and interaction matrices with the no-hidden-read and
+  geometry assertions preserved. These runs used isolated headless Chrome
+  156.0.8078.4 and Firefox 158.0.1 with synthetic providers; teardown passed.
 - **Later matrix failures:** [the second published run](https://github.com/wilmtang/better-peakbagger/actions/runs/40237887393)
   passed all 3,582 tests, scale checks, Firefox 152/current, and both browsers'
   GPU checks. Its later card cases exposed a real enlarged-text defect: a 216px
@@ -82,6 +98,9 @@ connection during the narrow analyzer case.
   the extension-owned resizable photo. The spacer regression and both caption
   assertions failed with the old selectors and passed after correction. Hidden
   Firefox 158.0.1 extension verification passed at 1000×760 after the editor merge.
+- **Minimum Firefox revalidation:** the third published run passed both Linux
+  Firefox 152 and current Firefox. The original connection loss's precise cause
+  remains unknown; passing revalidation is not proof of its root cause.
 - **MapLibre compatibility:** 6.14.0 retains the identical distributed terrain
   update method from 6.13.0 and still omits the source LOD callback. Explicitly
   approve 6.14.0 for the existing patch. Build and shipped-method checks passed;
@@ -126,9 +145,6 @@ connection during the narrow analyzer case.
 
 ### Changed but not fully proven
 
-- One local Firefox session disconnected during add-on installation. A diagnostic
-  run passed, but that does not establish the cause or repair of the remote
-  Firefox 152 connection loss. Linux and minimum-Firefox revalidation remain open.
 - Queue behavior is tested with CLI stubs; a future genuine Dependabot update
   must still exercise the changed privileged workflow against GitHub. A green
   test suite cannot guarantee that new dependency versions or advisories pass.
@@ -152,6 +168,10 @@ the full terrain verifier passed. All 20 immutable changelog sections passed.
 After the later card and capture-fixture repairs, the full local **3,582** tests
 and `npm run lint` passed again (the same eight owned warnings). Final published
 CI is checked separately; do not infer its result from these local runs.
+After the timestamp, snow and placement fixture repairs, all **3,584** tests,
+lint (the same eight owned warnings), the exact reviewed-advisory gate and all
+20 immutable changelog sections passed again. The next published run remains
+the terminal check for the combined head.
 The initial investigation's real unpacked extension passed hidden Chrome for Testing
 156.0.8078.4 verification at 1000×760, including analyzer controls at
 1600/800/390px, both themes, and enlarged text. Teardown passed. That earlier
