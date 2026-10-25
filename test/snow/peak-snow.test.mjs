@@ -524,3 +524,18 @@ test('rate-limited station control keeps focus and cannot relabel retained obser
         select.dispatchEvent(tab); assert.equal(tab.defaultPrevented, false, 'cooldown does not trap keyboard focus');
     } finally { env.close(); }
 });
+
+test('unit updates reuse daily snow rows and preserve their date and quality context', async () => {
+    const env = setup({ saved: { showSnotel: true, units: 'imperial' } });
+    try {
+        await settled(env);
+        const rows = [...env.doc.querySelectorAll('.bpb-snow-details tbody tr')];
+        const dates = rows.map(row => row.querySelector('th').textContent);
+        const values = rows.map(row => row.querySelector('td span').textContent);
+        await env.settings({ units: 'metric' });
+        assert.ok(env.doc.querySelector('.bpb-snow-details tbody tr') === rows[0], 'a unit change must not rebuild the daily table');
+        assert.deepEqual(rows.map(row => row.querySelector('th').textContent), dates);
+        assert.ok(rows.every(row => row.querySelectorAll('td small').length === 2));
+        assert.notDeepEqual(rows.map(row => row.querySelector('td span').textContent), values);
+    } finally { env.close(); }
+});

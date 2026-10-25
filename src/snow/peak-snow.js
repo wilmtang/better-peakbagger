@@ -80,6 +80,19 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
     const range = element('p', { class: 'bpb-snow-range', text: 'Past 7 days · Snow depth' });
     const stableRange = createStableText(range);
     const tbody = element('tbody');
+    const dailyRows = Array.from({ length: 8 }, () => {
+        const date = element('th', { scope: 'row' });
+        const readings = Array.from({ length: 2 }, () => {
+            const value = element('span'), flags = element('small');
+            const stableValue = createStableText(value), stableFlags = createStableText(flags);
+            stableValue.reserve(['1500.0 in', '3810.0 cm', '12700.0 mm', '—']);
+            stableFlags.reserve(['QC V · QA P', 'Unavailable']);
+            return { cell: element('td', {}, [value, flags]), stableValue, stableFlags };
+        });
+        tbody.append(element('tr', {}, [date, ...readings.map(reading => reading.cell)]));
+        return { date, readings };
+    });
+
     const details = element('details', { class: 'bpb-snow-details' }, [element('summary', { text: 'Daily readings and source details' }),
         element('div', { class: 'bpb-snow-table-wrap' }, [element('table', {}, [element('caption', { text: 'Daily observations · NRCS end-of-day dates' }),
             element('thead', {}, [element('tr', {}, ['Date', 'Snow depth', 'SWE'].map(text => element('th', { scope: 'col', text })))]), tbody])]),
@@ -167,14 +180,15 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
         const dates = Array.from({ length: 8 }, (_, i) => new Date(Date.parse(today) - (7 - i) * 86400_000).toISOString().slice(0, 10));
         const data = code => new Map((view?.data.daily[code] || []).map(reading => [reading.date, reading]));
         const snow = data('SNWD'), water = data('WTEQ');
-        tbody.replaceChildren(...dates.map(date => element('tr', {}, [element('th', { scope: 'row', text: dateLabel(date) }),
-            ...[snow.get(date), water.get(date)].map((reading, index) => {
-                const value = element('span', { text: index === 0 ? depthText(reading?.value ?? null) : waterText(reading?.value ?? null) });
-                const flags = element('small', { text: reading?.value != null ? `QC ${reading.qc || '—'} · QA ${reading.qa || '—'}` : 'Unavailable' });
-                createStableText(value).reserve(['1500.0 in', '3810.0 cm', '12700.0 mm', '—']);
-                createStableText(flags).reserve(['QC V · QA P', 'Unavailable']);
-                return element('td', {}, [value, flags]);
-            })])));
+        dailyRows.forEach((dailyRow, dateIndex) => {
+            const date = dates[dateIndex];
+            const label = dateLabel(date);
+            if (dailyRow.date.textContent !== label) dailyRow.date.textContent = label;
+            [snow.get(date), water.get(date)].forEach((reading, index) => {
+                dailyRow.readings[index].stableValue.set(index === 0 ? depthText(reading?.value ?? null) : waterText(reading?.value ?? null));
+                dailyRow.readings[index].stableFlags.set(reading?.value != null ? `QC ${reading.qc || '—'} · QA ${reading.qa || '—'}` : 'Unavailable');
+            });
+        });
         chart.update({ station: shownStation?.id ?? null, dates,
             values: dates.map(date => snow.get(date)?.value ?? null), loaded: Boolean(view) });
     };

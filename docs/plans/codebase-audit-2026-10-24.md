@@ -356,6 +356,11 @@ Independent commits for drag ownership and report/observer surfaces:
   passed. Eight hidden Chrome/Firefox cases passed pending/error/Retry, action and
   scroll geometry at 390/1280 px in both themes; narrow rendering was inspected.
 
+- F13 snow table: eight daily rows and their stable text owners are allocated once;
+  updates retain node identity, date headers and quality context. The unit-update
+  regression failed before the fix; all 31 snow tests, build and ESLint passed.
+  The real-extension snow browser matrix is in progress.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
