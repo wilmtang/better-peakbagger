@@ -58,14 +58,14 @@
         "https://www.peakbagger.com/peak.aspx*",
         "https://www.peakbagger.com/climber/Ascent.aspx*",
         "https://www.peakbagger.com/climber/ascent.aspx*",
-        "https://www.peakbagger.com/map/BigMap.aspx*",
-        "https://www.peakbagger.com/map/bigmap.aspx*",
+        "https://www.peakbagger.com/*BigMap.aspx*",
+        "https://www.peakbagger.com/*bigmap.aspx*",
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*",
         "https://peakbagger.com/climber/Ascent.aspx*",
         "https://peakbagger.com/climber/ascent.aspx*",
-        "https://peakbagger.com/map/BigMap.aspx*",
-        "https://peakbagger.com/map/bigmap.aspx*"
+        "https://peakbagger.com/*BigMap.aspx*",
+        "https://peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
         "content/map-layers.js"
@@ -87,14 +87,14 @@
         "https://www.peakbagger.com/peak.aspx*",
         "https://www.peakbagger.com/climber/Ascent.aspx*",
         "https://www.peakbagger.com/climber/ascent.aspx*",
-        "https://www.peakbagger.com/map/BigMap.aspx*",
-        "https://www.peakbagger.com/map/bigmap.aspx*",
+        "https://www.peakbagger.com/*BigMap.aspx*",
+        "https://www.peakbagger.com/*bigmap.aspx*",
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*",
         "https://peakbagger.com/climber/Ascent.aspx*",
         "https://peakbagger.com/climber/ascent.aspx*",
-        "https://peakbagger.com/map/BigMap.aspx*",
-        "https://peakbagger.com/map/bigmap.aspx*"
+        "https://peakbagger.com/*BigMap.aspx*",
+        "https://peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
         "content/peak-snow.js"

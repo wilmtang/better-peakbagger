@@ -4097,6 +4097,18 @@ try {
             `with 3D enabled the BigMap toggle must be visible (toggle=${JSON.stringify(bigMapToggle)}, page=${JSON.stringify(bigMapState)}, errors=${JSON.stringify(bigMapErrors)})`);
         check(bigMapToggle?.disabled === false,
             `the BigMap toggle should enable once its native route is ready (state=${JSON.stringify(bigMapToggle)})`);
+        // Native links use both /Map and /map. A case-sensitive manifest
+        // mismatch used to inject 3D while silently omitting both overlay owners.
+        for (const pathname of ['/Map/BigMap.aspx', '/map/BigMap.aspx']) for (const group of ['rc', 'rt']) {
+            await bigMapPage.goto(`https://www.peakbagger.com:${port}${pathname}?t=G&d=2096&c=40786&gt=${group}`);
+            const overlay = bigMapPage.locator('.bpb-layers-trigger');
+            const visible = await overlay.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
+            check(visible, `route group ${pathname}/${group} must show its overlay control`);
+            if (visible) {
+                await overlay.click();
+                check(await bigMapPage.locator('.bpb-layers-panel').isVisible(), `route group ${pathname}/${group} must open overlays`);
+            }
+        }
         await bigMapPage.close();
 
         const peakBigMapPage = await context.newPage();

@@ -516,6 +516,7 @@ const peakHtml = `<!doctype html><html><head><title>Mount Shuksan</title></head>
 
 // Enough of Peakbagger's frame for the analyzer overlay and native-layer sync.
 const masterMapHtml = `<!doctype html><html><body>
+<div id="map" style="position:absolute;inset:0;background:#dce6d7"></div>
 <select id="selmap"><option value="L_CT">Topo</option></select>
 <div class="leaflet-control-zoom" style="position:absolute;bottom:10px;right:10px;width:30px;height:60px"></div>
 <script>
@@ -535,10 +536,16 @@ const masterMapHtml = `<!doctype html><html><body>
     eachLayer(callback) { this.layers.slice().forEach(callback); }
     invalidateSize() {}
     on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
+    off(type, handler) { this.events[type] = (this.events[type] || []).filter(fn => fn !== handler); return this; }
+    getContainer() { return document.getElementById('map'); }
+    getBounds() { return { getWest: () => -121.78, getEast: () => -121.72, getSouth: () => 46.83, getNorth: () => 46.89 }; }
+    getCenter() { return { lat: 46.86, lng: -121.75 }; }
+    getZoom() { return 14; }
     removeLayer(layer) { this.layers = this.layers.filter(candidate => candidate !== layer); layer._map = null; }
   }
   window.L = {
     Polyline, Polygon, Map: MapStub,
+    GridLayer: { extend: () => class {} }, marker: () => ({}),
     polyline: (latLngs, options) => new Polyline(latLngs, options),
     circleMarker: (latLng, options) => new Polyline([latLng], options)
   };

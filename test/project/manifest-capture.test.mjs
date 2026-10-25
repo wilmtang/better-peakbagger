@@ -333,6 +333,21 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
         'the BigMap MAIN bundle must run before the isolated terrain bundle');
 });
 
+test('BigMap overlay owners load for both native Map path spellings and route groups', () => {
+    const matches = (pattern, url) => new RegExp('^' + pattern.split('*')
+        .map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$').test(url);
+    for (const host of ['www.peakbagger.com', 'peakbagger.com']) {
+        for (const pathname of ['/Map/BigMap.aspx', '/map/BigMap.aspx', '/map/bigmap.aspx']) {
+            for (const group of ['rc', 'rt']) {
+                const url = `https://${host}${pathname}?t=G&d=2096&c=40786&gt=${group}`;
+                for (const script of ['content/map-layers.js', 'content/peak-snow.js']) {
+                    assert.ok(contentEntry(script).matches.some(pattern => matches(pattern, url)), `${script} must load on ${url}`);
+                }
+            }
+        }
+    }
+});
+
 test('ascent editor integration is isolated to Peakbagger and capture never automates Save', async () => {
     const draftEntry = contentEntry('content/ascent-editor.js');
     assert.ok(draftEntry);
