@@ -10,6 +10,8 @@ shipped subsystem.
   invariants, feature ownership, and deep dives.
 - [Development](development.md) — build, test, browser, dependency, and package
   workflow.
+- [Peak-page card conventions](card-conventions.md) — shared layout, settings,
+  lifecycle, stable feedback and verification requirements for every agent.
 - [Browser store releases](releasing.md) — release checklist and the manual
   checks that automation cannot establish.
 - [Privacy and data handling](../PRIVACY.md) — canonical public disclosure and
