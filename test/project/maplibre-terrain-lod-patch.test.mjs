@@ -40,9 +40,16 @@ test('the distributed terrain grid uses the same LOD callback as its DEM downloa
     }
 });
 
-test('the LOD workaround refuses changed, ambiguous, upgraded or already patched input', () => {
+test('the LOD workaround accepts only reviewed releases with the same missing callback', () => {
+    for (const reviewed of ['6.13.0', '6.14.0']) {
+        const { options, calculateTileZoom } = coveringOptions(patchMapLibreTerrainLod(original, reviewed));
+        assert.equal(options.calculateTileZoom, calculateTileZoom);
+    }
+});
+
+test('the LOD workaround refuses changed, ambiguous, unreviewed or already patched input', () => {
     for (const [source, candidateVersion] of [
-        [original, '6.14.0'], ['', version], [original + original, version],
+        [original, '6.15.0'], ['', version], [original + original, version],
         [patchMapLibreTerrainLod(original, version), version],
     ]) assert.throws(() => patchMapLibreTerrainLod(source, candidateVersion), /Review or remove/);
 });
