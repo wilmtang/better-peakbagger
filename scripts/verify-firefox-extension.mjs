@@ -906,16 +906,14 @@ async function main() {
                 addedAt: index,
                 source: index % 2 ? 'buddy' : 'manual',
             }));
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) => Promise.all([
-                api.storage.sync.set({
-                    bpbSettings: {
-                        ...bpbSettings,
-                        theme,
-                        enable3dMap: true,
-                        addReportCredit: true,
-                        enableGithubBackup: true,
-                        favoritesSource: 'custom',
-                    },
+            Promise.all([
+                api.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: {
+                    theme, enable3dMap: true, addReportCredit: true,
+                    enableGithubBackup: true, favoritesSource: 'custom',
+                } }).then(response => {
+                    if (!response?.ok || response.settings?.enableGithubBackup !== true) {
+                        throw new Error('Firefox backup fixture settings were not acknowledged');
+                    }
                 }),
                 api.storage.local.set({
                     bpbGithubAuth: {
@@ -924,7 +922,7 @@ async function main() {
                     },
                     bpbFavoriteClimbers: { schemaVersion: 1, entries },
                 }),
-            ])).then(() => done(true), error => done(String(error)));
+            ]).then(() => done(true), error => done(String(error)));
         }, firefoxSunTheme);
         await driver.navigate().refresh();
         await waitForScript(
