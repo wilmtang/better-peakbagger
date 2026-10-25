@@ -13,7 +13,7 @@ registerCleanup();
 
 test('General display controls default on and save independent synced preferences', async () => {
     const dom = await loadOptions({});
-    for (const [id, key] of [['show-sun-moon', 'showSunMoon'], ['show-weather', 'showWeather'], ['show-snotel', 'showSnotel']]) {
+    for (const [id, key] of [['show-sun-moon', 'showSunMoon'], ['show-weather', 'showWeather'], ['show-summit-cloud', 'showSummitCloud'], ['show-snotel', 'showSnotel']]) {
         const control = el(dom, id);
         assert.equal(control.closest('section').id, 'general');
         assert.equal(control.labels.length, 1, 'the checkbox has one concise accessible name');
@@ -24,6 +24,7 @@ test('General display controls default on and save independent synced preference
     const restored = await loadOptions({ showSunMoon: false, showWeather: false });
     assert.equal(el(restored, 'show-sun-moon').checked, false);
     assert.equal(el(restored, 'show-weather').checked, false);
+    assert.equal(el(restored, 'show-summit-cloud').checked, false, 'legacy weather opt-out keeps cloud requests off');
     assert.equal(el(restored, 'show-snotel').checked, false, 'legacy weather opt-out also keeps SNOTEL off');
     el(restored, 'show-weather').checked = true;
     el(restored, 'show-weather').dispatchEvent(new restored.window.Event('change'));

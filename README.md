@@ -66,7 +66,7 @@ Expand any day for hourly detail in mountain-local time. On saved ascents,
 hover or select a timed GPX point to see the weather for that hour. Weather
 cards show model estimates; check local mountain forecasts before heading out.
 
-The **Sun & Moon**, **Summit weather**, and **Nearby snow** cards can be collapsed
+The **Sun & Moon**, **Summit weather**, **Summit Cloud Cover**, and **Nearby snow** cards can be collapsed
 by clicking their headings. Drag their grips to reorder them or move them to
 either column; click a grip for move options. Arrow keys also move a focused
 grip. Card positions and collapse choices are remembered across peak pages.
@@ -264,6 +264,15 @@ forecast cooler than one for the model's lower terrain. “Overcast” can also 
 high cloud above the mountain, without fog at the summit. Open **Source details**
 in the weather card to explore the model, forecast location, and elevation used.
 [More about summit weather](docs/peak-weather.md).
+
+**Summit Cloud Cover · Experimental** adds hourly estimates of cloud at summit
+height and possible nearby view obstruction. Browse every hour, including
+overnight, choose a date and compare or select a remembered weather model.
+Automatic compares two models over a ten-day outlook; individual models offer
+their available horizon up to 16 days. Missing data stays unavailable. Expand
+**Why this prediction** for the actual inputs and reasoning. These estimates
+are not yet calibrated against summit observations and do not describe snow
+conditions. [Method and limitations](docs/summit-cloud.md).
 
 ### Does Better Peakbagger place extra demand on Peakbagger or bypass its protections?
 

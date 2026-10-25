@@ -173,7 +173,7 @@ test('earlier queued writes cannot bounce a newer disclosure or reorder intent',
         env.commits.shift()(); await tick();
         assert.deepEqual(env.order(), ['sun', 'weather', 'snow']);
         env.commits.shift()(); await tick();
-        assert.deepEqual(env.state.peakCardOrder, ['sun', 'weather', 'snow']);
+        assert.deepEqual(env.state.peakCardOrder, ['sun', 'weather', 'cloud', 'snow']);
     } finally { env.close(); }
 });
 
@@ -250,7 +250,7 @@ test('column movement preserves node identity, disclosures, persistence and vert
         assert.equal(snow.querySelector('.bpb-peak-card-body').hidden, true);
         env.key('weather', 'ArrowUp'); await tick(); assert.deepEqual(left(), ['weather', 'snow']);
         assert.equal(env.doc.activeElement, env.handle('weather'));
-        assert.deepEqual(env.state.peakCardColumns, { sun: 'map', weather: 'details', snow: 'details' });
+        assert.deepEqual(env.state.peakCardColumns, { sun: 'map', weather: 'details', cloud: 'map', snow: 'details' });
         const next = setup({ columns: true, saved: env.state });
         try { await tick(); assert.deepEqual(next.order(), env.order()); } finally { next.close(); }
         env.key('weather', 'ArrowRight'); await tick();

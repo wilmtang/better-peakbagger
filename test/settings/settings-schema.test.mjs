@@ -42,7 +42,7 @@ test('every unit override shares validation and invalid values inherit the defau
 });
 
 test('display preferences default on, retain explicit opt-outs and reject non-booleans', () => {
-    for (const key of ['showSunMoon', 'showWeather', 'showSnotel']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'showSummitCloud']) {
         assert.equal(Schema.DEFAULTS[key], true);
         assert.equal(Schema.clean({})[key], true);
         assert.equal(Schema.clean({ [key]: false })[key], false);
@@ -61,13 +61,22 @@ test('SNOTEL inherits legacy weather opt-outs until independently selected', () 
     assert.equal(Schema.clean({ showWeather: false, showSnotel: 'true' }).showSnotel, false);
 });
 
+test('summit cloud preserves weather opt-outs and independently saves model and visibility', () => {
+    assert.equal(Schema.clean({ showWeather: false }).showSummitCloud, false);
+    const cleaned = Schema.clean({ showWeather: false, showSummitCloud: true, bpbSummitCloudModel: 'gfs_global' });
+    assert.equal(cleaned.showSummitCloud, true); assert.equal(cleaned.bpbSummitCloudModel, 'gfs_global');
+    assert.deepEqual(Schema.clean(cleaned), cleaned);
+    assert.equal(Schema.clean({ bpbSummitCloudModel: '../invalid' }).bpbSummitCloudModel, null);
+    assert.equal(Schema.clean({ bpbSummitCloudModel: 'auto' }).bpbSummitCloudModel, 'auto');
+});
+
 test('peak-card layout uses bounded identities and independent boolean disclosures', async () => {
     const clean = Schema.clean({ peakCardOrder: ['snow', 'unknown', 'snow', 'weather'], peakSunCollapsed: true, peakSnowCollapsed: 'true' });
-    assert.deepEqual(clean.peakCardOrder, ['snow', 'weather', 'sun']);
+    assert.deepEqual(clean.peakCardOrder, ['snow', 'weather', 'sun', 'cloud']);
     assert.equal(clean.peakSunCollapsed, true); assert.equal(clean.peakSnowCollapsed, false);
     assert.deepEqual(Schema.clean(clean), clean);
     assert.notEqual(Schema.clean({}).peakCardOrder, Schema.DEFAULTS.peakCardOrder);
-    for (const key of ['peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed']) {
+    for (const key of ['peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed', 'peakCloudCollapsed']) {
         assert.equal(Schema.clean({ [key]: true })[key], true);
         for (const value of [null, 0, 'false', [], {}]) assert.equal(Schema.clean({ [key]: value })[key], Schema.DEFAULTS[key]);
     }
@@ -301,7 +310,7 @@ test('planning link order removes unknown and duplicate IDs and fills missing sl
 
 test('peak-card columns reject unknown destinations and return independent validated maps', () => {
     const cleaned = Schema.clean({ peakCardColumns: { sun: 'details', weather: 'unknown', snow: 'details-bottom', unknown: 'details' } });
-    assert.deepEqual(cleaned.peakCardColumns, { sun: 'details', weather: 'map', snow: 'details-bottom' });
+    assert.deepEqual(cleaned.peakCardColumns, { sun: 'details', weather: 'map', cloud: 'map', snow: 'details-bottom' });
     assert.deepEqual(Schema.clean(cleaned), cleaned);
     assert.notEqual(Schema.clean({}).peakCardColumns, Schema.DEFAULTS.peakCardColumns);
 });

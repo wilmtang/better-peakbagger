@@ -4,13 +4,13 @@
 [data-bpb-peak-card] { --peak-card-accent: #1769aa; --peak-card-text: #1d232a; --peak-card-header-bg: #f4f6f8; }
 html[data-bpb-theme="dark"] [data-bpb-peak-card] { --peak-card-accent: #83bbff; --peak-card-text: #f1eee7; --peak-card-header-bg: #24272b; }
 .bpb-sun-calculator[data-bpb-peak-card] { width: 100%; max-inline-size: 100%; margin: 16px 0 0; }
-:is(#bpb-peak-weather, #bpb-peak-snow)[data-bpb-peak-card] { padding: 0; border-radius: .65rem; }
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-header {
+:is(#bpb-summit-cloud, #bpb-peak-weather, #bpb-peak-snow)[data-bpb-peak-card] { padding: 0; border-radius: .65rem; }
+:is(#bpb-summit-cloud, #bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-header {
     position: relative; display: block; margin: 0; padding: 0; border-radius: inherit; background: var(--peak-card-header-bg);
     font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-:is(#bpb-peak-weather, #bpb-peak-snow) .bpb-peak-card-header > h2 { display: block; margin: 0; min-width: 0; font: inherit; border-radius: inherit; }
-#bpb-peak-weather .bpb-peak-card-toggle, #bpb-peak-snow .bpb-peak-card-toggle {
+:is(#bpb-summit-cloud, #bpb-peak-weather, #bpb-peak-snow) .bpb-peak-card-header > h2 { display: block; margin: 0; min-width: 0; font: inherit; border-radius: inherit; }
+#bpb-summit-cloud .bpb-peak-card-toggle, #bpb-peak-weather .bpb-peak-card-toggle, #bpb-peak-snow .bpb-peak-card-toggle {
     display: flex; align-items: center; gap: 8px; width: 100%; min-height: 3rem; padding: .5rem 3.75rem .5rem .75rem;
     background: transparent !important; color: inherit !important; border: 0 !important; border-radius: inherit;
     font: inherit; text-align: left; cursor: pointer;
@@ -26,16 +26,16 @@ html[data-bpb-theme="dark"] [data-bpb-peak-card] { --peak-card-accent: #83bbff; 
 .bpb-peak-card-body { padding: 0 20px; }
 .bpb-peak-card-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 12px; }
 #bpb-peak-weather[data-bpb-peak-card] .bpb-week-actions { flex-wrap: wrap; justify-content: end; }
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip {
+:is(#bpb-summit-cloud, #bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip {
     position: absolute; right: 12px; top: 8px; display: inline-flex; align-items: center; justify-content: center;
     width: 32px; height: 32px; min-height: 32px; padding: 0;
     border: 0 !important; border-radius: 6px; background: transparent !important; color: var(--peak-card-accent) !important;
     cursor: grab; touch-action: none;
 }
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip:hover { background: #1769aa12 !important; }
+:is(#bpb-summit-cloud, #bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip:hover { background: #1769aa12 !important; }
 html [data-bpb-peak-card] .bpb-peak-card-grip[hidden], .bpb-peak-card-body[hidden] { display: none !important; }
 .bpb-peak-card-dots { display: block; width: 12px; height: 18px; background: radial-gradient(circle, currentColor 1.2px, transparent 1.6px) 0 0 / 6px 6px; }
-html :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: -3px; }
+html :is(#bpb-summit-cloud, #bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: -3px; }
 html [data-bpb-peak-card] .bpb-peak-card-grip:focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: 3px; }
 #bpb-peak-sun .bpb-sun-calculator__chevron { grid-column: -2; grid-row: 1; }
 #bpb-peak-sun .bpb-sun-calculator__toggle { padding-right: 3.75rem; background: transparent !important; border: 0 !important; color: inherit !important; }
@@ -74,5 +74,5 @@ html.bpb-peak-card-dragging, html.bpb-peak-card-dragging * { cursor: grabbing !i
 .bpb-peak-details-cards[hidden] { display: none !important; }
 .bpb-peak-details-cards .bpb-peak-card-cell { padding: 0; }
 @media (pointer: coarse) {
-    :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip { width: 44px; height: 44px; top: 2px; right: 6px; }
+    :is(#bpb-summit-cloud, #bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip { width: 44px; height: 44px; top: 2px; right: 6px; }
 }

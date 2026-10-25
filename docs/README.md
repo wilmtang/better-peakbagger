@@ -12,6 +12,8 @@ shipped subsystem.
   workflow.
 - [Peak-page card conventions](card-conventions.md) — shared layout, settings,
   lifecycle, stable feedback and verification requirements for every agent.
+- [Summit Cloud Cover](summit-cloud.md) — experimental method, model compatibility
+  and remaining forecast-validation work.
 - [Browser store releases](releasing.md) — release checklist and the manual
   checks that automation cannot establish.
 - [Privacy and data handling](../PRIVACY.md) — canonical public disclosure and

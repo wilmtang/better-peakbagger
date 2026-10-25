@@ -127,6 +127,8 @@ independent of the existing targets.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
 - [verify-peak-cards.mjs](verify-peak-cards.mjs)
+- [verify-summit-cloud.mjs](verify-summit-cloud.mjs) — hidden Chrome/Firefox
+  forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.
 - [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)
 - [verify-peak-weather-3d.mjs](verify-peak-weather-3d.mjs)
 - [verify-peak-weather-cases.mjs](verify-peak-weather-cases.mjs)

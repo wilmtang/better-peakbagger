@@ -33,6 +33,7 @@ const targets = {
     'weather-intervals': [['verify-weather-intervals.mjs']],
     weather: [['verify-ascent-weather.mjs'], ['verify-ascent-weather.mjs', '--firefox']],
     'peak-weather': [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']],
+    'summit-cloud': [['verify-summit-cloud.mjs'], ['verify-summit-cloud.mjs', '--firefox']],
     snow: [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']],
     'snow-map': [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']],
     'peak-cards': [['verify-ascent-weather.mjs', '--cards'], ['verify-ascent-weather.mjs', '--cards', '--firefox']],

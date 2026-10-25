@@ -39,6 +39,7 @@ const AUTHORITATIVE = Object.freeze({
     'src/garmin/garmin-imports.js': [{ count: 7, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],
     'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
     'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
+    'src/weather/summit-cloud.js': [{ count: 1, kind: 'privacy', reason: 'respect summit-cloud visibility and the saved model before profile requests' }],
     'src/maps/map-layer-bridge.js': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before viewport catalog requests' }],
     'src/snow/peak-snow.js': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before public snow catalog and observation requests' }],
     'src/favorites/favorite-source.js': [{ count: 1, kind: 'preservation', reason: 'resolve the selected source without substituting defaults after a failed settings read' }],

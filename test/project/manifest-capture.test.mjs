@@ -104,7 +104,7 @@ test('snow catalog and overlay preferences share an isolated map bundle without 
     assert.equal(entry.run_at, 'document_end');
     assert.ok(entry.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
     assert.ok(entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
-    assert.deepEqual(contentEntry('content/peak-cards.js').css, ['css/peak-snow.css']);
+    assert.deepEqual(contentEntry('content/peak-cards.js').css, ['css/peak-snow.css', 'css/summit-cloud.css']);
     assert.deepEqual(bundleSources('content/peak-snow.js'), ['snow/peak-snow.js', 'maps/map-layer-bridge.js']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/snow/peak-snow.css' && output === 'css/peak-snow.css'));
     assert.ok(![...manifest.host_permissions, ...manifest.optional_host_permissions].some(pattern => /usda/.test(pattern)));
@@ -117,6 +117,16 @@ test('peak-card layout stays isolated and shares the peak display schema', () =>
     assert.ok(entry.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
     assert.deepEqual(bundleSources('content/peak-cards.js'), ['maps/peak-cards.js']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/ui/peak-card-layout.css' && output === 'css/peak-card-layout.css'));
+});
+
+test('summit cloud loads before its shared layout owner without new network permissions', () => {
+    const entry = contentEntry('content/summit-cloud.js');
+    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, false);
+    assert.ok(entry.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
+    assert.deepEqual(entry.js, ['content/summit-cloud.js', 'content/peak-cards.js']);
+    assert.deepEqual(bundleSources('content/summit-cloud.js'), ['weather/summit-cloud.js']);
+    assert.ok(COPY_FILES.some(([source, output]) => source === 'src/weather/summit-cloud.css' && output === 'css/summit-cloud.css'));
+    assert.ok(!manifest.host_permissions.some(pattern => /open-meteo/.test(pattern)));
 });
 
 test('ImgBB upload access is optional and scoped to its API origin', () => {

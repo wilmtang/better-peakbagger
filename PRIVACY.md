@@ -411,6 +411,22 @@ developer account.
 
 ## Summit weather
 
+### Experimental summit cloud estimates
+
+The independent **Show Summit Cloud Cover** setting controls this peak-page card.
+Existing weather opt-outs carry over until the user changes this setting. When
+the expanded card approaches the viewport, Open-Meteo receives public summit
+coordinates and four nearby sample coordinates, the selected local day's UTC
+hour window, pressure-level weather fields and one or two explicit model IDs.
+Requests use model terrain elevation, omit credentials and referrers, and send
+no account information, page URL, tracks or ascent details. Provider-wide model
+update metadata is requested separately. Ordinary request metadata includes IP
+address. Model selection is saved in extension settings; profiles stay in page
+memory (six entries, five-minute freshness). Date/model changes, Refresh and
+returning to an expired visible card can request data again. Collapse, disabling
+the feature or page suspension cancels pending work. See
+[method and limitations](docs/summit-cloud.md).
+
 ### Nearby snow observations
 
 The independent **Settings → General → Show SNOTEL** preference controls the

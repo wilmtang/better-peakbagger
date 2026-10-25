@@ -348,8 +348,8 @@
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*"
       ],
-      "css": ["css/peak-snow.css"],
-      "js": ["content/peak-cards.js"],
+      "css": ["css/peak-snow.css", "css/summit-cloud.css"],
+      "js": ["content/summit-cloud.js", "content/peak-cards.js"],
       "run_at": "document_end",
       "all_frames": false
     },

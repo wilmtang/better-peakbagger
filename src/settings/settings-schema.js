@@ -22,7 +22,7 @@ const FAVORITES_SOURCES = Object.freeze(['buddies', 'custom']);
 const MAP_PROVIDERS = Object.freeze(['gaia', 'onx', 'alltrails', 'caltopo']);
 const PEAK_FILTER_ORDER = Object.freeze(['fav', 'gps', 'tr', 'link', 'beta']);
 const PERSONAL_FILTER_ORDER = Object.freeze(['gps', 'tr', 'link', 'beta']);
-const PEAK_CARD_ORDER = Object.freeze(['sun', 'weather', 'snow']);
+const PEAK_CARD_ORDER = Object.freeze(['sun', 'weather', 'cloud', 'snow']);
 // The first forecast slot follows the user's preference across countries.
 // Border peaks can have up to eight distinct sources (one per Nation entry).
 const PEAK_LINK_ORDER = Object.freeze(['windy', 'copernicus', 'airnow', 'avalanche',
@@ -74,7 +74,7 @@ const validCalendarDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d
 
 const DEFAULTS = {
     units: 'auto', theme: 'system',
-    bpbPeakWeatherModelPast: null, bpbPeakWeatherModelForecast: null,
+    bpbPeakWeatherModelPast: null, bpbPeakWeatherModelForecast: null, bpbSummitCloudModel: null,
     bpbPeakWeatherHourlyMetric: null, bpbAscentWeatherModel: null,
     bpbAscentWeatherColumn: null, bpbAscentWeatherSlot: null,
     bpbMapOverlayOpacityV1: null, bpbPhotoSharedStyle: null,
@@ -83,11 +83,13 @@ const DEFAULTS = {
     temperatureUnits: 'default', precipitationUnits: 'default', windUnits: 'default',
     showSunMoon: true,
     showWeather: true,
+    showSummitCloud: true,
     showSnotel: true,
     peakCardOrder: PEAK_CARD_ORDER,
     peakCardColumns: Object.freeze(Object.fromEntries(PEAK_CARD_ORDER.map(id => [id, 'map']))),
     peakSunCollapsed: false,
     peakWeatherCollapsed: false,
+    peakCloudCollapsed: false,
     peakSnowCollapsed: false,
     enable3dMap: false,
     retainWaypoints: true,
@@ -271,12 +273,13 @@ const clean = raw => {
     if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
     for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'enableGarminInbox', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSummitCloud', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakCloudCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'enableGarminInbox', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
     }
     // SNOTEL previously shared the weather gate. Preserve legacy opt-outs
     // until the user explicitly chooses the new independent preference.
     if (typeof raw?.showSnotel !== 'boolean') s.showSnotel = s.showWeather;
+    if (typeof raw?.showSummitCloud !== 'boolean') s.showSummitCloud = s.showWeather;
     // One ascent-backup choice controls automatic saves. Keep the legacy field
     // consistent for older readers and imported settings.
     s.autoGithubBackup = s.enableGithubBackup;
@@ -315,7 +318,7 @@ const clean = raw => {
     s.betaTrMinWords = beta.trMinWords;
     s.betaGps = beta.gps;
     s.betaLink = beta.link;
-    for (const key of ['bpbPeakWeatherModelPast', 'bpbPeakWeatherModelForecast', 'bpbAscentWeatherModel']) {
+    for (const key of ['bpbPeakWeatherModelPast', 'bpbPeakWeatherModelForecast', 'bpbSummitCloudModel', 'bpbAscentWeatherModel']) {
         s[key] = typeof s[key] === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(s[key]) ? s[key] : null;
     }
     for (const [key, allowed] of Object.entries({

@@ -10,6 +10,7 @@ import { createPageLifecycle } from './page-lifecycle.js';
 const definitions = {
     sun: { selector: '.bpb-sun-calculator--peak', name: 'Sun & Moon', collapsed: 'peakSunCollapsed' },
     weather: { selector: '#bpb-peak-weather', name: 'Summit weather', collapsed: 'peakWeatherCollapsed' },
+    cloud: { selector: '#bpb-summit-cloud', name: 'Summit Cloud Cover', collapsed: 'peakCloudCollapsed' },
     snow: { selector: '#bpb-peak-snow', name: 'Nearby snow', collapsed: 'peakSnowCollapsed' },
 };
 

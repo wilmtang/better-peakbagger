@@ -80,6 +80,25 @@ history. Model preferences use the shared extension settings schema.
 
 ## Evidence still needed for accuracy
 
+Run `npm run verify -- summit-cloud` for the hidden Chrome/Firefox card fixture
+checks. They exercise the built bundles, host table/layout, keyboard refresh,
+all-hours navigation, retained results and state-dependent geometry. Forecast
+and settings transports are stubbed. `npm run verify -- chrome` separately
+checks real unpacked-extension startup; neither check validates forecast skill.
+
+Implementation verification (October 24, 2026): the working-tree suite passed
+3,490 tests; ESLint/build and the owned web-ext lint gate passed. Hidden Chrome
+for Testing 156.0.8078.4 and Firefox 158.0.1 exercised 1440, 820, 390 and 320 px
+content viewports, light/dark themes and 150% CSS zoom. The fixture checked
+pending/success/error/retry focus and geometry, changing expanded explanations,
+all-hour navigation, saved model restoration and collapse. An initial narrow
+explanation assertion failed on a 17 px height change before its fix and passed
+afterward. Provider and settings responses were stubbed; native browser zoom,
+screen-reader speech and onscreen focus/window placement were not established.
+The separate real unpacked-extension Chrome check passed at 1000×760 hidden.
+Live Mount Stuart five-point requests succeeded for GFS, HRRR, HRDPS and IFS;
+IFS's sparse above-ground bracket was unavailable for the sampled summit hour.
+
 Do not describe this feature as validated. Evaluate archived forecasts against
 timestamped summit webcams and independent summit reports, split by mountain,
 season, lead time and wind regime. Measure false-clear rates and reliability

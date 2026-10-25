@@ -22,3 +22,10 @@ export function cloudResponse(request, { cloud = 5, humidity = 55 } = {}) {
         return { ...request.points[index], elevation: 700, utc_offset_seconds: 0, hourly, hourly_units };
     });
 }
+
+export function cloudResponseForUrl(url, options) {
+    const query = new URL(url).searchParams, latitudes = query.get('latitude').split(',').map(Number), longitudes = query.get('longitude').split(',').map(Number);
+    return cloudResponse({ model: summitCloudModel(query.get('models')),
+        start: Date.parse(`${query.get('start_hour')}Z`), end: Date.parse(`${query.get('end_hour')}Z`) + 3600000,
+        points: latitudes.map((latitude, index) => ({ latitude, longitude: longitudes[index] })) }, options);
+}
