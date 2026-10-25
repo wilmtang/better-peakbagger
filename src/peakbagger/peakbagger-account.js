@@ -39,7 +39,7 @@ const accountLink = (label, href, base = `${PEAKBAGGER_ORIGIN}/`) => {
 const canonicalAccountLink = (label, href) => {
     try {
         const url = new URL(href);
-        if (url.origin !== PEAKBAGGER_ORIGIN || queryKeys(url).length !== 1) return null;
+        if (url.origin !== PEAKBAGGER_ORIGIN) return null;
         return accountLink(label, href);
     } catch { return null; }
 };

@@ -211,6 +211,11 @@ Independent commits for drag ownership and report/observer surfaces:
   regressions failed against the prior implementation; 31 FIT/CSP tests and
   focused ESLint passed after the fix.
 
+- F9: strict fresh-page evidence accepts legacy mode=profile while still
+  rejecting extra/duplicate keys, off-canonical origins and conflicting identities.
+  The new regression failed before the fix; 10 account/page tests, focused
+  ESLint and hidden real-extension Chrome verification passed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

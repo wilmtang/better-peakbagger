@@ -85,3 +85,18 @@ test('real masked native navigation remains readable in DOM and worker adapters'
         } finally { dom.window.close(); }
     }
 });
+
+test('legacy Edit Account links remain valid in strict fresh-page evidence', () => {
+    const pageUrl = 'https://www.peakbagger.com/Default.aspx';
+    const links = [
+        { label: 'My Home Page', href: 'https://www.peakbagger.com/climber/climber.aspx?cid=17' },
+        { label: 'Edit Account', href: 'https://www.peakbagger.com/climber/ClimberEdit.aspx?mode=profile&cid=17' },
+    ];
+    assert.equal(peakbaggerAccount.freshAccountCid({ pageUrl, links }, pageUrl), '17');
+    for (const href of [
+        links[1].href + '&mode=profile', links[1].href + '&cid=17', links[1].href + '&other=1',
+        links[1].href.replace('www.peakbagger.com', 'peakbagger.com'),
+        links[1].href.replace('mode=profile', 'mode=other'),
+        links[1].href.replace('cid=17', 'cid=18'),
+    ]) assert.equal(peakbaggerAccount.freshAccountCid({ pageUrl, links: [links[0], { ...links[1], href }] }, pageUrl), null, href);
+});
