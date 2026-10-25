@@ -1276,6 +1276,41 @@ test('Garmin connection has a labelled sidebar entry and honors its deep link', 
     assert.ok(section.querySelector('#garmin-key'), 'The fixture must load the Garmin controller too');
 });
 
+for (const hash of ['#capture-garmin', '#general']) {
+    test(`a delayed Garmin reveal honors ${hash} without moving later preference updates`, async () => {
+        let release;
+        const readGate = new Promise(resolve => { release = resolve; });
+        const dom = await loadOptions({}, { hash,
+            prepareChrome: chrome => {
+                const get = chrome.storage.sync.get;
+                chrome.storage.sync.get = async (...args) => { await readGate; return get(...args); };
+            },
+            prepareWindow: window => {
+                const content = window.document.querySelector('.content');
+                const target = window.document.getElementById('capture-garmin');
+                content.getBoundingClientRect = () => ({ top: 100 });
+                target.getBoundingClientRect = () => ({ top: target.hidden ? 0 : 450 - content.scrollTop });
+                const nativeStyle = window.getComputedStyle.bind(window);
+                window.getComputedStyle = element => element === target
+                    ? { scrollMarginTop: '24px' } : nativeStyle(element);
+            },
+        });
+        const content = dom.window.document.querySelector('.content');
+        assert.equal(el(dom, 'capture-garmin').hidden, true);
+        assert.equal(content.scrollTop, 0);
+        release();
+        await waitFor(dom, () => !el(dom, 'capture-garmin').hidden);
+        assert.equal(content.scrollTop, hash === '#capture-garmin' ? 326 : 0,
+            'the requested fragment must land even when native navigation found a hidden target');
+        if (hash === '#capture-garmin') assert.equal(content.style.scrollBehavior, '',
+            'initial scrolling must finish without requiring a native scrollend');
+        assert.equal(activeLinks(dom)[0].hash, hash);
+        content.scrollTop = 400;
+        await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
+        assert.equal(content.scrollTop, 400, 'an unrelated settings update must preserve the reading position');
+    });
+}
+
 test('every settings subsection has exactly one sidebar entry in document order', async () => {
     const dom = await loadOptions({});
     const doc = dom.window.document;

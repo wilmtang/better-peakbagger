@@ -76,9 +76,14 @@ export async function initGarminSettings(root) {
     addEventListener('hashchange', redirectDisabledLink);
     const applyFeature = settings => {
         featureEnabled = settings.enableGarminInbox;
+        const revealed = featureEnabled && root.hidden;
         for (const element of document.querySelectorAll('[data-garmin-inbox]')) element.hidden = !featureEnabled;
         root.hidden = !featureEnabled;
         redirectDisabledLink();
+        // Native fragment scrolling can run before the async settings read
+        // reveals this section. Let the pane's navigation retry that landing
+        // once, without moving the reader on subsequent preference updates.
+        if (revealed && location.hash === '#capture-garmin') dispatchEvent(new HashChangeEvent('hashchange'));
         if (featureEnabled) void refresh().catch(() => {});
     };
     applyFeature(prefs);
