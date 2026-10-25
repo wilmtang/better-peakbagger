@@ -408,11 +408,13 @@ export function mountPeakWeather() {
             if (!eligiblePeakWeatherModels(next, requestedWindow, key).some(model => model.id === choices[key])) choices[key] = 'gfs_global';
         }
         populateModels();
-        if (next === summit && summitResult) {
+        const reusableSummit = summitResult && (cooldown.active() || (summitResult.window.today === requestedWindow.today
+            && Date.now() - summitResult.loadedAt < 5 * 60_000));
+        if (next === summit && reusableSummit) {
             current = summitResult; subject = summit; zone = current.zone;
             notice = cooldown.active() ? { kind: 'rate-limit', text: 'Weather requests are temporarily limited. Showing summit weather. Try again after the cooldown.' } : null;
             requestedWindow = current.window; renderResult();
-        } else void load();
+        } else void load({ clear: next === summit });
     };
     locationMenu = createWeatherLocationMenu({ enabled: () => enabled() && lifecycle.state === 'active', canSelect: () => !cooldown.active(), onSelect: chooseLocation });
     resetLocation.addEventListener('click', () => chooseLocation(summit));

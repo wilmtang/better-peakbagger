@@ -287,6 +287,10 @@ Independent commits for drag ownership and report/observer surfaces:
   focused switching/editor tests and the hidden Chrome/Firefox report-edit matrix
   passed after it, with the completed rendered status inspected again.
 
+- F12 summit reset: expired and prior-day snapshots request fresh data; fresh
+  snapshots and cooldown fallback remain usable. Both regressions failed before
+  the fix; 75 weather tests, build and focused ESLint passed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

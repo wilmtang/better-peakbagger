@@ -1704,3 +1704,16 @@ test('peak Best Match choices persist independently, share requests and disclose
         assert.equal(new URL(next.requests[0].url).searchParams.get('models'), 'best_match');
     } finally { next.close(); }
 });
+
+for (const now of ['2024-11-05T12:06:00Z', '2024-11-06T12:00:00Z']) test(`summit reset refreshes expired/day-stale weather at ${now}`, async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        openLocationMenu(env); env.doc.querySelector('#bpb-peak-weather-menu button').click();
+        await waitFor(() => env.requests.length === 2 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        env.setNow(now); env.doc.querySelector('.bpb-week-location-reset').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === 'At the summit'
+            && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(env.requests.length, 3, 'Reset must not present an expired summit snapshot as current');
+    } finally { env.close(); }
+});
