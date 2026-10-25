@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const FAIL_SOFT = Object.freeze({
-    'options/inbox.js': [{ count: 1, kind: 'display', reason: 'show the optional timestamp choice; the worker revalidates authoritative capture privacy' }],
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],

@@ -152,6 +152,7 @@ independent of the existing targets.
 - [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
 - [verify-photo-editor.mjs](verify-photo-editor.mjs)
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
+- [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
 - [verify-report-caption-stability.mjs](verify-report-caption-stability.mjs)
 - [verify-report-draft-ownership.mjs](verify-report-draft-ownership.mjs)
 - [verify-report-photos.mjs](verify-report-photos.mjs)
