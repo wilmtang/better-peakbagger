@@ -1,0 +1,21 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Explicit opt-in: native page controls and embedded MAIN-world panels do not
+   inherit this shell. Features retain density, content and placement. */
+[data-bpb-card="weather"] {
+    --bpb-card-bg: #fff; --bpb-card-text: #1d232a; --bpb-card-sub: #606873;
+    --bpb-card-border: #c8cdd4; --bpb-card-control: #fff;
+    --bpb-card-soft: #f4f6f8; --bpb-card-accent: #1769aa;
+    box-sizing: border-box; min-width: 0; text-align: left;
+    border: 1px solid var(--bpb-card-border); border-radius: 12px;
+    background: var(--bpb-card-bg); color: var(--bpb-card-text);
+}
+html[data-bpb-theme="dark"] [data-bpb-card="weather"] {
+    --bpb-card-bg: #24272b; --bpb-card-text: #f1eee7; --bpb-card-sub: #b6b0a6;
+    --bpb-card-border: #4a5058; --bpb-card-control: #2b2f34;
+    --bpb-card-soft: #2b2f34; --bpb-card-accent: #83bbff;
+}
+[data-bpb-card] *, [data-bpb-card] *::before, [data-bpb-card] *::after { box-sizing: border-box; }
+[data-bpb-card][hidden], [data-bpb-card] [hidden] { display: none !important; }
+[data-bpb-card] select { min-width: 0; max-width: 100%; font: inherit; }
+[data-bpb-card] :is(button, select, summary, a, [tabindex]):focus-visible { outline: 2px solid var(--bpb-card-accent); outline-offset: 3px; }

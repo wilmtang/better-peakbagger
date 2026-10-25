@@ -166,6 +166,7 @@ export const COPY_FILES = [
     ['src/ascent/ascent-layout.css', 'css/ascent-layout.css'],
     ['src/ui/column-resize.css', 'css/column-resize.css'],
     ['src/ui/card-drag.css', 'css/card-drag.css'],
+    ['src/ui/card.css', 'css/card.css'],
     ['src/ui/peak-card-layout.css', 'css/peak-card-layout.css'],
     ['src/ascent/ascent-weather.css', 'css/ascent-weather.css'],
     ['src/weather/peak-weather.css', 'css/peak-weather.css'],

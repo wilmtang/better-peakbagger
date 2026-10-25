@@ -225,6 +225,7 @@ async function handoffCase(page, origin, variant) {
         }
     }
     await capture(page, `${variant.name}-handoff`);
+    await page.addStyleTag({ content: (await asset('css/card.css')).toString() });
     await page.addStyleTag({ content: (await asset('css/ascent-weather.css')).toString() });
     await page.locator('#gpxlinks').evaluate(element => { element.id = 'bpb-ascent-gpx-details'; });
     const collapsed = await geometry(page, '[data-provider="gaia"]');
@@ -746,6 +747,7 @@ async function weatherCase(page, origin, variant) {
         document.documentElement.dataset.bpbTheme = theme;
         document.body.innerHTML = '<section id="bpb-peak-weather"><div id="jitter-hours"></div></section>';
     }, variant);
+    await page.addStyleTag({ content: (await asset('css/card.css')).toString() });
     await page.addStyleTag({ content: (await asset('css/peak-weather.css')).toString() });
     const source = (await asset('content/peak-weather.js')).toString();
     const end = source.lastIndexOf('})();');

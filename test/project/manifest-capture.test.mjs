@@ -521,7 +521,8 @@ test('ascent weather has an independent isolated bundle without API permissions'
     assert.equal(weather.world, undefined);
     assert.equal(weather.run_at, 'document_end');
     assert.deepEqual(weather.js, ['content/ascent-weather.js']);
-    assert.deepEqual(weather.css, ['css/card-drag.css', 'css/ascent-weather.css', 'css/weather-hourly-table.css']);
+    assert.deepEqual(weather.css, ['css/card.css', 'css/card-drag.css', 'css/ascent-weather.css', 'css/weather-hourly-table.css']);
+    assert.ok(COPY_FILES.some(([source, output]) => source === 'src/ui/card.css' && output === 'css/card.css'));
     assert.ok(weather.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
     assert.deepEqual(bundleSources('content/ascent-weather.js'), ['ascent/ascent-weather.js']);
     assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));
@@ -534,7 +535,7 @@ test('peak weather ships only on peak pages in the isolated world with its scope
     assert.equal(weather.run_at, 'document_end');
     assert.equal(weather.all_frames, false);
     assert.deepEqual(weather.js, ['content/peak-weather.js']);
-    assert.deepEqual(weather.css, ['css/column-resize.css', 'css/peak-card-layout.css', 'css/peak-weather.css', 'css/weather-hourly-table.css']);
+    assert.deepEqual(weather.css, ['css/card.css', 'css/column-resize.css', 'css/peak-card-layout.css', 'css/peak-weather.css', 'css/weather-hourly-table.css']);
     assert.ok(weather.matches.every(match => /\/peak\.aspx/i.test(match)));
     assert.deepEqual(bundleSources('content/peak-weather.js'), ['weather/peak-weather.js']);
     assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));

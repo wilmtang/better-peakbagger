@@ -222,7 +222,7 @@
         "https://peakbagger.com/climber/ascent.aspx*",
         "https://peakbagger.com/climber/Ascent.aspx*"
       ],
-      "css": ["css/card-drag.css", "css/ascent-weather.css", "css/weather-hourly-table.css"],
+      "css": ["css/card.css", "css/card-drag.css", "css/ascent-weather.css", "css/weather-hourly-table.css"],
       "js": ["content/ascent-weather.js"],
       "run_at": "document_end",
       "all_frames": false
@@ -336,7 +336,7 @@
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*"
       ],
-      "css": ["css/column-resize.css", "css/peak-card-layout.css", "css/peak-weather.css", "css/weather-hourly-table.css"],
+      "css": ["css/card.css", "css/column-resize.css", "css/peak-card-layout.css", "css/peak-weather.css", "css/weather-hourly-table.css"],
       "js": ["content/peak-weather.js"],
       "run_at": "document_end",
       "all_frames": false

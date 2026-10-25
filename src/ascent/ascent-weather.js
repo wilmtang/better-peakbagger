@@ -36,7 +36,7 @@ const displayDate = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([],
 export function mountAscentWeather() {
     if (document.getElementById(ID) || peakbaggerCloudflare.isChallengeDocument(document)) return;
     const subject = readWeatherSubject(document, location.href);
-    const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
+    const card = element('section', { id: ID, hidden: '', 'data-bpb-card': 'weather', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const heading = element('h2', { id: `${ID}-heading`, text: 'Weather archive' });
     const moveHandle = element('button', { type: 'button', class: 'bpb-card-drag-handle', hidden: '',
         'aria-label': 'Move weather below trip report', 'aria-keyshortcuts': 'ArrowUp ArrowDown ArrowLeft ArrowRight Home End' }, [

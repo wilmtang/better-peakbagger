@@ -24,7 +24,6 @@
     text-align: left;
     overflow-wrap: anywhere;
 }
-html[data-bpb-theme="dark"] #bpb-ascent-weather,
 html[data-bpb-theme="dark"] #bpb-ascent-gpx-details {
     --bpb-weather-bg: #23262a;
     --bpb-weather-text: #e6e1d8;
@@ -38,14 +37,9 @@ html[data-bpb-theme="dark"] #bpb-ascent-gpx-details {
 #bpb-ascent-weather {
     position: relative;
     padding-top: 16px;
-    --bpb-weather-bg: #fff; --bpb-weather-text: #1d232a; --bpb-weather-sub: #606873;
-    --bpb-weather-border: #c8cdd4; --bpb-weather-control: #fff;
-    --bpb-weather-soft: #f4f6f8; --bpb-weather-accent: #1769aa;
-}
-html[data-bpb-theme="dark"] #bpb-ascent-weather {
-    --bpb-weather-bg: #24272b; --bpb-weather-text: #f1eee7; --bpb-weather-sub: #b6b0a6;
-    --bpb-weather-border: #4a5058; --bpb-weather-control: #2b2f34;
-    --bpb-weather-soft: #2b2f34; --bpb-weather-accent: #83bbff;
+    --bpb-weather-bg: var(--bpb-card-bg); --bpb-weather-text: var(--bpb-card-text); --bpb-weather-sub: var(--bpb-card-sub);
+    --bpb-weather-border: var(--bpb-card-border); --bpb-weather-control: var(--bpb-card-control);
+    --bpb-weather-soft: var(--bpb-card-soft); --bpb-weather-accent: var(--bpb-card-accent);
 }
 #bpb-ascent-weather[hidden],
 #bpb-ascent-weather [hidden] { display: none !important; }

@@ -33,6 +33,7 @@ import { verifyPeakWeatherInteractions } from './verify-peak-weather-interaction
 import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
+import { settingsSchema } from '../src/settings/settings-schema.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
@@ -284,7 +285,10 @@ try {
         setSettings = async values => {
             await driver.switchTo().window(settingsWindow);
             try {
-                await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.set({bpbSettings:arguments[0]}).then(()=>done(true),error=>done(String(error)));', values);
+                await driver.executeAsyncScript(`const done=arguments[arguments.length-1], values=arguments[0], keys=arguments[1];
+                    chrome.storage.sync.get('bpbSettings').then(saved => chrome.storage.sync.set({ bpbSettings: {
+                        ...Object.fromEntries(Object.entries(saved.bpbSettings || {}).filter(([key]) => keys.includes(key))), ...values
+                    } })).then(()=>done(true),error=>done(String(error)));`, values, settingsSchema.PERSONAL_KEYS);
             } finally { await driver.switchTo().window(weatherWindow); }
         };
         readSettings = async () => {
@@ -307,15 +311,26 @@ try {
             // Reading the extension realm through BiDi avoids blurring the
             // weather tab and canceling an in-progress pointer gesture.
             const response = await send({ method: 'script.evaluate', params: {
-                expression: `chrome.storage.local.get(${JSON.stringify(key)}).then(saved => saved[${JSON.stringify(key)}] ?? null)`,
+                expression: settingsSchema.PERSONAL_KEYS.includes(key)
+                    ? `chrome.storage.sync.get('bpbSettings').then(saved => saved.bpbSettings?.[${JSON.stringify(key)}] ?? null)`
+                    : `chrome.storage.local.get(${JSON.stringify(key)}).then(saved => saved[${JSON.stringify(key)}] ?? null)`,
                 target: { context: settingsWindow }, awaitPromise: true, resultOwnership: 'none',
             } });
             if (response.result?.type === 'exception') throw new Error(response.result.exceptionDetails?.text || 'local storage read failed');
             return { [key]: response.result?.result?.value };
         };
         writeLocal = async values => {
+            const portable = Object.fromEntries(Object.entries(values).filter(([key]) => settingsSchema.PERSONAL_KEYS.includes(key)));
+            const local = Object.fromEntries(Object.entries(values).filter(([key]) => !settingsSchema.PERSONAL_KEYS.includes(key)));
             const response = await send({ method: 'script.evaluate', params: {
-                expression: `chrome.storage.local.set(${JSON.stringify(values)}).then(() => true)`,
+                expression: `(async () => {
+                    if (Object.keys(${JSON.stringify(portable)}).length) {
+                        const saved = await chrome.storage.sync.get('bpbSettings');
+                        await chrome.storage.sync.set({ bpbSettings: { ...saved.bpbSettings, ...${JSON.stringify(portable)} } });
+                    }
+                    if (Object.keys(${JSON.stringify(local)}).length) await chrome.storage.local.set(${JSON.stringify(local)});
+                    return true;
+                })()`,
                 target: { context: settingsWindow }, awaitPromise: true, resultOwnership: 'none',
             } });
             if (response.result?.type === 'exception') throw new Error(response.result.exceptionDetails?.text || 'local storage write failed');
@@ -380,7 +395,12 @@ try {
             });
             await writeFile(output, Buffer.from(data, 'base64'));
         };
-        setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
+        setSettings = values => worker.evaluate(async ({ values, keys }) => {
+            const saved = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({ bpbSettings: {
+                ...Object.fromEntries(Object.entries(saved.bpbSettings || {}).filter(([key]) => keys.includes(key))), ...values,
+            } });
+        }, { values, keys: settingsSchema.PERSONAL_KEYS });
         readSettings = () => worker.evaluate(async () => (await chrome.storage.sync.get('bpbSettings')).bpbSettings);
         setZoom = async factor => {
             await worker.evaluate(async value => {
@@ -390,8 +410,20 @@ try {
             }, factor);
             await page.bringToFront();
         };
-        readLocal = key => worker.evaluate(storageKey => chrome.storage.local.get(storageKey), key);
-        writeLocal = values => worker.evaluate(values => chrome.storage.local.set(values), values);
+        // Compatibility names for verifier adapters: portable card choices now
+        // live in the authoritative sync record; catalogs remain local. Reads
+        // stay in the worker realm so pointer checks never blur the fixture.
+        readLocal = key => worker.evaluate(async ({ key, portable }) => portable
+            ? { [key]: (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.[key] }
+            : chrome.storage.local.get(key), { key, portable: settingsSchema.PERSONAL_KEYS.includes(key) });
+        writeLocal = values => worker.evaluate(async ({ portable, local }) => {
+            if (Object.keys(portable).length) {
+                const saved = await chrome.storage.sync.get('bpbSettings');
+                await chrome.storage.sync.set({ bpbSettings: { ...saved.bpbSettings, ...portable } });
+            }
+            if (Object.keys(local).length) await chrome.storage.local.set(local);
+        }, { portable: Object.fromEntries(Object.entries(values).filter(([key]) => settingsSchema.PERSONAL_KEYS.includes(key))),
+            local: Object.fromEntries(Object.entries(values).filter(([key]) => !settingsSchema.PERSONAL_KEYS.includes(key))) });
     }
     const browserName = firefoxMode ? 'firefox' : 'chromium';
     console.log(`Verification browser: ${assertVerificationBrowser({ name: browserName, version, expectedName: browserName,

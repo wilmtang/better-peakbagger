@@ -145,8 +145,11 @@ and supplemental header content in the body toolbar. Do not add another collapse
 button, drag implementation or competing stored layout.
 
 Use [`src/ui/peak-card-layout.css`](../src/ui/peak-card-layout.css) for shared
-header geometry, typography, chevron, grip and focus treatment. Extend its card
-selectors when registering a new surface. The whole heading is the disclosure;
+header geometry, typography, chevron, grip and focus treatment. Common rules use
+the layout owner's `data-bpb-peak-card` marker; registering a new card does not
+require another ID in those selectors. Keep feature header/button defaults at
+low specificity (`:where(...)`) so shared controls retain their geometry.
+The whole heading is the disclosure;
 the grip is a separate control. Expansion and reordering are deliberate layout
 changes. Async refresh is not.
 
@@ -218,6 +221,11 @@ table. Follow its existing reconciliation flow for uncertain remote writes.
 
 ## Appearance and controls
 
+- Peak and ascent weather opt into [`card.css`](../src/ui/card.css) through
+  `data-bpb-card="weather"`. Reuse its semantic palette, hidden/focus rules and
+  shell; keep feature density/spacing local. Load it through the real manifest
+  before feature CSS and include it in faithful fixtures. GPS details, cloud/snow
+  palettes and embedded MAIN-world panels retain their existing variants.
 - Scope feature CSS to the card ID. Use the existing light palette and
   `html[data-bpb-theme="dark"]` overrides for isolated page cards. Embedded
   Analyzer panels use their owner's resolved `data-theme`/palette instead of

@@ -296,6 +296,14 @@ runtime changes require the real-browser checks in the convention and AGENTS.
   CR-02 now shares pure range/tick selection and hourly series construction across
   the ascent/peak charts. All 71 scale/chart/ascent tests and focused ESLint passed.
   The renderers retain their bar/line, GPX and reference-height differences.
+  CR-03 shares opt-in weather shell/palette rules in `card.css`, loaded through
+  the real manifest, and makes common peak headers attribute-based. The 49
+  manifest/layout tests passed. Hidden Chrome 156.0.8078.4 passed real-extension
+  startup at 1000×760, the ascent matrix at 375/681/768/1440 px in both themes,
+  and five cloud cases including 320/390/820/1440 px and simulated 150% text zoom.
+  Narrow dark ascent and narrow light cloud captures were visually inspected.
+  The ascent verifier was corrected to read portable choices from sync, preserve
+  them across theme resets and compare the actual pre-drag preference.
 - **Intentionally not changed:** native mounting, settings keys, provider policy,
   worker-write ownership and unrelated work. The remaining extractions are still
   being implemented.

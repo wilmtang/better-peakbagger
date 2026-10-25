@@ -21,7 +21,7 @@ export async function verifyAscentWeatherModelMemory({ evaluate, navigate, resiz
             select.focus({ preventScroll: true }); select.value = 'gfs_global'; select.dispatchEvent(new Event('change'));
         });
         await loaded('GFS');
-        await waitForCondition(async () => (await readLocal(key))[key] === 'gfs_global', { description: 'explicit archive model saved locally' });
+        await waitForCondition(async () => (await readLocal(key))[key] === 'gfs_global', { description: 'explicit archive model saved in portable settings' });
         const count = evidence.length;
         await navigate(url, { preserveModel: true });
         await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView({ block: 'center', behavior: 'instant' }));

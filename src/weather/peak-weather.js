@@ -41,7 +41,7 @@ export function mountPeakWeather() {
     const summit = subject;
     let requestedSubject = summit, summitResult = null;
     let zone = mountainTime.resolve(subject.latitude, subject.longitude);
-    const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
+    const card = element('section', { id: ID, hidden: '', 'data-bpb-card': 'weather', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', 'data-label': 'Refresh', 'aria-label': 'Refresh summit weather' },
         [element('span', { text: 'Refresh' })]);
     const selectedLocation = element('span', { class: 'bpb-week-location-name', role: 'status', 'aria-label': 'Weather location', 'aria-live': 'polite', 'aria-atomic': 'true', text: 'At the summit' });

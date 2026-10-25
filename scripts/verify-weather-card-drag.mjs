@@ -50,11 +50,12 @@ export async function verifyWeatherCardDrag({ evaluate, navigate, click, press, 
         await setSettings({ theme, units: 'metric' }); await resize(1440, 1100); await open();
         await click('.bpb-weather-disclosure'); await click('[data-metric="temperature"]');
         const requests = evidence.length;
+        const savedBeforeDrag = (await readLocal('bpbAscentWeatherColumn')).bpbAscentWeatherColumn;
         const first = await coordinates('report');
         await pointerDown(first.from.x, first.from.y); await movePointer(first.to.x, first.to.y);
         await wait(() => document.getElementById('bpb-ascent-weather').hasAttribute('data-bpb-card-dragging')
             && !document.querySelector('.bpb-card-drop-preview').hidden, 'lifted weather and destination preview');
-        assert.equal((await readLocal('bpbAscentWeatherColumn')).bpbAscentWeatherColumn, theme === 'light' ? undefined : 'summary', 'dragging never persists a tentative position');
+        assert.equal((await readLocal('bpbAscentWeatherColumn')).bpbAscentWeatherColumn, savedBeforeDrag, 'dragging never persists a tentative position');
         if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-weather-dragging.png`));
         await pointerUp(); await assertColumn('report'); await waitForSaved('report');
         assert.equal(evidence.length, requests, 'moving weather never refetches its data');
