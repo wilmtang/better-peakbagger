@@ -7,6 +7,15 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
+export const readSnowCardPlacement = () => {
+    const weather = document.getElementById('bpb-peak-weather-row');
+    const snow = document.getElementById('bpb-peak-snow-row');
+    const rows = Array.from(snow?.parentElement?.children || []);
+    return { sameStack: !!weather && !!snow && weather.parentElement === snow.parentElement,
+        followsWeather: rows.indexOf(weather) >= 0 && rows.indexOf(weather) < rows.indexOf(snow),
+        order: rows.map(row => row.id).filter(Boolean) };
+};
+
 // Shared Chrome/Firefox cases exercise the real manifest and isolated bundle.
 // Only provider responses and native fixture pages are substituted.
 export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, press, movePointer, clickPoint, resize, screenshot, screenshotPage,
@@ -18,6 +27,17 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         ArrowRight: '\uE014', Home: '\uE011', End: '\uE010', Escape: '\uE00C' }[name] : name;
     const ready = () => wait(() => document.querySelector('#bpb-peak-snow')?.getAttribute('aria-busy') === 'false'
         && document.querySelector('.bpb-snow-status')?.textContent.includes('Hourly readings'), 'visible snow observations');
+    const settleForecast = async description => {
+        await wait(() => document.getElementById('bpb-peak-weather')?.hidden === false, 'neighboring forecast mount');
+        // Forecast reads wait for viewport eligibility. Visit the neighbor
+        // before focusing Snow, which can put Weather above the viewport.
+        await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start' }));
+        await waitForCondition(() => evaluate(() => ({ days: document.querySelectorAll('.bpb-week-day').length,
+            busy: document.getElementById('bpb-peak-weather')?.getAttribute('aria-busy'),
+            status: document.querySelector('.bpb-week-status')?.textContent })), {
+            description, timeoutMs: 20_000, isReady: state => state.days === 16 && state.busy === 'false',
+        });
+    };
     const geometry = () => evaluate(() => {
         const card = document.getElementById('bpb-peak-snow');
         const rect = node => {
@@ -126,13 +146,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         await resize(width, 1100); await setSettings({ theme, units: theme === 'dark' ? 'metric' : 'imperial' });
         await writeLocal({ bpbSnotelCatalogV1: null }); setMode('loading');
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=${width === 681 ? 'map-first' : 'normal'}`);
-        await wait(() => document.getElementById('bpb-peak-weather')?.hidden === false, 'neighboring forecast mount');
-        await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start' }));
-        await waitForCondition(() => evaluate(() => ({ days: document.querySelectorAll('.bpb-week-day').length,
-            busy: document.getElementById('bpb-peak-weather')?.getAttribute('aria-busy'),
-            status: document.querySelector('.bpb-week-status')?.textContent })), {
-            description: 'settled neighboring forecast', timeoutMs: 20_000, isReady: state => state.days === 16 && state.busy === 'false',
-        });
+        await settleForecast('settled neighboring forecast');
         await focusRefresh(); await pending(); const initial = await geometry();
         assert.deepEqual(initial.overflow, []);
         setMode('complete'); release(); await ready(); stable(initial, await geometry(), `${name}: initial load`);
@@ -158,7 +172,9 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         assert.deepEqual(axis.labels, axis.dates, `${name}: horizontal axis identifies observation dates`);
         assert.equal(axis.readable, true, `${name}: date ticks fit without overlap`);
         assert.match(axis.title, new RegExp(`${axis.dates[0]}.*${theme === 'dark' ? 'cm' : 'in'}`));
-        assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-row').previousElementSibling.id), 'bpb-peak-weather-row');
+        const placement = await evaluate(readSnowCardPlacement);
+        assert.ok(placement.sameStack && placement.followsWeather,
+            `snow must follow weather in the default card stack: ${JSON.stringify(placement)}`);
         await image(`${name}-ready`);
         await inspectChart(name);
         await click('#bpb-peak-snow summary'); await focusRefresh();
@@ -235,9 +251,8 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     // Begin with a cold page-memory cache so the alternate station cannot
     // bypass the held/error transport through an earlier successful selection.
     setMode('complete'); await navigate(`${origin}/peak.aspx?pid=2296&snow=recovery`);
+    await settleForecast('settled forecast before failed station switch');
     await focusRefresh(); await ready();
-    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
-        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'settled forecast before failed station switch');
     await focusRefresh();
     // A failed replacement restores Paradise. Refresh must keep that visible
     // station, rather than silently retrying the failed Bumping Ridge choice.
@@ -280,9 +295,9 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     assert.equal(await evaluate(() => document.activeElement.id), 'bpb-peak-snow-station');
 
     await writeLocal({ bpbSnotelCatalogV1: null }); setMode('long-station');
-    await navigate(`${origin}/peak.aspx?pid=2296&week-weather=no-map`); await focusRefresh(); await ready();
-    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
-        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'settled mapless forecast before snow capture');
+    await navigate(`${origin}/peak.aspx?pid=2296&week-weather=no-map`);
+    await settleForecast('settled mapless forecast before snow capture');
+    await focusRefresh(); await ready();
     await focusRefresh();
     assert.deepEqual((await geometry()).overflow, []); await image('375-long-station-mapless'); cases.push('long-station-mapless');
     const beforeUnits = snowEvidence.length;
@@ -327,10 +342,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
 
     await writeLocal({ bpbSnotelCatalogV1: null }); setMode('loading');
     await navigate(`${origin}/peak.aspx?pid=2296&week-weather=normal`);
-    await wait(() => document.getElementById('bpb-peak-weather')?.hidden === false, 'forecast before coverage result');
-    await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start' }));
-    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
-        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'settled forecast before coverage result');
+    await settleForecast('settled forecast before coverage result');
     await focusRefresh(); await pending(); const beforeCoverage = await geometry();
     setMode('no-stations'); release();
     await wait(() => document.querySelector('.bpb-snow-status')?.textContent.includes('No SNOTEL'), 'no nearby station');
