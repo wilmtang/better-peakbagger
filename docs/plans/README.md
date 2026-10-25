@@ -14,6 +14,8 @@
   — conversion code, actual national-layer sizes and a rendered raw-polygon/H3
   comparison; local batch stopped at 122/460 sources, then resumed on build-host.
   Full US size, production settings and live Cloudflare behavior remain unverified.
+  Server tooling now has an [independent local repository](../server-repository.md);
+  existing research paths remain during concurrent compaction work.
 
 - [Cell coverage in-browser feasibility experiment](experiments/fcc-browser-coverage/README.md)
   — bounded FCC-derived sample decoded and rendered in hidden Chrome/Firefox;

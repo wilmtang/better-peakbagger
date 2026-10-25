@@ -1,5 +1,10 @@
 # FCC cell coverage on Cloudflare: storage and free-tier investigation
 
+**Repository boundary:** standalone server tooling is now available in the local
+`better-peakbagger-server` checkout. See the [extraction and deployment boundary](../server-repository.md).
+The research assets and existing experiment paths remain here during concurrent
+compaction work; the repositories are not automatically synchronized.
+
 Updated October 25, 2026. **The detailed national T-Mobile LTE conversion is
 3.315 GB; the public GitHub H3 counterpart is 109.2 MB. The comparison below
 shows the additional boundary detail and smaller coverage gaps.** Different
