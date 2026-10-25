@@ -2,9 +2,87 @@
 
 Read this guide before adding or changing a card on a peak page, saved ascent,
 or ascent add/edit form. It covers standalone cards and panels embedded in an
-existing feature. Shared visual and lifecycle rules do not imply one universal
-mounting, dragging or collapse controller. Follow the owning surface below.
+existing feature. Share common mechanisms through small helpers and keep native
+mounting, placement and data policy in surface adapters. Follow the owning surface
+below; one universal card controller is not required.
 Repository instructions in [AGENTS.md](../AGENTS.md) remain authoritative.
+
+## Reuse across peak and ascent surfaces
+
+Before creating another helper or copying a block from a card, identify the
+existing owner of that behavior. Reuse the mechanism when its invariants match;
+keep the surface's inputs and policy explicit. A new card should primarily supply
+identity, content, data policy and a placement adapter, rather than another
+implementation of focus, gestures, visibility and teardown.
+
+These shared modules already exist:
+
+| Concern | Reuse now | Policy retained by the caller |
+| --- | --- | --- |
+| Safe DOM and feedback | [`dom.js`](../src/ui/dom.js), [`stable-text.js`](../src/ui/stable-text.js) | Labels, status alternatives, deliberate expansion and retained content |
+| Page lifetime and cooldown UI | [`page-lifecycle.js`](../src/ui/page-lifecycle.js), [`retry-cooldown.js`](../src/ui/retry-cooldown.js) | Eligible reads, cancellation, TTL, resume and remote-write reconciliation |
+| Movement | [`card-drag.js`](../src/ui/card-drag.js), [`layout-menu.js`](../src/ui/layout-menu.js) | Native anchors, valid destinations, order, persistence and preview strategy |
+| Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.js`](../src/time/mountain-time.js) | Forecast versus historical endpoint, date range, model capabilities and freshness |
+| Weather display | [`weather-hourly-table.js`](../src/weather/weather-hourly-table.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |
+
+`card-drag.js` is currently used by ascent weather; the peak layout still owns a
+separate gesture implementation. The table describes reusable building blocks,
+not a claim that all current cards have migrated. Check the implementation before
+assuming a convention is already enforced.
+
+Use the following boundaries for further extraction:
+
+- **Card shell:** share visual tokens, safe control defaults, focus treatment,
+  attribution/status slots and optional header parts. Keep a peak's table row and
+  disclosure under the peak layout adapter; keep an ascent section, docking and
+  native GPS-node ownership under the ascent adapter. Embedded panels opt into
+  only the parts their owner needs. Do not give an ascent a collapse preference
+  merely to fit an abstraction.
+- **Read eligibility:** one policy should evaluate settings readiness, feature
+  enablement, active lifecycle, applicable document/card visibility, collapse and
+  viewport eligibility. A reusable observer may report transitions, while the
+  feature decides which reads to start or abort and whether cached data is fresh.
+  Observe changes in eligibility, not every attribute mutation. Never fetch on a
+  move, units/theme change, local hour selection or unrelated settings update.
+  A collapse gate applies only to a surface that actually supports collapse.
+- **Latest request ownership:** reusable transaction bookkeeping may own the
+  generation, AbortController and pending state. The feature supplies request
+  identity, validation, cache policy and how to label retained results. Guard
+  success, failure and finalization; aborting or superseding work must not publish
+  stale content or clear a newer request's busy state. Reads and worker-owned
+  writes require different contracts.
+- **Chart mechanics:** share series/interval math, scales, SVG primitives,
+  pointer/keyboard sampling and local-time ticks where semantics match. Keep
+  supported metrics, instantaneous versus interval gusts, precipitation bars or
+  lines, reference elevations, day bounds and GPX cursor overlays explicit.
+  A chart helper must not fetch data, infer identity or persist a model choice.
+- **Placement and settings:** adapters expose valid targets and move existing
+  nodes; the shared gesture mechanism consumes those targets. Persist stable
+  schema-owned identifiers only. A shared settings helper may guard revisions
+  and writes, but it must not choose a default model, storage world or destination
+  for the caller. Preserve existing keys and migration behavior.
+
+Treat these as extraction contracts, not available APIs. Introduce a new shared
+module only after identifying at least two concrete consumers with matching
+behavior, or a reproduced defect that needs one common invariant. Prefer a small
+internal extraction when only one consumer exists. Avoid a base class or an
+options object containing every feature's exceptions.
+
+Code reuse and request reuse are separate. These features ship as separate IIFE
+bundles: importing the same module into both shares source, not module state,
+caches or subscriptions. Cross-card/page deduplication needs an explicit owner
+and protocol, bounded retention, identity-aware keys and per-reader cancellation.
+Do not introduce a page-world global or broaden the settings bridge to share
+privileged state.
+
+For a behavior-preserving extraction, capture the existing contract first and
+migrate one consumer at a time. Reuse a parameterized test contract for common
+invariants, with a fixture adapter for each surface. Keep native markup, host CSS,
+late mounting and execution-world differences faithful. Check DOM identity,
+focus, fetch counts, cancellation, retained source labels and geometry across
+transitions; shared unit tests alone cannot establish both integrations.
+Make an intentional behavior change, including a bug fix, explicit and separately
+reviewable from mechanical code movement.
 
 ## Ownership and mounting
 
@@ -164,8 +242,11 @@ table. Follow its existing reconciliation flow for uncertain remote writes.
   new model/card preferences. Persist explicit choices only, not defaults during
   mount or render.
 - Resolve settings before the first request. A saved unsupported selection must
-  not silently become another model or overwrite the user's preference. Name
-  the displayed source separately when retaining older results.
+  follow the owning feature's documented policy and must not overwrite the user's
+  preference. Summit Cloud Cover keeps an unsupported choice unavailable; the
+  historical ascent archive permits a visit-local startup Best Match fallback
+  for a different ascent's date/coverage. Neither authorizes replacing an explicit
+  in-page choice. Name the displayed source separately when retaining older results.
 - Use `createPageLifecycle` for BFCache-aware suspend/resume/dispose. Cancel
   feature-owned reads, gestures and timers on disable, applicable collapse,
   page suspension or superseding selection; disconnect observers and unsubscribe
