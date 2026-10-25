@@ -1,5 +1,9 @@
 # Active plans
 
+- [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
+  — R2/Worker free-tier budgets, measured small-sample PMTiles sizes and a
+  proposed hosting path; full US size and live Cloudflare behavior remain unverified.
+
 - [Cell coverage in-browser feasibility experiment](experiments/fcc-browser-coverage/README.md)
   — bounded FCC-derived sample decoded and rendered in hidden Chrome/Firefox;
   direct FCC download access and full-state performance remain unverified.
