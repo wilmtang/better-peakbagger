@@ -203,6 +203,16 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(pageMessages.at(-1).type, 'loaded');
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.73, -121.78], zoom: 13.25 });
 
+    const beforeFireRetry = frameMessages.length;
+    dispatchPage({ type: 'layerAction', action: 'retry', id: 'wildfire', url: 'https://untrusted.example', fires: [{ geometry: 'untrusted' }] });
+    assert.equal(frameMessages.length, beforeFireRetry + 1, 'a validated wildfire Refresh must reach the active renderer');
+    assert.equal(frameMessages.at(-1).action, 'retry'); assert.equal(frameMessages.at(-1).id, 'wildfire');
+    assert.equal(Object.hasOwn(frameMessages.at(-1), 'url'), false); assert.equal(Object.hasOwn(frameMessages.at(-1), 'fires'), false);
+    const afterFireRetry = frameMessages.length;
+    dispatchPage({ type: 'layerAction', action: 'capture', id: 'wildfire' });
+    dispatchPage({ type: 'layerAction', action: 'retry', id: 'arbitrary' });
+    assert.equal(frameMessages.length, afterFireRetry, 'wildfires expose retry only; unknown layers remain blocked');
+
     const snowSelect = (stationId, generation = init.generation) => window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow, origin: 'chrome-extension://test-id',
         data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'snowSelect', generation, stationId },

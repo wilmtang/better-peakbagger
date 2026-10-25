@@ -617,6 +617,29 @@ activity metadata, or Peakbagger identity. DEM responses may be reused from a
 bounded local cache. Returning to 2D stops tile activity; the renderer may stay
 parked and idle for a few minutes before release, and the cache is not cleared.
 
+### Reported wildfire overlay
+
+**Wildfires** is off in unrelated map sessions. Turning it on requests current
+US incident locations and available perimeters directly from NIFC/WFIGS at
+`services3.arcgis.com`. Opening Overlays alone makes no fire request. Requests
+contain the viewed geographic bounds, fixed wildfire-only filters, selected public
+fields and pagination parameters. The provider receives IP address and ordinary
+network metadata; requests omit credentials and referrers and send no GPX, route,
+account, ascent date or activity data. The active renderer owns its requests;
+turning the layer off, switching renderers, hiding the document or leaving the
+page cancels work. Settled pans debounce for 300 ms. Visible enabled maps refresh
+approximately every five minutes, with bounded pages, response bytes, vertices
+and deadlines. Rate limits are retained across renderer switches and Full Screen.
+Results stay in page memory only. Each complete component can display independently;
+failed refreshes retain dated complete components for at most 30 minutes. An empty
+successful response is different from unavailable or incomplete reports. Incident
+updates, perimeter observations and perimeter edits keep separate source dates.
+Full Screen handoffs carry selection and cooldown only; they refetch fire data.
+This is current reporting even on old ascent pages, and does not establish closures,
+evacuation boundaries or route access. Canada, smoke and satellite hotspots are not
+part of this overlay. US state/DC outlines determine eligibility, with source
+completeness and mapping delays still applying within them.
+
 ## GitHub connection and backup (optional)
 
 GitHub is disconnected by default. Connecting requires the user to grant host

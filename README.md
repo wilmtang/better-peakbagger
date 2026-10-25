@@ -46,7 +46,8 @@ from the last 30 days and check its date, estimated coverage, and full-image
 cloud cover. Microsoft Planetary Computer supplies the imagery; clouds and
 gaps may still obscure the terrain.
 The compact **Overlays** menu at the upper-left combines Sentinel imagery,
-slope angle, public lands and SNOTEL, with independent raster opacity.
+slope angle, public lands, SNOTEL and current US wildfires, with independent raster opacity.
+Wildfires adds reported locations, mapped perimeters and separately dated source details.
 Public lands includes individual land-type checkboxes and quick **Only** actions.
 The basemap selector stays at the upper-right in both 2D and 3D.
 [Map overlays](docs/map-layers.md) · [Regional coverage table](docs/map-overlay-coverage.md) · [3D map guide](docs/3d-map.md)

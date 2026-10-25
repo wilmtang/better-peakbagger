@@ -37,7 +37,7 @@ test('opacity announcements wait for saved preferences as well as settings', asy
         finish({ bpbMapOverlayOpacityV1: { sentinel: 31, slope: 42, land: 73 } }); await tick();
         const announcements = env.messages.filter(message => message.type === 'preferences');
         assert.equal(announcements.length, 1);
-        assert.deepEqual(JSON.parse(JSON.stringify(announcements[0].preferences)), { sentinel: 31, slope: 42, land: 73, snotel: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
+        assert.deepEqual(JSON.parse(JSON.stringify(announcements[0].preferences)), { sentinel: 31, slope: 42, land: 73, snotel: 100, wildfire: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
         assert.equal(announcements[0].snotel, true);
     } finally { env.close(); }
 });
@@ -93,7 +93,7 @@ test('the isolated map service persists bounded preferences only and rejects for
     try {
         await tick(); env.send({ type: 'preferences' }); await tick(); assert.equal(env.requests.length, 0);
         env.send({ type: 'save', preferences: { sentinel: 150, slope: -5, land: 33.8, snotel: 5, enabled: true, url: 'https://example.com' } }); await tick();
-        assert.deepEqual(JSON.parse(JSON.stringify(env.local.bpbMapOverlayOpacityV1)), { sentinel: 100, slope: 0, land: 34, snotel: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
+        assert.deepEqual(JSON.parse(JSON.stringify(env.local.bpbMapOverlayOpacityV1)), { sentinel: 100, slope: 0, land: 34, snotel: 100, wildfire: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
         const request = { type: 'stations', requestId: 1, bounds: [-122, 46, -121, 47] };
         env.send(request, 'https://example.com'); env.send(request, env.win.location.origin, null); env.send({ ...request, bounds: [-122, -200, -121, 47] });
         await tick(); assert.equal(env.requests.length, 0);
@@ -186,7 +186,7 @@ test('full-screen handoffs are bounded, expiring, one-use and bound to destinati
     const service = createMapLayerHandoff({ storage, now: () => time, isPeakbaggerSender: sender => sender?.url?.startsWith('https://www.peakbagger.com/') });
     const source = { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', tab: { id: 7, windowId: 2 } };
     const destination = 'https://www.peakbagger.com/map/BigMap.aspx?t=P&d=2296';
-    const snapshot = { revision: 5, state: { slope: { enabled: true, opacity: 60 } }, menuOpen: true, cooldowns: { slope: time + 120000 } };
+    const snapshot = { revision: 5, state: { slope: { enabled: true, opacity: 60 }, wildfire: { enabled: true, opacity: 0 } }, menuOpen: true, cooldowns: { slope: time + 120000, wildfire: time + 180000 }, fires: [{ secret: 'not transferred' }] };
     assert.equal((await service.prepare({ destination: 'https://example.com/map/BigMap.aspx', snapshot }, source)).ok, false);
     await service.prepare({ destination, snapshot }, source);
     assert.match(values.bpbMapLayerHandoffsV1[0].target, /^[a-f0-9]{64}$/);
@@ -195,6 +195,8 @@ test('full-screen handoffs are bounded, expiring, one-use and bound to destinati
     const target = { url: destination, tab: { id: 9, windowId: 2, openerTabId: 7 } };
     const result = await service.consume({}, target); assert.equal(result.ok, true); assert.equal(result.snapshot.state.slope.enabled, true); assert.equal(result.snapshot.menuOpen, false);
     assert.equal(result.snapshot.cooldowns.slope, snapshot.cooldowns.slope);
+    assert.equal(result.snapshot.state.wildfire.enabled, true); assert.equal(result.snapshot.state.wildfire.opacity, 100);
+    assert.equal(result.snapshot.cooldowns.wildfire, snapshot.cooldowns.wildfire); assert.equal(Object.hasOwn(result.snapshot, 'fires'), false);
     assert.equal((await service.consume({}, target)).ok, false);
     await service.prepare({ destination, snapshot }, source); time += 30001; assert.equal((await service.consume({}, target)).ok, false);
 });

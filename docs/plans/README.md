@@ -10,7 +10,7 @@
   Records authentication requirements, parser compatibility, timings and proof gaps.
 
 - [Wildfire map overlay](wildfire-map-overlay.md)
-  — proposed; opt-in reported US wildfire locations and perimeters in the
+  — US implementation verified locally; opt-in reported locations and perimeters in the
   shared native/3D Overlays menu, followed by Canadian locations after proving
   the new service's current-record queries. Includes source probes, bounded
   request design, lifecycle/UX checks and explicit live/browser proof gaps.

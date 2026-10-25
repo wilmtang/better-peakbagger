@@ -123,6 +123,8 @@ independent of the existing targets.
 
 ## Weather and snow
 
+- [verify-wildfires.mjs](verify-wildfires.mjs) — real Leaflet and hardware MapLibre wildfire rendering and recovery through the weather fixture harness.
+
 - [verify-air-quality.mjs](verify-air-quality.mjs) — lazy AQI requests and refresh stability through the weather browser harness.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)

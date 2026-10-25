@@ -9,7 +9,7 @@ import { createMapLayerControl } from '../../src/maps/map-layer-control.js';
 
 test('overlay schema bounds device-local alpha and fails closed on enablement', () => {
     const state = Schema.mapOverlayState({ sentinel: { enabled: 'true', opacity: NaN }, slope: { enabled: true, opacity: 112 }, land: { opacity: -3 }, snotel: { enabled: true, opacity: 0 } });
-    assert.deepEqual(state, { sentinel: { enabled: false, opacity: 100 }, slope: { enabled: true, opacity: 100 }, land: { enabled: false, opacity: 0 }, snotel: { enabled: true, opacity: 100 } });
+    assert.deepEqual(state, { sentinel: { enabled: false, opacity: 100 }, slope: { enabled: true, opacity: 100 }, land: { enabled: false, opacity: 0 }, snotel: { enabled: true, opacity: 100 }, wildfire: { enabled: false, opacity: 100 } });
     assert.deepEqual(Schema.mapOverlayState(state), state);
     assert.equal(Object.hasOwn(Schema.DEFAULTS, 'mapOverlays'), false, 'overlay enablement is not a synced preference');
 });
@@ -381,4 +381,22 @@ test('land checkboxes support mixed selection, Only, empty selection and regiona
     state.land.enabled = false; paint();
     assert.ok([...doc.querySelectorAll('.bpb-layers-land-types input, .bpb-layers-land-only')].every(input => input.disabled));
     control.dispose(); dom.window.close();
+});
+
+test('wildfire details omit raster opacity and preserve open source-link focus on report updates', () => {
+    const dom = new JSDOM('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const state = Schema.mapOverlayState({ wildfire: { enabled: true } });
+    const fire = { id: 'nifc:incident:1', name: '<img src=x> Long Mountain Fire', incidentUpdated: Date.UTC(2026, 9, 24), perimeterObserved: null, perimeterEdited: null, acres: 12, contained: null, hasPerimeter: false };
+    const model = { state, statuses: { wildfire: { count: 1, fires: [fire], retry: true } } };
+    try {
+        control.render(model); control.trigger.click(); document.querySelector('[data-layer="wildfire"] button').click();
+        assert.equal(document.querySelector('[aria-label="Wildfires opacity"]'), null);
+        const detail = document.querySelector('.bpb-fire-list details'), source = detail.querySelector('a'); detail.open = true; source.focus();
+        control.render({ ...model, statuses: { wildfire: { count: 1, fires: [{ ...fire, incidentUpdated: Date.UTC(2026, 9, 25) }], retry: true } } });
+        assert.equal(document.activeElement, source); assert.equal(detail.open, true); assert.equal(source.isConnected, true);
+        assert.equal(document.querySelector('.bpb-fire-list img'), null);
+        control.render({ ...model, statuses: { wildfire: { count: 0, fires: [], retry: true } } });
+        assert.equal(document.activeElement, document.querySelector('[data-layer="wildfire"] button'));
+    } finally { control.dispose(); dom.window.close(); }
 });

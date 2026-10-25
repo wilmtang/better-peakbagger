@@ -1,7 +1,81 @@
 # Wildfire map overlay
 
-Status: researched and proposed on October 24, 2026. Documentation only; no
-wildfire runtime, settings, permissions or UI have been implemented.
+Status: US implementation completed and locally verified on October 24, 2026.
+Canada and the optional follow-up products remain deferred. The original research
+proposal below is retained as design history; the current closure ledger follows.
+
+## Implementation closure — October 24, 2026
+
+### Fixed and verified
+
+- Added opt-in current US incident locations and mapped perimeters in native 2D
+  and MapLibre 3D, using the existing menu, schema and one-use Full Screen state.
+  The layer is independent of weather/SNOTEL settings and leaves the camera,
+  native routes, peak markers and basemap alone. Fixed styling has no opacity
+  slider. All loaded fires have paginated keyboard details with safe text,
+  independent incident/observation/edit dates and official source links.
+- Added fixed WF-only query fields, wrapped viewport splitting, stable page
+  checks, bounded response/vertex budgets, deadlines, one transient HTTP retry,
+  cancellation, longest-deadline cooldowns and memory-only data. Complete source
+  components publish independently, preserve dated successful results on failed
+  refreshes, and expire after 30 minutes. Hidden pages do not poll.
+- Regression proof: the short-page test showed only one of three reported fires
+  before advancing pagination by the returned count. It passes with all three
+  afterward. The 3D retry assertion failed before the bridge's retry allowlist
+  admitted wildfire and passes after the narrow correction. Unknown layer IDs,
+  wildfire capture actions and arbitrary metadata remain rejected.
+- `npm test`: **3,485 passed** in an isolated source snapshot based on
+  `e57021f3`, containing this feature without the concurrent unfinished Summit
+  Cloud UI edits. After that separate unit was committed, the integrated checkout
+  passed **3,491 tests** as well. `npm run lint` passed with the existing eight reviewed owned
+  web-ext warnings. Focused model, client, session, schema, bridge, handoff,
+  control and renderer tests cover missing dates/geometry, holes, wrapped worlds,
+  stale completions, empty/partial results, budgets, cancellation and recovery.
+- Hidden Chromium **156.0.8078.4** and Firefox **158.0.1** passed eight
+  width/theme/zoom combinations each: **1440×1100** and **375×1100**, light/dark,
+  100%/200%. Checks cover held transports, duplicate activation, failed perimeter
+  refresh, Retry, keyboard source details, action/heading/following-content/scroll
+  geometry, plus real rendering on peak, ascent, Full Screen and standalone maps.
+  Real 3D pending/success/perimeter-error/retry transitions also passed.
+- Hardware MapLibre renderers were Chrome's **ANGLE Metal / Apple M3 Pro** and
+  Firefox's reported **Apple M1, or similar**. Painted-fire pixel checks passed
+  in both engines, with the off-state negative control producing zero fire
+  pixels. Screenshots were visually inspected, including polygon holes, native
+  vector priority, terrain drape and narrow enlarged controls. The broader real
+  unpacked extension checks passed in both browsers, including BFCache teardown.
+- Four small live NIFC count queries per browser returned HTTP 200 from the
+  HTTPS Peakbagger fixture and packaged terrain origins: the bounded Rainier
+  viewport contained three incident records and two perimeter records at probe
+  time. This proves browser access, not source completeness or fire conditions.
+  All interaction/rendering datasets otherwise remain deterministic fixtures.
+
+### Intentionally not changed
+
+- Canada remains unavailable until current-record semantics and official-map
+  agreement are proven. Territories are outside the first eligibility map.
+- Smoke, satellite hotspots, alerts, historical reconstruction and closure/route
+  inference remain separate future work. No new host permission, API key,
+  backend, persistent fire cache or provider tab was added.
+- Concurrent Summit Cloud work was preserved and excluded from this feature's
+  isolated verification snapshot and commit. Lazy AQI was completed separately
+  in commit `aa7dca5d`.
+
+### Changed but not fully proven
+
+- Live authenticated Peakbagger UI/legacy variants, native OS focus/window
+  placement, touch and screen-reader speech were not established by hidden
+  fixture checks. No store release or remote CI run was performed.
+- NIFC completeness, observation freshness and every jurisdiction's reporting
+  remain provider limits. Live edits between pages cannot be treated as a
+  server-side atomic snapshot, although inconsistent ordering/truncation fails
+  closed. Very large source perimeters may exceed the budget at any zoom.
+- Unsplit dateline-crossing rings fail closed instead of painting across the
+  world. Valid provider-split geometry and native wrapped-world placement are
+  covered by focused tests; unusual live dateline topology remains unproven.
+  Geometry validation is bounded and does not constitute a full topology audit.
+- The existing broad `peak-weather` verifier failed its location-label placement
+  assertion before this work. Focused AQI/wildfire and broad extension checks
+  passed; the unrelated weather placement assertion was not changed here.
 
 ## Recommendation and findings
 
@@ -255,7 +329,7 @@ not evidence that wildfire rendering has already been inspected.
   response headers alone do not prove page CSP, browser extension behavior,
   provider completeness, native focus or screen-reader output.
 
-## Evidence and remaining proof
+## Original research evidence and remaining proof (before implementation)
 
 Inspected the current map/settings/protocol/renderer sources and existing
 verification infrastructure on branch `main` at `e02b0fc4`. No runtime tests or
@@ -278,7 +352,7 @@ The initial direct probes could not resolve hosts inside the sandbox; the
 successful probes used approved read-only network access. No browser was
 launched, user tab altered, credential requested or activity data transmitted.
 
-Tracking categories for later implementation:
+Original research-only checkpoint (before implementation):
 
 - **Fixed and verified:** no runtime implementation yet. Research and repository
   documentation are the deliverables of this planning request.

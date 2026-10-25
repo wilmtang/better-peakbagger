@@ -1,5 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { createTerrainWildfires } from './terrain-wildfires.js';
 import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
 import { createSentinelSession } from '../maps/sentinel-session.js';
 import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
@@ -11,7 +12,7 @@ import { createBCTileFetch } from '../maps/bc-land-client.js';
 // tile URLs or executable styles cross the page/frame boundary.
 export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     let snapshot = null, scenes = [], sceneRevision = 0, landRevision = 0, sourceRevision = 0, disposed = false, registered = false;
-    let sentinelStatus = {};
+    let sentinelStatus = {}, wildfireStatus = {}, wildfire = null;
     const rasterStatus = {};
     const loadingMessage = id => id === 'land' ? 'Loading public lands' : 'Loading slope shading';
     const reportRaster = (id, patch) => {
@@ -114,6 +115,11 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
                 next.landCooldowns = mergeLandCooldowns(snapshot.landCooldowns, next.landCooldowns);
             }
             snapshot = next;
+            if (!wildfire && next.state.wildfire.enabled) wildfire = createTerrainWildfires({ map, maplibre, document: doc, onStatus: status => {
+                wildfireStatus = status; post('layerStatus', { id: 'wildfire', revision: snapshot?.revision, ...status });
+            } });
+            wildfire?.update({ ...next.state.wildfire, retryAt: next.cooldowns.wildfire });
+            if (next.state.wildfire.enabled && Object.keys(wildfireStatus).length) post('layerStatus', { id: 'wildfire', revision: next.revision, ...wildfireStatus });
             tiles.landCooldowns(next.landCooldowns);
             if (tiles.setLandTypes(next.landTypes)) { landRevision++; remove('land'); rasterStatus.land = {}; }
             for (const id of ['land', 'slope']) if (!next.state[id].enabled || next.state[id].opacity === 0) rasterStatus[id] = {};
@@ -134,6 +140,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             return first;
         },
         action({ id, action, capture }) {
+            if (id === 'wildfire') { if (action === 'retry') wildfire?.retry(); return; }
             if (action === 'capture' && id === 'sentinel' && typeof capture === 'string') sentinel.select(capture);
             if (action === 'retry' && (id === 'sentinel' ? sentinelStatus.pending : rasterStatus[id]?.pending)) return;
             if (action === 'retry' && snapshot?.state[id]?.enabled && !(id === 'land' && !snapshot.landTypes.length) && snapshot.cooldowns[id] <= Date.now()) {
@@ -145,13 +152,13 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
                 }
             }
         },
-        refresh() { retainOverlays(); sentinel.refresh(); },
+        refresh() { retainOverlays(); sentinel.refresh(); wildfire?.refresh(); },
         tileError(source, failure) {
             for (const [id, current] of layers) if (current === source && !(id === 'sentinel' ? sentinelStatus.error : rasterStatus[id]?.error)) error(id, failure);
         },
         menuOpen: () => snapshot?.menuOpen === true,
-        suspend() { snapshot = null; sentinel.deactivate(); for (const id of [...layers.keys()]) remove(id); },
-        basemapChanged: paint,
-        dispose() { disposed = true; sentinel.dispose(); for (const id of [...layers.keys()]) remove(id); tiles.dispose(); if (registered) maplibre.removeProtocol(protocol); },
+        suspend() { wildfire?.dispose(); wildfire = null; snapshot = null; sentinel.deactivate(); for (const id of [...layers.keys()]) remove(id); },
+        basemapChanged() { paint(); wildfire?.paint(); },
+        dispose() { disposed = true; wildfire?.dispose(); wildfire = null; sentinel.dispose(); for (const id of [...layers.keys()]) remove(id); tiles.dispose(); if (registered) maplibre.removeProtocol(protocol); },
     };
 }

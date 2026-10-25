@@ -40,6 +40,15 @@ locally after activation. Nearby discovery still requires a station within
 [South Dakota station](https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=354),
 [active SNOTEL catalog](https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?stationTriplets=*:*:SNTL&elements=SNWD,WTEQ&durations=DAILY&activeOnly=true).
 
+## Wildfire availability
+
+The **Wildfires** overlay is eligible inside US state and Washington, DC outlines
+(including Alaska and Hawaii). Canada and US territories remain unsupported.
+Border views can include US reporting alongside unsupported neighboring areas;
+clear pixels do not establish absence of fire. Current NIFC incident locations
+and available perimeters have independent reporting and mapping dates. See
+[Wildfires](map-layers.md#wildfires) for controls and limits.
+
 ## What each overlay actually covers
 
 | Overlay | Provider and geographic scope | Limits that remain inside an eligible region |

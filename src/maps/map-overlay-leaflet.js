@@ -1,17 +1,19 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createLeafletWildfires } from './wildfire-leaflet.js';
 import { createOverlayTiles } from './map-overlay-tiles.js';
 import { createPageBCTileFetch } from './bc-land-client.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup, updateSnotelPopupAction } from '../snow/snotel-map-marker.js';
 
-export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWindow = win }) {
+export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWindow = win, onWildfireStatus = () => {} }) {
     const L = win.L, layers = new Map(), controllers = new Map(), records = new Map(), states = new Map();
     const fetchBCTile = createPageBCTileFetch(bridgeWindow);
     const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError, onActivity });
     const z = { sentinel: 250, land: 260, slope: 270 };
+    let wildfire = null;
     let stations = null, stationPopups = [], stationKey = '', hasScenes = false;
     const draw = record => {
         const { id, coordinates, canvas, done } = record, controller = new AbortController();
@@ -56,6 +58,10 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
     };
     return {
         set(id, state) {
+            if (id === 'wildfire') {
+                if (!wildfire && state.enabled) wildfire = createLeafletWildfires({ win, map, document: bridgeWindow.document, onStatus: onWildfireStatus });
+                wildfire?.update(state); return;
+            }
             if (id === 'snotel') return;
             states.set(id, { ...state });
             if (id === 'land') {
@@ -80,6 +86,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         },
         clearSentinel() { remove('sentinel'); hasScenes = false; tiles.setScenes([]); },
         retry(id) {
+            if (id === 'wildfire') { wildfire?.retry(); return; }
             const state = states.get(id);
             if (!state?.enabled || state.opacity === 0 || state.retryAt > Date.now() || id === 'land' && state.landTypes?.length === 0 || id === 'sentinel' && !hasScenes) return;
             if (!tiles.retry(id)) return;
@@ -110,6 +117,6 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
             }
             stations.addTo(map);
         },
-        dispose() { for (const id of [...layers.keys()]) remove(id); if (stations) map.removeLayer(stations); for (const controller of controllers.values()) controller.abort(); controllers.clear(); tiles.dispose(); fetchBCTile.dispose(); },
+        dispose() { wildfire?.dispose(); for (const id of [...layers.keys()]) remove(id); if (stations) map.removeLayer(stations); for (const controller of controllers.values()) controller.abort(); controllers.clear(); tiles.dispose(); fetchBCTile.dispose(); },
     };
 }

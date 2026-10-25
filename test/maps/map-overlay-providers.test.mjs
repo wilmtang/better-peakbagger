@@ -24,9 +24,10 @@ test('offline overlay availability distinguishes provider regions without treati
     ];
     for (const [place, lon, lat, expected] of places) {
         const bounds = [lon - .01, lat - .01, lon + .01, lat + .01];
-        assert.deepEqual(Object.values(mapOverlayCoverage(bounds)), expected, place);
+        assert.deepEqual(['sentinel', 'slope', 'land', 'snotel'].map(id => mapOverlayCoverage(bounds)[id]), expected, place);
         assert.deepEqual(mapOverlayCoverage(bounds.map((value, index) => index % 2 ? value : value + 360)), mapOverlayCoverage(bounds), `${place} world copy`);
     }
+    for (const [place, lon, lat] of places) assert.equal(mapOverlayCoverage([lon - .01, lat - .01, lon + .01, lat + .01]).wildfire, ['Rainier', 'Denali', 'Hawaii', 'New Hampshire', 'South Dakota'].includes(place), `${place} wildfire coverage`);
     assert.equal(mapOverlayCoverage(null), null);
     assert.equal(mapOverlayCoverage([NaN, 0, 1, 2]), null);
     assert.equal(mapOverlayCoverage([-122.1, 49.09, -122, 49.11]).snotel, true, 'nearby US stations remain discoverable across the Canadian border');

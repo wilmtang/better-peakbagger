@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, intersectsLandBounds, regionCoverage, US_TERRITORY_BOUNDS } from './canadian-land.js';
+import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, intersectsLandBounds, regionCoverage, US_REGIONS, US_TERRITORY_BOUNDS } from './canadian-land.js';
 import { SENTINEL_LATITUDES } from './sentinel-core.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
@@ -18,6 +18,7 @@ export function mapOverlayCoverage(value) {
     const bounds = overlayBounds(value); if (!bounds) return null; // Unknown is not evidence of no coverage.
     const longitudePadding = 0.55 / Math.max(0.08, Math.cos(Math.max(Math.abs(bounds[1]), Math.abs(bounds[3])) * Math.PI / 180));
     return {
+        wildfire: regionCoverage(bounds, US_REGIONS),
         sentinel: bounds[3] >= SENTINEL_LATITUDES[0] && bounds[1] <= SENTINEL_LATITUDES[1],
         slope: intersectsWrapped(bounds, SLOPE_BOUNDS),
         land: landCoverage(bounds).length > 0,

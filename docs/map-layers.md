@@ -179,6 +179,46 @@ territories currently have no coverage. The detail links to
 and [Alberta camping rules](https://www.alberta.ca/camping-on-public-land).
 These ownership records do not establish whether dispersed camping is allowed.
 
+## Wildfires
+
+**Wildfires** shows current NIFC/WFIGS US wildfire incident locations and mapped
+perimeters. It is off by default and starts no request merely from opening the
+menu. Enablement follows the active renderer and one-use Full Screen handoff;
+there is no persistent fire-data cache. It operates independently of weather and
+SNOTEL settings. Native zoom 7 (with the existing 3D conversion) is the initial
+request threshold. US state/DC outlines determine eligibility; Canada and US
+territories are not enabled in this first version.
+
+Fixed translucent polygons and distinct incident points sit below native routes
+and markers. The row shows a reported-fire count instead of opacity. The detail
+contains a paginated, keyboard-operable list of every loaded fire, including
+perimeter-only records. Open a name or click a mapped feature for source dates,
+optional reported acreage/containment and an official NIFC link. Perimeter
+observation and edit dates remain separate from the incident update. An incident
+may have no mapped perimeter; a perimeter may have no matching incident point.
+Only validated official UUIDs associate the two sources, never names or proximity.
+
+Queries are bounded, cancellable viewport transactions. They follow all pages,
+reject inconsistent results and never publish a truncated component. Complete
+locations and perimeters can publish separately. **Partly loaded**, **Refresh
+failed**, **Service busy** and **Zoom in** distinguish failures from **No reported
+fires in this view**. Failed refreshes can retain complete components for at most
+30 minutes, with explicit feedback and original source dates. Large source
+perimeters can exceed the budget even at closer zooms; the source link remains
+available. A successful download does not imply a recently observed boundary.
+These are current reports even when viewing an older ascent.
+
+The active visible renderer refreshes approximately every five minutes; hidden
+pages do not poll. Changing the viewport, disabling the overlay, suspending the
+page or replacing the renderer cancels obsolete work. Fire styling never changes
+the native basemap, camera, routes or peak markers.
+
+Focused browser coverage: `node scripts/verify-ascent-weather.mjs --wildfire`
+and the same command with `--firefox`; `BPB_VERIFY_FIRE_SCREENSHOT_DIR` retains
+screenshots. These load the real unpacked extension, Leaflet and hardware
+MapLibre over HTTPS Peakbagger fixtures. Controlled provider replies exercise
+loading, partial/empty results, refresh recovery, keyboard details and geometry.
+
 ## Implementation boundaries
 
 `src/maps/map-layers.js` owns the page session and outer control. Embedded

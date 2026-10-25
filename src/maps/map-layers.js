@@ -5,6 +5,7 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
+import { WILDFIRE_LEGEND } from './wildfire-core.js';
 import { sentinelTarget } from './sentinel-core.js';
 import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns } from './map-layer-protocol.js';
@@ -52,6 +53,7 @@ export function installMapLayers(win = window) {
     };
     const selectable = new Set();
     const statuses = {
+        wildfire: { legend: WILDFIRE_LEGEND },
         sentinel: { legend: 'Copernicus Sentinel-2 · Microsoft Planetary Computer. Scene clouds can obscure coverage.' },
         slope: { legend: 'USGS 3DEP · Below 20° and no data are clear. Ground slope; resolution varies. Not an avalanche forecast.',
             legendEntries: SLOPE_BANDS.map(band => ({ label: band.to === 91 ? '≥45°' : `${band.from}–${band.to}°`, color: `rgb(${band.color.join(',')})` })) },
@@ -137,7 +139,7 @@ export function installMapLayers(win = window) {
         if (!opacityId) reconcileCoverage();
         relay();
         if (!frameMode && !booting && active && binding) {
-            for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], landTypes, retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
+            for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'slope', 'wildfire']) binding.engine.set(id, { ...state[id], landTypes, retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
             if (!opacityId || opacityId === 'sentinel') {
                 binding.sentinel.cooldown(statuses.sentinel.retryAt);
                 if (state.sentinel.enabled && state.sentinel.opacity > 0) binding.sentinel.activate(capture);
@@ -179,12 +181,12 @@ export function installMapLayers(win = window) {
             if (id === 'snotel') loadStations();
             else if (frameMode) {
                 statuses[id] = { ...statuses[id], pending: true, error: false, retry: true,
-                    message: id === 'sentinel' ? 'Finding captures…' : id === 'land' ? 'Loading public lands' : 'Loading slope shading' };
+                    message: id === 'wildfire' ? 'Loading fire reports…' : id === 'sentinel' ? 'Finding captures…' : id === 'land' ? 'Loading public lands' : 'Loading slope shading' };
                 paint(); terrain('layerAction', { action: 'retry', id });
             }
             else if (id === 'sentinel') binding?.sentinel.retry();
             else { statuses[id] = { ...statuses[id], pending: true, error: false, permission: false, retry: true,
-                message: id === 'land' ? 'Loading public lands' : 'Loading slope shading' }; binding?.engine.retry(id); paint(); }
+                message: id === 'wildfire' ? 'Loading fire reports…' : id === 'land' ? 'Loading public lands' : 'Loading slope shading' }; binding?.engine.retry(id); paint(); }
         },
         onOpen() { relay(); },
     });
@@ -221,7 +223,13 @@ export function installMapLayers(win = window) {
                 if (!map || !owner.L?.GridLayer || !owner.L?.marker) continue;
                 if (binding?.map === map && binding.win.document === owner.document) { position(); return true; }
                 unbind();
-                const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onError(id, error) {
+                const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onWildfireStatus(status) {
+                    if (!active || frameMode || booting) return;
+                    const previous = statuses.wildfire.retryAt || 0;
+                    statuses.wildfire = { ...statuses.wildfire, ...status, retryAt: Math.max(previous, status.retryAt || 0) };
+                    paint();
+                    if (status.retryAt > Date.now() && status.retryAt !== previous) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
+                }, onError(id, error) {
                     if (id === 'sentinel') binding?.sentinel.tileError(error);
                     else if (id === 'land') return; // Complete provider outcomes supply land feedback below.
                     else { statuses[id] = { ...statuses[id], pending: false, error: true, retry: true, permission: error?.code === 'bc-permission-required', retryAt: Math.max(statuses[id].retryAt || 0, error?.retryAt || 0),

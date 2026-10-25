@@ -178,3 +178,13 @@ html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu:foc
     #bpb-peak-weather-menu { border-color: CanvasText; }
     #bpb-peak-weather-menu .bpb-map-location-weather:focus-visible { outline: 2px solid Highlight; }
 }
+
+.bpb-map-layers .bpb-fire-list { border-block: 1px solid var(--bpb-layer-border); margin: 8px 0; }
+.bpb-map-layers .bpb-fire-list details { padding: 6px 0; }
+.bpb-map-layers .bpb-fire-list summary { cursor: pointer; overflow-wrap: anywhere; }
+.bpb-map-layers .bpb-fire-detail { font-size: 12px; overflow-wrap: anywhere; }
+.bpb-map-layers .bpb-fire-detail p { margin: 6px 0; }
+.bpb-map-layers .bpb-fire-pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 0; }
+.bpb-map-layers .bpb-fire-pages button { font: inherit; }
+
+.bpb-layers-detail[data-overlay='wildfire'] .bpb-layers-feedback { grid-template-columns: minmax(0, 1fr) 4.8em; }

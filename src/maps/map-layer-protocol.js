@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { readWildfireRecords } from './wildfire-core.js';
 import { sentinelTarget } from './sentinel-core.js';
 
 const text = (value, limit = 400) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, limit) : '';
@@ -21,7 +22,10 @@ export function readLayerSnapshot(value) {
 export function readLayerStatus(value) {
     if (!value || !Schema.MAP_OVERLAY_IDS.includes(value.id)) return null;
     return { id: value.id, revision: Number.isSafeInteger(value.revision) ? value.revision : 0,
-        pending: value.pending === true, capturePending: value.id === 'sentinel' && value.capturePending === true,
+        pending: value.pending === true,
+        ...(value.id === 'wildfire' ? { count: Number.isInteger(value.count) && value.count >= 0 && value.count <= 4000 ? value.count : 0,
+            saved: value.saved === true, overflow: value.overflow === true, fires: readWildfireRecords(value.fires),
+            loadedAt: Number.isFinite(value.loadedAt) && value.loadedAt > 0 && value.loadedAt <= Date.now() + 300000 ? value.loadedAt : 0 } : {}), capturePending: value.id === 'sentinel' && value.capturePending === true,
         error: value.error === true, partial: value.id !== 'snotel' && value.partial === true,
         captureError: value.id === 'sentinel' && value.captureError === true,
         providerCooldowns: value.id === 'land' ? readLandCooldowns(value.providerCooldowns) : {},
