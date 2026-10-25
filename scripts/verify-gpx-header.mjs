@@ -14,7 +14,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 
-export async function verifyGpxHeader({ evaluate, resize, click, press, wait, screenshot, setTheme }) {
+export async function verifyGpxHeader({ evaluate, resize, click, press, wait, screenshot, setTheme, checkCoordinateUnits = false }) {
     await wait(() => /^Interactive Stats:/.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''));
     const original = await evaluate(() => {
         const panel = document.querySelector('#bpb-gpx-analysis');
@@ -128,14 +128,16 @@ export async function verifyGpxHeader({ evaluate, resize, click, press, wait, sc
         await wait(() => /Show all source segments/.test(document.querySelector('.bpb-gpx-segment-view').textContent));
         await click('.bpb-gpx-segment-disclosure');
     }
-    await press('#bpb-gpx-analysis canvas', 'ArrowRight');
-    const originalUnits = await evaluate(() => {
-        const units = document.getElementById('bpb-gpx-units'), previous = units.value;
-        units.value = 'imperial'; units.dispatchEvent(new Event('change'));
-        return previous;
-    });
-    await wait(() => /(?:miles|ft)/.test(document.getElementById('bpb-gpx-coordinate-status').textContent));
-    await evaluate(new Function(`const units = document.getElementById('bpb-gpx-units'); units.value = ${JSON.stringify(originalUnits)}; units.dispatchEvent(new Event('change'));`));
+    if (checkCoordinateUnits) {
+        await press('#bpb-gpx-analysis canvas', 'ArrowRight');
+        const originalUnits = await evaluate(() => {
+            const units = document.getElementById('bpb-gpx-units'), previous = units.value;
+            units.value = 'imperial'; units.dispatchEvent(new Event('change'));
+            return previous;
+        });
+        await wait(() => /(?:miles|ft)/.test(document.getElementById('bpb-gpx-coordinate-status').textContent));
+        await evaluate(new Function(`const units = document.getElementById('bpb-gpx-units'); units.value = ${JSON.stringify(originalUnits)}; units.dispatchEvent(new Event('change'));`));
+    }
 
 }
 
@@ -169,6 +171,7 @@ async function main() {
             await page.goto(`https://www.peakbagger.com:${fixture.port}/climber/ascent.aspx?aid=analyzer-${variant}`);
             const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
             await verifyGpxHeader({
+                checkCoordinateUnits: true,
                 evaluate: fn => page.evaluate(fn),
                 resize: (width, height) => page.setViewportSize({ width, height }),
                 click: selector => page.locator(selector).click(),
