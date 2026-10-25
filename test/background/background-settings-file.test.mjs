@@ -475,12 +475,12 @@ for (const failedStore of ['settings', 'imgbb', 'github']) {
             token: 'ghu_old_token', repo: { owner: 'old', name: 'backup' },
         } });
         if (failedStore === 'settings') {
-            const nativeApply = h.settingsStore.applyPatch;
-            h.settingsStore.applyPatch = async patch => {
-                await nativeApply(patch);
-                throw new Error('ambiguous settings write failure');
-            };
-            h.settingsStore.replaceIfCurrent = async () => {
+            const nativeReplace = h.settingsStore.replaceIfCurrent; let calls = 0;
+            h.settingsStore.replaceIfCurrent = async (...args) => {
+                if (++calls === 1) {
+                    await nativeReplace(...args);
+                    throw new Error('ambiguous settings write failure');
+                }
                 throw new Error('settings rollback failed');
             };
         } else if (failedStore === 'imgbb') {
@@ -584,9 +584,29 @@ test('concurrent Garmin replacement wins over an older file import', async () =>
 });
 test('failed settings write rolls back the installed Garmin key conditionally', async () => {
     const garmin = garminTransfer(); const h = harness({ garmin });
-    h.settingsStore.applyPatch = async () => { throw new Error('unavailable'); };
+    h.settingsStore.replaceIfCurrent = async () => { throw new Error('unavailable'); };
     const file = Transfer.buildPayload({}, { apiKeys: { garmin: 'replacement-fictional-garmin-key' } });
     const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender);
     assert.equal(response.ok, false); assert.equal(response.stores.garmin, 'rolled-back');
     assert.equal(garmin.current().connection.key, 'old-fictional-garmin-key');
+});
+
+test('settings edits after the import snapshot are preserved instead of overwritten', async () => {
+    const h = harness({ imgbb: 'old-imgbb-key' });
+    const replace = h.settingsStore.replaceIfCurrent; let first = true;
+    h.settingsStore.replaceIfCurrent = async (...args) => {
+        if (first) { first = false; await h.settingsStore.applyPatch({ theme: 'system' }); }
+        return replace(...args);
+    };
+    const file = Transfer.buildPayload({ theme: 'light' }, { apiKeys: { imgbb: 'new-imgbb-key' } });
+    const result = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender);
+    assert.equal(result.ok, false); assert.equal(result.stores.settings, 'conflicted');
+    assert.equal((await h.settingsStore.requireCurrent()).theme, 'system');
+    assert.equal((await h.keyStore.read()).key, 'old-imgbb-key');
+});
+test('Garmin-only imports report that credentials changed', async () => {
+    const h = harness({ garmin: garminTransfer() });
+    const file = Transfer.buildPayload({}, { apiKeys: { garmin: null } });
+    const result = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender);
+    assert.equal(result.ok, true); assert.equal(result.apiKeysImported, true);
 });

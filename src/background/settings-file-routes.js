@@ -211,7 +211,13 @@ export function createSettingsFileRoutes({
                 stores.garmin = 'committed';
             }
             attempted.settings = true;
-            const importedSettings = await settings.applyPatch(parsed.settings);
+            const replacement = await settings.replaceIfCurrent(previousSettings, installedSettings);
+            if (!replacement.replaced) {
+                attempted.settings = false;
+                stores.settings = 'conflicted';
+                throw new Error('Settings changed during import.');
+            }
+            const importedSettings = replacement.current;
             stores.settings = 'committed';
             if (importsApiKeys) {
                 attempted.imgbb = true;
@@ -234,7 +240,7 @@ export function createSettingsFileRoutes({
             return {
                 ok: true,
                 settings: importedSettings,
-                apiKeysImported: importsApiKeys,
+                apiKeysImported: importsApiKeys || importsGarmin,
                 githubConnectionImported: importsGithubConnection,
                 stores,
             };

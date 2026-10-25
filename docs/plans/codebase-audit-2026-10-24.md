@@ -244,6 +244,12 @@ Independent commits for drag ownership and report/observer surfaces:
   hidden real-extension Chrome verification passed. Legacy/expired handoffs that
   may have opened forms retain their lock and manual review/Done recovery.
 
+- F4 transaction: the settings write now compares its reviewed snapshot before
+  committing, preserving a newer edit and conditionally rolling back other stores.
+  Garmin-only imports report changed credentials. Both new regressions failed
+  before the fix; settings transfer/worker tests, build and focused ESLint passed.
+  Explicit-null key removal remains intentional.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
