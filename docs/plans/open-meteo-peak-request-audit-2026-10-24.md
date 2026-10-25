@@ -1,18 +1,113 @@
 # Open-Meteo requests when loading a peak
 
-Date: October 24, 2026 (America/Los_Angeles). Status: audited; no runtime changes.
+Initial audit: October 24, 2026. Updated October 25, 2026 (America/Los_Angeles)
+after the card-reuse fixes. This report describes the current request behavior;
+the findings retain historical evidence where marked.
 
-**A successful cold load makes 5 Open-Meteo HTTP GET requests once both enabled,
-expanded cards enter their loading margin: 3 forecast requests and 2 model-metadata
-requests.** Before either card approaches the viewport, the count is 0. The default
-Washington example represents approximately **74.29 weighted forecast API calls**
-under Open-Meteo's published server calculation, excluding metadata. HTTP request
-count and provider quota consumption are different measures.
+**Loading a peak can automatically start 5 Open-Meteo network requests:**
+**1 for Summit weather + 4 for Summit Cloud Cover in Automatic mode.** No click
+is required if those enabled, expanded cards are on screen or within 200 px of
+it. Cards farther down the page wait until you scroll near them. A disabled or
+saved collapsed card makes no request until it becomes eligible.
+
+## Quick answer: user action → requests → what appears
+
+“Calls” in this table means actual network requests to Open-Meteo. Counts are
+additional requests for that action, assuming success. “First load” means that
+card/model/date has no usable result cached in this page. The default weather
+model is GFS; default cloud selection is Automatic. Model/date choices are saved,
+but downloaded forecasts are cached only in the current page.
+
+| What the user does or sees | New requests | What those requests are used for |
+| --- | ---: | --- |
+| Opens a peak; both expanded cards are near the viewport | **5 total** | 1 loads the weather forecast/history; 2 load atmospheric profiles from two cloud models; 2 check when those cloud models last updated |
+| Opens a peak with both cards collapsed, disabled or still far below the viewport | **0 initially** | No hidden weather download; scroll/expansion/enabling can trigger loading later |
+| Scrolls near or first expands **Summit weather** | **1** | Fills the 16-day forecast and Past 16 days from one download, including hourly readings |
+| Scrolls near or first expands **Summit Cloud Cover**, model = Automatic | **4** | Compares two models: 2 profile downloads + 2 update-time checks; displays hourly cloud obstruction/inside-cloud estimates and confidence |
+| First loads Summit Cloud Cover with one manually selected model | **2** | 1 model's profiles + 1 update-time check; there is no second model comparison |
+| Changes cloud model to an uncached manual model | **1–2** | 1 profile download; +1 if that model's update-time record is not fresh in this card's cache |
+| Changes cloud model to Automatic, with uncached profiles | **2–4** | 2 profile downloads; +0–2 update-time checks depending on cached records |
+| Selects another uncached cloud date with the same Automatic models | **2 while update records are fresh; otherwise 4** | Loads that selected day's hourly profiles, rather than all dates offered by the menu |
+| Selects another uncached date with a manual cloud model | **1 while its update record is fresh; otherwise 2** | Loads one model's selected day |
+| Returns to a cloud model/date still cached within five minutes | **0** | Uses the downloaded result; cache holds up to 6 model/date entries |
+| Clicks cloud **Earlier**, **Later**, an hour, or **Why this prediction** | **0** | Changes the view/explanation of already-loaded data |
+| Clicks cloud **Refresh**, Automatic | **2 with fresh update records; otherwise 4** | Re-downloads both profiles even when profile data is cached; update records retain their five-minute cache |
+| Clicks cloud **Refresh**, manual model | **1 with a fresh update record; otherwise 2** | Re-downloads that one model's profiles |
+| Switches Summit weather between **16-day forecast** and **Past 16 days** | **0 weather downloads** | Both tabs were downloaded together. If Source details is open, switching to a different uncached model may add update-time requests described below |
+| Opens a weather day or changes its hourly chart metric | **0** | Reads already-downloaded hourly data |
+| Opens weather **Source details** for default GFS | **2 on first opening** | Shows separate GFS 13 km/25 km last-update, next-expected-update and update-interval rows |
+| Reopens weather Source details within five minutes | **0** | Reuses its update-time records, unless Weather Refresh cleared them |
+| Opens Source details for another selected weather model | **Usually 1; 0 for Best Match/unmapped models** | One update-time record for a mapped model; never a new weather forecast just to open the disclosure |
+| Clicks weather **Refresh**, Source details closed | **1** | Re-downloads forecast/history; preserves usable old content while pending |
+| Clicks weather Refresh, GFS Source details open | **3** | 1 weather download + 2 update-time records; this refresh clears the weather card's metadata cache |
+| Changes the weather model to an uncached selection | **1; plus 0–2 if Source details is open** | Reloads the combined forecast/history request, then update times for the displayed model if requested |
+| Selects **Air quality** for the first time | **1** | Shows hourly US AQI and PM2.5 for five days; surface regional estimates, not summit measurements |
+| Reselects Air quality within five minutes | **0** | Reuses the current location's downloaded AQI forecast |
+| Clicks Air quality **Refresh** | **1** | Re-downloads AQI/PM2.5 |
+| Uses the map's explicit weather action for a new point | **1 weather request; +1 if AQI is active; +0–2 if Source details is open** | Shows weather/AQI for the selected point; cloud predictions remain for the summit |
+| Resets from map-point weather to a fresh retained summit result | **0 weather requests** | Restores the summit's cached weather. Stale summit data needs 1 weather request; active AQI/source details can independently need their own records |
+| Changes units/theme, moves a card, or browses its loaded hours | **0** | Reformats/repositions existing data |
+| Collapses a card while its read is pending | **0 new requests** | Cancels the pending read and keeps retained results; a request already sent may have reached the provider |
+| Re-expands a card with fresh retained data | **0** | Reuses the result; an empty/expired card loads according to its rows above |
+| Returns to a browser tab with expired weather/cloud data | **Weather: up to 1 forecast + 0–2 source records; Automatic cloud: up to 4** | Eligible cards near the viewport refresh stale data. Source records require open Source details; clouds can use 2 if only their profiles expired; active AQI can add 1 |
+| Reloads the page or opens the peak in another tab | **Starts the initial budget again** | Page-memory caches do not survive reload and are not shared across tabs |
+
+There is **no unconditional five-minute polling loop**. Five minutes is a cache/
+freshness threshold, not a timer that continually downloads forecasts. Settings,
+visibility, lifecycle, explicit refreshes and selections decide when to load.
+429 cooldowns, invalid identity/elevation and failed profiles can reduce actual
+request attempts. Rapid selections, reloads and aborted requests can add attempts.
+
+## What each endpoint does
+
+| Request and trigger | Downloaded data | What it changes on screen |
+| --- | --- | --- |
+| **Summit weather:** `/v1/forecast`, when weather first loads or is refreshed/model-changed | Surface temperature, feels-like temperature, precipitation, wind/gusts/direction, weather code, day/night, total cloud cover and freezing level; past and future days together | Daily weather summaries and hourly tables/graphs in Summit weather. Total sky cloud cover here is different from the cloud-at-summit-height estimate below |
+| **Cloud profiles:** `/v1/forecast`, once per selected cloud model when cloud data loads | Temperature, humidity, cloud amount, height and wind at atmospheric pressure levels, for the summit and four surrounding sample points | Summit Cloud Cover's hourly “inside cloud”, “views obstructed”, partial/clear/uncertain estimates and the measurements under Why this prediction |
+| **Cloud model update check** (called “freshness” in the initial audit): `/data/<domain>/static/meta.json`, after a valid profile download unless cached | Model-run initialization time, when the run became available, and its normal update interval. No new temperature/cloud forecast is downloaded | Helps detect stale/unverified inputs and adjust confidence or mark an estimate uncertain. It runs even while Why is closed because it affects the prediction, not just explanatory text |
+| **Weather Source details:** same `/data/<domain>/static/meta.json`, only when that weather disclosure is open and records are not cached | The selected weather model's provider-wide update clock(s) | Fills the Last update / Next expected / Update interval table in Source details. These records inform the source display; they do not replace the daily weather values |
+| **Air quality:** `air-quality-api.open-meteo.com/v1/air-quality`, on AQI selection/refresh | Hourly US AQI and PM2.5, five days, for the current weather location | The Air quality tab's category, AQI and particle-concentration rows |
+
+### Why are there two cloud profile requests?
+
+**Automatic intentionally compares two different forecast models.** For the
+Rainier/Washington example today, they are HRRR and GEM HRDPS. The current code
+calls the cloud client once per model, so it sends one `/v1/forecast` request for
+HRRR and another for HRDPS. Comparing agreement is one input to confidence.
+
+Each of those requests already batches all **five locations** and the selected
+day's hours. It is not one request per location or per hour. Choose a single
+model in the dropdown and it makes one profile request instead. Two is a choice
+of the current implementation, not an Open-Meteo requirement; a future combined
+multi-model implementation could reduce HTTP requests without removing the
+second model's data or its quota cost.
+
+The two Automatic update-time checks also use different model-domain URLs. These
+checks are separate from opening the weather card's Source details. The cards
+currently have separate caches, so an overlapping domain can be requested again.
+
+### What does “estimated weighted calls” mean?
+
+It means **estimated usage against Open-Meteo's allowance**, not extra network
+requests. A single large request can count as more than one quota call because
+it asks for many variables, locations, models or days. The browser still sends
+only the HTTP requests counted in the action table.
+
+In the Washington example, one cloud request asks for 72 variables at each of
+5 locations. The published calculation gives it a weight of about **36 quota
+calls**, even though it is **one network request**. Two models give about 72;
+the 32-day normal-weather request adds about 2.29. Thus the default page can
+send **5 actual requests**, while its **3 forecast requests** represent roughly
+**74.29 quota calls**. The accounting for the other 2 metadata requests has not
+been verified. These are source-based estimates, not a live account-usage reading.
+See [Open-Meteo pricing](https://open-meteo.com/en/pricing) and the
+[calculation and source links below](#provider-quota-estimate).
 
 This report covers extension-originated requests on `Peak.aspx`, not Peakbagger's
 own traffic, ascent pages, or requests made by opening external weather links.
-It audits commit `1739e18531e798920964c3e76d40acb82fd7a774`. Unrelated work was
-committed during the investigation; the final probe ran against that commit.
+The initial audit used commit `1739e18531e798920964c3e76d40acb82fd7a774`.
+The probe was rerun after the card-reuse remediation: both saved collapsed cards
+now make zero requests. Its output records the current audited HEAD and hashes.
 Source-input and built-bundle hashes, exact default URLs, and 23 asserted scenarios
 are saved in the [probe output](evidence/open-meteo-peak-request-audit.json).
 
@@ -20,21 +115,24 @@ are saved in the [probe output](evidence/open-meteo-peak-request-audit.json).
 
 ### OM-01 · P2 · Collapsing Summit weather does not suppress its forecast request
 
-With both cards saved collapsed, the probe still observed **1 weather GET** when
-the weather header intersected the loading margin. Summit Cloud Cover correctly
-made 0 requests. The weather loader checks feature enablement, lifecycle, pending
-work and cooldown, but does not check `peakWeatherCollapsed` or
-`data-bpb-card-collapsed`. Only its air-quality subview observes collapse.
+**Fixed during card-reuse remediation.** The original evidence below describes
+the defect; the current shared read gate suppresses collapsed reads and cancels
+pending work. See the [card reuse closure ledger](card-reuse-audit-2026-10-24.md#closure-ledger).
+
+Before the fix, with both cards saved collapsed, the probe observed **1 weather
+GET** when the weather header intersected the loading margin. Summit Cloud Cover
+correctly made 0 requests. The old weather loader checked feature enablement,
+lifecycle, pending work and cooldown, but omitted the card-collapse state.
+The shared read gate now includes that state for all weather reads.
 Evidence: [weather enablement](../../src/weather/peak-weather.js#L89),
 [load guard](../../src/weather/peak-weather.js#L363),
 [intersection trigger](../../src/weather/peak-weather.js#L443), contrasted with the
 [cloud active guard](../../src/weather/summit-cloud.js#L77).
 
-Recommended separate fix: use the existing card-collapse state to gate initial
-weather loading and suspend pending work; resume lazily on expansion. Acceptance:
-both saved collapsed → 0 requests; expand weather → exactly 1; collapse during a
-held response → abort without replacing retained data. Exercise these transitions
-in Chrome and Firefox before treating the fix as complete.
+Implemented acceptance: both saved collapsed → 0 requests; expand weather →
+exactly 1; collapse during a held response → abort without replacing retained
+data. These transitions passed in hidden Chrome and Firefox as well as local
+fixture tests; the closure ledger retains live-provider proof limits.
 
 ### OM-02 · Capacity concern · Automatic cloud prediction dominates usage
 
@@ -80,7 +178,8 @@ does not create shared state. Any worker/session cache needs explicit expiry,
 retention/privacy review and independent subscriber cancellation. Acceptance:
 overlapping metadata uses one request; warm repeated pages reuse only fresh,
 matching data; one cancelled reader cannot cancel another; expired data and 429
-recovery remain truthful. No such cache was implemented in this audit.
+recovery remain truthful. No cross-card/page cache was implemented by the
+card-reuse remediation: sharing source code does not share downloaded responses.
 
 ## Cold-load request inventory
 
@@ -141,7 +240,7 @@ means the controlled IntersectionObserver fired for that card.
 | Clouds disabled or saved collapsed, weather enabled | 1 |
 | Weather disabled, clouds explicitly enabled | 4 |
 | Both features disabled | 0 |
-| Both cards saved collapsed, weather header near viewport | **1 — OM-01** |
+| Both cards saved collapsed, weather header near viewport | **0 after OM-01 fix** |
 | Different saved past/forecast surface models, Automatic clouds | 5 |
 | Both cloud profiles return 429; weather succeeds | 3; no cloud metadata |
 | New page instance after an earlier successful page | 5 again |
@@ -280,11 +379,12 @@ Peakbagger, and forecast accuracy were outside this audit.
 
 ## Closure ledger
 
-- **Fixed and verified:** no runtime fixes; request inventory and the collapsed
-  weather/duplicate metadata findings were locally reproduced; report/probe only.
+- **Fixed and verified:** request inventory and duplicate metadata findings were
+  locally reproduced. OM-01 was subsequently fixed under the card-reuse audit;
+  the rerun probe verifies zero requests with both cards saved collapsed.
 - **Intentionally not changed:** prediction fields, default models and feature
   switches, existing caches/cooldowns, runtime behavior and unrelated work.
-  OM-01 remains an open bug; OM-02/OM-03 are follow-up design/optimization work.
+  OM-02/OM-03 remain follow-up design/optimization work.
 - **Changed but not fully proven:** documentation and audit evidence added;
   no claim of live request counts or metered quota verification. Browser/network
   and deployment limits are listed above.

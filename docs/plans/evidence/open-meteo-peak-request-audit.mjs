@@ -138,7 +138,7 @@ await scenario({ showSummitCloud: false }, 'Cloud disabled', [1, 0, 0, 0, 1]);
 await scenario({ showWeather: false, showSummitCloud: true }, 'Weather disabled, cloud explicitly enabled', [0, 2, 2, 0, 4]);
 await scenario({ showWeather: false, showSummitCloud: false }, 'Both disabled', [0, 0, 0, 0, 0]);
 await scenario({ peakCloudCollapsed: true }, 'Cloud saved collapsed', [1, 0, 0, 0, 1]);
-await scenario({ peakWeatherCollapsed: true, peakCloudCollapsed: true }, 'Both saved collapsed', [1, 0, 0, 0, 1]);
+await scenario({ peakWeatherCollapsed: true, peakCloudCollapsed: true }, 'Both saved collapsed', [0, 0, 0, 0, 0]);
 await scenario({ bpbPeakWeatherModelForecast: 'icon_global' }, 'Distinct past/forecast surface models', [1, 2, 2, 0, 5]);
 await scenario({}, 'Both cloud profile requests return 429', [1, 2, 0, 0, 3], { limitedCloud: true });
 await scenario({}, 'Fresh second page instance', [1, 2, 2, 0, 5]);

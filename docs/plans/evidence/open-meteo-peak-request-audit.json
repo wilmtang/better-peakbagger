@@ -1,6 +1,6 @@
 {
-  "auditedHead": "1739e18531e798920964c3e76d40acb82fd7a774",
-  "sourceInputsSha256": "cf2e043dc6826e16b1cf33770ffa00696fbf3ea53ac50f3e1225e28800440a42",
+  "auditedHead": "54b6d0bb19f9cd772ba9a71948bfe75eccf528fd",
+  "sourceInputsSha256": "22c46cce6baaee260e5b883d0d6e6f3a409a938f13e7bf89dd94be7b5fe05344",
   "sourceInputs": [
     "node_modules/tz-lookup/tz.js",
     "src/ascent/ascent-weather-subject.js",
@@ -20,8 +20,11 @@
     "src/terrain/terrain-cache.js",
     "src/theme/theme-resolve.js",
     "src/time/mountain-time.js",
+    "src/ui/card-pointer-drag.js",
+    "src/ui/card-read-gate.js",
     "src/ui/column-resize.js",
     "src/ui/dom.js",
+    "src/ui/latest-read.js",
     "src/ui/layout-menu.js",
     "src/ui/page-lifecycle.js",
     "src/ui/peak-card-layout.js",
@@ -42,6 +45,7 @@
     "src/weather/summit-cloud-core.js",
     "src/weather/summit-cloud-models.js",
     "src/weather/summit-cloud.js",
+    "src/weather/weather-chart-scale.js",
     "src/weather/weather-day.js",
     "src/weather/weather-hourly-table.js",
     "src/weather/weather-icon.js",
@@ -49,9 +53,9 @@
     "src/weather/weather-week.js"
   ],
   "bundleSha256": {
-    "dist/content/peak-weather.js": "088cfcf5c01c7140925b0623ab488a639ebd7362a1f98eef240862e52886b893",
-    "dist/content/summit-cloud.js": "85918ccbe1ee92678987c4871e5c39eee74f57286008c1fb5701f271f25d1ab0",
-    "dist/content/peak-cards.js": "7d0d651825ac4b7d91d5a93551829fbe6d581cfe9e731615d823b3ad699b01ef"
+    "dist/content/peak-weather.js": "01d0f85425c721e56ef4b366037e2bdebee2c823ceba75005e3ad1d51edd206c",
+    "dist/content/summit-cloud.js": "f671205f4bc163fd8374f4591e4667b62ccf9a90a45f6e22dca08d8301be17f5",
+    "dist/content/peak-cards.js": "3d32e73c564fbce0145b36365f6a8dd2b623dac39baec900bf022c6f7cd7df75"
   },
   "clock": "2026-10-24T18:00:00Z",
   "fixture": "test/fixtures/pages/peak-rainier.html",
@@ -204,11 +208,11 @@
     },
     {
       "name": "Both saved collapsed",
-      "weather": 1,
+      "weather": 0,
       "cloud": 0,
       "metadata": 0,
       "airQuality": 0,
-      "total": 1
+      "total": 0
     },
     {
       "name": "Distinct past/forecast surface models",
