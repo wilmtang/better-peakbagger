@@ -1,5 +1,10 @@
 # Active plans
 
+- [Cell coverage in-browser feasibility experiment](experiments/fcc-browser-coverage/README.md)
+  — bounded FCC-derived sample decoded and rendered in hidden Chrome/Firefox;
+  direct FCC download access and full-state performance remain unverified.
+  Records authentication requirements, parser compatibility, timings and proof gaps.
+
 - [Wildfire map overlay](wildfire-map-overlay.md)
   — proposed; opt-in reported US wildfire locations and perimeters in the
   shared native/3D Overlays menu, followed by Canadian locations after proving

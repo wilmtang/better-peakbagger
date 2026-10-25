@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-24 America/Los_Angeles",
+  "method": "hidden isolated Chrome for Testing",
+  "browser": "156.0.8078.4",
+  "website": {
+    "url": "https://broadbandmap.fcc.gov/data-download",
+    "status": 403,
+    "title": "Access Denied",
+    "text": "Access Denied\nYou don't have permission to access \"http://broadbandmap.fcc.gov/data-download\" on this server.\n\nReference #18.86f23517.1792900093.ff2c4bf9\n\nhttps://errors.edgesuite.net/18.86f23517.1792900093.ff2c4bf9"
+  },
+  "anonymousApi": {
+    "url": "https://bdc.fcc.gov/api/public/map/listAsOfDates",
+    "status": 403,
+    "body": "<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n \nYou don't have permission to access \"http&#58;&#47;&#47;bdc&#46;fcc&#46;gov&#47;api&#47;public&#47;map&#47;listAsOfDates\" on this server.<P>\nReference&#32;&#35;18&#46;84f23517&#46;1792900659&#46;9f74dc2\n<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;18&#46;84f23517&#46;1792900659&#46;9f74dc2</P>\n</BODY>\n</HTML>\n"
+  },
+  "apiSpecification": {
+    "url": "https://us-fcc.app.box.com/v/bdc-public-data-api-spec",
+    "version": "1.7",
+    "revisionDate": "2026-06-08",
+    "downloadedBytes": 599223,
+    "sha256": "83c3f9ec5e0778e74181fa8f346d832b24d3b6fc092587df35838af435eb7f7d",
+    "documentedRequirements": [
+      "FCC account",
+      "Generated API token",
+      "username and hash_value headers",
+      "10 calls per minute"
+    ],
+    "boundingBoxDownloadParameter": "Not present in documented downloadFile operation; bulk file selected by ID"
+  },
+  "interpretation": "403 came from the edge access layer. It does not prove what would happen with valid credentials or another user session."
+}

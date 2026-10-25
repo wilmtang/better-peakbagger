@@ -1,0 +1,410 @@
+{
+  "sample": {
+    "source": "AZGeo FCC-derived mobile LTE layer; bounded sample, not an FCC carrier/state archive",
+    "sourceUrl": "https://services6.arcgis.com/clPWQMwZfdWn4MQZ/ArcGIS/rest/services/FCC_Mobile_Broadband/FeatureServer/195",
+    "itemUrl": "https://www.arcgis.com/home/item.html?id=0182656631264741ae7cdd5a0569397b",
+    "owner": "cparkhurst_azgeo",
+    "sourceModified": 1779399168000,
+    "reportingDate": "not established",
+    "carrier": "not present in this mirror schema",
+    "bounds": [
+      -111.86,
+      34.78,
+      -111.66,
+      34.96
+    ],
+    "rows": 2799,
+    "uniqueHexagons": 2799,
+    "storedServiceBytes": 2992439296,
+    "storedServiceBytesMeaning": "ArcGIS item storage across all service layers; NOT download archive bytes",
+    "packageProvenance": "Locally generated SQLite GeoPackage fixture with private sample_bounds R-tree; not an original FCC export",
+    "geopackageBytes": 770048,
+    "zipBytes": 226005,
+    "zipSha256": "ac64cccd0301070996a4ef2387a37ddd4ae5c96206da5a27955cb84b24e5ce11",
+    "requests": [
+      {
+        "url": "https://www.arcgis.com/sharing/rest/content/items/0182656631264741ae7cdd5a0569397b?f=json",
+        "bytes": 6406,
+        "status": 200,
+        "cors": "https://www.peakbagger.com",
+        "elapsedMs": 156.97
+      },
+      {
+        "url": "https://services6.arcgis.com/clPWQMwZfdWn4MQZ/ArcGIS/rest/services/FCC_Mobile_Broadband/FeatureServer/195/query?f=json&where=1%3D1&geometry=-111.86%2C34.78%2C-111.66%2C34.96&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&returnCountOnly=true",
+        "bytes": 14,
+        "status": 200,
+        "cors": "*",
+        "elapsedMs": 417.23
+      },
+      {
+        "url": "https://services6.arcgis.com/clPWQMwZfdWn4MQZ/ArcGIS/rest/services/FCC_Mobile_Broadband/FeatureServer/195/query?f=geojson&where=1%3D1&geometry=-111.86%2C34.78%2C-111.66%2C34.96&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outSR=4326&outFields=objectid%2Ch3_res9_id%2Ctechnology%2Cmindown%2Cminup%2Cenvironmnt&resultOffset=0&resultRecordCount=2000&orderByFields=objectid+ASC",
+        "bytes": 911233,
+        "status": 200,
+        "cors": "*",
+        "elapsedMs": 1004.17
+      },
+      {
+        "url": "https://services6.arcgis.com/clPWQMwZfdWn4MQZ/ArcGIS/rest/services/FCC_Mobile_Broadband/FeatureServer/195/query?f=geojson&where=1%3D1&geometry=-111.86%2C34.78%2C-111.66%2C34.96&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outSR=4326&outFields=objectid%2Ch3_res9_id%2Ctechnology%2Cmindown%2Cminup%2Cenvironmnt&resultOffset=2000&resultRecordCount=2000&orderByFields=objectid+ASC",
+        "bytes": 364903,
+        "status": 200,
+        "cors": "*",
+        "elapsedMs": 637.34
+      }
+    ]
+  },
+  "package": {
+    "originalFccArchive": false,
+    "bytes": 226005
+  },
+  "libraries": {
+    "@sqlite.org/sqlite-wasm": {
+      "version": "3.54.1-build1",
+      "license": "Apache-2.0"
+    },
+    "sql.js": {
+      "version": "1.15.1",
+      "license": "MIT"
+    },
+    "leaflet": {
+      "version": "1.9.4",
+      "license": "BSD-2-Clause"
+    },
+    "maplibre-gl": {
+      "version": "6.13.0",
+      "license": "BSD-3-Clause"
+    },
+    "jszip": {
+      "version": "3.10.2",
+      "license": "(MIT OR GPL-3.0-or-later)"
+    }
+  },
+  "browsers": [
+    {
+      "browser": "chromium",
+      "version": "156.0.8078.4",
+      "hidden": true,
+      "viewport": [
+        1000,
+        760
+      ],
+      "cases": [
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.84107780456544,
+            34.821061201296615,
+            -111.7588520050049,
+            34.85896092064428
+          ],
+          "queryMs": 1.199999988079071,
+          "renderMs": 25.30000001192093,
+          "totalMs": 29,
+          "nativeRoutePresent": true,
+          "count": 304,
+          "expectedCount": 304
+        },
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.76108360290529,
+            34.891070436742524,
+            -111.67885780334474,
+            34.928937901421804
+          ],
+          "queryMs": 1,
+          "renderMs": 24.900000035762787,
+          "totalMs": 26.5,
+          "nativeRoutePresent": true,
+          "count": 290,
+          "expectedCount": 290
+        },
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.85214996337892,
+            34.83212295962102,
+            -111.68769836425783,
+            34.907894756448506
+          ],
+          "queryMs": 3.299999952316284,
+          "renderMs": 30.099999964237213,
+          "totalMs": 35.39999997615814,
+          "nativeRoutePresent": true,
+          "count": 1101,
+          "expectedCount": 1101
+        },
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.34111404418947,
+            34.85107245453402,
+            -111.25888824462892,
+            34.888958354012956
+          ],
+          "queryMs": 0.19999998807907104,
+          "renderMs": 24.5,
+          "totalMs": 26,
+          "nativeRoutePresent": true,
+          "count": 0,
+          "expectedCount": 0
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.84111289978028,
+            34.82104795604239,
+            -111.75888710021978,
+            34.85894768148732
+          ],
+          "queryMs": 0.9000000357627869,
+          "renderMs": 30.299999952316284,
+          "totalMs": 31.69999998807907,
+          "nativeRoutePresent": true,
+          "count": 305,
+          "expectedCount": 305
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.76111289977995,
+            34.89106408299307,
+            -111.67888710021943,
+            34.92893155060247
+          ],
+          "queryMs": 0.800000011920929,
+          "renderMs": 25.899999976158142,
+          "totalMs": 27.30000001192093,
+          "nativeRoutePresent": true,
+          "count": 290,
+          "expectedCount": 290
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.85222579956088,
+            34.832105365167095,
+            -111.68777420043989,
+            34.90787717820078
+          ],
+          "queryMs": 2.899999976158142,
+          "renderMs": 15.899999976158142,
+          "totalMs": 21.80000001192093,
+          "nativeRoutePresent": true,
+          "count": 1101,
+          "expectedCount": 1101
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.34111289977997,
+            34.85105486412914,
+            -111.25888710021945,
+            34.888940771711574
+          ],
+          "queryMs": 0.19999998807907104,
+          "renderMs": 30.5,
+          "totalMs": 30.799999952316284,
+          "nativeRoutePresent": true,
+          "count": 0,
+          "expectedCount": 0
+        }
+      ],
+      "profileRemoved": true,
+      "errors": [],
+      "memoryBaselineRssBytes": 1046593536,
+      "sampledMaximumRssBytes": 1308983296,
+      "load": {
+        "id": 1,
+        "ok": true,
+        "rows": 2799,
+        "archiveBytes": 226005,
+        "decodedBytes": 770048,
+        "wasmHeapBytes": 8388608,
+        "loadMs": 45.59999996423721
+      },
+      "routePixels": {
+        "leaflet": 44,
+        "maplibre": 47
+      },
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+      "invalidZipRejected": true,
+      "invalidReplacementRetainedData": true,
+      "invalidBoundsRejected": true,
+      "droppedFeatureControlDetected": true,
+      "liveCorsCount": {
+        "status": 200,
+        "count": 2799,
+        "error": null
+      },
+      "sampledMainThreadFrameGapMaxMs": 16.800000000000182,
+      "frameGapMeaning": "Includes map updates, screenshot and source request; not an isolated parser long-task measurement"
+    },
+    {
+      "browser": "firefox",
+      "version": "157.0",
+      "hidden": true,
+      "viewport": [
+        1000,
+        760
+      ],
+      "cases": [
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.84107780456544,
+            34.821061201296615,
+            -111.7588520050049,
+            34.85896092064428
+          ],
+          "queryMs": 2,
+          "renderMs": 24,
+          "totalMs": 30,
+          "nativeRoutePresent": true,
+          "count": 304,
+          "expectedCount": 304
+        },
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.76108360290529,
+            34.891070436742524,
+            -111.67885780334474,
+            34.928937901421804
+          ],
+          "queryMs": 3,
+          "renderMs": 20,
+          "totalMs": 23,
+          "nativeRoutePresent": true,
+          "count": 290,
+          "expectedCount": 290
+        },
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.85214996337892,
+            34.83212295962102,
+            -111.68769836425783,
+            34.907894756448506
+          ],
+          "queryMs": 4,
+          "renderMs": 17,
+          "totalMs": 23,
+          "nativeRoutePresent": true,
+          "count": 1101,
+          "expectedCount": 1101
+        },
+        {
+          "engine": "leaflet",
+          "bounds": [
+            -111.34111404418947,
+            34.85107245453402,
+            -111.25888824462892,
+            34.888958354012956
+          ],
+          "queryMs": 0,
+          "renderMs": 28,
+          "totalMs": 30,
+          "nativeRoutePresent": true,
+          "count": 0,
+          "expectedCount": 0
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.84111289978028,
+            34.82104795604239,
+            -111.75888710021978,
+            34.85894768148732
+          ],
+          "queryMs": 1,
+          "renderMs": 29,
+          "totalMs": 31,
+          "nativeRoutePresent": true,
+          "count": 305,
+          "expectedCount": 305
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.76111289977995,
+            34.89106408299307,
+            -111.67888710021943,
+            34.92893155060247
+          ],
+          "queryMs": 1,
+          "renderMs": 23,
+          "totalMs": 25,
+          "nativeRoutePresent": true,
+          "count": 290,
+          "expectedCount": 290
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.85222579956088,
+            34.832105365167095,
+            -111.68777420043989,
+            34.90787717820078
+          ],
+          "queryMs": 4,
+          "renderMs": 45,
+          "totalMs": 51,
+          "nativeRoutePresent": true,
+          "count": 1101,
+          "expectedCount": 1101
+        },
+        {
+          "engine": "maplibre",
+          "bounds": [
+            -111.34111289977997,
+            34.85105486412914,
+            -111.25888710021945,
+            34.888940771711574
+          ],
+          "queryMs": 0,
+          "renderMs": 29,
+          "totalMs": 29,
+          "nativeRoutePresent": true,
+          "count": 0,
+          "expectedCount": 0
+        }
+      ],
+      "profileRemoved": true,
+      "errors": [],
+      "memoryBaselineRssBytes": 1390772224,
+      "sampledMaximumRssBytes": 1685045248,
+      "load": {
+        "id": 1,
+        "ok": true,
+        "rows": 2799,
+        "archiveBytes": 226005,
+        "decodedBytes": 770048,
+        "wasmHeapBytes": 8388608,
+        "loadMs": 37
+      },
+      "routePixels": {
+        "leaflet": 46,
+        "maplibre": 47
+      },
+      "renderer": "Apple M1, or similar",
+      "invalidZipRejected": true,
+      "invalidReplacementRetainedData": true,
+      "invalidBoundsRejected": true,
+      "droppedFeatureControlDetected": true,
+      "liveCorsCount": {
+        "status": 200,
+        "count": 2799,
+        "error": null
+      },
+      "sampledMainThreadFrameGapMaxMs": 67.5,
+      "frameGapMeaning": "Includes map updates, screenshot and source request; not an isolated parser long-task measurement"
+    }
+  ],
+  "limits": [
+    "FCC original archive access blocked; local repackaging only",
+    "No full-state archive, IndexedDB persistence, raw-polygon dataset or installed extension was tested"
+  ],
+  "fixtureOrigin": "HTTPS www.peakbagger.com with disposable certificate",
+  "archiveRequests": 2,
+  "success": true
+}
