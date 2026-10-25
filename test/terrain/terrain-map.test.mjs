@@ -1041,6 +1041,9 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(map.options.style.layers.some(layer => layer.id === 'basemap'), false);
     assert.deepEqual(JSON.parse(JSON.stringify(map.getSource('basemap').tiles)), ['https://a.tile.example.com/{z}/{x}/{y}.png']);
     assert.equal(map.getSource('basemap').tileSize, 256);
+    const osmTile = 'https://tile.openstreetmap.org/0/0/0.png';
+    assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest(osmTile, 'Tile'))), { url: osmTile },
+        'raster requests preserve browser caching and identity defaults without injecting headers or a cache bypass');
     assert.match(map.getSource('basemap').attribution, /https:\/\/example\.com\/copyright/);
     assert.doesNotMatch(map.getSource('basemap').attribution, /script|alert/i);
     assert.equal(map.layers.find(layer => layer.id === 'basemap').paint['raster-opacity'], 0.78);
@@ -1304,10 +1307,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     blocked.handlers.get('idle')();
     assert.equal(picker().value, 'terrain',
         'a drape whose every tile fails is dropped to terrain-only at the first idle');
-    assert.equal(picker().options[0].disabled, true, 'the blocked layer is disabled in the picker');
+    assert.equal(picker().options[0].disabled, false, 'a temporary failure must leave the layer available to retry');
     assert.equal(notice().hidden, false);
-    assert.match(notice().textContent, /Blocked Layer.*blocks cross-origin/,
-        'the notice names the blocked layer and explains why');
+    assert.match(notice().textContent, /Blocked Layer.*couldn’t load.*Select it again to retry/s,
+        'the notice names the layer and a recovery action without inventing a cause');
 
     // Peak pages have no GPX route. They initialize the same renderer around
     // one summit, with an explicit subject marker that must survive a nearby-
@@ -1461,14 +1464,31 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     assert.equal(map.getSource('basemap'), undefined, 'terrain-only removes the drape');
     assert.equal(map.getLayer('basemap'), undefined);
 
-    // Manually selecting a layer that then fails every tile disables it.
+    // A failed layer returns to terrain-only and stays available for retry.
     swap('2');
     assert.equal(JSON.parse(JSON.stringify(map.getSource('basemap').tiles))[0], 'https://ot.example.com/{z}/{x}/{y}.png');
+    map.handlers.get('idle')(); // An early settle must not disarm the failure check.
     map.handlers.get('error')({ sourceId: 'basemap' });
     map.handlers.get('idle')();
     assert.equal(picker().value, 'terrain', 'a failed manual selection reverts to terrain-only');
-    assert.equal(picker().options[2].disabled, true, 'the failed layer is disabled');
-    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /OpenTopo/);
+    assert.equal(picker().options[2].disabled, false, 'the failed layer remains retryable');
+    const notice = window.document.querySelector('.bpb-terrain-notice');
+    assert.match(notice.textContent, /OpenTopo.*couldn’t load/);
+    assert.doesNotMatch(notice.textContent, /CORS|cross-origin/);
+    picker().focus();
+    picker().value = '2'; picker().dispatchEvent(new window.Event('change'));
+    assert.equal(picker().value, '2', 'the same layer can be selected again after a transient block');
+    assert.ok(map.getSource('basemap'), 'retry restores the raster source');
+    assert.equal(notice.hidden, true, 'retry clears the previous failure while the new tiles load');
+    assert.equal(window.document.activeElement, picker(), 'retry retains keyboard focus on the existing picker');
+    map.handlers.get('data')({ sourceId: 'basemap', dataType: 'source', tile: {} });
+    map.handlers.get('idle')();
+    assert.equal(picker().value, '2'); assert.equal(notice.hidden, true);
+    map.handlers.get('error')({ sourceId: 'basemap', error: { status: 403 } });
+    assert.equal(picker().value, 'terrain', 'an explicit policy denial is handled even after good tiles rendered');
+    assert.match(notice.textContent, /Select it again to retry/);
+    picker().value = 'terrain'; picker().dispatchEvent(new window.Event('change'));
+    assert.equal(notice.hidden, true, 'a deliberate switch to terrain-only does not retain a stale provider warning');
 
     dom.window.close();
 });
@@ -1580,6 +1600,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
     // is forgotten, so the next selection retries instead of staying broken.
     picker().value = 'vector';
     picker().dispatchEvent(new window.Event('change'));
+    assert.equal(picker().value, 'vector', 'the requested vector map stays selected while its style is pending');
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.deepEqual(fetches, ['https://tiles.openfreemap.org/styles/liberty'],
         'selecting the entry requests the provider style');

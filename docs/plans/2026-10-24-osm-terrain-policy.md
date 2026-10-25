@@ -22,7 +22,32 @@ Policy references checked October 24, 2026:
   passed eight layouts in each hidden GPU browser: 800/320px maps, light/dark,
   and normal/24px text. Chrome used ANGLE Metal on Apple M3 Pro; Firefox 157
   used ANGLE Metal on the same hardware. Chrome screenshots were inspected.
-- Focused terrain unit tests: 37 passed. ESLint passed for the changed modules.
+- Final `npm test`: 3,452 passed, including 37 terrain lifecycle tests.
+  `npm run lint` passed with the existing eight reviewed vendor/manifest
+  warnings. Both verifier CLIs reject unknown selections before launch.
+- The real unpacked extension check passed in hidden Chrome for Testing
+  156.0.8078.4 at 1000×760, including startup/content-script integration and
+  BFCache restoration. Its verifier reported successful teardown.
+- Failed raster layers remain available through the existing picker. A retry
+  or deliberate switch clears old feedback without moving focus or controls.
+  Messages name the failed map and recovery action without inventing CORS as
+  the cause. Explicit HTTP 401/403 denials cancel the source even after a good
+  tile rendered; an early idle cannot permanently disarm the tile check.
+- A pending vector style retains the requested selection and shows brief,
+  neutral loading feedback. Rejected styles restore terrain-only gracefully.
+- Feedback wraps clear of the compass, mode and zoom controls. Visual review
+  caught overlap at 320px/24px text; the browser assertion now checks that
+  overlap independently of stationary control geometry.
+- Both hidden GPU browsers pass eight real held-tile → HTTP 403 → native
+  select type-ahead retry → rendered-raster paths, plus the held-vector-style
+  pending/failure path. Focus and geometry stay stable within one CSS pixel.
+  Raster blocks come from the local HTTPS server, including worker requests;
+  Firefox's vector style is held at the fetch boundary and Chrome's at CDP.
+- Regression assertions failed before the fix for permanently disabled raster
+  choices, the reverted pending vector selection, and silent HTTP 403 recovery.
+  Chrome screenshots of credits, neutral loading, and narrow/wide error states
+  were inspected. The request-transform regression preserves browser defaults
+  for OSM raster caching/identity without injecting headers or a cache bypass.
 
 ## Intentionally not changed
 
@@ -41,9 +66,9 @@ Policy references checked October 24, 2026:
   gap was 41px against a 40px bound, and Firefox's later Sentinel overlay trigger
   was hidden. Focused `--provider-ui` runs retain real GPU rendering and exercise
   this change independently; these failures are not reported as full passes.
-- Browser fixtures stub extension storage/activation, elevation, raster tiles
-  and peak feeds. They do not establish native focus/window placement, real
+- Browser fixtures stub extension storage/activation, elevation, raster tiles,
+  vector styles and peak feeds. They do not establish OS focus/window placement,
+  native popup-menu behavior, real
   provider policy enforcement, or the exact server-side rule behind this block.
-- Planned next: make transient raster failures retryable through the existing
-  picker, remove unsupported CORS claims, clear stale feedback when switching,
-  and exercise failure/recovery geometry and keyboard focus in both browsers.
+- Text enlargement exercises 24px map/credit text at fixed 800/320px map sizes;
+  it is not evidence of browser-chrome zoom or an onscreen OS interaction.

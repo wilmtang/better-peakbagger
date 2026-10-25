@@ -532,7 +532,7 @@ html:has(.bpb-terrain-frame-body),
     inset: 0;
 }
 
-/* Stacked drape controls (layer picker, caveat, CORS notice) sit top-right,
+/* The drape picker and provider feedback sit top-right,
    matching the native 2D basemap selector so the control keeps its corner when
    the map flips between 2D and 3D. */
 #bpb-terrain-map .bpb-terrain-controls {
@@ -546,9 +546,8 @@ html:has(.bpb-terrain-frame-body),
     gap: 6px;
     /* Leave room for the separate left overlay trigger at larger text sizes. */
     max-width: calc(100% - max(120px, 8em));
-    max-height: calc(100% - 20px);
-    overflow: auto;
-    scrollbar-gutter: stable;
+    /* Feedback can use the map's width without widening the picker. */
+    overflow: visible;
 }
 #bpb-terrain-map .bpb-terrain-controls > * { flex-shrink: 0; }
 /* The 3D stack is anchored at the top; the 2D control is anchored at the
@@ -595,7 +594,7 @@ html:has(.bpb-terrain-frame-body),
 }
 
 /* The native macOS halo uses a different radius from the custom picker.
-   Keep keyboard focus inside its border so the scrollable stack cannot clip it. */
+   Keep keyboard focus inside its border. */
 #bpb-terrain-map .bpb-terrain-picker:focus-visible {
     outline: 2px solid #2f6fd0;
     outline-offset: -2px;
@@ -606,8 +605,13 @@ html:has(.bpb-terrain-frame-body),
 }
 
 #bpb-terrain-map .bpb-terrain-notice {
-    max-width: 260px;
+    position: relative;
+    /* Reserve the compass/mode/zoom column even when feedback grows tall. */
+    right: 64px;
+    width: max-content;
+    max-width: min(260px, calc(100vw - 84px));
     white-space: normal;
+    overflow-wrap: anywhere;
     line-height: 1.3;
     border-color: rgb(150 70 70 / 55%);
 }
@@ -615,6 +619,8 @@ html:has(.bpb-terrain-frame-body),
 #bpb-terrain-map[data-theme="dark"] .bpb-terrain-notice {
     border-color: rgb(160 90 95 / 65%);
 }
+#bpb-terrain-map .bpb-terrain-notice[data-kind="loading"] { border-color: rgb(53 58 49 / 20%); }
+#bpb-terrain-map[data-theme="dark"] .bpb-terrain-notice[data-kind="loading"] { border-color: rgb(255 255 255 / 16%); }
 
 #bpb-terrain-map .bpb-terrain-status {
     position: absolute;

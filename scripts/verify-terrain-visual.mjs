@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
-import { verifyTerrainCredits } from './verify-terrain-provider-ui.mjs';
+import { verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
 
 import {
     createFixtureCertificate,
@@ -62,10 +62,20 @@ const certificate = await resources.guard(() =>
     createFixtureCertificate({ host: FIXTURE_HOST, label: 'terrain' }));
 resources.defer('terrain fixture certificate', () => certificate.remove());
 const { key: fixtureKey, cert: fixtureCert } = certificate;
+let providerRasterMode = 'normal';
+const providerHeldResponses = [];
+const rejectProviderRaster = response => {
+    response.setHeader('Cache-Control', 'no-store');
+    sendFixtureText(response, 403, 'Synthetic provider policy block');
+};
 
 const handleRequest = async (request, response) => {
     try {
         const url = new URL(request.url, `https://${FIXTURE_HOST}`);
+        if (url.pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
+            if (providerRasterMode === 'hold') { providerHeldResponses.push({ request, response }); return; }
+            if (providerRasterMode === 'blocked') { rejectProviderRaster(response); return; }
+        }
         // Peakbagger's own peak-marker feed: answer like /Async/PLLBB.aspx,
         // with synthetic peaks placed inside whatever box was requested so a
         // dot always lands near the camera center.
@@ -180,7 +190,7 @@ const connectCdp = async url => {
 
 const evaluate = async (cdp, expression) => {
     const result = await cdp.call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'Runtime evaluation failed');
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Runtime evaluation failed');
     return result.result.value;
 };
 
@@ -874,12 +884,16 @@ try {
     let terrainCoverageMaxZoom = Infinity;
     const basemapRequests = [];
     const pendingBasemapRequestIds = [];
+    const pendingVectorStyles = [];
     let holdBasemapRequests = false;
     const peakFeedRequests = [];
     const runtimeErrors = [];
     cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
         const isBasemapRequest = /\/scripts\/showcase\/terrain-tiles\//.test(request.url);
         const fulfill = async () => {
+            if (request.url === 'https://tiles.openfreemap.org/styles/liberty') {
+                pendingVectorStyles.push(requestId); return;
+            }
             if (isBasemapRequest) {
                 if (holdBasemapRequests) pendingBasemapRequestIds.push(requestId);
                 else await cdp.call('Fetch.continueRequest', { requestId });
@@ -959,7 +973,8 @@ try {
         patterns: [
             { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
             { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' },
-            { urlPattern: '*scripts/showcase/terrain-tiles/*', requestStage: 'Request' }
+            { urlPattern: '*scripts/showcase/terrain-tiles/*', requestStage: 'Request' },
+            { urlPattern: 'https://tiles.openfreemap.org/styles/liberty', requestStage: 'Request' },
         ]
     });
 
@@ -1157,7 +1172,8 @@ try {
     await cdp.call('Fetch.enable', {
         patterns: [
             { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
-            { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' }
+            { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' },
+            { urlPattern: 'https://tiles.openfreemap.org/styles/liberty', requestStage: 'Request' },
         ]
     });
     console.log('Pending-drape boot probe: terrain became active while raster requests were held.');
@@ -1233,6 +1249,34 @@ try {
     await verifyTerrainCredits({
         evaluate: expression => evaluate(cdp, expression),
         screenshot: name => capture(cdp, path.join(outputDir, `${name}.png`)),
+    });
+    await verifyTerrainProviderRecovery({
+        evaluate: expression => evaluate(cdp, expression),
+        retryWithKeyboard: async () => {
+            // Native select type-ahead works with macOS's closed menu, where
+            // Home may scroll instead of selecting the first option.
+            await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 's', code: 'KeyS', text: 's', windowsVirtualKeyCode: 83 });
+            await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 });
+        },
+        blockRaster: () => { providerRasterMode = 'hold'; },
+        releaseRaster: async status => {
+            if (status === 403) await waitForCondition(() => providerHeldResponses.some(({ response }) => !response.destroyed),
+                () => `No live raster responses held; recent requests: ${JSON.stringify(basemapRequests.slice(-3))}`);
+            providerRasterMode = status === 403 ? 'blocked' : 'normal';
+            await Promise.all(providerHeldResponses.splice(0).filter(({ response }) => !response.destroyed)
+                .map(({ request, response }) => status === 403 ? rejectProviderRaster(response) : handleRequest(request, response)));
+        },
+        screenshot: name => capture(cdp, path.join(outputDir, `${name}.png`)),
+    });
+    await verifyTerrainVectorPending({
+        evaluate: expression => evaluate(cdp, expression),
+        screenshot: name => capture(cdp, path.join(outputDir, `${name}.png`)),
+        waitForStyle: () => waitForCondition(() => pendingVectorStyles.length > 0, () => 'No vector style request was held'),
+        releaseStyle: () => Promise.all(pendingVectorStyles.splice(0).map(requestId => cdp.call('Fetch.fulfillRequest', {
+            requestId, responseCode: 200,
+            responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'application/json' }],
+            body: Buffer.from('{}').toString('base64'),
+        }))),
     });
     if (providerUiOnly) {
         if (terrainMockFailures.length) throw new Error(`DEM mock failed: ${terrainMockFailures.join('\n')}`);

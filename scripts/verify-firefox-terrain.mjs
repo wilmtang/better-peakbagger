@@ -10,7 +10,7 @@ import { mkdir } from 'node:fs/promises';
 import { firefox } from 'playwright';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 import { waitForPeakPopupSnapshot } from './verify-terrain-popup.mjs';
-import { verifyTerrainCredits } from './verify-terrain-provider-ui.mjs';
+import { verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
 
 import {
     createFixtureCertificate,
@@ -21,6 +21,7 @@ import {
     sendFixtureText,
     instrumentTerrainFrameHtml,
     instrumentTerrainFrameModule,
+    waitForCondition,
 } from './browser-verification-fixtures.mjs';
 import {
     closeServer,
@@ -38,6 +39,13 @@ const syntheticTerrariumWebp = Buffer.from(
     'UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef',
     'base64',
 );
+let providerRasterMode = 'normal';
+const heldRasterResponses = [], expectedBlockedTiles = new Set();
+const rejectProviderRaster = (request, response) => {
+    expectedBlockedTiles.add(`https://${request.headers.host}${request.url}`);
+    response.setHeader('Cache-Control', 'no-store');
+    sendFixtureText(response, 403, 'Synthetic provider policy block');
+};
 // The showcase must be served over HTTPS. src/peakbagger/peakbagger-request.js
 // refuses any URL whose protocol is not https: — a deliberate security property
 // — and the analyzer fetches its GPX through that guard, so over http:// the
@@ -46,6 +54,10 @@ function createFixtureServer({ key, cert }) {
     const server = createServer({ key, cert }, async (request, response) => {
         try {
             const url = new URL(request.url, `https://${fixtureHost}`);
+            if (url.pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
+                if (providerRasterMode === 'hold') { heldRasterResponses.push({ request, response }); return; }
+                if (providerRasterMode === 'blocked') { rejectProviderRaster(request, response); return; }
+            }
             if (url.pathname.toLowerCase() === '/async/pllbb.aspx') {
                 const bounds = ['miny', 'maxy', 'minx', 'maxx'].map(name =>
                     Number(url.searchParams.get(name)));
@@ -168,6 +180,24 @@ async function main() {
         // route handler below is the thing that keeps live origins unreachable.
         const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
         resources.defer('Firefox terrain context', () => context.close());
+        // Hold only the style response at the fetch boundary, before the frame
+        // captures fetch. Raster failures still use real HTTPS responses. This
+        // gives the Firefox pending-state check a deterministic release point.
+        await context.addInitScript(() => {
+            const nativeFetch = globalThis.fetch.bind(globalThis);
+            globalThis.fetch = (input, init) => {
+                if (input !== 'https://tiles.openfreemap.org/styles/liberty') return nativeFetch(input, init);
+                return new Promise((resolve, reject) => {
+                    const abort = () => reject(init.signal.reason);
+                    init.signal.addEventListener('abort', abort, { once: true });
+                    (globalThis.__bpbHeldVectorStyles ??= []).push(() => {
+                        init.signal.removeEventListener('abort', abort);
+                        const response = new Response('{}', { headers: { 'content-type': 'application/json' } });
+                        Object.defineProperty(response, 'url', { value: input }); resolve(response);
+                    });
+                });
+            };
+        });
         const page = await context.newPage();
         const startupRenderer = await page.evaluate(() => {
             const gl = document.createElement('canvas').getContext('webgl2');
@@ -188,6 +218,7 @@ async function main() {
         const requests = { terrain: 0, basemap: 0, peaks: 0 };
         page.on('pageerror', error => errors.push(String(error)));
         page.on('console', message => {
+            if (expectedBlockedTiles.has(message.location().url) && /403/.test(message.text())) return;
             if (message.type() === 'error') errors.push(message.text());
         });
         page.on('request', request => {
@@ -200,7 +231,7 @@ async function main() {
         // itself https now, so an unconditional `https://**` abort would tear down
         // the page under test. Everything not explicitly allowed still fails closed.
         const fixtureOrigin = `https://${fixtureHost}:${port}/`;
-        await page.route('https://**', route => {
+        await context.route('https://**', route => {
             const url = route.request().url();
             if (url.startsWith('https://tiles.mapterhorn.com/')) {
                 return route.fulfill({
@@ -356,6 +387,24 @@ async function main() {
         }
         await page.locator('#bpb-gpx-analysis canvas').focus();
         await verifyTerrainCredits({ evaluate: expression => page.evaluate(expression) });
+        await verifyTerrainProviderRecovery({
+            evaluate: expression => page.evaluate(expression),
+            retryWithKeyboard: () => page.keyboard.press('s'),
+            blockRaster: () => { providerRasterMode = 'hold'; },
+            releaseRaster: async status => {
+                if (status === 403) await waitForCondition(() => heldRasterResponses.some(({ response }) => !response.destroyed),
+                    { description: 'held provider recovery raster tiles' });
+                providerRasterMode = status === 403 ? 'blocked' : 'normal';
+                await Promise.all(heldRasterResponses.splice(0).filter(({ response }) => !response.destroyed)
+                    .map(async ({ request, response }) => status === 403 ? rejectProviderRaster(request, response)
+                        : sendFixtureFile(response, await resolveFixtureFile('/scripts/showcase/terrain-basemap-tile.png'))));
+            },
+        });
+        await verifyTerrainVectorPending({
+            evaluate: expression => page.evaluate(expression),
+            waitForStyle: () => page.waitForFunction(() => document.getElementById('bpb-terrain-frame').contentWindow.__bpbHeldVectorStyles?.length > 0),
+            releaseStyle: () => page.evaluate(() => document.getElementById('bpb-terrain-frame').contentWindow.__bpbHeldVectorStyles?.splice(0).forEach(release => release())),
+        });
         if (providerUiOnly) {
             if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
             await resources.dispose();

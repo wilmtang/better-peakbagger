@@ -210,7 +210,6 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let activeBasemap = null;
     let availableBasemaps = [];
     let activeBasemapIndex = -1;
-    const failedBasemaps = new Set();
     let basemapErrored = false;
     let basemapContentLoaded = false;
     let basemapChecked = false;
@@ -244,6 +243,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const tiltWarmedTiles = new Set();
     let activeRouteStyle = { ...settingsSchema.ROUTE_STYLE };
     let vectorActive = false;
+    let vectorLoading = false;
     let vectorInstalling = false;
     const vectorStyleLoader = TerrainStyle.createVectorStyleLoader({ styleUrl: VECTOR_BASEMAP.styleUrl });
     let vectorSwapToken = 0;
@@ -450,11 +450,11 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         routeHasTrackIds = false;
         hoveredRouteTrack = null;
         vectorActive = false;
+        vectorLoading = false;
         vectorInstalling = false;
         vectorSwapToken++;
         vectorLayerIds = [];
         vectorSourceIds = [];
-        failedBasemaps.clear();
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
@@ -872,10 +872,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     const renderPicker = () => {
         const choices = [
-            ...availableBasemaps.map((basemap, index) => ({ id: String(index), label: basemap.name || `Map ${index + 1}`, disabled: failedBasemaps.has(index) })),
+            ...availableBasemaps.map((basemap, index) => ({ id: String(index), label: basemap.name || `Map ${index + 1}`, disabled: false })),
             { id: 'vector', label: VECTOR_BASEMAP.name }, { id: 'terrain', label: 'Terrain only' },
         ];
-        const selection = vectorActive ? 'vector' : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
+        const selection = vectorActive || vectorLoading ? 'vector' : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
         if (pickerElement) {
             pickerElement.replaceChildren(...choices.map(choice => {
                 const option = document.createElement('option');
@@ -895,10 +895,11 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         else if (swapBasemap(choice)) userPickedBasemap = true;
     };
 
-    const showNotice = text => {
+    const showNotice = (text, kind = 'error') => {
         if (!noticeElement) return;
-        if (noticeElement.textContent === text) return;
+        if (noticeElement.textContent === text && noticeElement.dataset.kind === kind) return;
         noticeElement.textContent = text;
+        noticeElement.dataset.kind = kind;
         noticeElement.hidden = !text;
     };
 
@@ -1025,12 +1026,13 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         vectorSourceIds = [];
         vectorStyleResources = null;
         vectorActive = false;
+        vectorLoading = false;
         vectorInstalling = false;
     };
 
     // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
     // selects the extension-provided vector basemap. Each swap re-arms the
-    // one-shot CORS check so the new layer is judged on its own.
+    // one-shot tile check so the new layer is judged on its own.
     const swapBasemap = selection => {
         if (!map || !loaded) return false;
         removeBasemapLayer();
@@ -1041,13 +1043,16 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         basemapChecked = false;
         activeBasemapIndex = -1;
         activeBasemap = null;
+        showNotice('');
         if (selection === 'vector') {
+            vectorLoading = true;
             renderPicker();
-            showNotice(`Loading ${VECTOR_BASEMAP.name}…`);
+            showNotice('Loading map…', 'loading');
             const token = vectorSwapToken;
             fetchVectorStyle()
                 .then(style => {
                     if (!map || !loaded || token !== vectorSwapToken) return;
+                    vectorLoading = false;
                     addVectorBasemap(style);
                     overlays?.basemapChanged();
                     renderPicker();
@@ -1064,7 +1069,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             return true;
         }
         const index = selection;
-        activeBasemapIndex = index >= 0 && index < availableBasemaps.length && !failedBasemaps.has(index) ? index : -1;
+        activeBasemapIndex = index >= 0 && index < availableBasemaps.length ? index : -1;
         activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
         if (activeBasemap) addBasemapLayer(activeBasemap);
         overlays?.basemapChanged();
@@ -1072,19 +1077,18 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         return true;
     };
 
-    // A whole layer blocked by CORS renders no tile. Disable it in the picker,
-    // remember it for the session, revert to terrain-only, and say why.
+    // No usable tiles after an error: retain the map and a natural retry via
+    // the existing picker. A tile error cannot establish CORS as the cause.
     const markBasemapFailed = index => {
         const name = index >= 0 && index < availableBasemaps.length ? availableBasemaps[index].name : '';
-        if (index >= 0) failedBasemaps.add(index);
         swapBasemap(-1);
-        showNotice(`${name || 'That map layer'} can’t be draped here — the map provider blocks cross-origin tiles. Showing terrain only.`);
+        showNotice(`${name || 'That map layer'} couldn’t load. Select it again to retry.`);
     };
 
     // Build the switchable drape list from the layers the page offered, deduped
     // by tile template, with the initially-selected layer as the active one
     // (falling back to the first available, then terrain-only). Resets the
-    // per-drape CORS-check flags so the resolved layer is judged fresh. Used by
+    // per-drape tile-check flags so the resolved layer is judged fresh. Used by
     // the initial boot and by resume (to reflect a 2D layer change).
     const resolveBasemaps = data => {
         const initialBasemap = validateBasemap(data.basemap);
@@ -1104,7 +1108,6 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             ? availableBasemaps.findIndex(basemap => basemap.tiles[0] === initialBasemap.tiles[0])
             : -1;
         activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
-        failedBasemaps.clear();
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
@@ -1964,7 +1967,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     return;
                 }
                 if (event && event.sourceId === 'basemap') {
+                    // Authentication/policy denials apply even when a cached
+                    // tile previously rendered. Cancel the denied source and
+                    // expose a retry, rather than silently retaining holes.
+                    if (event.error?.status === 401 || event.error?.status === 403) {
+                        if (activeBasemap) markBasemapFailed(activeBasemapIndex);
+                        return;
+                    }
                     basemapErrored = true;
+                    basemapChecked = false;
                     return;
                 }
                 if (event?.sourceId?.startsWith('bpb-overlay-')) {
@@ -2046,6 +2057,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     }
                 }
                 if (basemapChecked) return;
+                if (!basemapErrored && !basemapContentLoaded) return;
                 basemapChecked = true;
                 if (activeBasemap && basemapErrored && !basemapContentLoaded) markBasemapFailed(activeBasemapIndex);
             });

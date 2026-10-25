@@ -297,6 +297,24 @@ uses them.
 | `terrain cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
 | `terrain lod` | Measures painted elevation provenance across a cold-cache tilt sweep and 20 fixed-angle Rainier zoom cases, with local delayed DEM tiles and elevation/drape traffic counts. Same HTTPS showcase host and GPU rules as `verify -- terrain`. |
 
+For a focused provider-feedback check, run
+`npm run verify -- terrain chrome --provider-ui` or
+`npm run verify -- terrain firefox --provider-ui`. Each uses
+real hidden GPU rendering with eight credit layouts and eight held-tile → HTTP
+403 → keyboard retry → rendered-map paths: 800/320px maps, both themes and
+normal/enlarged text. It checks focus, feedback visibility, control overlap,
+and action/map/following-content geometry within one CSS pixel. A held vector
+style checks pending selection and neutral loading feedback. Provider responses
+and extension activation/storage are fixtures; native windows, browser menus
+and live provider enforcement remain separate proof. Unknown selections fail.
+
+When diagnosing OSM warning-image tiles, leave DevTools **Disable cache**
+unchecked during an ordinary-use capture. Cache bypass reproduced the reported
+block, and disabling that option restored the user's 3D map. The raster path
+leaves HTTP caching and request identity with the browser; changing the tile
+transport or spoofing headers is not an established fix. See the
+[policy/recovery closure ledger](plans/2026-10-24-osm-terrain-policy.md).
+
 Ordinary Test CI runs `snow`, `peak-cards`, `peak-card-placement` and `weather-interactions` per browser after the generic
 layout matrix, reusing its completed `dist/` build. A separate always-run
 `snow-map` matrix uses hardware GPU runners. Both feed the required Chrome
