@@ -480,7 +480,7 @@ test('a missing summit reply times out, restores Preview, and rejects a late res
     expireLookup();
     await waitFor(dom, () => uploadStatus(dom));
     assert.match(uploadStatus(dom).textContent,
-        /Summit lookup stopped responding.*Peakbagger’s Preview.*choose the GPX again/);
+        /Summit lookup stopped responding.*Peakbagger’s Preview.*Process again/);
     assert.equal(processButton(dom), null);
     assert.equal(dom.window.document.getElementById('GPXPreview')
         .classList.contains('bpb-native-preview-hidden'), false);
@@ -1131,4 +1131,19 @@ test('stalled file preparation blocks native submission, times out safely, and i
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.equal(processButton(dom), null);
     dom.window.close();
+});
+
+test('cancelled summit review can process the still-selected file with fresh authority', async () => {
+    const dom = await loadCard();
+    try {
+        const starts = () => dom.messages.filter(message => message.type === 'GPX_PROCESS_START');
+        const previous = starts().at(-1);
+        cardParts(dom).cancel.click();
+        await waitFor(dom, () => dom.window.document.querySelector('.bpb-process-retry'));
+        dom.window.document.querySelector('.bpb-process-retry').click();
+        await waitFor(dom, () => starts().length === 2 && dom.window.document.querySelector('.bpb-summit-card'));
+        assert.ok(starts().at(-1).selectionGeneration > previous.selectionGeneration);
+        assert.notEqual(starts().at(-1).selectionNonce, previous.selectionNonce);
+        assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false);
+    } finally { dom.window.close(); }
 });

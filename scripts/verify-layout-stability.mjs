@@ -1019,7 +1019,7 @@ async function uploadCase(page, origin, variant) {
     await page.route('**/climber/ascentedit.aspx**', route => route.fulfill({ contentType: 'text/html', body: html }));
     await page.addInitScript(({ theme }) => {
         document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
-        globalThis.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { theme } }) },
+        globalThis.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { theme } }) },
             onChanged: { addListener() {}, removeListener() {} } }, runtime: { getManifest: () => ({ version: '4.0.0' }),
             onMessage: { addListener() {}, removeListener() {} }, sendMessage: async message => {
                 if (message.type === 'GPX_PROCESS_START') return new Promise(resolve => {
@@ -1046,7 +1046,7 @@ async function uploadCase(page, origin, variant) {
     await writeFile(file, '<gpx><trk><trkseg><trkpt lat="46.8" lon="-121.7"><ele>100</ele><time>2025-01-01T01:00:00Z</time></trkpt><trkpt lat="46.9" lon="-121.8"><ele>200</ele><time>2025-01-01T02:00:00Z</time></trkpt></trkseg></trk></gpx>');
     await page.locator('#GPXUpload').setInputFiles(file);
     const action = '.bpb-process-button';
-    await page.locator(action).waitFor(); await page.locator(action).scrollIntoViewIfNeeded();
+    await page.locator(action).waitFor().catch(async error => { throw new Error(`${error.message}; upload state: ${await page.locator('.bpb-upload-status').allTextContents()}`); }); await page.locator(action).scrollIntoViewIfNeeded();
     const rect = () => documentRect(action);
     const before = await rect();
     await page.click(action);
@@ -1056,7 +1056,15 @@ async function uploadCase(page, origin, variant) {
     await page.locator('#GPXPreview').waitFor();
     stable(originalPreview, await documentRect('#GPXPreview'), 'GPX native fallback after failure');
     stable(originalRemove, await documentRect('#GPXRemove'), 'GPX neighboring Remove after failure');
+    await page.locator('.bpb-process-retry').waitFor();
     await capture(page, `${variant.name}-process`);
+    await page.evaluate(() => { globalThis.__finishTrack = null; });
+    await page.locator('.bpb-process-retry').press('Enter');
+    await page.waitForFunction(() => typeof globalThis.__finishTrack === 'function');
+    await page.evaluate(() => globalThis.__finishTrack());
+    await page.locator('.bpb-process-retry').waitFor();
+    stable(originalPreview, await documentRect('#GPXPreview'), 'GPX retry fallback');
+    stable(originalRemove, await documentRect('#GPXRemove'), 'GPX retry neighboring Remove');
     await page.evaluate(() => {
         const card = document.createElement('div'); card.className = 'bpb-summit-card';
         card.innerHTML = '<div class="bpb-summit-actions"><button class="bpb-summit-apply">Fill this ascent</button><button class="bpb-summit-cancel">Cancel</button></div>';

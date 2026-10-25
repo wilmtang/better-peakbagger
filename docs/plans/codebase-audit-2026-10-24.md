@@ -310,6 +310,14 @@ Independent commits for drag ownership and report/observer surfaces:
   client-side records. The regression failed before the fix; all 62 ascent filter
   tests, build and focused ESLint passed. Date-served section restoration remains.
 
+- F12 GPX retry: cancelled review and processing failures offer Process again
+  only after confirmed invalidation; retry prepares a fresh generation/nonce.
+  Uncertain Apply delivery does not get this shortcut. The absent-action regression
+  failed before the fix; 45 upload tests, build and ESLint passed. Hidden Chrome/
+  Firefox exercised failure and keyboard retry, preserving Preview/Remove positions
+  at 390/1280 px in both themes. The native legacy form retains horizontal overflow
+  at narrow widths; desktop recovery rendering was inspected. Worker replies stubbed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

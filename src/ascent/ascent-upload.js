@@ -223,7 +223,7 @@ import tzlookup from 'tz-lookup';
         document.body.append(dropOverlay);
 
         let button = null;
-        let attachButton = null;
+        let attachButton = null, retryProcessButton = null;
         let labelElement = null;
         let processText = null;
         let status = null;
@@ -281,6 +281,7 @@ import tzlookup from 'tz-lookup';
 
         const resetNativeUi = () => {
             removeCard();
+            retryProcessButton?.remove(); retryProcessButton = null;
             attachButton?.remove();
             attachButton = null;
             button?.remove();
@@ -291,7 +292,8 @@ import tzlookup from 'tz-lookup';
             nativePreview.classList.remove('bpb-native-preview-hidden');
         };
 
-        const restoreNative = ({ reason = null } = {}) => {
+        const restoreNative = ({ reason = null, retry = false } = {}) => {
+            const file = nativeGpxFile();
             requestToken++;
             const generation = ++selectionGeneration;
             selectedFile = null;
@@ -300,6 +302,21 @@ import tzlookup from 'tz-lookup';
                 type: 'GPX_PROCESS_INVALIDATE',
                 ...selectionMessage(generation, newSelectionNonce()),
                 ...(reason ? { reason } : {}),
+            }).then(result => {
+                if (!retry || !result?.ok || result.preserved || generation !== selectionGeneration || nativeGpxFile() !== file || !file) return;
+                retryProcessButton = document.createElement('button');
+                retryProcessButton.type = 'button'; retryProcessButton.className = 'bpb-attach-gpx-button bpb-process-retry';
+                retryProcessButton.textContent = 'Process again';
+                const retryButton = retryProcessButton;
+                retryButton.addEventListener('click', async () => {
+                    if (retryButton.getAttribute('aria-disabled') === 'true') return;
+                    retryButton.setAttribute('aria-disabled', 'true');
+                    await handleFileChange(timestampSourceFile || file, { keepTimestampChoice: true });
+                    if (!selectedFile || !button || nativeGpxFile() !== selectedFile.attachedFile) return;
+                    button.focus({ preventScroll: true });
+                    void processFile();
+                });
+                (document.getElementById('GPXRemove') || nativePreview).after(retryProcessButton);
             }).catch(() => {});
         };
 
@@ -381,9 +398,9 @@ import tzlookup from 'tz-lookup';
             setIdle();
         };
 
-        const fail = message => {
+        const fail = (message, { retry = true } = {}) => {
             showStatus('error', message);
-            restoreNative();
+            restoreNative({ retry });
         };
 
         const applySelection = async (response, selectedIds, primaryId, token) => {
@@ -404,13 +421,13 @@ import tzlookup from 'tz-lookup';
             } catch (error) {
                 if (token !== requestToken) return;
                 console.error('Better Peakbagger: prepared draft delivery failed', error);
-                fail('The prepared draft could not be delivered. Reload the ascent form and try again.');
+                fail('The prepared draft could not be delivered. Reload the ascent form and try again.', { retry: false });
                 return;
             }
             if (token !== requestToken) return;
             if (!applied?.ok) {
                 removeCard();
-                fail(applied?.error?.message || 'The prepared draft could not be delivered.');
+                fail(applied?.error?.message || 'The prepared draft could not be delivered.', { retry: false });
                 return;
             }
             removeCard();
@@ -567,7 +584,7 @@ import tzlookup from 'tz-lookup';
                     primaryId === null ? null : Number(primaryId), token);
             });
             cancelButton.addEventListener('click', () => {
-                restoreNative();
+                restoreNative({ retry: true });
             });
 
             actionGroup.insertAdjacentElement('afterend', card);
@@ -667,7 +684,7 @@ import tzlookup from 'tz-lookup';
                 }
                 if (Deadline.isTimeout(error)) {
                     console.error('Better Peakbagger: summit lookup reply timed out', error);
-                    fail('Summit lookup stopped responding. Use Peakbagger’s Preview, or choose the GPX again to retry.');
+                    fail('Summit lookup stopped responding. Use Peakbagger’s Preview, or Process again to retry.');
                     return;
                 }
                 console.error('Better Peakbagger: local GPX read failed', error);
