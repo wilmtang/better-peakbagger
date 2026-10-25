@@ -43,10 +43,10 @@
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#map-chart-chart">GPX chart</a></li>
                     <li><a class="nav-subitem" href="#map-chart-map">Map</a></li>
-                    <li><a class="nav-subitem" href="#custom-map-layers">Custom layers</a></li>
                     <li><a class="nav-subitem" href="#map-handoffs">Send GPX</a></li>
                 </ul>
             </li>
+            <li><a class="nav-item" href="#custom-map-layers">Map layers</a></li>
             <li>
                 <a class="nav-item" href="#beta">Ascent beta filter</a>
                 <ul class="nav-sublist">
@@ -506,18 +506,6 @@
                 </div>
             </div>
 
-            <div id="custom-map-layers" class="subsection" role="group" aria-labelledby="custom-map-layers-heading">
-                <h3 class="subsection-title" id="custom-map-layers-heading">Custom layers</h3>
-                <div class="card">
-                    <div class="row">
-                        <div class="label"><span class="title">Your map sources</span><span class="desc">Add raster tiles, vector tiles or GeoJSON once, then choose them from Overlays on any map.</span></div>
-                        <button type="button" class="panel-button primary" id="custom-layer-add" disabled>Add layer</button>
-                    </div>
-                    <p id="custom-layer-status" class="custom-layer-status" role="status">Loading saved layers…</p>
-                    <ul id="custom-layer-list" class="custom-layer-list" aria-label="Custom map layers" hidden></ul>
-                    <p class="custom-layer-note">Included in settings exports and GitHub settings backups. Source URLs may contain public API keys. Layers stay off after a restore until you enable them.</p>
-                </div>
-            </div>
             <div id="map-handoffs" class="subsection" role="group" aria-labelledby="map-handoffs-heading">
                 <h3 class="subsection-title" id="map-handoffs-heading">Send GPX</h3>
                 <div class="card">
@@ -530,6 +518,20 @@
                     </div>
                 </div>
                 <p class="sub">Provider choices and filter order are included in <a href="#github-settings-backup">Settings backup</a> for transfer to another device.</p>
+            </div>
+        </section>
+
+        <section id="custom-map-layers" class="settings-section" aria-labelledby="custom-map-layers-heading">
+            <h2 class="section-title" id="custom-map-layers-heading">Map layers</h2>
+            <div class="card">
+                <div class="row">
+                    <div class="label"><span class="title">Custom map layers</span><span class="desc">Add raster tiles, vector tiles or GeoJSON once, then choose them from Overlays on any map.</span></div>
+                    <button type="button" class="panel-button primary" id="custom-layer-add" disabled>Add layer</button>
+                </div>
+                <p id="custom-layer-status" class="custom-layer-status" role="status">Loading saved layers…</p>
+                <ul id="custom-layer-list" class="custom-layer-list" aria-label="Custom map layers" hidden></ul>
+                <p id="custom-layer-order-status" class="order-settings-sr" role="status"></p>
+                <p class="custom-layer-note">Top layers appear above those below. Your order is included in settings exports and GitHub backups. Source URLs may contain public API keys. Layers stay off after a restore until you enable them.</p>
             </div>
         </section>
 

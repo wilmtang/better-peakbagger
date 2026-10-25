@@ -2,12 +2,22 @@
 
 ## Custom sources
 
-Choose **Overlays → Add custom overlay** on any interactive Peakbagger map, or
-manage the same library at **Settings → Map & GPX chart → Custom layers**. Saved sources are available
+Choose **Overlays → Add custom layer…** on any interactive Peakbagger map to
+open **Settings → Map layers**. This dedicated Settings section follows
+**Map & GPX chart** and contains the saved list, Add, Edit, Delete, opacity and
+Move up/down controls. It follows the selected light/dark theme, including an
+open source editor. The old standalone editor URL also opens this section.
+Saved sources are available
 on peak, ascent, BigMap, recent/different-route, list, climber and other native
 Leaflet maps. Each map starts with custom sources off; enable up to three at a
 time. Selection survives supported 2D/3D switches and the one-use Full Screen
 handoff. Separate maps have separate selections.
+
+The saved list also determines display order: the first row is the topmost
+custom overlay. Reordering updates both renderers while retaining sources and
+selection. The order travels in settings-file and GitHub backups. Native routes
+and markers remain above custom layers. The map menu keeps a compact header
+link and layer controls; adding or editing sources happens in Settings.
 
 Supported formats are raster PNG/JPEG/WebP XYZ tiles, MVT/PBF vector tiles and
 small GeoJSON FeatureCollections. Tiled sources accept a `{z}/{x}/{y}` template
@@ -26,12 +36,11 @@ properties are discarded, overlays are noninteractive, and native routes,
 markers and interactions stay above them. Full MapLibre styles, labels, icons,
 authenticated services, offline archives and custom basemaps are not supported.
 
-**Preview** is temporary until saved. Closing an unsaved edit restores that
-map's previous selection. **Test source** explicitly samples at most six zoom
-levels at the current center, from the active 2D or 3D request origin. It reports
-only those samples, never changes the range or proves global coverage. A valid
-empty tile stays empty. HTTP 404/410 may fall back to at most two parent levels
-during rendering, with **Lower detail** feedback; probes do not borrow parents.
+**Check source** reads metadata in Settings; it does not claim that tiles exist
+at a particular location. Save a source, then explicitly enable it on a map to
+see its loading/CORS status. Closing an unsaved edit makes no map changes.
+A valid empty tile stays empty. HTTP 404/410 may fall back to at most two parent
+levels during rendering, with **Lower detail** feedback.
 
 All provider requests use direct HTTPS with CORS, omit cookies/referrers and
 reject redirects. Additional hosts discovered in metadata require review.

@@ -121,3 +121,60 @@ scrolling and chaining, exposing an unthemed canvas in dark mode.
   trackpad momentum/rubber-band animation, browser chrome or focus placement.
   The CSS policy and opaque canvas are verified; native gesture proof remains
   separate from these hidden checks.
+
+## Dedicated management and compact map entry
+
+The next design revision promotes **Map layers** to its own Settings section,
+immediately after **Map & GPX chart**. It is a library card with Add, saved
+sources, Edit/Delete, opacity and accessible Move up/down buttons. The first row
+is the topmost custom layer. The old standalone editor URL redirects here so
+every management entry uses the authoritative Settings theme. Open editors also
+follow live theme changes from the parent.
+
+### Fixed and verified
+
+- Saved order uses an authorized registry-revision transaction, validates a
+  complete permutation and preserves source revisions, opacity and active
+  selections. Both renderers and settings/GitHub backups honor the order.
+- Leaflet needed equal stacking levels for its raster containers and vector
+  canvases; reordering their DOM alone left canvases above raster tiles. The
+  adapter now owns that common stacking level. Chrome checks final composited
+  pixels and demonstrates failure with the prior mixed stacking levels restored
+  in the fixture, then success with the corrected levels.
+- The map has a single compact **Add custom layer…** link and saved-layer rows;
+  Edit links go to Settings as well. No inline setup frame is shown. Opening
+  Settings uses a one-use, sender-bound trusted-activation capability, a fixed
+  destination and the existing Settings-tab reuse owner.
+- Focused tests cover pending/edge reorder activation, stable rows and keyboard
+  focus, source order, backup ordering, stale writes and navigation authority.
+  Hidden Chrome/Firefox checks cover the real section, legacy redirect, live
+  dark/light editor changes, keyboard ordering, file round trips, compact menu,
+  CORS recovery and native/hardware terrain rendering. Chrome also holds a
+  reorder through pending → failure → retry → success, comparing the control,
+  section heading, following section and scroll position while the write is
+  pending or fails. Successful reordering intentionally moves the source row.
+- Final checks: 3,570 full-suite tests and 301 focused checks passed; lint passed
+  with the eight existing owned warnings. The extended failed-write unit case
+  passed independently. Real unpacked-extension startup gates passed hidden in
+  Chrome 156.0.8078.4 and Firefox 158.0.1. Custom-layer matrices used hardware
+  ANGLE Metal on Apple M3 Pro, a 1000×760 map, 1000/375px Options layouts and
+  200% browser zoom. Light/dark saved lists, the compact menu and narrow editors
+  were visually inspected. A missing editor-visibility wait in the verifier was
+  corrected so execution does not depend on screenshot timing.
+
+### Intentionally not changed
+
+- New layers append to the saved list; users choose their final order. Reordering
+  itself neither enables a layer nor fetches source data. Native routes and
+  markers retain priority. Sources remain outside browser sync.
+- Reordering uses explicit buttons rather than a drag-only interaction. The
+  setup flow is centralized in Settings: Check source reads metadata there,
+  while actual loading/CORS status belongs to explicit map activation. Earlier
+  map Preview/Test editor entry points are no longer exposed in the UI.
+
+### Changed but not fully proven
+
+- The real-browser checks use deterministic provider and map fixtures. Live
+  GitHub writers, every live host layout, physical trackpad/touch behavior,
+  screen-reader announcements and native window placement remain outside this
+  evidence. Existing concurrent Options backup-control work was preserved.

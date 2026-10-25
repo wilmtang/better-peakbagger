@@ -152,11 +152,18 @@ settings can subsequently propagate through browser sync.
 
 ### Custom map layer management and transfer
 
-**Map & GPX chart → Custom layers** is the central library in Options, with its
-own sidebar link. Add/edit opens the packaged editor in a modal; the list shows
-format, provider host and opacity, and confirms removal. The same sources are
-available on every map. **Check source** can read TileJSON in Options; testing
-tile coverage at the map center remains an explicit action on that map.
+**Map layers** is a dedicated Options section directly after **Map & GPX chart**,
+with its own top-level sidebar link. Add/Edit opens the packaged editor in a
+modal; the saved list shows format, provider host, opacity, Edit/Delete and
+Move up/down controls. The top saved row renders above the rows below it in both
+map modes. Reordering preserves source revisions and active map selections,
+rejects stale writes, and is included in backup signatures and exports.
+Both the manager and an open editor follow stored light/dark/system theme
+changes. The former standalone editor URL redirects to the central section.
+The map's compact **Add custom layer…** link opens this section with a trusted
+activation; it never opens an inline setup form. **Check source** reads TileJSON
+in Options. Actual tile availability and CORS status appear when the user
+enables the source on a map.
 
 Version 6 writes `customLayers: {schemaVersion: 1, sources, preferences}` beside
 `settings`, using the [shared source schema](../src/maps/custom-overlay-schema.js).

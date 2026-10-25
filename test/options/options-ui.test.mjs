@@ -320,25 +320,27 @@ test('settings are grouped by the surface they affect', async () => {
         'General',
         'Capture & reports',
         'Map & GPX chart',
+        'Map layers',
         'Ascent beta filter',
         'Backup & sync',
         'About'
     ]);
 
-    const [general, capture, mapChart, beta, github, about] = sections;
+    const [general, capture, mapChart, mapLayers, beta, github, about] = sections;
+    assert.ok(mapLayers.querySelector('#custom-layer-add')); assert.ok(mapLayers.querySelector('#custom-layer-list'));
     const favorites = beta.querySelector('#favorites');
     assert.equal(beta.children[1], favorites, 'climber lists comes before the other beta settings');
     assert.equal(favorites.querySelector('.desc').textContent,
         'Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.');
     assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
     assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
-        ['map-chart-chart', 'map-chart-map', 'custom-map-layers', 'map-handoffs']);
+        ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('#github-backup .desc').textContent, /automatically back up new and edited ascents/i);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
-    for (const section of [general, capture, mapChart, beta, github]) {
+    for (const section of [general, capture, mapChart, mapLayers, beta, github]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
         assert.ok(section.querySelector('.card'), 'the section carries a settings card');
@@ -1034,7 +1036,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'custom-map-layers', 'beta', 'github', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
@@ -1043,7 +1045,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
-            '#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#map-handoffs', '#favorites', '#github-connection',
+            '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
     for (const link of subLinks) {

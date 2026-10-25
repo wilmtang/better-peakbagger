@@ -56,15 +56,23 @@ try {
         const extension = await admin.waitForFunction(() => { try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); } catch { return false; } }).then(handle => handle.jsonValue());
         await admin.goto(`chrome-extension://${extension.id}/options/options.html`);
         await admin.evaluate(async () => chrome.storage.sync.set({ bpbSettings: { showSnotel: false, showWeather: false, showSunMoon: false, enable3dMap: true, terrainCacheLimitMb: 0 } }));
+        await admin.evaluate(async () => { const saved = await chrome.storage.sync.get('bpbSettings'); await chrome.storage.sync.set({ bpbSettings: { ...saved.bpbSettings, theme: 'dark' } }); });
+        await admin.goto(`chrome-extension://${extension.id}/custom-overlay/editor.html`);
+        await admin.waitForURL('**/options/options.html#custom-map-layers');
+        await admin.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
         await page.goto(`${origin}/map/MasterMap.aspx?t=G&gt=rc`);
         await page.getByRole('button', { name: /^Overlays/ }).click();
-        await page.getByRole('button', { name: 'Add custom overlay', exact: true }).click();
-        const editor = page.frameLocator('iframe[title="Custom map overlays"]');
+        const addLink = page.getByRole('link', { name: 'Add custom layer…', exact: true });
+        await addLink.waitFor();
+        assert.ok((await page.locator('.bpb-custom-section').boundingBox()).height <= 40, 'empty custom section is one compact row');
+        await addLink.click();
+        await admin.waitForURL('**/options/options.html#custom-map-layers');
+        await admin.getByRole('heading', { name: 'Map layers', exact: true }).waitFor();
+        assert.equal(await page.locator('iframe[title="Custom map overlays"]').count(), 0, 'map navigation never opens an inline editor');
+        const editor = admin.frameLocator('#custom-layer-dialog iframe');
+        await admin.locator('#custom-layer-add').click();
         await editor.locator('#name').fill('Custom raster'); await editor.locator('#url').fill(`${providerOrigin}/{z}/{x}/{y}.png`);
         png = Buffer.from(await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256; const context = canvas.getContext('2d'); context.fillStyle = '#ef2719'; context.fillRect(0, 0, 256, 256); return canvas.toDataURL().split(',')[1]; }), 'base64');
-        resources.defer('custom held replies', () => releases.splice(0).forEach(resolve => resolve()));
-        await editor.locator('#preview').click(); await editor.locator('#feedback').filter({ hasText: 'Preview enabled' }).waitFor();
-        await editor.locator('#test').click(); await editor.locator('#feedback').filter({ hasText: 'Other zooms and locations remain unchecked' }).waitFor();
         await editor.locator('#save').click(); await editor.locator('#feedback').filter({ hasText: 'Saved on this device' }).waitFor();
         await editor.locator('#cancel').click();
         const raster = page.getByRole('checkbox', { name: 'Custom raster', exact: true }); await raster.check();
@@ -74,7 +82,7 @@ try {
         assert.ok(nativePaint.some(pixel => pixel[0] > 200 && pixel[3] > 0), 'custom raster actually painted');
         await raster.uncheck(); const stopped = requests.length;
         for (const [name, kind, url] of [['Custom polygons', 'geojson', `${providerOrigin}/data.geojson`], ['Custom MVT', 'mvt', `${providerOrigin}/{z}/{x}/{y}.pbf`]]) {
-            await page.getByRole('button', { name: 'Add custom overlay', exact: true }).click();
+            await admin.locator('#custom-layer-add').click();
             await editor.locator('#name').fill(name); await editor.locator('#kind').selectOption(kind); await editor.locator('#url').fill(url);
             if (kind === 'mvt') await editor.locator('[id$="-sourceLayer"]').fill('trails');
             await editor.locator('[id$="-geometry"]').selectOption('polygon');
@@ -86,7 +94,7 @@ try {
         denied = true;
         const mvtRow = page.locator('.bpb-custom-source').filter({ hasText: 'Custom MVT' }); await mvtRow.locator('summary').first().click();
         await mvtRow.getByRole('button', { name: 'Retry', exact: true }).click();
-        await mvtRow.locator('.bpb-custom-feedback').filter({ hasText: /Check the URL and the provider/ }).waitFor();
+        await mvtRow.locator('.bpb-custom-feedback').filter({ hasText: /Check the URL or provider CORS/ }).waitFor();
         denied = false; held = true;
         const retry = mvtRow.getByRole('button', { name: 'Retry', exact: true }); const before = await retry.boundingBox();
         await retry.click(); await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.textContent.includes('Custom MVT') && element.textContent.includes('Loading')));
@@ -98,6 +106,67 @@ try {
         await admin.goto(`chrome-extension://${extension.id}/options/options.html#custom-map-layers`);
         const library = admin.locator('#custom-layer-list'); await library.locator('li').nth(2).waitFor();
         assert.equal(await library.locator('li').count(), 3, 'central Options manager shows the shared library');
+        const movedLayer = library.locator('li').filter({ hasText: 'Custom MVT' }), up = movedLayer.getByRole('button', { name: 'Move Custom MVT up', exact: true });
+        const reorderGeometry = async () => ({ button: await up.boundingBox(), heading: await admin.locator('#custom-map-layers-heading').boundingBox(), following: await admin.locator('#beta').boundingBox(), scroll: await admin.locator('.content').evaluate(element => element.scrollTop) });
+        const assertOrderGeometry = (before, after, state) => {
+            for (const key of ['button', 'heading', 'following']) for (const property of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(before[key][property] - after[key][property]) <= 1, `${state} reorder preserves ${key} ${property}`);
+            assert.equal(before.scroll, after.scroll, `${state} reorder keeps the reading position`);
+        };
+        for (const fail of [true, false]) {
+            await admin.evaluate(fail => { const send = chrome.runtime.sendMessage.bind(chrome.runtime); chrome.runtime.sendMessage = async (...args) => {
+                if (args[0]?.type === 'CUSTOM_OVERLAYS_REORDER') {
+                    chrome.runtime.sendMessage = send; await new Promise(resolve => { window.releaseLayerOrder = resolve; });
+                    if (fail) return { ok: false, error: 'Layer order could not be saved. Try again.' };
+                }
+                return send(...args);
+            }; }, fail);
+            const beforeOrder = await reorderGeometry(); await up.click(); await admin.waitForFunction(() => document.getElementById('custom-layer-list').getAttribute('aria-busy') === 'true');
+            assertOrderGeometry(beforeOrder, await reorderGeometry(), 'pending');
+            await admin.evaluate(() => window.releaseLayerOrder());
+            if (fail) {
+                await admin.locator('#status-error').filter({ hasText: 'Layer order could not be saved. Try again.' }).waitFor();
+                await admin.waitForFunction(() => !document.getElementById('custom-layer-list').hasAttribute('aria-busy'));
+                assertOrderGeometry(beforeOrder, await reorderGeometry(), 'failed');
+                assert.equal(await library.locator('li strong').last().innerText(), 'Custom MVT', 'failed write preserves the saved order');
+                assert.equal(await up.getAttribute('aria-disabled'), 'false', 'failed write can be retried');
+                await admin.locator('#status-error-dismiss').click();
+            } else await admin.waitForFunction(() => document.querySelectorAll('#custom-layer-list li strong')[1]?.textContent === 'Custom MVT');
+        }
+        await up.press('Space'); await admin.waitForFunction(() => document.querySelector('#custom-layer-list li strong')?.textContent === 'Custom MVT');
+        assert.equal(await up.evaluate(button => document.activeElement === button), true, 'reorder retains keyboard focus on its moved control');
+        assert.equal(await up.getAttribute('aria-disabled'), 'true');
+        await page.waitForFunction(() => document.querySelector('.bpb-custom-source label span')?.textContent === 'Custom MVT');
+        await page.getByRole('checkbox', { name: 'Custom raster', exact: true }).check();
+        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.textContent.includes('60%')).length === 3);
+        await page.waitForFunction(() => [...document.querySelectorAll('.leaflet-bpb-custom-overlays-pane .leaflet-tile')].every(tile => +getComputedStyle(tile).opacity >= .999));
+        const composedPixel = async () => {
+            const data = (await page.screenshot({ clip: { x: 700, y: 500, width: 1, height: 1 } })).toString('base64');
+            return page.evaluate(async value => {
+                const image = new window.Image(); image.src = 'data:image/png;base64,' + value; await image.decode();
+                const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+                return [...context.getImageData(0, 0, 1, 1).data];
+            }, data);
+        };
+        const matches = (pixel, expected) => expected.every((value, index) => Math.abs(pixel[index] - value) <= 5);
+        const initialPixel = await composedPixel(); assert.ok(matches(initialPixel, [185, 108, 89]), `composited pixels follow MVT over raster over GeoJSON: ${initialPixel}`);
+        await page.evaluate(() => { for (const element of window.mapsPlaceholder.getPane('bpb-custom-overlays').children) element.style.zIndex = element.tagName === 'CANVAS' ? '200' : '1'; });
+        assert.equal(matches(await composedPixel(), [185, 108, 89]), false, 'pixel assertion detects the prior mixed Leaflet canvas/grid stacking');
+        await page.evaluate(() => { for (const element of window.mapsPlaceholder.getPane('bpb-custom-overlays').children) element.style.zIndex = '0'; });
+        const topPixel = () => page.evaluate(() => {
+            const top = window.mapsPlaceholder.getPane('bpb-custom-overlays').lastElementChild;
+            const canvas = top.tagName === 'CANVAS' ? top : top.querySelector('canvas');
+            return [...canvas.getContext('2d').getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data];
+        });
+        assert.ok((await topPixel())[0] < 100, 'first saved MVT layer sits above the red raster');
+        await library.locator('li').filter({ hasText: 'Custom raster' }).getByRole('button', { name: 'Move Custom raster up', exact: true }).click();
+        await admin.waitForFunction(() => document.querySelector('#custom-layer-list li strong')?.textContent === 'Custom raster');
+        await page.waitForFunction(() => { const pane = window.mapsPlaceholder.getPane('bpb-custom-overlays'); return pane.lastElementChild.querySelector('canvas')?.getContext('2d').getImageData(128, 128, 1, 1).data[0] > 200; });
+        assert.ok((await topPixel())[0] > 200, 'reordering places raster pixels above the vector layer');
+        assert.ok(matches(await composedPixel(), [207, 100, 83]), 'composited pixels follow raster over MVT over GeoJSON');
+        await up.click(); await admin.waitForFunction(() => document.querySelector('#custom-layer-list li strong')?.textContent === 'Custom MVT');
+        await page.getByRole('checkbox', { name: 'Custom raster', exact: true }).uncheck();
+        const orderedFile = await admin.evaluate(async () => chrome.runtime.sendMessage({ type: 'SETTINGS_FILE_EXPORT' }));
+        assert.equal(JSON.parse(orderedFile.content).customLayers.sources[0].name, 'Custom MVT', 'backup includes the saved order');
         if (process.env.BPB_PREVIOUS_PANEL_CSS) {
             const original = await readFile(process.env.BPB_PREVIOUS_PANEL_CSS, 'utf8');
             await admin.evaluate(() => { document.querySelector('link[href$="panel.css"]').disabled = true; });
@@ -112,14 +181,18 @@ try {
         const optionsEditor = admin.frameLocator('#custom-layer-dialog iframe');
         await optionsEditor.locator('#name').fill('Temporary options layer'); await optionsEditor.locator('#url').fill(`${providerOrigin}/{z}/{x}/{y}.png`);
         assert.equal(await optionsEditor.locator('#library button').count(), 0, 'embedded editor shows only the source form');
+        await admin.evaluate(async () => { const saved = await chrome.storage.sync.get('bpbSettings'); await chrome.storage.sync.set({ bpbSettings: { ...saved.bpbSettings, theme: 'light' } }); });
+        await optionsEditor.locator('html[data-theme="light"]').waitFor();
+        await admin.evaluate(async () => { const saved = await chrome.storage.sync.get('bpbSettings'); await chrome.storage.sync.set({ bpbSettings: { ...saved.bpbSettings, theme: 'dark' } }); });
+        await optionsEditor.locator('html[data-theme="dark"]').waitFor();
         if (screenshots) { await mkdir(screenshots, { recursive: true }); await admin.screenshot({ path: path.join(screenshots, 'custom-options-editor-dark.png') }); }
         await optionsEditor.locator('#save').click(); await optionsEditor.locator('#feedback').filter({ hasText: 'Saved on this device' }).waitFor();
         await optionsEditor.locator('#cancel').click();
-        const temporary = library.locator('li').filter({ hasText: 'Temporary options layer' }); await temporary.getByRole('button', { name: 'Remove', exact: true }).click();
+        const temporary = library.locator('li').filter({ hasText: 'Temporary options layer' }); await temporary.getByRole('button', { name: 'Delete', exact: true }).click();
         await temporary.getByRole('button', { name: 'Keep layer', exact: true }).click();
-        await temporary.getByRole('button', { name: 'Remove', exact: true }).click();
+        await temporary.getByRole('button', { name: 'Delete', exact: true }).click();
         await admin.evaluate(() => { const send = chrome.runtime.sendMessage.bind(chrome.runtime); chrome.runtime.sendMessage = async (...args) => { if (args[0]?.type === 'CUSTOM_OVERLAYS_REMOVE') { chrome.runtime.sendMessage = send; await new Promise(resolve => { window.releaseLayerRemove = resolve; }); } return send(...args); }; });
-        const remove = temporary.getByRole('button', { name: 'Remove layer', exact: true }), bounds = await remove.boundingBox();
+        const remove = temporary.getByRole('button', { name: 'Delete layer', exact: true }), bounds = await remove.boundingBox();
         await remove.click(); await admin.waitForFunction(() => document.querySelector('#custom-layer-list li:last-child .custom-layer-remove button').getAttribute('aria-disabled') === 'true');
         const pendingBounds = await remove.boundingBox(); for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(bounds[key] - pendingBounds[key]) <= 1, `layer removal keeps ${key} anchored`);
         await admin.evaluate(() => window.releaseLayerRemove());
@@ -127,7 +200,7 @@ try {
         for (const [width, theme] of [[1000, 'light'], [375, 'dark']]) {
             await admin.setViewportSize({ width, height: 800 });
             await admin.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
-            await admin.locator('#custom-map-layers').scrollIntoViewIfNeeded();
+            await admin.locator('#custom-map-layers').evaluate(section => section.scrollIntoView({ block: 'start', behavior: 'instant' }));
             const policy = await admin.evaluate(() => ({ background: getComputedStyle(document.documentElement).backgroundColor,
                 root: getComputedStyle(document.documentElement).overscrollBehaviorY, content: getComputedStyle(document.querySelector('.content')).overscrollBehaviorY,
                 sidebar: getComputedStyle(document.querySelector('.side-nav')).overscrollBehaviorY }));
@@ -141,7 +214,7 @@ try {
             await scroller.evaluate(element => element.scrollTo({ top: element.scrollHeight, behavior: 'instant' })); await admin.mouse.wheel(0, 1200);
             assert.ok(await scroller.evaluate(element => Math.abs(element.scrollTop - (element.scrollHeight - element.clientHeight)) <= 1), 'bottom boundary remains clamped');
             assert.equal(await admin.evaluate(() => window.scrollY), 0, 'overscroll never chains into the root');
-            await admin.locator('#custom-map-layers').scrollIntoViewIfNeeded();
+            await admin.locator('#custom-map-layers').evaluate(section => section.scrollIntoView({ block: 'start', behavior: 'instant' }));
             assert.ok(await admin.locator('#custom-map-layers').evaluate(element => element.scrollWidth <= element.clientWidth), 'central manager fits');
             if (screenshots) { await mkdir(screenshots, { recursive: true }); await admin.screenshot({ path: path.join(screenshots, `custom-options-${theme}.png`) }); }
         }
@@ -155,11 +228,12 @@ try {
         await library.locator('li').nth(2).waitFor();
         await admin.setViewportSize({ width: 1000, height: 760 });
         if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, 'custom-map.png') }); }
-        await page.getByRole('button', { name: 'Add custom overlay', exact: true }).click();
-        await page.setViewportSize({ width: 375, height: 800 });
-        if (screenshots) await page.screenshot({ path: path.join(screenshots, 'custom-editor-narrow.png') });
+        await admin.locator('#custom-layer-add').click();
+        await admin.setViewportSize({ width: 375, height: 800 });
+        await editor.locator('#save').waitFor({ state: 'visible' });
+        if (screenshots) await admin.screenshot({ path: path.join(screenshots, 'custom-editor-narrow.png') });
         assert.ok((await editor.locator('#save').boundingBox()).width > 50);
-        await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 2); }, page.url());
+        await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 2); }, admin.url());
         assert.ok(await editor.locator('#form').evaluate(form => form.scrollWidth <= form.clientWidth), 'editor fits at 200% browser zoom');
         const wordsFit = () => editor.locator('footer.actions').evaluate(footer => [...footer.querySelectorAll('button')].filter(button => button.getClientRects().length).every(button => {
             const text = button.firstChild;
@@ -169,10 +243,10 @@ try {
         await editor.locator('head').evaluate(head => { const style = document.createElement('style'); style.id = 'historical-footer'; style.textContent = '.actions button{padding:6px 12px;overflow-wrap:anywhere}'; head.append(style); });
         assert.equal(await wordsFit(), false, 'the assertion detects the historical enlarged-label regression');
         await editor.locator('#historical-footer').evaluate(style => style.remove()); assert.ok(await wordsFit());
-        if (screenshots) await page.screenshot({ path: path.join(screenshots, 'custom-editor-zoom.png') });
-        await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 1); }, page.url());
+        if (screenshots) await admin.screenshot({ path: path.join(screenshots, 'custom-editor-zoom.png') });
+        await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 1); }, admin.url());
         await editor.locator('#cancel').click();
-        await page.setViewportSize({ width: 1000, height: 760 });
+        await admin.setViewportSize({ width: 1000, height: 760 });
         const surfaces = ['A','P','G','L','C','R','W','K','I','J','S','E','U','M','F'];
         for (const type of surfaces) {
             await page.goto(`${origin}/map/MasterMap.aspx?t=${type}&gt=rt`);
@@ -215,13 +289,12 @@ try {
         const renderer = await terrain.locator('canvas.maplibregl-canvas').evaluate(canvas => { const gl = canvas.getContext('webgl2'); const extension = gl.getExtension('WEBGL_debug_renderer_info'); return extension && gl.getParameter(extension.UNMASKED_RENDERER_WEBGL); });
         assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware renderer required: ${renderer}`);
         assert.ok(origins.has(origin) && origins.has(`chrome-extension://${extension.id}`), 'provider receives both actual renderer origins');
-        const requestCount = requests.length;
-        const terrainRaster = page.locator('.bpb-custom-source').filter({ hasText: 'Custom raster' }); await terrainRaster.locator('summary').first().focus(); await terrainRaster.locator('summary').first().press('Enter');
-        await terrainRaster.getByRole('button', { name: 'Edit source', exact: true }).click();
-        await editor.locator('#test').click(); await editor.locator('#feedback').filter({ hasText: 'This area (3D)' }).waitFor();
+        await page.getByRole('link', { name: 'Add custom layer…', exact: true }).click();
+        await admin.waitForURL('**/options/options.html#custom-map-layers');
+        await admin.locator('#custom-layer-add').click();
+        await editor.locator('#name').fill('3D navigation draft');
         const editorPolicy = await editor.locator('html').evaluate(root => ({ background: getComputedStyle(root).backgroundColor, overscroll: getComputedStyle(root).overscrollBehaviorY }));
-        assert.equal(editorPolicy.overscroll, 'none'); assert.ok(editorPolicy.background !== 'rgba(0, 0, 0, 0)', 'embedded editor root canvas is painted');
-        assert.ok(requests.length > requestCount, '3D probes make uncached direct requests');
+        assert.equal(editorPolicy.overscroll, 'none'); assert.ok(editorPolicy.background !== 'rgba(0, 0, 0, 0)', 'Settings editor root canvas is painted');
         await editor.locator('#cancel').click();
         if (screenshots) await page.screenshot({ path: path.join(screenshots, 'custom-terrain.png') });
         assert.deepEqual(errors, []);
@@ -270,13 +343,20 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
             rules: kind === 'raster' ? [] : [{ geometry: 'polygon', color: '#26734d', width: 2, radius: 5, fillOpacity: .3, ...kind === 'mvt' ? { sourceLayer: 'trails' } : {} }] } }));
     const setup = await evaluate(async sources => {
         const api = globalThis.browser || globalThis.chrome;
-        await api.storage.sync.set({ bpbSettings: { showSnotel: false, showWeather: false, showSunMoon: false, enable3dMap: true, terrainCacheLimitMb: 0 } });
+        await api.storage.sync.set({ bpbSettings: { theme: 'dark', showSnotel: false, showWeather: false, showSunMoon: false, enable3dMap: true, terrainCacheLimitMb: 0 } });
         return Promise.all(sources.map(source => api.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_SAVE', id: source.id, source, expectedRevision: 0 })));
     }, definitions);
     assert.ok(setup.every(reply => reply.ok), 'packaged editor setup uses authorized store writes');
     const optionsUrl = extensionUrl.replace('custom-overlay/editor.html', 'options/options.html');
     await driver.get(optionsUrl + '#custom-map-layers');
     await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 3), 'Firefox central layer manager');
+    await click('#custom-layer-list li:last-child .custom-layer-order button:first-child');
+    await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li strong')[1]?.textContent === 'Custom mvt'), 'Firefox reorder persisted');
+    const moveAgain = await driver.findElement(By.css('#custom-layer-list li:nth-child(2) .custom-layer-order button:first-child'));
+    await moveAgain.sendKeys(Key.SPACE);
+    await wait(() => evaluate(() => document.querySelector('#custom-layer-list li strong')?.textContent === 'Custom mvt'), 'keyboard reorder persisted');
+    assert.equal(await evaluate(() => document.activeElement.getAttribute('aria-label')), 'Move Custom mvt up');
+
     await click('#custom-layer-add');
     await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
     await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Options editor initialized');
@@ -287,7 +367,7 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await click('#cancel'); await driver.switchTo().defaultContent();
     await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 4), 'manager updates after save');
     const removeSelector = '#custom-layer-list li:last-child';
-    await click(removeSelector + ' .custom-layer-actions button:last-child'); await click(removeSelector + ' .custom-layer-remove button:first-of-type');
+    await click(removeSelector + ' .custom-layer-actions > button:last-child'); await click(removeSelector + ' .custom-layer-remove button:first-of-type');
     await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 3), 'manager removes layer');
     await evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
     await driver.manage().window().setRect({ width: 480, height: 900 });
@@ -324,15 +404,23 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await wait(ready, 'Firefox keyboard retry recovers'); const after = await geometry();
     for (const key of Object.keys(before)) assert.ok(Math.abs(before[key] - after[key]) <= 1, `Firefox retry ${key} remains stable`);
     await evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
-    await click('[data-bpb-custom-editor=""]');
-    await send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width: 375, height: 800 } } });
-    await driver.switchTo().frame(await driver.findElement(By.css('iframe[title="Custom map overlays"]')));
-    await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'packaged editor ready');
+    const mapWindow = await driver.getWindowHandle(), beforeWindows = await driver.getAllWindowHandles();
+    await click('.bpb-custom-header a');
+    await wait(async () => (await driver.getAllWindowHandles()).length > beforeWindows.length, 'map link opens Settings');
+    const settingsWindow = (await driver.getAllWindowHandles()).find(handle => !beforeWindows.includes(handle));
+    await driver.switchTo().window(settingsWindow);
+    await wait(async () => (await driver.getCurrentUrl()).endsWith('options/options.html#custom-map-layers'), 'fixed Settings destination');
+    await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 3), 'saved library available from map link');
+    assert.equal(await evaluate(() => document.documentElement.dataset.bpbTheme), 'dark');
+    await driver.manage().window().setRect({ width: 480, height: 900 });
+    await click('#custom-layer-add');
+    await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
+    await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Settings editor ready');
     assert.equal(await evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY), 'none');
-    assert.ok(await evaluate(() => document.documentElement.scrollWidth <= innerWidth && getComputedStyle(document.body).color !== 'rgb(35, 54, 41)'), 'narrow dark editor fits');
+    assert.ok(await evaluate(() => document.documentElement.scrollWidth <= innerWidth && getComputedStyle(document.body).color !== 'rgb(35, 54, 41)'), 'narrow dark Settings editor fits');
     const screenshots = process.env.BPB_CUSTOM_SCREENSHOTS;
     if (screenshots) { await mkdir(screenshots, { recursive: true }); await writeFile(path.join(screenshots, 'custom-editor-firefox-narrow.png'), await driver.takeScreenshot(), 'base64'); }
-    await click('#cancel'); await driver.switchTo().defaultContent();
+    await click('#cancel'); await driver.switchTo().defaultContent(); await driver.close(); await driver.switchTo().window(mapWindow);
     await driver.get(`${origin}/map/BigMap.aspx?t=A&d=2296&c=900001`);
     await send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width: 1000, height: 760 } } });
     await wait(() => driver.findElements(By.css('.bpb-layers-trigger')).then(elements => elements.length === 1), 'parent map owns one control');

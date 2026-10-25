@@ -54,6 +54,7 @@ export function createCustomOverlayStore({ storage, canRead, canEdit }) {
                         || ids.some(id => !current.registry.sources.some(source => source.id === id))) throw new Error('Invalid layer order.');
                     current.registry.sources = ids.map(id => current.registry.sources.find(source => source.id === id));
                     current.registry.revision++;
+                    if (!readCustomRegistry(current.registry)) throw new Error('Layer order could not be saved.');
                     await storage.set({ [CUSTOM_REGISTRY_KEY]: current.registry });
                     return { ok: true, ...current };
                 }

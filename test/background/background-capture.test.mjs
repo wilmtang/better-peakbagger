@@ -1159,6 +1159,16 @@ test('only a Peakbagger tab can open the Has beta settings section', async () =>
     assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
 });
 
+test('map-layer Settings navigation requires its own trusted activation and a fixed destination', async () => {
+    const harness = createHarness(), sender = { tab: { id: 5, windowId: 9 }, documentId: 'map-document', frameId: 0, url: 'https://www.peakbagger.com/map/MasterMap.aspx' };
+    assert.equal((await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', disposition: 'foreground-tab' }, sender)).error.code, 'activation-required');
+    const generation = 'custom-layers-1';
+    const activation = await harness.send({ type: 'TRUSTED_ACTION_ISSUE', action: 'custom-layer-settings', generation }, sender);
+    const reply = await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', generation, activationToken: activation.token, disposition: 'foreground-tab', section: 'evil' }, sender);
+    assert.equal(reply.ok, true); assert.equal(harness.tabs.get(reply.tabId).url, 'chrome-extension://test-extension/options/options.html#custom-map-layers');
+    assert.equal((await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', generation, activationToken: activation.token, disposition: 'foreground-tab' }, sender)).error.code, 'activation-required');
+});
+
 test('rapid trusted Settings activations serialize to one exact options tab', async () => {
     const harness = createHarness();
     const sender = {

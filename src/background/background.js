@@ -3779,7 +3779,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
 
     let betaSettingsQueue = Promise.resolve();
-    const openBetaSettings = async (message, sender) => {
+    const openBetaSettings = async (message, sender, { action = TrustedActions.ACTIONS.BETA_SETTINGS, section = 'beta' } = {}) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
             return {
                 ok: false,
@@ -3789,7 +3789,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 },
             };
         }
-        if (!trustedActions.consumeCapability(message, sender, TrustedActions.ACTIONS.BETA_SETTINGS)) {
+        if (!trustedActions.consumeCapability(message, sender, action)) {
             return { ok: false, error: { code: 'activation-required' } };
         }
         const disposition = ['foreground-tab', 'background-tab', 'new-window'].includes(message?.disposition)
@@ -3799,7 +3799,7 @@ import { GarminError } from '../garmin/garmin-api.js';
 
         const operation = betaSettingsQueue.then(async () => {
             try {
-                const targetUrl = ext.runtime.getURL('options/options.html#beta');
+                const targetUrl = ext.runtime.getURL(`options/options.html#${section}`);
                 const optionsUrl = new URL(ext.runtime.getURL('options/options.html'));
                 const tabs = await ext.tabs.query({});
                 const existing = await registeredBetaSettingsTab() || tabs.find(tab => {
@@ -3927,6 +3927,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 return favoriteMutations.mutate(message.mutation);
             case 'OPTIONS_TAB_REGISTER': return registerBetaSettingsTab(sender);
             case 'OPEN_BETA_SETTINGS': return openBetaSettings(message, sender);
+            case 'OPEN_CUSTOM_LAYER_SETTINGS': return openBetaSettings(message, sender, { action: TrustedActions.ACTIONS.CUSTOM_LAYER_SETTINGS, section: 'custom-map-layers' });
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(message, sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_FOCUS_RECOVERY': return focusCaptureRecoveryTab(message, sender);

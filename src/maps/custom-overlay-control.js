@@ -21,11 +21,12 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
         send({ type: 'parse', requestId, job });
     });
     const node = (tagName, text) => { const element = win.document.createElement(tagName); if (text != null) element.textContent = text; return element; };
-    const section = node('section'), title = node('div', 'Custom'), list = node('div'), add = node('button', 'Add custom overlay');
-    section.className = 'bpb-custom-section'; title.className = 'bpb-layers-detail-title'; add.type = 'button';
-    add.dataset.bpbCustomEditor = ''; add.dataset.bpbCustomMap = mapId;
+    const section = node('section'), header = node('div'), title = node('div', 'Custom layers'), list = node('div'), add = node('a', 'Add custom layer…');
+    section.className = 'bpb-custom-section'; header.className = 'bpb-custom-header'; title.className = 'bpb-layers-detail-title';
+    const settingsLink = link => { link.href = '#custom-map-layers'; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.dataset.bpbCustomSettings = ''; };
+    settingsLink(add);
     const live = node('p'); live.className = 'bpb-custom-live'; live.setAttribute('role', 'status');
-    section.append(title, list, add, live); panel.append(section);
+    header.append(title, add); section.append(header, list, live); panel.append(section);
     const currentSources = () => sources.filter(source => selected.get(source.id) === source.revision).slice(0, CUSTOM_LIMITS.active);
     const publish = () => {
         if (active && !terrain) engine?.update(currentSources(), preferences, reloads);
@@ -40,8 +41,8 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
                 element.className = 'bpb-custom-source'; checkbox.type = 'checkbox'; label.append(checkbox, name); heading.append(label, summary); element.append(heading);
                 const slider = node('input'); slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.dataset.bpbCustomOpacity = source.id;
                 const opacity = node('label', 'Opacity'); opacity.append(slider);
-                const attribution = node('p'), message = node('p'), retry = node('button', 'Retry'), edit = node('button', 'Edit source');
-                retry.type = edit.type = 'button'; edit.dataset.bpbCustomEditor = source.id; edit.dataset.bpbCustomMap = mapId;
+                const attribution = node('p'), message = node('p'), retry = node('button', 'Retry'), edit = node('a', 'Edit in Settings');
+                retry.type = 'button'; settingsLink(edit); if (add.href) edit.href = add.href;
                 message.className = 'bpb-custom-feedback';
                 const help = node('details'), helpTitle = node('summary', 'How to fix URL / CORS errors');
                 help.append(helpTitle, node('p', 'Check the URL and source format. Public metadata and tile endpoints must allow browser access (CORS), usually Access-Control-Allow-Origin: *. Use a compatible endpoint or contact the provider. BPB has no proxy.'));
@@ -57,7 +58,7 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
                     statuses[source.id] = {}; publish(); paint();
                 });
                 slider.oninput = () => { preferences[source.id] = +slider.value; publish(); paint(); };
-                retry.onclick = () => { if (statuses[source.id]?.pending || statuses[source.id]?.retryAt > Date.now()) return; reloads[source.id] = (reloads[source.id] || 0) + 1; publish(); };
+                retry.onclick = () => { if (!selected.has(source.id) || statuses[source.id]?.pending || statuses[source.id]?.retryAt > Date.now()) return; reloads[source.id] = (reloads[source.id] || 0) + 1; publish(); };
             }
             const status = statuses[source.id] || {}, enabled = selected.has(source.id);
             row.name.textContent = source.name; row.checkbox.setAttribute('aria-label', source.name); row.checkbox.checked = enabled;
@@ -67,9 +68,12 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
             const zoomedOut = source.kind !== 'geojson' && Number.isFinite(zoom) && zoom < source.source.minNativeZoom + (source.kind === 'mvt' || source.source.tileSize === 512 ? 1 : 0);
             if (enabled && zoomedOut) row.summary.textContent = 'Zoom in';
             row.attribution.textContent = [source.kind.toUpperCase(), source.attribution.text, ...source.approvedOrigins].filter(Boolean).join(' · ');
-            row.message.textContent = enabled ? zoomedOut ? 'Zoom in to this source’s available range.' : status.message ? status.error ? customFailure(status) : status.message : 'Loading status appears here.' : 'Enable to load this source.';
+            row.message.textContent = enabled ? zoomedOut ? 'Zoom in to this source’s available range.' : status.error && status.code === 'access' ? 'Source unavailable. Check the URL or provider CORS settings.' : status.message ? status.error ? customFailure(status) : status.message : 'Loading status appears here.' : 'Enable to load this source.';
             row.retry.setAttribute('aria-disabled', String(!enabled || status.pending || status.retryAt > Date.now()));
         }
+        const focused = list.contains(win.document.activeElement) ? win.document.activeElement : null;
+        sources.forEach((source, index) => { const row = rows.get(source.id); if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null); });
+        if (focused?.isConnected && win.document.activeElement === win.document.body) focused.focus({ preventScroll: true });
     };
     const onStatus = (id, status) => { const before = statuses[id]?.message; statuses[id] = status; paint(); if (!status.pending && status.message && status.message !== before) live.textContent = `${sources.find(source => source.id === id)?.name || 'Overlay'}: ${status.error ? customFailure(status) : status.message}`; };
     const getRegistry = async () => {
@@ -83,11 +87,15 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
             const registry = readCustomRegistry(data.registry); if (!registry) { live.textContent = 'Saved overlays are unavailable. Retry by reopening the map.'; return; }
             if (libraryGeneration !== null && libraryGeneration !== (registry.generation || 0)) { selected.clear(); previewId = previewBaseline = pendingAdoption = null; cancelTasks(); }
             libraryGeneration = registry.generation || 0;
+            try { const url = new URL(data.settingsUrl); if (['chrome-extension:', 'moz-extension:'].includes(url.protocol) && url.pathname === '/options/options.html') {
+                for (const link of section.querySelectorAll('[data-bpb-custom-settings]')) link.href = url.href;
+            } } catch { /* Wait for the isolated bridge's packaged destination. */ }
             sources = registry.sources; preferences = data.preferences || {}; registryVersion++;
             for (const id of selected.keys()) { const source = sources.find(item => item.id === id); if (source) selected.set(id, source.revision); else if (id !== previewId) selected.delete(id); }
             if (pendingAdoption) { for (const item of pendingAdoption) if (sources.some(source => source.id === item.id && source.revision === item.sourceRevision)) selected.set(item.id, item.sourceRevision); pendingAdoption = null; }
             publish(); paint();
         }
+        if (data.type === 'settingsError') { live.textContent = data.message; live.classList.add('bpb-custom-error'); }
         if (data.type === 'parsed') {
             const entry = parseJobs.get(data.requestId); if (!entry) return; parseJobs.delete(data.requestId); entry.done();
             if (data.reply?.ok) entry.resolve(data.reply.value); else entry.reject(new Error('Invalid or oversized vector data.'));
