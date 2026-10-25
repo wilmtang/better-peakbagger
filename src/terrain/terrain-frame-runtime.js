@@ -1152,6 +1152,36 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         } catch (error) { /* The route layer may be mid-teardown; hover is decoration. */ }
     };
 
+    const setZoomControl = value => {
+        if (!mapElement || !value || !['right', 'bottom', 'width', 'height'].every(key =>
+            Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 10000)
+            || value.width < 16 || value.height < 32) return;
+        for (const key of ['right', 'bottom', 'width', 'height']) {
+            mapElement.style.setProperty(`--bpb-zoom-${key}`, `${value[key]}px`);
+        }
+        positionCreditControls();
+    };
+
+    const positionCreditControls = () => {
+        // Additional terrain credits can wrap one line beyond Leaflet's. Flow
+        // that text around the anchored zoom column instead of moving buttons
+        // or hiding attribution. Resolve wrapping before the next paint.
+        for (let pass = 0; pass < 4; pass++) {
+            const credits = mapElement?.querySelector('.maplibregl-ctrl-attrib')?.getBoundingClientRect();
+            const zoom = mapElement?.querySelector('.maplibregl-ctrl-group')?.getBoundingClientRect();
+            if (!credits || !zoom) break;
+            const height = Math.max(0, zoom.bottom + 4 - credits.top);
+            const width = height > 0 ? Math.max(64, credits.right - zoom.left + 4) : 0;
+            const values = [['width', width], ['height', height]];
+            if (values.every(([key, value]) => mapElement.style.getPropertyValue(`--bpb-credit-obstruction-${key}`) === `${value}px`)) break;
+            for (const [key, value] of values) mapElement.style.setProperty(`--bpb-credit-obstruction-${key}`, `${value}px`);
+        }
+        const credits = mapElement?.querySelector('.maplibregl-ctrl-attrib')?.getBoundingClientRect();
+        const left = mapElement?.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
+        if (credits && left) mapElement.style.setProperty('--bpb-credits-inset',
+            `${credits.left < left.right ? credits.height : 0}px`);
+    };
+
     const setTheme = theme => {
         const nextTheme = theme === 'dark' ? 'dark' : 'light';
         activeTheme = nextTheme;
@@ -1834,6 +1864,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         mapElement = document.createElement('div');
         mapElement.id = 'bpb-terrain-map';
         mapElement.dataset.theme = activeTheme;
+        setZoomControl(data.zoomControl);
         mapElement.setAttribute('role', 'region');
         mapElement.setAttribute('aria-label', 'Interactive 3D terrain map');
         const weatherRoot = mapElement;
@@ -2015,14 +2046,13 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 };
                 rendererCanvas.addEventListener('webglcontextlost', contextLostHandler);
             }
-            // Credits stay readable without opening a disclosure. Keep their
-            // wrapping in the left stack, separate from the anchored zoom/mode
-            // actions on the right. Bottom controls are prepended by MapLibre,
-            // so the transient hint sits above credits, then the fixed scale.
+            // Match Leaflet's flush bottom-right credits. Navigation has its
+            // own measured anchor, so wrapping credits cannot move its buttons.
             terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
-            terrainMap.addControl(new maplibre.AttributionControl({ compact: false }), 'bottom-left');
+            terrainMap.addControl(new maplibre.AttributionControl({ compact: false }), 'bottom-right');
             terrainMap.addControl({ onAdd: () => hint, onRemove: () => hint.remove() }, 'bottom-left');
+            positionCreditControls();
             // A raster tile that loads fires a 'source' data event carrying the
             // tile. One such event proves the drape can render, so a handful of
             // later tile failures must not tear the whole layer down.
@@ -2180,6 +2210,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (typeof ResizeObserver === 'function') {
                 resizeObserver = new ResizeObserver(() => {
                     if (!map) return;
+                    positionCreditControls();
                     map.resize();
                     // resize() re-allocates the canvas backing store, which the
                     // browser clears to transparent, and MapLibre only repaints
@@ -2192,6 +2223,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     if (loaded) post('metrics', { navTop: measureNavTop() });
                 });
                 resizeObserver.observe(mapElement);
+                const credits = mapElement.querySelector('.maplibregl-ctrl-attrib');
+                if (credits) resizeObserver.observe(credits);
             }
         } catch (error) {
             fail('renderer');
@@ -2245,6 +2278,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }
         setRoutePaint(data.routeStyle);
         setTheme(data.theme);
+        setZoomControl(data.zoomControl);
 
         // Drape: keep the user's in-3D pick; otherwise re-resolve from the page
         // so a 2D layer change made while in 2D is reflected.
@@ -2358,6 +2392,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (!stations.length) snowReveal.cancel();
             else if (loaded && data.reveal === true) snowReveal.show(stations, readSnotelMapOcclusions(data.occlusions));
         } else if (data.type === 'peaks') applyPeaks(data);
+        else if (data.type === 'zoomControl') setZoomControl(data.zoomControl);
         else if (data.type === 'update') {
             if (data.routeStyle !== undefined) setRoutePaint(data.routeStyle);
             if (data.theme !== undefined) setTheme(data.theme);

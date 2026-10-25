@@ -1023,6 +1023,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         routeStyle: { color: '#2457a7', width: 7, casingColor: '#f1eadc', casingWidth: 13 },
         theme: 'dark',
         cacheLimitMb: 384,
+        zoomControl: { right: 10, bottom: 43, width: 34, height: 64 },
         basemap: {
             name: 'Open Topo Map',
             tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png'],
@@ -1039,6 +1040,15 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
 
     assert.equal(maps.length, 1);
     const map = maps[0];
+    const mapElement = window.document.getElementById('bpb-terrain-map');
+    assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-bottom'), '43px');
+    assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-width'), '34px');
+    dispatch({ type: 'zoomControl', zoomControl: { right: 12, bottom: 60, width: 34, height: 64 } });
+    assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-bottom'), '60px', 'resize updates the measured native zoom anchor');
+    for (const bottom of [-1, Infinity, '80px', 10001]) {
+        dispatch({ type: 'zoomControl', zoomControl: { right: 10, bottom, width: 34, height: 64 } });
+        assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-bottom'), '60px', 'untrusted layout values cannot enter CSS');
+    }
     assert.equal(workerUrl, 'chrome-extension://test-id/vendor/maplibre-gl-worker.mjs');
     assert.equal(map.options.zoomLevelsToOverscale, undefined,
         'the v6 overscaling default stays disabled until a separate measured decision');

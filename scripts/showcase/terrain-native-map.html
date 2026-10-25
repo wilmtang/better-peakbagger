@@ -13,10 +13,13 @@
     /* Peakbagger's Leaflet map keeps its zoom at the bottom-right, above the
        attribution — mirror that (class and all) so the floating toggle's
        zoom-stack measurement has a realistic target to sit above. */
-    .leaflet-control-zoom { position: absolute; right: 10px; bottom: 22px; display: grid; overflow: hidden; border: 1px solid #abb2a5; border-radius: 5px; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 16%); }
-    .leaflet-control-zoom b { width: 28px; height: 28px; text-align: center; font: 20px/27px Arial, sans-serif; }
-    .leaflet-control-zoom b + b { border-top: 1px solid #d2d6cf; }
-    .credit { position: absolute; right: 0; bottom: 0; padding: 2px 5px; background: rgb(255 255 255 / 80%); color: #465143; font: 9px Arial, sans-serif; }
+    .leaflet-bottom { position: absolute; bottom: 0; right: 0; max-width: 100%; }
+    .leaflet-control { float: right; clear: both; }
+    .leaflet-control-zoom { display: grid; overflow: hidden; margin: 0 10px 10px 0; border: 1px solid #abb2a5; border-radius: 5px; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 16%); }
+    .leaflet-control-zoom a { display: block; width: 30px; height: 30px; text-align: center; text-decoration: none; background: #fff; color: #000; font: bold 22px/30px Arial, sans-serif; }
+    .leaflet-control-zoom a + a { border-top: 1px solid #d2d6cf; }
+    .leaflet-control-attribution { box-sizing: border-box; max-width: 100%; padding: 0 5px; background: rgb(255 255 255 / 80%); color: #333; font: 11px/1.5 "Helvetica Neue", Arial, sans-serif; }
+    .leaflet-control-attribution a { color: #0078a8; }
   </style>
 </head>
 <body>
@@ -31,8 +34,10 @@
     <path class="route-shadow" d="M385 420 C370 348 390 278 378 220 S392 92 401 35"/>
     <path class="route" d="M385 420 C370 348 390 278 378 220 S392 92 401 35"/>
   </svg>
-  <div class="leaflet-control-zoom leaflet-bar"><b>+</b><b>−</b></div>
-  <span class="credit">Synthetic 2D fixture</span>
+  <div class="leaflet-bottom leaflet-right">
+      <div class="leaflet-control-zoom leaflet-bar leaflet-control"><a href="#" role="button" aria-label="Zoom in">+</a><a href="#" role="button" aria-label="Zoom out">−</a></div>
+      <div class="leaflet-control-attribution leaflet-control"><a href="https://leafletjs.com">Leaflet</a> | OT:Basemap © <a href="https://opentopomap.org">OpenTopoMap</a> contributors, CC-BY-SA, Copernicus Sentinel-2 / Microsoft Planetary Computer</div>
+    </div>
   <script>
     const basemap = {
       _url: `${location.origin}/scripts/showcase/terrain-tiles/{z}/{x}/{y}.png`,
@@ -40,7 +45,7 @@
         tileSize: 256,
         minZoom: 0,
         maxZoom: 18,
-        attribution: 'Synthetic topographic fixture'
+        attribution: 'OT:Basemap © OpenTopoMap contributors, CC-BY-SA, Copernicus Sentinel-2 / Microsoft Planetary Computer'
       }
     };
     window.L = {

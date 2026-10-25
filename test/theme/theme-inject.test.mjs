@@ -81,7 +81,7 @@ test('native map popups and basemap picker inherit the theme across changes, rel
     try {
         const mount = frame => {
             const doc = frame.contentDocument;
-            doc.open(); doc.write('<!doctype html><html><head><style>body{background:#dce6d7}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:white;color:#333}</style></head><body><div id="selboxdiv" style="background-color:white;border:2px solid black"><select id="selmap"><option>Open Topo Map</option></select></div><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper">Station</div><div class="leaflet-popup-tip"></div></div></body></html>'); doc.close();
+            doc.open(); doc.write('<!doctype html><html><head><style>body{background:#dce6d7}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:white;color:#333}.leaflet-control-zoom a{background:white;color:black}.leaflet-control-attribution{background:white;color:#333}.leaflet-control-attribution a{color:#0078a8}</style></head><body><div id="selboxdiv" style="background-color:white;border:2px solid black"><select id="selmap"><option>Open Topo Map</option></select></div><div class="leaflet-control-zoom"><a href="#">+</a><a href="#" class="leaflet-disabled">−</a></div><div class="leaflet-control-attribution"><a href="https://leafletjs.com">Leaflet</a> | Credits</div><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper">Station</div><div class="leaflet-popup-tip"></div></div></body></html>'); doc.close();
             frame.dispatchEvent(new dom.window.Event('load'));
             return doc;
         };
@@ -91,6 +91,13 @@ test('native map popups and basemap picker inherit the theme across changes, rel
         const background = () => doc.defaultView.getComputedStyle(doc.querySelector('.leaflet-popup-content-wrapper')).backgroundColor;
         const picker = () => doc.defaultView.getComputedStyle(doc.getElementById('selmap'));
         const container = () => doc.defaultView.getComputedStyle(doc.getElementById('selboxdiv'));
+        const zoom = () => doc.defaultView.getComputedStyle(doc.querySelector('.leaflet-control-zoom a'));
+        const credits = () => doc.defaultView.getComputedStyle(doc.querySelector('.leaflet-control-attribution'));
+        assert.equal(zoom().backgroundColor, 'rgb(39, 44, 41)');
+        assert.equal(zoom().color, 'rgb(226, 222, 213)');
+        assert.equal(credits().backgroundColor, 'rgba(31, 35, 33, 0.82)');
+        assert.equal(doc.defaultView.getComputedStyle(doc.querySelector('.leaflet-disabled')).color, 'rgb(156, 150, 140)');
+        assert.equal(doc.defaultView.getComputedStyle(doc.querySelector('.leaflet-control-attribution a')).color, 'rgb(170, 208, 255)');
         assert.equal(background(), 'rgb(39, 44, 41)', 'dark mode must reach the native popup inside the iframe');
         assert.equal(picker().backgroundColor, 'rgb(38, 54, 44)', 'the native basemap picker matches BPB dark inputs');
         assert.equal(picker().color, 'rgb(238, 234, 222)');
@@ -101,6 +108,8 @@ test('native map popups and basemap picker inherit the theme across changes, rel
         await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'light' } });
         await new Promise(resolve => dom.window.setTimeout(resolve, 0));
         assert.equal(background(), 'rgb(255, 255, 255)');
+        assert.equal(zoom().backgroundColor, 'rgb(255, 255, 255)');
+        assert.equal(credits().backgroundColor, 'rgb(255, 255, 255)');
         assert.equal(container().backgroundColor, 'rgb(255, 255, 255)');
         assert.equal(container().borderTopColor, 'rgb(0, 0, 0)');
         await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'dark' } });
@@ -108,6 +117,8 @@ test('native map popups and basemap picker inherit the theme across changes, rel
         doc = mount(frame);
         assert.equal(background(), 'rgb(39, 44, 41)', 'reload restores the scoped popup sheet');
         assert.equal(picker().colorScheme, 'dark', 'reload restores the picker theme');
+        assert.equal(zoom().backgroundColor, 'rgb(39, 44, 41)', 'reload restores the zoom theme');
+        assert.equal(credits().backgroundColor, 'rgba(31, 35, 33, 0.82)', 'reload restores the credit theme');
         const replacement = dom.window.document.createElement('iframe'); replacement.src = '/map/mastermap.aspx';
         frame.replaceWith(replacement); doc = mount(replacement);
         await new Promise(resolve => dom.window.setTimeout(resolve, 0));

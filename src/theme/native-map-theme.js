@@ -6,6 +6,34 @@ import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 // Shared by top-level Leaflet maps and the native MasterMap iframe. Repaint
 // controls and popups only; the full site theme would repaint the map itself.
 export const nativeMapDarkCss = `
+html[data-bpb-theme="dark"] .leaflet-control-zoom {
+    color-scheme: dark;
+    background: #272c29 !important;
+    border-color: #4a5058 !important;
+}
+html[data-bpb-theme="dark"] .leaflet-control-zoom a {
+    background: #272c29 !important;
+    color: #e2ded5 !important;
+    border-color: #4a5058 !important;
+}
+html[data-bpb-theme="dark"] .leaflet-control-zoom a:hover,
+html[data-bpb-theme="dark"] .leaflet-control-zoom a:focus {
+    background: #343b37 !important;
+}
+html[data-bpb-theme="dark"] .leaflet-control-zoom a.leaflet-disabled {
+    color: #9c968c !important;
+}
+html[data-bpb-theme="dark"] .leaflet-control-zoom a:focus-visible {
+    outline: 2px solid #aad0ff;
+    outline-offset: -2px;
+}
+html[data-bpb-theme="dark"] .leaflet-control-attribution {
+    background: rgb(31 35 33 / 82%) !important;
+    color: #e2ded5 !important;
+}
+html[data-bpb-theme="dark"] .leaflet-control-attribution a {
+    color: #aad0ff !important;
+}
 html[data-bpb-theme="dark"] #selmap,
 html[data-bpb-theme="dark"] #selmap option {
     color-scheme: dark;

@@ -114,6 +114,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
     const removeFrame = () => {
         clearSuspendTimer();
+        controlResizeObserver?.disconnect();
+        controlResizeObserver = null;
         pendingLaunch = null;
         suspended = false;
         frameLoaded = false;
@@ -162,6 +164,23 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             // removes the iframe, and that must happen either way.
             console.warn('Better Peakbagger: 3D terrain frame message failed', error);
         }
+    };
+
+    // Read DOM geometry in the isolated bridge for every owning surface. The
+    // native map stays laid out while hidden, so credits wrapping and viewport
+    // resizing cannot give the two renderers different zoom-control anchors.
+    let controlResizeObserver = null;
+    const nativeZoomControl = () => {
+        try {
+            const native = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+            const doc = native?.contentDocument || document;
+            const zoom = doc.querySelector('.leaflet-control-zoom')?.getBoundingClientRect();
+            const map = native ? { width: native.contentWindow.innerWidth, height: native.contentWindow.innerHeight,
+                right: native.contentWindow.innerWidth, bottom: native.contentWindow.innerHeight }
+                : document.getElementById('map')?.getBoundingClientRect();
+            if (!zoom?.width || !zoom.height || !map?.width || !map.height) return null;
+            return { right: map.right - zoom.right, bottom: map.bottom - zoom.bottom, width: zoom.width, height: zoom.height };
+        } catch { return null; }
     };
 
     const fail = reason => {
@@ -396,7 +415,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         theme: data.theme,
         basemap: data.basemap,
         basemaps: data.basemaps,
-        cacheLimitMb: data.cacheLimitMb
+        cacheLimitMb: data.cacheLimitMb,
+        zoomControl: nativeZoomControl()
     });
 
     const createFrame = async data => {
@@ -450,6 +470,17 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         terrainFrame.src = chrome.runtime.getURL('terrain/terrain.html');
         frame = terrainFrame;
         viewport.append(terrainFrame);
+        if (window.ResizeObserver) {
+            controlResizeObserver = new ResizeObserver(() => {
+                if (frameLoaded && !suspended) postToFrame('zoomControl', { zoomControl: nativeZoomControl() });
+            });
+            controlResizeObserver.observe(viewport);
+            try {
+                const credits = document.querySelector('iframe[src*="MasterMap.aspx" i]')?.contentDocument
+                    ?.querySelector('.leaflet-control-attribution');
+                if (credits) controlResizeObserver.observe(credits);
+            } catch { /* A cross-origin native map cannot supply geometry. */ }
+        }
     };
 
     window.addEventListener('message', event => {
@@ -558,6 +589,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         } else if (data.generation !== frameGeneration) {
             return;
         } else if (data.type === 'loaded') {
+            postToFrame('zoomControl', { zoomControl: nativeZoomControl() });
             // An overlay can change after init was posted but before the
             // frame's asynchronous authorization completed. Replay the latest
             // snapshot once it can accept updates, including a toggle-off.

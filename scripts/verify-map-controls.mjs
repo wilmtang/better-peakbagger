@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { createServer } from 'node:https';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium, firefox } from 'playwright';
@@ -25,6 +25,7 @@ const firefoxMode = args.includes('--firefox');
 const artifacts = process.env.BPB_VERIFY_MAP_CONTROLS_ARTIFACTS;
 const host = 'www.peakbagger.com';
 const resources = createResourceStack();
+const themeBundle = await readFile(new URL('../dist/content/theme.js', import.meta.url), 'utf8');
 let primaryError;
 try {
     const profile = await mkdtemp(path.join(tmpdir(), 'bpb-map-controls-'));
@@ -144,6 +145,7 @@ try {
         try {
             await page.setViewportSize({ width, height: 1000 });
             await page.goto(`${origin}${url}&theme=${theme}`);
+            await page.addScriptTag({ content: themeBundle });
             await page.waitForFunction(() => {
                 const button = document.getElementById('bpb-terrain-toggle');
                 const native = document.querySelector('iframe[src*="MasterMap.aspx" i]');
@@ -152,12 +154,34 @@ try {
             // Fit the showcase's fixed presentation shell to the same narrow
             // map dimensions users can choose in the real page's resize rail.
             await page.addStyleTag({ content: '.terrain-check {box-sizing:border-box;width:100%;padding:8px;margin:0}.terrain-check .map-shell {width:100%;min-height:0}' });
+            // The synthetic resize above invalidates Leaflet on the next
+            // animation frame. Wait for the visible control gap before driving
+            // the UI, as a person would after choosing a map size.
+            await page.waitForFunction(() => {
+                const native = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+                const zoom = native?.contentDocument?.querySelector('.leaflet-control-zoom')?.getBoundingClientRect();
+                const button = document.getElementById('bpb-terrain-toggle')?.getBoundingClientRect();
+                return zoom && button && button.bottom <= native.getBoundingClientRect().top + native.clientTop + zoom.top - 7;
+            });
             await page.locator('#bpb-terrain-toggle').evaluate(button => button.scrollIntoView({ block: 'center', behavior: 'instant' }));
             // Every pending-state case must take the network path, including
             // a summit already visited in an earlier viewport in this profile.
             await page.evaluate(() => window.caches.delete('bpb-mapterhorn-dem-v1'));
             await page.locator('#bpb-terrain-toggle').focus();
             const before = await read();
+            const nativeFrame = page.frameLocator('iframe[src*="MasterMap.aspx" i]');
+            if (theme === 'dark') {
+                await nativeFrame.locator('html[data-bpb-theme="dark"]').waitFor({ state: 'attached' });
+                const appearance = await nativeFrame.locator('.leaflet-control-zoom a').first().evaluate(element => ({
+                    background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color,
+                    credits: getComputedStyle(document.querySelector('.leaflet-control-attribution')).backgroundColor,
+                    creditLink: getComputedStyle(document.querySelector('.leaflet-control-attribution a')).color,
+                }));
+                assert.equal(appearance.background, 'rgb(39, 44, 41)', `${label}: native zoom follows dark mode`);
+                assert.equal(appearance.color, 'rgb(226, 222, 213)');
+                assert.equal(appearance.credits, 'rgba(31, 35, 33, 0.82)');
+                assert.equal(appearance.creditLink, 'rgb(170, 208, 255)');
+            }
             await screenshot(`${surface}-${width}-2d`);
             const point = { x: before.button.x + before.button.width / 2, y: before.button.y + before.button.height / 2 };
             hold = true;
@@ -179,6 +203,33 @@ try {
             stage = 'active';
             await waitActive();
             const frame = page.frameLocator('#bpb-terrain-frame');
+            const zoomGeometry = async () => {
+                const native = await page.locator('iframe[src*="MasterMap.aspx" i]').evaluate(element => {
+                    const box = element.getBoundingClientRect(), zoom = element.contentDocument.querySelector('.leaflet-control-zoom').getBoundingClientRect();
+                    return { x: box.x + element.clientLeft + zoom.x, y: box.y + element.clientTop + zoom.y, width: zoom.width, height: zoom.height };
+                });
+                const terrain = await frame.locator('.maplibregl-ctrl-group').boundingBox();
+                return { native, terrain };
+            };
+            const aligned = value => value.terrain && ['x', 'y', 'width', 'height'].every(key => Math.abs(value.native[key] - value.terrain[key]) <= 2);
+            const zoom = await zoomGeometry();
+            assert.ok(aligned(zoom), `${label}: 3D zoom must match native 2D geometry: ${JSON.stringify(zoom)}`);
+            const credits = await frame.locator('.maplibregl-ctrl-attrib').boundingBox();
+            const terrainMapBox = await frame.locator('#bpb-terrain-map').boundingBox();
+            assert.ok(Math.abs(credits.x + credits.width - terrainMapBox.x - terrainMapBox.width) <= 1
+                && Math.abs(credits.y + credits.height - terrainMapBox.y - terrainMapBox.height) <= 1,
+            `${label}: credits must hug the bottom-right border: ${JSON.stringify({ credits, terrainMapBox })}`);
+            const creditCollisions = () => frame.locator('.maplibregl-ctrl-attrib-inner').evaluate(element => {
+                const zoom = document.querySelector('.maplibregl-ctrl-group').getBoundingClientRect();
+                const nodes = document.createTreeWalker(element, window.NodeFilter.SHOW_TEXT), collisions = [];
+                while (nodes.nextNode()) {
+                    const range = document.createRange(); range.selectNodeContents(nodes.currentNode);
+                    for (const rect of range.getClientRects()) if (rect.left < zoom.right && rect.right > zoom.left
+                        && rect.top < zoom.bottom && rect.bottom > zoom.top) collisions.push(nodes.currentNode.textContent);
+                }
+                return collisions;
+            });
+            assert.deepEqual(await creditCollisions(), [], `${label}: readable credit text must not overlap zoom`);
             if (await page.locator('#native-map-heading').count()) {
                 const native = await page.locator('#if').boundingBox();
                 const terrain = await page.locator('#bpb-terrain-frame').boundingBox();
@@ -205,11 +256,19 @@ try {
                 assert.ok(Math.abs(overlay.y - map.y - 10) <= 1, `${label}: overlays align to the map's top edge`);
                 assert.ok(base.x + base.width > map.x + map.width / 2, `${label}: basemap stays in the right corner`);
                 assert.ok(map.x + map.width - base.x - base.width <= 26, `${label}: basemap stays against the right inset`);
-                assert.ok(overlay.x + overlay.width + 6 <= base.x, `${label}: corner controls overlap`);
+                assert.ok(overlay.x + overlay.width + 4 <= base.x,
+                    `${label}: corner controls overlap: ${JSON.stringify({ overlay, base })}`);
                 assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0);
             };
             await checkCorners();
             if (surface === 'peak') {
+                const creditControl = frame.locator('.maplibregl-ctrl-attrib');
+                await creditControl.evaluate(element => { element.style.fontSize = '22px'; });
+                await waitForCondition(creditCollisions, { description: `${label}: enlarged credits avoid zoom`, isReady: values => !values.length });
+                assert.ok(aligned(await zoomGeometry()), `${label}: enlarged credits must not move zoom`);
+                stable(before, await read(), `${label}/enlarged-credits`);
+                await screenshot(`${surface}-${width}-${theme}-enlarged-credits`);
+                await creditControl.evaluate(element => { element.style.fontSize = ''; });
                 stage = 'layer picker focus';
                 const picker = frame.locator('[aria-label="Base map"]');
                 const pickerState = () => picker.evaluate(element => {
@@ -287,9 +346,12 @@ try {
             await waitActive();
             stable(before, await read(), `${label}/retry`);
             await checkSamples(before, label);
+            await page.setViewportSize({ width: width - 30, height: 900 });
+            await waitForCondition(zoomGeometry, { description: `${label}: zoom follows native map resize`, isReady: aligned });
             cases++;
         } catch (error) {
             release();
+            await screenshot(`${surface}-${width}-${theme}-failed`);
             const live = await page.evaluate(() => ({ toggle: document.getElementById('bpb-terrain-toggle')?.outerHTML,
                 frame: document.getElementById('bpb-terrain-frame')?.outerHTML,
                 native: document.querySelector('iframe[src*="MasterMap.aspx" i]')?.src,

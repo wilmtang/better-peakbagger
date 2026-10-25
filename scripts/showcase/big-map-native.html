@@ -15,9 +15,13 @@
     /* Peakbagger's native Leaflet map keeps its zoom bottom-right (verified live:
        class "leaflet-control-zoom leaflet-bar leaflet-control"); mirror that so
        the floating toggle's 2D measurement has a realistic target. */
-    .leaflet-control-zoom { position: absolute; right: 10px; bottom: 22px; display: grid; overflow: hidden; border: 1px solid #abb2a5; border-radius: 5px; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 16%); }
-    .leaflet-control-zoom b { width: 28px; height: 28px; text-align: center; font: 20px/27px Arial, sans-serif; }
-    .leaflet-control-zoom b + b { border-top: 1px solid #d2d6cf; }
+    .leaflet-bottom { position: absolute; bottom: 0; right: 0; max-width: 100%; }
+    .leaflet-control { float: right; clear: both; }
+    .leaflet-control-zoom { display: grid; overflow: hidden; margin: 0 10px 10px 0; border: 1px solid #abb2a5; border-radius: 5px; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 16%); }
+    .leaflet-control-zoom a { display: block; width: 30px; height: 30px; text-align: center; text-decoration: none; background: #fff; color: #000; font: bold 22px/30px Arial, sans-serif; }
+    .leaflet-control-zoom a + a { border-top: 1px solid #d2d6cf; }
+    .leaflet-control-attribution { box-sizing: border-box; max-width: 100%; padding: 0 5px; background: rgb(255 255 255 / 80%); color: #333; font: 11px/1.5 "Helvetica Neue", Arial, sans-serif; }
+    .leaflet-control-attribution a { color: #0078a8; }
   </style>
 </head>
 <body>
@@ -32,7 +36,10 @@
     </svg>
     <div id="trip-details">Synthetic route A · native trip-report link</div>
     <select id="selmap"><option value="L_LOCAL">Synthetic topographic map</option></select>
-    <div class="leaflet-control-zoom leaflet-bar"><b>+</b><b>−</b></div>
+    <div class="leaflet-bottom leaflet-right">
+      <div class="leaflet-control-zoom leaflet-bar leaflet-control"><a href="#" role="button" aria-label="Zoom in">+</a><a href="#" role="button" aria-label="Zoom out">−</a></div>
+      <div class="leaflet-control-attribution leaflet-control"><a href="https://leafletjs.com">Leaflet</a> | OT:Basemap © <a href="https://opentopomap.org">OpenTopoMap</a> contributors, CC-BY-SA, Copernicus Sentinel-2 / Microsoft Planetary Computer</div>
+    </div>
   </div>
   <script>
     class Polyline {
@@ -103,7 +110,7 @@
     // local raster (no network) via the shared basemap module's live-layer path.
     window.L_LOCAL = {
       _url: '/scripts/showcase/terrain-tiles/{z}/{x}/{y}.png',
-      options: { minZoom: 0, maxZoom: 16, attribution: 'Synthetic 2D fixture' }
+      options: { minZoom: 0, maxZoom: 16, attribution: 'OT:Basemap © OpenTopoMap contributors, CC-BY-SA, Copernicus Sentinel-2 / Microsoft Planetary Computer' }
     };
     window.routeA = new Polyline(points, { color: '#e34a33', weight: 3 }, document.getElementById('route-a'));
     window.routeB = new Polyline(pointsB, { color: '#3182bd', weight: 3 }, document.getElementById('route-b'));

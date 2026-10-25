@@ -21,8 +21,8 @@
    every mode. The label and spinner share fixed dimensions so switching modes
    keeps the pointer target anchored. */
 .bpb-map-3d-toggle {
-    /* Compact attribution, two zoom buttons and an 8px gap above them. */
-    --bpb-terrain-toggle-bottom: calc(122px + var(--bpb-map-resize-rail-height, 16px));
+    /* Native attribution, two zoom buttons and an 8px gap above them. */
+    --bpb-terrain-toggle-bottom: calc(90px + var(--bpb-map-resize-rail-height, 16px));
     position: absolute;
     right: 10px;
     bottom: var(--bpb-terrain-toggle-bottom);
@@ -52,8 +52,8 @@
 
 /* Full Screen BigMap hosts the toggle and the terrain frame in a fixed overlay
    over the native map. The overlay itself is click-through (only the toggle and,
-   when active, the frame take pointer events); the frame fills the viewport with
-   no resize rail or rounded border. */
+   when active, the frame take pointer events). JS follows the native map bounds
+   below its subject header, with no resize rail or rounded frame border. */
 .bpb-terrain-mount-fullscreen {
     --bpb-map-resize-rail-height: 0px;
     position: fixed;
@@ -545,7 +545,7 @@ html:has(.bpb-terrain-frame-body),
     align-items: flex-end;
     gap: 6px;
     /* Leave room for the separate left overlay trigger at larger text sizes. */
-    max-width: calc(100% - max(120px, 8em));
+    max-width: calc(100% - max(132px, 8em));
     /* Feedback can use the map's width without widening the picker. */
     overflow: visible;
 }
@@ -629,9 +629,9 @@ html:has(.bpb-terrain-frame-body),
     z-index: 3;
 }
 
-/* Variable credits grow upwards in their own stack. The scale and the right
-   action stack never move when a provider changes or credits wrap. */
+/* The scale and gesture hint keep the native map's left corner. */
 #bpb-terrain-map .maplibregl-ctrl-bottom-left {
+    bottom: var(--bpb-credits-inset, 0px);
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -640,25 +640,41 @@ html:has(.bpb-terrain-frame-body),
 
 #bpb-terrain-map .maplibregl-ctrl-attrib {
     box-sizing: border-box;
-    max-width: calc(100% - 10px);
-    margin: 0 0 4px 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: rgb(250 249 245 / 94%);
-    color: #252821;
-    font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 100%;
+    margin: 0;
+    padding: 0 5px;
+    border-radius: 0;
+    font: 11px/1.5 "Helvetica Neue", Arial, sans-serif;
     overflow-wrap: anywhere;
 }
 #bpb-terrain-map .maplibregl-ctrl-attrib a { color: #174d82; }
-#bpb-terrain-map[data-theme="dark"] .maplibregl-ctrl-attrib { background: rgb(31 35 33 / 94%); color: #f1eee7; }
-#bpb-terrain-map[data-theme="dark"] .maplibregl-ctrl-attrib a { color: #9bd1ff; }
 #bpb-terrain-map .maplibregl-ctrl-attrib a:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+#bpb-terrain-map .maplibregl-ctrl-attrib-inner::before {
+    content: "";
+    float: right;
+    width: var(--bpb-credit-obstruction-width, 0px);
+    height: var(--bpb-credit-obstruction-height, 0px);
+    pointer-events: none;
+}
 
-/* Preserve the zoom's old compact-attribution slot and the mode-button gap. */
-#bpb-terrain-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { margin-bottom: 54px; }
+/* Independent anchors retain the actual Leaflet zoom position on every map,
+   including when a narrow viewport wraps its credits onto multiple lines. */
+#bpb-terrain-map .maplibregl-ctrl-bottom-right { width: 100%; }
+#bpb-terrain-map .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group {
+    position: absolute;
+    z-index: 1;
+    right: var(--bpb-zoom-right, 10px);
+    bottom: var(--bpb-zoom-bottom, 22px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: var(--bpb-zoom-width, 32px);
+    height: var(--bpb-zoom-height, 60px);
+    margin: 0;
+}
+#bpb-terrain-map .maplibregl-ctrl-group button { flex: 1; width: 100%; height: auto; }
 
-/* The gesture hint shares the left stack so it cannot cover required credits,
-   including at enlarged text sizes. Dismissal never moves controls below it. */
+/* Dismissal never moves the scale below the gesture hint. */
 #bpb-terrain-map .bpb-terrain-hint {
     max-width: calc(100% - 10px);
     box-sizing: border-box;
