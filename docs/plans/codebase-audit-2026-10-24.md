@@ -269,6 +269,11 @@ Independent commits for drag ownership and report/observer surfaces:
   at 390/1280 px, including enlarged file text, pending/error/stale/retry and
   geometry/focus checks. File chooser and live GitHub remain manual proof gaps.
 
+- F7 ownership: child edits recheck the accepted parent report, and the snapshot
+  write atomically rejects a deleted or differently owned parent. The cross-owner
+  regression failed before the fix; report-photo/store tests, build and focused
+  ESLint passed, including deletion at the write boundary.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

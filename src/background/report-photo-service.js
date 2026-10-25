@@ -76,12 +76,12 @@ export function createReportPhotoService({
             || (photo.localId !== replacesLocalPhotoId && photo.lineage.parentLocalId !== replacesLocalPhotoId)) {
             throw new Error('Save an editable local photo first.');
         }
-        // Resuming a draft keeps its id. Verify the same report still owns its
-        // flattened snapshot before replacing it in place.
-        if (photo.localId === replacesLocalPhotoId) await read(owner, replacesLocalPhotoId);
+        // A child version's lineage is not authority over its parent's report.
+        // Verify the accepted parent still exists and belongs to this owner.
+        await read(owner, replacesLocalPhotoId);
         const { exported } = await metadata(message.dataUrl, photo.source);
         await store.putReportImage({ localId: photo.localId, owner, dataUrl: message.dataUrl,
-            exported, revision: photo.revision });
+            exported, revision: photo.revision, replacesLocalPhotoId });
         await announceChange();
         return { localPhotoId: photo.localId, url: Pending.url(photo.localId), alt: photo.alt, caption: photo.caption || '' };
     });

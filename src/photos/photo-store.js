@@ -290,12 +290,17 @@ const createPhotoStore = async options => {
 
     // Local report snapshots are private device data, excluded from catalog
     // backup. Tie the flattened pixels to the exact editable photo revision.
-    const putReportImage = async ({ localId, owner, dataUrl, exported, revision }) => {
+    const putReportImage = async ({ localId, owner, dataUrl, exported, revision, replacesLocalPhotoId = null }) => {
         const transaction = database.transaction([STORES.photos, STORES.projects, STORES.metadata], 'readwrite');
         try {
             const photo = await requestResult(transaction.objectStore(STORES.photos).get(localId));
             if (!photo || photo.deletedAt || photo.remote.state !== 'draft' || photo.revision !== revision) {
                 throw new PhotoStoreConflictError(localId);
+            }
+            if (replacesLocalPhotoId) {
+                const parent = await requestResult(transaction.objectStore(STORES.photos).get(replacesLocalPhotoId));
+                const accepted = await requestResult(transaction.objectStore(STORES.metadata).get(`report-image:${replacesLocalPhotoId}`));
+                if (!parent || parent.deletedAt || !accepted || accepted.owner !== owner) throw new PhotoStoreConflictError(replacesLocalPhotoId);
             }
             const project = await requestResult(transaction.objectStore(STORES.projects).get(localId));
             transaction.objectStore(STORES.metadata).put({

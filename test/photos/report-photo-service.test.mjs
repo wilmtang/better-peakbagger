@@ -203,3 +203,19 @@ test('a malformed real client success retains its journal across service restart
     assert.equal((await store.getOperations())[0].state, 'request-started');
     store.close();
 });
+
+test('edited child versions must still belong to the original report owner', async () => {
+    const { service, store } = await harness(async () => { throw new Error('must not upload'); });
+    try {
+        const original = await service.create(owner, image), bundle = await store.getBundle(original.localPhotoId);
+        const localId = crypto.randomUUID();
+        await store.putDraft({ ...bundle,
+            photo: Library.createDraft({ localId, title: 'Edited', source: bundle.photo.source, parentLocalId: original.localPhotoId }),
+            project: { ...bundle.project, localId } });
+        await assert.rejects(service.saveEdit('another-report', { localPhotoId: localId, dataUrl: image.dataUrl }, original.localPhotoId), /unavailable/);
+        const child = (await store.getBundle(localId)).photo;
+        await store.putPhoto(Library.markDeleted(bundle.photo));
+        await assert.rejects(store.putReportImage({ localId, owner, dataUrl: image.dataUrl, exported: {}, revision: child.revision, replacesLocalPhotoId: original.localPhotoId }), error => error.name === 'PhotoStoreConflictError');
+        await assert.rejects(service.saveEdit(owner, { localPhotoId: localId, dataUrl: image.dataUrl }, original.localPhotoId), /unavailable/);
+    } finally { store.close(); }
+});
