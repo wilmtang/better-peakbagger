@@ -106,7 +106,7 @@ const run = async action => {
                 for (const { controls } of ruleValues) if (!controls.sourceLayer.value && result.layers.length === 1) controls.sourceLayer.value = result.layers[0];
             }
             if (result.origins?.length) {
-                resolved = result.source; feedback(`Tile hosts: ${result.source.approvedOrigins.join(', ')}. Click ${action === 'preview' ? 'Preview' : 'Test source'} again to approve and continue.`); return;
+                resolved = result.source; feedback(`Tile hosts: ${result.source.approvedOrigins.join(', ')}. Click ${action === 'preview' ? 'Preview' : field('test').textContent} again to approve and continue.`); return;
             }
             resolved = result.source; source = resolved;
             if (source.kind === 'mvt') source.appearance.rules = sourceFromForm().appearance.rules;
@@ -151,7 +151,7 @@ async function library() {
     const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_GET' }), registry = reply?.ok && readCustomRegistry(reply.registry);
     if (!registry) throw new Error('Saved overlays are unavailable.');
     const list = field('library'); list.replaceChildren();
-    if (!mapId) {
+    if (!mapId && parent === window) {
         for (const source of registry.sources) { const button = document.createElement('button'); button.type = 'button'; button.textContent = source.name; button.onclick = () => reset(source); list.append(button); }
         const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Add custom overlay'; button.onclick = () => reset(); list.append(button);
     }

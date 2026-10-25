@@ -111,6 +111,7 @@ try {
         await admin.locator('#custom-layer-add').click();
         const optionsEditor = admin.frameLocator('#custom-layer-dialog iframe');
         await optionsEditor.locator('#name').fill('Temporary options layer'); await optionsEditor.locator('#url').fill(`${providerOrigin}/{z}/{x}/{y}.png`);
+        assert.equal(await optionsEditor.locator('#library button').count(), 0, 'embedded editor shows only the source form');
         if (screenshots) { await mkdir(screenshots, { recursive: true }); await admin.screenshot({ path: path.join(screenshots, 'custom-options-editor-dark.png') }); }
         await optionsEditor.locator('#save').click(); await optionsEditor.locator('#feedback').filter({ hasText: 'Saved on this device' }).waitFor();
         await optionsEditor.locator('#cancel').click();
@@ -279,6 +280,7 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await click('#custom-layer-add');
     await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
     await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Options editor initialized');
+    assert.equal(await evaluate(() => document.querySelectorAll('#library button').length), 0, 'Firefox embedded editor has no duplicate manager');
     await (await driver.findElement(By.id('name'))).sendKeys('Options Firefox source');
     await (await driver.findElement(By.id('url'))).sendKeys(`${providerOrigin}/{z}/{x}/{y}.png`);
     await click('#save'); await wait(() => evaluate(() => document.getElementById('feedback').textContent.includes('Saved on this device')), 'Firefox manager saves layer');

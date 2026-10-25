@@ -74,6 +74,15 @@ contract is [settings storage, export and sync](../settings-storage-and-sync.md)
 - New manager checks have no historical pre-feature UI comparison. Model
   regressions and rendered transitions are the recorded evidence.
 
+### Embedded-editor visual cleanup
+
+Visual inspection found that the embedded Options editor repeated the standalone
+library above its form. The editor now shows that chooser only when opened as a
+standalone page. The new Chrome assertion failed against the unfixed bundle with
+four duplicate chooser buttons (`4 !== 0`) before the one-condition fix; both
+browser matrices then verify the form-only modal. The Options list remains the
+single management view. This is separate from the scroll-boundary fix below.
+
 ## Scroll-boundary follow-up
 
 The shared panel stylesheet painted only `body`; Options fixes that body inside
