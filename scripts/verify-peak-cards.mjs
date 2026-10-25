@@ -208,6 +208,12 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             await dragBelow(false);
             await open(); await placement('weather', true);
             await focus('weather', '.bpb-peak-card-toggle'); await press(key('Enter')); await expanded('weather', true);
+            // Finish this case's visible read before the next iteration takes
+            // its no-hidden-requests baseline. Disclosure alone precedes the
+            // lazy read and can otherwise charge it to the next page.
+            await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
+                && document.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false',
+            'expanded placement forecast settled');
             await placement('weather', true); await image(`${width}-${theme}-below-details-expanded`);
             if (width === 375 && theme === 'dark') {
                 await setZoom(2); await focus('weather', '.bpb-peak-card-toggle');
