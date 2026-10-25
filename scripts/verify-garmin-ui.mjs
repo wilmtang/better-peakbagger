@@ -11,7 +11,9 @@ import { chromium, firefox } from 'playwright';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mjs';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
-assert.equal(process.argv.length, 2, 'No arguments supported');
+const args = process.argv.slice(2);
+assert(args.length === 0 || (args.length === 1 && args[0] === '--popup'), 'Only --popup is supported');
+const popupOnly = args.includes('--popup');
 assertChromeLaunchAllowed();
 const root = path.resolve(process.env.BPB_VERIFY_GARMIN_SOURCE || new URL('../dist/', import.meta.url).pathname);
 const output = '/tmp/garmin-implementation-ui'; await mkdir(output, { recursive: true });
@@ -41,7 +43,9 @@ try {
         const context = await browser.newContext({ ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
         context.setDefaultTimeout(15000);
         await context.addInitScript(defaults => {
-            const prefs = { ...defaults, removeGpxTimestamps: true, ...(window.location.search.includes('disabled') ? { enableGarminInbox: false } : {}) };
+            const prefs = { ...defaults, removeGpxTimestamps: true,
+                theme: new window.URLSearchParams(window.location.search).get('theme') || defaults.theme,
+                ...(window.location.search.includes('disabled') ? { enableGarminInbox: false } : {}) };
             const listeners = [];
             const row = { id: '123', owner: '1234', cid: '5678', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
                 analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], hasTimestamps: true } };
@@ -54,13 +58,16 @@ try {
             window.fixture.setEnabled = value => { prefs.enableGarminInbox = value; listeners.forEach(fn => fn({ bpbSettings: { newValue: prefs } }, 'sync')); };
             window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => { if (window.fixture.holdSettings) await window.fixture.readGate; return { bpbSettings: prefs }; } },
                 local: { get: async () => ({ bpbDeviceSettings: { schemaVersion: 1, settings: prefs } }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } },
-            tabs: { query: async () => [{ id: 1 }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
+            tabs: { query: async () => [{ id: 1, url: 'https://www.peakbagger.com/default.aspx' }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
                 if (message.type === 'GARMIN_STATUS') window.fixture.statuses++;
                 if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
-                if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 1 };
+                if (message.type === 'GARMIN_SUMMARY') return { ok: true, ...structuredClone(window.fixture.state) };
                 if (message.type === 'CAPTURE_STATUS') return null;
                 if (message.type === 'CAPTURE_START') window.fixture.captures++;
-                if (message.type === 'GARMIN_INBOX_OPEN') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 300)); return { ok: false }; }
+                if (message.type === 'GARMIN_INBOX_OPEN') {
+                    window.fixture.opens++;
+                    return new Promise(resolve => { window.fixture.finishOpen = resolve; });
+                }
                 if (message.type === 'GARMIN_DISMISS') { window.fixture.state.items = []; window.fixture.state.history = [{ id: row.id, date: row.summary.date, dismissed: true, undoAvailable: true }]; }
                 if (message.type === 'GARMIN_UNDO') { window.fixture.state.items = [row]; window.fixture.state.history = []; }
                 if (message.type === 'GARMIN_OPEN_DRAFTS') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 350)); row.handoff = true; }
@@ -80,7 +87,7 @@ try {
             const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
         }) }), selectors);
         const stable = (before, after) => { assert.deepEqual(after.scroll, before.scroll); before.boxes.forEach((box, i) => Object.keys(box).forEach(key => assert(Math.abs(box[key] - after.boxes[i][key]) <= 1, `${name} shifted ${i}.${key}: ${box[key]} → ${after.boxes[i][key]}`))); };
-        for (const theme of ['light', 'dark']) for (const width of [1180, 390]) {
+        for (const theme of ['light', 'dark']) for (const width of popupOnly ? [] : [1180, 390]) {
             console.log(`${name}: ${theme}/${width}`);
             await page.setViewportSize({ width, height: 1000 });
             await page.goto(`${origin}/options/options.html#capture-garmin`);
@@ -267,32 +274,100 @@ try {
             await page.locator('#activity-inbox').waitFor();
             cases++;
         }
-        await page.setViewportSize({ width: 390, height: 1000 });
-        await page.goto(`${origin}/options/inbox.html`); await page.locator('.garmin-activity').waitFor();
-        await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
-        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-        for (const theme of ['light', 'dark']) {
-            await page.setViewportSize({ width: 390, height: 700 });
-            await page.goto(`${origin}/popup/popup.html`);
+        if (!popupOnly) {
+            await page.setViewportSize({ width: 390, height: 1000 });
+            await page.goto(`${origin}/options/inbox.html`); await page.locator('.garmin-activity').waitFor();
+            await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+        }
+        for (const theme of ['light', 'dark']) for (const zoom of [1, 2]) {
+            await page.setViewportSize({ width: 390 * zoom, height: 600 * zoom });
+            await page.goto(`${origin}/popup/popup.html?theme=${theme}`);
             await page.locator('#inbox-count').filter({ hasText: '1' }).waitFor();
-            await page.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
+            await page.waitForFunction(() => document.querySelector('#state').textContent.length > 0);
+            await page.waitForFunction(theme => document.documentElement.dataset.bpbTheme === theme, theme);
+            await page.evaluate(zoom => {
+                document.documentElement.style.zoom = zoom;
+                window.fixture.closed = 0;
+                window.close = () => { window.fixture.closed++; };
+            }, zoom);
+            const sizes = await geometry(['#activity-inbox', '.inbox-entry']);
+            assert(sizes.boxes[0].width < sizes.boxes[1].width / 2,
+                'Inbox navigation must have a compact Open inbox action, not a full-width menu-like button');
+            assert.equal(await page.locator('.inbox-entry h2').textContent(), 'Activity inbox');
+            assert.equal(await page.locator('#activity-inbox').textContent(), 'Open inbox');
+            assert(await page.locator('.inbox-entry svg[aria-hidden="true"]').isVisible());
             const inbox = page.locator('#activity-inbox'); await inbox.focus();
-            const selectors = ['#activity-inbox', '.brand', '#state']; const before = await geometry(selectors);
+            const selectors = ['#activity-inbox', '.inbox-entry', '#inbox-count', '.brand', '#state'];
+            const before = await geometry(selectors);
+            await inbox.hover(); stable(before, await geometry(selectors));
+            if (name === 'chromium') await page.screenshot({ path: path.join(output, `popup-${theme}-${zoom}x-idle.png`) });
+            for (const pending of [0, 99, 200, 1]) {
+                await page.evaluate(pending => {
+                    window.fixture.state.pending = pending;
+                    window.fixture.setEnabled(true);
+                }, pending);
+                await page.waitForFunction(pending => document.querySelector('#activity-inbox')
+                    .getAttribute('aria-label').includes(`${pending} pending`), pending);
+                stable(before, await geometry(selectors));
+                assert.equal(await page.locator('#inbox-count').textContent(), pending > 99 ? '99+' : pending ? String(pending) : '');
+                if (pending === 0) {
+                    assert(await page.locator('#inbox-count').isHidden(), 'An empty count must not paint an empty badge');
+                    if (name === 'chromium') await page.screenshot({ path: path.join(output, `popup-${theme}-${zoom}x-empty.png`) });
+                }
+            }
+            for (const summary of [
+                { configured: false, manual: false, queued: 0, text: 'Connect Garmin' },
+                { configured: true, manual: true, queued: 0, text: 'ready when you check' },
+                { configured: true, manual: false, queued: 200, text: '200 waiting for peak checks' },
+            ]) {
+                await page.evaluate(summary => {
+                    Object.assign(window.fixture.state, summary);
+                    window.fixture.setEnabled(true);
+                }, summary);
+                await page.locator('#activity-inbox-status').filter({ hasText: summary.text }).waitFor();
+                stable(before, await geometry(selectors));
+            }
+            await page.evaluate(() => {
+                window.fixture.state.error = { code: 'key-rejected' };
+                window.fixture.setEnabled(true);
+            });
+            await page.locator('#activity-inbox-status').filter({ hasText: 'Garmin needs a new key' }).waitFor();
+            stable(before, await geometry(selectors));
             await inbox.press('Enter');
             await page.waitForFunction(() => document.querySelector('#activity-inbox').getAttribute('aria-busy') === 'true');
-            stable(before, await geometry(selectors)); await inbox.press('Enter');
+            stable(before, await geometry(selectors));
+            assert(await inbox.evaluate(el => document.activeElement === el));
+            await inbox.press('Enter'); await inbox.press('Space');
+            await inbox.click({ force: true });
+            assert.equal(await page.evaluate(() => window.fixture.opens), 1);
+            if (name === 'chromium') await page.screenshot({ path: path.join(output, `popup-${theme}-${zoom}x-pending.png`) });
+            await page.evaluate(() => window.fixture.finishOpen({ ok: false }));
             await page.locator('#activity-inbox-status').filter({ hasText: 'Couldn’t open inbox' }).waitFor();
             stable(before, await geometry(selectors));
-            assert.equal(await page.evaluate(() => window.fixture.opens), 1);
+            assert(await inbox.evaluate(el => document.activeElement === el));
+            if (name === 'chromium') await page.screenshot({ path: path.join(output, `popup-${theme}-${zoom}x-error.png`) });
+            await inbox.press('Space');
+            await page.waitForFunction(() => document.querySelector('#activity-inbox').getAttribute('aria-busy') === 'true');
+            stable(before, await geometry(selectors));
+            assert.equal(await page.evaluate(() => window.fixture.opens), 2);
+            await page.evaluate(() => window.fixture.finishOpen({ ok: true }));
+            await page.waitForFunction(() => window.fixture.closed === 1);
+            stable(before, await geometry(selectors));
             assert.equal(await page.evaluate(() => window.fixture.captures), 0);
-            if (name === 'chromium') await page.screenshot({ path: path.join(output, `popup-${theme}.png`) });
+            assert.equal(await page.evaluate(() => document.documentElement.dataset.bpbTheme), theme);
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+            await page.evaluate(() => window.fixture.setEnabled(false));
+            await page.locator('.inbox-entry').waitFor({ state: 'hidden' });
+            await page.locator('#open-settings').focus(); await page.keyboard.press('Tab');
+            assert.equal(await inbox.evaluate(el => document.activeElement === el), false);
             cases++;
         }
         assert.deepEqual(errors, []);
-        console.log(`${name} ${browser.version()}: settings/rejected-key, manual descriptions, inbox pending/rejection/retry, Strong/Probable selection; both themes at 1180/390px, 200% CSS zoom. Hidden DOM/CSS; transport/session replies stubbed.`);
+        console.log(`${name} ${browser.version()}: ${popupOnly ? 'popup' : 'settings and inbox'}; popup counts, pending/rejection/retry/success, duplicate activation and focus; both themes at 390×600 CSS px, 100%/200% CSS zoom. Hidden DOM/CSS; transport/session replies and popup dismissal stubbed.`);
         await context.close();
     }
-    assert.equal(cases, 12); console.log(`Garmin UI checks passed: ${cases} cases. Images: ${output}`);
+    assert.equal(cases, popupOnly ? 8 : 16); console.log(`Garmin UI checks passed: ${cases} cases. Images: ${output}`);
 } finally {
     const closed = await Promise.allSettled(browsers.reverse().map(browser => browser.close()));
     await new Promise(resolve => { server.closeAllConnections(); server.close(resolve); });

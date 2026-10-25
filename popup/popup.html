@@ -24,8 +24,16 @@
       </button>
     </header>
 
-    <nav hidden class="inbox-entry" aria-label="Activity drafts">
-      <button id="activity-inbox" class="panel-button secondary" type="button" aria-label="Activity inbox, pending count unavailable"><span>Activity inbox</span><span id="inbox-count">—</span><span aria-hidden="true">›</span></button>
+    <nav hidden class="inbox-entry" aria-labelledby="inbox-heading">
+      <div class="inbox-heading">
+        <svg class="inbox-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4.5 5h15L22 14v5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-5Z"/>
+          <path d="M2 14h6l2 3h4l2-3h6"/>
+        </svg>
+        <h2 id="inbox-heading">Activity inbox</h2>
+        <span id="inbox-count" class="status-chip" aria-hidden="true">—</span>
+        <button id="activity-inbox" class="panel-button secondary" type="button" aria-label="Open inbox, pending count unavailable">Open inbox</button>
+      </div>
       <div class="inbox-feedback"><span aria-hidden="true">Your Garmin activities, imported automatically.</span><span aria-hidden="true">Garmin needs a new key. Open inbox to reconnect.</span><span aria-hidden="true">200 waiting for peak checks. Open inbox to resume.</span><span id="activity-inbox-status" role="status" aria-atomic="true">Your Garmin activities, imported automatically.</span></div>
     </nav>
     <section id="state" aria-live="polite"></section>
