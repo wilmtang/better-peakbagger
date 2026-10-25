@@ -40,6 +40,19 @@ registerCardDragContract(test, 'ascent drag adapter', async () => {
         close: env.close };
 });
 
+test('the ascent adapter retains its reduced-motion animation policy', () => {
+    for (const reduced of [false, true]) {
+        const env = setup(); let animations = 0;
+        env.dom.window.matchMedia = () => ({ matches: reduced });
+        env.card.animate = () => { animations++; return { cancel() {} }; };
+        try {
+            env.pointer('pointerdown', 500, env.handle); env.pointer('pointermove', 150); env.pointer('pointerup', 150);
+            assert.equal(env.card.parentElement.id, 'left');
+            assert.equal(animations, reduced ? 0 : 1);
+        } finally { env.close(); }
+    }
+});
+
 test('a card follows a thresholded pointer gesture and moves only on a valid drop', () => {
     const env = setup();
     try {

@@ -597,7 +597,8 @@ try {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,
                 movePointer, pointerDown, pointerUp, setMode: next => { mode = next; }, heldCount: () => held.length,
-                release: () => held.splice(0).forEach(resolve => resolve()), writeLocal, networkErrors, firefoxMode, placementOnly: cardsPlacementMode }) };
+                release: () => held.splice(0).forEach(resolve => resolve()), writeLocal, networkErrors, firefoxMode, placementOnly: cardsPlacementMode,
+                weatherRequestCount: () => evidence.filter(request => request.host === 'api.open-meteo.com').length }) };
     } else if (snowMapMode) {
         const optionsCases = await withOptions(verifySnotelOptions);
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,

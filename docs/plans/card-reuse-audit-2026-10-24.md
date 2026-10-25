@@ -314,6 +314,12 @@ runtime changes require the real-browser checks in the convention and AGENTS.
   weather. It guards ownership before abort notifications and prevents stale
   finalizers from clearing newer work. All 147 focused ownership/integration
   tests and ESLint passed, including late responses and reentrant abort handlers.
+  Final peak-card matrices passed in Chrome/Firefox, including request suppression,
+  pending-collapse cancellation, retained nodes, stable geometry, movement and
+  200% zoom. A new color assertion first failed on the dark-header regression
+  introduced by lower specificity; shared heading color and generic theme-owned
+  button exclusions then fixed it in both browsers. All 103 focused theme,
+  manifest and movement tests passed. Reduced-motion animation policy is tested.
 - **Intentionally not changed:** native mounting, settings keys, provider policy,
   worker-write ownership and unrelated work. Settings reconciliation remains
   surface-specific: ascent serial placement writes and peak per-field optimistic

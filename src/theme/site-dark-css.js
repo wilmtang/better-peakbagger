@@ -109,7 +109,7 @@ html[data-bpb-theme="dark"] [bgcolor="#f0f0f0"] {
 html[data-bpb-theme="dark"] input:not(.pbaf-control):not(:where(.bpb-map-layers *)),
 html[data-bpb-theme="dark"] select:not(:where(.bpb-map-layers *)),
 html[data-bpb-theme="dark"] textarea,
-html[data-bpb-theme="dark"] button:not(.bpb-re-swatch):not(.pbaf-control):not([data-bpb-climber-ui]):not(:where(#bpb-ascent-weather *, #bpb-peak-weather *, #bpb-peak-links *, #bpb-snow-map-toggle, .bpb-snow-map-notice *, .bpb-map-layers *)) {
+html[data-bpb-theme="dark"] button:not(.bpb-re-swatch):not(.pbaf-control):not([data-bpb-climber-ui]):not(:where([data-bpb-card] *, [data-bpb-peak-card] *, #bpb-peak-links *, #bpb-snow-map-toggle, .bpb-snow-map-notice *, .bpb-map-layers *)) {
     background: #2b2f34 !important;
     color: #e6e1d8 !important;
     border: 1px solid #4a5058 !important;

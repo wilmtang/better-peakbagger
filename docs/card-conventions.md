@@ -234,6 +234,9 @@ table. Follow its existing reconciliation flow for uncertain remote writes.
   shell; keep feature density/spacing local. Load it through the real manifest
   before feature CSS and include it in faithful fixtures. GPS details, cloud/snow
   palettes and embedded MAIN-world panels retain their existing variants.
+  The site-wide dark button rule excludes marked card controls; their owners
+  provide palette/geometry. Shared peak headings explicitly use the header text
+  token so native important heading colors cannot leak into registered cards.
 - Scope feature CSS to the card ID. Use the existing light palette and
   `html[data-bpb-theme="dark"]` overrides for isolated page cards. Embedded
   Analyzer panels use their owner's resolved `data-theme`/palette instead of

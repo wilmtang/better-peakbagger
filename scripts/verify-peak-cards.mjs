@@ -9,14 +9,19 @@ import { waitForCondition } from './browser-verification-fixtures.mjs';
 import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
 
 export async function verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings,
-    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, writeLocal, networkErrors, firefoxMode, placementOnly = false }) {
+    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, writeLocal, networkErrors, firefoxMode, placementOnly = false, weatherRequestCount }) {
+    // This matrix covers the three original cards; the cloud card has its own
+    // model/profile fixture and browser matrix.
+    const applySettings = setSettings;
+    setSettings = patch => applySettings({ showSummitCloud: false, ...patch });
     const output = process.env.BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR, cases = [];
     if (output) await mkdir(output, { recursive: true });
     const browser = firefoxMode ? 'firefox' : 'chrome';
     const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowUp: '\uE013', ArrowDown: '\uE015', ArrowLeft: '\uE012', ArrowRight: '\uE014', Home: '\uE011', End: '\uE010', Escape: '\uE00C', Tab: '\uE004' }[name] : name;
-    const order = () => evaluate(() => [...document.querySelectorAll('[data-bpb-peak-card]')].map(card => card.dataset.bpbPeakCard));
+    const order = () => evaluate(() => [...document.querySelectorAll('[data-bpb-peak-card]:not([data-bpb-peak-card="cloud"])')].map(card => card.dataset.bpbPeakCard));
     const saved = (field, value) => waitForCondition(readSettings, { description: `saved ${field}`, timeoutMs: 7000,
-        isReady: settings => isDeepStrictEqual(settings[field], value) });
+        isReady: settings => isDeepStrictEqual(field === 'peakCardOrder' ? settings[field].filter(id => id !== 'cloud')
+            : field === 'peakCardColumns' ? Object.fromEntries(Object.entries(settings[field]).filter(([id]) => id !== 'cloud')) : settings[field], value) });
     const image = async name => { if (output) await screenshotPage(path.join(output, `${browser}-${name}.png`)); };
     const geometry = () => evaluate(() => {
         const rect = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
@@ -34,16 +39,22 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             for (const key of Object.keys(before)) stable(before[key], after[key], `${label}.${key}`);
         } else assert.equal(after, before, label);
     };
-    const ready = () => wait(() => document.querySelectorAll('[data-bpb-peak-card]').length === 3
+    const ready = () => wait(() => document.querySelectorAll('[data-bpb-peak-card]:not([data-bpb-peak-card="cloud"])').length === 3
         && document.querySelector('.bpb-sun-calculator--peak .bpb-sun-calculator__toggle')?.disabled === false
-        && document.querySelectorAll('.bpb-week-day').length === 16
+        && (document.querySelector('#bpb-peak-weather')?.dataset.bpbCardCollapsed === 'true'
+            || document.querySelectorAll('.bpb-week-day').length === 16)
         && document.querySelector('#bpb-peak-weather')?.getAttribute('aria-busy') === 'false'
         && document.querySelector('.bpb-snow-status')?.textContent.includes('Hourly readings'), 'three ready cards');
     const open = async () => {
+        const before = weatherRequestCount();
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map-first`);
-        await wait(() => document.querySelectorAll('[data-bpb-peak-card]').length === 3, 'card layout owner');
+        await wait(() => document.querySelectorAll('[data-bpb-peak-card]:not([data-bpb-peak-card="cloud"])').length === 3, 'card layout owner');
         await evaluate(() => document.querySelector('#bpb-peak-weather').scrollIntoView({ block: 'start' }));
-        await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'forecast data');
+        await wait(() => document.querySelector('#bpb-peak-weather')?.dataset.bpbCardCollapsed === 'true'
+            || document.querySelectorAll('.bpb-week-day').length === 16, 'expanded forecast data or saved collapse');
+        if (await evaluate(() => document.querySelector('#bpb-peak-weather').dataset.bpbCardCollapsed === 'true')) {
+            assert.equal(weatherRequestCount(), before, 'restoring a collapsed card never loads hidden forecast data');
+        }
         await evaluate(() => document.querySelector('#bpb-peak-snow').scrollIntoView({ block: 'center' })); await ready();
         assertPeakMapLinks(await evaluate(readPeakMapLinks));
     };
@@ -208,6 +219,33 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         assert.deepEqual(networkErrors, []); assert.ok(cases.length > 0);
         return { verification: 'peak-card-placement', cases, output: output || null, providers: 'fixture responses; no live provider requests' };
     }
+    await resize(375, 1100); setMode('complete');
+    await setSettings({ theme: 'dark', units: 'metric', showWeather: true, showSnotel: false, showSunMoon: false,
+        peakWeatherCollapsed: true, bpbPeakWeatherModelPast: 'gfs_global', bpbPeakWeatherModelForecast: 'gfs_global' });
+    const beforeCollapsedLoad = weatherRequestCount();
+    await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map-first`);
+    await wait(() => document.querySelector('#bpb-peak-weather')?.dataset.bpbCardCollapsed === 'true', 'saved collapsed weather');
+    await evaluate(() => document.querySelector('#bpb-peak-weather').scrollIntoView({ block: 'center' }));
+    await evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+    assert.equal(weatherRequestCount(), beforeCollapsedLoad, 'collapsed header in viewport never requests weather');
+    await click('#bpb-peak-weather .bpb-peak-card-toggle');
+    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
+        && document.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false', 'expanded weather');
+    assert.equal(weatherRequestCount(), beforeCollapsedLoad + 1);
+    await evaluate(() => { window.bpbReadGateDay = document.querySelector('.bpb-week-day'); });
+    setMode('loading'); await click('.bpb-week-refresh');
+    await waitForCondition(() => heldCount() > 0, { description: 'held weather refresh' });
+    await click('#bpb-peak-weather .bpb-peak-card-toggle');
+    await wait(() => document.querySelector('#bpb-peak-weather').dataset.bpbCardCollapsed === 'true'
+        && document.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false', 'collapse cancels pending read');
+    const closedRefresh = await geometry(); setMode('complete'); release();
+    await evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+    stable(closedRefresh, await geometry(), 'cancelled weather completion cannot shift the closed card');
+    await click('#bpb-peak-weather .bpb-peak-card-toggle');
+    await wait(() => document.querySelector('#bpb-peak-weather').dataset.bpbCardCollapsed === 'false', 'weather reexpanded');
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-day') === window.bpbReadGateDay), true, 'retained result nodes survive');
+    assert.equal(weatherRequestCount(), beforeCollapsedLoad + 2, 'fresh result resumes without another request');
+    cases.push({ case: 'weather-read-gate', collapsedRequests: 0, expandedRequests: 1, cancelledRefresh: true });
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
@@ -282,7 +320,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
                     const title = button.querySelector('.bpb-peak-card-title, .bpb-sun-calculator__title');
                     const c = getComputedStyle(card), h = getComputedStyle(header), b = getComputedStyle(button), t = getComputedStyle(title);
                     return { cardRadius: c.borderRadius, headerBackground: h.backgroundColor === 'rgba(0, 0, 0, 0)' ? c.backgroundColor : h.backgroundColor, buttonRadius: b.borderRadius,
-                        fontFamily: t.fontFamily, fontSize: t.fontSize, fontWeight: t.fontWeight, lineHeight: t.lineHeight,
+                        color: t.color, fontFamily: t.fontFamily, fontSize: t.fontSize, fontWeight: t.fontWeight, lineHeight: t.lineHeight,
                         padding: b.padding };
                 };
                 return { actual: read(document.querySelector(`[data-bpb-peak-card="${id}"]`)), expected: read(document.querySelector('[data-bpb-peak-card="sun"]')) };
@@ -294,7 +332,10 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
                 const toggle = header.querySelector('.bpb-peak-card-toggle, .bpb-sun-calculator__toggle');
                 const caret = toggle.querySelector('.bpb-peak-card-chevron, .bpb-sun-calculator__chevron');
                 const t = toggle.getBoundingClientRect(), c = card.getBoundingClientRect(), r = caret.getBoundingClientRect();
-                return { left: t.left - c.left, right: c.right - t.right, caretInset: c.right - r.right,
+                // Firefox can report 62.000061 for a 62px edge. Quantize below
+                // a thousandth of a CSS pixel; retain the 1px layout tolerance.
+                const precise = value => Math.round(value * 1000) / 1000;
+                return { left: precise(t.left - c.left), right: precise(c.right - t.right), caretInset: precise(c.right - r.right),
                     headerButtons: header.querySelectorAll('button').length };
             }, id);
             assert.ok(Math.abs(row.caretInset - 61) <= 1, `${width}/${theme}/${id}: the caret aligns at the right before the drag handle: ${JSON.stringify(row)}`);
