@@ -33,9 +33,15 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
     };
     const paintPreview = (preview, focus = true) => {
         pending = preview; panel.hidden = false;
-        title.textContent = preview.kind === 'restore' ? 'Restore ignored climbers?' : 'Review ignored climbers';
-        mode.value = preview.kind === 'restore' ? 'github' : preview.kind === 'backup' ? 'device' : 'merge';
-        mode.hidden = preview.kind === 'restore';
+        const restoring = preview.kind === 'restore';
+        title.textContent = restoring ? 'Restore ignored climbers?' : 'Review ignored climbers';
+        mode.value = restoring ? 'github' : preview.kind === 'backup' ? 'device' : 'merge';
+        mode.hidden = restoring;
+        mode.closest('label').hidden = restoring;
+        panel.classList.toggle('is-review', !restoring);
+        confirm.textContent = restoring ? 'Restore ignored climbers' : 'Apply reviewed changes';
+        confirm.classList.toggle('danger', restoring);
+        confirm.classList.toggle('primary', !restoring);
         conflicts.replaceChildren();
         for (const conflict of preview.conflicts) {
             const label = document.createElement('label'); label.className = 'ignored-conflict';
@@ -66,7 +72,7 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
             backup.disabled = restore.disabled = !connected;
             const state = response.state;
             enabled = state.enabled; syncToggle.checked = enabled; syncToggle.disabled = !connected;
-            backup.textContent = enabled ? 'Sync now' : 'Back up now';
+            backup.querySelector('span').textContent = enabled ? 'Sync now' : 'Back up now';
             if (response.preview && panel.hidden && state.phase === 'review') paintPreview(response.preview, false);
             status.textContent = state.phase === 'working' ? 'Syncing…' : state.phase === 'review' ? `Review changes${state.error ? ` · ${state.error}` : ''}`
                 : state.phase === 'offline' ? `Offline — changes saved on this device${state.error ? ` · ${state.error}` : ''}`

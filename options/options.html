@@ -649,8 +649,8 @@
                             <span class="title">Transfer settings with a file</span>
                             <span class="desc">Move your settings and custom map layers to another browser or keep a personal copy. Public source URLs and their URL keys are included. Saved account credentials are optional below. Files are not encrypted; keep them private.</span>
                         </div>
-                        <div class="control settings-file-transfer-actions">
-                            <div class="settings-backup-actions">
+                        <div class="control backup-controls">
+                            <div class="backup-actions">
                                 <button id="settings-backup-export" class="panel-button secondary" type="button">Export settings</button>
                                 <button id="settings-backup-import" class="panel-button secondary" type="button">Import from file…</button>
                                 <input id="settings-backup-file" type="file" accept=".json,application/json" hidden>
@@ -661,12 +661,12 @@
                             </label>
                         </div>
                     </div>
-                    <div class="settings-backup-confirmation" id="settings-backup-confirmation" role="alert" hidden>
+                    <div class="backup-confirmation" id="settings-backup-confirmation" role="alert" hidden>
                         <div>
-                            <p class="settings-backup-confirmation-title">Import <strong id="settings-backup-confirmation-name"></strong>?</p>
-                            <p class="settings-backup-confirmation-detail" id="settings-backup-confirmation-detail">Replaces your current settings.</p>
+                            <p class="backup-confirmation-title"><span id="settings-backup-confirmation-action">Import</span> <strong id="settings-backup-confirmation-name"></strong>?</p>
+                            <p class="backup-confirmation-detail" id="settings-backup-confirmation-detail">Replaces your current settings.</p>
                         </div>
-                        <div class="settings-backup-confirmation-actions">
+                        <div class="backup-actions">
                             <button id="settings-backup-cancel" class="panel-button secondary" type="button">Cancel</button>
                             <button id="settings-backup-confirm" class="panel-button danger settings-backup-confirm" type="button">Import settings</button>
                         </div>
@@ -674,19 +674,21 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">GitHub settings backup</span>
-                            <span class="desc" id="settings-backup-github-status" role="status">Checking connection…</span>
+                            <span class="desc backup-status" id="settings-backup-github-status" role="status">Checking connection…</span>
                             <span class="desc">Includes your custom layers and public source URLs. Private tokens belong outside map URLs, especially when using a public repository.</span>
                         </div>
-                        <div class="control settings-backup-github-actions" id="settings-backup-github-actions" hidden>
-                            <div class="settings-backup-actions">
-                                <button id="settings-backup-github-backup" class="panel-button secondary" type="button">Back up settings</button>
-                                <button id="settings-backup-github-restore" class="panel-button secondary" type="button">Restore from GitHub</button>
+                        <div class="control backup-controls" id="settings-backup-github-actions" hidden>
+                            <div class="backup-actions" role="group" aria-label="Settings backup actions">
+                                <button id="settings-backup-github-backup" class="panel-button secondary" type="button">Back up now</button>
+                                <button id="settings-backup-github-restore" class="panel-button secondary" type="button">Restore…</button>
                             </div>
-                            <label class="check" for="settings-backup-auto">
-                                <input type="checkbox" id="settings-backup-auto">
-                                <span>Back up settings automatically on this device</span>
-                            </label>
                         </div>
+                    </div>
+                    <div class="row backup-automatic" hidden>
+                        <label class="check" for="settings-backup-auto">
+                            <input type="checkbox" id="settings-backup-auto">
+                            <span>Back up automatically on this device</span>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -697,38 +699,38 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">Favorite climbers &amp; climbing buddies</span>
-                            <span class="desc" id="favorites-github-status" role="status">Checking connection…</span>
+                            <span class="desc backup-status" id="favorites-github-status" role="status">Checking connection…</span>
                         </div>
-                        <div class="control favorites-github-actions" id="favorites-github-actions">
-                            <div class="favorites-github-buttons">
+                        <div class="control backup-controls" id="favorites-github-actions">
+                            <div class="backup-actions" role="group" aria-label="Favorite climbers backup actions">
                                 <button id="favorites-backup" class="panel-button secondary" type="button">Back up now</button>
                                 <button id="favorites-restore" class="panel-button secondary" type="button">Restore…</button>
                             </div>
                         </div>
                     </div>
-                    <div class="row climber-sync-row">
+                    <div class="row backup-automatic">
                         <label class="check" for="favorites-auto-backup">
                             <input type="checkbox" id="favorites-auto-backup">
-                            <span>Back up favorites automatically on this device</span>
+                            <span>Back up automatically on this device</span>
                         </label>
                         <p class="desc">Automatically backs up favorites, including buddies saved to your list. Restore to bring them back to this device.</p>
                     </div>
                     <!-- Restore's own confirm-then-undo, beside its trigger. The
                          mirror action on the Favorite climbers page has the same
                          shape; the two no longer share one element. -->
-                    <div class="favorites-mirror-confirmation" id="favorites-restore-confirmation"
+                    <div class="backup-confirmation" id="favorites-restore-confirmation"
                         role="alertdialog" aria-labelledby="favorites-restore-confirmation-title"
                         aria-describedby="favorites-restore-confirmation-detail" tabindex="-1" hidden>
                         <div>
-                            <p class="favorites-mirror-confirmation-title" id="favorites-restore-confirmation-title">Restore favorites from backup?</p>
-                            <p class="favorites-mirror-confirmation-detail" id="favorites-restore-confirmation-detail">
+                            <p class="backup-confirmation-title" id="favorites-restore-confirmation-title">Restore favorites from backup?</p>
+                            <p class="backup-confirmation-detail" id="favorites-restore-confirmation-detail">
                                 <strong id="favorites-restore-confirmation-impact"></strong>
                                 <span id="favorites-restore-confirmation-summary"></span>
                             </p>
                         </div>
-                        <div class="favorites-mirror-confirmation-actions">
+                        <div class="backup-actions">
                             <button id="favorites-restore-cancel" class="panel-button secondary" type="button">Cancel</button>
-                            <button id="favorites-restore-confirm" class="panel-button danger favorites-mirror-confirm" type="button">Restore backup</button>
+                            <button id="favorites-restore-confirm" class="panel-button danger favorites-mirror-confirm" type="button">Restore favorites</button>
                         </div>
                     </div>
                     <div class="favorites-undo-all" id="favorites-restore-undo" role="status" hidden>
@@ -739,31 +741,33 @@
                 <div class="card" id="ignored-github">
                     <div class="row">
                         <div class="label"><span class="title">Ignored climbers</span>
-                            <span class="desc" id="ignored-github-status" role="status">Saved on this device</span>
+                            <span class="desc backup-status" id="ignored-github-status" role="status">Saved on this device</span>
                         </div>
-                        <div class="control favorites-github-buttons">
-                            <button id="ignored-backup" class="panel-button secondary" type="button">Back up now</button>
-                            <button id="ignored-restore" class="panel-button secondary" type="button">Restore…</button>
+                        <div class="control backup-controls">
+                            <div class="backup-actions" role="group" aria-label="Ignored climbers backup actions">
+                                <button id="ignored-backup" class="panel-button secondary" type="button" data-sizing-label="Back up now"><span>Back up now</span></button>
+                                <button id="ignored-restore" class="panel-button secondary" type="button">Restore…</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="row climber-sync-row">
+                    <div class="row backup-automatic">
                         <label class="check" for="ignored-sync-enable">
                             <input type="checkbox" id="ignored-sync-enable"><span>Sync ignored climbers from this device</span>
                         </label>
                         <p class="desc">Keeps this device and GitHub in sync. Conflicting changes require review.</p>
                     </div>
-                    <div class="favorites-mirror-confirmation" id="ignored-review" role="alertdialog"
+                    <div class="backup-confirmation is-review" id="ignored-review" role="alertdialog"
                         aria-labelledby="ignored-review-title" aria-describedby="ignored-review-impact" tabindex="-1" hidden>
                         <div class="ignored-review-content">
-                            <p class="favorites-mirror-confirmation-title" id="ignored-review-title">Review ignored climbers</p>
+                            <p class="backup-confirmation-title" id="ignored-review-title">Review ignored climbers</p>
                             <label>Keep <select id="ignored-review-mode" aria-label="How to reconcile ignored climbers">
                                 <option value="merge">Merge lists</option><option value="github">Use GitHub's list</option>
                                 <option value="device">Use this device's list</option>
                             </select></label>
-                            <p id="ignored-review-impact" class="favorites-mirror-confirmation-detail"></p>
+                            <p id="ignored-review-impact" class="backup-confirmation-detail"></p>
                             <div id="ignored-review-conflicts"></div>
                         </div>
-                        <div class="favorites-mirror-confirmation-actions">
+                        <div class="backup-actions">
                             <button id="ignored-review-cancel" class="panel-button secondary" type="button">Cancel</button>
                             <button id="ignored-review-confirm" class="panel-button primary" type="button">Apply reviewed changes</button>
                         </div>
@@ -779,26 +783,28 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">GitHub photo backup</span>
-                            <span class="desc" id="photos-github-status" role="status">Checking connection…</span>
+                            <span class="desc backup-status" id="photos-github-status" role="status">Checking connection…</span>
                             <span class="desc">Stores what your photo library knows: annotations, titles and descriptions, public ImgBB links, image hashes, and which reports used each photo — as <code>photo-library.json</code>. It does not store the images themselves, your ImgBB API key, or the links that delete a photo from ImgBB, so a restore brings back the record, not the picture. Keep the originals with <strong>Download project</strong> in the <a href="../photos/photos.html?mode=library">photo library</a>. <a href="../photos/guide.html#backup" target="_blank" rel="noopener noreferrer">What a restore can and cannot bring back</a>.</span>
                         </div>
-                        <div class="control photos-github-actions" id="photos-github-actions" hidden>
-                            <div class="photos-github-buttons">
-                                <button id="photos-backup" class="panel-button secondary" type="button">Back up photos</button>
-                                <button id="photos-restore" class="panel-button secondary" type="button">Restore from backup</button>
+                        <div class="control backup-controls" id="photos-github-actions" hidden>
+                            <div class="backup-actions" role="group" aria-label="Photo library backup actions">
+                                <button id="photos-backup" class="panel-button secondary" type="button">Back up now</button>
+                                <button id="photos-restore" class="panel-button secondary" type="button">Restore…</button>
                             </div>
-                            <label class="check" for="photos-auto-backup">
-                                <input type="checkbox" id="photos-auto-backup">
-                                <span>Back up the photo library automatically on this device</span>
-                            </label>
                         </div>
                     </div>
-                    <div class="photos-restore-confirmation" id="photos-restore-confirmation" role="alert" hidden>
+                    <div class="row backup-automatic" hidden>
+                        <label class="check" for="photos-auto-backup">
+                            <input type="checkbox" id="photos-auto-backup">
+                            <span>Back up automatically on this device</span>
+                        </label>
+                    </div>
+                    <div class="backup-confirmation" id="photos-restore-confirmation" role="alert" hidden>
                         <div>
-                            <p class="photos-restore-title" id="photos-restore-title"></p>
-                            <p class="photos-restore-detail" id="photos-restore-detail"></p>
+                            <p class="backup-confirmation-title" id="photos-restore-title"></p>
+                            <p class="backup-confirmation-detail" id="photos-restore-detail"></p>
                         </div>
-                        <div class="photos-restore-actions">
+                        <div class="backup-actions">
                             <button id="photos-restore-cancel" class="panel-button secondary" type="button">Cancel</button>
                             <button id="photos-restore-confirm" class="panel-button danger photos-restore-confirm" type="button">Restore photo records</button>
                         </div>

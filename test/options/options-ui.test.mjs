@@ -434,9 +434,9 @@ test('settings are grouped by the surface they affect', async () => {
     }
     for (const [cardId, toggleId] of [['favorites-github', 'favorites-auto-backup'], ['ignored-github', 'ignored-sync-enable']]) {
         const card = el(dom, cardId);
-        assert.equal(card.querySelectorAll('.climber-sync-row').length, 1);
-        assert.equal(card.querySelector('.climber-sync-row .check input').id, toggleId);
-        assert.match(card.querySelector('.check').textContent, /Back up favorites automatically on this device|Sync ignored climbers from this device/);
+        assert.equal(card.querySelectorAll('.backup-automatic').length, 1);
+        assert.equal(card.querySelector('.backup-automatic .check input').id, toggleId);
+        assert.match(card.querySelector('.check').textContent, /Back up automatically on this device|Sync ignored climbers from this device/);
         assert.equal(card.querySelector('button[id$="-restore"]').textContent, 'Restore…');
     }
 });

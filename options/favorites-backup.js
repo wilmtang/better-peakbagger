@@ -80,12 +80,12 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
         OptionsUtils.setButtonBusy(backupEl, githubBusy);
         OptionsUtils.setButtonBusy(restoreEl, githubBusy);
         autoBackupEl.disabled = githubBusy || !connected;
-        statusEl.classList.remove('favorites-github-success');
+        statusEl.classList.remove('is-success');
         statusEl.textContent = '';
         if (githubBusy) {
             statusEl.textContent = 'Working with GitHub…';
         } else if (showBackupResult) {
-            statusEl.classList.add('favorites-github-success');
+            statusEl.classList.add('is-success');
             statusEl.textContent = 'Favorites backed up ✓';
             if (backupResult.commitUrl) {
                 statusEl.append(' ', Object.assign(document.createElement('a'), {

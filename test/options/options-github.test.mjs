@@ -139,7 +139,7 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
         /1 favorite will be added\. 1 custom favorite will be removed\./);
     assert.match(el(dom, 'favorites-restore-confirmation-detail').textContent,
         /list will match the backup from ada\/peaks/);
-    assert.equal(el(dom, 'favorites-restore-confirm').textContent, 'Restore backup');
+    assert.equal(el(dom, 'favorites-restore-confirm').textContent, 'Restore favorites');
     assert.equal(dom.window.document.activeElement, el(dom, 'favorites-restore-cancel'));
 
     el(dom, 'favorites-restore-cancel').focus();

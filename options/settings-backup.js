@@ -36,6 +36,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     const fileEl = document.getElementById('settings-backup-file');
     const exportCredentialsEl = document.getElementById('settings-backup-export-credentials');
     const confirmationEl = document.getElementById('settings-backup-confirmation');
+    const confirmationActionEl = document.getElementById('settings-backup-confirmation-action');
     const confirmationNameEl = document.getElementById('settings-backup-confirmation-name');
     const confirmationDetailEl = document.getElementById('settings-backup-confirmation-detail');
     const confirmEl = document.getElementById('settings-backup-confirm');
@@ -51,6 +52,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         'settings-backup-file': fileEl,
         'settings-backup-export-credentials': exportCredentialsEl,
         'settings-backup-confirmation': confirmationEl,
+        'settings-backup-confirmation-action': confirmationActionEl,
         'settings-backup-confirmation-name': confirmationNameEl,
         'settings-backup-confirmation-detail': confirmationDetailEl,
         'settings-backup-confirm': confirmEl,
@@ -99,6 +101,9 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         pendingImport = {
             settings, successMessage, returnFocus, fileContent, includesGithubConnection, requestsGarminAccess,
         };
+        const restoring = returnFocus === githubRestoreEl;
+        confirmationActionEl.textContent = restoring ? 'Restore' : 'Import';
+        confirmEl.textContent = restoring ? 'Restore settings' : 'Import settings';
         confirmationNameEl.textContent = name;
         confirmationDetailEl.textContent = includesApiKeys && includesGithubConnection
             ? 'Replaces your current settings, saved API keys, and GitHub connection.'
@@ -246,17 +251,18 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             && githubBackupResult?.repo === repoName()
             && githubBackupResult?.signature === settingsSignature;
         githubActionsEl.hidden = !connected;
+        autoBackupEl.closest('.backup-automatic').hidden = !connected;
         OptionsUtils.setButtonBusy(githubBackupEl, githubBusy);
         OptionsUtils.setButtonBusy(githubRestoreEl, githubBusy);
         autoBackupEl.disabled = githubBusy;
-        githubStatusEl.classList.remove('settings-backup-github-success');
+        githubStatusEl.classList.remove('is-success');
         githubStatusEl.textContent = '';
         if (githubBusy) {
             githubStatusEl.textContent = githubOperation === 'backup'
                 ? 'Backing up settings to GitHub…'
                 : 'Working with GitHub…';
         } else if (showBackupResult) {
-            githubStatusEl.classList.add('settings-backup-github-success');
+            githubStatusEl.classList.add('is-success');
             githubStatusEl.textContent = 'Settings backed up ✓';
             if (githubBackupResult.commitUrl) {
                 githubStatusEl.append(' ', Object.assign(document.createElement('a'), {

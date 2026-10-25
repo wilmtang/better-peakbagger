@@ -26,6 +26,10 @@ body { position: fixed; inset: 0; display: flex; overflow: hidden; }
 .custom-layer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px 18px; border-top: 1px solid var(--border); }
 .custom-layer-row strong, .custom-layer-row .desc { display: block; overflow-wrap: anywhere; }
 .custom-layer-actions { display: flex; align-items: start; gap: 8px; }
+.custom-layer-order { display: flex; gap: 4px; }
+.custom-layer-move { display: grid; place-items: center; min-width: 32px; padding: 6px; }
+.custom-layer-move[aria-disabled="true"] { cursor: default; }
+.custom-layer-actions .panel-button { white-space: nowrap; }
 .custom-layer-opacity { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(50px, 1fr) 4ch; align-items: center; gap: 12px; font-size: 12.5px; }
 .custom-layer-opacity output { text-align: right; font-variant-numeric: tabular-nums; }
 .custom-layer-remove { grid-column: 1 / -1; }
@@ -149,26 +153,25 @@ input[type="number"].route-width { min-width: 0; width: 58px; padding: 5px 7px; 
    column. Rows that lay their actions out themselves reset this to auto. */
 button.secondary, a.secondary { align-self: flex-end; }
 
-/* Settings export/import and the GitHub settings and favorites backup rows,
-   which share one control shape inside Backup & sync. */
-.settings-backup-actions,
-.favorites-github-buttons,
-.photos-github-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
-.settings-backup-actions button.secondary,
-.favorites-github-buttons button.secondary,
-.photos-github-buttons button.secondary { align-self: auto; }
-.settings-file-transfer-actions,
-.settings-backup-github-actions,
-.favorites-github-actions,
-.photos-github-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-.settings-backup-github-actions[hidden] { display: none; }
-.photos-github-actions[hidden] { display: none; }
-.settings-backup-github-success { color: var(--link); font-weight: 600; }
-.settings-backup-github-success a { color: inherit; }
-/* The photo restore preview reuses the destructive-confirmation shape: it
-   replaces local catalog records, and the counts have to be read first. */
-.photos-restore-confirmation,
+/* File transfers and every GitHub backup share one presentation contract.
+   IDs belong to their controllers; layout belongs to these common classes. */
+/* Wrap actions before long labels can squeeze their description column. */
+.backup-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; max-width: min(100%, 40ch); }
+.backup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.backup-actions > .panel-button { align-self: auto; }
+/* Two lines cover normal progress and completion copy without moving the
+   automatic option below it; longer actionable details can still expand. */
+.backup-status { min-block-size: 2lh; overflow-wrap: anywhere; }
+.backup-automatic { align-items: flex-start; flex-direction: column; gap: 8px; }
+.backup-automatic .desc { margin: 0; max-width: 62ch; }
+.backup-controls[hidden], .backup-automatic[hidden] { display: none; }
+.backup-status.is-success { color: var(--link); font-weight: 600; }
+.backup-status.is-success a { color: inherit; }
+/* The draft manager retains the same confirmation shape outside Settings. */
+.backup-confirmation,
 .settings-backup-confirmation {
+    position: relative;
+    z-index: 6;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -178,19 +181,21 @@ button.secondary, a.secondary { align-self: flex-end; }
     background: var(--danger-bg);
     border-top: 1px solid var(--danger-border);
 }
-.settings-backup-confirmation[hidden] { display: none; }
-.settings-backup-confirmation.backup-replacement { display: block; }
+.backup-confirmation > :first-child { min-width: 0; }
+.backup-confirmation:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
+.backup-confirmation.backup-replacement { display: block; }
+.backup-confirmation[hidden], .settings-backup-confirmation[hidden] { display: none; }
 .backup-replacement p { margin: 0 0 12px; }
-.backup-replacement .settings-backup-confirmation-actions { flex-wrap: wrap; }
-.photos-restore-confirmation[hidden] { display: none; }
+.backup-confirmation-title,
 .settings-backup-confirmation-title,
-.photos-restore-title { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }
+.favorites-mirror-confirmation-title { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }
+.backup-confirmation-detail,
 .settings-backup-confirmation-detail,
-.photos-restore-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; }
-.settings-backup-confirmation-actions,
-.photos-restore-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
-.settings-backup-confirmation-actions button.secondary,
-.photos-restore-actions button.secondary { align-self: auto; }
+.favorites-mirror-confirmation-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; }
+.backup-confirmation-detail strong, .favorites-mirror-confirmation-detail strong { color: var(--danger); }
+.backup-confirmation > .backup-actions,
+.settings-backup-confirmation-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.settings-backup-confirmation-actions button.secondary { align-self: auto; }
 
 .beta-signals { display: flex; flex-direction: column; gap: 9px; }
 .check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: normal; }
@@ -282,9 +287,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 }
 .favorites-mirror-confirmation[hidden] { display: none; }
 .favorites-mirror-confirmation:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
-.favorites-mirror-confirmation-title { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }
-.favorites-mirror-confirmation-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; }
-.favorites-mirror-confirmation-detail strong { color: var(--danger); }
 .favorites-mirror-confirmation-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
 .favorites-mirror-confirmation-actions button.secondary { align-self: auto; }
 
@@ -350,10 +352,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorite-item-deleted { justify-content: flex-start; color: var(--sub); font-size: 13px; }
 .favorites-undo-all { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--sub); font-size: 13px; }
 .favorites-undo-all[hidden] { display: none; }
-.favorites-github-success { color: var(--link); font-weight: 600; }
-.favorites-github-success a { color: inherit; }
-.favorites-github-actions[hidden] { display: none; }
-.favorites-github-actions button:disabled { cursor: wait; opacity: .55; }
 
 /* GitHub connection and ascent and TR backup panels. Each detail row spans the card width and is a
    plain block rather than the label/control split the other rows use. */
@@ -578,8 +576,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 @media (max-width: 600px) {
     .settings-backup-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
     .settings-backup-confirmation-actions { justify-content: flex-end; }
-    .photos-restore-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
-    .photos-restore-actions { justify-content: flex-end; }
+    .backup-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-mirror-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-mirror-confirmation-actions { justify-content: flex-end; }
     .favorites-list-toolbar { align-items: stretch; flex-direction: column; gap: 9px; }
@@ -614,11 +611,8 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .favorites-list-controls input[type="search"] { min-width: 0; width: 100%; }
     .favorites-sort { justify-content: space-between; }
     .favorites-sort select { width: auto; }
-    .settings-backup-actions,
-    .favorites-github-buttons { justify-content: flex-start; }
-    .settings-file-transfer-actions,
-    .settings-backup-github-actions,
-    .favorites-github-actions { align-items: flex-start; }
+    .backup-controls { align-items: flex-start; }
+    .backup-controls > .backup-actions { justify-content: flex-start; }
     .favorite-item { align-items: flex-start; }
 }
 
@@ -639,17 +633,16 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 .order-settings-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 #ignored-github { margin-top: 12px; }
-.climber-sync-row { align-items: flex-start; flex-direction: column; gap: 8px; }
-.climber-sync-row .desc { margin: 0; max-width: 62ch; }
 .climber-sync-privacy { margin: 10px 2px 0; max-width: 70ch; }
 .ignored-review-content { min-width: 0; flex: 1; }
 .ignored-review-content select { max-width: 100%; }
 .ignored-conflict { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; overflow-wrap: anywhere; }
 #ignored-github .desc { overflow-wrap: anywhere; }
-#ignored-review { margin: 0 18px 16px; background: var(--bg); border-color: var(--border); flex-direction: column; align-items: stretch; }
-#ignored-review-title { color: var(--text); }
-#ignored-review .favorites-mirror-confirmation-actions { justify-content: flex-end; flex-wrap: wrap; }
-#ignored-review-confirm { background: var(--accent); color: var(--accent-fg); border: 1px solid var(--accent); border-radius: 8px; padding: 6px 10px; }
+#ignored-review { flex-direction: column; align-items: stretch; }
+.backup-confirmation.is-review { background: var(--bg); border-color: var(--border); }
+.backup-confirmation.is-review .backup-confirmation-title { color: var(--text); }
+.ignored-review-content label[hidden] { display: none; }
+#ignored-review .backup-actions { justify-content: flex-end; }
 #ignored-restore-undo { margin: 0 18px 16px; }
 .ignored-conflict-version { flex-basis: 100%; }
 
@@ -662,10 +655,9 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .row .desc { max-width: none; }
     .control { width: 100%; }
     select, input[type="number"], #general-units select { min-width: 0; width: 100%; }
-    .settings-file-transfer-actions,
-    .settings-backup-github-actions,
-    .favorites-github-actions,
-    .photos-github-actions { align-items: flex-start; }
+    .backup-controls { align-items: flex-start; }
+    .backup-controls > .backup-actions { justify-content: flex-start; }
+    .backup-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
 }
 @container (max-width: 220px) {
     .route-style-row { grid-template-columns: 34px minmax(0, 1fr) 18px; }

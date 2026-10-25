@@ -64,6 +64,10 @@ test('disconnected and permission-denied GitHub controls retain preferences with
         }
         assert.equal(el(h.dom, 'settings-backup-github-actions').hidden, true);
         assert.equal(el(h.dom, 'photos-github-actions').hidden, true);
+        for (const id of ['settings-backup-auto', 'photos-auto-backup']) {
+            assert.equal(el(h.dom, id).closest('.backup-automatic').hidden, true,
+                `${id} stays hidden with its disconnected backup actions`);
+        }
         assert.equal(el(h.dom, 'github-auto-backup'), null);
         assert.equal(el(h.dom, 'github-delete-backup'), null);
         assert.equal(el(h.dom, 'settings-backup-auto').checked, true);
@@ -89,6 +93,8 @@ const accessSettled = (h, connected) => ['favorites-auto-backup', 'ignored-sync-
     .every(id => el(h.dom, id).disabled === !connected)
     && el(h.dom, 'settings-backup-github-actions').hidden === !connected
     && el(h.dom, 'photos-github-actions').hidden === !connected
+    && ['settings-backup-auto', 'photos-auto-backup']
+        .every(id => el(h.dom, id).closest('.backup-automatic').hidden === !connected)
     && !!el(h.dom, 'github-delete-backup') === connected
     && /Connected as/.test(el(h.dom, 'github-panel').textContent) === connected;
 

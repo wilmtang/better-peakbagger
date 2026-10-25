@@ -46,9 +46,14 @@ test('backup preview describes both sides, restore uses replacement counts and g
     await waitFor(dom, () => !el(dom, 'ignored-backup').disabled);
     el(dom, 'ignored-backup').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
     assert.equal(el(dom, 'ignored-review-mode').value, 'device');
+    assert.equal(el(dom, 'ignored-review-mode').closest('label').hidden, false);
     assert.match(el(dom, 'ignored-review-impact').textContent, /1 added and 1 removed on GitHub/);
     el(dom, 'ignored-review-cancel').click(); await waitFor(dom, () => el(dom, 'ignored-review').hidden);
     el(dom, 'ignored-restore').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
+    assert.equal(el(dom, 'ignored-review-mode').closest('label').hidden, true,
+        'restore hides the entire list-choice label instead of leaving an orphan Keep prompt');
+    assert.equal(el(dom, 'ignored-review-confirm').textContent, 'Restore ignored climbers');
+    assert.equal(el(dom, 'ignored-review-confirm').classList.contains('danger'), true);
     assert.match(el(dom, 'ignored-review-impact').textContent, /1 added and 1 removed on this device/);
     el(dom, 'ignored-review-confirm').click(); await waitFor(dom, () => !el(dom, 'ignored-restore-undo').hidden);
     assert.deepEqual((await h.store.read()).entries, [entry(2)]);

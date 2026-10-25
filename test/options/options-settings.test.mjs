@@ -88,6 +88,8 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
     el(dom, 'settings-backup-github-restore').focus();
     el(dom, 'settings-backup-github-restore').click();
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    assert.equal(el(dom, 'settings-backup-confirmation-action').textContent, 'Restore');
+    assert.equal(el(dom, 'settings-backup-confirm').textContent, 'Restore settings');
     assert.match(el(dom, 'settings-backup-confirmation').textContent,
         /settings\.json from ada\/peaks.*Replaces your current settings/s);
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');

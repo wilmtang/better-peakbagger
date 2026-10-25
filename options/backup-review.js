@@ -6,12 +6,12 @@ import { optionsUtils as UI } from './options-utils.js';
 // through pending/error/retry. The worker rechecks both snapshots on acceptance.
 export function createBackupReview({ anchor, submit }) {
     const panel = document.createElement('div');
-    panel.className = 'settings-backup-confirmation backup-replacement';
+    panel.className = 'backup-confirmation backup-replacement';
     panel.hidden = true;
     const copy = document.createElement('p');
     copy.textContent = 'GitHub has a different backup. Restore from GitHub to use it, or replace it with this device’s current copy.';
     const actions = document.createElement('div');
-    actions.className = 'settings-backup-confirmation-actions';
+    actions.className = 'backup-actions';
     const cancel = UI.actionButton('secondary', 'Cancel', 'Cancel backup replacement');
     const accept = UI.actionButton('danger', 'Replace GitHub backup', 'Replace GitHub backup with this device’s copy');
     actions.append(cancel, accept); panel.append(copy, actions);

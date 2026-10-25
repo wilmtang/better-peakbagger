@@ -61,6 +61,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     const render = () => {
         const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
         actionsEl.hidden = !connected;
+        autoEl.closest('.backup-automatic').hidden = !connected;
         OptionsUtils.setButtonBusy(backupEl, busy);
         OptionsUtils.setButtonBusy(restoreEl, busy);
         autoEl.disabled = busy;

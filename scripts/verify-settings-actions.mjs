@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, location */
+/* global document, window, location, getComputedStyle */
 import assert from 'node:assert/strict';
 import { settingsTransfer } from '../src/settings/settings-transfer.js';
 
@@ -25,7 +25,10 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
                         return new Promise(resolve => { globalThis.__finish = response => { globalThis.__finish = null; resolve(response); }; });
                     }
                     if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, hasToken: true, repo, account: { login: 'fixture' } };
-                    if (message.type === 'GITHUB_IGNORED_LIST') return { ok: true, state: { enabled: false, phase: 'idle' }, count: 0 };
+                    if (message.type === 'GITHUB_IGNORED_LIST') {
+                        if (message.action === 'enable' || message.action === 'disable') globalThis.__ignoredEnabled = message.action === 'enable';
+                        return { ok: true, state: { enabled: !!globalThis.__ignoredEnabled, phase: 'idle' }, count: 0 };
+                    }
                     if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true, connected: true, repo, state: null };
                     if (message.type === 'PHOTO_IMGBB_STATUS') return { ok: true, configured: true, permissionGranted: true };
                     if (message.type === 'SETTINGS_PATCH') { Object.assign(settings, message.patch); return { ok: true, settings }; }
@@ -36,6 +39,33 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
     await page.goto(`${origin}/dist/options/options.html#github`);
     await page.locator('#photos-github-status').filter({ hasText: /No photo-library backup|Ready to back up/ }).waitFor();
     await page.emulateMedia({ reducedMotion: 'reduce' });
+    const backupPairs = ['settings-backup-github', 'favorites', 'ignored', 'photos'];
+    for (const prefix of backupPairs) {
+        assert.equal(await page.locator(`#${prefix}-backup`).textContent(), 'Back up now', `${prefix}: consistent upload label`);
+        assert.equal(await page.locator(`#${prefix}-restore`).textContent(), 'Restore…', `${prefix}: consistent preview label`);
+    }
+    assert.equal(await page.locator('.backup-confirmation[hidden]').evaluateAll(panels =>
+        panels.every(panel => getComputedStyle(panel).display === 'none')), true, 'closed confirmations are unpainted');
+    const region = selector => page.locator(selector).evaluate(button => {
+        const row = button.closest('.row');
+        const rect = element => {
+            const { x, y, width, height } = element.getBoundingClientRect();
+            return { x, y, width, height };
+        };
+        return { row: rect(row), title: rect(row.querySelector('.title')),
+            automatic: rect(row.parentElement.querySelector('.backup-automatic')),
+            heading: rect(row.closest('.subsection').querySelector('h3')) };
+    });
+    const stableRegion = (before, after, label) => {
+        for (const part of Object.keys(before)) for (const key of ['x', 'y', 'width', 'height']) {
+            assert.ok(Math.abs(before[part][key] - after[part][key]) <= 1,
+                `${label}: ${part} ${key} shifted; ${JSON.stringify({ before, after })}`);
+        }
+    };
+    for (const section of ['github-settings-backup', 'github-favorites-backup', 'github-photos-backup']) {
+        await page.locator(`#${section}`).scrollIntoViewIfNeeded();
+        await capture(page, `${variant.name}-${section}-idle`);
+    }
     const cases = [
         ['#settings-backup-github-backup', 'GITHUB_SETTINGS_BACKUP'],
         ['#settings-backup-github-restore', 'GITHUB_SETTINGS_RESTORE'],
@@ -57,6 +87,51 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
     for (const textScale of [1, 2]) {
         // Enlarged control text is additional coverage, not native browser zoom.
         await page.addStyleTag({ content: `button, input, select { font-size: ${14 * textScale}px !important; }` });
+        const transfer = await page.locator('#settings-backup-export').evaluate(button => {
+            const row = button.closest('.row');
+            return { row: row.getBoundingClientRect().width, label: row.querySelector('.label').getBoundingClientRect().width };
+        });
+        if (transfer.row > 560) assert.ok(transfer.label >= transfer.row / 3,
+            `file transfer actions must leave readable space for their description: ${JSON.stringify(transfer)}`);
+        const buttonShapes = [];
+        for (const prefix of backupPairs) {
+            const action = page.locator(`#${prefix}-backup`);
+            await action.scrollIntoViewIfNeeded();
+            buttonShapes.push(await action.evaluate(button => {
+                const { width, height } = button.getBoundingClientRect();
+                const actions = button.closest('.backup-actions');
+                const controls = button.closest('.backup-controls');
+                const css = getComputedStyle(button);
+                const card = button.closest('.card').getBoundingClientRect();
+                const group = actions.getBoundingClientRect();
+                const row = button.closest('.row').getBoundingClientRect();
+                if (card.width <= 560
+                    && Math.abs(group.x - row.x - parseFloat(getComputedStyle(button.closest('.row')).paddingLeft)) > 1) {
+                    throw new Error('Narrow backup actions must align with the row text');
+                }
+                if (!controls) throw new Error('Every backup uses the common controls owner');
+                return { width, height, fontSize: css.fontSize, padding: css.padding, borderRadius: css.borderRadius };
+            }));
+        }
+        for (const { width, height, ...style } of buttonShapes) {
+            const { width: expectedWidth, height: expectedHeight, ...expectedStyle } = buttonShapes[0];
+            assert.ok(Math.abs(width - expectedWidth) <= 1 && Math.abs(height - expectedHeight) <= 1,
+                'backup buttons share their size within 1px browser rounding');
+            assert.deepEqual(style, expectedStyle, 'backup buttons share their style');
+        }
+        const ignored = page.locator('#ignored-backup');
+        await ignored.scrollIntoViewIfNeeded();
+        const toggleBefore = await ignored.boundingBox();
+        const ignoredBefore = await region('#ignored-backup');
+        await page.locator('#ignored-sync-enable').check();
+        await ignored.filter({ hasText: 'Sync now' }).waitFor();
+        const toggleAfter = await ignored.boundingBox();
+        for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(toggleAfter[key] - toggleBefore[key]) <= 1,
+            `switching to sync keeps the action ${key} within 1px browser rounding`);
+        stableRegion(ignoredBefore, await region('#ignored-backup'), 'switching to sync');
+        await page.locator('#ignored-sync-enable').uncheck();
+        await ignored.filter({ hasText: 'Back up now' }).waitFor();
+        stableRegion(ignoredBefore, await region('#ignored-backup'), 'switching back to backup');
         for (const [selector, type] of cases) {
             await page.locator('#imgbb-key').fill('0123456789abcdef0123456789abcdef');
             const action = page.locator(selector);
@@ -64,6 +139,8 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             await page.evaluate(type => { globalThis.__hold = type; globalThis.__calls = 0; globalThis.__finish = null; }, type);
             await action.focus();
             const before = await action.boundingBox();
+            const beforeRegion = backupPairs.some(prefix => selector === `#${prefix}-backup` || selector === `#${prefix}-restore`)
+                ? await region(selector) : null;
             const scroll = await page.locator('.content').evaluate(element => element.scrollTop);
             await page.keyboard.press('Enter');
             await page.waitForFunction(() => typeof globalThis.__finish === 'function');
@@ -73,12 +150,14 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             assert.equal(await page.evaluate(() => globalThis.__calls), 1, `${selector}: no duplicate work`);
             const pending = await action.boundingBox();
             for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(before[key] - pending[key]) <= 1, `${selector}: pending ${key}`);
+            if (beforeRegion) stableRegion(beforeRegion, await region(selector), `${selector} pending`);
             await page.evaluate(type => globalThis.__finish({ ok: false, error: type === 'PEAKBAGGER_MY_ASCENTS'
                 ? { code: 'peakbagger-unverified', message: 'Your Peakbagger account could not be verified. Open Peakbagger, check your session, then try again.' }
                 : { code: 'network', message: 'Connection unavailable. Try again.' } }), type);
             await page.waitForFunction(selector => !document.querySelector(selector).disabled
                 && document.querySelector(selector).getAttribute('aria-disabled') !== 'true', selector);
             await focus(selector, `${selector} failed at ${textScale}x`);
+            if (beforeRegion) stableRegion(beforeRegion, await region(selector), `${selector} error`);
             if (type === 'PEAKBAGGER_MY_ASCENTS') {
                 await capture(page, `${variant.name}-settings-my-ascents-${textScale}`);
                 const recovery = page.locator('.github-history-status button');
@@ -171,6 +250,12 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
         await page.waitForFunction(() => typeof globalThis.__finish === 'function');
         await page.evaluate(reply => globalThis.__finish(reply), item.reply);
         await page.locator(item.panel).waitFor();
+        assert.equal(await page.locator(item.confirm).evaluate(button => button.classList.contains('danger')), true,
+            'every restore confirmation uses the shared destructive action style');
+        if (item.panel === '#ignored-review') assert.equal(await page.locator('#ignored-review-mode').locator('..').isVisible(), false,
+            'restore must not leave an orphan list-choice prompt');
+        await page.locator(item.panel).scrollIntoViewIfNeeded();
+        await capture(page, `${variant.name}-${item.panel.slice(1)}-preview`);
         for (const success of [false, true]) {
             await page.evaluate(type => { globalThis.__hold = type; globalThis.__calls = 0; globalThis.__finish = null; }, item.write);
             await page.locator(item.confirm).press('Enter');
