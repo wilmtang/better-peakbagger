@@ -6,11 +6,12 @@
   <title>Synthetic recent GPS tracks</title>
   <style>
     html, body { width: 100%; height: 100%; margin: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    #native-map-heading { flex: none; padding: 2px; border: 1px solid #858d87; text-align: center; font-size: 14px; line-height: 18px; }
     /* The Full Screen page is a shell whose Leaflet map lives in a same-origin
        MasterMap.aspx child iframe; big-map.js runs here (not in the frame) and
        reaches into it. */
-    #if { display: block; width: 100%; height: 100%; border: 0; }
+    #if { display: block; flex: 1; min-height: 0; width: 100%; border: 0; }
   </style>
   <link rel="stylesheet" href="/dist/css/terrain-map.css">
   <script>
@@ -41,7 +42,7 @@
   <link rel="stylesheet" href="/dist/css/map-layers.css">
 </head>
 <body>
-  <a id="subject-peak" href="/peak.aspx?pid=2829" hidden>Mount Shuksan</a>
+  <div id="native-map-heading">Peakbagger.com Large Map Page - <a id="subject-peak" href="/peak.aspx?pid=2829">Mount Shuksan</a></div>
   <iframe id="if" src="/map/MasterMap.aspx?big=1&cy=48.74&cx=-121.81&z=13&t=G&d=1&c=900001" title="Synthetic Peakbagger route map"></iframe>
   <script>
     if ((new URLSearchParams(location.search).get('t') || '').toUpperCase() === 'P') {

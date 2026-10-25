@@ -80,6 +80,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     let activeMapWin = null;
     let activeMapFrame = null;
     let activeMapHandlers = null;
+    let mapResizeObserver = null;
     let mapGeneration = 0;
     let retryTimer = null;
 
@@ -278,6 +279,12 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
             activeMap = context.map;
             activeMapWin = context.win;
             activeMapFrame = context.win === window ? null : findMapIframe();
+            mapResizeObserver?.disconnect();
+            if (window.ResizeObserver) {
+                mapResizeObserver = new ResizeObserver(positionTerrainToggle);
+                const element = nativeMapElement();
+                if (element) mapResizeObserver.observe(element);
+            }
             const generation = mapGeneration;
             const map = activeMap;
             activeMapHandlers = {
@@ -337,13 +344,21 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
                 const iframe = findMapIframe();
                 if (iframe) top += iframe.getBoundingClientRect().top;
             }
-            return window.innerHeight - top;
+            return (terrainMount?.getBoundingClientRect().bottom || window.innerHeight) - top;
         } catch (error) {
             return null;
         }
     };
     const positionTerrainToggle = () => {
         if (!terrainToggle) return;
+        // Cover only the map, leaving Peakbagger's native subject link and
+        // legend visible. The map can move when a narrow header wraps.
+        const rect = nativeMapElement()?.getBoundingClientRect();
+        if (rect?.width > 0 && rect.height > 0) {
+            terrainMount.style.inset = `${rect.top}px auto auto ${rect.left}px`;
+            terrainMount.style.width = `${rect.width}px`;
+            terrainMount.style.height = `${rect.height}px`;
+        }
         const bottom = measureNative2dZoomTop();
         terrainToggle.style.bottom = bottom != null && bottom > 0
             ? `max(var(--bpb-terrain-toggle-bottom), ${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px)` : '';
@@ -523,9 +538,9 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 
     const ensureTerrainToggle = () => {
         if (terrainToggle) return;
-        // The mount is a fixed overlay that hosts the toggle (always clickable)
-        // and, once activated, the full-bleed terrain frame; clicks otherwise
-        // pass through to the native 2D map. The bridge mounts the frame here.
+        // The fixed overlay follows the native map's bounds, preserving the
+        // subject header and legend. Clicks pass through outside its controls
+        // until the bridge mounts the active terrain frame here.
         terrainMount = document.createElement('div');
         terrainMount.id = 'bpb-map-viewport';
         terrainMount.className = 'bpb-terrain-mount-fullscreen';
@@ -645,7 +660,9 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         terrainCoordinator.handleMessage(data);
     });
 
-    window.addEventListener('resize', () => terrainCoordinator?.position());
+    const repositionTerrain = () => terrainCoordinator?.position();
+    window.addEventListener('resize', repositionTerrain);
+    window.addEventListener('scroll', repositionTerrain, true);
 
     window.addEventListener('message', event => {
         if (event.source !== window || event.origin !== location.origin) return;
@@ -674,6 +691,8 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     });
 
     const releaseActiveMap = () => {
+        mapResizeObserver?.disconnect();
+        mapResizeObserver = null;
         const map = activeMap;
         const handlers = activeMapHandlers;
         mapGeneration++;
@@ -780,6 +799,8 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
             window.postMessage({ __bpbBigMap: true, dir: 'toCS', type: 'get' }, location.origin);
         },
         onDispose: () => {
+            window.removeEventListener('resize', repositionTerrain);
+            window.removeEventListener('scroll', repositionTerrain, true);
             stopBinding();
             if (terrainCoordinator?.isOpen()) terrainCoordinator.reset();
             releaseActiveMap();

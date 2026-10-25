@@ -17,7 +17,10 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { snowMapDem } from './verify-snow-map-fixture.mjs';
 
 const args = process.argv.slice(2);
-assert.ok(args.every(arg => arg === '--firefox'), `Unknown map-controls arguments: ${args.join(' ')}`);
+const surfaces = ['peak', 'ascent', 'big-map', 'big-peak', 'different-routes', 'recent-routes'];
+assert.ok(args.every(arg => arg === '--firefox' || arg.startsWith('--surface=') && surfaces.includes(arg.slice(10))),
+    `Unknown map-controls arguments: ${args.join(' ')}`);
+const selection = args.find(arg => arg.startsWith('--surface='))?.slice(10);
 const firefoxMode = args.includes('--firefox');
 const artifacts = process.env.BPB_VERIFY_MAP_CONTROLS_ARTIFACTS;
 const host = 'www.peakbagger.com';
@@ -85,11 +88,12 @@ try {
         };
         return { button: rect(document.getElementById('bpb-terrain-toggle')),
             map: rect(document.querySelector('#bpb-map-viewport, .bpb-terrain-mount-fullscreen')),
+            heading: rect(document.getElementById('native-map-heading')),
             following: rect(document.querySelector('.bpb-sun-calculator, #bpb-gpx-panel')),
             scrollX: window.scrollX, scrollY: window.scrollY };
     });
     const stable = (before, after, label) => {
-        for (const key of ['button', 'map', 'following']) for (const dimension of ['x', 'y', 'width', 'height']) {
+        for (const key of ['button', 'map', 'heading', 'following']) for (const dimension of ['x', 'y', 'width', 'height']) {
             assert.ok(Math.abs((before[key]?.[dimension] || 0) - (after[key]?.[dimension] || 0)) <= 1,
                 `${label}: ${key}.${dimension} moved: ${JSON.stringify({ before, after })}`);
         }
@@ -129,7 +133,9 @@ try {
         ['ascent', '/climber/ascent.aspx?aid=1&mode=terrain&map=wide'],
         ['big-map', '/map/BigMap.aspx?t=G&mode3d=1'],
         ['big-peak', '/map/BigMap.aspx?t=P&d=2829&cy=48.83115&cx=-121.60214&z=14&mode3d=1'],
-    ]) for (const [width, theme] of surface === 'peak'
+        ['different-routes', '/Map/BigMap.aspx?t=G&d=2096&c=40786&gt=rc'],
+        ['recent-routes', '/Map/BigMap.aspx?t=G&d=2096&c=40786&gt=rt'],
+    ].filter(([surface]) => !selection || surface === selection)) for (const [width, theme] of surface === 'peak'
         ? [[1280, 'light'], [1280, 'dark'], [375, 'light'], [375, 'dark']]
         : [[1280, 'light'], [375, 'dark']]) {
         const label = `${surface}/${width}/${theme}`;
@@ -173,6 +179,16 @@ try {
             stage = 'active';
             await waitActive();
             const frame = page.frameLocator('#bpb-terrain-frame');
+            if (await page.locator('#native-map-heading').count()) {
+                const native = await page.locator('#if').boundingBox();
+                const terrain = await page.locator('#bpb-terrain-frame').boundingBox();
+                for (const dimension of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(native[dimension] - terrain[dimension]) <= 1,
+                    `${label}: 3D must fill the native map, preserving the header: ${JSON.stringify({ native, terrain })}`);
+                assert.equal(await page.locator('#subject-peak').evaluate(link => {
+                    const r = link.getBoundingClientRect();
+                    return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('a') === link;
+                }), true, `${label}: the native peak link remains clickable in 3D`);
+            }
             const renderer = await frame.locator('canvas.maplibregl-canvas').evaluate(canvas => {
                 const gl = canvas.getContext('webgl2'), info = gl.getExtension('WEBGL_debug_renderer_info');
                 return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
@@ -243,7 +259,10 @@ try {
             const group = await frame.locator('.maplibregl-ctrl-group').boundingBox();
             const button = (await read()).button;
             assert.ok(group.y - button.y - button.height >= 7, `${label}: toggle overlaps zoom: ${JSON.stringify({ group, button })}`);
-            await frame.locator('.maplibregl-ctrl-attrib-button').click();
+            const attributionDisclosure = frame.locator('.maplibregl-ctrl-attrib-button');
+            if (await attributionDisclosure.isVisible()) await attributionDisclosure.click();
+            else assert.ok((await frame.locator('.maplibregl-ctrl-attrib-inner').textContent()).includes('Mapterhorn'),
+                `${label}: noncompact credits remain readable without a disclosure`);
             stable(before, await read(), `${label}/attribution`);
             const expandedGroup = await frame.locator('.maplibregl-ctrl-group').boundingBox();
             assert.ok(expandedGroup.y - button.y - button.height >= 7,
