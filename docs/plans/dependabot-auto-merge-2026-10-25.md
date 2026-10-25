@@ -27,6 +27,15 @@ connection during the narrow analyzer case.
 
 ### Fixed and verified
 
+- **Locale spelling in the last interaction gate:** [the fifth published run](https://github.com/wilmtang/better-peakbagger/actions/runs/40243363662)
+  passed the repaired Firefox card and placement matrices. Its last interaction
+  check rejected the Intel browser's resolved `en` against requested `en-US`.
+  Compare maximized canonical locales and report observed spellings. Two focused
+  tests accept the default-region alias while rejecting different regions,
+  scripts, languages and hour-cycle extensions. The complete screenshot-enabled
+  Chrome 156 and Firefox 158 interaction matrices passed at 375/1440px, both
+  themes and normal/200% zoom; Firefox also passed with generic English requested.
+  This changes verifier spelling equivalence, not product formatting or coverage.
 - **Screenshot-enabled Firefox input ownership:** [the fourth published run](https://github.com/wilmtang/better-peakbagger/actions/runs/40241538978)
   passed both full layout matrices and the entire Chrome snow/card suite. Its
   Firefox card check then timed out on Sun's keyboard disclosure. Persistence
