@@ -5,6 +5,7 @@ import { dom } from '../ui/dom.js';
 import { createStableText } from '../ui/stable-text.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.js';
+import { weatherChartRange, weatherChartTicks } from './weather-chart-scale.js';
 
 const HOUR = 3600_000, element = dom.element;
 const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['freezing', 'Freezing level'], ['cloud', 'Clouds'], ['wind', 'Wind'], ['gust', 'Gusts']];
@@ -118,16 +119,12 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         svg.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} in ${clockLabel.toLowerCase()}. ${overview()}. Missing readings leave gaps.`);
         if (!values.length) { geometry = null; drawCursor(); return; }
         const references = metric === 'freezing' && Number.isFinite(referenceElevation) ? [referenceElevation] : [];
-        const low = metric === 'freezing' ? Math.min(...values, ...references) - 200 : metric === 'temperature' ? Math.min(...values) - 2 : 0;
-        // Keep rounded axis labels distinct even for a dry or calm day, in
-        // either unit system (1 mm of rain, 4 km/h of wind).
-        const high = metric === 'freezing' ? Math.max(...values, ...references) + 200 : metric === 'cloud' ? 100
-            : Math.max(low + (metric === 'temperature' ? 4 : accumulation(metric) ? 1 : 4), Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
+        const { low, high } = weatherChartRange(values, metric, { references });
         const x = time => left + (time - day.window.start) / (day.window.end - day.window.start) * (right - left);
         const y = value => bottom - (value - low) / (high - low) * (bottom - top);
         geometry = { x, y, top, bottom, left, right, width };
-        for (let i = 0; i < 3; i++) {
-            const value = low + (high - low) * i / 2, position = y(value);
+        for (const value of weatherChartTicks({ low, high })) {
+            const position = y(value);
             svg.append(svgElement('line', { class: 'bpb-week-grid', x1: left, x2: right, y1: position, y2: position }),
                 svgElement('text', { class: 'bpb-week-axis', x: left - 6, y: position + 4, 'text-anchor': 'end' }, valueLabel(value)));
         }

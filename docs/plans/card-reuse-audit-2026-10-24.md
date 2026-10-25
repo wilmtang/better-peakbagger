@@ -293,6 +293,9 @@ runtime changes require the real-browser checks in the convention and AGENTS.
   weather. The helper owns eligibility transitions and cancellable viewport waits;
   features retain request/TTL policy. Shared gate and integration coverage passed
   146 tests after a build. Settings/theme updates do not restart eligible reads.
+  CR-02 now shares pure range/tick selection and hourly series construction across
+  the ascent/peak charts. All 71 scale/chart/ascent tests and focused ESLint passed.
+  The renderers retain their bar/line, GPX and reference-height differences.
 - **Intentionally not changed:** native mounting, settings keys, provider policy,
   worker-write ownership and unrelated work. The remaining extractions are still
   being implemented.

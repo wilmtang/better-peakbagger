@@ -24,7 +24,7 @@ These shared modules already exist:
 | Read eligibility and lazy start | [`card-read-gate.js`](../src/ui/card-read-gate.js) | Feature/date eligibility, optional collapse, freshness, retained results and cancellation |
 | Movement | [`card-drag.js`](../src/ui/card-drag.js), [`layout-menu.js`](../src/ui/layout-menu.js) | Native anchors, valid destinations, order, persistence and preview strategy |
 | Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.js`](../src/time/mountain-time.js) | Forecast versus historical endpoint, date range, model capabilities and freshness |
-| Weather display | [`weather-hourly-table.js`](../src/weather/weather-hourly-table.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |
+| Weather display | [`weather-hourly-table.js`](../src/weather/weather-hourly-table.js), [`weather-chart-scale.js`](../src/weather/weather-chart-scale.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |
 
 `card-drag.js` is currently used by ascent weather; the peak layout still owns a
 separate gesture implementation. The table describes reusable building blocks,
@@ -82,6 +82,12 @@ Call `refresh()` after authoritative settings or lifecycle changes; use
 and `dispose()` on final teardown. The gate never aborts a transport or discards
 results itself. Its callback lets the feature suspend/resume owned reads. Snow's
 station/map client still has separate eligibility and ownership.
+
+Both weather charts use `weatherChartRange`/`weatherChartTicks` and
+`hourlyWeatherSeries`. Supply range values/references in the plotting unit system.
+The ascent renderer retains precipitation bars and GPX overlays; the peak renderer
+retains additional metrics and summit-height references. Shared scale/series code
+does not imply one renderer or one historical/forecast data policy.
 
 For a behavior-preserving extraction, capture the existing contract first and
 migrate one consumer at a time. Reuse a parameterized test contract for common

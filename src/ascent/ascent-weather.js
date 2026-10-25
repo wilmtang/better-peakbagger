@@ -20,7 +20,8 @@ import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
 import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels } from '../weather/weather-models.js';
 import { createWeatherClient } from '../weather/open-meteo-client.js';
-import { createWeatherHourlyTable } from '../weather/weather-hourly-table.js';
+import { createWeatherHourlyTable, hourlyWeatherSeries } from '../weather/weather-hourly-table.js';
+import { weatherChartRange, weatherChartTicks } from '../weather/weather-chart-scale.js';
 import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-cursor.js';
 
 const ID = 'bpb-ascent-weather', SVG_NS = 'http://www.w3.org/2000/svg';
@@ -364,12 +365,7 @@ export function mountAscentWeather() {
         }
         const width = chart.getBoundingClientRect().width;
         if (width < 100) return;
-        const rows = metric === 'precipitation' ? current.day.precipitationHours : [];
-        if (metric !== 'precipitation') {
-            const samples = new Map(current.day.hourly.map(row => [row.time, row]));
-            for (let time = Math.ceil(dayWindow.start / 3600_000) * 3600_000; time < dayWindow.cutoff; time += 3600_000)
-                rows.push({ time, sourceTime: time, value: samples.get(time)?.[metric] ?? null });
-        }
+        const rows = hourlyWeatherSeries(dayWindow, current.data.samples, metric, current.data.gustTiming);
         readingRows = rows; readingGeometry = null;
         readingText.reserve(['Hourly readings unavailable', ...['temperature', 'precipitation', 'wind'].flatMap(key => {
             const sizingRows = key === 'precipitation' ? current.day.precipitationHours
@@ -396,15 +392,13 @@ export function mountAscentWeather() {
         add('title', {}, chartLabel);
         if (!finite.length) { add('text', { x: width / 2, y: 70, 'text-anchor': 'middle' }, 'Hourly data unavailable'); drawCursor(); drawReading(); return; }
         const values = finite.map(row => convert(row.value, metric));
-        const low = metric === 'temperature' ? Math.floor(Math.min(...values) - 2) : 0;
-        // Integer wind labels need room for three distinct rounded ticks.
-        const high = Math.max(low + (metric === 'wind' ? 4 : 1), Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
+        const { low, high } = weatherChartRange(values, metric, { roundTemperatureLow: true });
         const left = 42, right = width - 16, top = 26, bottom = 124;
         const x = time => left + (right - left) * (time - dayWindow.start) / (dayWindow.end - dayWindow.start);
         const y = value => bottom - (convert(value, metric) - low) / (high - low) * (bottom - top);
         readingGeometry = { x, y, left, right, top, bottom, width };
         add('text', { x: left, y: 12 }, unit(metric));
-        for (const value of [low, (low + high) / 2, high]) {
+        for (const value of weatherChartTicks({ low, high })) {
             const yy = bottom - (value - low) / (high - low) * (bottom - top);
             add('line', { x1: left, x2: right, y1: yy, y2: yy, class: 'bpb-weather-grid' });
             add('text', { x: left - 7, y: yy + 4, 'text-anchor': 'end' }, value.toFixed(units.weatherDigits(metric, unitSystem(metric))));
