@@ -49,7 +49,7 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     const job = ordinary.jobs.layout;
     assert.ok(job, 'the full layout matrix needs a job budget separate from package verification');
     assert.equal(job['runs-on'], ordinary.jobs.chrome['runs-on']);
-    assert.equal(job['timeout-minutes'], 20);
+    assert.equal(job['timeout-minutes'], 30, 'complete screenshot-enabled matrices need setup, timeout-path and cleanup headroom');
     assert.equal(job.if, undefined);
     assert.ok(job.strategy?.matrix, 'each complete browser matrix needs its own job budget');
     assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
