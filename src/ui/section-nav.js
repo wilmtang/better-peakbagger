@@ -130,6 +130,7 @@ export const initSectionNav = () => {
     // without reaching the marker, but the explicit deep link still wins.
     let navLocked = false;
     let navLockTimer = null;
+    let lastScrollTop = content.scrollTop;
     const armIdleRelease = () => {
         clearTimeout(navLockTimer);
         navLockTimer = setTimeout(() => { navLocked = false; }, 250);
@@ -142,6 +143,11 @@ export const initSectionNav = () => {
     };
 
     content.addEventListener('scroll', () => {
+        // Fragment normalization can queue a final notification after scrollend
+        // without moving the pane. It must not replace the explicit near-bottom
+        // target with the scroll spy's final-section fallback.
+        if (content.scrollTop === lastScrollTop) return;
+        lastScrollTop = content.scrollTop;
         if (navLocked) armIdleRelease();
         else setActive(activeFromScroll());
     }, { passive: true });
@@ -149,6 +155,7 @@ export const initSectionNav = () => {
         clearTimeout(navLockTimer);
         navLocked = false;
         finishInitialScroll(true);
+        lastScrollTop = content.scrollTop;
     });
     for (const { link, section } of entries) {
         link.addEventListener('click', event => {

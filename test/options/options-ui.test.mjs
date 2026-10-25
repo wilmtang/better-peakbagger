@@ -1348,3 +1348,23 @@ test('nested ignored-climber backup fragments activate their owning sidebar sect
     dom.window.location.hash = '#ignored-github';
     await waitFor(dom, () => activeLinks(dom)[0].getAttribute('href') === '#github-favorites-backup');
 });
+
+test('a trailing scroll event at a clamped fragment landing preserves its active owner', async () => {
+    const dom = await loadOptions({}, { hash: '#ignored-github', prepareWindow: window => {
+        const content = window.document.querySelector('.content');
+        Object.defineProperty(content, 'clientHeight', { value: 1000 });
+        Object.defineProperty(content, 'scrollHeight', { value: 7649 });
+        content.getBoundingClientRect = () => ({ top: 0 });
+        window.document.getElementById('ignored-github').getBoundingClientRect = () => ({ top: 24 });
+    } });
+    const content = dom.window.document.querySelector('.content');
+    content.scrollTop = 6649;
+    content.dispatchEvent(new dom.window.Event('scroll'));
+    content.dispatchEvent(new dom.window.Event('scrollend'));
+    content.dispatchEvent(new dom.window.Event('scroll'));
+    assert.equal(activeLinks(dom)[0].hash, '#github-favorites-backup',
+        'a duplicate final scroll notification must not replace an explicit deep link with About');
+    content.scrollTop = 6500;
+    content.dispatchEvent(new dom.window.Event('scroll'));
+    assert.equal(activeLinks(dom)[0].hash, '#about', 'actual pane movement resumes the scroll spy');
+});
