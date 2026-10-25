@@ -341,3 +341,30 @@ test('keyboard and move menu cross the native details boundary in both direction
         assert.deepEqual(lowerOrder(), ['weather']); assert.equal(native.previousElementSibling.contains(env.card('snow')), true);
     } finally { env.close(); }
 });
+
+test('split-card drops accept the established 24px horizontal tolerance', async () => {
+    const env = setup({ columns: true });
+    try {
+        await tick();
+        env.pointer('pointerdown', 350, env.handle('snow'), 400);
+        env.pointer('pointermove', 150, env.win, -12);
+        env.pointer('pointerup', 150, env.win, -12);
+        await tick();
+        assert.equal(env.card('snow').closest('#bpb-peak-details-column')?.id, 'bpb-peak-details-column');
+    } finally { env.close(); }
+});
+
+test('card mutation reconciliation settles and keeps observing later host changes', async () => {
+    const env = setup();
+    try {
+        await tick();
+        const query = env.doc.querySelector.bind(env.doc); let scans = 0;
+        env.doc.querySelector = selector => { if (selector === '#bpb-peak-weather') scans++; return query(selector); };
+        env.sun.disabled = true;
+        await tick(); await tick();
+        assert.ok(scans > 0 && scans <= 2, `bounded reconciliation: ${scans}`);
+        const settled = scans; await tick(); assert.equal(scans, settled);
+        env.sun.disabled = false; await tick();
+        assert.ok(scans > settled, 'later host mutations remain visible');
+    } finally { env.close(); }
+});

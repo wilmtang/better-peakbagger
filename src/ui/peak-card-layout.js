@@ -148,11 +148,13 @@ export function createPeakCardLayout({ document: doc, settings }) {
         const split = doc.getElementById('bpb-peak-table-split');
         let column = 'map', area = drag.item.row.getBoundingClientRect();
         if (split) {
-            column = ['details', 'map'].find(id => {
+            const columns = ['details', 'map'];
+            const contains = (id, tolerance) => {
                 const rect = doc.getElementById(`bpb-peak-${id}-column`).getBoundingClientRect();
-                return drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top
+                return drag.x >= rect.left - tolerance && drag.x <= rect.right + tolerance && drag.y >= rect.top
                     && drag.y <= (view.getComputedStyle(split).display === 'grid' ? split.getBoundingClientRect().bottom : rect.bottom);
-            });
+            };
+            column = columns.find(id => contains(id, 0)) || columns.find(id => contains(id, 24));
             if (column) area = doc.getElementById(`bpb-peak-${column}-column`).getBoundingClientRect();
         }
         if (!column || drag.x < area.left - 24 || drag.x > area.right + 24) { indicator.hidden = true; drag.target = null; return; }

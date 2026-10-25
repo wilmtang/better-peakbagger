@@ -340,6 +340,13 @@ Independent commits for drag ownership and report/observer surfaces:
   Hidden Chrome/Firefox passed 16 layout cases at 390/1280 px and 150% zoom in
   both themes, including cancelled drag and subsequent weather updates.
 
+- F13 card drops: split-column lookup now honors the existing 24 px horizontal
+  tolerance after exact-column hits. The regression failed before the fix; 16 card
+  tests and ESLint passed. Hidden Chrome 156/Firefox 158 passed placement, pointer
+  preview/drop/cancel, focus and surrounding-content checks at 375/1440 px in both
+  themes. Observer measurement settled within two passes and retained later host
+  mutations; draining records would weaken that boundary and is intentionally omitted.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
