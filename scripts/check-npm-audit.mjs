@@ -16,12 +16,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // explicitly opt into the same exception without changing its scope or expiry.
 export const DEVELOPMENT_ADVISORY = Object.freeze({
     url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
-    expiresAt: '2026-10-24T07:00:00Z',
+    expiresAt: '2026-10-31T07:00:00Z',
 });
 
-function acceptsDevelopmentAdvisory(audit, lockfile, now) {
-    const expires = Date.parse(DEVELOPMENT_ADVISORY.expiresAt);
-    if (!Number.isFinite(now) || now >= expires) return false;
+function matchesDevelopmentAdvisory(audit, lockfile) {
     const expected = {
         '@devicefarmer/adbkit': {
             version: '3.3.9', isDirect: false, via: ['node-forge'], effects: ['web-ext'],
@@ -68,7 +66,11 @@ export function evaluateAudit(audit, { allowReviewedDevelopmentAdvisory = false,
     }
     const names = Object.keys(audit.vulnerabilities).sort();
     if (counts.total !== 0 || names.length) {
-        if (allowReviewedDevelopmentAdvisory && acceptsDevelopmentAdvisory(audit, lockfile, now)) {
+        if (allowReviewedDevelopmentAdvisory && Number.isFinite(now)
+            && matchesDevelopmentAdvisory(audit, lockfile)) {
+            if (now >= Date.parse(DEVELOPMENT_ADVISORY.expiresAt)) {
+                throw new Error(`Reviewed development advisory expired at ${DEVELOPMENT_ADVISORY.expiresAt}: ${DEVELOPMENT_ADVISORY.url}`);
+            }
             return { status: 'accepted-development-advisory', ...DEVELOPMENT_ADVISORY };
         }
         throw new Error(`Unowned npm audit findings: ${names.join(', ') || 'missing vulnerability detail'}`);

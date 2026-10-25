@@ -201,7 +201,10 @@ Independent commits for drag ownership and report/observer surfaces:
 
 ### Fixed and verified
 
-- None yet. Per-commit checks and final integrated evidence will be recorded here.
+- F1: fast-uri 3.1.9 and undici 7.30.1 / 8.12.3 installed. Dependency and
+  documentation tests passed; bundle exclusion scan found no node-forge/adbkit.
+  Reviewed live gate passed; production audit has zero vulnerabilities. The same
+  exact development-only node-forge exception expires October 31 at 07:00 UTC.
 
 ### Intentionally not changed
 

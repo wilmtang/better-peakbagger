@@ -1805,7 +1805,7 @@ No single green command proves the extension works:
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
   `minimatch@^3` path on patched 1.1.21 through a scoped override.
   Ordinary Test CI explicitly accepts one owner-reviewed node-forge advisory
-  through its exact development dependency path through October 23, 2026.
+  through its exact development dependency path through October 30, 2026.
   The owner approved the release gate's opt-in to that same exact exception
   through the expiry without version-specific approval. The default command
   remains strict; new findings, changed paths

@@ -248,11 +248,12 @@ visible in the AMO Developer Hub.
    together rather than relying on web-ext's old repository-root ignore list.
    `audit:ci` requires zero advisories by default, including development dependencies.
    The owner approved the same exact-path, development-only `node-forge`
-   exception for main CI and store releases through October 23, 2026, renewed
-   on October 17 for the 4.0.2 release. Pass `--allow-reviewed-development-advisory`
+   exception for main CI and store releases through October 30, 2026, rechecked
+   on October 24 during audit remediation. Compatible fast-uri and undici
+   resolutions are patched; node-forge 1.4.0 remains the latest upstream release. Pass `--allow-reviewed-development-advisory`
    for the local check; the release workflow opts into the same evaluator.
    The exception expires
-   at 00:00 October 24, 2026 in Los Angeles (07:00 UTC), and rejects new advisories,
+   at 00:00 October 31, 2026 in Los Angeles (07:00 UTC), and rejects new advisories,
    changed dependency versions or paths, and production resolutions. Raw npm
    audit still reports the three high findings in the `web-ext` chain. This is
    an accepted tooling risk, not a patched dependency or a clean raw audit.
