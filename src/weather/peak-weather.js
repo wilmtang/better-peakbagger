@@ -7,6 +7,7 @@ import { units } from '../ui/units.js';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createCardReadGate } from '../ui/card-read-gate.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.js';
@@ -88,23 +89,16 @@ export function mountPeakWeather() {
 
     const client = createPeakWeatherClient();
     const airQuality = createAirQualityView({ readLocation: () => requestedSubject, available: () => readable() });
-    let airVisible = !card.hidden && card.dataset.bpbCardCollapsed !== 'true';
-    const airVisibilityObserver = new MutationObserver(() => {
-        const visible = !card.hidden && card.dataset.bpbCardCollapsed !== 'true';
-        if (visible === airVisible) return;
-        airVisible = visible;
-        visibility();
-    });
-    airVisibilityObserver.observe(card, { attributes: true, attributeFilter: ['hidden', 'data-bpb-card-collapsed'] });
     periodPanel.after(airQuality.panel);
     const updateClient = createPeakModelUpdateClient();
     const updateClocks = new Map();
     let updatesController = null, updatesGeneration = 0;
-    let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
+    let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, lifecycle;
     let settingsReady = false, modelsReady = false, locationMenu = null;
     const enabled = () => settingsReady && modelsReady && preference.showWeather;
-    const readable = () => enabled() && lifecycle?.state === 'active' && document.visibilityState === 'visible'
-        && !card.hidden && !preference.peakWeatherCollapsed && card.dataset.bpbCardCollapsed !== 'true';
+    const readGate = createCardReadGate({ card, enabled, active: () => lifecycle?.state === 'active',
+        collapsed: () => preference.peakWeatherCollapsed, onChange: () => visibility() });
+    const readable = readGate.eligible;
     const cancelUpdates = () => { updatesGeneration++; updatesController?.abort(); updatesController = null; };
     async function loadUpdates() {
         if (!readable() || aqiActive || !source.open || !current) return;
@@ -364,7 +358,7 @@ export function mountPeakWeather() {
     const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); };
     async function load({ clear = false } = {}) {
         if (!readable() || pending || cooldown.active()) return;
-        visibilityObserver?.disconnect(); visibilityObserver = null;
+        readGate.cancelWait();
         started = true; pending = true;
         controller = new AbortController(); const owner = ++generation;
         card.setAttribute('aria-busy', 'true'); cooldown.refresh();
@@ -443,17 +437,12 @@ export function mountPeakWeather() {
     locationMenu = createWeatherLocationMenu({ enabled: () => enabled() && lifecycle.state === 'active', canSelect: () => !cooldown.active(), onSelect: chooseLocation });
     resetLocation.addEventListener('click', () => chooseLocation(summit));
     const beginWhenVisible = () => {
-        if (!readable() || visibilityObserver) return;
-        if (typeof IntersectionObserver !== 'function') { void load(); return; }
-        visibilityObserver = new IntersectionObserver(entries => {
-            if (entries.some(entry => entry.isIntersecting)) { visibilityObserver?.disconnect(); visibilityObserver = null; void load(); }
-        }, { rootMargin: '200px' });
-        visibilityObserver.observe(card);
+        readGate.waitForViewport(() => { void load(); });
     };
     const visibility = () => {
         if (!readable()) {
             airQuality.suspend(); cooldown.suspend(); cancel(); cancelUpdates();
-            visibilityObserver?.disconnect(); visibilityObserver = null;
+            readGate.cancelWait();
             return;
         }
         cooldown.resume(); airQuality.resume();
@@ -464,7 +453,6 @@ export function mountPeakWeather() {
     refresh.addEventListener('click', () => { void load({ clear: true }); });
     const applyPreference = next => {
         const wasEnabled = !row.hidden && enabled();
-        const wasCollapsed = preference.peakWeatherCollapsed;
         const previousUnits = unitSignature();
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();
@@ -472,20 +460,19 @@ export function mountPeakWeather() {
         if (!enabled()) {
             locationMenu.close();
             airQuality.suspend(); cooldown.suspend(); cancel(); cancelUpdates(); clearChart();
-            visibilityObserver?.disconnect(); visibilityObserver = null;
+            readGate.cancelWait();
         } else if (lifecycle.state === 'active') {
             cooldown.resume(); airQuality.resume();
             if (!wasEnabled || previousUnits !== unitSignature()) renderResult();
-            if (!wasEnabled || wasCollapsed !== preference.peakWeatherCollapsed) visibility();
         }
+        readGate.refresh();
     };
     const unsubscribe = settings.subscribe(applyPreference);
-    const stop = () => { airQuality.suspend(); locationMenu.close(); cooldown.suspend(); cancel(); cancelUpdates(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { airQuality.suspend(); locationMenu.close(); cooldown.suspend(); cancel(); cancelUpdates(); clearChart(); readGate.cancelWait(); readGate.refresh(); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
-        onResume: () => { document.addEventListener('visibilitychange', visibility); if (enabled()) { airQuality.resume(); cooldown.resume(); renderResult(); beginWhenVisible(); } },
-        onDispose: () => { stop(); airVisibilityObserver.disconnect(); airQuality.dispose(); locationMenu.dispose(); cooldown.dispose(); unsubscribe(); client.clear(); updateClient.clear(); },
+        onResume: () => { readGate.refresh(); if (enabled()) { airQuality.resume(); cooldown.resume(); renderResult(); beginWhenVisible(); } },
+        onDispose: () => { stop(); readGate.dispose(); airQuality.dispose(); locationMenu.dispose(); cooldown.dispose(); unsubscribe(); client.clear(); updateClient.clear(); },
     });
-    document.addEventListener('visibilitychange', visibility);
     // Resolve local choices before the first request, including a late sync
     // settings read/notification. Regional choices may not cover this summit.
     void (async () => {

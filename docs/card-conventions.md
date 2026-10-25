@@ -21,6 +21,7 @@ These shared modules already exist:
 | --- | --- | --- |
 | Safe DOM and feedback | [`dom.js`](../src/ui/dom.js), [`stable-text.js`](../src/ui/stable-text.js) | Labels, status alternatives, deliberate expansion and retained content |
 | Page lifetime and cooldown UI | [`page-lifecycle.js`](../src/ui/page-lifecycle.js), [`retry-cooldown.js`](../src/ui/retry-cooldown.js) | Eligible reads, cancellation, TTL, resume and remote-write reconciliation |
+| Read eligibility and lazy start | [`card-read-gate.js`](../src/ui/card-read-gate.js) | Feature/date eligibility, optional collapse, freshness, retained results and cancellation |
 | Movement | [`card-drag.js`](../src/ui/card-drag.js), [`layout-menu.js`](../src/ui/layout-menu.js) | Native anchors, valid destinations, order, persistence and preview strategy |
 | Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.js`](../src/time/mountain-time.js) | Forecast versus historical endpoint, date range, model capabilities and freshness |
 | Weather display | [`weather-hourly-table.js`](../src/weather/weather-hourly-table.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |
@@ -74,6 +75,13 @@ caches or subscriptions. Cross-card/page deduplication needs an explicit owner
 and protocol, bounded retention, identity-aware keys and per-reader cancellation.
 Do not introduce a page-world global or broaden the settings bridge to share
 privileged state.
+
+Peak weather, Summit Cloud Cover and ascent weather use `createCardReadGate`.
+Call `refresh()` after authoritative settings or lifecycle changes; use
+`waitForViewport()` to start optional reads, `cancelWait()` when superseding work,
+and `dispose()` on final teardown. The gate never aborts a transport or discards
+results itself. Its callback lets the feature suspend/resume owned reads. Snow's
+station/map client still has separate eligibility and ownership.
 
 For a behavior-preserving extraction, capture the existing contract first and
 migrate one consumer at a time. Reuse a parameterized test contract for common

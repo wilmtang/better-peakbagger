@@ -7,6 +7,7 @@ import { createWeatherIcon } from '../weather/weather-icon.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createCardReadGate } from '../ui/card-read-gate.js';
 import { createCardDrag } from '../ui/card-drag.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { requestDeadline } from '../net/request-deadline.js';
@@ -193,9 +194,14 @@ export function mountAscentWeather() {
 
     let summit = null, dayWindow = null, candidates = [], current = null;
     let retryDate = subject.date, refreshLabel = '';
-    let metric = 'conditions', generation = 0, controller = null, started = false, visibilityObserver = null;
+    let metric = 'conditions', generation = 0, controller = null, started = false;
     const client = createWeatherClient();
     let lifecycle;
+    const readGate = createCardReadGate({ card, enabled: () => enabled() && !subject.reason && subject.date >= '1940-01-01',
+        active: () => lifecycle?.state === 'active', onChange: eligible => {
+            if (!eligible) { cancel(); cooldown.suspend(); }
+            else { cooldown.resume(); if (!current && !controller) beginWhenVisible(); }
+        } });
     let rememberedModel = ARCHIVE_BEST_MATCH.id, modelRevision = 0, modelSaveError = '';
     let modelWrites = Promise.resolve();
     const modelReadDeadline = requestDeadline.createRequestDeadline(2000);
@@ -498,7 +504,8 @@ export function mountAscentWeather() {
         updateModels(subject.date, true);
     };
     async function load(targetDate = dayWindow?.date || subject.date) {
-        if (!enabled() || subject.reason || subject.date < '1940-01-01' || lifecycle?.state !== 'active') return;
+        if (!readGate.eligible()) return;
+        readGate.cancelWait();
         cancel(); const ownGeneration = generation; controller = new AbortController(); const signal = controller.signal;
         retryDate = targetDate;
         refreshLabel = current ? targetDate === dayWindow.date ? `Updating… Showing ${current.model.label}`
@@ -613,13 +620,7 @@ export function mountAscentWeather() {
     const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(drawChart) : null;
     resizeObserver?.observe(chart);
     const beginWhenVisible = () => {
-        if (!enabled() || lifecycle.state !== 'active' || subject.reason || subject.date < '1940-01-01') return;
-        if (typeof IntersectionObserver !== 'function') { void load(); return; }
-        visibilityObserver?.disconnect();
-        visibilityObserver = new IntersectionObserver(entries => {
-            if (entries.some(entry => entry.isIntersecting)) { visibilityObserver?.disconnect(); visibilityObserver = null; void load(); }
-        }, { rootMargin: '200px' });
-        visibilityObserver.observe(card);
+        readGate.waitForViewport(() => { void load(); });
     };
     const applyPreference = next => {
         const wasEnabled = enabled();
@@ -629,18 +630,19 @@ export function mountAscentWeather() {
             cardDrag?.cancel(); cardDrag?.refresh();
             restoreGpsDetails();
             cooldown.suspend(); stopCursor(); cancel();
-            visibilityObserver?.disconnect(); visibilityObserver = null;
+            readGate.cancelWait();
         } else if (lifecycle.state === 'active') {
             place();
             cooldown.resume(); renderResult();
             if (!wasEnabled) { listenForCursor(); beginWhenVisible(); }
         }
+        readGate.refresh();
     };
     const unsubscribe = settings.subscribe(applyPreference);
     lifecycle = createPageLifecycle({
-        onSuspend: () => { cardDrag?.cancel(); cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
-        onResume: () => { place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (enabled()) { cooldown.resume(); listenForCursor(); drawChart(); if (!current || started) beginWhenVisible(); } },
-        onDispose: () => { modelReadDeadline.clear(); cardDrag?.dispose(); cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
+        onSuspend: () => { cardDrag?.cancel(); cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); readGate.refresh(); },
+        onResume: () => { place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); readGate.refresh(); if (enabled()) { cooldown.resume(); listenForCursor(); drawChart(); if (!current || started) beginWhenVisible(); } },
+        onDispose: () => { readGate.dispose(); modelReadDeadline.clear(); cardDrag?.dispose(); cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
     cardDrag = createCardDrag({ card, handle: moveHandle, surface: header, status: moveStatus, name: 'Weather',
         enabled: () => enabled() && lifecycle.state === 'active', getPosition: () => `${column}:${slot === 'gps' && (column === 'report' || !gpsDetails) ? 'after' : slot}`,

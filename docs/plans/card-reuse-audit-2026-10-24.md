@@ -289,6 +289,10 @@ runtime changes require the real-browser checks in the convention and AGENTS.
   regression failed with the original `0, 1, 1` labels; all 55 ascent-weather tests
   then passed in metric and imperial coverage. The retained axis probe now checks
   correctness by default; `--expect-regression` is for the historical bundle only.
+  CR-01 now shares `createCardReadGate` across peak weather, clouds and ascent
+  weather. The helper owns eligibility transitions and cancellable viewport waits;
+  features retain request/TTL policy. Shared gate and integration coverage passed
+  146 tests after a build. Settings/theme updates do not restart eligible reads.
 - **Intentionally not changed:** native mounting, settings keys, provider policy,
   worker-write ownership and unrelated work. The remaining extractions are still
   being implemented.

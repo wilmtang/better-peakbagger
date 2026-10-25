@@ -7,6 +7,7 @@ import { units } from '../ui/units.js';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createCardReadGate } from '../ui/card-read-gate.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { createStableText } from '../ui/stable-text.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
@@ -71,11 +72,12 @@ export function mountSummitCloud() {
 
     const client = createSummitCloudClient();
     let preference = settings.DEFAULTS, ready = false, selection = 'auto', requestedDate = '', current = null;
-    let generation = 0, controller = null, pending = false, visibilityObserver = null, lifecycle, writeGeneration = 0;
+    let generation = 0, controller = null, pending = false, lifecycle, writeGeneration = 0;
     let selectedIndex = 0, offset = 0, failed = false, savingChoice = false;
     const enabled = () => ready && preference.showSummitCloud;
-    const active = () => enabled() && lifecycle.state === 'active' && document.visibilityState === 'visible'
-        && !card.hidden && !preference.peakCloudCollapsed && card.dataset.bpbCardCollapsed !== 'true';
+    const readGate = createCardReadGate({ card, enabled, active: () => lifecycle?.state === 'active',
+        collapsed: () => preference.peakCloudCollapsed, onChange: () => visibility() });
+    const active = readGate.eligible;
     const cooldown = createRetryCooldown(blocked => {
         refresh.setAttribute('aria-disabled', String(pending || blocked));
         modelSelect.setAttribute('aria-disabled', String(blocked)); dateSelect.setAttribute('aria-disabled', String(blocked));
@@ -147,7 +149,7 @@ export function mountSummitCloud() {
     function cancel() {
         if (pending) statusText.set('Forecast paused. Expand to continue.');
         generation++; controller?.abort(); controller = null; pending = false;
-        card.setAttribute('aria-busy', 'false'); cooldown.refresh(); visibilityObserver?.disconnect(); visibilityObserver = null;
+        card.setAttribute('aria-busy', 'false'); cooldown.refresh(); readGate.cancelWait();
     }
     async function load({ refresh: force = false } = {}) {
         if (!active() || pending || cooldown.active()) return;
@@ -180,12 +182,8 @@ export function mountSummitCloud() {
         cooldown.refresh(); paint();
     }
     function begin() {
-        visibilityObserver?.disconnect(); visibilityObserver = null;
         if (!active() || pending || failed) return;
-        if (typeof IntersectionObserver !== 'function') { void load(); return; }
-        visibilityObserver = new IntersectionObserver(entries => {
-            if (entries.some(entry => entry.isIntersecting)) { visibilityObserver?.disconnect(); visibilityObserver = null; void load(); }
-        }, { rootMargin: '200px' }); visibilityObserver.observe(card);
+        readGate.waitForViewport(() => { void load(); });
     }
     for (const { button } of hourNodes) button.addEventListener('click', () => { selectedIndex = Number(button.dataset.index); paint(); });
     earlier.addEventListener('click', () => { if (offset > 0) { offset = Math.max(0, offset - 8); selectedIndex = Math.min(selectedIndex, offset + 7); paint(); } });
@@ -206,13 +204,6 @@ export function mountSummitCloud() {
         if (!active()) { cancel(); cooldown.suspend(); return; }
         cooldown.resume(); if (!current || current.selection !== selection || current.day.date !== requestedDate || Date.now() - current.loadedAt >= 300000) begin(); else paint();
     };
-    let observedVisibility = null;
-    const observer = new MutationObserver(() => {
-        const visible = !card.hidden && card.dataset.bpbCardCollapsed !== 'true';
-        if (visible === observedVisibility) return;
-        observedVisibility = visible; visibility();
-    });
-    observer.observe(card, { attributes: true, attributeFilter: ['hidden', 'data-bpb-card-collapsed'] });
     const applyPreference = next => {
         if (lifecycle.state === 'disposed') return;
         const wasEnabled = enabled(), wasCollapsed = preference.peakCloudCollapsed, priorSelection = selection;
@@ -222,12 +213,12 @@ export function mountSummitCloud() {
         ready = true; row.hidden = card.hidden = !enabled(); populateControls(); paint();
         if (!active()) { cancel(); cooldown.suspend(); }
         else if (!wasEnabled || wasCollapsed || priorSelection !== selection) { cancel(); failed = false; cooldown.resume(); begin(); }
+        readGate.refresh();
     };
     const unsubscribe = settings.subscribe(applyPreference);
-    const stop = () => { cancel(); cooldown.suspend(); document.removeEventListener('visibilitychange', visibility); };
-    lifecycle = createPageLifecycle({ onSuspend: stop, onResume: () => { document.addEventListener('visibilitychange', visibility); visibility(); },
-        onDispose: () => { stop(); observer.disconnect(); unsubscribe(); cooldown.dispose(); client.clear(); } });
-    document.addEventListener('visibilitychange', visibility);
+    const stop = () => { cancel(); cooldown.suspend(); readGate.refresh(); };
+    lifecycle = createPageLifecycle({ onSuspend: stop, onResume: () => { if (!readGate.refresh()) visibility(); },
+        onDispose: () => { stop(); readGate.dispose(); unsubscribe(); cooldown.dispose(); client.clear(); } });
     settings.requireCurrent().then(next => { if (!ready && lifecycle.state !== 'disposed') applyPreference(next); }).catch(() => {});
     return { card, lifecycle };
 }
