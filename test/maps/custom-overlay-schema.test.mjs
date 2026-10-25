@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readCustomSource, customUrl, readCustomRegistry, readCustomSelection, CUSTOM_REGISTRY_KEY } from '../../src/maps/custom-overlay-schema.js';
 import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
+import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.js';
 export const source = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Trails', kind: 'raster',
     source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png?key=a%2Fb'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: 'Data' }, appearance: { opacity: 60, rules: [] } });
@@ -28,4 +29,19 @@ test('registry serializes stale editors, rejects page writes and preserves corru
     values[CUSTOM_REGISTRY_KEY] = { corrupt: true };
     assert.equal((await store.handle(save, { editor: true })).ok, false);
     assert.deepEqual(values[CUSTOM_REGISTRY_KEY], { corrupt: true });
+});
+test('restores reject intervening source/opacity changes and invalidate old revisions and previews', async () => {
+    const values = {}, storage = { get: async () => structuredClone(values), set: async patch => Object.assign(values, structuredClone(patch)) };
+    const store = createCustomOverlayStore({ storage, canRead: () => true, canEdit: () => true }), sender = { tab: { id: 4 } }, valid = source();
+    await store.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id: valid.id, source: valid, expectedRevision: 0 }, sender);
+    const snapshot = await store.snapshot(), backup = customLayerBackup(snapshot);
+    await store.handle({ type: 'CUSTOM_OVERLAYS_OPACITY', id: valid.id, opacity: 20 }, sender);
+    assert.equal((await store.replaceIfCurrent(snapshot, backup)).replaced, false, 'opacity participates in the compare-and-swap');
+    await store.handle({ type: 'CUSTOM_OVERLAYS_PREVIEW', mapId: 'map-one', source: { ...valid, name: 'Temporary' } }, sender);
+    const current = await store.snapshot(), result = await store.replaceIfCurrent(current, backup);
+    assert.equal(result.replaced, true); assert.equal(result.current.registry.generation, 1);
+    assert.equal(result.current.registry.sources[0].revision, 2);
+    const reply = await store.handle({ type: 'CUSTOM_OVERLAYS_GET', mapId: 'map-one' }, sender);
+    assert.equal(reply.registry.sources[0].name, valid.name, 'restore drops temporary drafts');
+    assert.equal((await store.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id: valid.id, source: valid, expectedRevision: 1 }, sender)).ok, false);
 });

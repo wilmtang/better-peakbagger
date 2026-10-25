@@ -81,7 +81,7 @@ permission to read device location. It covers:
 | `storage.sync` | Theme, units, chart, route/map appearance, weather models/metric/card placement, capture, editor, beta-filter, favorite-source and photo-tool appearance preferences | May sync through the browser account; included in settings files and optional GitHub settings backup. No coordinates, weather results or annotation contents. |
 | `storage.local` | Device settings (map dimensions, terrain cache budget and GitHub transfer consent), DEM cache index, custom favorites, ignored climbers, Buddy cache/intents, GitHub token/repository, ImgBB API key, report drafts and backup/sync state | Device-local; never browser-synced. |
 | `storage.sync` map overlay preferences | Raster opacity percentages and selected public-land type IDs | Included in settings sync, exports and backups. Enabled layers remain in page memory. |
-| `storage.local.bpbCustomMapOverlaysV1` and `bpbCustomMapOverlayPreferencesV1` | User-entered overlay definitions, public URLs/keys, attribution, appearance and opacity | Device-local; excluded from browser sync, settings exports and GitHub backups. Remove sources in the overlay editor. Custom enablement, parsed geometry, tile bytes and probe locations are not persisted by the extension. |
+| `storage.local.bpbCustomMapOverlaysV1` and `bpbCustomMapOverlayPreferencesV1` | User-entered overlay definitions, public URLs/keys, attribution, appearance and opacity | Included in manual settings files and opted-in GitHub settings backups; excluded from browser sync. Manage/remove in Settings → Map & GPX chart → Custom layers. Custom enablement, parsed geometry, tile bytes and probe locations are not persisted by the extension. |
 | `storage.local` public snow catalog | Public SNOTEL station metadata only, with a fetch timestamp | Refreshed after seven days when next used; expired metadata can remain until replaced or extension data is cleared. No peak/location query or observations; excluded from settings exports, sync and backups. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
@@ -676,7 +676,7 @@ never blocks or changes Peakbagger Save.
 | Backup | Included | Excluded |
 | --- | --- | --- |
 | Ascent and TR | User-entered ascent fields, Markdown trip report, and Peakbagger's stored, user-approved GPS track | Raw Garmin or Strava GPX |
-| `settings.json` | Validated settings, export time, schema version, and extension version | Credentials, repository choice, favorites, drafts, caches, ascents, activity, and GPS data |
+| `settings.json` | Validated portable settings, custom map sources/opacity (including public URL keys), export time, schema version, and extension version | Saved ImgBB/Garmin/GitHub credentials, repository choice, favorites, drafts, caches, ascents, activity, and GPS data |
 | `favorite-climbers.json` | Custom climber ids, displayed names, added-at timestamps, provenance, and export time | Buddy cache and credentials |
 | `photo-library.json` | Catalog metadata, public URLs, sanitized source file name, hashes/dimensions, title/caption/alt state, lineage, report references, annotation projects, tombstones, and version/export metadata | Image bytes, ImgBB key and delete URLs, upload journal, transient editor state, and GitHub credentials |
 
@@ -728,13 +728,15 @@ Automatic ascent and TR backup never changes the three root recovery files.
 The user can export and import settings without GitHub:
 
 - **Export settings** downloads an unencrypted JSON file only after a click. By
-  default it contains validated portable settings and no credentials. Device
+  default it contains validated portable settings and custom map sources, with
+  public URLs and any public keys in those URLs. Saved ImgBB/Garmin/GitHub
+  credentials remain opt-in. Device
   dimensions, cache budget and automatic-transfer consent are excluded.
 - **Include saved credentials** adds the saved ImgBB and Garmin API keys and,
   when connected, the GitHub token and selected repository in plain text.
   The Settings page warns the user to keep the file private and resets the checkbox after each export.
 - Import validates the file and requires confirmation before replacing
-  portable settings, included API keys, or an included GitHub connection.
+  portable settings, included custom sources, included API keys, or an included GitHub connection.
   Device settings remain unchanged even when importing an older settings file.
 - Before accepting imported GitHub credentials, the extension requests host
   access if needed and verifies the token, account, repository grant,

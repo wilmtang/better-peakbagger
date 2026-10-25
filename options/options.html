@@ -43,6 +43,7 @@
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#map-chart-chart">GPX chart</a></li>
                     <li><a class="nav-subitem" href="#map-chart-map">Map</a></li>
+                    <li><a class="nav-subitem" href="#custom-map-layers">Custom layers</a></li>
                     <li><a class="nav-subitem" href="#map-handoffs">Send GPX</a></li>
                 </ul>
             </li>
@@ -427,7 +428,6 @@
 
             <div class="subsection" id="map-chart-map" role="group" aria-labelledby="map-chart-map-heading">
                 <h3 class="subsection-title" id="map-chart-map-heading">Map</h3>
-                <p><a href="../custom-overlay/editor.html" target="_blank" rel="noopener">Manage custom overlays</a></p>
                 <div class="card">
                     <div class="row">
                         <div class="label">
@@ -503,6 +503,18 @@
                 </div>
             </div>
 
+            <div id="custom-map-layers" class="subsection" role="group" aria-labelledby="custom-map-layers-heading">
+                <h3 class="subsection-title" id="custom-map-layers-heading">Custom layers</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label"><span class="title">Your map sources</span><span class="desc">Add raster tiles, vector tiles or GeoJSON once, then choose them from Overlays on any map.</span></div>
+                        <button type="button" class="panel-button primary" id="custom-layer-add" disabled>Add layer</button>
+                    </div>
+                    <p id="custom-layer-status" class="custom-layer-status" role="status">Loading saved layers…</p>
+                    <ul id="custom-layer-list" class="custom-layer-list" aria-label="Custom map layers" hidden></ul>
+                    <p class="custom-layer-note">Included in settings exports and GitHub settings backups. Source URLs may contain public API keys. Layers stay off after a restore until you enable them.</p>
+                </div>
+            </div>
             <div id="map-handoffs" class="subsection" role="group" aria-labelledby="map-handoffs-heading">
                 <h3 class="subsection-title" id="map-handoffs-heading">Send GPX</h3>
                 <div class="card">
@@ -632,7 +644,7 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">Transfer settings with a file</span>
-                            <span class="desc">Move your Better Peakbagger settings to another browser or keep a personal copy. Files are credential-free unless you include your saved credentials below. They are not encrypted; keep them private.</span>
+                            <span class="desc">Move your settings and custom map layers to another browser or keep a personal copy. Public source URLs and their URL keys are included. Saved account credentials are optional below. Files are not encrypted; keep them private.</span>
                         </div>
                         <div class="control settings-file-transfer-actions">
                             <div class="settings-backup-actions">
@@ -660,6 +672,7 @@
                         <div class="label">
                             <span class="title">GitHub settings backup</span>
                             <span class="desc" id="settings-backup-github-status" role="status">Checking connection…</span>
+                            <span class="desc">Includes your custom layers and public source URLs. Private tokens belong outside map URLs, especially when using a public repository.</span>
                         </div>
                         <div class="control settings-backup-github-actions" id="settings-backup-github-actions" hidden>
                             <div class="settings-backup-actions">
@@ -825,6 +838,7 @@
       </div>
     </main>
 
+    <dialog id="custom-layer-dialog" class="custom-layer-dialog" aria-label="Edit custom map layer"><iframe title="Custom map layer editor"></iframe></dialog>
     <script src="options.js"></script>
     <script src="garmin.js"></script>
 </body>

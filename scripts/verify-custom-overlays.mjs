@@ -95,6 +95,41 @@ try {
         await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.textContent.includes('Custom MVT') && element.textContent.includes('60%')));
         assert.deepEqual(errors, []);
         const screenshots = process.env.BPB_CUSTOM_SCREENSHOTS;
+        await admin.goto(`chrome-extension://${extension.id}/options/options.html#custom-map-layers`);
+        const library = admin.locator('#custom-layer-list'); await library.locator('li').nth(2).waitFor();
+        assert.equal(await library.locator('li').count(), 3, 'central Options manager shows the shared library');
+        await admin.setViewportSize({ width: 375, height: 800 }); await admin.evaluate(() => document.documentElement.dataset.bpbTheme = 'dark');
+        await admin.locator('#custom-layer-add').click();
+        const optionsEditor = admin.frameLocator('#custom-layer-dialog iframe');
+        await optionsEditor.locator('#name').fill('Temporary options layer'); await optionsEditor.locator('#url').fill(`${providerOrigin}/{z}/{x}/{y}.png`);
+        if (screenshots) { await mkdir(screenshots, { recursive: true }); await admin.screenshot({ path: path.join(screenshots, 'custom-options-editor-dark.png') }); }
+        await optionsEditor.locator('#save').click(); await optionsEditor.locator('#feedback').filter({ hasText: 'Saved on this device' }).waitFor();
+        await optionsEditor.locator('#cancel').click();
+        const temporary = library.locator('li').filter({ hasText: 'Temporary options layer' }); await temporary.getByRole('button', { name: 'Remove', exact: true }).click();
+        await temporary.getByRole('button', { name: 'Keep layer', exact: true }).click();
+        await temporary.getByRole('button', { name: 'Remove', exact: true }).click();
+        await admin.evaluate(() => { const send = chrome.runtime.sendMessage.bind(chrome.runtime); chrome.runtime.sendMessage = async (...args) => { if (args[0]?.type === 'CUSTOM_OVERLAYS_REMOVE') { chrome.runtime.sendMessage = send; await new Promise(resolve => { window.releaseLayerRemove = resolve; }); } return send(...args); }; });
+        const remove = temporary.getByRole('button', { name: 'Remove layer', exact: true }), bounds = await remove.boundingBox();
+        await remove.click(); await admin.waitForFunction(() => document.querySelector('#custom-layer-list li:last-child .custom-layer-remove button').getAttribute('aria-disabled') === 'true');
+        const pendingBounds = await remove.boundingBox(); for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(bounds[key] - pendingBounds[key]) <= 1, `layer removal keeps ${key} anchored`);
+        await admin.evaluate(() => window.releaseLayerRemove());
+        await temporary.waitFor({ state: 'detached' });
+        for (const [width, theme] of [[1000, 'light'], [375, 'dark']]) {
+            await admin.setViewportSize({ width, height: 800 });
+            await admin.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
+            await admin.locator('#custom-map-layers').scrollIntoViewIfNeeded();
+            assert.ok(await admin.locator('#custom-map-layers').evaluate(element => element.scrollWidth <= element.clientWidth), 'central manager fits');
+            if (screenshots) { await mkdir(screenshots, { recursive: true }); await admin.screenshot({ path: path.join(screenshots, `custom-options-${theme}.png`) }); }
+        }
+        const file = await admin.evaluate(async () => chrome.runtime.sendMessage({ type: 'SETTINGS_FILE_EXPORT' }));
+        assert.equal(JSON.parse(file.content).customLayers.sources.length, 3, 'actual worker settings export includes layers');
+        await admin.evaluate(async () => { const reply = await chrome.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_GET' }); const source = reply.registry.sources[0]; await chrome.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_REMOVE', id: source.id, expectedRevision: source.revision }); });
+        await admin.locator('#settings-backup-file').setInputFiles({ name: 'restored-settings.json', mimeType: 'application/json', buffer: Buffer.from(file.content) });
+        await admin.locator('#settings-backup-confirmation-detail').filter({ hasText: '3 saved layers' }).waitFor();
+        await admin.locator('#settings-backup-confirm').click();
+        await admin.locator('#settings-backup-confirmation').waitFor({ state: 'hidden' });
+        await library.locator('li').nth(2).waitFor();
+        await admin.setViewportSize({ width: 1000, height: 760 });
         if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, 'custom-map.png') }); }
         await page.getByRole('button', { name: 'Add custom overlay', exact: true }).click();
         await page.setViewportSize({ width: 375, height: 800 });
@@ -211,6 +246,25 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
         return Promise.all(sources.map(source => api.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_SAVE', id: source.id, source, expectedRevision: 0 })));
     }, definitions);
     assert.ok(setup.every(reply => reply.ok), 'packaged editor setup uses authorized store writes');
+    const optionsUrl = extensionUrl.replace('custom-overlay/editor.html', 'options/options.html');
+    await driver.get(optionsUrl + '#custom-map-layers');
+    await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 3), 'Firefox central layer manager');
+    await click('#custom-layer-add');
+    await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
+    await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Options editor initialized');
+    await (await driver.findElement(By.id('name'))).sendKeys('Options Firefox source');
+    await (await driver.findElement(By.id('url'))).sendKeys(`${providerOrigin}/{z}/{x}/{y}.png`);
+    await click('#save'); await wait(() => evaluate(() => document.getElementById('feedback').textContent.includes('Saved on this device')), 'Firefox manager saves layer');
+    await click('#cancel'); await driver.switchTo().defaultContent();
+    await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 4), 'manager updates after save');
+    const removeSelector = '#custom-layer-list li:last-child';
+    await click(removeSelector + ' .custom-layer-actions button:last-child'); await click(removeSelector + ' .custom-layer-remove button:first-of-type');
+    await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 3), 'manager removes layer');
+    await evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
+    await driver.manage().window().setRect({ width: 480, height: 900 });
+    await evaluate(() => document.getElementById('custom-map-layers').scrollIntoView());
+    assert.ok(await evaluate(() => { const panel = document.getElementById('custom-map-layers'); return panel.scrollWidth <= panel.clientWidth; }), 'Firefox Options layer list fits');
+    if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await writeFile(path.join(process.env.BPB_CUSTOM_SCREENSHOTS, 'custom-options-firefox-dark.png'), await driver.takeScreenshot(), 'base64'); }
     await driver.get(`${origin}/map/MasterMap.aspx?t=G&gt=rc`);
     await send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width: 1000, height: 760 } } });
     await wait(() => driver.findElements(By.css('.bpb-layers-trigger')).then(elements => elements.length === 1), 'native overlay control');

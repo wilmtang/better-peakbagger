@@ -16,6 +16,7 @@ import { initSettingsBackup } from './settings-backup.js';
 import { initPhotoBackup } from './photos.js';
 import { initSectionNav } from '../src/ui/section-nav.js';
 import { initUnitSettings } from './unit-settings.js';
+import { initCustomLayers } from './custom-layers.js';
 
 (() => {
     'use strict';
@@ -85,6 +86,7 @@ import { initUnitSettings } from './unit-settings.js';
         statusErrorTextEl,
         statusErrorDismissEl,
     });
+    initCustomLayers({ extensionApi, flash });
 
     const formatCacheBytes = bytes => {
         if (bytes < 1024) return `${Math.max(0, Math.floor(bytes))} B`;

@@ -332,7 +332,7 @@ test('settings are grouped by the surface they affect', async () => {
         'Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.');
     assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
     assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
-        ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
+        ['map-chart-chart', 'map-chart-map', 'custom-map-layers', 'map-handoffs']);
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('#github-backup .desc').textContent, /automatically back up new and edited ascents/i);
@@ -1043,7 +1043,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
-            '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#favorites', '#github-connection',
+            '#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
     for (const link of subLinks) {

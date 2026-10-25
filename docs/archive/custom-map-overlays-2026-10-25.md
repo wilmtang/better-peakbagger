@@ -4,6 +4,12 @@ Status: implemented locally, October 25, 2026. The original design is retained
 below; the closure ledger records shipped behavior, intentional boundaries and
 remaining proof limits. See [the maintained user guide](../map-layers.md).
 
+The later [Options and backup audit](custom-layer-settings-audit-2026-10-25.md)
+supersedes this design's exclusion of definitions from settings files/GitHub.
+Version 6 includes sources and opacity, with explicit restore and public-URL
+disclosure; browser sync remains excluded. The sections below preserve the
+original implementation decisions as historical evidence.
+
 ## Decision
 
 Let users save their own **raster tiles, vector tiles and GeoJSON overlays** and

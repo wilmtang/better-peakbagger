@@ -12,6 +12,8 @@ import { boundedText as BoundedText } from '../src/net/bounded-text.js';
 import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.js';
+import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry } from '../src/maps/custom-overlay-schema.js';
+import { customLayerBackup } from '../src/maps/custom-overlay-transfer.js';
 
 const SETTINGS_STORAGE_KEY = S.STORAGE_KEY;
 
@@ -69,6 +71,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     let githubOperation = null;
     let githubBackupResult = null;
     let settingsSignature = Transfer.signature({});
+    let currentSettings = {}, layerBackup, layerRead = 0;
 
     const send = RuntimeMessage.bind(extensionApi);
 
@@ -91,7 +94,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         settings,
         successMessage = 'Settings imported',
         returnFocus = importEl,
-        { fileContent = null, includesApiKeys = false, includesGithubConnection = false, includesGarminKey = false, requestsGarminAccess = false } = {}
+        { fileContent = null, includesApiKeys = false, includesGithubConnection = false, includesGarminKey = false, requestsGarminAccess = false, customLayerCount = null } = {}
     ) => {
         pendingImport = {
             settings, successMessage, returnFocus, fileContent, includesGithubConnection, requestsGarminAccess,
@@ -107,6 +110,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         if (includesGarminKey) confirmationDetailEl.textContent += requestsGarminAccess
             ? ' Includes a Garmin key, which will be checked before replacing your connection and enabling Garmin drafts on this device.'
             : ' Removes your Garmin key while keeping your drafts.';
+        if (customLayerCount !== null) confirmationDetailEl.textContent += ` Replaces custom layers with ${customLayerCount} saved ${customLayerCount === 1 ? 'layer' : 'layers'}. Existing map selections turn off.`;
         confirmationEl.hidden = false;
         if (document.activeElement === returnFocus) confirmEl.focus();
     };
@@ -171,6 +175,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 includesGithubConnection: Object.hasOwn(parsed, 'githubConnection'),
                 includesGarminKey: Object.hasOwn(parsed.apiKeys || {}, 'garmin'),
                 requestsGarminAccess: typeof parsed.apiKeys?.garmin === 'string',
+                customLayerCount: parsed.customLayers?.sources.length ?? null,
             }
         );
     });
@@ -331,7 +336,10 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             return;
         }
         showConfirmation(`settings.json from ${repoName()}`, parsed.settings,
-            `Settings restored from ${repoName()}`, githubRestoreEl);
+            `Settings restored from ${repoName()}`, githubRestoreEl, parsed.customLayers ? {
+                fileContent: Transfer.serialize(Transfer.buildPayload(parsed.settings, { customLayers: parsed.customLayers })),
+                customLayerCount: parsed.customLayers.sources.length,
+            } : {});
     }));
 
     autoBackupEl.addEventListener('change', () => {
@@ -339,10 +347,21 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     });
 
     window.addEventListener('focus', () => { void refreshGithub(); });
+    const refreshLayers = async () => {
+        const revision = ++layerRead;
+        try {
+            const stored = await extensionApi.storage.local.get([CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY]);
+            const registry = readCustomRegistry(stored[CUSTOM_REGISTRY_KEY]); if (!registry) throw new Error('Custom layers unavailable.');
+            const value = customLayerBackup({ registry, preferences: stored[CUSTOM_PREFERENCES_KEY] || {} });
+            if (revision !== layerRead) return; layerBackup = value;
+        } catch { if (revision !== layerRead) return; layerBackup = null; }
+        settingsSignature = layerBackup ? Transfer.signature(currentSettings, layerBackup) : null; renderGithub();
+    };
     if (extensionApi.storage.onChanged) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
             if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithub();
             if (area === 'local' && changes.bpbSettingsBackupState) void refreshGithub();
+            if (area === 'local' && (changes[CUSTOM_REGISTRY_KEY] || changes[CUSTOM_PREFERENCES_KEY])) void refreshLayers();
         });
     }
     observeGithubAccess(extensionApi, () => { void refreshGithub(); });
@@ -350,12 +369,14 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     let painted = false;
     return {
         populate(settings) {
-            settingsSignature = Transfer.signature(settings || {});
+            currentSettings = settings || {};
+            settingsSignature = layerBackup ? Transfer.signature(currentSettings, layerBackup) : layerBackup === null ? null : Transfer.signature(currentSettings);
             autoBackupEl.checked = settings?.autoSettingsBackup === true;
             renderGithub();
             if (!painted) {
                 painted = true;
                 void refreshGithub();
+                void refreshLayers();
             }
         }
     };

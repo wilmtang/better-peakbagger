@@ -1,11 +1,14 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry, readCustomSource, customId } from '../maps/custom-overlay-schema.js';
+import { customLayerBackup, readCustomLayerBackup } from '../maps/custom-overlay-transfer.js';
+import { storageValue as StorageValue } from '../storage/storage-value.js';
 
 // The worker owns configuration only. There is deliberately no provider-fetch route.
 export function createCustomOverlayStore({ storage, canRead, canEdit }) {
     let queue = Promise.resolve();
     const previews = new Map();
+    const transact = operation => { const next = queue.then(operation); queue = next.catch(() => {}); return next; };
     const read = async () => {
         const data = await storage.get([CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY]);
         const registry = readCustomRegistry(data[CUSTOM_REGISTRY_KEY]);
@@ -60,7 +63,17 @@ export function createCustomOverlayStore({ storage, canRead, canEdit }) {
                 return { ok: true, ...current };
             } catch (error) { return { ok: false, error: error.message }; }
         };
-        const next = queue.then(operation); queue = next.catch(() => {}); return next;
+        return transact(operation);
     };
-    return { handle };
+    return { handle, snapshot: () => transact(read), replaceIfCurrent: (expected, next) => transact(async () => {
+        const current = await read();
+        if (!StorageValue.same(current, expected)) return { replaced: false, current };
+        const backup = next?.registry ? customLayerBackup(next) : readCustomLayerBackup(next);
+        if (!backup) throw new Error('Invalid custom layers backup.');
+        const registry = { schemaVersion: 1, revision: current.registry.revision + 1, generation: (current.registry.generation || 0) + 1,
+            sources: backup.sources.map(source => ({ ...source, revision: (current.registry.sources.find(item => item.id === source.id)?.revision || 0) + 1 })) };
+        if (!readCustomRegistry(registry)) throw new Error('Invalid custom layers backup.');
+        await storage.set({ [CUSTOM_REGISTRY_KEY]: registry, [CUSTOM_PREFERENCES_KEY]: backup.preferences });
+        previews.clear(); return { replaced: true, current: { registry, preferences: backup.preferences } };
+    }) };
 }

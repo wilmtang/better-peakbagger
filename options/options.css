@@ -20,6 +20,22 @@ body { position: fixed; inset: 0; display: flex; overflow: hidden; }
 
 .wrap { max-width: 640px; margin: 0 auto; }
 
+.custom-layer-status, .custom-layer-note { margin: 0; padding: 12px 18px; color: var(--sub); font-size: 12.5px; }
+.custom-layer-note { border-top: 1px solid var(--border); }
+.custom-layer-list { list-style: none; margin: 0; padding: 0; }
+.custom-layer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px 18px; border-top: 1px solid var(--border); }
+.custom-layer-row strong, .custom-layer-row .desc { display: block; overflow-wrap: anywhere; }
+.custom-layer-actions { display: flex; align-items: start; gap: 8px; }
+.custom-layer-opacity { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(50px, 1fr) 4ch; align-items: center; gap: 12px; font-size: 12.5px; }
+.custom-layer-opacity output { text-align: right; font-variant-numeric: tabular-nums; }
+.custom-layer-remove { grid-column: 1 / -1; }
+.custom-layer-remove p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.custom-layer-remove button { margin-right: 8px; }
+.custom-layer-dialog { width: min(620px, calc(100vw - 24px)); height: min(780px, 90dvh); max-height: 90dvh; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text); }
+.custom-layer-dialog::backdrop { background: #0007; }
+.custom-layer-dialog iframe { display: block; width: 100%; height: 100%; border: 0; }
+@media (max-width: 480px) { .custom-layer-row { grid-template-columns: minmax(0, 1fr); } .custom-layer-actions { justify-content: start; } }
+
 /* A panel page with no sidebar — the draft manager. It reuses every card, row,
    and control style above, so only the frame differs: .content is still the one
    scroll container, it just has nothing beside it. */

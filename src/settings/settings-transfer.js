@@ -7,9 +7,10 @@ import { settingsSchema as Schema } from './settings-schema.js';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { cleanGarminKey } from '../garmin/garmin-api.js';
+import { readCustomLayerBackup } from '../maps/custom-overlay-transfer.js';
 
 const KIND = 'better-peakbagger-settings';
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const BACKUP_PATH = 'settings.json';
 const API_KEY_NAMES = Object.freeze(['imgbb', 'garmin']);
 const IMPORT_MAX_BYTES = 1024 * 1024;
@@ -83,7 +84,7 @@ const cleanGithubConnection = value => {
 // (including explicit nulls) and a complete GitHub connection only after the
 // user selects the single sensitive-file option.
 const buildPayload = (settings, {
-    extensionVersion = '', exportedAt, apiKeys, githubConnection,
+    extensionVersion = '', exportedAt, apiKeys, githubConnection, customLayers,
 } = {}) => {
     const payload = {
         kind: KIND,
@@ -92,6 +93,10 @@ const buildPayload = (settings, {
         extensionVersion,
         settings: pick(settings)
     };
+    if (customLayers !== undefined) {
+        payload.customLayers = readCustomLayerBackup(customLayers);
+        if (!payload.customLayers) throw new TypeError('Custom layers backup is invalid.');
+    }
     if (apiKeys !== undefined) {
         const cleaned = cleanApiKeys(apiKeys);
         if (!cleaned) throw new TypeError('Settings transfer API keys are invalid.');
@@ -137,6 +142,11 @@ const parse = text => {
         return { ok: false, reason: 'no-settings' };
     }
     const result = { ok: true, settings: pick(parsed.settings) };
+    if (parsed.schemaVersion >= 6 && Object.hasOwn(parsed, 'customLayers')) {
+        const customLayers = readCustomLayerBackup(parsed.customLayers);
+        if (!customLayers) return { ok: false, reason: 'invalid-custom-layers' };
+        result.customLayers = customLayers;
+    }
     if (Object.hasOwn(parsed, 'apiKeys')) {
         const apiKeys = cleanApiKeys(parsed.apiKeys);
         if (!apiKeys) return { ok: false, reason: 'invalid-api-keys' };
@@ -153,7 +163,13 @@ const parse = text => {
 
 // Export time and extension version are metadata, not part of the content
 // identity used to skip an unchanged automatic backup.
-const signature = settings => JSON.stringify(pick(settings));
+const signature = (settings, customLayers) => {
+    if (customLayers === undefined) return JSON.stringify(pick(settings));
+    const layers = readCustomLayerBackup(customLayers);
+    if (!layers) throw new TypeError('Custom layers backup is invalid.');
+    if (!layers.sources.length) return JSON.stringify(pick(settings));
+    return JSON.stringify({ settings: pick(settings), customLayers: layers });
+};
 
 export const settingsTransfer = {
     KIND,

@@ -87,7 +87,8 @@ export function readCustomRegistry(value) {
     const sources = value.sources.map(readCustomSource);
     if (sources.some(source => !source) || new Set(sources.map(source => source.id)).size !== sources.length
         || new TextEncoder().encode(JSON.stringify(value)).length > CUSTOM_LIMITS.registry) return null;
-    return { schemaVersion: 1, revision: value.revision, sources };
+    if (value.generation != null && (!Number.isSafeInteger(value.generation) || value.generation < 0)) return null;
+    return { schemaVersion: 1, revision: value.revision, sources, ...(value.generation == null ? {} : { generation: value.generation }) };
 }
 export function readCustomSelection(value) {
     if (!Array.isArray(value) || value.length > CUSTOM_LIMITS.active) return [];

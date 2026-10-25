@@ -7,7 +7,7 @@ import { createCustomRenderer } from './custom-overlay-render.js';
 
 export function createCustomOverlayControl({ win, panel, onChange = () => {}, readView }) {
     const tag = '__bpbCustomOverlays', mapId = crypto.randomUUID(), selected = new Map(), reloads = {}, rows = new Map(), parseJobs = new Map();
-    let sources = [], preferences = {}, engine = null, native = null, terrain = false, active = true, registryVersion = 0, previewId = null, previewBaseline = null, pendingAdoption = null;
+    let sources = [], preferences = {}, engine = null, native = null, terrain = false, active = true, registryVersion = 0, libraryGeneration = null, previewId = null, previewBaseline = null, pendingAdoption = null;
     const statuses = {}, pool = customPoolForWindow(win), taskJobs = new Map(), terrainTasks = new Set();
     const send = detail => win.postMessage({ [tag]: true, dir: 'toCS', ...detail }, win.location.origin);
     const parse = (job, signal) => new Promise((resolve, reject) => {
@@ -81,6 +81,8 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
         if (data.type === 'registry') {
             if (data.mapId && data.mapId !== mapId) return;
             const registry = readCustomRegistry(data.registry); if (!registry) { live.textContent = 'Saved overlays are unavailable. Retry by reopening the map.'; return; }
+            if (libraryGeneration !== null && libraryGeneration !== (registry.generation || 0)) { selected.clear(); previewId = previewBaseline = pendingAdoption = null; cancelTasks(); }
+            libraryGeneration = registry.generation || 0;
             sources = registry.sources; preferences = data.preferences || {}; registryVersion++;
             for (const id of selected.keys()) { const source = sources.find(item => item.id === id); if (source) selected.set(id, source.revision); else if (id !== previewId) selected.delete(id); }
             if (pendingAdoption) { for (const item of pendingAdoption) if (sources.some(source => source.id === item.id && source.revision === item.sourceRevision)) selected.set(item.id, item.sourceRevision); pendingAdoption = null; }

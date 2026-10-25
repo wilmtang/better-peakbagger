@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
+import { readCustomSource } from '../../src/maps/custom-overlay-schema.js';
 
 test('display opt-outs survive settings files and affect backup signatures; older files keep sections visible', () => {
     const payload = Transfer.buildPayload({ showSunMoon: false, showWeather: false });
@@ -64,6 +65,27 @@ test('settings transfer payload round-trips known cleaned settings', () => {
     assert.deepEqual(parsed, { ok: true, settings: payload.settings });
     assert.equal('apiKeys' in payload, false,
         'credential-free callers such as GitHub backup must opt in to API keys');
+});
+
+test('custom layer definitions and opacity round-trip without live state or local revisions', () => {
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 14, name: 'Topo', kind: 'raster',
+        source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png?key=public'], minNativeZoom: 3, maxNativeZoom: 15, scheme: 'tms', tileSize: 256 },
+        approvedOrigins: ['https://tiles.example.com'], attribution: { text: 'Topo' }, appearance: { opacity: 60, rules: [] } };
+    assert.ok(readCustomSource(source));
+    const customLayers = { schemaVersion: 1, sources: [source], preferences: { [source.id]: 35 }, enabled: true, cached: 'never export' };
+    const payload = Transfer.buildPayload({}, { customLayers });
+    const parsed = Transfer.parse(Transfer.serialize(payload)); assert.equal(parsed.ok, true);
+    assert.equal(parsed.customLayers.sources[0].revision, 1); assert.equal(parsed.customLayers.preferences[source.id], 35);
+    assert.equal(parsed.customLayers.enabled, undefined); assert.equal(parsed.customLayers.cached, undefined);
+    assert.notEqual(Transfer.signature({}), Transfer.signature({}, customLayers));
+    const changed = structuredClone(customLayers); changed.preferences[source.id] = 70;
+    assert.notEqual(Transfer.signature({}, customLayers), Transfer.signature({}, changed));
+    changed.sources[0].revision++; assert.equal(Transfer.signature({}, changed), Transfer.signature({}, { ...changed, sources: [{ ...changed.sources[0], revision: 1 }] }));
+    assert.equal(Transfer.signature({}, { schemaVersion: 1, sources: [], preferences: {} }), Transfer.signature({}), 'empty-library upgrade preserves backup identity');
+    const legacy = { ...payload, schemaVersion: 5 }; delete legacy.customLayers;
+    assert.equal(Object.hasOwn(Transfer.parse(Transfer.serialize(legacy)), 'customLayers'), false, 'legacy imports preserve destination library');
+    payload.customLayers.sources[0].source.tiles = ['http://unsafe.example.com/{z}/{x}/{y}'];
+    assert.equal(Transfer.parse(Transfer.serialize(payload)).reason, 'invalid-custom-layers');
 });
 
 test('manual settings transfer round-trips every supported API key state', () => {

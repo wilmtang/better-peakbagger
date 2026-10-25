@@ -1,10 +1,12 @@
 # Settings storage, export, and sync
 
-Maintained report, updated **2026-10-23** for the implementation following the
+Maintained report, updated **2026-10-25** for the implementation following the
 storage audit (package version **4.0.2**, unreleased changes). This describes the
 repository, not necessarily the extension installed in a particular browser.
 The [remediation ledger](archive/settings-portability-remediation.md) records
 commits, verification, intentional boundaries and remaining live checks.
+The [custom-layer follow-up](archive/custom-layer-settings-audit-2026-10-25.md)
+records the centralized manager and version 6 backup/restore audit.
 
 ## Current policy
 
@@ -23,9 +25,12 @@ commits, verification, intentional boundaries and remaining live checks.
 - **Credentials remain local.** Manual settings files include them only with
   the unchecked-by-default **Include saved credentials (ImgBB, GitHub and Garmin)**
   option. GitHub settings backups never include credentials.
-- **Custom map sources remain local.** Their definitions and opacity use a
-  separate validated registry, excluded from settings files, sync and GitHub
-  backups. Saving a source makes it available on every map without enabling it.
+- **Custom map sources are backed up with settings.** Their definitions,
+  attribution, zoom ranges, appearance and opacity stay in a separate local
+  registry and travel in settings files and GitHub settings backups. They do
+  not use browser sync: the registry can exceed its per-item quota. Saved public
+  URLs and any public keys in them are included; private tokens do not belong
+  in custom source URLs. Saving/restoring never enables layers on a map.
 
 ## Transfer matrix
 
@@ -36,7 +41,7 @@ computer. “Settings file” means **Export settings**, not a complete profile 
 | --- | --- | --- | --- | --- |
 | 67 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
 | Nine device settings | `storage.local.bpbDeviceSettings` | No | No | No |
-| Custom map sources and opacity | `storage.local.bpbCustomMapOverlaysV1`, `bpbCustomMapOverlayPreferencesV1` | No | No | No |
+| Custom map sources and opacity | `storage.local.bpbCustomMapOverlaysV1`, `bpbCustomMapOverlayPreferencesV1` | No | Yes, `customLayers` | `settings.json`: push and explicit restore |
 | ImgBB API key | `storage.local.bpbImgbbAuth` | No | Credential opt-in only | Never in GitHub settings backup |
 | GitHub token and repository | `storage.local.bpbGithubAuth` | No | Credential opt-in and complete connection only | Never in GitHub settings backup |
 | Garmin Personal API key | IndexedDB `bpb-garmin-v1` | No | Credential opt-in only | Never in GitHub settings backup |
@@ -137,12 +142,46 @@ map dimensions/cache budget seed the device record; later sync changes cannot
 replace it. [Settings migration](../src/settings/settings.js) and
 [connection selection](../src/background/github-routes.js) enforce this boundary.
 
-[Settings transfer schema v5](../src/settings/settings-transfer.js) exports only
-portable keys. It still reads supported v1–v4 files, but strips their old device
+[Settings transfer schema v6](../src/settings/settings-transfer.js) exports
+portable keys plus a separate `customLayers` envelope. It still reads supported
+v1–v5 files, but strips their old device
 and transfer values too. Import replaces the portable snapshot after
 confirmation: missing portable keys receive cleaned defaults, unknown keys are
 excluded, and destination device settings stay unchanged. Applied portable
 settings can subsequently propagate through browser sync.
+
+### Custom map layer management and transfer
+
+**Map & GPX chart → Custom layers** is the central library in Options, with its
+own sidebar link. Add/edit opens the packaged editor in a modal; the list shows
+format, provider host and opacity, and confirms removal. The same sources are
+available on every map. **Check source** can read TileJSON in Options; testing
+tile coverage at the map center remains an explicit action on that map.
+
+Version 6 writes `customLayers: {schemaVersion: 1, sources, preferences}` beside
+`settings`, using the [shared source schema](../src/maps/custom-overlay-schema.js).
+It includes configured URLs/public keys, bounds, native zoom/provenance,
+coordinate scheme, raster size, attribution, simple style rules and saved
+opacity. It excludes selections, previews, tile/feature bytes and probe locations.
+Local source revisions are normalized for transfer and rebased on restore.
+
+File import and GitHub restore preview the replacement layer count before
+confirmation. An included empty library deliberately clears saved layers;
+v1–v5 files and other files without `customLayers` leave the destination library
+alone. Malformed sources reject the entire file before writes. Registry
+replacement and opacity commit together through the worker's serialized store;
+concurrent edits block replacement, and a later credential failure attempts a
+conditional rollback that preserves newer edits. Restore increments the library
+generation so open maps clear their selections and cannot silently request a
+restored provider. It does not fetch providers or enable layers.
+
+GitHub signatures and overwrite reviews include definitions and opacity;
+source-only changes schedule automatic settings backup when that device's
+existing opt-in is enabled. Runtime cache/probe activity never schedules backup.
+No new automatic transfer consent is enabled by adding or restoring layers.
+An unreadable/corrupt registry blocks export/backup rather than exporting an
+apparently empty library. Public repository contents and Git history can expose
+source URLs and their public URL keys, independently of the credential checkbox.
 
 The default settings file has no `apiKeys` or `githubConnection`. Credential
 opt-in adds `apiKeys.imgbb` and `apiKeys.garmin` (including explicit null for a
@@ -181,7 +220,7 @@ this device, can transfer the resulting list change. See [file formats](../src/f
 
 | File / feature | Automatic behavior after device opt-in | Restore / reconciliation |
 | --- | --- | --- |
-| `settings.json` | Push portable settings | Explicit replacement of portable settings; no automatic pull or per-key merge |
+| `settings.json` | Push portable settings plus custom sources/opacity | Explicit replacement of portable settings and included custom library; no automatic pull or per-key merge |
 | `favorite-climbers.json` | Push custom list | Explicit guarded replacement; no automatic pull or two-way list merge |
 | `ignored-climbers.json` | Two-way sync after setup | Review initial merge and conflicting changes; later three-way comparison propagates additions/removals |
 | `photo-library.json` | Push/merge catalog metadata and projects | Explicit restore preview; excludes original pixels, thumbnails and deletion URLs |

@@ -9,6 +9,7 @@ const ext = globalThis.browser || globalThis.chrome, tag = '__bpbCustomOverlays'
 const token = location.hash.slice(1), parser = createCustomParser(ext.runtime.getURL('custom-overlay/worker.js'));
 const client = createCustomClient({ parse: parser.parse });
 let parentOrigin = null, mapId = '', expectedRevision = 0, sourceId = '', pending = false, dirty = false, resolved = null, controller = null;
+let openRevision = 0;
 const jobs = new Map(), tasks = new Map();
 const send = detail => { if (parentOrigin) parent.postMessage({ [tag]: true, token, ...detail }, parentOrigin); };
 const root = document.getElementById('editor');
@@ -61,7 +62,8 @@ function updateKind() {
     field('tile-fields').hidden = geo; field('format').hidden = field('format-label').hidden = geo;
     field('tile-size').hidden = field('size-label').hidden = kind !== 'raster'; field('appearance').hidden = kind === 'raster';
     for (const wrap of document.querySelectorAll('[data-source-layer]')) wrap.hidden = kind !== 'mvt';
-    field('preview').disabled = !mapId; field('test').disabled = !mapId || geo;
+    field('preview').disabled = !mapId; field('preview').hidden = !mapId && parent !== window;
+    field('test').textContent = mapId ? 'Test source' : 'Check source'; field('test').disabled = geo;
 }
 const sourceFromForm = (discover = false) => {
     const kind = field('kind').value, url = field('url').value.trim(), tiled = kind !== 'geojson';
@@ -117,6 +119,7 @@ const run = async action => {
                 field('zoom-origin').textContent = `Minimum: ${source.source.zoomOrigin.min}; maximum: ${source.source.zoomOrigin.max}.` + (declared ? ` Source: ${declared.min}–${declared.max}${declared.maxDeclared ? '' : ' (default maximum)'}. BPB supports zooms up to 22.` : '');
             }
             if (action === 'test') { const tested = await task('test', source); if (!dirty) feedback(tested.message); return; }
+            if (action === 'resolve') { feedback('Source values loaded. Review the zoom range and appearance, then Save. Tile coverage has not been tested.'); return; }
             const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_PREVIEW', mapId, source });
             if (!reply?.ok) throw new Error(reply?.error || 'Preview unavailable.');
             send({ type: 'preview', detail: { type: 'preview', mapId, sourceId: source.id, sourceRevision: source.revision } });
@@ -137,6 +140,8 @@ const reset = source => {
     field('format').value = source?.source.metadataUrl ? 'tilejson' : 'template';
     field('minimum').value = source?.source.minNativeZoom ?? 0; field('maximum').value = source?.source.maxNativeZoom ?? 18;
     field('minimum').dataset.origin = source?.source.zoomOrigin?.min || 'default'; field('maximum').dataset.origin = source?.source.zoomOrigin?.max || 'default';
+    field('zoom-origin').textContent = source ? `Minimum: ${field('minimum').dataset.origin}; maximum: ${field('maximum').dataset.origin}.` : 'Default — not checked';
+    field('source-layers').replaceChildren();
     field('scheme').value = source?.source.scheme || 'xyz'; field('tile-size').value = source?.source.tileSize || 256;
     field('bounds').value = source?.source.bounds?.join(', ') || ''; field('attribution').value = source?.attribution.text || ''; field('attribution-url').value = source?.attribution.url || '';
     ruleValues.length = 0; field('rules').replaceChildren(); for (const rule of source?.appearance.rules.length ? source.appearance.rules : [undefined]) addRule(rule);
@@ -161,9 +166,9 @@ const stopPreview = async () => {
 };
 field('form').onsubmit = event => { event.preventDefault(); void run('save'); };
 field('preview').onclick = () => { dirty = false; void run('preview'); };
-field('test').onclick = () => { dirty = false; void run('test'); };
+field('test').onclick = () => { dirty = false; void run(mapId ? 'test' : 'resolve'); };
 field('add-rule').onclick = () => { dirty = true; resolved = null; controller?.abort(); addRule(); };
-field('source-values').onclick = () => { field('minimum').dataset.origin = field('maximum').dataset.origin = 'default'; resolved = null; feedback('Click Preview or Test source to read the source values.'); };
+field('source-values').onclick = () => { field('minimum').dataset.origin = field('maximum').dataset.origin = 'default'; resolved = null; dirty = false; void run('resolve'); };
 field('remove').onclick = async () => { if (pending || !expectedRevision) return; busy(true); try { const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_REMOVE', id: sourceId, expectedRevision }); if (!reply?.ok) throw new Error(reply?.error || 'Couldn’t remove.'); await stopPreview(); reset(); await library(); feedback('Overlay removed.'); } catch (error) { feedback(error.message); } finally { busy(false); } };
 field('cancel').onclick = () => { void stopPreview().finally(() => send({ type: 'close' })); };
 document.addEventListener('keydown', event => {
@@ -176,14 +181,20 @@ field('kind').onchange = () => { void stopPreview(); updateKind(); };
 field('url').onchange = () => { void stopPreview(); };
 window.addEventListener('message', event => {
     const data = event.data;
-    if (event.source !== parent || !data?.[tag] || data.token !== token || !isPeakbaggerPageOrigin(event.origin)) return;
+    let optionsParent = false;
+    try { const expected = new URL(ext.runtime.getURL('options/options.html')); optionsParent = event.origin === `${expected.protocol}//${expected.host}` && parent.location.pathname === expected.pathname; } catch { /* Peakbagger is cross-origin. */ }
+    if (event.source !== parent || !data?.[tag] || data.token !== token || !isPeakbaggerPageOrigin(event.origin) && !optionsParent) return;
     parentOrigin = event.origin;
     if (data.type === 'hello') send({ type: 'ready' });
     if (data.type === 'open') {
+        const revision = ++openRevision;
+        if (optionsParent) root.setAttribute('role', 'form');
         void stopPreview().then(async () => { mapId = typeof data.mapId === 'string' ? data.mapId : ''; document.documentElement.dataset.theme = data.theme === 'dark' ? 'dark' : 'light';
-            const registry = await library(); reset(registry.sources.find(source => source.id === data.sourceId)); send({ type: 'opened' }); field('name').focus();
+            const registry = await library(); if (revision !== openRevision) return;
+            reset(registry.sources.find(source => source.id === data.sourceId)); send({ type: 'opened' }); field('name').focus();
         }).catch(error => { feedback(error.message); send({ type: 'opened' }); });
     }
+    if (data.type === 'dismiss') { openRevision++; void stopPreview(); }
     if (data.type === 'parse') {
         const owner = new AbortController(); jobs.set(data.requestId, owner);
         parser.parse(data.job, owner.signal).then(value => send({ type: 'parsed', requestId: data.requestId, reply: { ok: true, value } }),

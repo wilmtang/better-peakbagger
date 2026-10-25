@@ -3450,16 +3450,21 @@ import { GarminError } from '../garmin/garmin-api.js';
         'options/inbox.html',
     ]);
     const isPopupPage = createPackagedPageMatcher(ext, ['popup/popup.html']);
+    const isCustomOptionsParent = value => {
+        try { const actual = new URL(value), expected = new URL(ext.runtime.getURL('options/options.html'));
+            return actual.protocol === expected.protocol && actual.host === expected.host && actual.pathname === expected.pathname;
+        } catch { return false; }
+    };
     const customPage = (sender, paths) => {
         if (sender?.id !== ext.runtime.id || sender.tab && (!Number.isInteger(sender.tab.id) || !Number.isInteger(sender.frameId)
-            || sender.frameId > 0 && !isPeakbaggerSenderUrl(sender.tab.url))) return false;
+            || sender.frameId > 0 && !isPeakbaggerSenderUrl(sender.tab.url) && !isCustomOptionsParent(sender.tab.url))) return false;
         try { const actual = new URL(sender.url); return paths.some(path => {
             const expected = new URL(ext.runtime.getURL(path));
             return actual.protocol === expected.protocol && actual.host === expected.host && actual.pathname === expected.pathname && !actual.username && !actual.password;
         }); } catch { return false; }
     };
-    const customEditor = sender => customPage(sender, ['custom-overlay/editor.html']);
-    const customReader = sender => customPage(sender, ['custom-overlay/editor.html', 'terrain/terrain.html']);
+    const customEditor = sender => customPage(sender, ['custom-overlay/editor.html', 'options/options.html']);
+    const customReader = sender => customPage(sender, ['custom-overlay/editor.html', 'terrain/terrain.html', 'options/options.html']);
     const customOverlays = createCustomOverlayStore({ storage: ext.storage.local,
         canRead: sender => isPeakbaggerSender(sender) || customReader(sender), canEdit: customEditor });
     const bcLandRoutes = createBCLandRoutes({ ext, isPeakbaggerSender,
@@ -3520,6 +3525,7 @@ import { GarminError } from '../garmin/garmin-api.js';
 
     const ignoredMutations = createIgnoredStore({ storage: ext.storage.local });
     const githubRoutes = createGithubRoutes({
+        customLayers: customOverlays,
         ignoredStore: ignoredMutations,
         ext,
         snapshotKey: SNAPSHOTS_KEY,
@@ -3686,6 +3692,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     });
     const settingsFileRoutes = createSettingsFileRoutes({
         ext,
+        customLayers: customOverlays,
         garmin: garminImports,
         verifyGithubConnection: githubRoutes.validateImportedConnection,
     });

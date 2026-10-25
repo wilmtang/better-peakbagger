@@ -7,6 +7,8 @@ import * as Ignored from '../favorites/ignored-climbers.js';
 import { createIgnoredStore } from './ignored-store.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
+import { customLayerBackup } from '../maps/custom-overlay-transfer.js';
+import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY } from '../maps/custom-overlay-schema.js';
 import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js';
 import { photoBackup as PhotoBackup } from '../photos/photo-backup.js';
 import { photoStore as PhotoStore } from '../photos/photo-store.js';
@@ -62,6 +64,7 @@ export const createGithubRouteTable = definitions => {
 const peakbaggerPage = handler => ({ handler, extensionOnly: false });
 
 export function createGithubRoutes({
+    customLayers = null,
     ext,
     snapshotKey: SNAPSHOTS_KEY,
     storage,
@@ -1170,7 +1173,7 @@ export function createGithubRoutes({
                     if (remoteText !== null) {
                         const parsed = path === Transfer.BACKUP_PATH ? Transfer.parse(remoteText) : Favorites.parseBackup(remoteText);
                         if (!parsed.ok) throw new GithubAccessError({ code: 'backup-invalid', message: 'The existing backup is invalid or newer. It was not replaced.' });
-                        remoteSignature = path === Transfer.BACKUP_PATH ? Transfer.signature(parsed.settings) : Favorites.backupSignature(parsed.favorites);
+                        remoteSignature = path === Transfer.BACKUP_PATH ? Transfer.signature(parsed.settings, parsed.customLayers) : Favorites.backupSignature(parsed.favorites);
                     }
                     guardRootBackup({ path, localSignature: signature, remoteSignature, scope,
                         baseline: await readState(), review });
@@ -1246,8 +1249,10 @@ export function createGithubRoutes({
 
     const buildSettingsBackup = async () => {
         let settings;
+        let layerBackup;
         try {
             settings = await Settings.requireCurrent({ includeLegacy: true });
+            if (customLayers) layerBackup = customLayerBackup(await customLayers.snapshot());
         } catch (cause) {
             console.error('Better Peakbagger: settings backup read failed', cause);
             throw PublicErrors.exception(
@@ -1258,9 +1263,10 @@ export function createGithubRoutes({
         }
         const payload = Transfer.buildPayload(settings, {
             extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
-            exportedAt: new Date().toISOString()
+            exportedAt: new Date().toISOString(),
+            ...(layerBackup ? { customLayers: layerBackup } : {})
         });
-        return { text: Transfer.serialize(payload), signature: Transfer.signature(settings) };
+        return { text: Transfer.serialize(payload), signature: Transfer.signature(settings, layerBackup) };
     };
 
     const settingsAutoBackup = createAutoBackup({
@@ -1964,10 +1970,11 @@ export function createGithubRoutes({
         const connectionChanged = !!(changes[GithubAuth.STORAGE_KEY] || changes[GithubAuth.EPOCH_KEY]);
         if (connectionChanged) ignoredSync.connectionChanged();
         if (changes[Ignored.IGNORED_KEY]) void ignoredSync.localChanged().catch(() => {});
-        if (!connectionChanged && !changes[Favorites.FAVORITES_KEY]) return;
+        const layersChanged = !!(changes[CUSTOM_REGISTRY_KEY] || changes[CUSTOM_PREFERENCES_KEY]);
+        if (!connectionChanged && !changes[Favorites.FAVORITES_KEY] && !layersChanged) return;
         void Settings.requireCurrent().then(settings => {
-            if (connectionChanged && settings.autoSettingsBackup) settingsAutoBackup.schedule();
-            if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
+            if ((connectionChanged || layersChanged) && settings.autoSettingsBackup) settingsAutoBackup.schedule();
+            if ((connectionChanged || changes[Favorites.FAVORITES_KEY]) && settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
             if (connectionChanged && settings.autoPhotoLibraryBackup) armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
         }).catch(() => {});
     };

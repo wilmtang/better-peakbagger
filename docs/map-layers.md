@@ -3,7 +3,7 @@
 ## Custom sources
 
 Choose **Overlays → Add custom overlay** on any interactive Peakbagger map, or
-manage the same device-local library from Settings. Saved sources are available
+manage the same library at **Settings → Map & GPX chart → Custom layers**. Saved sources are available
 on peak, ascent, BigMap, recent/different-route, list, climber and other native
 Leaflet maps. Each map starts with custom sources off; enable up to three at a
 time. Selection survives supported 2D/3D switches and the one-use Full Screen
@@ -43,8 +43,10 @@ own feedback. Retry retains painted tiles or last good GeoJSON; opacity changes
 do not fetch the source again. Hidden/removed renderers cancel their work.
 
 Keep URL keys public: Peakbagger page scripts can see source configuration.
-Definitions and opacity stay in separate local records, excluded from generic
-settings export, browser sync and GitHub backup. The extension does not persist
+Definitions and opacity stay in separate local records and are included in
+settings exports and GitHub settings backups. They do not use browser sync.
+Restoring a library turns off existing selections. Public URLs and any public
+keys in them travel with the backup. The extension does not persist
 custom geometry, tile data or probe locations. See [privacy](../PRIVACY.md).
 
 Implementation verification: `node scripts/verify-custom-overlays.mjs` (Chrome)

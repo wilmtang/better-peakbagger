@@ -8,6 +8,7 @@ import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
+import { customLayerBackup } from '../maps/custom-overlay-transfer.js';
 
 const EXPORT_TYPE = 'SETTINGS_FILE_EXPORT';
 const IMPORT_TYPE = 'SETTINGS_FILE_IMPORT';
@@ -56,6 +57,7 @@ export function createSettingsFileRoutes({
     authStore = GithubAuth.authStore,
     verifyGithubConnection,
     garmin = null,
+    customLayers = null,
 } = {}) {
     if (!ext || !settings?.requireCurrent || !settings?.applyPatch || !settings?.replaceIfCurrent
         || !settings?.clean || !keyStore?.read || !keyStore?.replace || !keyStore?.replaceIfCurrent
@@ -87,16 +89,18 @@ export function createSettingsFileRoutes({
         if (!isOptionsPage(sender)) return forbidden();
         const includeCredentials = message?.includeCredentials === true;
         try {
-            const [currentSettings, imgbb, auth, garminSnapshot] = await Promise.all([
+            const [currentSettings, imgbb, auth, garminSnapshot, layerSnapshot] = await Promise.all([
                 settings.requireCurrent({ includeLegacy: true }),
                 includeCredentials ? keyStore.read() : null,
                 includeCredentials ? authStore.read() : null,
                 includeCredentials && garmin ? garmin.readSnapshot() : null,
+                customLayers ? customLayers.snapshot() : null,
             ]);
             const connection = includeCredentials ? connectionPayload(auth) : null;
             const payload = Transfer.buildPayload(currentSettings, {
                 extensionVersion: ext.runtime.getManifest().version,
                 exportedAt: new Date().toISOString(),
+                ...(layerSnapshot ? { customLayers: customLayerBackup(layerSnapshot) } : {}),
                 ...(includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null,
                     ...(garmin ? { garmin: garminSnapshot?.connection?.key || null } : {}) } } : {}),
                 ...(connection ? { githubConnection: connection } : {}),
@@ -125,6 +129,9 @@ export function createSettingsFileRoutes({
         const importsGarmin = Object.hasOwn(parsed.apiKeys || {}, 'garmin');
         const importsGithubConnection = Object.hasOwn(parsed, 'githubConnection');
         const stores = storeStates({ importsApiKeys, importsGithubConnection });
+        const importsLayers = Object.hasOwn(parsed, 'customLayers');
+        if (importsLayers) stores.customLayers = 'not-written';
+        let previousLayers, installedLayers;
         let previousGarmin; let installedGarmin; let garminAttempted = false;
         if (importsGarmin) {
             stores.garmin = 'not-written';
@@ -176,11 +183,13 @@ export function createSettingsFileRoutes({
         let previousImgbb;
         let previousGithubSnapshot;
         try {
-            [previousSettings, previousImgbb, previousGithubSnapshot] = await Promise.all([
+            [previousSettings, previousImgbb, previousGithubSnapshot, previousLayers] = await Promise.all([
                 settings.requireCurrent({ includeLegacy: true }),
                 keyStore.read(),
                 importsGithubConnection ? authStore.readSnapshot() : null,
+                importsLayers ? customLayers?.snapshot() : null,
             ]);
+            if (importsLayers && !previousLayers) throw new Error('Custom layers store unavailable.');
         } catch (error) {
             console.error('Better Peakbagger: settings file import read failed', error);
             return {
@@ -202,7 +211,7 @@ export function createSettingsFileRoutes({
             auth: importedGithubAuth,
             epoch: previousGithubSnapshot.epoch + 1,
         } : null;
-        const attempted = { settings: false, imgbb: false, github: false };
+        const attempted = { settings: false, imgbb: false, github: false, customLayers: false };
         try {
             if (importsGarmin) {
                 garminAttempted = true;
@@ -219,6 +228,12 @@ export function createSettingsFileRoutes({
             }
             const importedSettings = replacement.current;
             stores.settings = 'committed';
+            if (importsLayers) {
+                attempted.customLayers = true;
+                const layerReplacement = await customLayers.replaceIfCurrent(previousLayers, parsed.customLayers);
+                if (!layerReplacement.replaced) { attempted.customLayers = false; stores.customLayers = 'conflicted'; throw new Error('Custom layers changed during import.'); }
+                installedLayers = layerReplacement.current; stores.customLayers = 'committed';
+            }
             if (importsApiKeys) {
                 attempted.imgbb = true;
                 await keyStore.replace(installedImgbb);
@@ -280,6 +295,10 @@ export function createSettingsFileRoutes({
                 }
             }
             if (attempted.imgbb) await restore('imgbb', keyStore, installedImgbb, previousImgbb);
+            if (attempted.customLayers) {
+                if (installedLayers) await restore('customLayers', customLayers, installedLayers, previousLayers);
+                else stores.customLayers = 'rollback-failed'; // A rejected storage write may have committed; never claim a clean rollback.
+            }
             if (attempted.settings) {
                 await restore('settings', settings, installedSettings, previousSettings);
             }

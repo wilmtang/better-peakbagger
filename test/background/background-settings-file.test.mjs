@@ -8,6 +8,8 @@ import { createSettingsStore } from '../../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 import { imgbbAuth as ImgbbAuth } from '../../src/photos/imgbb-auth.js';
 import { githubAuth as GithubAuth } from '../../src/github/github-auth.js';
+import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
+import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.js';
 
 const makeArea = (initial = {}) => {
     const values = structuredClone(initial);
@@ -62,6 +64,7 @@ const harness = ({
     };
     const routes = createSettingsFileRoutes({
         ext, settings: settingsStore, keyStore, authStore, verifyGithubConnection, garmin,
+        customLayers: createCustomOverlayStore({ storage: local, canRead: () => true, canEdit: () => true }),
     });
     return { routes, sync, local, settingsStore, keyStore, authStore };
 };
@@ -72,6 +75,46 @@ const optionsSender = {
 const straySender = {
     url: 'chrome-extension://test-extension/options/favorites.html',
 };
+
+const customSource = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Topo', kind: 'raster',
+    source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
+    approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [] } });
+test('settings files export and atomically replace layers while legacy files preserve them', async () => {
+    const h = harness(), source = customSource();
+    h.local.values.bpbCustomMapOverlaysV1 = { schemaVersion: 1, revision: 8, sources: [source] };
+    h.local.values.bpbCustomMapOverlayPreferencesV1 = { [source.id]: 27 };
+    const exported = await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender);
+    const parsed = Transfer.parse(exported.content); assert.equal(parsed.customLayers.preferences[source.id], 27);
+    const legacy = Transfer.serialize(Transfer.buildPayload({ theme: 'light' }));
+    assert.equal((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: legacy }, optionsSender)).ok, true);
+    assert.equal(h.local.values.bpbCustomMapOverlaysV1.sources.length, 1);
+    const payload = Transfer.buildPayload({ theme: 'dark' }, { customLayers: { schemaVersion: 1, sources: [{ ...source, name: 'Restored topo' }], preferences: { [source.id]: 44 } } });
+    assert.equal((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(payload) }, optionsSender)).ok, true);
+    assert.equal(h.local.values.bpbCustomMapOverlaysV1.sources[0].name, 'Restored topo');
+    assert.equal(h.local.values.bpbCustomMapOverlaysV1.sources[0].revision, 2); assert.equal(h.local.values.bpbCustomMapOverlaysV1.generation, 1);
+    assert.equal(h.local.values.bpbCustomMapOverlayPreferencesV1[source.id], 44);
+    const invalid = structuredClone(payload); invalid.customLayers.sources[0].source.tiles[0] = 'http://unsafe.example.com';
+    assert.equal((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: JSON.stringify(invalid) }, optionsSender)).ok, false);
+    assert.equal(h.local.values.bpbCustomMapOverlayPreferencesV1[source.id], 44);
+});
+test('later credential failure rolls imported custom layers back without losing prior sources', async () => {
+    const h = harness(), source = customSource();
+    h.local.values.bpbCustomMapOverlaysV1 = { schemaVersion: 1, revision: 8, sources: [source] };
+    h.local.values.bpbCustomMapOverlayPreferencesV1 = { [source.id]: 27 };
+    const before = customLayerBackup({ registry: h.local.values.bpbCustomMapOverlaysV1, preferences: h.local.values.bpbCustomMapOverlayPreferencesV1 });
+    h.keyStore.replace = async () => { throw new Error('simulated credential write failure'); };
+    const payload = Transfer.buildPayload({ theme: 'light' }, { customLayers: { schemaVersion: 1, sources: [], preferences: {} }, apiKeys: { imgbb: 'new-key' } });
+    const reply = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(payload) }, optionsSender);
+    assert.equal(reply.ok, false); assert.equal(reply.stores.customLayers, 'rolled-back');
+    assert.deepEqual(customLayerBackup({ registry: h.local.values.bpbCustomMapOverlaysV1, preferences: h.local.values.bpbCustomMapOverlayPreferencesV1 }), before);
+    assert.equal(h.sync.values.bpbSettings.theme, 'dark');
+});
+test('an unreadable or corrupt custom library cannot become an empty settings export', async () => {
+    const h = harness(); h.local.values.bpbCustomMapOverlaysV1 = { schemaVersion: 99, sources: [] };
+    const reply = await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender);
+    assert.equal(reply.ok, false); assert.equal(reply.error.code, 'settings-unavailable'); assert.equal(reply.content, undefined);
+    assert.deepEqual(h.local.values.bpbCustomMapOverlaysV1, { schemaVersion: 99, sources: [] });
+});
 
 test('a manual file export is credential-free unless the user opts in', async () => {
     const h = harness({ imgbb: 'secret-imgbb-key' });

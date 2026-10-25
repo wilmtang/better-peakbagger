@@ -1037,6 +1037,29 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
     assert.equal(forbidden.error, 'forbidden');
 });
 
+test('custom source and opacity edits trigger settings backups and remote layer differences require review', async () => {
+    const backend = rootDataBackend();
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Topo', kind: 'raster',
+        source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png?key=public'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
+        approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [] } };
+    const worker = createWorker({ settings: { autoSettingsBackup: true }, local: { bpbGithubAuth: structuredClone(AUTH),
+        bpbCustomMapOverlaysV1: { schemaVersion: 1, revision: 1, sources: [source] }, bpbCustomMapOverlayPreferencesV1: { [source.id]: 35 } }, github: backend.handler });
+    worker.fireAlarm('bpb-settings-backup'); await waitFor(() => worker.local.bpbSettingsBackupState?.syncedAt);
+    const payload = JSON.parse(backend.state.contents['settings.json']);
+    assert.equal(payload.customLayers.sources[0].source.tiles[0], source.source.tiles[0]);
+    assert.equal(payload.customLayers.preferences[source.id], 35);
+    const signature = worker.local.bpbSettingsBackupState.signature, previousAlarms = worker.alarms.created.length;
+    worker.local.bpbCustomMapOverlayPreferencesV1[source.id] = 70;
+    worker.fireStorageChange({ bpbCustomMapOverlayPreferencesV1: { newValue: { [source.id]: 70 } } }, 'local');
+    await waitFor(() => worker.alarms.created.slice(previousAlarms).some(alarm => alarm.name === 'bpb-settings-backup'));
+    worker.fireAlarm('bpb-settings-backup'); await waitFor(() => worker.local.bpbSettingsBackupState.signature !== signature);
+    assert.equal(JSON.parse(backend.state.contents['settings.json']).customLayers.preferences[source.id], 70);
+    const different = JSON.parse(backend.state.contents['settings.json']); different.customLayers.sources[0].name = 'Remote replacement';
+    backend.state.contents['settings.json'] = JSON.stringify(different);
+    const result = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
+    assert.equal(result.error.code, 'backup-review'); assert.equal(JSON.parse(backend.state.contents['settings.json']).customLayers.sources[0].name, 'Remote replacement');
+});
+
 test('manual settings backup preserves the remote file on read failure and retries authoritative settings', async () => {
     const backend = gitDataBackend();
     const previousRemote = '{"kind":"previous-settings-backup","theme":"light"}\n';
