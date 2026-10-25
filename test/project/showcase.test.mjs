@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { createSettingsStore } from '../../src/settings/settings.js';
 import { createPageSettingsClient } from '../../src/settings/page-settings-client.js';
 
 import {
@@ -203,4 +204,16 @@ test('the request guard that makes the HTTPS fixture necessary is still in force
         'plain HTTP must stay refused — the fixtures serve HTTPS because of this, not the reverse');
     assert.equal(called, false, 'and it must fail before any fetch');
     assert.ok(root);
+});
+
+test('terrain fixture supplies both storage areas for the strict frame feature gate', async () => {
+    const dom = new JSDOM(instrumentTerrainFrameHtml('<html><head></head><body></body></html>'), {
+        url: 'https://www.peakbagger.com/dist/terrain/terrain.html', runScripts: 'dangerously' });
+    try {
+        const api = dom.window.chrome;
+        const store = createSettingsStore({ area: api.storage.sync, localArea: api.storage.local, sendMessage: null });
+        assert.equal((await store.requireCurrent()).enable3dMap, true);
+        const missingLocal = createSettingsStore({ area: api.storage.sync, localArea: null, sendMessage: null });
+        await assert.rejects(missingLocal.requireCurrent(), /could not|unavailable/i);
+    } finally { dom.window.close(); }
 });

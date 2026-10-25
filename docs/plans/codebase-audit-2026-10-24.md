@@ -359,7 +359,9 @@ Independent commits for drag ownership and report/observer surfaces:
 - F13 snow table: eight daily rows and their stable text owners are allocated once;
   updates retain node identity, date headers and quality context. The unit-update
   regression failed before the fix; all 31 snow tests, build and ESLint passed.
-  The real-extension snow browser matrix is in progress.
+  Hidden real-extension Chrome 156/Firefox 158 passed the snow matrix at
+  375/681/1440 px, both themes and 200% zoom, including slow/error/Retry, keyboard
+  station changes and geometry negative controls.
 
 ### Intentionally not changed
 
@@ -378,8 +380,9 @@ Independent commits for drag ownership and report/observer surfaces:
 
 - F10 hardware Chrome reached Apple M3 Pro Metal but stopped before 3D at a
   pre-existing native-toggle gap (41 px, verifier limit 40 px). Firefox terrain
-  probe timed out before rendering (authorization-attempt counter remained zero);
-  hardware terrain verification is not yet claimed complete.
+  probe initially stopped before rendering because its fixture omitted local
+  settings storage. The repaired fixture reaches hardware terrain; its full
+  interaction matrix remains in progress.
 - Audit corrections only. Runtime items above remain open until their focused
   regression checks pass; source inspection alone is not UI or live-service proof.
 - Live Garmin/ImgBB/GitHub/provider operations, native browser chrome/focus, assistive

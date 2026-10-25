@@ -273,6 +273,13 @@ async function main() {
                 activation: 'guessed-fixture-capability',
             }, location.origin);
             return globalThis.__bpbTerrainFixtureAuthorizationAttempts > 0;
+        }).catch(async error => {
+            const frameState = await page.evaluate(() => {
+                const frame = document.getElementById('bpb-direct-terrain-probe');
+                return { url: frame?.contentWindow?.location.href, ready: frame?.contentDocument?.readyState,
+                    body: frame?.contentDocument?.body?.innerHTML, attempts: globalThis.__bpbTerrainFixtureAuthorizationAttempts };
+            });
+            throw new Error(`Direct-frame authorization probe failed: ${JSON.stringify({ frameState, errors: errors.slice(-8) })}`, { cause: error });
         });
         const directFrameState = await page.evaluate(() => {
             const frame = document.getElementById('bpb-direct-terrain-probe');
@@ -666,7 +673,13 @@ async function main() {
         await toggle.click();
         const sentinelFrame = page.frameLocator('#bpb-terrain-frame');
         await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
-        await page.locator('.bpb-layers-trigger').click();
+        await page.locator('.bpb-layers-trigger').click().catch(async error => {
+            const state = await page.evaluate(() => ({ scroll: window.scrollY,
+                menu: document.querySelector('.bpb-map-layers')?.outerHTML.slice(0, 500),
+                frame: document.getElementById('bpb-terrain-frame')?.getBoundingClientRect().toJSON(),
+                toggle: document.getElementById('bpb-terrain-toggle')?.outerHTML }));
+            throw new Error(`Firefox terrain overlays unavailable: ${JSON.stringify(state)}`, { cause: error });
+        });
         await page.locator('[data-layer="sentinel"] input').check();
         const sentinelDetails = page.locator('[data-layer="sentinel"] button');
         if (await sentinelDetails.getAttribute('aria-expanded') !== 'true') await sentinelDetails.click();

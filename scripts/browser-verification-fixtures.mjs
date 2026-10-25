@@ -1069,6 +1069,7 @@ export const instrumentTerrainFrameHtml = html => html
       runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href },
       storage: {
         sync: { get: async () => ({ bpbSettings: { enable3dMap: true } }) },
+        local: { get: async () => ({}) },
         onChanged: { addListener: () => {}, removeListener: () => {} }
       }
     };
