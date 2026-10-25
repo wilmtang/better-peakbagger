@@ -103,8 +103,9 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     };
     const expanded = (id, expected) => waitForCondition(() => evaluate(id => {
         const card = document.querySelector(`[data-bpb-peak-card="${id}"]`), button = card.querySelector('.bpb-peak-card-toggle, .bpb-sun-calculator__toggle');
-        return button.getAttribute('aria-expanded');
-    }, id), { description: `${id} disclosure ${expected}`, isReady: value => value === String(expected) });
+        return { expanded: button.getAttribute('aria-expanded'), focus: document.activeElement?.outerHTML?.slice(0, 300),
+            visibility: document.visibilityState, focused: document.hasFocus() };
+    }, id), { description: `${id} disclosure ${expected}`, isReady: value => value.expanded === String(expected) });
     const preferences = { sun: 'peakSunCollapsed', weather: 'peakWeatherCollapsed', snow: 'peakSnowCollapsed' };
     const compactSnow = async label => {
         const layout = await evaluate(() => {
@@ -231,6 +232,17 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     const beforeCollapsedLoad = weatherRequestCount();
     await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map-first`);
     await wait(() => document.querySelector('#bpb-peak-weather')?.dataset.bpbCardCollapsed === 'true', 'saved collapsed weather');
+    await evaluate(() => {
+        window.__preferenceReadVisibility = [];
+        window.__preferenceReadListener = () => window.__preferenceReadVisibility.push(document.visibilityState);
+        document.addEventListener('visibilitychange', window.__preferenceReadListener);
+    });
+    await readSettings();
+    const visibility = await evaluate(() => {
+        document.removeEventListener('visibilitychange', window.__preferenceReadListener);
+        return window.__preferenceReadVisibility;
+    });
+    assert.deepEqual(visibility, [], 'reading saved preferences must not hide or blur the interaction fixture');
     await evaluate(() => document.querySelector('#bpb-peak-weather').scrollIntoView({ block: 'center' }));
     await evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
     assert.equal(weatherRequestCount(), beforeCollapsedLoad, 'collapsed header in viewport never requests weather');

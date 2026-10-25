@@ -292,9 +292,14 @@ try {
             } finally { await driver.switchTo().window(weatherWindow); }
         };
         readSettings = async () => {
-            await driver.switchTo().window(settingsWindow);
-            try { return await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.get("bpbSettings").then(value=>done(value.bpbSettings));'); }
-            finally { await driver.switchTo().window(weatherWindow); }
+            // Persistence polling must not hide the interaction page or
+            // disturb the native keyboard target between pointer and Enter.
+            const response = await send({ method: 'script.evaluate', params: {
+                expression: 'chrome.storage.sync.get("bpbSettings").then(saved => JSON.stringify(saved.bpbSettings || {}))',
+                target: { context: settingsWindow }, awaitPromise: true, resultOwnership: 'none',
+            } });
+            if (response.result?.type === 'exception') throw new Error(response.result.exceptionDetails?.text || 'settings read failed');
+            return JSON.parse(response.result?.result?.value);
         };
         setZoom = async factor => {
             await driver.switchTo().window(settingsWindow);
