@@ -13,14 +13,15 @@ controls still require implementation and verification.
 
 ## Extraction and completed ownership transfer
 
-Six FCC-directory commits through extension commit `d7bae265` were extracted
-with `git subtree split`. Authors and messages are preserved; extracted commit
-IDs differ because the directory becomes the new repository root. The server's
+Six FCC-directory commits through extension commit `58b557e0` were extracted
+with `git subtree split`. Authors and original changes are preserved. Extracted
+commit IDs differ because the directory becomes the repository root; the later privacy rewrite
+also redacts host identifiers from messages and content. The server's
 extraction record maps each original commit to its extracted counterpart.
 
 The follow-up transfer ports the final compaction policy, service template,
-installer and deployment evidence from extension commit `08098e95`. Server
-commit `7f53451` records hashes for all 61 source-directory files and the full
+installer and deployment evidence from extension commit `e6d750e5`. Server
+commit `82dac32` records hashes for all 61 source-directory files and the full
 research report, preserving standalone browser-harness adaptations. The
 extension's duplicate scripts, tests, images and receipts have been retired;
 the [FCC directory](plans/experiments/fcc-browser-coverage/README.md) retains a
@@ -44,3 +45,12 @@ Credentials, raw source archives, generated PMTiles and build caches stay outsid
 Git. Retained JSON receipts and small comparison fixtures are research evidence,
 not a copy of the national dataset. No Cloudflare deployment, DNS change or new
 paid resource was part of creating the local server repository.
+
+## Redacted history
+
+Private host identifiers were removed from the local histories of both
+repositories. Current provenance records use rewritten commit IDs; the mapping
+for earlier references is in
+`~/Dev/better-peakbagger-server/docs/history-redaction.json`. Tracked host names
+are documentation placeholders. Live SSH configuration and VPS services remain
+unchanged, and no GitHub refs were rewritten.
