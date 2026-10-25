@@ -282,7 +282,12 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     await prepare(375,'dark','error');await click('#bpb-snow-map-toggle');await open(true);await wait(()=>document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry').getAttribute('aria-disabled')==='true','NRCS cooldown');
     const count=snowEvidence.length;const point=await evaluate(()=>{const r=document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};});
     await clickPoint(point.x,point.y);await evaluate(()=>document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry').focus());await press(key('Enter'));assert.equal(snowEvidence.length,count,'cooldown blocks pointer and keyboard retry');
-    await prepare(375,'dark','complete');await setZoom(2);await click('#bpb-snow-map-toggle');await ready();await image('zoom-200');await setZoom(1);
+    await prepare(375,'dark','complete');await setZoom(2);
+    // Browser zoom changes the visible map rectangle; a user scrolls the map
+    // back into view before opening its overlay control.
+    await evaluate(()=>document.querySelector('.bpb-terrain-mount-peak').scrollIntoView({block:'center'}));
+    await wait(()=>!document.querySelector('.bpb-map-layers').hidden,'zoomed map controls visible');
+    await click('#bpb-snow-map-toggle');await ready();await image('zoom-200');await setZoom(1);
     cases.push({states:['empty','rate-limit','blocked-retry','zoom-200']});
     const cardGeometry = () => evaluate(() => {
         const rect = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
