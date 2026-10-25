@@ -19,6 +19,7 @@ export const resolvePeakHourlyMetric = value => value === 'snowfall' ? 'precipit
 
 export function createPeakHourlyChart({ container, day, samples, zone, metric = 'code', format, onMetric, state, referenceElevation, referenceLabel = 'Summit' }) {
     const id = `bpb-week-${day.window.date}`;
+    const clockLabel = referenceLabel === 'Summit' ? 'Summit local time' : 'Local time at selected point';
     metric = resolvePeakHourlyMetric(metric);
     let disposed = false, observer, rows = [], geometry, hover = -1, selected = -1;
     const tabs = element('div', { class: 'bpb-week-tabs', role: 'tablist', 'aria-label': 'Hourly weather data' });
@@ -33,7 +34,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     const svg = svgElement('svg', { role: 'img', preserveAspectRatio: 'xMidYMid meet' });
     const empty = element('p', { class: 'bpb-week-chart-empty', hidden: '' });
     frame.append(svg, empty);
-    const conditions = element('div', { class: 'bpb-week-conditions bpb-weather-hourly-scroll', tabindex: '0', role: 'region', 'aria-label': 'Hourly weather in summit local time. Scroll horizontally for all hours.' });
+    const conditions = element('div', { class: 'bpb-week-conditions bpb-weather-hourly-scroll', tabindex: '0', role: 'region', 'aria-label': `Hourly weather in ${clockLabel.toLowerCase()}. Scroll horizontally for all hours.` });
     const note = element('p', { class: 'bpb-week-sub', id: `${id}-hint` });
     const info = element('button', { type: 'button', class: 'bpb-week-info', 'aria-expanded': 'false', 'aria-controls': `${id}-info` },
         [element('span', { 'aria-hidden': 'true', text: 'ⓘ' })]);
@@ -103,7 +104,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         empty.textContent = metric === 'cloud' ? 'Cloud cover is unavailable for this day.'
             : `${metrics.find(([key]) => key === metric)[1]} readings are unavailable for this day.`;
         frame.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} hourly graph. Use left and right arrows to explore readings; Escape clears selection.`);
-        svg.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} in summit local time. ${overview()}. Missing readings leave gaps.`);
+        svg.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} in ${clockLabel.toLowerCase()}. ${overview()}. Missing readings leave gaps.`);
         if (!values.length) { geometry = null; drawCursor(); return; }
         const references = metric === 'freezing' && Number.isFinite(referenceElevation) ? [referenceElevation] : [];
         const low = metric === 'freezing' ? Math.min(...values, ...references) - 200 : metric === 'temperature' ? Math.min(...values) - 2 : 0;
@@ -160,9 +161,9 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         if (isConditions) {
             const { table } = createWeatherHourlyTable({ window: day.window, samples, zone, format });
             conditions.replaceChildren(table);
-            note.textContent = 'Summit local time · Scroll for all hours.';
+            note.textContent = `${clockLabel} · Scroll for all hours.`;
         } else {
-            note.textContent = 'Summit local time · Hover, tap or use ← → for readings.';
+            note.textContent = `${clockLabel} · Hover, tap or use ← → for readings.`;
             draw();
         }
         const information = {

@@ -291,6 +291,11 @@ Independent commits for drag ownership and report/observer surfaces:
   snapshots and cooldown fallback remain usable. Both regressions failed before
   the fix; 75 weather tests, build and focused ESLint passed.
 
+- F12 hourly labels: selected-point charts identify their own local clock in
+  visible and accessible labels. The regression failed before the fix; 82 weather
+  tests and ESLint passed. Hidden Chrome/Firefox passed light/dark 390/1280 px
+  cases at normal/enlarged text; the narrow rendered label was inspected.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

@@ -1364,6 +1364,12 @@ test('source details distinguish the clicked location from the returned weather 
         await settled(env, { past: false });
         selectLocation(env, 46.4947, -121.4636);
         await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.4947, -121.4636');
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-conditions'));
+        assert.match(day.querySelector('.bpb-week-conditions').getAttribute('aria-label'), /local time at selected point/i);
+        assert.match(day.querySelector('.bpb-week-sub').textContent, /Local time at selected point/);
+        day.querySelector('[data-metric="temperature"]').click();
+        assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /local time at selected point/i);
         const request = new URL(env.requests.at(-1).url);
         assert.equal(request.searchParams.get('latitude'), '46.4947');
         assert.equal(request.searchParams.get('longitude'), '-121.4636');

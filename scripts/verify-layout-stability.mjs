@@ -763,9 +763,10 @@ async function weatherCase(page, origin, variant) {
                 day: { window: { date: '2025-01-02', start, end, cutoff: end } },
                 samples: Array.from({ length: 26 }, (_, index) => ({ time: Math.floor(start / 3600_000) * 3600_000 + index * 3600_000,
                     temperature: -15 + index, precipitation: index / 10, wind: index * 10, gust: null })),
-                zone: { timeZone: 'Asia/Kathmandu', offsetMs: 20700000 }, metric: 'temperature', onMetric() {},
+                zone: { timeZone: 'Asia/Kathmandu', offsetMs: 20700000 }, metric: 'temperature', referenceLabel: 'Location', onMetric() {},
                 format: (value, key) => `${value.toFixed(1)} ${key === 'temperature' ? '°C' : key === 'precipitation' ? 'mm' : 'km/h'}` });
         });
+        assert.match(await page.locator('.bpb-week-sub').textContent(), /Local time at selected point/);
         const frame = '.bpb-week-chart';
         await page.locator('.bpb-week-readout').evaluate((element, zoom) => { element.style.fontSize = `${12 * zoom}px`; }, zoom);
         const before = await geometry(page, frame);
