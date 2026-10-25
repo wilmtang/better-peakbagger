@@ -363,6 +363,10 @@ Independent commits for drag ownership and report/observer surfaces:
 
 ### Intentionally not changed
 
+- Inline-color observer measured at at most two passes per host update, then
+  settles and still transforms later changes. No runaway work reproduced; retaining
+  the idempotent second pass avoids discarding another feature's mutation records.
+  Focused observer tests passed.
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
   guard; signed GPX time-gap comparisons.
 - The rejected initial claims about climber-list network lock scope, durable pending

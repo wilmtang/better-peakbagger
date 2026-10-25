@@ -145,3 +145,24 @@ test('non-rendered link elements remain outside dynamic inline-color processing'
     applier.disconnect();
     dom.window.close();
 });
+
+test('inline color observation settles after its own writes and retains later host mutations', async () => {
+    const dom = new JSDOM('<body><span style="color:black">Status</span></body>', { pretendToBeVisual: true });
+    let passes = 0;
+    class CountObserver extends dom.window.MutationObserver {
+        constructor(callback) { super(records => { passes++; callback(records); }); }
+    }
+    const applier = createDynamicInlineColorApplier({ document: dom.window.document, MutationObserver: CountObserver, normalizeColor: () => null });
+    try {
+        applier.setTheme('dark');
+        const node = dom.window.document.querySelector('span');
+        node.style.color = '#8b4513';
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        assert.ok(passes > 0 && passes <= 2, `bounded observer passes: ${passes}`);
+        const settled = passes, previous = node.style.getPropertyValue(INLINE_COLOR_PROPERTY);
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0)); assert.equal(passes, settled);
+        node.style.color = '#102030'; await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        assert.notEqual(node.style.getPropertyValue(INLINE_COLOR_PROPERTY), previous);
+        assert.ok(passes > settled && passes <= settled + 2);
+    } finally { applier.disconnect(); dom.window.close(); }
+});
