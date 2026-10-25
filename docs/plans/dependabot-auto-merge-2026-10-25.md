@@ -27,6 +27,21 @@ connection during the narrow analyzer case.
 
 ### Fixed and verified
 
+- **Published-head follow-up:** [the first published Test run](https://github.com/wilmtang/better-peakbagger/actions/runs/40237076937)
+  passed Node/scale checks but exposed additional browser failures. A duplicate
+  final Settings scroll notification replaced the correct near-bottom fragment
+  selection with About; the regression failed before the fix and all 49 Options
+  UI tests and the full hidden Chrome extension check passed afterward. The
+  capture readiness fixture incorrectly issued popup-only messages from
+  Settings; using the actual popup passed hidden Chrome/Firefox readiness and
+  signed-out gates without relaxing worker authorization. Map stability now
+  measures capture selection after deliberate field reveal, preserving native
+  page geometry and reading position; all eight Chrome/Firefox map cases passed.
+  Terrain matrix setup now waits for applied fonts and stable native picker
+  metrics. Snow-popup checks wait for settled native geometry and the actual
+  rendered arrow after restoring the negative control; the full Firefox GPU
+  matrix passed at 375/1440px, both themes and 200% zoom. These local results do
+  not substitute for a terminal result on the next published head.
 - **Exact PR ancestry:** the initial local integration contained equivalent
   dependency commits with different SHAs. Verified their complete trees match
   the GitHub heads, merged those exact heads, retained the combined manifest
