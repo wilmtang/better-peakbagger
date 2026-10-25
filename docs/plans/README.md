@@ -81,6 +81,11 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [settings hierarchy audit](../archive/settings-hierarchy-audit-2026-10-25.md)
+is complete locally: readable subsection headings, a Features group under
+General, consistent spacing, and card-width responsive controls. Its ledger
+records browser/zoom stability checks and retained native-UI proof limits.
+
 The [settings portability remediation](../archive/settings-portability-remediation.md)
 is complete locally: guarded GitHub root replacements, portable weather/overlay/
 photo-tool preferences, device-local transfer consent and standalone list files.

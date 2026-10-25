@@ -34,24 +34,27 @@ body.standalone-page .content { height: 100%; }
 .settings-section { scroll-margin-top: 24px; }
 .subsection { scroll-margin-top: 24px; }
 
-.settings-section + .settings-section { margin-top: 28px; }
+.settings-section + .settings-section { margin-top: 32px; }
 .section-title {
-    margin: 0 2px 9px;
+    margin: 0 2px 12px;
     color: var(--text);
-    font-size: 18px;
+    font-size: 22px;
     font-weight: 680;
+    line-height: 1.25;
     letter-spacing: -.01em;
 }
 
 /* Level-2 groups inside a section: each is its own titled card. */
+.card + .subsection,
 .subsection + .subsection,
-.subsection + .card { margin-top: 16px; }
+.subsection + .card { margin-top: 24px; }
 .subsection-title {
-    margin: 0 2px 7px;
-    color: var(--sub);
-    font-size: 13px;
+    margin: 0 2px 10px;
+    color: var(--text);
+    font-size: 17px;
     font-weight: 650;
-    letter-spacing: .01em;
+    line-height: 1.4;
+    letter-spacing: -.01em;
 }
 
 .row {
@@ -88,13 +91,12 @@ label.label { cursor: pointer; }
     text-transform: uppercase;
 }
 
-.control { flex: 0 0 auto; }
+.control { flex: 0 0 auto; min-width: 0; max-width: 100%; }
 
 /* The shared panel stylesheet gives every control its colour, border, and
    radius; a setting row only decides how much width its value needs. */
 select { min-width: 168px; }
 #general-units select { width: 220px; }
-#general-units { margin-top: 16px; }
 .unit-customize { border-top: 1px solid var(--border); }
 .unit-customize summary { padding: 14px 18px; color: var(--link); font-weight: 600; cursor: pointer; }
 .unit-custom-count { float: right; font-size: 12px; font-weight: 400; color: var(--sub); }
@@ -634,3 +636,26 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 #ignored-review-confirm { background: var(--accent); color: var(--accent-fg); border: 1px solid var(--accent); border-radius: 8px; padding: 6px 10px; }
 #ignored-restore-undo { margin: 0 18px 16px; }
 .ignored-conflict-version { flex-basis: 100%; }
+
+/* Available card width, rather than the window, owns row reflow. Sidebar
+ * space and browser zoom can make a card narrow in a wide window. */
+.settings-section .card { container-type: inline-size; }
+@container (max-width: 560px) {
+    .row { flex-direction: column; align-items: stretch; }
+    .row:has(> [role="status"]:not(.order-settings-sr)) { grid-template-columns: minmax(0, 1fr); }
+    .row .desc { max-width: none; }
+    .control { width: 100%; }
+    select, input[type="number"], #general-units select { min-width: 0; width: 100%; }
+    .settings-file-transfer-actions,
+    .settings-backup-github-actions,
+    .favorites-github-actions,
+    .photos-github-actions { align-items: flex-start; }
+}
+@container (max-width: 220px) {
+    .route-style-row { grid-template-columns: 34px minmax(0, 1fr) 18px; }
+    .route-style-row input.route-width { width: 100%; }
+    .viewport-size-row { grid-template-columns: minmax(0, 1fr) 18px; }
+    .route-style-row > span:first-child,
+    .viewport-size-row > span:first-child { grid-column: 1 / -1; }
+    .beta-tr-signal, .beta-tr-threshold, .cache-limit { flex-wrap: wrap; }
+}

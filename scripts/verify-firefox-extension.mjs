@@ -227,8 +227,9 @@ async function main() {
         try {
             await verifySettingsNavigation({
                 navigate: hash => driver.get(`${optionsUrl}${hash}`),
-                evaluate: fn => driver.executeScript(webdriverScript(fn)),
+                evaluate: (fn, ...args) => driver.executeScript(webdriverScript(fn, ...args)),
                 resize: (width, height) => driver.manage().window().setRect({ width, height }),
+                toggle: selector => driver.findElement(By.css(selector)).sendKeys(Key.SPACE),
                 click: async selector => {
                     const link = await driver.findElement(By.css(selector));
                     // Firefox's overlay horizontal scrollbar can cover a

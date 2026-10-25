@@ -12,6 +12,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mjs';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
 import { initSectionNav } from '../src/ui/section-nav.js';
+import { assertSettingsHierarchy, readSettingsHierarchy } from './verify-settings-navigation.mjs';
 const args = process.argv.slice(2);
 assert(args.length === 0 || (args.length === 1 && ['--popup', '--navigation'].includes(args[0])), 'Only --popup or --navigation is supported');
 const popupOnly = args.includes('--popup');
@@ -146,6 +147,20 @@ try {
                         - parseFloat(getComputedStyle(target).scrollMarginTop)) <= 1;
             });
             await page.evaluate(theme => window.fixture.setTheme(theme), theme);
+            assertSettingsHierarchy(await page.evaluate(readSettingsHierarchy));
+            for (const zoom of [1, 2]) {
+                await page.evaluate(zoom => { document.documentElement.style.zoom = String(zoom); }, zoom);
+                assertSettingsHierarchy(await page.evaluate(readSettingsHierarchy));
+                if (name === 'chromium') for (const section of ['general-features', 'map-chart-map', 'capture-garmin']) {
+                    await page.locator(`#${section}`).evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
+                    await page.screenshot({ path: path.join(output, `hierarchy-${section}-${width}-${theme}-${zoom}x.png`) });
+                    if (section === 'map-chart-map') {
+                        await page.locator('#map-route-width').evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+                        await page.screenshot({ path: path.join(output, `hierarchy-map-controls-${width}-${theme}-${zoom}x.png`) });
+                    }
+                }
+            }
+            await page.evaluate(() => { document.documentElement.style.zoom = ''; });
             if (name === 'chromium') await page.screenshot({ path: path.join(output, `navigation-${width}-${theme}.png`) });
             if (navigationOnly) { cases++; continue; }
             await page.goto(`${origin}/options/options.html#capture-garmin`);

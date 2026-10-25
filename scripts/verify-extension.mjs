@@ -1725,9 +1725,10 @@ try {
         try {
             await verifySettingsNavigation({
                 navigate: hash => optionsPage.goto(`chrome-extension://${extensionId}/options/options.html${hash}`),
-                evaluate: fn => optionsPage.evaluate(fn),
+                evaluate: (fn, arg) => optionsPage.evaluate(fn, arg),
                 resize: (width, height) => optionsPage.setViewportSize({ width, height }),
                 click: selector => optionsPage.locator(selector).click(),
+                toggle: selector => optionsPage.locator(selector).press('Space'),
                 back: () => optionsPage.goBack(),
                 forward: () => optionsPage.goForward(),
                 wait: fn => optionsPage.waitForFunction(fn, null, { timeout: 5000 }),

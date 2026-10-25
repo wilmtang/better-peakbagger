@@ -10,7 +10,7 @@ quality, request counts, data contracts and audit evidence. Updated October 25,
 weather and 4 for Automatic Summit Cloud Cover. Loading waits until each enabled,
 expanded card is on screen or within 200 px. Disabled, collapsed and distant
 cards do not start hidden weather downloads. Actual network requests and the
-provider's weighted quota units are different; both are explained below.
+provider's counted API calls are different; both are explained below.
 
 - [API calls by user action](#api-calls-by-user-action)
 - [Endpoint purposes](#what-each-endpoint-does)
@@ -19,7 +19,7 @@ provider's weighted quota units are different; both are explained below.
 - [Summit Cloud Cover](#summit-cloud-cover)
 - [Air quality](#air-quality)
 - [Time, transport and privacy](#time-transport-and-privacy)
-- [Provider quota and cost](#provider-quota-and-cost)
+- [API-call counting and rate limits](#api-call-counting-and-rate-limits)
 - [Implementation and verification](#implementation-and-verification)
 - [Research and unimplemented options](#research-and-unimplemented-options)
 - [Audit closure ledger](#audit-closure-ledger)
@@ -94,7 +94,7 @@ day's hours. It is not one request per location or per hour. Choose a single
 model in the dropdown and it makes one profile request instead. Two is a choice
 of the current implementation, not an Open-Meteo requirement; a future combined
 multi-model implementation could reduce HTTP requests without removing the
-second model's data or its quota cost.
+second model's data or its counted API usage.
 
 The two Automatic update-time checks also use different model-domain URLs. These
 checks are separate from opening the weather card's Source details. The cards
@@ -102,20 +102,21 @@ currently have separate caches, so an overlapping domain can be requested again.
 
 ### What does “estimated weighted calls” mean?
 
-It means **estimated usage against Open-Meteo's allowance**, not extra network
-requests. A single large request can count as more than one quota call because
-it asks for many variables, locations, models or days. The browser still sends
-only the HTTP requests counted in the action table.
+It means **estimated API calls as counted by Open-Meteo**, not extra network
+requests or a separately documented “quota” limit. The Terms state API-call
+limits; the Pricing FAQ defines how a request is counted, including fractional
+counts for larger selections. The browser still sends only the HTTP requests
+counted in the action table.
 
 In the Washington example, one cloud request asks for 72 variables at each of
-5 locations. The published calculation gives it a weight of about **36 quota
-calls**, even though it is **one network request**. Two models give about 72;
+5 locations. The published calculation gives about **36 counted API calls**,
+even though it is **one network request**. Two models give about 72;
 the 32-day normal-weather request adds about 2.29. Thus the default page can
 send **5 actual requests**, while its **3 forecast requests** represent roughly
-**74.29 quota calls**. The accounting for the other 2 metadata requests has not
+**74.29 counted API calls**. The accounting for the other 2 metadata requests has not
 been verified. These are source-based estimates, not a live account-usage reading.
 See [Open-Meteo pricing](https://open-meteo.com/en/pricing) and the
-[calculation and source links below](#provider-quota-and-cost).
+[definition, rate-limit evidence and calculation below](#api-call-counting-and-rate-limits).
 
 ## Settings and display
 
@@ -427,19 +428,40 @@ new weather host permission or weather account is required for the free hosted
 endpoint. Provider CORS, attribution and non-commercial hosted terms still apply;
 [PRIVACY.md](../PRIVACY.md#summit-weather) owns their public disclosure.
 
-## Provider quota and cost
+## API-call counting and rate limits
 
-“Weighted calls” estimates allowance consumption, not browser requests or dollar
-charges. Open-Meteo scales larger variable/location/model/time selections. For
-these deterministic hourly requests, its pinned published server implementation
-uses the following per-location sum:
+Open-Meteo documents **one API-call limit**, not a separate quota unit. Three
+pieces of evidence explain why the limit is not simply a count of HTTP requests:
+
+1. The [Terms → Non-Commercial Use](https://open-meteo.com/en/terms) lists fewer
+   than 10,000 API calls/day, 5,000/hour and 600/minute, applied by IP/application.
+2. The [Pricing FAQ → How is one API call defined?](https://open-meteo.com/en/pricing)
+   says “fractional counts are used”. Its example counts a single request for
+   two weeks and 15 weather variables as **1.5 API calls**. The same page identifies
+   the free endpoint as rate-limited to 10,000 calls/day.
+3. The [published free-API request branch](https://github.com/open-meteo/open-meteo/blob/7e6d03ef249f8eb24b5b24fa04f5ee777c9e18cb/Sources/App/Helper/Vapor/ApiKeyManager.swift#L238-L257)
+   calculates the query's weight and returns it to
+   [withFreeApiRateLimiter](https://github.com/open-meteo/open-meteo/blob/7e6d03ef249f8eb24b5b24fa04f5ee777c9e18cb/Sources/App/Helper/Vapor/ApiKeyManager.swift#L175-L211).
+   That wrapper checks the current limit, then increments with `count: weight`
+   on success (one count on handled errors). The
+   [counter implementation](https://github.com/open-meteo/open-meteo/blob/7e6d03ef249f8eb24b5b24fa04f5ee777c9e18cb/Sources/App/Helper/Vapor/RateLimiter.swift#L133-L174)
+   adds the floating-point count to minute/hour/day usage. This connects the
+   calculation to free-tier enforcement, rather than only commercial billing.
+
+Checked October 25, 2026. Therefore this guide uses **estimated counted API
+calls** for the weighted estimate and **HTTP requests** for actual downloads.
+The earlier “quota calls” wording was shorthand and has been removed. This does
+not establish the exact server revision/configuration deployed on the live host.
+
+For these deterministic hourly requests, the pinned calculation uses a
+per-location sum:
 
 ```text
 V = requested variables × named models
-quota weight = sum over locations of max(1, V/10, (V/10) × days/14)
+counted API calls = sum over locations of max(1, V/10, (V/10) × days/14)
 ```
 
-| Example | Actual forecast GETs | Estimated quota weight |
+| Example | Actual forecast GETs | Estimated counted API calls |
 | --- | ---: | ---: |
 | Default GFS weather: 1 point, 10 variables, 32 UTC dates | 1 | 2.29 |
 | One dense cloud model: 5 points, 72 variables, selected day | 1 | 36 |
@@ -452,12 +474,15 @@ Two different surface models still fit in one GET but give about 4.57 weight
 for the 32-date example. A 33-date padded window is slightly larger. Reducing
 cloud hours within one day or batching both model responses would not remove
 the dominant variable/location weight. These estimates use source, not a live
-remaining-quota meter or proof of production deployment. Metadata accounting
-was not established. The free service's published limits at the audit were
-600/minute, 5,000/hour, 10,000/day; the source-based free limiter uses request
-address, so tabs/users sharing an address may compete. Do not induce throttling
-to verify them. Check current [pricing](https://open-meteo.com/en/pricing) and
-[terms](https://open-meteo.com/en/terms) for service conditions.
+remaining-allowance meter or proof of production deployment. Metadata accounting
+was not established. The source-based free limiter uses request address, so
+tabs/users sharing an address may compete. No deliberate throttling test was run.
+
+The Pricing FAQ separately says monthly limits are not currently enforced while
+its usage portal is under development. That statement concerns monthly limits;
+the page still describes the free endpoint's daily rate limit. Do not conflate
+monthly subscription budgets, short-term free rate limits and HTTP-request
+counts. This guide's estimates are not measured account charges.
 
 Pinned calculation sources, inspected October 24–25, 2026:
 [weight](https://github.com/open-meteo/open-meteo/blob/7e6d03ef249f8eb24b5b24fa04f5ee777c9e18cb/Sources/App/Helper/Writer/ForecastApiResult.swift#L238-L257),
@@ -597,11 +622,11 @@ that comparison. Do not repeat its historical “missing” claims as current fa
   local, so reloads/tabs repeat downloads. A bounded shared coordinator needs exact
   model/coordinates/elevation/variables/time keys, explicit retention/privacy and
   independent-reader cancellation; importing a module in two IIFEs is insufficient.
-- Live provider availability/header exposure/quota charges, forecast skill,
+- Live provider availability/header exposure/call accounting, forecast skill,
   authenticated native Peakbagger layouts, physical touch, screen-reader speech,
   native browser focus/Space/window placement and publication remain external
   proof gaps. Hidden rendered fixtures and one successful CORS probe cannot
-  establish them. No release or quota-exhaustion experiment was performed.
+  establish them. No release or rate-limit exhaustion experiment was performed.
 
 ### Consolidated records
 

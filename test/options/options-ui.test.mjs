@@ -1042,7 +1042,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const doc = dom.window.document;
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
-        ['#general-units', '#capture-garmin', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
+        ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
             '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
@@ -1066,6 +1066,25 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     assert.match(ascentBackup.textContent, /Enable ascent and TR backup/);
     assert.equal(doc.getElementById('github-ascent-panel').getAttribute('aria-label'),
         'Ascent and report backup options');
+});
+
+test('General groups feature switches under Features and keeps Theme outside that group', async () => {
+    const dom = await loadOptions({}, { hash: '#general-features' });
+    const doc = dom.window.document, general = doc.getElementById('general');
+    const features = doc.getElementById('general-features');
+    assert.ok(features, 'Feature switches need a named subsection');
+    assert.equal(features.querySelector('h3').textContent, 'Features');
+    assert.equal(features.getAttribute('aria-labelledby'), features.querySelector('h3').id);
+    assert.equal(features.getAttribute('role'), 'group');
+    assert.deepEqual([...features.querySelectorAll('input[type="checkbox"]')].map(input => input.id),
+        ['enable-garmin-inbox', 'show-sun-moon', 'show-weather', 'show-summit-cloud', 'show-snotel', 'enable-3d-map']);
+    assert.equal(general.querySelector('#theme').closest('.subsection'), null);
+    assert.equal(general.querySelector(':scope > .card .row').querySelector('select').id, 'theme');
+    assert.equal(general.querySelectorAll(':scope > .card .row').length, 1);
+    assert.deepEqual([...general.querySelectorAll(':scope > .subsection')].map(group => group.id),
+        ['general-features', 'general-units']);
+    assert.equal(activeLinks(dom)[0].hash, '#general-features');
+    assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#general');
 });
 
 const activeLinks = dom =>

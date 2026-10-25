@@ -13,7 +13,7 @@
 .garmin-feedback>span[aria-hidden] { visibility:hidden; pointer-events:none; user-select:none; }
 .garmin-helper { color:var(--sub); font-size:13px; line-height:1.6; }
 .garmin-pref { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; padding:20px 0; border-top:1px solid var(--border); }
-.garmin-pref>label:first-child { flex:1; min-width:180px; font-weight:600; }
+.garmin-pref>label:first-child { flex:1; min-width:min(180px,100%); font-weight:600; }
 .garmin-pref small { display:block; color:var(--sub); font-weight:400; font-size:13px; margin-top:4px; }
 .garmin-pref input[type=number] { width:90px; }
 .garmin-pref select { max-width:100%; }

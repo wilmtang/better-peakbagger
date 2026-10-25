@@ -23,7 +23,10 @@
         <ul class="nav-list">
             <li>
                 <a class="nav-item" href="#general">General</a>
-                <ul class="nav-sublist"><li><a class="nav-subitem" href="#general-units">Units</a></li></ul>
+                <ul class="nav-sublist">
+                    <li><a class="nav-subitem" href="#general-features">Features</a></li>
+                    <li><a class="nav-subitem" href="#general-units">Units</a></li>
+                </ul>
             </li>
             <li>
                 <a class="nav-item" href="#capture">Capture &amp; reports</a>
@@ -69,10 +72,6 @@
             <h2 class="section-title" id="general-settings-heading">General</h2>
             <div class="card">
                 <div class="row">
-                    <div class="label"><span class="title" id="enable-garmin-inbox-title">Automatically detect Garmin activities</span><span class="desc" id="enable-garmin-inbox-desc">Find new Garmin activities and prepare ascent drafts for review. Turn off to pause imports and hide Garmin features. Your key and drafts stay saved.</span></div>
-                    <div class="control"><label class="check" for="enable-garmin-inbox"><input type="checkbox" id="enable-garmin-inbox" aria-labelledby="enable-garmin-inbox-title" aria-describedby="enable-garmin-inbox-desc"><span>Enabled</span></label></div>
-                </div>
-                <div class="row">
                     <label class="label" for="theme">
                         <span class="title">Theme</span>
                         <span class="desc">Dark or light mode for Peakbagger pages and this extension’s panels.</span>
@@ -85,72 +84,80 @@
                         </select>
                     </div>
                 </div>
+            </div>
+            <div class="subsection" id="general-features" role="group" aria-labelledby="general-features-heading">
+                <h3 class="subsection-title" id="general-features-heading">Features</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label"><span class="title" id="enable-garmin-inbox-title">Automatically detect Garmin activities</span><span class="desc" id="enable-garmin-inbox-desc">Find new Garmin activities and prepare ascent drafts for review. Turn off to pause imports and hide Garmin features. Your key and drafts stay saved.</span></div>
+                        <div class="control"><label class="check" for="enable-garmin-inbox"><input type="checkbox" id="enable-garmin-inbox" aria-labelledby="enable-garmin-inbox-title" aria-describedby="enable-garmin-inbox-desc"><span>Enabled</span></label></div>
+                    </div>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Sun &amp; Moon</span>
+                            <span class="desc" id="show-sun-moon-desc">Show the Sun &amp; Moon section on peak pages and ascent GPX charts.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="show-sun-moon">
+                                <input type="checkbox" id="show-sun-moon" aria-describedby="show-sun-moon-desc">
+                                <span>Show Sun &amp; Moon</span>
+                            </label>
+                        </div>
+                    </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Sun &amp; Moon</span>
-                        <span class="desc" id="show-sun-moon-desc">Show the Sun &amp; Moon section on peak pages and ascent GPX charts.</span>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Weather forecast and archive</span>
+                            <span class="desc" id="show-weather-desc">Show summit weather on peak pages and the weather archive on ascent pages. Weather powered by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>. Free weather access is subject to <a href="https://open-meteo.com/en/terms" target="_blank" rel="noopener noreferrer">fair-use limits</a>.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="show-weather">
+                                <input type="checkbox" id="show-weather" aria-describedby="show-weather-desc">
+                                <span>Show weather forecast and archive</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="control">
-                        <label class="check" for="show-sun-moon">
-                            <input type="checkbox" id="show-sun-moon" aria-describedby="show-sun-moon-desc">
-                            <span>Show Sun &amp; Moon</span>
-                        </label>
-                    </div>
-                </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Weather forecast and archive</span>
-                        <span class="desc" id="show-weather-desc">Show summit weather on peak pages and the weather archive on ascent pages. Weather powered by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>. Free weather access is subject to <a href="https://open-meteo.com/en/terms" target="_blank" rel="noopener noreferrer">fair-use limits</a>.</span>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Summit Cloud Cover · Experimental</span>
+                            <span class="desc" id="show-summit-cloud-desc">Estimate cloud at summit height and nearby view obstruction. Choose and remember a forecast model on the card. Accuracy is not yet validated.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="show-summit-cloud">
+                                <input type="checkbox" id="show-summit-cloud" aria-describedby="show-summit-cloud-desc">
+                                <span>Show Summit Cloud Cover</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="control">
-                        <label class="check" for="show-weather">
-                            <input type="checkbox" id="show-weather" aria-describedby="show-weather-desc">
-                            <span>Show weather forecast and archive</span>
-                        </label>
-                    </div>
-                </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Summit Cloud Cover · Experimental</span>
-                        <span class="desc" id="show-summit-cloud-desc">Estimate cloud at summit height and nearby view obstruction. Choose and remember a forecast model on the card. Accuracy is not yet validated.</span>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">SNOTEL snow observations</span>
+                            <span class="desc" id="show-snotel-desc">Show nearby NRCS snow readings and SNOTEL stations on peak maps in the western US and Alaska.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="show-snotel">
+                                <input type="checkbox" id="show-snotel" aria-describedby="show-snotel-desc">
+                                <span>Show SNOTEL</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="control">
-                        <label class="check" for="show-summit-cloud">
-                            <input type="checkbox" id="show-summit-cloud" aria-describedby="show-summit-cloud-desc">
-                            <span>Show Summit Cloud Cover</span>
-                        </label>
-                    </div>
-                </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">SNOTEL snow observations</span>
-                        <span class="desc" id="show-snotel-desc">Show nearby NRCS snow readings and SNOTEL stations on peak maps in the western US and Alaska.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="show-snotel">
-                            <input type="checkbox" id="show-snotel" aria-describedby="show-snotel-desc">
-                            <span>Show SNOTEL</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="label">
-                        <span class="title-line">
-                            <span class="title">Enable experimental 3D map</span>
-                            <span class="experimental-badge">Experimental</span>
-                        </span>
-                        <span class="desc" id="enable-3d-map-desc">Shows a 3D terrain option on ascent maps, Full Screen GPS maps, and Peak pages. Loading it requests elevation tiles from open-source project <a href="https://mapterhorn.com/privacy-policy/" target="_blank" rel="noopener noreferrer">Mapterhorn</a>; choosing OSM Vector requests map tiles from <a href="https://openfreemap.org/privacy/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>. Those services receive the viewed map area and request metadata.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="enable-3d-map">
-                            <input type="checkbox" id="enable-3d-map" aria-describedby="enable-3d-map-desc">
-                            <span>Enable 3D map</span>
-                        </label>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title-line">
+                                <span class="title">Enable experimental 3D map</span>
+                                <span class="experimental-badge">Experimental</span>
+                            </span>
+                            <span class="desc" id="enable-3d-map-desc">Shows a 3D terrain option on ascent maps, Full Screen GPS maps, and Peak pages. Loading it requests elevation tiles from open-source project <a href="https://mapterhorn.com/privacy-policy/" target="_blank" rel="noopener noreferrer">Mapterhorn</a>; choosing OSM Vector requests map tiles from <a href="https://openfreemap.org/privacy/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>. Those services receive the viewed map area and request metadata.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="enable-3d-map">
+                                <input type="checkbox" id="enable-3d-map" aria-describedby="enable-3d-map-desc">
+                                <span>Enable 3D map</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
