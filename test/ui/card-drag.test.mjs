@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createCardDrag } from '../../src/ui/card-drag.js';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
+import { registerCardDragContract } from '../helpers/card-drag-contract.mjs';
 
 function setup() {
     const dom = new JSDOM('<div id="left"></div><div id="right"><section id="card"><header><h2>Weather</h2><button id="handle" type="button">Move</button><button id="date" type="button">Previous day</button></header><span id="status"></span></section></div>', { pretendToBeVisual: true });
@@ -26,6 +27,18 @@ function setup() {
         removeTargets: () => { targetList = []; controller.refresh(); },
         close: () => { controller.dispose(); dom.window.close(); } };
 }
+
+registerCardDragContract(test, 'ascent drag adapter', async () => {
+    const env = setup(), win = env.dom.window;
+    return { position: () => env.card.parentElement.id, active: () => env.card.hasAttribute('data-bpb-card-dragging'),
+        start: () => env.pointer('pointerdown', 500, env.handle), smallMove: () => env.pointer('pointermove', 502),
+        move: pointerId => env.pointer('pointermove', 150, win, { pointerId }),
+        finish: pointerId => env.pointer('pointerup', 150, win, { pointerId }),
+        interrupt: reason => reason === 'Escape' ? env.handle.dispatchEvent(new win.KeyboardEvent('keydown', { key: reason, bubbles: true }))
+            : ['blur', 'resize'].includes(reason) ? win.dispatchEvent(new win.Event(reason))
+                : env.pointer(reason, 150, reason === 'lostpointercapture' ? env.handle : win),
+        close: env.close };
+});
 
 test('a card follows a thresholded pointer gesture and moves only on a valid drop', () => {
     const env = setup();

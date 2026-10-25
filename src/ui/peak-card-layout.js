@@ -4,6 +4,7 @@
 import { createLayoutMenu } from './layout-menu.js';
 import { mountPeakTableSplit } from './peak-table-split.js';
 import { createPageLifecycle } from './page-lifecycle.js';
+import { createCardPointerDrag } from './card-pointer-drag.js';
 
 // Only standalone extension cards participate. Native map, legend, links and
 // peak details keep their DOM and owning execution context.
@@ -33,7 +34,7 @@ export function createPeakCardLayout({ document: doc, settings }) {
     doc.body.append(help, status, ghost, indicator);
     let preference = settings.clean(settings.DEFAULTS), received = false, revision = 0, writeRevision = 0;
     const pendingWrites = new Map(), failedFields = new Set();
-    let anchor = null, drag = null, frame = null, scanning = false, suppressClick = false;
+    let anchor = null, drag = null, scanning = false, suppressClick = false;
     const detailsAnchors = {};
     const columnOf = key => doc.getElementById('bpb-peak-table-split') ? preference.peakCardColumns[key] : 'map';
     const columnName = column => column === 'map' ? 'right column' : `left column, ${column === 'details' ? 'above' : 'below'} peak details`;
@@ -132,9 +133,7 @@ export function createPeakCardLayout({ document: doc, settings }) {
         if (column === 'details-bottom' && index < 0) return { column: 'details', index: inColumn('details').length };
         return { column, index };
     };
-    const stopFrame = () => { if (frame !== null) view.cancelAnimationFrame(frame); frame = null; };
-    const cancel = () => {
-        stopFrame();
+    const clearDrag = () => {
         for (const item of cards.values()) item.menu?.close();
         if (!drag) return;
         const current = drag; drag = null;
@@ -142,8 +141,8 @@ export function createPeakCardLayout({ document: doc, settings }) {
         ghost.hidden = indicator.hidden = true;
         current.item.card.removeAttribute('data-bpb-card-lifted');
         doc.documentElement.classList.remove('bpb-peak-card-dragging');
-        try { current.item.handle.releasePointerCapture?.(current.pointerId); } catch { /* capture already ended */ }
     };
+    const cancel = () => { pointer.cancel(); clearDrag(); };
     const locate = () => {
         if (!drag?.active) return;
         const split = doc.getElementById('bpb-peak-table-split');
@@ -174,39 +173,24 @@ export function createPeakCardLayout({ document: doc, settings }) {
         indicator.hidden = false;
         Object.assign(indicator.style, { left: `${bounds.left}px`, top: `${y}px`, width: `${bounds.width}px` });
     };
-    const autoscroll = () => {
-        frame = null;
-        if (!drag?.active) return;
-        const edge = 56, speed = drag.y < edge ? -Math.ceil((edge - drag.y) / 4)
-            : drag.y > view.innerHeight - edge ? Math.ceil((drag.y - view.innerHeight + edge) / 4) : 0;
-        if (speed) { view.scrollBy(0, Math.max(-18, Math.min(18, speed))); locate(); }
-        frame = view.requestAnimationFrame(autoscroll);
-    };
     const pointerMove = event => {
-        if (!drag || event.pointerId !== drag.pointerId) return;
         drag.x = event.clientX; drag.y = event.clientY;
-        if (!drag.active && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) < 6) return;
         if (!drag.active) {
             drag.active = true; ghost.hidden = false; ghost.textContent = drag.item.definition.name;
             drag.item.card.setAttribute('data-bpb-card-lifted', '');
             doc.documentElement.classList.add('bpb-peak-card-dragging');
-            frame = view.requestAnimationFrame(autoscroll);
         }
-        if (event.cancelable) event.preventDefault();
         Object.assign(ghost.style, { left: `${Math.min(view.innerWidth - 180, Math.max(8, drag.x + 12))}px`, top: `${Math.max(8, drag.y - 20)}px` });
         locate();
     };
     const pointerUp = event => {
-        if (!drag || event.pointerId !== drag.pointerId) return;
         const current = drag; current.x = event.clientX; current.y = event.clientY; locate(); cancel();
         if (current.active) suppressClick = true;
         if (current.active && current.target !== null) move(current.item, current.target.index, current.target.column);
     };
-    const pointerCancel = event => { if (drag?.pointerId === event.pointerId) cancel(); };
-    const escape = event => {
-        if (event.key !== 'Escape' || !drag) return;
-        event.preventDefault(); cancel(); announce('Card reordering canceled.');
-    };
+    const pointer = createCardPointerDrag({ view, captureOnPress: true, enabled: () => lifecycle.state === 'active',
+        onMove: pointerMove, onFinish: pointerUp, onScroll: locate,
+        onCancel: event => { clearDrag(); if (event?.key === 'Escape') announce('Card reordering canceled.'); } });
     const register = (key, card) => {
         const definition = definitions[key];
         let row = key === 'sun' ? null : card.closest('tr');
@@ -278,11 +262,9 @@ export function createPeakCardLayout({ document: doc, settings }) {
             save({ [definition.collapsed]: false }); applyCollapse(item);
         };
         const down = event => {
-            if (lifecycle.state !== 'active' || drag || (visible().length < 2 && !doc.getElementById('bpb-peak-table-split')) || event.button !== 0 || event.isPrimary === false) return;
-            if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+            if ((visible().length < 2 && !doc.getElementById('bpb-peak-table-split')) || !pointer.start(event, handle)) return;
             menu.close(); suppressClick = false; focus(item);
             drag = { item, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, active: false, target: null };
-            try { handle.setPointerCapture?.(event.pointerId); } catch { /* Window listeners finish the gesture. */ }
         };
         const menu = createLayoutMenu({ handle, label: `Move ${definition.name}`, actions: () => {
             const column = columnOf(key), list = inColumn(column), index = list.indexOf(item), other = column === 'map' ? 'details' : 'map';
@@ -324,13 +306,13 @@ export function createPeakCardLayout({ document: doc, settings }) {
         toggle.addEventListener('click', collapse, key === 'sun'); handle.addEventListener('pointerdown', down);
         card.addEventListener('bpb:reveal-card', reveal);
         handle.addEventListener('click', click);
-        handle.addEventListener('keydown', keydown); handle.addEventListener('lostpointercapture', pointerCancel);
+        handle.addEventListener('keydown', keydown);
         disposers.push(() => {
             menu.dispose(); handle.removeEventListener('click', click);
             view.clearTimeout(item.toggleTimer);
             toggle.removeEventListener('click', collapse, key === 'sun'); handle.removeEventListener('pointerdown', down);
             card.removeEventListener('bpb:reveal-card', reveal);
-            handle.removeEventListener('keydown', keydown); handle.removeEventListener('lostpointercapture', pointerCancel);
+            handle.removeEventListener('keydown', keydown);
         });
     };
     const scan = () => {
@@ -374,16 +356,11 @@ export function createPeakCardLayout({ document: doc, settings }) {
         onResume: () => { observe(); scan(); },
         onDispose: () => {
             cancel(); observer.disconnect(); unsubscribe(); disposers.forEach(dispose => dispose());
-            view.removeEventListener('pointermove', pointerMove, true); view.removeEventListener('pointerup', pointerUp, true);
-            view.removeEventListener('pointercancel', pointerCancel, true); view.removeEventListener('keydown', escape, true);
-            view.removeEventListener('blur', cancel); view.removeEventListener('resize', cancel);
+            pointer.dispose();
             dismiss.removeEventListener('click', dismissMessage);
             help.remove(); status.remove(); ghost.remove(); indicator.remove();
         },
     });
-    view.addEventListener('pointermove', pointerMove, { capture: true, passive: false }); view.addEventListener('pointerup', pointerUp, true);
-    view.addEventListener('pointercancel', pointerCancel, true); view.addEventListener('keydown', escape, true);
-    view.addEventListener('blur', cancel); view.addEventListener('resize', cancel);
     observe(); scan();
     const initialRevision = revision;
     void settings.requireCurrent().then(next => { if (!received && revision === initialRevision) applyPreference(next); }).catch(() => {});

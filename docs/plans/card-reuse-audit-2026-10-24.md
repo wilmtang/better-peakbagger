@@ -304,6 +304,12 @@ runtime changes require the real-browser checks in the convention and AGENTS.
   Narrow dark ascent and narrow light cloud captures were visually inspected.
   The ascent verifier was corrected to read portable choices from sync, preserve
   them across theme resets and compare the actual pre-drag preference.
+  CR-04 shares pointer ownership, threshold, capture, cancellation and autoscroll
+  through `createCardPointerDrag`; peak ghost and ascent transform previews and
+  destination/keyboard policies remain local. CR-06 adds one shared contract run
+  against both real layout adapters: threshold/unrelated-pointer handling and
+  Escape, blur, resize, pointer cancellation and capture loss. All 33 movement
+  tests, build and focused ESLint passed; browser movement checks are pending.
 - **Intentionally not changed:** native mounting, settings keys, provider policy,
   worker-write ownership and unrelated work. The remaining extractions are still
   being implemented.

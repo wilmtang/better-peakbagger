@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { createPeakCardLayout } from '../../src/ui/peak-card-layout.js';
 import { settingsSchema as schema } from '../../src/settings/settings-schema.js';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
+import { registerCardDragContract } from '../helpers/card-drag-contract.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function setup({ saved = {}, read, fail = false, snow = true, lateSunListener = false, holdWrites = false, columns = false } = {}) {
@@ -55,6 +56,18 @@ function setup({ saved = {}, read, fail = false, snow = true, lateSunListener = 
         pointer: (type, y, target = win, x = 50) => target.dispatchEvent(pointerEvent(win, type, { pointerId: 1, clientX: x, clientY: y })),
         close: () => { layout.lifecycle.dispose(); win.close(); } };
 }
+
+registerCardDragContract(test, 'peak drag adapter', async () => {
+    const env = setup(); await tick();
+    const send = (type, y, pointerId = 1, target = env.win) => target.dispatchEvent(pointerEvent(env.win, type, { pointerId, clientX: 50, clientY: y, button: 0 }));
+    return { position: () => env.order().join(','), active: () => env.card('weather').hasAttribute('data-bpb-card-lifted'),
+        start: () => send('pointerdown', 260, 1, env.handle('weather')), smallMove: () => send('pointermove', 262),
+        move: id => send('pointermove', 90, id), finish: id => send('pointerup', 90, id),
+        interrupt: reason => reason === 'Escape' ? env.handle('weather').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: reason, bubbles: true }))
+            : ['blur', 'resize'].includes(reason) ? env.win.dispatchEvent(new env.win.Event(reason))
+                : send(reason, 90, 1, reason === 'lostpointercapture' ? env.handle('weather') : env.win),
+        close: env.close };
+});
 
 test('cards restore validated order and disclosures while preserving the native map and legend', async () => {
     const env = setup({ saved: { peakCardOrder: ['snow', 'sun', 'weather'], peakWeatherCollapsed: true, peakSunCollapsed: true } });
