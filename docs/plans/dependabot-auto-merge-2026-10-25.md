@@ -1,8 +1,10 @@
 # Dependabot auto-merge investigation — 2026-10-25
 
-All three requested branches are merged into local `main` with real merge
-commits. Nothing was pushed and the remote PRs remain open. This is local
-integration evidence, not a claim that remote CI or every browser verifier is green.
+All three current GitHub PR heads are merged into local `main` with real merge
+commits. The initial investigation was local-only. The follow-through was
+authorized to push main, finish the remote checks, close integrated PRs, and
+delete branches whose exact heads are ancestors of main. Publishing and remote
+CI results belong to the final handoff; local checks alone do not establish them.
 
 ## Remote evidence
 
@@ -25,6 +27,20 @@ connection during the narrow analyzer case.
 
 ### Fixed and verified
 
+- **Exact PR ancestry:** the initial local integration contained equivalent
+  dependency commits with different SHAs. Verified their complete trees match
+  the GitHub heads, merged those exact heads, retained the combined manifest
+  and lockfile repairs, and verified each merge left the tree unchanged.
+- **Queue transitions:** serialize privileged runs per PR, reject stale event
+  heads before mutation, propagate reset failures, and confirm queue removal
+  and the final exact-head merge request. Execute the real workflow shell
+  against an isolated CLI stub; the new checks failed on the former workflow
+  and all 13 queue/policy tests passed after the repair. Required checks and
+  single signed Dependabot commit validation remain intact.
+- **Monthly manual group:** GitHub Actions checks run on the first day of each
+  month at 09:00 UTC. npm keeps `0 9 * * mon%2`; all group patterns, cooldowns,
+  and manual-versus-automatic merge policy are preserved. The schedule
+  regression failed before the change and passed afterward.
 - **Audit parent version:** replace the exact web-ext 10.7.0 requirement with
   stable compatible releases from the same floor. Keep the exact node-forge
   advisory, vulnerable dependency versions, development-only locations, edges,
@@ -51,6 +67,19 @@ connection during the narrow analyzer case.
   resource, and showcase checks passed afterward. Browser process arguments prove
   the flags are passed; hidden protocol verification does not establish native
   prompt absence or window-placement behavior.
+- **Terrain credits:** the current renderer deliberately wraps attribution
+  around anchored controls and moves its informational scale to clear credit
+  text. Replace the stale fixed 60px exclusion with actual painted-text
+  containment/collision checks, retaining action, heading, following-content
+  and scroll stability. Four focused tests and all eight hidden Chrome layout
+  and failure/retry cases passed; desktop and narrow enlarged-text renders were
+  inspected. No runtime layout change was necessary.
+- **Sentinel cooldown verifier:** reproduced the previous timeout. The shared
+  control replaces session copy with `Service busy. Retry after …`; the probe
+  now requires that visible feedback, disabled Retry, and an intercepted
+  catalog HTTP 429. The full hidden Chrome terrain verifier passed on Apple
+  M3 Pro Metal, including the earlier failed case. Eleven focused verifier
+  tests passed. Requests and data remain synthetic.
 
 ### Intentionally not changed
 
@@ -65,31 +94,31 @@ connection during the narrow analyzer case.
 
 ### Changed but not fully proven
 
-- The full Chrome terrain verifier reached hardware rendering and passed the
-  changed geometry checks, then timed out in a separate Sentinel cooldown case
-  at the end of the run. Its root cause remains unresolved; full Chrome terrain
-  success is not claimed.
 - One local Firefox session disconnected during add-on installation. A diagnostic
   run passed, but that does not establish the cause or repair of the remote
   Firefox 152 connection loss. Linux and minimum-Firefox revalidation remain open.
-- No push was authorized or performed. The remote default branch still lacks
-  these repairs and has no new terminal CI result for them.
+- Queue behavior is tested with CLI stubs; a future genuine Dependabot update
+  must still exercise the changed privileged workflow against GitHub. A green
+  test suite cannot guarantee that new dependency versions or advisories pass.
 
 ## Local integration
 
 | Source branch | Merge commit |
 | --- | --- |
-| `dependabot/npm_and_yarn/editor-5e8c75a09f` | `643f1fc1` |
-| `dependabot/npm_and_yarn/vendored-8f42b2fb74` | `40f7e43` |
-| `dependabot/npm_and_yarn/tooling-3bd57b00f0` | `841fe172` |
+| `dependabot/npm_and_yarn/editor-5e8c75a09f` | `0086ffa0` |
+| `dependabot/npm_and_yarn/vendored-8f42b2fb74` | `b81e563d` |
+| `dependabot/npm_and_yarn/tooling-3bd57b00f0` | `ff7ec417` |
 
-The tooling merge's adjacent manifest conflicts were resolved by retaining all
-three groups' updates. Each remote head is an ancestor of local `main`.
+The current heads' adjacent manifest conflicts were resolved by retaining all
+three groups' updates and subsequent repairs. Each exact remote head is an
+ancestor of local `main`; the three follow-through merges changed ancestry only.
 
-Final combined checks: `npm ci`, all **3,529** tests, **14** scale tests,
+Follow-through combined checks: `npm ci`, all **3,576** tests, **14** scale tests,
 `npm run lint` (eight owned warnings), and the reviewed-advisory gate passed.
-The final real unpacked extension also passed hidden Chrome for Testing
+The subsequently added five focused terrain assertions passed separately;
+the full terrain verifier passed. All 20 immutable changelog sections passed.
+The initial investigation's real unpacked extension passed hidden Chrome for Testing
 156.0.8078.4 verification at 1000×760, including analyzer controls at
-1600/800/390px, both themes, and enlarged text. Teardown passed. This does not
-replace the separate incomplete terrain verifier or prove native focus/window
-placement or keychain-prompt absence.
+1600/800/390px, both themes, and enlarged text. Teardown passed. That earlier
+result does not establish the final published head's CI result, native
+focus/window placement, or keychain-prompt absence.
