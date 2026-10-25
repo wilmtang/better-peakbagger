@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
+import { verifyTerrainCredits } from './verify-terrain-provider-ui.mjs';
 
 import {
     createFixtureCertificate,
@@ -32,7 +33,11 @@ const chromePath = process.env.CHROME_BIN || ({
     darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
 }[process.platform] || 'google-chrome');
-const outputDir = path.resolve(process.argv[2] || path.join(os.tmpdir(), 'better-peakbagger-terrain-visual'));
+const args = process.argv.slice(2);
+const providerUiOnly = args.includes('--provider-ui');
+const positional = args.filter(value => value !== '--provider-ui');
+if (positional.length > 1 || positional.some(value => value.startsWith('--'))) throw new Error('Usage: verify-terrain-visual.mjs [output-directory] [--provider-ui]');
+const outputDir = path.resolve(positional[0] || path.join(os.tmpdir(), 'better-peakbagger-terrain-visual'));
 const FIXTURE_HOST = 'www.peakbagger.com';
 const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
 const TERRAIN_FIXTURE_HEADER = 'synthetic-terrarium-v1';
@@ -976,7 +981,7 @@ try {
     const ascent2dMetrics = await measureNative2dGap(cdp);
     if (!Number.isFinite(ascent2dMetrics.gap)) throw new Error('Could not measure the 2D toggle against the native zoom');
     if (ascent2dMetrics.gap < 0) throw new Error(`Ascent 2D toggle overlaps the native zoom (gap ${ascent2dMetrics.gap}px)`);
-    if (ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
+    if (!providerUiOnly && ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'map-default-450.png'));
 
     // The showcase runs the production bundles without an extension worker,
@@ -1225,6 +1230,16 @@ try {
         async () => `The selected layer was not retained: ${await activeBadge()}`);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     const ascentMetrics = await measureToggleGap(cdp);
+    await verifyTerrainCredits({
+        evaluate: expression => evaluate(cdp, expression),
+        screenshot: name => capture(cdp, path.join(outputDir, `${name}.png`)),
+    });
+    if (providerUiOnly) {
+        if (terrainMockFailures.length) throw new Error(`DEM mock failed: ${terrainMockFailures.join('\n')}`);
+        await resources.dispose();
+        console.log(`Hidden Chrome terrain provider UI verification passed. Screenshots: ${outputDir}`);
+        process.exit(0);
+    }
     if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
     if (ascentMetrics.gap > 40) throw new Error(`Ascent 3D toggle floats too far above the zoom controls (gap ${ascentMetrics.gap}px)`);
     const wideHintGap = await measureGestureHintGap(cdp);

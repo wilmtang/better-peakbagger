@@ -2004,15 +2004,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 };
                 rendererCanvas.addEventListener('webglcontextlost', contextLostHandler);
             }
-            // Bottom-right, matching the native 2D map's zoom: a compact
-            // attribution ("ⓘ") first so it can't wrap and shove the zoom upward,
-            // then a zoom-only control (no compass) so the stack is the same
-            // two-button height as the 2D zoom and the floating toggle lines up
-            // the same way in both. The 2D camera preserves center and zoom but
-            // has no bearing, so a later 3D transition starts north-up again.
-            terrainMap.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
+            // Credits stay readable without opening a disclosure. Keep their
+            // wrapping in the left stack, separate from the anchored zoom/mode
+            // actions on the right. Bottom controls are prepended by MapLibre,
+            // so the transient hint sits above credits, then the fixed scale.
             terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
+            terrainMap.addControl(new maplibre.AttributionControl({ compact: false }), 'bottom-left');
+            terrainMap.addControl({ onAdd: () => hint, onRemove: () => hint.remove() }, 'bottom-left');
             // A raster tile that loads fires a 'source' data event carrying the
             // tile. One such event proves the drape can render, so a handful of
             // later tile failures must not tear the whole layer down.

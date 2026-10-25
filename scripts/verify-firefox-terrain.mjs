@@ -10,6 +10,7 @@ import { mkdir } from 'node:fs/promises';
 import { firefox } from 'playwright';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 import { waitForPeakPopupSnapshot } from './verify-terrain-popup.mjs';
+import { verifyTerrainCredits } from './verify-terrain-provider-ui.mjs';
 
 import {
     createFixtureCertificate,
@@ -28,6 +29,9 @@ import {
 } from './resource-stack.mjs';
 
 const viewport = { width: 1000, height: 760 };
+const args = process.argv.slice(2);
+if (args.some(value => value !== '--provider-ui') || args.length > 1) throw new Error('Usage: verify-firefox-terrain.mjs [--provider-ui]');
+const providerUiOnly = args.includes('--provider-ui');
 const fixtureHost = 'www.peakbagger.com';
 const TERRAIN_CAMERA_SETTLE_TIMEOUT_MS = 20_000;
 const syntheticTerrariumWebp = Buffer.from(
@@ -351,6 +355,13 @@ async function main() {
             throw new Error(`Firefox terrain surface was incomplete: ${JSON.stringify(rendererState)}`);
         }
         await page.locator('#bpb-gpx-analysis canvas').focus();
+        await verifyTerrainCredits({ evaluate: expression => page.evaluate(expression) });
+        if (providerUiOnly) {
+            if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
+            await resources.dispose();
+            console.log(`Hidden Firefox ${browser.version()} terrain provider UI verification passed (${viewport.width}x${viewport.height}).`);
+            return;
+        }
         await page.keyboard.press('ArrowRight');
         await page.waitForFunction(() =>
             document.querySelector('.bpb-sun-calculator__toggle')?.disabled === false);
