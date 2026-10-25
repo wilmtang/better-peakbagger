@@ -818,6 +818,9 @@ assertChromeLaunchAllowed();
 const chrome = spawn(chromePath, [
     '--headless=new',
     '--no-first-run',
+    // Disposable fixtures must never request access to the user's keychain.
+    '--password-store=basic',
+    '--use-mock-keychain',
     '--disable-background-networking',
     '--disable-component-update',
     '--disable-default-apps',

@@ -13,6 +13,22 @@ test('Chrome preflight refuses macOS Seatbelt before starting a browser', () => 
     }
 });
 
+test('direct fixture Chrome launches isolate profiles and avoid the login keychain', async () => {
+    const directory = new URL('../../scripts/', import.meta.url);
+    let checked = 0;
+    for (const name of await readdir(directory)) {
+        if (!name.endsWith('.mjs')) continue;
+        const source = await readFile(new URL(name, directory), 'utf8');
+        for (const match of source.matchAll(/(?:spawn\(chromePath,|run\(chrome,)\s*\[([\s\S]*?)\n\s*\]/g)) {
+            assert.ok(match[1].includes('--use-mock-keychain'), `${name} must avoid macOS keychain prompts`);
+            assert.ok(match[1].includes('--password-store=basic'), `${name} must use disposable password storage`);
+            assert.ok(match[1].includes('--user-data-dir='), `${name} must isolate its browser profile`);
+            checked++;
+        }
+    }
+    assert.ok(checked > 0, 'no direct Chrome launch was checked');
+});
+
 test('every repository Chrome launcher runs the shared preflight before launching', async () => {
     const directory = new URL('../../scripts/', import.meta.url);
     const launch = /(?:chromium|engine|browserType)\.launch(?:PersistentContext)?\(|spawn\(chromePath,|run\(chrome,/g;

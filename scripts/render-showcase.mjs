@@ -169,6 +169,9 @@ const handleRequest = async (request, response) => {
 const server = await resources.guard(() =>
     createServer({ key: certificate.key, cert: certificate.cert }, handleRequest));
 resources.defer('showcase server', () => closeServer(server));
+const chromeProfile = await resources.guard(() =>
+    mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-showcase-profile-')));
+resources.defer('showcase Chrome profile', () => rm(chromeProfile, { recursive: true, force: true }));
 
 const run = (command, args) => new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -193,6 +196,9 @@ const screenshot = async (port, route, output) => {
     assertChromeLaunchAllowed();
     await run(chrome, [
         '--headless=new',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        `--user-data-dir=${chromeProfile}`,
         '--hide-scrollbars',
         '--disable-gpu',
         '--force-device-scale-factor=1',

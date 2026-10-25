@@ -352,6 +352,8 @@ assertChromeLaunchAllowed();
 const chrome = spawn(chromePath, [
     '--headless=new',
     '--no-first-run',
+    '--password-store=basic',
+    '--use-mock-keychain',
     '--disable-background-networking',
     '--disable-component-update',
     '--disable-default-apps',
