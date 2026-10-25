@@ -28,6 +28,8 @@ that a process is still running. There is no complete national manifest.
 | [fcc_sizes.py](fcc_sizes.py) | Exact source-size survey using existing receipts or at most 64 KiB of a ZIP central directory per missing archive. |
 | [start-vps.sh](start-vps.sh) | Linux-only systemd launcher with CPU/memory limits and a mounted-data-disk prerequisite. |
 | [test_fcc_tiles.py](test_fcc_tiles.py) | Nine small regression fixtures covering data/geometry, safe resume, raw sizes, ZIP tails, completed-build and national-assembly restarts. |
+| [fcc_compact.py](fcc_compact.py) | Separate delivery pass over completed PMTiles; copies zoom 12 unchanged and simplifies overview geometry. |
+| [test_fcc_compact.py](test_fcc_compact.py) | Nine tiny fixtures for geometry, seams, feature fields, unchanged close-ups, independent audit rejection, catalogs and resume. |
 
 The checked-in copies share `FCC_TILE_ROOT`, defaulting to `~/Dev/fcc-tiles`.
 Set `FCC_TIPPECANOE_DIR` if the tool binaries are elsewhere. The browser verifier
@@ -209,3 +211,64 @@ The scripts deliberately use assertions and must not be run with Python `-O`.
 For the bounded screenshot reproduction, see the separate
 [comparison instructions](../comparison/README.md). Its static renderer does
 not launch a converter or scan the complete national archive.
+
+## Smaller delivery archives
+
+The separate `overview-half-pixel-v1` delivery pass reads the completed national
+PMTiles. It needs **no FCC downloads or repeat source conversion**. Original
+archives, receipts and the baseline catalog remain unchanged. The delivery pass
+waits for the baseline's complete data audit before using the VPS's working
+memory; it produces its own `delivery/tiles/`, `delivery/manifest.json` and
+`delivery/catalog.json`. Paths in that catalog resolve relative to `delivery/`.
+
+- Zoom **12 and higher**: original compressed tile bytes are copied unchanged.
+  The archive audit independently compares **every** finest-zoom tile, rather
+  than extrapolating from a few source points.
+- Zooms **4–11**: polygon chains are simplified with a tolerance of 4 units in a
+  4096-unit tile: **half a pixel when the tile is drawn at 512 px**. These are
+  approximate overviews, not exact point-coverage query results. This does not
+  improve the underlying FCC reception model.
+- Tile-edge crossing segments are pinned. Invalid candidates and candidates
+  whose tile-edge intersections change are rejected. Polygon parts and holes
+  remain present; very small or narrow rings retain their original coordinates.
+  This does not claim exact preservation of shared boundaries between different
+  classifications inside a tile; subpixel differences can occur there.
+- Feature order, IDs, property dictionaries and all eight source fields are
+  preserved, then independently audited. There is no same-class reordering,
+  cross-class merging or attribute removal. Reordering overlapping signal
+  classes could change paint order and needs a separate rendering contract.
+- Tiles exceeding 128 MiB uncompressed and individual features exceeding one
+  million geometry command integers are retained unchanged to bound memory.
+  A transformed tile is used only if its compressed payload is smaller.
+- Output payload deduplication uses SHA-256 **and a byte comparison**. Scratch
+  lives on the dedicated data disk. Every output address and gzip checksum is
+  checked; output receipts bind the input and output hashes. Partial or orphaned
+  outputs are not advertised as complete, and unverified existing destinations
+  are not overwritten.
+
+The bounded real-data benchmark chooses the largest tile no larger than 2 MB
+compressed at each available zoom. It intentionally does **not** cover the
+13.7 MB worst overview tile or estimate whole-archive savings. Initial measured
+zoom-4 and zoom-5 samples saved only about **2%**: preserving every small island
+and hole at overview scales limits potential savings. The earlier 635 MB figure
+is the size of finest-level payloads alone, **not** the promised final archive.
+Whole-country bytes and low-zoom browser rendering remain unproven until the
+full delivery pass and separate browser checks finish.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+  ~/Dev/fcc-tiles/.venv/bin/python \
+  docs/plans/experiments/fcc-browser-coverage/full-conversion/test_fcc_compact.py
+
+# Run on the Linux VPS; --wait leaves the independent baseline build alone.
+FCC_TILE_ROOT=/mnt/fcc-tiles \
+  ~/Dev/fcc-tiles/.venv/bin/python \
+  ~/Dev/fcc-tiles/code/fcc_compact.py delivery --wait
+```
+
+Nine tiny regression fixtures pass locally. The small-island containment
+assertion first failed on the initial simplifier, then passed after adding the
+small-ring guard. A deliberately altered zoom-12 payload is rejected by the
+independent archive audit. Catalog/resume tests run a complete nine-archive
+synthetic delivery, verify portable URLs and original hashes, then resume without
+reprocessing. These fixtures do not prove national size or browser performance.
