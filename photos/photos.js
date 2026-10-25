@@ -19,6 +19,8 @@ import { readPhotoSourceUrl } from '../src/photos/photo-source-url.js';
 const ext = globalThis.browser || globalThis.chrome;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const LOCAL_PHOTO_ID = new URL(location.href).searchParams.get('localPhotoId') || '';
+const canEditReportPhoto = item => !LOCAL_PHOTO_ID || item.localId === LOCAL_PHOTO_ID
+    || item.remote.state === 'draft' && item.lineage?.parentLocalId === LOCAL_PHOTO_ID;
 const SOURCE_IMAGE_URL = new URL(location.href).searchParams.get('imageUrl') || '';
 const SOURCE_IMAGE_ALT = (new URL(location.href).searchParams.get('imageAlt') || '').slice(0, Library.ALT_LIMIT);
 const SOURCE_IMAGE_CAPTION = new URL(location.href).searchParams.get('imageCaption');
@@ -561,7 +563,7 @@ const updateEditorControls = () => {
         || replacingOtherTab;
     ui.showEditor.disabled = storeReloadRequired || busy;
     ui.showLibrary.disabled = storeReloadRequired || busy;
-    ui.file.disabled = storeReloadRequired || busy;
+    ui.file.disabled = storeReloadRequired || busy || !!LOCAL_PHOTO_ID;
     ui.importProject.disabled = storeReloadRequired || busy;
     ui.saveKey.disabled = busy;
     for (const select of ui.reportWidthSelects) select.disabled = busy;
@@ -2200,6 +2202,10 @@ const loadBundle = async bundle => {
 
 const chooseFile = async file => {
     if (busy || !file) return;
+    if (LOCAL_PHOTO_ID) {
+        toast('Finish this report photo first. Open Photo Topos from the extension to start another image.');
+        return;
+    }
     if (file.size <= 0) {
         toast('That file is empty.');
         return;
@@ -2697,6 +2703,7 @@ const makeLibraryButton = (label, operation, failureMessage, className) => makeB
     event => void runLibraryAction(event.currentTarget, operation, failureMessage), className);
 
 const insertFromLibrary = async (item, control = null) => {
+    if (LOCAL_PHOTO_ID) return;
     if (!RETURN_TOKEN) {
         await copyTextWithFallback(item.remote.url, { control });
         return;
@@ -2743,6 +2750,7 @@ const insertFromLibrary = async (item, control = null) => {
 
 const editAsNewVersion = async (item, control = null) => {
     if (busy || newVersionTransaction) return;
+    if (!canEditReportPhoto(item)) return;
     const owner = {};
     newVersionTransaction = owner;
     settleEditorGestures();
@@ -3105,12 +3113,12 @@ const cardFor = (item, thumbnail, objectUrls) => {
         button.dataset.action = action;
         actions.append(button);
     };
-    if (!item.deletedAt && ['uploaded', 'unreachable'].includes(item.remote.state)) {
+    if (!LOCAL_PHOTO_ID && !item.deletedAt && ['uploaded', 'unreachable'].includes(item.remote.state)) {
         appendAction(RETURN_TOKEN ? 'insert' : 'copy', makeLibraryButton(RETURN_TOKEN ? 'Insert' : 'Copy URL',
             control => insertFromLibrary(item, control), 'The image could not be inserted. Try again.', 'secondary-button'));
     }
     if (!item.deletedAt && item.assets.originalRetained && item.assets.projectRetained) {
-        appendAction('edit', makeButton('Edit',
+        if (canEditReportPhoto(item)) appendAction('edit', makeButton('Edit',
             event => void editAsNewVersion(item, event.currentTarget)));
         appendAction('download', makeLibraryButton('Download project', () => downloadProject(item),
             'This project could not be downloaded. Try again.'));
@@ -3408,6 +3416,9 @@ const bindInspector = () => {
             && ui.text.value.trim() !== object.text) {
             updateSelected({ text: ui.text.value }, { coalesce: 'text' });
         }
+    });
+    ui.text.addEventListener('change', () => {
+        if (selectedObject()?.type === 'text' && !ui.text.value.trim()) deleteSelected();
     });
     // A range input fires `change` when the drag ends and a text field when it
     // loses focus, so the next gesture on the same control is its own Undo step
@@ -3805,7 +3816,7 @@ const initialize = async () => {
         const bundle = await store.getBundle(LOCAL_PHOTO_ID);
         if (!bundle?.photo) throw new Error('The local photo is unavailable.');
         await editAsNewVersion(bundle.photo);
-        if (project && SOURCE_IMAGE_CAPTION !== null) { ui.caption.value = SOURCE_IMAGE_CAPTION; schedulePersist(); }
+        if (project && SOURCE_IMAGE_CAPTION !== null && SOURCE_IMAGE_CAPTION !== (photo.caption || '')) { ui.caption.value = SOURCE_IMAGE_CAPTION; schedulePersist(); }
         setEditorStatus('Edits stay on this device. Save and return to update the TR.');
     } else if (SOURCE_IMAGE_URL && RETURN_TOKEN) {
         try {
@@ -3817,7 +3828,7 @@ const initialize = async () => {
             const bundle = latest ? await store.getBundle(latest.localId) : null;
             if (bundle?.original && bundle?.project) await editAsNewVersion(existing);
             else await chooseFile(await readPhotoSourceUrl(SOURCE_IMAGE_URL, { maxBytes: MAX_ENCODED_SOURCE_BYTES }));
-            if (project && SOURCE_IMAGE_CAPTION !== null) { ui.caption.value = SOURCE_IMAGE_CAPTION; schedulePersist(); }
+            if (project && SOURCE_IMAGE_CAPTION !== null && SOURCE_IMAGE_CAPTION !== (photo.caption || '')) { ui.caption.value = SOURCE_IMAGE_CAPTION; schedulePersist(); }
         } catch {
             toast('The image could not be opened from its host or local library. Download it and choose the file to continue editing.', {
                 action: 'Choose image', onAction: () => ui.file.click(), duration: 0,

@@ -274,6 +274,14 @@ Independent commits for drag ownership and report/observer surfaces:
   regression failed before the fix; report-photo/store tests, build and focused
   ESLint passed, including deletion at the write boundary.
 
+- F7 editor: report-edit tabs restrict incompatible replacement actions, identical
+  captions keep the loaded draft clean, and committing empty text removes the mark
+  with Undo support. Empty-text and no-op-caption assertions failed before the fix;
+  124 editor tests and focused ESLint passed. Hidden Chrome/Firefox exercised the
+  shipped editor with native decoding, canvas and IndexedDB at 390/1280 px in both
+  themes; the report-context controls, caption status, empty text and Undo passed
+  and rendered editor/library states were inspected. External APIs were stubbed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

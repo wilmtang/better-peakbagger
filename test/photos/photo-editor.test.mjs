@@ -37,7 +37,7 @@ const settle = win => new Promise(resolve => win.setTimeout(resolve, 0));
 
 const loadEditor = async ({
     returnToReport = false,
-    imageUrl = null,
+    imageUrl = null, localPhotoId = null, imageCaption = null,
     nativeBlobs = false,
     imgbbStatus = { ok: true, configured: false, permissionGranted: false },
     runtimeHandler = async () => ({ ok: true }),
@@ -61,6 +61,8 @@ const loadEditor = async ({
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
     if (imageUrl) params.set('imageUrl', imageUrl);
+    if (localPhotoId) params.set('localPhotoId', localPhotoId);
+    if (imageCaption !== null) params.set('imageCaption', imageCaption);
     if (startMode) params.set('mode', startMode);
     const dom = new JSDOM(html, {
         url: `chrome-extension://test/photos/photos.html${params.size ? `?${params}` : ''}`,
@@ -4005,3 +4007,36 @@ for (const placement of ['photo', 'center']) {
         assert.deepEqual(page.errors, []);
     });
 }
+
+test('committing an empty text label removes it and Undo restores the last text', async t => {
+    const page = await loadEditor(); t.after(() => page.win.close());
+    page.tool('text'); page.click(page.doc.getElementById('add-at-center'));
+    const input = page.doc.getElementById('object-text');
+    input.value = 'North ridge'; page.emit(input, 'input');
+    input.value = ''; page.emit(input, 'input'); page.emit(input, 'change');
+    assert.equal(page.markCount(), 0);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 1); assert.equal(page.overlay.querySelector('text').textContent, 'North ridge');
+});
+test('report-photo editing keeps its accepted image and does not dirty an unchanged caption', async t => {
+    const indexedDB = new IDBFactory(), store = await Store.createPhotoStore({ indexedDB });
+    const localId = crypto.randomUUID(), sha256 = 'a'.repeat(64);
+    const source = { ...IMAGE, sha256, mime: 'image/jpeg', bytes: 6, fileName: 'report.jpg' };
+    const photo = Library.createDraft({ localId, title: 'Report photo', caption: 'Existing caption', source });
+    await store.putDraft({ photo, project: Project.createProject({ localId, ...IMAGE, sourceSha256: sha256 }),
+        original: new Blob(['pixels'], { type: 'image/jpeg' }), thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }) });
+    const otherId = crypto.randomUUID();
+    await store.putDraft({ photo: Library.createDraft({ localId: otherId, title: 'Other photo', source: { ...source, sha256: 'b'.repeat(64) } }),
+        project: Project.createProject({ localId: otherId, ...IMAGE, sourceSha256: 'b'.repeat(64) }),
+        original: new Blob(['pixels'], { type: 'image/jpeg' }), thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }) });
+    store.close();
+    const page = await loadEditor({ indexedDB, nativeBlobs: true, pickPhoto: false, returnToReport: true,
+        localPhotoId: localId, imageCaption: 'Existing caption' }); t.after(() => page.win.close());
+    await waitFor(page.dom, () => page.doc.getElementById('editor-status').textContent.includes('Edits stay on this device'));
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, false, page.doc.getElementById('toast').textContent);
+    assert.equal(page.doc.getElementById('save-status').textContent, 'Saved on this device');
+    assert.equal(page.doc.getElementById('photo-file').disabled, true);
+    const otherCard = page.doc.querySelector(`[data-local-id="${otherId}"]`);
+    assert.equal(otherCard.querySelector('[data-action=edit]'), null);
+    assert.equal(otherCard.querySelector('[data-action=insert]'), null);
+});
