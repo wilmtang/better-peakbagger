@@ -791,6 +791,10 @@ async function weatherCase(page, origin, variant) {
 }
 async function reportFilterCase(page, origin, variant) {
     await page.route('https://**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    // Keep native icon dimensions; failed image/alt-text layout is unrelated
+    // to the report table's real content widths.
+    await page.route(/\/image\/(Suc|UnSuc|GPS)\.gif/i, route => route.fulfill({ contentType: 'image/svg+xml',
+        body: `<svg xmlns="http://www.w3.org/2000/svg" width="${/GPS/i.test(route.request().url()) ? 25 : 16}" height="16"><rect width="100%" height="100%" fill="green"/></svg>` }));
     const html = (await readFile(path.join(projectRoot, 'test/fixtures/pages/peak-rainier.html'), 'utf8')).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
     await page.route('**/Peak.aspx**', route => route.fulfill({ body: html, contentType: 'text/html' }));
     await page.addInitScript(({ theme }) => {
@@ -818,6 +822,25 @@ async function reportFilterCase(page, origin, variant) {
     await page.addScriptTag({ content: (await asset('content/peak-report-filter.js')).toString() });
     const button = page.locator('.bpb-report-favorites'); await button.filter({ hasText: 'Favorite climbers · 1' }).waitFor();
     await page.waitForFunction(() => [...document.images].every(image => image.complete));
+    const assertNaturalColumns = async label => {
+        const widths = await page.locator('#bpb-selected-reports').evaluate(async table => {
+            // Compare with the native table under the same host styles and
+            // available width, without the extension's table-specific rules.
+            const native = table.cloneNode(true);
+            native.removeAttribute('id'); native.style.visibility = 'hidden';
+            table.after(native);
+            const columns = element => [...element.rows[0].cells].map(cell => cell.getBoundingClientRect().width);
+            try {
+                await Promise.all([...native.querySelectorAll('img')].map(image => image.decode().catch(() => {})));
+                return { actual: columns(table), native: columns(native) };
+            }
+            finally { native.remove(); }
+        });
+        assert.equal(widths.actual.length, 6, `${label}: six report columns`);
+        for (const [index, width] of widths.native.entries()) assert.ok(Math.abs(widths.actual[index] - width) <= 1,
+            `${label}: column ${index} must hug its content as the native table does: ${JSON.stringify(widths)}`);
+    };
+    await assertNaturalColumns('all reports');
     await button.scrollIntoViewIfNeeded(); await button.focus();
     const scrollBefore = await page.evaluate(() => ({ y: window.scrollY, height: document.documentElement.scrollHeight }));
     await capture(page, `${variant.name}-report-filter-before`);
@@ -826,6 +849,7 @@ async function reportFilterCase(page, origin, variant) {
     await page.waitForFunction(() => typeof globalThis.__finishPreference === 'function');
     assert.equal(await button.getAttribute('aria-disabled'), 'true');
     await assertActionFocus(page, '.bpb-report-favorites', 'report preference pending focus');
+    await assertNaturalColumns('filtered reports pending');
     await capture(page, `${variant.name}-report-filter-pending`);
     assert.equal(await page.evaluate(() => window.scrollY), scrollBefore.y, 'filtering preserves the reading position');
     stable(before, await geometry(page, '.bpb-report-favorites'), 'report preference pending');
@@ -834,6 +858,7 @@ async function reportFilterCase(page, origin, variant) {
     await page.evaluate(() => globalThis.__finishPreference(true));
     await page.waitForFunction(() => document.querySelector('.bpb-report-favorites').getAttribute('aria-disabled') === 'false');
     await assertActionFocus(page, '.bpb-report-favorites', 'report preference error focus');
+    await assertNaturalColumns('filtered reports error');
     stable(before, await geometry(page, '.bpb-report-favorites'), 'report preference error');
     await page.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
     await page.waitForFunction(() => globalThis.__preferenceWrites === 2);
@@ -841,6 +866,7 @@ async function reportFilterCase(page, origin, variant) {
     await page.waitForFunction(() => document.querySelector('.bpb-report-favorites').getAttribute('aria-disabled') === 'false');
     assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).evaluate(node => document.activeElement === node), true, 'retry retains completion focus');
     assert.match(await page.locator('#bpb-peak-report-tools').textContent(), /1 of 30/);
+    await assertNaturalColumns('filtered reports complete');
     await capture(page, `${variant.name}-report-filter`);
 }
 async function sunCase(page, origin, variant) {
@@ -1386,7 +1412,7 @@ try {
             : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }) });
         try {
             for (const theme of ['light', 'dark']) for (const width of [390, 1280])
-                for (const zoom of ['timestamps', 'ascent-columns'].includes(selected) ? [1, 1.5] : [1]) {
+                for (const zoom of ['timestamps', 'ascent-columns', 'report-filter'].includes(selected) ? [1, 1.5] : [1]) {
                     for (const [surface, check] of Object.entries(cases)) {
                         if (selected && selected !== surface) continue;
                         const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: Math.floor(width / zoom), height: Math.floor(900 / zoom) }, deviceScaleFactor: zoom, colorScheme: theme });

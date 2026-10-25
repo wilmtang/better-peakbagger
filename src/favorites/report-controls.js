@@ -20,8 +20,6 @@ export const reportStyle = doc => {
 .bpb-report-tools .bpb-report-favorites { border:1px solid #9aa89e; background:#f6f8f6; }
 .bpb-report-tools .bpb-report-favorites[aria-pressed="true"] { background:#e7f1e9; border-color:#2f6b3f; color:#245332; }
 .bpb-report-table-wrap { width:0; min-width:100%; overflow-x:auto; }
-#bpb-selected-reports { width:100%; min-width:38em; table-layout:fixed; }
-#bpb-selected-reports th, #bpb-selected-reports td { overflow-wrap:anywhere; }
 .bpb-report-status { color:#555e57; font-size:12px; }
 .bpb-report-utilities { display:flex; align-items:flex-start; flex-wrap:wrap; gap:4px 10px; }
 .bpb-report-utilities .bpb-report-status { flex-basis:100%; order:1; }
