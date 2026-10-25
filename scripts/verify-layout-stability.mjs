@@ -1178,7 +1178,8 @@ async function timestampCase(page, origin, variant) {
     await page.addInitScript(({ theme }) => {
         document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
         globalThis.__messages = [];
-        globalThis.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { theme, removeGpxTimestamps: true, enableReportEditor: false } }) },
+        globalThis.chrome = { storage: { local: { get: async () => ({}) },
+            sync: { get: async () => ({ bpbSettings: { theme, removeGpxTimestamps: true, enableReportEditor: false } }) },
             onChanged: { addListener() {}, removeListener() {} } }, runtime: { getManifest: () => ({ version: '4.0.1' }),
             onMessage: { addListener() {}, removeListener() {} }, sendMessage: async message => {
                 globalThis.__messages.push(message);
@@ -1275,7 +1276,7 @@ async function timestampCase(page, origin, variant) {
                 trackSummary: { originalPointCount: 50, retainedPointCount: 50, maxDeviationM: 0 },
                 matches: [{ id: 1, name: 'North Summit', classification: 'strong', confidence: 98, evidence: { distanceM: 2 } }] };
             globalThis.chrome = { tabs: { query: async () => [{ id: 9 }] },
-                storage: { sync: { get: async () => ({ bpbSettings: { theme } }) }, onChanged: { addListener() {}, removeListener() {} } },
+                storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { theme } }) }, onChanged: { addListener() {}, removeListener() {} } },
                 runtime: { sendMessage: async message => {
                     if (['CAPTURE_START', 'CAPTURE_STATUS'].includes(message.type)) return structuredClone(job);
                     if (message.type === 'CAPTURE_OPEN_DRAFTS') return new Promise(resolve => {
