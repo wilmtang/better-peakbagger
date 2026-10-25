@@ -6,9 +6,16 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
+export function assertFormattingLocale(actual, expected) {
+    // Firefox may omit the default region from its resolved locale. Preserve
+    // regional/script/extension distinctions while accepting that spelling.
+    assert.equal(new Intl.Locale(actual).maximize().toString(), new Intl.Locale(expected).maximize().toString(),
+        `real browser formatting locale: observed ${actual}, requested ${expected}`);
+}
+
 export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate, click, clickPoint, movePointer, press, resize, setZoom,
     setSettings, wait, setMode, heldCount, release, releaseOne, evidence, networkErrors, firefoxMode, screenshotPage, writeLocal, verificationLocale }) {
-    const cases = [], chartCases = [], output = process.env.BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR;
+    const cases = [], chartCases = [], observedLocales = new Set(), output = process.env.BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015', ArrowRight: '\uE014', Tab: '\uE004' }[name] : name;
     const focus = selector => evaluate(selector => {
@@ -55,7 +62,8 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, peakWeatherCollapsed: false });
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map-first`);
         await setZoom(zoom);
-        assert.equal(await evaluate(() => Intl.DateTimeFormat().resolvedOptions().locale), verificationLocale, 'real browser formatting locale');
+        const actualLocale = await evaluate(() => Intl.DateTimeFormat().resolvedOptions().locale);
+        assertFormattingLocale(actualLocale, verificationLocale); observedLocales.add(actualLocale);
         await focus('.bpb-week-refresh'); await ready();
         // Settle the following card before comparing reading positions.
         await evaluate(() => document.querySelector('#bpb-peak-snow').scrollIntoView({ block: 'center' }));
@@ -152,5 +160,5 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
     assert.equal(cases.length, 8, 'the complete interaction matrix executed');
     assert.equal(chartCases.length, 2, 'both desktop chart input cases executed');
     assert.deepEqual(networkErrors, []);
-    return { cases, chartCases, locale: verificationLocale, screenshots: output || null };
+    return { cases, chartCases, locale: verificationLocale, observedLocales: [...observedLocales], screenshots: output || null };
 }
