@@ -787,6 +787,60 @@ async function weatherCase(page, origin, variant) {
         await capture(page, `${variant.name}-weather-${zoom}`);
     }
 }
+async function reportFilterCase(page, origin, variant) {
+    await page.route('https://**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    const html = (await readFile(path.join(projectRoot, 'test/fixtures/pages/peak-rainier.html'), 'utf8')).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+    await page.route('**/Peak.aspx**', route => route.fulfill({ body: html, contentType: 'text/html' }));
+    await page.addInitScript(({ theme }) => {
+        const listeners = new Set(), local = { bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: false },
+            bpbFavoriteClimbers: { schemaVersion: 1, entries: [{ cid: 38769, name: 'Favorite', source: 'manual', addedAt: 1 }] } };
+        globalThis.__preferenceWrites = 0;
+        globalThis.chrome = { storage: {
+            local: { get: async () => local }, sync: { get: async () => ({ bpbSettings: { theme, favoritesSource: 'custom' } }) },
+            onChanged: { addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn) } },
+        runtime: { getURL: file => `${location.origin}/dist/${file}`, sendMessage: message => {
+            if (message.type !== 'PEAK_REPORT_PREFERENCE') return Promise.resolve({ ok: true });
+            globalThis.__preferenceWrites++;
+            return new Promise(resolve => { globalThis.__finishPreference = failure => {
+                if (!failure) {
+                    local.bpbPeakReportFilter = { schemaVersion: 1, favoritesOnly: message.favoritesOnly };
+                    listeners.forEach(fn => fn({ bpbPeakReportFilter: { newValue: local.bpbPeakReportFilter } }, 'local'));
+                }
+                resolve({ ok: !failure });
+            }; });
+        } } };
+    }, variant);
+    await page.goto(`${origin}/Peak.aspx?pid=2296`);
+    await page.evaluate(theme => { document.documentElement.dataset.bpbTheme = theme; }, variant.theme);
+    await page.addStyleTag({ content: darkCss });
+    await page.addScriptTag({ content: (await asset('content/peak-report-filter.js')).toString() });
+    const button = page.locator('.bpb-report-favorites'); await button.filter({ hasText: 'Favorite climbers · 1' }).waitFor();
+    await page.waitForFunction(() => [...document.images].every(image => image.complete));
+    await button.scrollIntoViewIfNeeded(); await button.focus();
+    const scrollBefore = await page.evaluate(() => ({ y: window.scrollY, height: document.documentElement.scrollHeight }));
+    await capture(page, `${variant.name}-report-filter-before`);
+    const before = await geometry(page, '.bpb-report-favorites');
+    await button.press('Enter');
+    await page.waitForFunction(() => typeof globalThis.__finishPreference === 'function');
+    assert.equal(await button.getAttribute('aria-disabled'), 'true');
+    await assertActionFocus(page, '.bpb-report-favorites', 'report preference pending focus');
+    await capture(page, `${variant.name}-report-filter-pending`);
+    assert.equal(await page.evaluate(() => window.scrollY), scrollBefore.y, 'filtering preserves the reading position');
+    stable(before, await geometry(page, '.bpb-report-favorites'), 'report preference pending');
+    await button.evaluate(node => node.click());
+    assert.equal(await page.evaluate(() => globalThis.__preferenceWrites), 1);
+    await page.evaluate(() => globalThis.__finishPreference(true));
+    await page.waitForFunction(() => document.querySelector('.bpb-report-favorites').getAttribute('aria-disabled') === 'false');
+    await assertActionFocus(page, '.bpb-report-favorites', 'report preference error focus');
+    stable(before, await geometry(page, '.bpb-report-favorites'), 'report preference error');
+    await page.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+    await page.waitForFunction(() => globalThis.__preferenceWrites === 2);
+    await page.evaluate(() => globalThis.__finishPreference(false));
+    await page.waitForFunction(() => document.querySelector('.bpb-report-favorites').getAttribute('aria-disabled') === 'false');
+    assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).evaluate(node => document.activeElement === node), true, 'retry retains completion focus');
+    assert.match(await page.locator('#bpb-peak-report-tools').textContent(), /1 of 30/);
+    await capture(page, `${variant.name}-report-filter`);
+}
 async function sunCase(page, origin, variant) {
     await page.goto(`${origin}/dist/photos/guide.html`);
     await page.evaluate(({ theme }) => {
@@ -1301,7 +1355,7 @@ async function reportCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-report-feedback`);
 }
-const cases = { sun: sunCase, 'photo-report-edit': (page, origin, variant) => verifyPhotoReportEdit(page, origin, variant, { capture }), popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, 'photo-backup': photoBackupCase, weather: weatherCase,
+const cases = { 'report-filter': reportFilterCase, sun: sunCase, 'photo-report-edit': (page, origin, variant) => verifyPhotoReportEdit(page, origin, variant, { capture }), popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, 'photo-backup': photoBackupCase, weather: weatherCase,
     'climber-files': (page, origin, variant) => verifyClimberFiles(page, origin, variant, { capture }),
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'ascent-columns': (page, origin, variant) => verifyAscentColumnWidths(page, origin, variant, { asset, capture }),

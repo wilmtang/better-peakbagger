@@ -347,6 +347,15 @@ Independent commits for drag ownership and report/observer surfaces:
   themes. Observer measurement settled within two passes and retained later host
   mutations; draining records would weaken that boundary and is intentionally omitted.
 
+- F13 report filters: unused subscriptions stop on absent tables/disposal; busy
+  preference actions retain focus and reject duplicates. Empty reveal feedback is
+  hidden and count grammar is correct. Browser verification reproduced a 16 px
+  action shift from native table width changes; a bounded horizontal report region
+  preserves column widths and readable cells without rewrapping preceding content.
+  The old busy control failed the regression; 11 report tests, build and ESLint
+  passed. Eight hidden Chrome/Firefox cases passed pending/error/Retry, action and
+  scroll geometry at 390/1280 px in both themes; narrow rendering was inspected.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

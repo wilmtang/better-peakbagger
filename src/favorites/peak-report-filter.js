@@ -46,10 +46,20 @@ const recovery = setTimeout(() => {
     if (!preference && !preferenceError) preferenceError = "Couldn't load the report preference.";
     restore(); startup.disconnect(); render();
 }, 3000);
+let stopped = false;
+const stop = () => {
+    if (stopped) return;
+    stopped = true; preferenceGeneration++; clearTimeout(recovery); startup.disconnect(); restore();
+    source.stop(); ignoreObserver.stop(); chrome.storage.onChanged.removeListener(preferenceChanged);
+    render = () => {};
+};
+window.addEventListener('pagehide', event => {
+    restore(); source.pause(); if (!event.persisted) stop();
+});
 const mount = () => {
     startup.disconnect();
     const target = selectedReportTable(document);
-    if (!target || !target.records.length) { clearTimeout(recovery); restore(); return; }
+    if (!target || !target.records.length) { stop(); return; }
     reportStyle(document);
     const { table, records } = target;
     if (!table.id) table.id = 'bpb-selected-reports';
@@ -60,6 +70,7 @@ const mount = () => {
     const revealStatus = document.createElement('span'); revealStatus.className = 'bpb-report-status';
     const error = document.createElement('span'); error.className = 'bpb-list-error'; error.setAttribute('role', 'status');
     const savePreference = async value => {
+        if (busy || stopped) return;
         full = false; preference = { schemaVersion: 1, favoritesOnly: value }; busy = true; preferenceError = ''; render();
         try {
             const response = await chrome.runtime.sendMessage({ type: I.PREFERENCE_MESSAGE, favoritesOnly: value });
@@ -96,6 +107,9 @@ const mount = () => {
     utilities.append(revealButton, retry, accountLinks, showAll, fullButton, restoreFilters, manage, revealStatus, status, error);
     tools.append(favorites, utilities);
     table.before(tools);
+    const tableWrap = document.createElement('div'); tableWrap.className = 'bpb-report-table-wrap';
+    tableWrap.tabIndex = 0; tableWrap.setAttribute('role', 'region'); tableWrap.setAttribute('aria-label', 'Selected trip reports');
+    table.before(tableWrap); tableWrap.append(table);
     const emptyRow = table.insertRow(); emptyRow.className = 'bpb-report-empty';
     const empty = emptyRow.insertCell(); empty.colSpan = 6;
     render = () => {
@@ -110,7 +124,7 @@ const mount = () => {
         favoriteText.set(`${preference?.favoritesOnly ? '★' : '☆'} ${label} · ${favoriteCount}`);
         favorites.setAttribute('aria-pressed', String(preference?.favoritesOnly === true));
         favorites.title = `Only show reports from your ${label.toLowerCase()}. Remembered on this device.`;
-        favorites.disabled = busy; favorites.setAttribute('aria-busy', String(busy));
+        favorites.setAttribute('aria-disabled', String(busy)); favorites.setAttribute('aria-busy', String(busy));
         paintReveal(revealButton, revealStatus, counts, reveal);
         status.textContent = `${counts.visible.length} of ${records.length} selected reports shown`;
         error.textContent = ignoredError || preferenceError || (active ? sourceState?.error || '' : '');
@@ -137,9 +151,6 @@ const mount = () => {
     window.addEventListener('pageshow', event => { if (event.persisted) {
         full = false; reveal = false; render(); void source.resume(); void ignoreObserver.refresh();
     } });
-    window.addEventListener('pagehide', event => {
-        restore(); source.pause(); if (!event.persisted) { source.stop(); ignoreObserver.stop(); }
-    });
     source.reconcile(); render();
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });

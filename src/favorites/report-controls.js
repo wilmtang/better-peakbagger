@@ -19,6 +19,9 @@ export const reportStyle = doc => {
 #bpb-peak-report-tools .bpb-report-reveal:hover { text-decoration:underline; text-underline-offset:3px; }
 .bpb-report-tools .bpb-report-favorites { border:1px solid #9aa89e; background:#f6f8f6; }
 .bpb-report-tools .bpb-report-favorites[aria-pressed="true"] { background:#e7f1e9; border-color:#2f6b3f; color:#245332; }
+.bpb-report-table-wrap { width:0; min-width:100%; overflow-x:auto; }
+#bpb-selected-reports { width:100%; min-width:38em; table-layout:fixed; }
+#bpb-selected-reports th, #bpb-selected-reports td { overflow-wrap:anywhere; }
 .bpb-report-status { color:#555e57; font-size:12px; }
 .bpb-report-utilities { display:flex; align-items:flex-start; flex-wrap:wrap; gap:4px 10px; }
 .bpb-report-utilities .bpb-report-status { flex-basis:100%; order:1; }
@@ -57,9 +60,9 @@ export const paintReveal = (button, status, counts, reveal, noun = 'reports') =>
     button.setAttribute('aria-pressed', String(reveal));
     button.textContent = `${reveal ? 'Hide' : 'Show'} ignored · ${n}`;
     button.setAttribute('aria-label', `${reveal ? 'Hide' : 'Show'} ${n} ignored ${noun}`);
-    status.hidden = n === 0;
     status.textContent = counts.ignoredMatches === n ? ''
-        : counts.ignoredMatches === 0 ? 'None match filters' : `${counts.ignoredMatches} matches filters`;
+        : counts.ignoredMatches === 0 ? 'None match filters' : `${counts.ignoredMatches} ${counts.ignoredMatches === 1 ? 'matches' : 'match'} filters`;
+    status.hidden = n === 0 || !status.textContent;
     button.setAttribute('aria-description', reveal ? `${n} ignored ${noun} included; 0 hidden by ignore.`
-        : `${n} ${noun} hidden because you ignored their climbers; ${counts.ignoredMatches} matches current filters.`);
+        : `${n} ${noun} hidden because you ignored their climbers; ${counts.ignoredMatches} ${counts.ignoredMatches === 1 ? 'matches' : 'match'} current filters.`);
 };

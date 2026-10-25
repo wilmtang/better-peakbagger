@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
+import { paintReveal } from '../../src/favorites/report-controls.js';
 import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
 const entry = cid => ({ cid, name: `Climber ${cid}`, addedAt: 1 });
 const load = local => loadPage('peak-rainier.html', { fixtures: PAGE_FIXTURES,
@@ -77,4 +79,48 @@ test('an unverified Buddy source offers sign-in and local favorites without disc
     assert.ok(links.some(a => a.textContent === 'Use custom favorites…'));
     assert.equal(dom.chrome._localStore.bpbPeakReportFilter.favoritesOnly, true);
     assert.ok([...tools.querySelectorAll('button')].find(b => b.textContent === 'Retry').hidden);
+});
+
+test('saving the report preference retains focus and rejects duplicate activation', async () => {
+    let finish, writes = 0;
+    const dom = await loadPage('peak-rainier.html', { fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/peak.aspx?pid=2296', bundles: [process.env.BPB_REPORT_FILTER_BUNDLE || 'content/peak-report-filter.js'],
+        settings: { favoritesSource: 'custom' }, prepare: d => {
+            const send = d.chrome.runtime.sendMessage;
+            Object.defineProperty(d.chrome.runtime, 'sendMessage', { value: message => message.type === 'PEAK_REPORT_PREFERENCE'
+                ? (writes++, new Promise(resolve => { finish = () => resolve({ ok: true }); })) : send(message) });
+        } });
+    try {
+        const button = dom.window.document.querySelector('.bpb-report-favorites');
+        button.focus(); button.click(); await waitFor(dom, () => finish);
+        assert.equal(button.disabled, false, 'busy control retains browser focus');
+        assert.equal(button.getAttribute('aria-disabled'), 'true');
+        button.click(); assert.equal(writes, 1);
+        finish(); await waitFor(dom, () => button.getAttribute('aria-disabled') === 'false');
+        assert.equal(dom.window.document.activeElement, button);
+    } finally { dom.window.close(); }
+});
+
+test('report reveal feedback is hidden when empty and pluralizes matching counts', () => {
+    const dom = new JSDOM('<button></button><span></span>'), doc = dom.window.document;
+    try {
+        const button = doc.querySelector('button'), status = doc.querySelector('span');
+        paintReveal(button, status, { ignored: [1, 2], ignoredMatches: 2 }, false);
+        assert.equal(status.hidden, true);
+        paintReveal(button, status, { ignored: [1, 2, 3], ignoredMatches: 2 }, false);
+        assert.equal(status.textContent, '2 match filters');
+        assert.match(button.getAttribute('aria-description'), /2 match current filters/);
+    } finally { dom.window.close(); }
+});
+
+test('a page without a recognized report table releases its storage subscriptions', async () => {
+    const active = new Set();
+    const dom = await loadPage('peak-rainier.html', { fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/peak.aspx?pid=2296', bundles: ['content/peak-report-filter.js'],
+        prepare: d => {
+            d.window.document.body.replaceChildren();
+            d.chrome.storage.onChanged.addListener = fn => active.add(fn);
+            d.chrome.storage.onChanged.removeListener = fn => active.delete(fn);
+        } });
+    try { assert.equal(active.size, 0); } finally { dom.window.close(); }
 });
