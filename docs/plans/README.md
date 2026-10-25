@@ -1,5 +1,10 @@
 # Active plans
 
+- [Open-Meteo peak-page request audit — October 24](open-meteo-peak-request-audit-2026-10-24.md)
+  — five default HTTP requests once both cards enter the loading margin;
+  weighted quota estimates, 23 request-count probes, collapsed-weather fetching
+  and separate caches. Report only; runtime findings remain open.
+
 - [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
   — R2/Worker free-tier budgets, measured small-sample PMTiles sizes and a
   proposed hosting path; full US size and live Cloudflare behavior remain unverified.

@@ -1,0 +1,273 @@
+{
+  "auditedHead": "1739e18531e798920964c3e76d40acb82fd7a774",
+  "sourceInputsSha256": "cf2e043dc6826e16b1cf33770ffa00696fbf3ea53ac50f3e1225e28800440a42",
+  "sourceInputs": [
+    "node_modules/tz-lookup/tz.js",
+    "src/ascent/ascent-weather-subject.js",
+    "src/maps/map-elevation.js",
+    "src/maps/map-location-menu.js",
+    "src/maps/peak-cards.js",
+    "src/net/bounded-text.js",
+    "src/net/rate-limit.js",
+    "src/net/request-deadline.js",
+    "src/peakbagger/peak-units.js",
+    "src/peakbagger/peakbagger-origin.js",
+    "src/photos/photo-project.js",
+    "src/photos/photo-tool-preferences.js",
+    "src/settings/settings-schema.js",
+    "src/settings/settings.js",
+    "src/storage/storage-value.js",
+    "src/terrain/terrain-cache.js",
+    "src/theme/theme-resolve.js",
+    "src/time/mountain-time.js",
+    "src/ui/column-resize.js",
+    "src/ui/dom.js",
+    "src/ui/layout-menu.js",
+    "src/ui/page-lifecycle.js",
+    "src/ui/peak-card-layout.js",
+    "src/ui/peak-table-split.js",
+    "src/ui/retry-cooldown.js",
+    "src/ui/stable-text.js",
+    "src/ui/units.js",
+    "src/weather/air-quality-client.js",
+    "src/weather/air-quality-view.js",
+    "src/weather/open-meteo-client.js",
+    "src/weather/peak-weather-hourly.js",
+    "src/weather/peak-weather-location.js",
+    "src/weather/peak-weather-models.js",
+    "src/weather/peak-weather-subject.js",
+    "src/weather/peak-weather-updates.js",
+    "src/weather/peak-weather.js",
+    "src/weather/summit-cloud-client.js",
+    "src/weather/summit-cloud-core.js",
+    "src/weather/summit-cloud-models.js",
+    "src/weather/summit-cloud.js",
+    "src/weather/weather-day.js",
+    "src/weather/weather-hourly-table.js",
+    "src/weather/weather-icon.js",
+    "src/weather/weather-models.js",
+    "src/weather/weather-week.js"
+  ],
+  "bundleSha256": {
+    "dist/content/peak-weather.js": "088cfcf5c01c7140925b0623ab488a639ebd7362a1f98eef240862e52886b893",
+    "dist/content/summit-cloud.js": "85918ccbe1ee92678987c4871e5c39eee74f57286008c1fb5701f271f25d1ab0",
+    "dist/content/peak-cards.js": "7d0d651825ac4b7d91d5a93551829fbe6d581cfe9e731615d823b3ad699b01ef"
+  },
+  "clock": "2026-10-24T18:00:00Z",
+  "fixture": "test/fixtures/pages/peak-rainier.html",
+  "method": "Built dist IIFEs in jsdom; stubbed settings, intersection, clock, HTTP responses; no live network or browser",
+  "assertions": 23,
+  "results": [
+    {
+      "name": "Before either IntersectionObserver fires",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 0
+    },
+    {
+      "name": "Only weather intersects",
+      "weather": 1,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 1
+    },
+    {
+      "name": "Default: both cards intersect",
+      "weather": 1,
+      "cloud": 2,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 5
+    },
+    {
+      "name": "Period/hour/Why navigation: additional",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 0
+    },
+    {
+      "name": "Weather Refresh with Source details closed: additional",
+      "weather": 1,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 1
+    },
+    {
+      "name": "Cloud Refresh within cache TTL: additional",
+      "weather": 0,
+      "cloud": 2,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 2
+    },
+    {
+      "name": "Tomorrow, same models: additional",
+      "weather": 0,
+      "cloud": 2,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 2
+    },
+    {
+      "name": "Return to cached day: additional",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 0
+    },
+    {
+      "name": "Open GFS Source details: additional",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 2
+    },
+    {
+      "name": "Weather Refresh with Source details open: additional",
+      "weather": 1,
+      "cloud": 0,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 3
+    },
+    {
+      "name": "First AQI selection: additional",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 1,
+      "total": 1
+    },
+    {
+      "name": "Reselect warm AQI: additional",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 0
+    },
+    {
+      "name": "Cloud Refresh after cache TTL: additional",
+      "weather": 0,
+      "cloud": 2,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 4
+    },
+    {
+      "name": "Manual GFS cloud",
+      "weather": 1,
+      "cloud": 1,
+      "metadata": 1,
+      "airQuality": 0,
+      "total": 3
+    },
+    {
+      "name": "Cloud disabled",
+      "weather": 1,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 1
+    },
+    {
+      "name": "Weather disabled, cloud explicitly enabled",
+      "weather": 0,
+      "cloud": 2,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 4
+    },
+    {
+      "name": "Both disabled",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 0
+    },
+    {
+      "name": "Cloud saved collapsed",
+      "weather": 1,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 1
+    },
+    {
+      "name": "Both saved collapsed",
+      "weather": 1,
+      "cloud": 0,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 1
+    },
+    {
+      "name": "Distinct past/forecast surface models",
+      "weather": 1,
+      "cloud": 2,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 5
+    },
+    {
+      "name": "Both cloud profile requests return 429",
+      "weather": 1,
+      "cloud": 2,
+      "metadata": 0,
+      "airQuality": 0,
+      "total": 3
+    },
+    {
+      "name": "Fresh second page instance",
+      "weather": 1,
+      "cloud": 2,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 5
+    },
+    {
+      "name": "Manual GFS: opening Source repeats cloud GFS025 metadata",
+      "weather": 0,
+      "cloud": 0,
+      "metadata": 2,
+      "airQuality": 0,
+      "total": 2
+    }
+  ],
+  "defaultRequests": [
+    {
+      "kind": "weather",
+      "url": "https://api.open-meteo.com/v1/forecast?latitude=46.851731&longitude=-121.760395&start_date=2026-10-08&end_date=2026-11-08&hourly=weather_code%2Ctemperature_2m%2Cprecipitation%2Cwind_speed_10m%2Cwind_gusts_10m%2Capparent_temperature%2Cwind_direction_10m%2Cis_day%2Ccloud_cover%2Cfreezing_level_height&timezone=GMT&timeformat=unixtime&temperature_unit=celsius&precipitation_unit=mm&wind_speed_unit=kmh&models=gfs_global&elevation=4391",
+      "cache": "no-store"
+    },
+    {
+      "kind": "cloud",
+      "url": "https://api.open-meteo.com/v1/forecast?latitude=46.85173%2C46.94166%2C46.85166%2C46.76180%2C46.85166&longitude=-121.76040%2C-121.76040%2C-121.62889%2C-121.76040%2C-121.89190&elevation=nan%2Cnan%2Cnan%2Cnan%2Cnan&cell_selection=nearest&models=gfs_hrrr&hourly=temperature_1000hPa%2Crelative_humidity_1000hPa%2Cgeopotential_height_1000hPa%2Ccloud_cover_1000hPa%2Cwind_speed_1000hPa%2Cwind_direction_1000hPa%2Ctemperature_925hPa%2Crelative_humidity_925hPa%2Cgeopotential_height_925hPa%2Ccloud_cover_925hPa%2Cwind_speed_925hPa%2Cwind_direction_925hPa%2Ctemperature_850hPa%2Crelative_humidity_850hPa%2Cgeopotential_height_850hPa%2Ccloud_cover_850hPa%2Cwind_speed_850hPa%2Cwind_direction_850hPa%2Ctemperature_800hPa%2Crelative_humidity_800hPa%2Cgeopotential_height_800hPa%2Ccloud_cover_800hPa%2Cwind_speed_800hPa%2Cwind_direction_800hPa%2Ctemperature_750hPa%2Crelative_humidity_750hPa%2Cgeopotential_height_750hPa%2Ccloud_cover_750hPa%2Cwind_speed_750hPa%2Cwind_direction_750hPa%2Ctemperature_700hPa%2Crelative_humidity_700hPa%2Cgeopotential_height_700hPa%2Ccloud_cover_700hPa%2Cwind_speed_700hPa%2Cwind_direction_700hPa%2Ctemperature_650hPa%2Crelative_humidity_650hPa%2Cgeopotential_height_650hPa%2Ccloud_cover_650hPa%2Cwind_speed_650hPa%2Cwind_direction_650hPa%2Ctemperature_600hPa%2Crelative_humidity_600hPa%2Cgeopotential_height_600hPa%2Ccloud_cover_600hPa%2Cwind_speed_600hPa%2Cwind_direction_600hPa%2Ctemperature_500hPa%2Crelative_humidity_500hPa%2Cgeopotential_height_500hPa%2Ccloud_cover_500hPa%2Cwind_speed_500hPa%2Cwind_direction_500hPa%2Ctemperature_400hPa%2Crelative_humidity_400hPa%2Cgeopotential_height_400hPa%2Ccloud_cover_400hPa%2Cwind_speed_400hPa%2Cwind_direction_400hPa%2Ctemperature_300hPa%2Crelative_humidity_300hPa%2Cgeopotential_height_300hPa%2Ccloud_cover_300hPa%2Cwind_speed_300hPa%2Cwind_direction_300hPa%2Ctemperature_250hPa%2Crelative_humidity_250hPa%2Cgeopotential_height_250hPa%2Ccloud_cover_250hPa%2Cwind_speed_250hPa%2Cwind_direction_250hPa&start_hour=2026-10-24T07%3A00&end_hour=2026-10-25T06%3A00&timezone=GMT&timeformat=unixtime&temperature_unit=celsius&wind_speed_unit=ms",
+      "cache": "no-store"
+    },
+    {
+      "kind": "cloud",
+      "url": "https://api.open-meteo.com/v1/forecast?latitude=46.85173%2C46.94166%2C46.85166%2C46.76180%2C46.85166&longitude=-121.76040%2C-121.76040%2C-121.62889%2C-121.76040%2C-121.89190&elevation=nan%2Cnan%2Cnan%2Cnan%2Cnan&cell_selection=nearest&models=gem_hrdps_continental&hourly=temperature_1000hPa%2Crelative_humidity_1000hPa%2Cgeopotential_height_1000hPa%2Ccloud_cover_1000hPa%2Cwind_speed_1000hPa%2Cwind_direction_1000hPa%2Ctemperature_925hPa%2Crelative_humidity_925hPa%2Cgeopotential_height_925hPa%2Ccloud_cover_925hPa%2Cwind_speed_925hPa%2Cwind_direction_925hPa%2Ctemperature_850hPa%2Crelative_humidity_850hPa%2Cgeopotential_height_850hPa%2Ccloud_cover_850hPa%2Cwind_speed_850hPa%2Cwind_direction_850hPa%2Ctemperature_800hPa%2Crelative_humidity_800hPa%2Cgeopotential_height_800hPa%2Ccloud_cover_800hPa%2Cwind_speed_800hPa%2Cwind_direction_800hPa%2Ctemperature_750hPa%2Crelative_humidity_750hPa%2Cgeopotential_height_750hPa%2Ccloud_cover_750hPa%2Cwind_speed_750hPa%2Cwind_direction_750hPa%2Ctemperature_700hPa%2Crelative_humidity_700hPa%2Cgeopotential_height_700hPa%2Ccloud_cover_700hPa%2Cwind_speed_700hPa%2Cwind_direction_700hPa%2Ctemperature_650hPa%2Crelative_humidity_650hPa%2Cgeopotential_height_650hPa%2Ccloud_cover_650hPa%2Cwind_speed_650hPa%2Cwind_direction_650hPa%2Ctemperature_600hPa%2Crelative_humidity_600hPa%2Cgeopotential_height_600hPa%2Ccloud_cover_600hPa%2Cwind_speed_600hPa%2Cwind_direction_600hPa%2Ctemperature_500hPa%2Crelative_humidity_500hPa%2Cgeopotential_height_500hPa%2Ccloud_cover_500hPa%2Cwind_speed_500hPa%2Cwind_direction_500hPa%2Ctemperature_400hPa%2Crelative_humidity_400hPa%2Cgeopotential_height_400hPa%2Ccloud_cover_400hPa%2Cwind_speed_400hPa%2Cwind_direction_400hPa%2Ctemperature_300hPa%2Crelative_humidity_300hPa%2Cgeopotential_height_300hPa%2Ccloud_cover_300hPa%2Cwind_speed_300hPa%2Cwind_direction_300hPa%2Ctemperature_250hPa%2Crelative_humidity_250hPa%2Cgeopotential_height_250hPa%2Ccloud_cover_250hPa%2Cwind_speed_250hPa%2Cwind_direction_250hPa&start_hour=2026-10-24T07%3A00&end_hour=2026-10-25T06%3A00&timezone=GMT&timeformat=unixtime&temperature_unit=celsius&wind_speed_unit=ms",
+      "cache": "no-store"
+    },
+    {
+      "kind": "metadata",
+      "url": "https://api.open-meteo.com/data/ncep_hrrr_conus/static/meta.json",
+      "cache": "no-store"
+    },
+    {
+      "kind": "metadata",
+      "url": "https://api.open-meteo.com/data/cmc_gem_hrdps/static/meta.json",
+      "cache": "no-store"
+    }
+  ]
+}
