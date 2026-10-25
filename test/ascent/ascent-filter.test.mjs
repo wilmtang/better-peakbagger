@@ -1520,3 +1520,11 @@ test('choosing custom favorites while the Buddy account is unavailable updates t
     await waitFor(dom, () => chip(dom, 'Fav climbers') && visibleRows(dom).length > 0);
     assert.equal(bar(dom).querySelector('.bpb-account-recovery').hidden, true);
 });
+
+test('date sorting hides sections belonging to a non-date served grouping', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: `${SMALL_URL}&sort=climber` });
+    assert.ok(sectionRows(dom).length > 0, 'fixture includes native grouping rows');
+    sortControl(dom).click();
+    assert.ok(sectionRows(dom).every(row => row.hidden), 'native grouping must not label the newly sorted records');
+    dom.window.close();
+});

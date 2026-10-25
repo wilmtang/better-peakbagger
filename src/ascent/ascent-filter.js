@@ -404,7 +404,7 @@ const setupInstantTableSort = ({
             headerRow.parentNode.appendChild(fragment);
         } else {
             const sorted = dataRows.slice().sort((left, right) => compareRecords(left, right, column, dir));
-            appendRecords(sorted, column.key === 'ascentdate');
+            appendRecords(sorted, false);
         }
 
         currentColumn = column;

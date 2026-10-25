@@ -306,6 +306,10 @@ Independent commits for drag ownership and report/observer surfaces:
   build and ESLint passed. Hidden real-extension Chrome checked the announcement
   and header geometry across themes, 1600/800/390 px and doubled narrow text.
 
+- F12 ascent sort: non-date native grouping rows stay hidden when date sorting
+  client-side records. The regression failed before the fix; all 62 ascent filter
+  tests, build and focused ESLint passed. Date-served section restoration remains.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
