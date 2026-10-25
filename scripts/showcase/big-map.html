@@ -22,7 +22,7 @@
     (() => {
       const params = new URLSearchParams(location.search);
       const settings = {
-        enable3dMap: true,
+        enable3dMap: true, showSnotel: false,
         theme: params.get('theme') === 'dark' ? 'dark' : 'light',
         mapRouteColor: '#d9483b', mapRouteWidth: 5,
         mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
@@ -49,6 +49,7 @@
     }
   </script>
 
+  <script src="/dist/content/peak-snow.js"></script>
   <script src="/dist/content/map-layers.js"></script>
   <script src="/dist/content/big-map-bridge.js"></script>
   <script src="/dist/content/big-map.js"></script>

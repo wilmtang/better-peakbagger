@@ -18,7 +18,7 @@
       runtime: { getURL: path => new URL(`/dist/${path}`, location.origin).href },
       storage: {
         local: { get: async () => ({}) },
-        sync: { get: async () => ({ bpbSettings: { enable3dMap: true, theme, terrainCacheLimitMb: 256 } }) },
+        sync: { get: async () => ({ bpbSettings: { enable3dMap: true, showSnotel: false, theme, terrainCacheLimitMb: 256 } }) },
         onChanged: { addListener: () => {}, removeListener: () => {} }
       }
     };
@@ -41,6 +41,7 @@
     <a href="/map/BigMap.aspx?cy=48.83115&amp;cx=-121.60214&amp;z=14&amp;l=L_CT|L_OT&amp;t=P&amp;d=2829&amp;c=0">Click Here for a Full Screen Map</a>
   </td></tr></tbody></table>
 
+  <script src="/dist/content/peak-snow.js"></script>
   <script src="/dist/content/map-layers.js"></script>
   <script src="/dist/content/peak-map-bridge.js"></script>
   <script src="/dist/content/peak-map.js"></script>

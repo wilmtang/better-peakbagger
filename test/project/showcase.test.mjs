@@ -217,3 +217,11 @@ test('terrain fixture supplies both storage areas for the strict frame feature g
         await assert.rejects(missingLocal.requireCurrent(), /could not|unavailable/i);
     } finally { dom.window.close(); }
 });
+
+test('terrain showcases load the real overlay preferences bridge with SNOTEL requests disabled', () => {
+    for (const source of [terrainShowcase, peakMapShowcase, bigMapShowcase]) {
+        assert.match(source, /showSnotel:\s*false/);
+        const bridge = source.indexOf('/dist/content/peak-snow.js'), main = source.indexOf('/dist/content/map-layers.js');
+        assert.ok(bridge > 0 && bridge < main, 'the isolated overlay preferences owner loads before the page controls');
+    }
+});

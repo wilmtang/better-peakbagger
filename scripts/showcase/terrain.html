@@ -22,7 +22,7 @@
     const size = /^(\d{3,4})x(\d{3,4})$/.exec(params.get('viewport') || '');
     let fixtureSettings = {
       units: 'imperial', theme: params.get('theme') === 'dark' ? 'dark' : 'light',
-      chartDefaultSeries: 'both', enable3dMap: true,
+      chartDefaultSeries: 'both', enable3dMap: true, showSnotel: false,
       mapViewportWidth: size ? Number(size[1]) : (wide ? 800 : 450),
       mapViewportHeight: size ? Number(size[2]) : 450,
       terrainCacheLimitMb: 256
@@ -76,6 +76,7 @@
   </main>
 
   <script src="/dist/vendor/chart.umd.min.js"></script>
+  <script src="/dist/content/peak-snow.js"></script>
   <script src="/dist/content/map-layers.js"></script>
   <script src="/dist/content/terrain-map.js"></script>
   <script src="/dist/content/ascent-bridge.js"></script>
