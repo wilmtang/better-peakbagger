@@ -8,7 +8,7 @@ For audit-remediation work, keep an explicit closure ledger with three categorie
 
 ## Repository skills
 
-Before adding or changing a standalone peak-page card, read [card implementation conventions](docs/card-conventions.md). Use the shared card layout owner for collapse, ordering and placement; keep this guide current when the common contract changes.
+Before adding or changing a peak-page card, saved-ascent card, or embedded ascent-form panel, read [card implementation conventions](docs/card-conventions.md). Follow the owning surface: peak cards use the shared peak layout owner; ascent cards use their existing column/drag or embedded-feature owners. Keep this guide current when the common contract changes.
 
 For UI/UX design, interface implementation, accessibility, interaction, or layout reviews, read and apply [ui-ux-pro-max](.agents/skills/ui-ux-pro-max/SKILL.md). Codex and Gemini CLI discover the shared `.agents/skills/` copy; Claude Code uses a symlink under `.claude/skills/`. Follow this file's project-specific rules when generic skill recommendations differ.
 

@@ -10,8 +10,9 @@ shipped subsystem.
   invariants, feature ownership, and deep dives.
 - [Development](development.md) — build, test, browser, dependency, and package
   workflow.
-- [Peak-page card conventions](card-conventions.md) — shared layout, settings,
-  lifecycle, stable feedback and verification requirements for every agent.
+- [Peak and ascent card conventions](card-conventions.md) — shared appearance,
+  settings, lifecycle and stability rules, plus each surface's mounting,
+  movement, disclosure and verification contract for every agent.
 - [Summit Cloud Cover](summit-cloud.md) — experimental method, model compatibility
   and remaining forecast-validation work.
 - [Browser store releases](releasing.md) — release checklist and the manual

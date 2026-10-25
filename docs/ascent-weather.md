@@ -17,13 +17,15 @@ right-hand column beneath Summary Total Data, beside the trip report. It follows
 the existing divider width and stacks with the summary on narrow screens. Its
 metrics and controls adapt to the column width. The same card moves into its
 preferred column if the table layout mounts later; GPX analysis never moves it out.
-Drag the card by its header or six-dot grip to move it beneath the trip report
-on the left or beneath the summary on the right. The destination is outlined
-while dragging; Escape, interruption or dropping outside the columns cancels
-the move. Clicking the grip switches columns, and its Left/Right arrow keys
-provide a keyboard alternative. Only the weather card has dragging enabled.
+Drag the card by its header or six-dot grip to move it above or below the native
+report/summary table, or above dedicated GPS links when that target exists.
+The insertion target is shown while dragging; Escape, interruption or dropping
+outside the columns cancels the move. Clicking the grip opens move options;
+arrow keys change position or column, and Home/End select the column's first/last
+target. Only the weather card has dragging enabled.
 The shared opt-in controller in `src/ui/card-drag.js` can support other BPB
-cards without registering or moving them automatically.
+cards without registering or moving them automatically. Follow the
+[peak and ascent card conventions](card-conventions.md) when extending a surface.
 
 The chosen column and slot are portable settings (`bpbAscentWeatherColumn`,
 `bpbAscentWeatherSlot`). They contain no ascent identity or activity data and

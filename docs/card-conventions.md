@@ -1,25 +1,44 @@
-# Peak-page card implementation conventions
+# Peak and ascent card implementation conventions
 
-Read this guide before adding or changing a standalone peak-page card. It describes
-the shared implementation contract, not a new component framework. Repository
-instructions in [AGENTS.md](../AGENTS.md) remain authoritative.
+Read this guide before adding or changing a card on a peak page, saved ascent,
+or ascent add/edit form. It covers standalone cards and panels embedded in an
+existing feature. Shared visual and lifecycle rules do not imply one universal
+mounting, dragging or collapse controller. Follow the owning surface below.
+Repository instructions in [AGENTS.md](../AGENTS.md) remain authoritative.
 
 ## Ownership and mounting
 
 - Author plain ES modules under the feature's owning directory. Separate pure
   calculations, bounded provider clients and DOM/lifecycle ownership. Use
   `dom.element` and text nodes for provider text; do not interpolate it into HTML.
-- Parse the current peak with `readPeakWeatherSubject` or the relevant validated
-  page reader. Fail closed on ambiguous coordinates or an unrecognized native
-  layout. Do not geocode a guessed name or mount a full-page fallback.
-- Mount once, with a stable `bpb-…` root ID. A standalone card is a labelled
-  `<section>` inside its own `<tr><td colspan="2">` in the recognized peak table.
-  Its direct header contains an `h2`; its remaining children are the body content.
-  Initially hide both row and section until settings have been resolved.
-- Keep native map, legend, full-screen links and details in their owning DOM.
-  Reuse the existing page/table split; do not move native nodes for a new card.
+- Read identity, date and coordinates through the relevant validated page reader.
+  Peak forecasts use `readPeakWeatherSubject`; the ascent weather archive uses
+  `readWeatherSubject` in `ascent-weather-subject.js`. Do not infer an ascent date
+  from report prose, substitute today's date, or geocode a guessed summit name.
+  Do not reuse backup's best-effort reader for strict weather identity.
+- Mount once, with a stable feature ID and an accessible label. Follow the
+  surface-specific host structure below. Keep settings-gated UI hidden and
+  requests stopped until the authoritative settings read succeeds.
+- Keep native map, report, legend, form and download controls with their owners.
+  Reuse existing table splits. A documented feature-specific reparenting path
+  must preserve nodes and handlers and provide restoration on disposal; it is
+  not permission for a new card to move arbitrary native content.
 
-## Shared header, collapse and placement
+## Choose the correct layout owner
+
+| Surface | Owner and placement | Movement and disclosure |
+| --- | --- | --- |
+| Standalone peak card | `peak-card-layout.js`; independent table row in the recognized peak table | Shared order, columns, grip, move menu and header collapse |
+| Saved-ascent weather archive | `ascent-weather.js` within the columns from `ascent-table-split.js` | Opt-in `createCardDrag`; weather-owned placement settings; hourly/source disclosures |
+| Ascent GPX Analyzer and its Sun & Moon panel | `gpx-analyzer.js` and `sun-calculator.js` | Keep their existing embedded layout, settings bridge and disclosures |
+| Add/edit ascent summit picker or upload feedback | `ascent-upload.js` beside its native form controls | Form-owned interaction; no automatic registration as a movable page card |
+| Saved-ascent backup control | `ascent-backup.js` beside the owner's native edit actions | Inline action/status group; background worker owns remote writes |
+
+## Peak cards: shared header, collapse and placement
+
+Mount a labelled `<section>` inside its own `<tr><td colspan="2">` in the
+recognized peak table. Its direct header contains an `h2`; its remaining children
+are body content. Initially hide both row and section until settings resolve.
 
 [`src/ui/peak-card-layout.js`](../src/ui/peak-card-layout.js) owns card discovery,
 the header disclosure, drag grip, keyboard move menu, column placement, ordering
@@ -44,10 +63,73 @@ suspend data. The feature owns its requests and render lifecycle. The shared
 layout owns the disclosure. A deliberate feature action can dispatch
 `bpb:reveal-card`; ordinary refresh must not expand or scroll the card.
 
+## Saved-ascent cards: columns and explicit docking
+
+[`ascent-table-split.js`](../src/ascent/ascent-table-split.js) owns only the
+report/summary column split. It recognizes the adjacent native report and Summary
+Total Data tables, including the supported metadata-only variant without report
+prose. It supplies `#bpb-ascent-report-column` and `#bpb-ascent-summary-column`,
+the shared column resizer and narrow-screen stacking. It is not a card registry.
+Do not register ascent cards in `PEAK_CARD_ORDER` or use peak-only destinations.
+
+The current standalone example is
+[`ascent-weather.js`](../src/ascent/ascent-weather.js). Its labelled section is
+a sibling of the native table within a split column, not a peak-style table row.
+It defaults to the summary column after the dedicated GPS details, where present.
+Placement must tolerate the split or GPX surface mounting later, preserve the
+same card node and controls, and avoid repeated reparenting/mutation loops. Its
+existing fallback uses validated map/metadata anchors when the split is absent;
+do not make that fallback a universal document-body mount for new cards.
+
+For a movable ascent card, explicitly opt into
+[`createCardDrag`](../src/ui/card-drag.js) and
+[`card-drag.css`](../src/ui/card-drag.css). Supply the card, grip, drag surface,
+status region, enabled predicate, current position, valid targets and move
+callback. The helper owns pointer/keyboard gestures, move-menu behavior, preview
+and cancellation. The feature owns placement and persistence; the helper neither
+discovers other cards nor writes settings. Keep controls within a draggable
+header usable and dispose/cancel the helper with its feature lifecycle.
+
+The archive's settings are `bpbAscentWeatherColumn` (`report` or `summary`) and
+`bpbAscentWeatherSlot` (`before`, `gps` or `after`). Targets are built from actual
+anchors: before a native table, before dedicated GPS details where available,
+or after the relevant table/details. Other cards need their own schema-owned
+settings if movement is part of their design; never reuse weather's keys.
+Persist completed moves, guard late reads/queued writes against newer gestures,
+and retain usable visit-local placement when saving fails. Moving a card must
+not recreate its chart, lose selection, fetch data or alter another card's state.
+
+The weather archive's dedicated GPS-note/download blocks are a deliberate
+exception: it reparents only recognized safe blocks, preserves their handlers,
+keeps them in the summary column when weather moves left, and restores their
+origins on disposal. The map, report and GPX Analyzer are not draggable weather
+content. Do not copy this exception to other cards.
+
+Ascent cards do not currently have a universal header-collapse controller.
+Keep existing feature disclosures and do not add peak collapse attributes or
+a competing global registry. See [historical ascent weather](ascent-weather.md)
+for the archive's date/model semantics and GPX cursor integration.
+
+## Embedded panels and ascent forms
+
+Extend the existing owner when a panel belongs inside the GPX Analyzer or an
+add/edit form. The Analyzer runs in the MAIN world; archive weather and form
+features run in the isolated world. Keep that boundary, the narrow validated
+settings bridge and each feature's established theme/units inputs intact.
+
+Mount upload/picker feedback beside the relevant form controls, with explicit
+button types and stable pending/error states. Preserve native Preview/Save and
+form validation; adding a card never authorizes automatic Save. Keep identity,
+ownership and draft-delivery gates fail closed. The saved-ascent backup surface
+is an inline control group, not a standalone card to reorder or wrap in a new
+table. Follow its existing reconciliation flow for uncertain remote writes.
+
 ## Appearance and controls
 
 - Scope feature CSS to the card ID. Use the existing light palette and
-  `html[data-bpb-theme="dark"]` overrides, not an independent OS-theme detector.
+  `html[data-bpb-theme="dark"]` overrides for isolated page cards. Embedded
+  Analyzer panels use their owner's resolved `data-theme`/palette instead of
+  introducing an independent OS-theme detector.
   Reuse the shared header, system font, neutral borders, compact controls and
   packaged icons. Do not add a framework or remote assets for a card.
 - Keep the card within its column: `min-width: 0`, bounded selects and tables,
@@ -57,32 +139,47 @@ layout owns the disclosure. A deliberate feature action can dispatch
   explicit empty `form` owner where necessary to prevent Enter from submitting
   Peakbagger's surrounding ASP.NET form. Give disclosures and buttons clear
   accessible names and visible keyboard focus.
-- Honor units through `units.resolveUnits` and `readPeakUnitSystem`. Store raw
-  measurements, then format them at render time. Changing units must reuse data.
+- Honor units through `units.resolveUnits` and the owning page's native-unit
+  reader (`readPeakUnitSystem` for peak pages; the archive's existing native
+  elevation-text inference on ascents). Embedded panels use their owner's
+  validated unit settings.
+  Store raw measurements, then format them at render time. Changing units must
+  reuse data.
 - Resolve timezone offline with `mountainTime`. Keep UTC instants as identities;
   derive local dates and labels from the location's timezone, including repeated
-  and missing DST hours. Never use the browser's timezone for summit forecasts.
-- Keep a source/attribution footer and a concise, actionable unavailable state.
-  Put methodological detail behind a disclosure. Label experiments and distinguish
-  observations, model output and derived estimates.
+  and missing DST hours. Archive weather uses the summit-local ascent date;
+  track charts use their existing track-local time resolver. Never replace
+  either with the browser's timezone or send a track for timezone lookup.
+- For provider-backed data cards, keep a source/attribution footer and a concise,
+  actionable unavailable state. Put methodological detail behind a disclosure.
+  Label experiments and distinguish observations, model output and derived estimates.
 
 ## State, settings and requests
 
 - Use [`settings-schema.js`](../src/settings/settings-schema.js) for portable
   preferences, feature gates, defaults and validation. Write through `settings`;
   do not introduce page localStorage or widen the MAIN-world settings allowlist.
-  Persist explicit choices only, not defaults during mount or render.
+  Existing column-width preferences (`pbAscentTableSplit.v1` and the peak split's
+  counterpart) are explicitly owned page-local exceptions, not a precedent for
+  new model/card preferences. Persist explicit choices only, not defaults during
+  mount or render.
 - Resolve settings before the first request. A saved unsupported selection must
   not silently become another model or overwrite the user's preference. Name
   the displayed source separately when retaining older results.
 - Use `createPageLifecycle` for BFCache-aware suspend/resume/dispose. Cancel
-  pending work on disable, collapse, page suspension or superseding selection;
-  disconnect observers and unsubscribe on final disposal. Resume without creating
-  duplicate cards or listeners.
-- Load lazily when visible. Bound request windows, response bytes, cache size and
-  concurrency. Use deadlines, AbortSignals, omitted credentials, no referrer and
-  explicit provider URLs. Handle 429 cooldowns through the shared rate-limit
-  helpers and `createRetryCooldown`; do not automatically loop on failures.
+  feature-owned reads, gestures and timers on disable, applicable collapse,
+  page suspension or superseding selection; disconnect observers and unsubscribe
+  on final disposal. Resume without duplicate cards or listeners. A page lifecycle
+  event does not cancel a remote write already owned by the background worker:
+  ascent backup invalidates page UI work and reconciles on resume without
+  resubmitting that write. Do not equate hiding a card with undoing an operation.
+- Load optional remote data cards lazily when visible. Bound request windows,
+  response bytes, cache size and concurrency; use deadlines and AbortSignals.
+  Public weather-provider requests omit credentials and referrers and use explicit
+  provider URLs. First-party authenticated reads and worker-owned transfers must
+  retain their existing trusted request helpers and consent/ownership gates.
+  Handle 429 cooldowns through the shared rate-limit helpers and
+  `createRetryCooldown`; do not automatically loop on failures.
 - Every async completion needs an owner/generation check, including failures and
   finally blocks. Abort alone is insufficient. A late model/date reply must not
   replace newer intent. Keep the last usable result through refresh or failure,
@@ -112,6 +209,10 @@ live regions containing all hidden alternatives.
    appropriate. Keep domain-specific limitations explicit.
 3. Add pure algorithm/client tests and fixture-based lifecycle/interaction tests.
    Exercise cancellation, missing data, saved selection and unavailable states.
+   For ascent cards, include report and summary placement, before/after/GPS slots
+   where supported, late split/GPX mounting, metadata-only and no-GPX ascents,
+   fallback layouts and preservation of native controls. For embedded form panels,
+   exercise the native form's validation and Preview/Save boundaries.
 4. Build `dist/`, then inspect the real rendered card with faithful host styles.
    Use the hidden HTTPS Peakbagger fixture workflow in `AGENTS.md`. Check Chrome
    and Firefox, light/dark, narrow columns and enlarged text. Compare geometry of
@@ -123,6 +224,8 @@ live regions containing all hidden alternatives.
 
 Useful examples: [`peak-weather.js`](../src/weather/peak-weather.js) for retained
 source identity and local dates, [`peak-snow.js`](../src/snow/peak-snow.js) for stable
-feedback and guarded native controls, and the shared layout owner for persistent
-collapse and placement. These are examples, not authorization to copy their
+feedback and guarded native controls, the peak layout owner for persistent
+collapse/order, [`ascent-weather.js`](../src/ascent/ascent-weather.js) for explicit
+column docking, and [`ascent-backup.js`](../src/ascent/ascent-backup.js) for the
+worker-write lifecycle boundary. These are examples, not authorization to copy
 feature-specific exceptions or unrelated legacy behavior.
