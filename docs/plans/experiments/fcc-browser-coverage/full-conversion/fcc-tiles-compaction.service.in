@@ -1,0 +1,29 @@
+[Unit]
+Description=Build compact FCC delivery archives after the verified source conversion
+After=network-online.target
+RequiresMountsFor=/mnt/fcc-tiles
+
+[Service]
+Type=simple
+User=@FCC_USER@
+Group=@FCC_GROUP@
+WorkingDirectory=@FCC_HOME@/Dev/fcc-tiles/code
+Environment=FCC_TILE_ROOT=/mnt/fcc-tiles
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+ExecStartPre=/usr/bin/mountpoint --quiet /mnt/fcc-tiles
+ExecStart=@FCC_HOME@/Dev/fcc-tiles/.venv/bin/python @FCC_HOME@/Dev/fcc-tiles/code/fcc_compact.py delivery --wait
+StandardOutput=append:/mnt/fcc-tiles/logs/compaction.log
+StandardError=append:/mnt/fcc-tiles/logs/compaction.log
+CPUQuota=200%
+Nice=10
+MemoryHigh=1800M
+MemoryMax=2400M
+OOMPolicy=stop
+KillMode=control-group
+Restart=no
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

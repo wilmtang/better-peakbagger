@@ -6,6 +6,7 @@ work/
 tiles/
 metadata/
 verification/
+delivery/
 tools/
 *.pmtiles
 *.log

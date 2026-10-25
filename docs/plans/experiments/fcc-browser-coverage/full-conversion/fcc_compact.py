@@ -22,9 +22,10 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, box, shape
 from fcc_download import ROOT, atomic_json
 from fcc_catalog import build_catalog
 
-PROFILE = 'overview-half-pixel-v1'
+PROFILE = 'overview-subpixel-holes-v2'
 KEEP_FROM_ZOOM = 12
 TOLERANCE_PIXELS = 0.5
+HOLE_MAX_PIXELS = 1.0
 MAX_RAW_TILE_BYTES = 128*1024**2
 MAX_GEOMETRY_COMMANDS = 1_000_000
 
@@ -88,14 +89,19 @@ def simplify_geometry(original, tolerance, extent):
         return original
     polygons = list(original.geoms) if original.geom_type == 'MultiPolygon' else [original]
     reduced = []
+    seam = box(0, 0, extent, extent).boundary
     for polygon in polygons:
         shell = simplify_ring(list(polygon.exterior.coords), tolerance, extent)
-        holes = [simplify_ring(list(ring.coords), tolerance, extent) for ring in polygon.interiors]
+        holes = []
+        for ring in polygon.interiors:
+            left, bottom, right, top = ring.bounds
+            if max(right-left, top-bottom) <= extent/512*HOLE_MAX_PIXELS and not ring.intersects(seam):
+                continue  # A distant overview cannot reliably display subpixel holes.
+            holes.append(simplify_ring(list(ring.coords), tolerance, extent))
         reduced.append(Polygon(shell, holes))
     candidate = MultiPolygon(reduced) if original.geom_type == 'MultiPolygon' else reduced[0]
     if candidate.is_empty or not candidate.is_valid:
         return original
-    seam = box(0, 0, extent, extent).boundary
     if not original.intersection(seam).equals(candidate.intersection(seam)):
         return original
     return candidate
@@ -199,6 +205,7 @@ class SafeWriter(Writer):
 
 def benchmark(path, output, maximum=2_000_000):
     rows = []
+    code_hash = digest(Path(__file__))
     with path.open('rb') as source, mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ) as data:
         reader = Reader(lambda offset, length: data[offset:offset+length])
         header = reader.header()
@@ -224,6 +231,7 @@ def benchmark(path, output, maximum=2_000_000):
             atomic_json(output, {'status':'running', 'profile':PROFILE, 'sampleOnly':True, 'tiles':rows})
             print(json.dumps(row), flush=True)
     report = {'status':'complete', 'profile':PROFILE, 'sampleOnly':True, 'input':str(path),
+              'codeSha256':code_hash, 'allFeatureFieldsAndOrderVerified':True,
               'maximumCompressedInputBytes':maximum, 'tiles':rows,
               'wholeArchiveSizeReduction':'Not measured by this bounded sample'}
     atomic_json(output, report)
@@ -262,6 +270,7 @@ def compact_archive(source_path, destination):
                         atomic_json(progress, {'stage':'compacting', 'profile':PROFILE, 'byZoom':dict(counts)})
                 metadata['bpb_compaction'] = {'profile':PROFILE, 'unchangedFromZoom':KEEP_FROM_ZOOM,
                     'overviewTolerancePixelsAt512':TOLERANCE_PIXELS, 'allSourceAttributesRetained':True,
+                    'overviewHoleMaxPixelsAt512':HOLE_MAX_PIXELS,
                     'originalArchiveSha256':before_hash, 'overviewGeometryIsApproximate':True}
                 writer.finalize(dict(header), metadata)
             finally:
@@ -341,7 +350,7 @@ def build_delivery(output, wait):
             assert digest(source) == record['sha256']
             receipt = compact_archive(source, destination)
         results.append({**record, **receipt, 'path':str(destination.relative_to(output))})
-    result = {**manifest, 'profile':PROFILE, 'geometryPolicy':'Zoom 12 unchanged; subpixel approximate overviews',
+    result = {**manifest, 'profile':PROFILE, 'geometryPolicy':'Zoom 12 unchanged; approximate overviews fill holes no larger than one pixel at 512 px per tile',
               'originalTileBytes':manifest['tileBytes'], 'tileBytes':sum(item['bytes'] for item in results),
               'archives':results, 'browserVerification':'pending separately'}
     atomic_json(output/'manifest.json', result)

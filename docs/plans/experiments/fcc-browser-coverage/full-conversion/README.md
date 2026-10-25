@@ -29,7 +29,9 @@ that a process is still running. There is no complete national manifest.
 | [start-vps.sh](start-vps.sh) | Linux-only systemd launcher with CPU/memory limits and a mounted-data-disk prerequisite. |
 | [test_fcc_tiles.py](test_fcc_tiles.py) | Nine small regression fixtures covering data/geometry, safe resume, raw sizes, ZIP tails, completed-build and national-assembly restarts. |
 | [fcc_compact.py](fcc_compact.py) | Separate delivery pass over completed PMTiles; copies zoom 12 unchanged and simplifies overview geometry. |
-| [test_fcc_compact.py](test_fcc_compact.py) | Nine tiny fixtures for geometry, seams, feature fields, unchanged close-ups, independent audit rejection, catalogs and resume. |
+| [test_fcc_compact.py](test_fcc_compact.py) | Eleven tiny fixtures for geometry, seams, subpixel holes, feature fields, unchanged close-ups, independent audit rejection, catalogs, resume and service rendering. |
+| [fcc-tiles-compaction.service.in](fcc-tiles-compaction.service.in) | Portable service template; waits for the baseline data audit before doing CPU-intensive work. |
+| [install_compaction_vps.py](install_compaction_vps.py) | Render host identity on the VPS, verify the benchmark/code binding and unit syntax, then install and enable the service. |
 
 The checked-in copies share `FCC_TILE_ROOT`, defaulting to `~/Dev/fcc-tiles`.
 Set `FCC_TIPPECANOE_DIR` if the tool binaries are elsewhere. The browser verifier
@@ -214,7 +216,7 @@ not launch a converter or scan the complete national archive.
 
 ## Smaller delivery archives
 
-The separate `overview-half-pixel-v1` delivery pass reads the completed national
+The separate `overview-subpixel-holes-v2` delivery pass reads the completed national
 PMTiles. It needs **no FCC downloads or repeat source conversion**. Original
 archives, receipts and the baseline catalog remain unchanged. The delivery pass
 waits for the baseline's complete data audit before using the VPS's working
@@ -228,9 +230,13 @@ memory; it produces its own `delivery/tiles/`, `delivery/manifest.json` and
   4096-unit tile: **half a pixel when the tile is drawn at 512 px**. These are
   approximate overviews, not exact point-coverage query results. This does not
   improve the underlying FCC reception model.
+- Overview holes whose bounding boxes are no larger than **one display pixel**
+  in both dimensions are filled. This is an intentional overview approximation;
+  these gaps remain in the byte-identical zoom-12 tiles. Larger holes and every
+  coverage-island component are retained.
 - Tile-edge crossing segments are pinned. Invalid candidates and candidates
-  whose tile-edge intersections change are rejected. Polygon parts and holes
-  remain present; very small or narrow rings retain their original coordinates.
+  whose tile-edge intersections change are rejected. Very small or narrow
+  retained rings keep their original coordinates.
   This does not claim exact preservation of shared boundaries between different
   classifications inside a tile; subpixel differences can occur there.
 - Feature order, IDs, property dictionaries and all eight source fields are
@@ -246,11 +252,14 @@ memory; it produces its own `delivery/tiles/`, `delivery/manifest.json` and
   outputs are not advertised as complete, and unverified existing destinations
   are not overwritten.
 
-The bounded real-data benchmark chooses the largest tile no larger than 2 MB
-compressed at each available zoom. It intentionally does **not** cover the
-13.7 MB worst overview tile or estimate whole-archive savings. Initial measured
-zoom-4 and zoom-5 samples saved only about **2%**: preserving every small island
-and hole at overview scales limits potential savings. The earlier 635 MB figure
+The first bounded real-data benchmark used the conservative v1 policy, choosing
+the largest tile no larger than 2 MB compressed at each available zoom. Initial
+zoom-4 through zoom-7 samples saved only **0.77–2.14%**. This evidence motivated
+the v2 subpixel-hole policy. The revised quick benchmark uses a 50 KB input
+ceiling and independently audits all feature fields and order. Neither bounded
+sample covers the **13.7 MB worst overview tile** or estimates whole-archive
+savings. The final revised sample saved **1.37–6.26%** on the eight overview
+tiles; its zoom-12 payload was byte-identical. The earlier 635 MB figure
 is the size of finest-level payloads alone, **not** the promised final archive.
 Whole-country bytes and low-zoom browser rendering remain unproven until the
 full delivery pass and separate browser checks finish.
@@ -266,9 +275,27 @@ FCC_TILE_ROOT=/mnt/fcc-tiles \
   ~/Dev/fcc-tiles/code/fcc_compact.py delivery --wait
 ```
 
-Nine tiny regression fixtures pass locally. The small-island containment
+Eleven tiny regression fixtures pass locally and on native Linux. The small-island containment
 assertion first failed on the initial simplifier, then passed after adding the
 small-ring guard. A deliberately altered zoom-12 payload is rejected by the
 independent archive audit. Catalog/resume tests run a complete nine-archive
 synthetic delivery, verify portable URLs and original hashes, then resume without
 reprocessing. These fixtures do not prove national size or browser performance.
+
+The [deployment receipt](compaction-deployment.json) binds the deployed code and
+unit-definition hashes to the final native benchmark. The service was verified
+enabled and parented by PID 1, with `waiting_for_baseline` published after its
+startup. The existing source-conversion service retained its original PID and
+was active at **126/460** sources in that snapshot. The activation check waits
+for the expected state rather than assuming `systemctl start` means Python has
+already finished importing. Boot configuration was inspected, not reboot-tested.
+The checked-in unit is a template: its installer fills the account and home
+directory from the VPS's local user database, keeping host identity out of the
+service source. The installer refuses unverified or mismatched benchmark code.
+
+```sh
+ssh build-host 'cat /mnt/fcc-tiles/delivery/status.json'
+ssh build-host 'systemctl status fcc-tiles-compaction.service --no-pager'
+# Stop just the optimization pass; the original converter is a separate unit.
+ssh build-host 'sudo systemctl stop fcc-tiles-compaction.service'
+```

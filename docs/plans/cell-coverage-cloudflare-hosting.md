@@ -59,6 +59,44 @@ archive checksums, catalog agreement and every unique gzip tile payload.
 Browser/GPU verification remains a separate proof obligation. No tile upload,
 hosted coverage endpoint or shipped map layer was added by moving the build.
 
+## October 25: separate delivery optimization
+
+The requested optimization is a **post-processing pass over the generated
+national PMTiles**, so it does not repeat FCC downloads, GeoPackage extraction
+or the source conversion. The original build and archives remain intact. The
+separate `fcc-tiles-compaction.service` waits for the baseline's final data audit
+before running with a two-CPU quota and 2,400 MiB memory ceiling. It writes its
+own `delivery/tiles/`, manifest and portable catalog on the mounted data disk.
+Its systemd unit is enabled for boot and independent of the Mac; an actual
+reboot has not been tested.
+
+The `overview-subpixel-holes-v2` policy copies **every zoom-12 compressed tile
+byte for byte**. Zooms 4–11 use half-pixel polygon-chain simplification and may
+fill holes whose bounding boxes fit inside one pixel at 512 px per tile. These
+are intentionally approximate overviews. Larger holes, coverage-island
+components, feature order, IDs and all eight source attributes remain. Tile-edge
+crossings are protected; invalid or oversized transformations are retained
+unchanged. The independent output audit checks every tile address and gzip
+payload, all feature fields/order, and every finest-level payload against the
+original. No source archive is deleted by this pass.
+
+The first conservative real-data benchmark saved only **0.77–4.59%** on its
+sampled overview tiles, motivating the explicit subpixel-hole policy. The
+revised nine-tile quick benchmark caps compressed input at 50 KB per tile.
+It saved **1.37–6.26%** on eight overview tiles and retained the zoom-12 payload
+byte for byte. Neither sample establishes a national size reduction or covers the original
+13.7 MB worst overview tile. In particular, **635 MB is still only the measured
+finest-level payload size**, not a promised compact national archive size.
+
+See the [implementation and policy](experiments/fcc-browser-coverage/full-conversion/README.md#smaller-delivery-archives),
+[service template](experiments/fcc-browser-coverage/full-conversion/fcc-tiles-compaction.service.in)
+and [deployment and benchmark evidence](experiments/fcc-browser-coverage/full-conversion/compaction-deployment.json).
+Eleven new tiny fixtures passed on Mac and native Linux; the nine earlier FCC
+fixtures and three documentation checks also passed locally. The fixtures
+exercise complete synthetic archive/catalog generation and safe resume; they do
+not establish the eventual country-wide byte size, worst-tile resource use or
+real-browser low-zoom rendering. Those remain open proof obligations.
+
 ## October 25: detailed conversion and rendered comparison
 
 Authenticated FCC bulk downloads succeeded with the supplied API token. The

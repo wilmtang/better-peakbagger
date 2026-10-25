@@ -1,0 +1,298 @@
+{
+  "checkedAt": "2026-10-25T09:22:32.696045+00:00",
+  "profile": "overview-subpixel-holes-v2",
+  "codeSha256": "136c5cebcfd7ff0695dd0a697b6745db64438d410f655b403ef3b86834e4fc80",
+  "nativeLinuxFixturesPassed": 11,
+  "baselineService": {
+    "MainPID": "3966600",
+    "MemoryCurrent": "1017233408",
+    "CPUQuotaPerSecUSec": "2s",
+    "MemoryMax": "2516582400",
+    "ActiveState": "active",
+    "SubState": "running",
+    "FragmentPath": "/run/systemd/transient/fcc-tiles-conversion.service",
+    "UnitFileState": "transient",
+    "parentPid": 1
+  },
+  "optimizerService": {
+    "MainPID": "3974751",
+    "MemoryCurrent": "28143616",
+    "CPUQuotaPerSecUSec": "2s",
+    "MemoryMax": "2516582400",
+    "ActiveState": "active",
+    "SubState": "running",
+    "FragmentPath": "/etc/systemd/system/fcc-tiles-compaction.service",
+    "UnitFileState": "enabled",
+    "parentPid": 1
+  },
+  "optimizerStatus": {
+    "stage": "waiting_for_baseline",
+    "profile": "overview-subpixel-holes-v2",
+    "convertedSourceArchives": 126
+  },
+  "baselineStatus": {
+    "stage": "downloading_and_converting",
+    "pid": 3966600,
+    "startedAt": 1792915314.6134331,
+    "updatedAt": 1792920151.1266427,
+    "convertedSourceArchives": 126,
+    "rawSizes": {
+      "scope": "Three selected US providers, LTE and both 5G tiers, 2025-12-31",
+      "expectedSourceArchives": 460,
+      "measuredSourceArchives": 250,
+      "complete": false,
+      "compressedZipBytes": 17565825157,
+      "uncompressedGeoPackageBytes": 50771795968
+    },
+    "childPids": [
+      3966701,
+      3966702
+    ]
+  },
+  "benchmark": {
+    "status": "complete",
+    "profile": "overview-subpixel-holes-v2",
+    "sampleOnly": true,
+    "input": "/mnt/fcc-tiles/tiles/tmobile-lte-2025-12-31.pmtiles",
+    "codeSha256": "136c5cebcfd7ff0695dd0a697b6745db64438d410f655b403ef3b86834e4fc80",
+    "allFeatureFieldsAndOrderVerified": true,
+    "maximumCompressedInputBytes": 50000,
+    "tiles": [
+      {
+        "zxy": [
+          4,
+          5,
+          7
+        ],
+        "beforeBytes": 47569,
+        "afterBytes": 45878,
+        "savedPercent": 3.55,
+        "identicalPayload": false,
+        "seconds": 3.783
+      },
+      {
+        "zxy": [
+          5,
+          1,
+          14
+        ],
+        "beforeBytes": 32649,
+        "afterBytes": 31769,
+        "savedPercent": 2.7,
+        "identicalPayload": false,
+        "seconds": 2.4
+      },
+      {
+        "zxy": [
+          6,
+          3,
+          27
+        ],
+        "beforeBytes": 35640,
+        "afterBytes": 35152,
+        "savedPercent": 1.37,
+        "identicalPayload": false,
+        "seconds": 2.293
+      },
+      {
+        "zxy": [
+          7,
+          32,
+          53
+        ],
+        "beforeBytes": 48909,
+        "afterBytes": 47995,
+        "savedPercent": 1.87,
+        "identicalPayload": false,
+        "seconds": 2.198
+      },
+      {
+        "zxy": [
+          8,
+          41,
+          87
+        ],
+        "beforeBytes": 45128,
+        "afterBytes": 44054,
+        "savedPercent": 2.38,
+        "identicalPayload": false,
+        "seconds": 3.264
+      },
+      {
+        "zxy": [
+          9,
+          98,
+          192
+        ],
+        "beforeBytes": 49944,
+        "afterBytes": 46820,
+        "savedPercent": 6.26,
+        "identicalPayload": false,
+        "seconds": 4.345
+      },
+      {
+        "zxy": [
+          10,
+          173,
+          404
+        ],
+        "beforeBytes": 49998,
+        "afterBytes": 48394,
+        "savedPercent": 3.21,
+        "identicalPayload": false,
+        "seconds": 6.263
+      },
+      {
+        "zxy": [
+          11,
+          603,
+          770
+        ],
+        "beforeBytes": 40858,
+        "afterBytes": 39576,
+        "savedPercent": 3.14,
+        "identicalPayload": false,
+        "seconds": 4.561
+      },
+      {
+        "zxy": [
+          12,
+          1252,
+          1492
+        ],
+        "beforeBytes": 16926,
+        "afterBytes": 16926,
+        "savedPercent": 0.0,
+        "identicalPayload": true,
+        "seconds": 0.0
+      }
+    ],
+    "wholeArchiveSizeReduction": "Not measured by this bounded sample"
+  },
+  "initialConservativeBenchmark": {
+    "status": "complete",
+    "profile": "overview-half-pixel-v1",
+    "sampleOnly": true,
+    "input": "/mnt/fcc-tiles/tiles/tmobile-lte-2025-12-31.pmtiles",
+    "maximumCompressedInputBytes": 2000000,
+    "tiles": [
+      {
+        "zxy": [
+          4,
+          5,
+          7
+        ],
+        "beforeBytes": 47569,
+        "afterBytes": 46551,
+        "savedPercent": 2.14,
+        "identicalPayload": false,
+        "seconds": 9.537
+      },
+      {
+        "zxy": [
+          5,
+          6,
+          13
+        ],
+        "beforeBytes": 894128,
+        "afterBytes": 877891,
+        "savedPercent": 1.82,
+        "identicalPayload": false,
+        "seconds": 164.491
+      },
+      {
+        "zxy": [
+          6,
+          10,
+          25
+        ],
+        "beforeBytes": 1919780,
+        "afterBytes": 1897088,
+        "savedPercent": 1.18,
+        "identicalPayload": false,
+        "seconds": 325.939
+      },
+      {
+        "zxy": [
+          7,
+          25,
+          48
+        ],
+        "beforeBytes": 1955527,
+        "afterBytes": 1940469,
+        "savedPercent": 0.77,
+        "identicalPayload": false,
+        "seconds": 199.506
+      },
+      {
+        "zxy": [
+          8,
+          58,
+          103
+        ],
+        "beforeBytes": 1557068,
+        "afterBytes": 1497720,
+        "savedPercent": 3.81,
+        "identicalPayload": false,
+        "seconds": 174.613
+      },
+      {
+        "zxy": [
+          9,
+          115,
+          211
+        ],
+        "beforeBytes": 459153,
+        "afterBytes": 438074,
+        "savedPercent": 4.59,
+        "identicalPayload": false,
+        "seconds": 76.11
+      },
+      {
+        "zxy": [
+          10,
+          277,
+          393
+        ],
+        "beforeBytes": 136601,
+        "afterBytes": 131803,
+        "savedPercent": 3.51,
+        "identicalPayload": false,
+        "seconds": 24.18
+      },
+      {
+        "zxy": [
+          11,
+          603,
+          770
+        ],
+        "beforeBytes": 40858,
+        "afterBytes": 39576,
+        "savedPercent": 3.14,
+        "identicalPayload": false,
+        "seconds": 6.946
+      },
+      {
+        "zxy": [
+          12,
+          1252,
+          1492
+        ],
+        "beforeBytes": 16926,
+        "afterBytes": 16926,
+        "savedPercent": 0.0,
+        "identicalPayload": true,
+        "seconds": 0.0
+      }
+    ],
+    "wholeArchiveSizeReduction": "Not measured by this bounded sample"
+  },
+  "unitTemplateSha256": "c9328fed8dda9269872ee7a6499137fef5f1278a1de78e400c583cd559bb39d4",
+  "unitInstallerSha256": "21add50d7256d31c745bf8167a9e0a26710ff6e77c883db3694a16a434471636",
+  "unitDefinitionSha256": "03336f1fc83a662015109f7bca0080f7b3ed93479f2bcf869f3c66462b1aeda4",
+  "fullCompactionComplete": false,
+  "browserVerification": "pending separately",
+  "macRequired": false,
+  "rebootTested": false,
+  "freeDiskBytes": 192015794176
+}

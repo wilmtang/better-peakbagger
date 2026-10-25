@@ -17,6 +17,7 @@ from shapely.geometry import MultiPolygon, Point, Polygon, box, mapping, shape
 
 from fcc_compact import (SafeWriter, benchmark, compact_archive, compact_tile,
                          delivery, simplify_geometry, verify_feature_fields)
+from install_compaction_vps import render_unit
 
 
 def fixture():
@@ -58,6 +59,19 @@ def write_archive(path):
 
 
 class CompactionTests(unittest.TestCase):
+    def test_service_template_binds_host_values_without_recording_them(self):
+        template = Path(__file__).with_name('fcc-tiles-compaction.service.in').read_text()
+        rendered = render_unit(template, 'tester', 'testers', '/home/tester')
+        self.assertIn('User=tester\n', rendered)
+        self.assertIn('Group=testers\n', rendered)
+        self.assertIn('ExecStart=/home/tester/Dev/fcc-tiles/.venv/bin/python ', rendered)
+        self.assertIn('ExecStartPre=/usr/bin/mountpoint --quiet /mnt/fcc-tiles', rendered)
+        self.assertNotIn('@FCC_', rendered)
+        with self.assertRaises(AssertionError):
+            render_unit(template, 'tester\nUser=root', 'testers', '/home/tester')
+        with self.assertRaises(AssertionError):
+            render_unit(template, 'tester', 'testers', '/home/tester\nExecStart=/bin/false')
+
     def test_finest_zoom_is_copied_without_even_decoding(self):
         # This also catches accidentally applying the overview transform at z12.
         data = b'opaque original compressed bytes'
@@ -103,6 +117,22 @@ class CompactionTests(unittest.TestCase):
         bowtie = Polygon([(0, 0), (100, 100), (0, 100), (100, 0), (0, 0)])
         self.assertFalse(bowtie.is_valid)
         self.assertIs(simplify_geometry(bowtie, 4, 4096), bowtie)
+
+    def test_only_subpixel_overview_holes_are_filled(self):
+        tiny = [(900, 900), (900, 904), (904, 904), (904, 900), (900, 900)]
+        large = [(1500, 1500), (1500, 1600), (1600, 1600), (1600, 1500), (1500, 1500)]
+        original = Polygon([(100, 100), (3900, 100), (3900, 3900), (100, 3900), (100, 100)], [tiny, large])
+        reduced = simplify_geometry(original, 4, 4096)
+        self.assertTrue(reduced.covers(Point(902, 902)))
+        self.assertFalse(reduced.covers(Point(1550, 1550)))
+        self.assertEqual(len(reduced.interiors), 1)
+        # A small hole crossing a tile edge must remain, preventing seams.
+        crossing = Polygon([(-40, -40), (4140, -40), (4140, 4140), (-40, 4140), (-40, -40)],
+                           [[(-2, 100), (-2, 104), (2, 104), (2, 100), (-2, 100)], tiny])
+        kept = simplify_geometry(crossing, 4, 4096)
+        self.assertEqual(len(kept.interiors), 1)
+        self.assertFalse(kept.covers(Point(0, 102)))
+        self.assertTrue(kept.covers(Point(902, 902)))
 
     def test_memory_guards_preserve_oversized_inputs_and_field_audit_rejects_changes(self):
         original = payload()
