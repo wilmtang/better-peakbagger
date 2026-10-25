@@ -216,6 +216,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                     throw new Error(response?.error?.code || 'settings-file-import-failed');
                 }
                 await Promise.all([refreshCredentials(), refreshGithub()]);
+                if (response.apiKeysImported) document.dispatchEvent(new Event('bpb:credentials-imported'));
             } else {
                 await save(pending.settings);
             }

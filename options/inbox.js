@@ -7,7 +7,11 @@ const ext = globalThis.browser || globalThis.chrome;
 const $ = selector => document.querySelector(selector);
 const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Your inbox could not be updated. Try again.'); return result; };
 let featureEnabled = false; let current; let items = new Map(); let review = null; let busy = false; let accepted = new Set();
-let statusError = false;
+let statusError = false, preferences = null, reviewStatusSignature = '';
+const reviewMessage = item => item.handoff ? 'Draft forms were opened. Review their saved state before continuing.'
+    : item.analysis ? 'Strong matches are selected. Review any Probable matches before opening drafts.'
+        : item.error || (item.phase === 'no-gps' ? 'No usable GPS route.' : item.phase === 'no-matches' ? 'No matching summits.'
+            : 'Waiting for peak checks. Visit Peakbagger to resume.');
 const rows = new Map();
 const changedMatches = () => review && items.has(review.id)
     && JSON.stringify(review.analysis?.matches) !== JSON.stringify(items.get(review.id).analysis?.matches);
@@ -15,11 +19,11 @@ function updateReviewControls() {
     if (!review) return;
     const live = items.get(review.id), updated = changedMatches();
     const handoff = !!live?.handoff;
-    $('#inbox-open').setAttribute('aria-disabled', String(!live || updated || !review.analysis));
+    $('#inbox-open').setAttribute('aria-disabled', String(busy || !live || updated || !review.analysis));
     $('#inbox-refresh span').textContent = updated ? 'Review updated matches' : 'Refresh from Garmin';
-    $('#inbox-refresh').setAttribute('aria-disabled', String(!live || handoff || (!updated && (!current.configured || ['key-rejected', 'permission'].includes(current.error?.code)))));
-    $('#inbox-dismiss').setAttribute('aria-disabled', String(!live || handoff));
-    $('#inbox-done').setAttribute('aria-disabled', String(!live));
+    $('#inbox-refresh').setAttribute('aria-disabled', String(busy || !live || handoff || (!updated && (!current.configured || ['key-rejected', 'permission'].includes(current.error?.code)))));
+    $('#inbox-dismiss').setAttribute('aria-disabled', String(busy || !live || handoff));
+    $('#inbox-done').setAttribute('aria-disabled', String(busy || !live));
     $('#inbox-saved').hidden = !handoff || !positiveId(current.cid);
     if (positiveId(current.cid)) $('#inbox-saved').href = `https://www.peakbagger.com/climber/ClimbListC.aspx?cid=${current.cid}`;
     for (const input of document.querySelectorAll('#inbox-matches input')) {
@@ -27,9 +31,15 @@ function updateReviewControls() {
     }
     if (!live) $('#inbox-review-status').textContent = 'This activity has left the inbox. Return to your activity list.';
     else if (updated) $('#inbox-review-status').textContent = 'Updated matches are ready. Review them before opening drafts.';
+    else {
+        const signature = JSON.stringify([live.phase, live.error, handoff]);
+        if (signature !== reviewStatusSignature) $('#inbox-review-status').textContent = reviewMessage(live);
+        reviewStatusSignature = signature;
+    }
 }
 function showReview(id, focus = true) {
     review = items.get(id); if (!review) return;
+    $('#inbox-timestamp-row').hidden = !preferences?.removeGpxTimestamps || !review.analysis?.hasTimestamps;
     $('#inbox-list').hidden = true; $('#inbox-review').hidden = false;
     $('#inbox-review-title').textContent = `${garminActivityLabel(review.summary.type)} · ${review.summary.date}`;
     $('#inbox-matches').replaceChildren();
@@ -42,21 +52,24 @@ function showReview(id, focus = true) {
         const detail = document.createElement('span'); detail.textContent = `${matchLabel(match.classification)}${Number.isFinite(match.confidence) ? ` · ${Math.round(match.confidence * (match.confidence <= 1 ? 100 : 1))}% confidence` : ''}${review.saved.includes(String(match.id)) ? ' · Saved and verified' : ''}`;
         text.append(detail); label.append(checkbox, text); $('#inbox-matches').append(label);
     }
-    $('#inbox-review-status').textContent = review.handoff ? 'Draft forms were opened. Review their saved state before continuing.'
-        : !review.analysis ? review.error || 'Waiting for peak checks. Visit Peakbagger to resume.' : 'Strong matches are selected. Review any Probable matches before opening drafts.';
+    $('#inbox-review-status').textContent = reviewMessage(review);
+    reviewStatusSignature = JSON.stringify([review.phase, review.error, !!review.handoff]);
     $('#inbox-timestamps').checked = false;
     updateReviewControls();
     if (focus) $('#inbox-back').focus();
-    void Settings.get().then(prefs => { $('#inbox-timestamp-row').hidden = !prefs.removeGpxTimestamps || !review?.analysis?.hasTimestamps; });
 }
 const busyAction = async (button, status, operation) => {
     if (!featureEnabled || busy || button.getAttribute('aria-disabled') === 'true') return;
     if (status.id === 'inbox-status') statusError = false;
     busy = true; button.setAttribute('aria-disabled', 'true'); button.setAttribute('aria-busy', 'true'); status.textContent = 'Working…';
+    updateReviewControls();
     try { await operation(); } catch (error) { status.textContent = error.message; if (status.id === 'inbox-status') statusError = true; }
     finally { busy = false;
         if (button.id === 'inbox-check') button.setAttribute('aria-disabled', String(current?.checking || !current?.enabled || ['key-rejected', 'permission'].includes(current?.error?.code)));
-        else button.removeAttribute('aria-disabled');
+        else if (button.closest('#inbox-history-list')) {
+            const receipt = current.history?.find(item => `history-${item.id}` === button.parentElement.id);
+            button.setAttribute('aria-disabled', String(!receipt?.undoAvailable));
+        } else button.removeAttribute('aria-disabled');
         button.removeAttribute('aria-busy'); updateReviewControls(); }
 };
 function paintList() {
@@ -96,10 +109,17 @@ async function refresh(initial = false) {
             const link = document.createElement('a'); link.textContent = 'View in Garmin'; link.target = '_blank'; link.rel = 'noopener noreferrer';
             if (positiveId(receipt.id)) link.href = `https://connect.garmin.com/app/activity/${receipt.id}`;
             row.append(link);
-            if (receipt.dismissed) { const undo = document.createElement('button'); undo.className = 'panel-button secondary'; undo.textContent = 'Undo';
-                undo.addEventListener('click', () => void busyAction(undo, $('#inbox-status'), async () => { await send({ type: 'GARMIN_UNDO', id: receipt.id }); accepted.add(receipt.id); await refresh(); })); row.append(undo); }
             $('#inbox-history-list').append(row);
         }
+        if (receipt.dismissed && !row.querySelector('button')) { const undo = document.createElement('button'); undo.className = 'panel-button secondary'; undo.textContent = 'Undo';
+            undo.addEventListener('click', () => void busyAction(undo, $('#inbox-status'), async () => {
+                const focused = document.activeElement === undo;
+                await send({ type: 'GARMIN_UNDO', id: receipt.id }); accepted.add(receipt.id); await refresh();
+                if (focused && (document.activeElement === undo || document.activeElement === document.body)) {
+                    (rows.get(receipt.id)?.querySelector('button') || $('#inbox-check')).focus();
+                }
+            })); row.append(undo); }
+        if (!receipt.dismissed) row.querySelector('button')?.remove();
         row.querySelector('p').textContent = `${receipt.date ? `${receipt.date} · ` : ''}${receipt.dismissed ? 'Dismissed' : receipt.complete ? 'Completed' : 'Draft review in progress'}`;
         row.querySelector('button')?.setAttribute('aria-disabled', String(!receipt.undoAvailable));
     }
@@ -136,11 +156,18 @@ $('#inbox-refresh').addEventListener('click', () => void busyAction($('#inbox-re
     if (changedMatches()) { showReview(review.id, false); return; }
     await send({ type: 'GARMIN_RETRY', id: review.id }); $('#inbox-review-status').textContent = 'Refreshing from Garmin. Your saved draft stays available.';
 }));
-for (const [selector, type] of [['#inbox-dismiss', 'GARMIN_DISMISS'], ['#inbox-done', 'GARMIN_DONE']]) $(selector).addEventListener('click', () => void busyAction($(selector), $('#inbox-review-status'), async () => {
+for (const [selector, type] of [['#inbox-dismiss', 'GARMIN_DISMISS'], ['#inbox-done', 'GARMIN_DONE']]) $(selector).addEventListener('click', () => {
+    if (!featureEnabled || busy || $(selector).getAttribute('aria-disabled') === 'true') return;
     if (type === 'GARMIN_DONE' && !confirm('Mark this activity done? It will leave the inbox and will not be imported again.')) return;
-    await send({ type, id: review.id }); review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false; await refresh();
-}));
+    void busyAction($(selector), $('#inbox-review-status'), async () => {
+        await send({ type, id: review.id });
+        const focused = document.activeElement, restoreFocus = $('#inbox-review').contains(focused);
+        review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false; await refresh();
+        if (restoreFocus && (document.activeElement === focused || document.activeElement === document.body)) $('#inbox-check').focus();
+    });
+});
 const applyFeature = settings => {
+    preferences = settings;
     const changed = featureEnabled !== settings.enableGarminInbox;
     featureEnabled = settings.enableGarminInbox;
     $('#inbox-content').hidden = !featureEnabled;

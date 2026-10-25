@@ -250,6 +250,16 @@ Independent commits for drag ownership and report/observer surfaces:
   before the fix; settings transfer/worker tests, build and focused ESLint passed.
   Explicit-null key removal remains intentional.
 
+- F11 Inbox/Garmin and F4 credential feedback: timestamp preferences are resolved
+  before review reveal; cancel stays idle; review/history availability and errors
+  reconcile; dismissal/Undo restore surviving focus; imported credentials refresh
+  Garmin immediately. Four Inbox regressions failed before the fix. The browser
+  assertion rejected the old bundle for its actual 21 px action/content shift.
+  54 Garmin/Settings tests passed. Hidden Chrome 156.0.8078.4 and Firefox 157.0
+  passed 12 rendered cases, light/dark, 1180/390 px and 200% CSS zoom, including
+  pending/error/retry/cancel, geometry, focus and duplicate-activation guards.
+  Worker/network replies and permission prompts remain stubbed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

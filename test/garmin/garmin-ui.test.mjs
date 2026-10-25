@@ -101,3 +101,82 @@ test('a bookmarked inbox stays hidden while disabled and does not poll its data'
         assert.equal(messages, 0);
     } finally { dom.window.close(); }
 });
+
+const auditInbox = async (overrides = {}) => {
+    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const intervals = [], calls = [];
+    const item = { id: '123', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
+        analysis: { matches: [{ id: 1, name: 'Example Peak', classification: 'strong' }], hasTimestamps: true } };
+    const state = { configured: true, enabled: true, cid: '456', items: [item], history: [], ...overrides };
+    dom.window.setInterval = fn => (intervals.push(fn), intervals.length);
+    dom.window.confirm = () => false;
+    Object.defineProperty(dom.window.document, 'hidden', { value: false });
+    const get = async () => ({ bpbSettings: { removeGpxTimestamps: true },
+        bpbDeviceSettings: { schemaVersion: 1, settings: { removeGpxTimestamps: true } } });
+    dom.window.chrome = { runtime: { sendMessage: async message => {
+        calls.push(message);
+        if (message.type === 'GARMIN_DISMISS') state.items = [];
+        if (message.type === 'GARMIN_UNDO') state.history[0].undoAvailable = false;
+        return { ok: true, ...structuredClone(state) };
+    } }, storage: { sync: { get }, local: { get }, onChanged: { addListener() {}, removeListener() {} } } };
+    dom.window.eval(inboxSource); await tick();
+    return { dom, d: dom.window.document, state, item, calls, refresh: async () => { intervals[0](); await tick(); } };
+};
+test('Inbox cancel preserves review status and dismissal focuses a surviving action', async () => {
+    const h = await auditInbox();
+    try {
+        h.d.querySelector('#inbox-list button').click();
+        const before = h.d.querySelector('#inbox-review-status').textContent;
+        h.d.querySelector('#inbox-done').focus(); h.d.querySelector('#inbox-done').click(); await tick();
+        assert.equal(h.d.querySelector('#inbox-review-status').textContent, before);
+        assert(!h.calls.some(call => call.type === 'GARMIN_DONE'));
+        h.d.querySelector('#inbox-dismiss').focus(); h.d.querySelector('#inbox-dismiss').click(); await tick();
+        assert.equal(h.d.activeElement.id, 'inbox-check');
+    } finally { h.dom.window.close(); }
+});
+test('Inbox timestamp visibility is resolved before the review becomes visible', async () => {
+    const h = await auditInbox();
+    try {
+        h.d.querySelector('#inbox-list button').click();
+        assert.equal(h.d.querySelector('#inbox-review').hidden, false);
+        assert.equal(h.d.querySelector('#inbox-timestamp-row').hidden, false);
+    } finally { h.dom.window.close(); }
+});
+test('Inbox review follows phase errors even when both match snapshots are empty', async () => {
+    const h = await auditInbox();
+    try {
+        h.item.phase = 'waiting'; h.item.analysis = null; await h.refresh();
+        h.d.querySelector('#inbox-list button').click();
+        h.item.phase = 'error'; h.item.error = 'Recording could not be downloaded.'; await h.refresh();
+        assert.equal(h.d.querySelector('#inbox-review-status').textContent, h.item.error);
+    } finally { h.dom.window.close(); }
+});
+test('existing Inbox history rows reconcile Undo and retain authoritative availability', async () => {
+    const h = await auditInbox({ history: [{ id: '123', complete: true }] });
+    try {
+        h.state.history[0] = { id: '123', dismissed: true, undoAvailable: true }; await h.refresh();
+        const undo = h.d.querySelector('#history-123 button'); assert(undo);
+        undo.click(); await tick(); assert.equal(undo.getAttribute('aria-disabled'), 'true');
+        h.state.history[0] = { id: '123', complete: true }; await h.refresh();
+        assert.equal(h.d.querySelector('#history-123 button'), null);
+    } finally { h.dom.window.close(); }
+});
+
+test('Garmin Settings refreshes imported credentials and leaves cancelled deletion idle', async () => {
+    const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    let configured = false, deletes = 0;
+    dom.window.chrome = { storage: { sync: { get: async () => ({}) }, local: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } },
+        runtime: { sendMessage: async message => {
+            if (message.type === 'GARMIN_DISCONNECT') deletes++;
+            return { ok: true, configured, enabled: false, pending: 0, connectedDate: '2026-10-23', items: [] };
+        } } };
+    dom.window.confirm = () => false;
+    try {
+        dom.window.eval(settingsSource); await tick();
+        configured = true; dom.window.document.dispatchEvent(new dom.window.Event('bpb:credentials-imported')); await tick();
+        assert.equal(dom.window.document.querySelector('#garmin-key-status').textContent, 'Connected on this device');
+        const status = dom.window.document.querySelector('#garmin-settings-status'), before = status.textContent;
+        dom.window.document.querySelector('#garmin-delete').click(); await tick();
+        assert.equal(status.textContent, before); assert.equal(deletes, 0);
+    } finally { dom.window.close(); }
+});

@@ -13,7 +13,7 @@ import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from '.
 import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
 assert.equal(process.argv.length, 2, 'No arguments supported');
 assertChromeLaunchAllowed();
-const root = path.resolve(new URL('../dist/', import.meta.url).pathname);
+const root = path.resolve(process.env.BPB_VERIFY_GARMIN_SOURCE || new URL('../dist/', import.meta.url).pathname);
 const output = '/tmp/garmin-implementation-ui'; await mkdir(output, { recursive: true });
 const certificate = await createFixtureCertificate({ label: 'garmin-ui' });
 const server = createServer({ key: certificate.key, cert: certificate.cert }, async (request, response) => {
@@ -41,10 +41,10 @@ try {
         const context = await browser.newContext({ ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
         context.setDefaultTimeout(15000);
         await context.addInitScript(defaults => {
-            const prefs = { ...defaults, ...(window.location.search.includes('disabled') ? { enableGarminInbox: false } : {}) };
+            const prefs = { ...defaults, removeGpxTimestamps: true, ...(window.location.search.includes('disabled') ? { enableGarminInbox: false } : {}) };
             const listeners = [];
             const row = { id: '123', owner: '1234', cid: '5678', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
-                analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], hasTimestamps: false } };
+                analysis: { matches: [{ id: 123, name: 'Example Mountain', classification: 'strong' }, { id: 124, name: 'Example Ridge', classification: 'probable' }], hasTimestamps: true } };
             window.fixture = { mode: 'success', checks: 0, connects: 0, enables: 0, opens: 0, captures: 0, statuses: 0, state: { configured: true, enabled: !window.location.pathname.endsWith('/options/options.html'), pending: 1, cid: '5678', items: [row], history: [], connectedDate: '2026-10-23' } };
             if (window.location.search.includes('queued')) {
                 row.analysis = null; row.phase = 'waiting';
@@ -52,26 +52,27 @@ try {
                 window.fixture.state.peakbaggerBlocked = { code: 'cloudflare' };
             }
             window.fixture.setEnabled = value => { prefs.enableGarminInbox = value; listeners.forEach(fn => fn({ bpbSettings: { newValue: prefs } }, 'sync')); };
-            window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => ({ bpbSettings: prefs }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } },
-                tabs: { query: async () => [{ id: 1 }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
-                    if (message.type === 'GARMIN_STATUS') window.fixture.statuses++;
-                    if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
-                    if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 1 };
-                    if (message.type === 'CAPTURE_STATUS') return null;
-                    if (message.type === 'CAPTURE_START') window.fixture.captures++;
-                    if (message.type === 'GARMIN_INBOX_OPEN') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 300)); return { ok: false }; }
-                    if (message.type === 'GARMIN_DISMISS') { window.fixture.state.items = []; window.fixture.state.history = [{ id: row.id, date: row.summary.date, dismissed: true, undoAvailable: true }]; }
-                    if (message.type === 'GARMIN_UNDO') { window.fixture.state.items = [row]; window.fixture.state.history = []; }
-                    if (message.type === 'GARMIN_OPEN_DRAFTS') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 350)); row.handoff = true; }
-                    if (message.type === 'GARMIN_CONNECT') { window.fixture.connects++; await new Promise(resolve => setTimeout(resolve, 350));
-                        if (window.fixture.mode !== 'success') return { ok: false, error: { message: 'Garmin didn’t accept this key. Copy the full key or get a new one.' } }; }
-                    if (message.type === 'GARMIN_ENABLE') { window.fixture.enables++; await new Promise(resolve => setTimeout(resolve, 350));
-                        if (window.fixture.mode !== 'success') return { ok: false, error: { message: 'Open Peakbagger and sign in before enabling drafts.' } };
-                        window.fixture.state.enabled = true; }
-                    if (message.type === 'GARMIN_CHECK') { window.fixture.checks++; window.fixture.state.checking = true;
-                        setTimeout(() => { window.fixture.state.checking = false; window.fixture.state.error = { code: 'key-rejected', message: 'Garmin needs a new API key. Imports paused; your drafts are safe.' }; }, 350); }
-                    return { ok: true, ...structuredClone(window.fixture.state) };
-                } } };
+            window.chrome = { permissions: { request: async () => true }, storage: { sync: { get: async () => { if (window.fixture.holdSettings) await window.fixture.readGate; return { bpbSettings: prefs }; } },
+                local: { get: async () => ({ bpbDeviceSettings: { schemaVersion: 1, settings: prefs } }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } },
+            tabs: { query: async () => [{ id: 1 }], getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
+                if (message.type === 'GARMIN_STATUS') window.fixture.statuses++;
+                if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
+                if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 1 };
+                if (message.type === 'CAPTURE_STATUS') return null;
+                if (message.type === 'CAPTURE_START') window.fixture.captures++;
+                if (message.type === 'GARMIN_INBOX_OPEN') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 300)); return { ok: false }; }
+                if (message.type === 'GARMIN_DISMISS') { window.fixture.state.items = []; window.fixture.state.history = [{ id: row.id, date: row.summary.date, dismissed: true, undoAvailable: true }]; }
+                if (message.type === 'GARMIN_UNDO') { window.fixture.state.items = [row]; window.fixture.state.history = []; }
+                if (message.type === 'GARMIN_OPEN_DRAFTS') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 350)); row.handoff = true; }
+                if (message.type === 'GARMIN_CONNECT') { window.fixture.connects++; await new Promise(resolve => setTimeout(resolve, 350));
+                    if (window.fixture.mode !== 'success') return { ok: false, error: { message: 'Garmin didn’t accept this key. Copy the full key or get a new one.' } }; }
+                if (message.type === 'GARMIN_ENABLE') { window.fixture.enables++; await new Promise(resolve => setTimeout(resolve, 350));
+                    if (window.fixture.mode !== 'success') return { ok: false, error: { message: 'Open Peakbagger and sign in before enabling drafts.' } };
+                    window.fixture.state.enabled = true; }
+                if (message.type === 'GARMIN_CHECK') { window.fixture.checks++; window.fixture.state.checking = true;
+                    setTimeout(() => { window.fixture.state.checking = false; window.fixture.state.error = { code: 'key-rejected', message: 'Garmin needs a new API key. Imports paused; your drafts are safe.' }; }, 350); }
+                return { ok: true, ...structuredClone(window.fixture.state) };
+            } } };
         }, Schema.DEFAULTS);
         const page = await context.newPage(); const errors = [];
         page.on('pageerror', error => errors.push(error.message));
@@ -173,6 +174,11 @@ try {
             await page.locator('#garmin-settings-status').filter({ hasText: 'Garmin drafts enabled.' }).waitFor();
             assert(await enable.isHidden(), 'Successful setup deliberately removes the enable action');
             assert.equal(await page.evaluate(() => window.fixture.enables), 2);
+            page.once('dialog', dialog => dialog.dismiss());
+            await page.locator('#garmin-preferences > details').evaluate(el => { el.open = true; });
+            const beforeDelete = await page.locator('#garmin-settings-status').textContent();
+            await page.locator('#garmin-delete').focus(); await page.locator('#garmin-delete').press('Enter');
+            assert.equal(await page.locator('#garmin-settings-status').textContent(), beforeDelete);
             await page.goto(`${origin}/options/inbox.html?queued`);
             await page.locator('#inbox-queue').filter({ hasText: '1 activity waiting' }).waitFor();
             await page.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
@@ -198,14 +204,28 @@ try {
             assert(await page.locator('#inbox-update-key').isVisible());
             await check.press('Enter'); assert.equal(await page.evaluate(() => window.fixture.checks), 1);
             if (name === 'chromium') await page.locator('#inbox-content .garmin-workspace').screenshot({ path: path.join(output, `inbox-${width}-${theme}.png`) });
+            await page.evaluate(() => {
+                window.fixture.holdSettings = true;
+                window.fixture.readGate = new Promise(resolve => { window.fixture.releaseSettings = resolve; });
+            });
             await page.locator('.garmin-activity button').click();
+            const firstReview = await geometry(['#inbox-open', '#inbox-review-title', '#inbox-history', 'footer']);
+            await page.evaluate(() => { window.fixture.holdSettings = false; window.fixture.releaseSettings(); });
+            await page.locator('#inbox-timestamp-row').waitFor();
+            stable(firstReview, await geometry(['#inbox-open', '#inbox-review-title', '#inbox-history', 'footer']));
+            const reviewStatus = await page.locator('#inbox-review-status').textContent();
+            page.once('dialog', dialog => dialog.dismiss());
+            await page.locator('#inbox-done').focus(); await page.locator('#inbox-done').press('Enter');
+            assert.equal(await page.locator('#inbox-review-status').textContent(), reviewStatus);
             assert.equal(await page.locator('#inbox-matches input:checked').count(), 1);
             assert.equal(await page.locator('#inbox-matches input:not(:checked)').count(), 1);
             await page.locator('#inbox-dismiss').click();
             await page.waitForFunction(() => document.querySelectorAll('#inbox-list .garmin-activity').length === 0);
+            await page.waitForFunction(() => document.activeElement.id === 'inbox-check');
             await page.locator('#inbox-history summary').click();
             await page.locator('#inbox-history-list button').click();
             await page.locator('#inbox-list .garmin-activity').waitFor();
+            await page.waitForFunction(() => document.activeElement.matches('#inbox-list .garmin-activity button'));
             await page.locator('#inbox-list .garmin-activity button').click();
             const beforeUpdatedMatches = await geometry(['#inbox-refresh', '#inbox-open', '#inbox-history']);
             await page.evaluate(() => { window.fixture.state.items[0].analysis.matches[0].name = 'Updated Mountain'; });

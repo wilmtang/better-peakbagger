@@ -60,6 +60,9 @@ export async function initGarminSettings(root) {
         if (!settingsError) $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
             : state.error?.message || (state.enabled ? 'Garmin drafts enabled. Your activity inbox is ready.' : 'Open Peakbagger and sign in before enabling drafts.');
     };
+    const credentialsImported = () => { keyError = settingsError = false; void refresh().catch(() => {}); };
+    document.addEventListener('bpb:credentials-imported', credentialsImported);
+    addEventListener('pagehide', () => document.removeEventListener('bpb:credentials-imported', credentialsImported), { once: true });
     let prefs;
     try { prefs = await Settings.requireCurrent(); }
     catch { $('#garmin-key-status').textContent = 'Settings could not be read. Reload Settings to connect Garmin.';
@@ -117,12 +120,15 @@ export async function initGarminSettings(root) {
         $('#garmin-settings-status').textContent = 'Preferences saved. Your existing drafts stay in the inbox.';
     }));
     for (const [selector, type, extra] of [['#garmin-enable', 'GARMIN_ENABLE', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-disconnect', 'GARMIN_DISCONNECT', {}], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]]) {
-        $(selector).addEventListener('click', () => void perform($(selector), $('#garmin-settings-status'), async () => {
+        $(selector).addEventListener('click', () => {
+            if (busy || !featureEnabled) return;
             if (extra.deleteData && !confirm(`Delete ${state?.pending || 0} local Garmin drafts and their import history?`)) return;
-            if (type === 'GARMIN_ENABLE' && state?.error?.code === 'permission'
-                && !await ext.permissions.request({ origins: [GARMIN_PERMISSION] })) throw new Error('Garmin access was not granted.');
-            await send({ type, ...extra }); await refresh();
-        }));
+            void perform($(selector), $('#garmin-settings-status'), async () => {
+                if (type === 'GARMIN_ENABLE' && state?.error?.code === 'permission'
+                    && !await ext.permissions.request({ origins: [GARMIN_PERMISSION] })) throw new Error('Garmin access was not granted.');
+                await send({ type, ...extra }); await refresh();
+            });
+        });
     }
     try { await refresh(); } catch (error) { $('#garmin-key-status').textContent = error.message; }
     const timer = setInterval(() => { if (!busy && !document.hidden) void refresh().catch(() => {}); }, 5000);
