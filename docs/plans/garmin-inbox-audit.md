@@ -2,6 +2,30 @@
 
 ## Fixed and verified
 
+- **Connection now implies draft enablement (October 25).** Connecting or
+  importing a validated key starts the chosen import schedule, including for
+  already-saved keys with the old enable flag unset. Cached summaries follow
+  the same rule. Discovery can queue activities before Peakbagger is open;
+  the first verified account is recorded for the queue before route download,
+  and later checks retain that account. The redundant Enable button is gone;
+  Allow Garmin access appears only to restore revoked browser permission.
+  The new importer assertions failed before the change, and the browser
+  assertion failed against a disposable original UI with one visible extra
+  activation button. Verified: 3,534 full-suite tests, then all 81 Garmin tests
+  and four focused settings tests after the final regression additions;
+  focused ESLint and three documentation checks pass. All 16 Garmin fixture
+  cases pass in hidden Chrome 156 and Firefox 157, including connection
+  pending/rejection/retry, permission recovery, and waiting for Peakbagger →
+  account-bound status. Both themes at 1180×1000 and 390×1000, plus 200% CSS
+  zoom on desktop, preserve action/panel/following-content and scroll geometry
+  within 1px during applicable transitions. Initial connection deliberately
+  reveals preferences below the anchored connection action. Desktop, narrow
+  and enlarged screenshots were inspected. The import-confirmation copy was
+  also rendered in both browsers/themes/sizes with its controller stubbed.
+  The rebuilt real extension passes hidden Chrome 156 at 1000×760. These are
+  DOM/CSS checks with synthetic provider/session responses; native permission
+  dialogs, OS focus and live Garmin/Peakbagger integration remain unproven.
+
 - **General master switch.** Garmin activity inbox defaults on; disabling it
   cancels in-flight work, removes its alarm and blocks manual/visit-triggered
   processing. Popup, connection section and sidebar entry hide. Existing keys,

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { createGarminStore } from '../../src/garmin/garmin-store.js';
+import { createGarminStore, GARMIN_DB } from '../../src/garmin/garmin-store.js';
 import { createGarminClient, garminActivityLabel } from '../../src/garmin/garmin-api.js';
 const key = 'fictional-personal-key-for-tests';
 const jwt = () => `a.${btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600, garmin_guid: 'test-owner-guid' }))}.b`;
@@ -41,4 +41,22 @@ test('IndexedDB mutations serialize and survive a new store instance', async () 
     const factory = new IDBFactory(); const a = createGarminStore(factory), b = createGarminStore(factory);
     await Promise.all(Array.from({ length: 10 }, () => a.mutate(s => { s.epoch++; })));
     assert.equal((await b.read()).epoch, 10); await a.close(); await b.close();
+});
+test('legacy cached summaries treat a saved key as enabled without rewriting credentials', async () => {
+    const factory = new IDBFactory(), store = createGarminStore(factory);
+    let database;
+    try {
+        await store.mutate(state => { state.connection = { key, enabled: false }; });
+        database = await new Promise((resolve, reject) => {
+            const request = factory.open(GARMIN_DB, 1);
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        await new Promise((resolve, reject) => {
+            const tx = database.transaction('state', 'readwrite');
+            tx.objectStore('state').put({ configured: true, enabled: false, queued: 0 }, 'summary');
+            tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+        });
+        assert.equal((await store.summary()).enabled, true);
+        assert.equal((await store.read()).connection.enabled, false);
+    } finally { database?.close(); await store.close(); }
 });

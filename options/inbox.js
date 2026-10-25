@@ -134,7 +134,7 @@ async function refresh(initial = false) {
         ? 'Peakbagger needs a human check. Your activities are queued safely.'
         : current.peakbaggerBlocked?.code === 'rate-limit' ? 'Peakbagger asked us to wait. Your activities are queued safely.' : null;
     if (!statusError) $('#inbox-status').textContent = current.error?.message || peakbaggerMessage || (current.checking ? 'Checking Garmin… Your drafts remain ready to review.'
-        : current.lastCheck ? `Last checked ${new Date(current.lastCheck).toLocaleString()}${current.historyIncomplete ? ' · History check in progress' : ''}` : current.enabled ? 'Ready to check Garmin.' : 'Connect Garmin and enable drafts in Settings.');
+        : current.lastCheck ? `Last checked ${new Date(current.lastCheck).toLocaleString()}${current.historyIncomplete ? ' · History check in progress' : ''}` : current.enabled ? 'Ready to check Garmin.' : 'Connect Garmin in Settings.');
     $('#inbox-update-key').hidden = !current.error || !['key-rejected', 'permission'].includes(current.error.code);
     $('#inbox-update-key').textContent = current.error?.code === 'permission' ? 'Allow Garmin access' : 'Update key';
     $('#inbox-check').setAttribute('aria-disabled', String(current.checking || !current.enabled || ['key-rejected', 'permission'].includes(current.error?.code)));

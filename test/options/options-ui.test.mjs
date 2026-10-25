@@ -1255,6 +1255,7 @@ test('Garmin credential import names the key and requires API permission before 
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => !el(dom, 'settings-backup-confirmation').hidden);
     assert.match(el(dom, 'settings-backup-confirmation').textContent, /Includes a Garmin key/);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent, /enabling Garmin drafts on this device/);
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => /Garmin access was not granted/.test(el(dom, 'status-error-text').textContent));
     assert.deepEqual(requested, [{ origins: ['https://personal.connectapi.garmin.com/*'] }]);

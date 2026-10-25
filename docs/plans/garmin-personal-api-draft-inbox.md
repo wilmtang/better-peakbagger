@@ -18,7 +18,7 @@ Implementation ledger (updated with each completed unit):
 | Durable inbox and short-lived draft handoff | Implemented; bundled-worker test verifies retained snapshots, single-summit Save verification, handoff reuse and fail-closed expired delivery. Cross-entry receipts reserve toolbar imports too. |
 | Settings, inbox and popup UI | Implemented; 54 popup tests and 12 hidden Chrome/Firefox fixture cases. Rejected-key errors survive polling; dismissal Undo, refresh and completed/dismissed history are available. Layout and keyboard checks cover pending/error/retry at 1180/390px, both themes and 200% CSS zoom. Native permission prompts and live provider integration remain open. |
 | Bounded continuation and recovery | Implemented; focused regressions cover backlog draining, capacity, permission removal, midnight cursor recovery, public summary privacy and Undo expiry. Public UI responses omit stored routes and draft payloads. A new key-error assertion failed against the old implementation and passed after the fix. |
-| Credential-file export/import | Implemented in schema 4; export checkbox, legacy omission, explicit null, permission refusal, failed validation, rollback and concurrent replacement covered. New devices do not inherit import consent. |
+| Credential-file export/import | Implemented in schema 4; export checkbox, legacy omission, explicit null, permission refusal, failed validation, rollback and concurrent replacement covered. A validated imported key enables drafts on the destination device; Peakbagger account bindings are not copied. |
 | Browser integration, privacy and documentation | Privacy contract and setup guide updated. Actual hidden Chrome/Firefox manifest and worker checks passed; final validation and external proof gaps are tracked in the audit ledger. |
 | Distribution / business program | External agreement review remains open; no business account application or release is authorized by implementation. |
 
@@ -109,9 +109,11 @@ retain focus and show a short error below the same button so it can be retried.
 ### Connect a personal key
 
 Keep setup in Capture & reports, with one primary action and a masked key.
-Connection leads to an explicit Enable Garmin drafts step; it does not silently
-enable scheduled imports. **Get a Garmin API key ↗** sits beside the key-field
-label and opens Garmin's key page in a new tab. The field contains only a
+Connecting a validated key enables imports on the chosen schedule. There is
+no separate enable step; the first peak check binds the queue to a verified
+Peakbagger account before downloading routes. The mock images below retain
+the earlier two-step setup for historical context. **Get a Garmin API key ↗**
+sits beside the key-field label and opens Garmin's key page in a new tab. The field contains only a
 read-only demo value; the mock makes no API requests.
 
 ![Garmin connection mock with create-key guidance, a masked personal-key field and Connect Garmin action](mocks/garmin-api/images/01-connect.png)
@@ -136,7 +138,7 @@ the replacement form, with the same direct Garmin link and **Reconnect Garmin**.
 The connected state exposes the four-hour default, manual checks, activity
 types and history scope in familiar setting rows. Manual only turns scheduled
 checks off; Custom reveals an hours field. This image shows the state after
-Enable Garmin drafts has been selected.
+Garmin has been connected.
 
 This earlier rendered mock predates the separate configurable ranges. The
 [settings labels and descriptions below](#scan-settings-copy) are the current
@@ -356,7 +358,7 @@ scope was established by the reviewed public documentation.
 
 ```mermaid
 flowchart TD
-    connect["Connect Garmin with a personal key"] --> scope["Choose activity types and enable automatic drafts"]
+    connect["Connect Garmin with a personal key"] --> scope["Imports enabled; choose activity types and schedule"]
     scope --> discover["Check for new activities while the browser runs"]
     discover --> session{"Expected Peakbagger account available?"}
     session -- No --> wait["Inbox: waiting for Peakbagger"]
@@ -453,13 +455,15 @@ and use their routes to find peaks on Peakbagger. Drafts and their
 reduced routes stay on this device until saved or removed.
 You decide what to save.
 
-[Enable Garmin drafts]
+[Save preferences]    [Open activity inbox]
 ```
 
-Connection alone does not authorize background route processing. The final
-action enables the chosen mode and records the selected Peakbagger account;
-Manual only permits user-started imports and creates no discovery alarm. Its
-helper text describes Check now instead of automatic checks. The default
+Connecting or importing a validated Garmin key enables the chosen mode. The
+first peak check records the verified Peakbagger account before downloading
+routes, and subsequent checks retain that binding. Previously connected keys
+also use this implied activation. Manual only permits user-started imports
+and creates no discovery alarm. Its helper text describes Check now instead
+of automatic checks. The default
 activity types are a proposed convenience, not proof of GPS or summits. Offer
 other types, including cycling, in Change; validate Garmin's parent/subtype
 taxonomy before shipping. Never filter solely on a high elevation-gain value.
@@ -718,7 +722,8 @@ checkbox off, the background export path must neither read the Garmin credential
 store nor serialize any Garmin credential. With it on, include the saved personal
 key in the versioned credential payload. The short-lived bearer token is always
 omitted. Frequency, activity types and both scan ranges may travel as ordinary
-settings; device permission and consent to start background processing do not.
+settings; Garmin host permission and Peakbagger account bindings do not.
+Accepting a validated imported key enables drafts on the destination device.
 
 The implementation upgrades schema 3 to **schema 4**, adding `garmin` beside
 `imgbb`. Compatibility tests preserve these rules: an absent Garmin key

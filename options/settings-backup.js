@@ -105,7 +105,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                     ? 'Replaces your current settings and saved API keys.'
                     : 'Replaces your current settings.';
         if (includesGarminKey) confirmationDetailEl.textContent += requestsGarminAccess
-            ? ' Includes a Garmin key, which will be checked before replacing your connection.'
+            ? ' Includes a Garmin key, which will be checked before replacing your connection and enabling Garmin drafts on this device.'
             : ' Removes your Garmin key while keeping your drafts.';
         confirmationEl.hidden = false;
         if (document.activeElement === returnFocus) confirmEl.focus();

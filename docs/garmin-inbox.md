@@ -8,8 +8,8 @@ the detected peaks and click Save in Peakbagger yourself.
 **Settings → General → Automatically detect Garmin activities** is on by default.
 Turning it off stops imports and queued peak checks and hides the inbox entry
 and Garmin connection settings. Your key, drafts and import history stay on this device.
-Turn it back on to restore them. Connecting Garmin and enabling drafts still
-require your consent; the master switch alone never starts a new connection.
+Turn it back on to restore them. A validated Garmin key enables drafts on this
+device; the master switch alone never creates a connection.
 
 ## Set up
 
@@ -17,8 +17,10 @@ require your consent; the master switch alone never starts a new connection.
 2. Use **Get a Garmin API key** to open
    [Garmin’s key page](https://connect.garmin.com/app/settings/personalApiToken).
    Paste the key, choose **Connect Garmin**, and allow access when your browser asks.
-3. Open Peakbagger and sign in to your climber account, then choose
-   **Enable Garmin drafts**. Keep a signed-in Peakbagger tab available for peak matching.
+   This enables imports on your chosen schedule; there is no separate enable step.
+3. Open Peakbagger and sign in to your climber account. The first peak check
+   binds your queue to that account before downloading routes. Keep a signed-in
+   Peakbagger tab available for peak matching; activities wait locally until then.
 4. Open **Activity inbox** from the extension popup to review activities.
 
 ## Choose when and how far back to check
@@ -76,7 +78,9 @@ are not prepared again.
 Keys, reduced routes and history stay on this device. **Disconnect** keeps drafts;
 **Delete local Garmin data** removes them and their duplicate-prevention history.
 The key is included in a downloaded settings file only when **Include saved
-credentials** is checked. Importing it on a new device still requires enabling drafts.
+credentials** is checked. Importing a validated key also enables drafts on the
+destination device, after granting Garmin access. It does not copy the source
+device's Peakbagger account binding.
 
 See the [audit ledger](plans/garmin-inbox-audit.md) for verification and release
 gaps, and the [investigation](plans/garmin-personal-api-draft-inbox.md) for API evidence.

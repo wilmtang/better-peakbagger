@@ -5,7 +5,7 @@ export const GARMIN_DB = 'bpb-garmin-v1';
 const empty = () => ({ version: 1, epoch: 0, connection: null, items: {}, receipts: {}, scan: null,
     lastCheck: 0, lastFull: 0, retryAt: 0, error: null });
 export const garminPublicSummary = state => ({ revision: state.revision || 0, configured: !!state.connection?.key,
-    enabled: state.connection?.enabled === true, cid: state.connection?.cid || null,
+    enabled: !!state.connection?.key, cid: state.connection?.cid || null,
     connectedDate: state.connection?.connectedDate || null,
     queued: Object.values(state.items).filter(item => !item.analysis && ['waiting', 'error'].includes(item.phase)).length,
     peakbaggerBlocked: state.peakbaggerBlocked || null,
@@ -42,7 +42,8 @@ export function createGarminStore(indexedDB = globalThis.indexedDB) {
             const tx = database.transaction('state', 'readonly'); const request = tx.objectStore('state').get('summary');
             request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error('Garmin inbox summary is unavailable.'));
         });
-        return Number.isInteger(result?.queued) ? result : garminPublicSummary(await read());
+        // Older cached summaries may still contain the separate opt-in flag.
+        return Number.isInteger(result?.queued) ? { ...result, enabled: result.configured === true } : garminPublicSummary(await read());
     };
     return { read, summary,
         mutate: mutate => transaction(true, mutate),

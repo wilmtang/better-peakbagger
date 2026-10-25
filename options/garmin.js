@@ -8,7 +8,7 @@ export async function initGarminSettings(root) {
     if (!root) return;
     root.classList.add('garmin-settings');
     root.innerHTML = `<h3 class="subsection-title" id="capture-garmin-heading">Garmin connection</h3>
-      <p>Bring your Garmin activities into your inbox automatically.</p>
+      <p>Connect Garmin to import activities and prepare ascent drafts automatically.</p>
       <form class="garmin-key-form">
         <div class="garmin-key-label"><label for="garmin-key">Personal API key</label><a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer" aria-label="Get a Garmin API key (opens in a new tab)">Get a Garmin API key ↗</a></div>
         <p class="garmin-helper" id="garmin-key-help">Create a key in Garmin, then paste it below. Stored only on this device. Keys last up to one year.</p>
@@ -22,9 +22,10 @@ export async function initGarminSettings(root) {
         <div class="garmin-pref"><label for="garmin-history">Full history range<small id="garmin-history-help">Checked weekly to find older activities uploaded late.</small></label><select id="garmin-history"><option value="connection">From connection date</option><option value="date">Choose start date…</option><option value="all">All available history</option></select><label id="garmin-date-row" hidden>From <input id="garmin-date" type="date"></label></div>
         <div class="garmin-pref"><label for="garmin-types">Activities<small>Mountain activities include hikes, walks, trail runs, rock climbing, mountaineering and backcountry skiing.</small></label><select id="garmin-types"><option value="walking">Mountain activities</option><option value="all">All activities</option></select></div>
         <p class="garmin-helper" id="garmin-scope-note">Ranges use activity dates. Recent checks stay within your full history range. Changing ranges keeps your existing drafts.</p>
-        <div class="garmin-actions"><button id="garmin-save" class="panel-button secondary">Save preferences</button><button id="garmin-enable" class="panel-button primary" data-sizing-label="Enable Garmin drafts"><span>Enable Garmin drafts</span></button><a href="inbox.html" class="garmin-inbox-link">Open activity inbox</a></div>
+        <div class="garmin-actions"><button id="garmin-save" class="panel-button secondary">Save preferences</button><a href="inbox.html" class="garmin-inbox-link">Open activity inbox</a></div>
         <p class="garmin-helper">While your browser runs, imports use routes to find peaks on Peakbagger. Drafts and reduced routes stay on this device until completed or removed. You review every ascent before Save.</p>
-        <div class="garmin-feedback"><span aria-hidden="true">Open Peakbagger, sign in to your selected climber, then enable Garmin drafts.</span><span id="garmin-settings-status" role="status" aria-atomic="true"></span></div>
+        <div class="garmin-feedback"><span aria-hidden="true">Open Peakbagger and sign in to prepare your drafts. Your activities stay in the inbox.</span><span id="garmin-settings-status" role="status" aria-atomic="true"></span></div>
+        <button id="garmin-access" class="panel-button primary" hidden>Allow Garmin access</button>
         <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="panel-button secondary">Check full history</button><button id="garmin-disconnect" class="panel-button secondary">Disconnect</button><button id="garmin-delete" class="panel-button secondary">Delete local Garmin data</button></div><p class="garmin-helper">Disconnect keeps your drafts. Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
       </div>`;
     const $ = selector => root.querySelector(selector);
@@ -53,12 +54,12 @@ export async function initGarminSettings(root) {
         $('#garmin-preferences').hidden = !state.configured && !state.pending;
         $('#garmin-connect span').textContent = state.configured || state.pending ? 'Reconnect Garmin' : 'Connect Garmin';
         $('#garmin-connect').classList.toggle('primary', (!state.configured && !state.pending) || state.error?.code === 'key-rejected');
-        $('#garmin-enable').hidden = state.enabled && state.error?.code !== 'permission';
-        $('#garmin-enable span').textContent = state.error?.code === 'permission' ? 'Allow Garmin access' : 'Enable Garmin drafts';
+        $('#garmin-access').hidden = state.error?.code !== 'permission';
         $('#garmin-history option[value="connection"]').textContent = `From ${state.connectedDate} to today`;
         if (!keyError) $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
         if (!settingsError) $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
-            : state.error?.message || (state.enabled ? 'Garmin drafts enabled. Your activity inbox is ready.' : 'Open Peakbagger and sign in before enabling drafts.');
+            : state.error?.message || (state.enabled ? state.cid ? 'Garmin drafts enabled. Your activity inbox is ready.'
+                : 'Open Peakbagger and sign in to prepare your drafts. Your activities stay in the inbox.' : 'Connect Garmin to start importing activities.');
     };
     const credentialsImported = () => { keyError = settingsError = false; void refresh().catch(() => {}); };
     document.addEventListener('bpb:credentials-imported', credentialsImported);
@@ -124,12 +125,12 @@ export async function initGarminSettings(root) {
         if (!result || result.ok === false) throw new Error('Preferences could not be saved.');
         $('#garmin-settings-status').textContent = 'Preferences saved. Your existing drafts stay in the inbox.';
     }));
-    for (const [selector, type, extra] of [['#garmin-enable', 'GARMIN_ENABLE', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-disconnect', 'GARMIN_DISCONNECT', {}], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]]) {
+    for (const [selector, type, extra] of [['#garmin-access', 'GARMIN_ACCESS', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-disconnect', 'GARMIN_DISCONNECT', {}], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]]) {
         $(selector).addEventListener('click', () => {
             if (busy || !featureEnabled) return;
             if (extra.deleteData && !confirm(`Delete ${state?.pending || 0} local Garmin drafts and their import history?`)) return;
             void perform($(selector), $('#garmin-settings-status'), async () => {
-                if (type === 'GARMIN_ENABLE' && state?.error?.code === 'permission'
+                if (type === 'GARMIN_ACCESS'
                     && !await ext.permissions.request({ origins: [GARMIN_PERMISSION] })) throw new Error('Garmin access was not granted.');
                 await send({ type, ...extra }); await refresh();
             });

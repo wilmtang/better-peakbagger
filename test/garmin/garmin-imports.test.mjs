@@ -20,9 +20,88 @@ async function setup(overrides = {}) {
     prepare: overrides.prepare || (async () => { counts.preparations++; return { analysis: { matches: [{ id: 987 }] } }; }),
     });
     await imports.connect('fictional-personal-key');
-    await imports.handle({ type: 'GARMIN_ENABLE' }, sender);
     return { imports, store, prefs, counts, alarms, row };
 }
+test('connecting a Garmin key enables imports without a separate activation or Peakbagger session', async () => {
+    let bindings = 0;
+    const h = await setup({ binding: async () => { bindings++; throw new GarminError('peakbagger'); } });
+    try {
+        assert.equal((await h.imports.snapshot()).enabled, true);
+        assert.equal(h.alarms.size, 1, 'Connecting schedules the first check');
+        assert.equal(bindings, 0, 'Connecting does not depend on Peakbagger being open');
+        await h.imports.check();
+        const state = await h.store.read();
+        assert.equal(h.counts.lists, 2);
+        assert.equal(h.counts.downloads, 0, 'Recordings wait for a verified Peakbagger account');
+        assert.equal(state.items['12'].phase, 'waiting');
+        assert.equal(state.peakbaggerBlocked.code, 'peakbagger');
+    } finally { await h.store.close(); }
+});
+test('an already saved Garmin key imports without the former enable flag', async () => {
+    const h = await setup();
+    try {
+        await h.store.mutate(state => { state.connection.enabled = false; });
+        await h.imports.reconcile();
+        assert.equal((await h.imports.snapshot()).enabled, true);
+        assert.equal(h.alarms.size, 1);
+        await h.imports.check();
+        assert.equal(h.counts.preparations, 1);
+    } finally { await h.store.close(); }
+});
+test('the first preparation binds every queued activity and later checks retain that account', async () => {
+    let available = false, cid = '456'; const expected = [];
+    const rows = [12, 13, 14, 15].map(id => ({ id: String(id), owner: '123', date: '2026-10-23', type: 'hiking' }));
+    const h = await setup({ api: { list: async () => rows }, binding: async expectedCid => {
+        expected.push(expectedCid);
+        if (!available || expectedCid && expectedCid !== cid) throw new GarminError('peakbagger');
+        return { cid };
+    }, prepare: async (item, _route, context) => {
+        assert.equal(item.cid, context.cid);
+        return { analysis: { matches: [{ id: 987 }] } };
+    } });
+    try {
+        await h.imports.check(); assert.equal(h.counts.downloads, 0);
+        available = true; await h.imports.check(false, false, { resume: true });
+        const state = await h.store.read();
+        assert.equal(state.connection.cid, '456');
+        assert(Object.values(state.items).every(item => item.cid === '456'));
+        assert.deepEqual(expected, [undefined, undefined, '456', '456']);
+        cid = '789'; await h.imports.check();
+        assert.equal(expected.at(-1), '456');
+        assert.equal(h.counts.downloads, 3, 'Changing the signed-in climber cannot download the remaining route');
+        assert.equal((await h.store.read()).items['15'].phase, 'waiting');
+    } finally { await h.store.close(); }
+});
+test('disconnect during the first Peakbagger account check cannot bind or download a route', async () => {
+    let release, entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const hold = new Promise(resolve => { release = resolve; });
+    const h = await setup({ binding: async () => { entered(); await hold; return { cid: '456' }; } });
+    try {
+        const checking = h.imports.check(); await started;
+        await h.imports.disconnect(); release(); await checking;
+        const state = await h.store.read();
+        assert.equal(state.connection.key, null);
+        assert.equal(state.connection.cid, undefined);
+        assert.equal(h.counts.downloads, 0);
+    } finally { release(); await h.store.close(); }
+});
+test('restoring Garmin access needs permission but no second account activation', async () => {
+    let allowed = true, bindings = 0;
+    const h = await setup({ permission: () => allowed, binding: async () => { bindings++; return { cid: '456' }; } });
+    try {
+        allowed = false; await h.imports.accessChanged();
+        assert.equal((await h.imports.handle({ type: 'GARMIN_ACCESS' }, sender)).error.code, 'permission');
+        assert.equal(h.alarms.size, 0);
+        allowed = true;
+        const restored = await h.imports.handle({ type: 'GARMIN_ACCESS' }, sender);
+        assert.equal(restored.ok, true); assert.equal(restored.error, null);
+        assert.equal(h.alarms.size, 1); assert.equal(bindings, 0);
+        await h.store.mutate(state => { state.error = { code: 'key-rejected' }; });
+        assert.equal((await h.imports.handle({ type: 'GARMIN_ACCESS' }, sender)).error.code, 'key-rejected');
+        assert.equal(h.alarms.size, 0, 'Restoring host access must not resume a rejected key');
+    } finally { await h.store.close(); }
+});
 test('date scopes clip recent checks and widen for catch-up', () => {
     assert.deepEqual(importRange({ garminRecentDays: 30, garminHistoryStart: '2026-10-20' }, '', 0, false, '2026-10-23'), { from: '2026-10-20', to: '2026-10-23' });
     assert.equal(importRange({ garminRecentDays: 7, garminHistoryStart: 'all' }, '', Date.parse('2026-09-01'), false, '2026-10-23').from, '2026-08-31');
@@ -78,7 +157,7 @@ test('untrusted messages cannot read retained routes or credentials', async () =
     assert.equal(summary.items, undefined); assert.equal(JSON.stringify(summary).includes('fictional-personal-key'), false); await store.close();
 });
 
-test('credential imports preserve consent and ignore independent scope epochs', async () => {
+test('credential imports enable drafts and ignore independent scope epochs', async () => {
     const { imports, prefs, store } = await setup();
     const snapshot = await imports.readSnapshot();
     const next = await imports.verifyImportedKey('replacement-fictional-key', snapshot);
@@ -86,7 +165,7 @@ test('credential imports preserve consent and ignore independent scope epochs', 
     assert.equal((await imports.replaceIfSnapshot(snapshot, next)).replaced, true);
     assert.equal((await store.read()).connection.enabled, true);
     const onNewDevice = await imports.verifyImportedKey('replacement-fictional-key', { epoch: 0, connection: null });
-    assert.equal(onNewDevice.enabled, false);
+    assert.equal(onNewDevice.enabled, true);
     const before = await imports.readSnapshot();
     await imports.connect('newer-fictional-key');
     assert.equal((await imports.replaceIfSnapshot(before, next)).replaced, false);
@@ -307,8 +386,6 @@ test('an explicit resume arriving during a check runs after the blocked pass', a
         if (++calls === 1) { entered(); await hold; }
         return [{ id: '12', owner: '123', date: '2026-10-23', type: 'hiking' }];
     } }, binding: async (_cid, options) => {
-        // Enable has no options; the first actual preparation discovers a block.
-        if (!options) return { cid: '456' };
         if (++bindings === 1) throw new GarminError('cloudflare');
         assert.equal(options.tabId, 42); return { cid: '456' };
     } });

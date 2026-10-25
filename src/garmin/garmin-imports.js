@@ -43,7 +43,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     const reconcile = async () => {
         await ext.alarms.clear(GARMIN_ALARM);
         const [state, prefs] = await Promise.all([store.read(), settings.requireCurrent()]);
-        if (!prefs.enableGarminInbox || !state.connection?.key || !state.connection.enabled || state.error?.code === 'key-rejected' || !await permission()
+        if (!prefs.enableGarminInbox || !state.connection?.key || state.error?.code === 'key-rejected' || !await permission()
             || (state.error?.code === 'capacity' && !state.preparePending)) return;
         const continuing = state.scan || (state.preparePending && !state.peakbaggerBlocked);
         if (!continuing && !prefs.garminCheckHours) return;
@@ -79,7 +79,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         await mutateEpoch(previous.epoch, state => {
             state.epoch++;
             state.credentialEpoch = (state.credentialEpoch || 0) + 1;
-            state.connection = { ...state.connection, key, ...account, connectedDate: state.connection?.connectedDate || date(), enabled: state.connection?.enabled === true };
+            state.connection = { ...state.connection, key, ...account, connectedDate: state.connection?.connectedDate || date(), enabled: true };
             state.error = null; state.retryAt = 0; state.scan = null;
         });
         await reconcile();
@@ -132,7 +132,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         }
         const connection = state.connection;
         const prefs = await settings.requireCurrent();
-        if (!prefs.enableGarminInbox || !connection?.key || !connection.enabled) return;
+        if (!prefs.enableGarminInbox || !connection?.key) return;
         if (!await permission()) throw new GarminError('permission');
         if (state.error?.code === 'key-rejected') throw new GarminError('key-rejected');
         if (state.retryAt > clock()) throw new GarminError('rate', state.retryAt);
@@ -198,7 +198,17 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             let context;
             try {
                 context = await binding(connection.cid, { tabId, signal: controller.signal });
-                await mutateEpoch(epoch, next => { next.peakbaggerBlocked = null; });
+                await mutateEpoch(epoch, next => {
+                    // A connected key can discover activities before Peakbagger
+                    // is open. Bind the queue before downloading its first route.
+                    if (!next.connection.cid) {
+                        next.connection.cid = context.cid;
+                        for (const queued of Object.values(next.items)) if (!queued.cid) queued.cid = context.cid;
+                    }
+                    next.peakbaggerBlocked = null;
+                });
+                connection.cid ||= context.cid;
+                item.cid ||= connection.cid;
             } catch (error) { await pausePeaks(error); return; }
             let stage = 'download';
             try {
@@ -258,7 +268,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
                 if (!(await settings.requireCurrent()).enableGarminInbox) return;
                 const state = await store.read();
                 const count = Object.values(state.items).filter(item => !item.handoff && ['waiting', 'error'].includes(item.phase) && !(item.retryAt > clock())).length;
-                if (!state.connection?.key || !state.connection.enabled || !count || count >= previous
+                if (!state.connection?.key || !count || count >= previous
                     || state.peakbaggerBlocked?.retryAt > clock() || state.error?.code === 'key-rejected') return;
                 previous = count;
                 await check(false, false, { prepareOnly: true, resume: true, tabId });
@@ -285,13 +295,10 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         GARMIN_INBOX_OPEN: openInbox,
         GARMIN_CONNECT: async message => { await connect(message.key); return { ok: true, ...await snapshot() }; },
         GARMIN_DISCONNECT: async message => { await disconnect(message.deleteData === true); return { ok: true, ...await snapshot() }; },
-        GARMIN_ENABLE: async () => {
+        GARMIN_ACCESS: async () => {
             const current = await store.read(); if (!current.connection?.key) throw new GarminError('key-rejected');
             if (!await permission()) throw new GarminError('permission');
-            const context = await binding(current.connection.cid);
-            await mutateEpoch(current.epoch, state => { state.connection.cid = context.cid; state.connection.enabled = true;
-                state.error = null;
-                state.credentialEpoch = (state.credentialEpoch || 0) + 1; });
+            await mutateEpoch(current.epoch, state => { if (state.error?.code === 'permission') state.error = null; });
             await reconcile(); return { ok: true, ...await snapshot() };
         },
         GARMIN_CHECK: async message => { void check(message.full === true, false, { resume: true }); return { ok: true }; },
@@ -339,7 +346,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             if (key === null) return previous.connection ? { ...previous.connection, key: null, enabled: false } : null;
             if (!await permission()) throw new GarminError('permission');
             const account = verifiedAccount(previous.connection, await identity(clientFactory({ key })));
-            return { ...previous.connection, key, ...account, connectedDate: previous.connection?.connectedDate || date(), enabled: previous.connection?.enabled === true };
+            return { ...previous.connection, key, ...account, connectedDate: previous.connection?.connectedDate || date(), enabled: true };
         },
         async replaceIfSnapshot(expected, replacement) {
             let result;

@@ -94,11 +94,13 @@ Access tokens stay in worker memory and are never exported.
 The General **Automatically detect Garmin activities** switch defaults on.
 Turning it off hides the feature and stops imports and queued peak checks,
 preserving the key, drafts and import history. Turning it on does not grant
-Garmin access or consent.
+Garmin access or create a connection.
 
-Connection alone does not enable imports. **Enable Garmin drafts** records your
-chosen Peakbagger account and consent to local route processing. Checks run
-while the browser is running, every four hours by default; frequency, recent
+Connecting or importing a validated Garmin key enables drafts on this device,
+including for previously connected keys. The first peak check records your
+verified Peakbagger account before downloading or processing routes; later
+checks must use the same account. Checks run while the browser is running,
+every four hours by default; frequency, recent
 lookback (30 days by default) and full history dates are configurable. Manual
 only disables automatic scans. Full history checks look for older uploads;
 discovery uses activity dates and IDs, not an upload-time watermark. If Peakbagger
@@ -720,9 +722,10 @@ The user can export and import settings without GitHub:
   writability, branch, and backup-path safety with GitHub.
 - A file without credential fields leaves those destination credentials
   unchanged. Explicit null API keys remove those keys. A Garmin key requires
-  Garmin host access and validation; it does not copy processing consent or
-  the source device's Peakbagger account binding. Access tokens and inbox data
-  are excluded. The extension never uploads the settings file.
+  Garmin host access and validation, and enables drafts on the destination
+  device. It does not copy the source device's Peakbagger account binding.
+  Access tokens and inbox data are excluded. The extension never uploads the
+  settings file.
 
 ## Manual climber-list files
 

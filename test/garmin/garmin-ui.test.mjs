@@ -31,6 +31,44 @@ test('Garmin setup links directly to key creation and requests permission only o
     assert.match(document.querySelector('#garmin-key-status').textContent, /didn’t accept/, 'Background refresh preserves the rejected replacement message');
     dom.window.close();
 });
+test('Garmin setup finishes on Connect and only offers a second action for revoked access', async () => {
+    const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    const messages = [], intervals = []; let permissions = 0;
+    const state = { configured: false, enabled: false, pending: 0, cid: null, items: [] };
+    dom.window.setInterval = callback => (intervals.push(callback), intervals.length);
+    Object.defineProperty(dom.window.document, 'hidden', { value: false });
+    dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
+        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
+        runtime: { sendMessage: async message => {
+            messages.push(message);
+            if (message.type === 'GARMIN_CONNECT') Object.assign(state, { configured: true, enabled: true });
+            if (message.type === 'GARMIN_ACCESS') state.error = null;
+            return { ok: true, ...structuredClone(state) };
+        } } };
+    try {
+        dom.window.eval(settingsSource); await tick();
+        const d = dom.window.document;
+        assert.equal(d.querySelector('#garmin-enable'), null, 'Setup has no separate draft activation');
+        assert.equal(d.querySelector('#garmin-access').hidden, true);
+        d.querySelector('#garmin-key').value = 'fictional-personal-api-key';
+        d.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+        await tick();
+        assert.equal(permissions, 1);
+        assert.equal(d.querySelector('#garmin-key').value, '');
+        assert.equal(d.querySelector('#garmin-preferences').hidden, false);
+        assert.match(d.querySelector('#garmin-settings-status').textContent, /Open Peakbagger and sign in to prepare/);
+        assert.equal(messages.some(message => message.type === 'GARMIN_ENABLE'), false);
+        state.cid = '456'; intervals[0](); await tick();
+        assert.match(d.querySelector('#garmin-settings-status').textContent, /Garmin drafts enabled/);
+        state.error = { code: 'permission', message: 'Allow Garmin access to continue.' };
+        intervals[0](); await tick();
+        assert.equal(d.querySelector('#garmin-access').hidden, false);
+        d.querySelector('#garmin-access').click(); await tick();
+        assert.equal(permissions, 2);
+        assert.equal(messages.filter(message => message.type === 'GARMIN_ACCESS').length, 1);
+        assert.equal(d.querySelector('#garmin-access').hidden, true);
+    } finally { dom.window.close(); }
+});
 test('inbox keeps drafts visible during a rejected-key state', async () => {
     const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
     dom.window.chrome = { runtime: { sendMessage: async () => ({ ok: true, configured: true, enabled: true, pending: 1,
