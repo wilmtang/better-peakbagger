@@ -120,6 +120,8 @@ export async function verifyAscentColumnWidths(page, origin, variant, { asset, c
         });
         assert.ok(Math.abs(summaryWidths[0] - summaryWidths[1]) > 2,
             `summary labels and values must size to their different content, not equal halves: ${JSON.stringify(summaryWidths)}`);
+        await page.locator('#summarydata').evaluate(table => table.scrollIntoView({ block: 'start' }));
+        await capture(page, `${variant.name}-native-summary-columns`);
         const handle = page.locator('#bpb-ascent-table-resize-handle');
         const desktop = variant.width > 680;
         for (const share of desktop ? ['Home', 'End', 'Home'] : ['stacked']) {
@@ -223,6 +225,6 @@ export async function verifyPeakColumnWidths(page, origin, variant, { asset, cap
             await inspect(`peak divider ${key}`);
         }
     }
-    await page.locator('#bpb-peak-table-split').scrollIntoViewIfNeeded();
+    await page.locator('#bpb-peak-details-column > .bpb-peak-native-table').evaluate(table => table.scrollIntoView({ block: 'start' }));
     await capture(page, `${variant.name}-peak-columns`);
 }

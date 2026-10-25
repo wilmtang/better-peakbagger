@@ -75,6 +75,12 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [native table-width audit](../archive/native-table-width-audit-2026-10-25.md)
+restores content-based columns on native peak metadata and ascent summaries,
+following the Selected Trip Reports repair. Its ledger records regression
+proof, Chrome/Firefox layout coverage and the explicit exclusion of BPB-created
+tables.
+
 The [custom map overlay implementation](../archive/custom-map-overlays-2026-10-25.md)
 adds direct raster, GeoJSON and MVT sources across native and supported 3D maps.
 Its ledger records Chrome/Firefox fixture evidence, the separate cross-origin
