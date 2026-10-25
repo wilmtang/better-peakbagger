@@ -29,6 +29,7 @@ export const verificationViewport = Object.freeze({ width: 1000, height: 760 });
 export const surfaceSelectors = Object.freeze({
     analyzer: '#bpb-gpx-analysis',
     editor: '#bpb-report-editor',
+    reportPhoto: '#bpb-report-editor .bpb-re-surface .bpb-re-image-resize img',
     profileBackup: '#bpb-profile-backup',
     terrainToggle: '#bpb-terrain-toggle',
 });

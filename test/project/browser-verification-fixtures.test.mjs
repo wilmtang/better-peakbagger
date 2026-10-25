@@ -18,6 +18,7 @@ import {
     readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
+    surfaceSelectors,
     waitForCondition,
     waitForBuddyHelperCleanup,
     waitForBuddyReportCache,
@@ -31,6 +32,20 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('the report photo probe skips editor spacer images', () => {
+    const dom = new JSDOM(`<div id="bpb-report-editor"><div class="bpb-re-surface"><figure>
+        <img class="ProseMirror-separator" alt="">
+        <span class="bpb-re-image-resize"><img src="/caption-photo.svg" alt="Ridge"></span>
+        <figcaption>North ridge<img class="ProseMirror-separator" alt=""></figcaption>
+    </figure></div></div>`);
+    try {
+        assert.equal(dom.window.document.querySelector(surfaceSelectors.reportPhoto)?.getAttribute('alt'),
+            'Ridge', 'browser interaction must target the photo, not a ProseMirror spacer');
+    } finally {
+        dom.window.close();
+    }
+});
 
 test('verifier theme changes preserve a pending page settings patch', async () => {
     let stored = { theme: 'light', mapViewportWidth: 450 };

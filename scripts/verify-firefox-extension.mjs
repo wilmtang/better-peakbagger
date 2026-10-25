@@ -2960,10 +2960,10 @@ async function main() {
         await driver.actions({ async: true }).sendKeys('North ridge caption').perform();
         await waitForScript(driver, 'return document.querySelector(\'.bpb-re-surface figcaption\')?.textContent === \'North ridge caption\';', 'Firefox caption typing');
         await driver.actions({ async: true }).sendKeys(Key.ENTER).sendKeys('After the photo').perform();
-        await driver.findElement(By.css('.bpb-re-surface figure img')).click();
+        await driver.findElement(By.css(surfaceSelectors.reportPhoto)).click();
         await driver.actions({ async: true }).sendKeys(Key.ARROW_UP).sendKeys('Before the photo').perform();
         for (const [backward, forward] of [[Key.ARROW_UP, Key.ARROW_DOWN], [Key.ARROW_LEFT, Key.ARROW_RIGHT]]) {
-            await driver.findElement(By.css('.bpb-re-surface figure img')).click();
+            await driver.findElement(By.css(surfaceSelectors.reportPhoto)).click();
             await driver.actions({ async: true }).sendKeys(backward).perform();
             await waitForScript(driver, "return getSelection()?.anchorNode?.textContent === 'Before the photo';", 'Firefox prose before image');
             await driver.actions({ async: true }).sendKeys(forward).perform();
@@ -2982,7 +2982,7 @@ async function main() {
         const captionScreenshot = process.env.BPB_VERIFY_FIREFOX_CAPTION_SCREENSHOT
             || path.join(root, 'tmp/report-photos/firefox-caption.png');
         await mkdir(path.dirname(captionScreenshot), { recursive: true });
-        await waitForScript(driver, 'return document.querySelector(\'.bpb-re-surface figure img\')?.naturalWidth === 640;', 'Firefox restored caption image');
+        await waitForScript(driver, `return document.querySelector('${surfaceSelectors.reportPhoto}')?.naturalWidth === 640;`, 'Firefox restored caption image');
         const captionScrollGaps = await driver.executeScript(`
       const startY = scrollY;
       const result = [];
@@ -2990,7 +2990,7 @@ async function main() {
         scrollTo(0, y);
         const figure = document.querySelector('.bpb-re-surface figure');
         if (!figure) throw new Error('Missing caption figure');
-        const image = figure.querySelector('img').getBoundingClientRect();
+        const image = figure.querySelector('.bpb-re-image-resize img').getBoundingClientRect();
         const caption = figure.querySelector('figcaption').getBoundingClientRect();
         result.push({ y: scrollY, gap: caption.top - image.bottom });
       }
@@ -3004,7 +3004,7 @@ async function main() {
         const captionState = await waitForScript(driver, `
       const figure = document.querySelector('.bpb-re-surface figure');
       if (!figure) return false;
-      const image = figure.querySelector('img').getBoundingClientRect();
+      const image = figure.querySelector('.bpb-re-image-resize img').getBoundingClientRect();
       const caption = figure.querySelector('figcaption').getBoundingClientRect();
       const text = figure.querySelector('figcaption').textContent;
       const source = document.getElementById('JournalText').value;
