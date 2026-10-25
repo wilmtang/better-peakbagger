@@ -851,3 +851,13 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     calculator.dispose();
     assert.equal(dom.window.document.querySelector('.bpb-sun-calculator'), null);
 }, { width: 390 }));
+
+test('distant Moon crossings show the actual local date', () => withDom(dom => {
+    const calculator = SunCalculator.create({ mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame() {} });
+    const lat = 63, lon = 15, date = '2026-12-24', zone = MountainTime.resolve(lat, lon);
+    const instant = MountainTime.civilToInstant(zone, date, 120);
+    calculator.render({ ...ordinaryState({ zone, date, minute: 120 }), instant,
+        result: SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms }) });
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__moon-events-text').textContent, /2026-12-22/);
+}));

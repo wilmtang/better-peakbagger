@@ -296,6 +296,11 @@ Independent commits for drag ownership and report/observer surfaces:
   tests and ESLint passed. Hidden Chrome/Firefox passed light/dark 390/1280 px
   cases at normal/enlarged text; the narrow rendered label was inspected.
 
+- F12 Moon: whole-civil-day intervals report always-up, and distant crossings
+  show their exact local date. The full-day regression failed before the fix;
+  42 astronomy tests, build and ESLint passed. Eight hidden Chrome/Firefox
+  light/dark 390/1280 px rendered cases passed; the expanded panel was inspected.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

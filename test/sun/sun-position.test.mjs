@@ -304,3 +304,19 @@ test('Moon event search is bounded and its failure does not erase valid Sun even
     assert.equal(result.moonVisibilityState, 'unavailable');
     assert.equal(result.sunriseMs, Date.parse('1970-01-01T06:00:00Z'));
 });
+
+test('a multi-day Moon interval covering the whole civil day is always up', () => {
+    const lat = 66, lon = 15, date = '2026-12-23', zone = MountainTime.resolve(lat, lon);
+    const result = SunPosition.calculate({ lat, lon, date, zone, ms: MountainTime.civilToInstant(zone, date, 720).ms });
+    assert.equal(result.moonVisibilityState, 'always-up');
+    assert.equal(result.moonriseMs, null);
+    assert.equal(result.moonsetMs, null);
+});
+
+test('nonadjacent Moon crossings retain their distance from the selected date', () => {
+    const lat = 63, lon = 15, date = '2026-12-24', zone = MountainTime.resolve(lat, lon);
+    const result = SunPosition.calculate({ lat, lon, date, zone, ms: MountainTime.civilToInstant(zone, date, 120).ms });
+    assert.equal(result.moonVisibilityState, 'ordinary');
+    assert.equal(result.moonriseDate, '2026-12-22');
+    assert.equal(result.moonriseDayRelation, 'earlier-day');
+});

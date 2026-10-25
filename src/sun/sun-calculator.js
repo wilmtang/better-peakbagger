@@ -138,7 +138,8 @@ function eventDisplay(zone, ms, dayRelation) {
     const clock = MountainTime.formatClock(zone, ms);
     const label = MountainTime.zoneLabel(zone, ms);
     if (!clock || !label) return null;
-    return Object.freeze({ clock, label, daySuffix: eventDaySuffix(dayRelation) });
+    return Object.freeze({ clock, label, daySuffix: ['earlier-day', 'later-day'].includes(dayRelation)
+        ? ` (${MountainTime.localDate(zone, ms)})` : eventDaySuffix(dayRelation) });
 }
 
 function eventSummary(zone, result) {

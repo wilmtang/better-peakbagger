@@ -787,6 +787,38 @@ async function weatherCase(page, origin, variant) {
         await capture(page, `${variant.name}-weather-${zoom}`);
     }
 }
+async function sunCase(page, origin, variant) {
+    await page.goto(`${origin}/dist/photos/guide.html`);
+    await page.evaluate(({ theme }) => {
+        document.head.querySelectorAll('style,link[rel="stylesheet"]').forEach(node => node.remove());
+        document.documentElement.dataset.bpbTheme = theme;
+        document.body.innerHTML = '<main id="sun-mount" style="margin:16px;max-width:720px"></main>';
+    }, variant);
+    await page.addStyleTag({ content: (await asset('css/sun-calculator.css')).toString() });
+    const source = (await asset('content/peak-map.js')).toString(), end = source.lastIndexOf('})();');
+    assert.ok(end > 0, 'Sun calculator shipped seam');
+    await page.addScriptTag({ content: source.slice(0, end) + 'globalThis.__sun = { createSunCalculator, mountainTime, sunPosition };' + source.slice(end) });
+    await page.evaluate(() => {
+        const { createSunCalculator, mountainTime, sunPosition } = globalThis.__sun;
+        globalThis.__calculator = createSunCalculator({ mount: document.getElementById('sun-mount'), mode: 'peak' });
+        globalThis.__calculator.setTheme(document.documentElement.dataset.bpbTheme);
+        globalThis.__renderSun = (lat, date) => {
+            const lon = 15, zone = mountainTime.resolve(lat, lon), minute = 120;
+            const instant = mountainTime.civilToInstant(zone, date, minute);
+            globalThis.__calculator.render({ mode: 'peak', subject: { lat, lon }, zone, date, minute, instant,
+                dateSource: 'Selected date', timeSource: 'Selected time', mapBearing: 0, theme: document.documentElement.dataset.bpbTheme,
+                result: sunPosition.calculate({ lat, lon, zone, date, ms: instant.ms }) });
+        };
+        globalThis.__renderSun(63, '2026-12-24');
+    });
+    await page.waitForFunction(() => document.querySelector('.bpb-sun-calculator__toggle').getAttribute('aria-expanded') === 'true');
+    await page.locator('.bpb-sun-calculator__moon-events-text').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => document.querySelector('.bpb-sun-calculator__moon-events-text').textContent.includes('2026-12-22'));
+    await capture(page, `${variant.name}-sun-distant-date`);
+    await page.evaluate(() => globalThis.__renderSun(66, '2026-12-23'));
+    await page.waitForFunction(() => document.querySelector('.bpb-sun-calculator__moon-events-text').textContent.includes('above the level horizon all day'));
+    await capture(page, `${variant.name}-sun-all-day`);
+}
 async function gpxSourceCase(page, origin, variant) {
     await page.goto(`${origin}/dist/photos/guide.html`);
     await page.evaluate(({ theme }) => {
@@ -1261,7 +1293,7 @@ async function reportCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-report-feedback`);
 }
-const cases = { 'photo-report-edit': (page, origin, variant) => verifyPhotoReportEdit(page, origin, variant, { capture }), popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, 'photo-backup': photoBackupCase, weather: weatherCase,
+const cases = { sun: sunCase, 'photo-report-edit': (page, origin, variant) => verifyPhotoReportEdit(page, origin, variant, { capture }), popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, 'settings-actions': (page, origin, variant) => verifySettingsActions(page, origin, variant, { capture }), photos: photoCase, 'photo-backup': photoBackupCase, weather: weatherCase,
     'climber-files': (page, origin, variant) => verifyClimberFiles(page, origin, variant, { capture }),
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'ascent-columns': (page, origin, variant) => verifyAscentColumnWidths(page, origin, variant, { asset, capture }),

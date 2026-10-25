@@ -41,7 +41,8 @@ function dateRelation(value, zone, date) {
     return Object.freeze({
         ms,
         date: eventDate,
-        dayRelation: eventDate === date ? 'same-day' : eventDate < date ? 'previous-day' : 'next-day',
+        dayRelation: eventDate === date ? 'same-day' : eventDate === shiftedCivilDate(date, -1) ? 'previous-day'
+            : eventDate === shiftedCivilDate(date, 1) ? 'next-day' : eventDate < date ? 'earlier-day' : 'later-day',
     });
 }
 
@@ -200,6 +201,9 @@ function calculateMoonEvents({ lat, lon, date, zone, noonMs, sunCalc }) {
         riseMs = null;
     }
 
+    if (candidates.some(interval => interval.riseMs <= dayStart.ms && interval.setMs >= dayEnd.ms)) return {
+        ...unavailableMoonEvents(), moonVisibilitySelection: 'active', moonVisibilityState: 'always-up',
+    };
     candidates.sort((a, b) => a.riseMs - b.riseMs);
     const intervals = [];
     for (const candidate of candidates) {
