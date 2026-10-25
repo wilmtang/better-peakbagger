@@ -11,12 +11,13 @@
   cloud usage and cross-card/page cache work remain open in its ledger.
 
 - [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
-  — R2/Worker free-tier budgets, measured small-sample PMTiles sizes and a
-  proposed hosting path; full US size and live Cloudflare behavior remain unverified.
+  — conversion code, actual national-layer sizes and a rendered raw-polygon/H3
+  comparison; local batch stopped at 122/460 sources, then resumed on build-host.
+  Full US size, production settings and live Cloudflare behavior remain unverified.
 
 - [Cell coverage in-browser feasibility experiment](experiments/fcc-browser-coverage/README.md)
   — bounded FCC-derived sample decoded and rendered in hidden Chrome/Firefox;
-  direct FCC download access and full-state performance remain unverified.
+  later authenticated downloads and national-layer rendering are linked in the plan.
   Records authentication requirements, parser compatibility, timings and proof gaps.
 
 - [Wildfire map overlay](wildfire-map-overlay.md)

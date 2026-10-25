@@ -1,5 +1,14 @@
 # FCC coverage in the browser: feasibility experiment
 
+**October 25 follow-up:** authenticated FCC downloads, a stopped full-source
+conversion, one verified national T-Mobile LTE archive, and the corrected
+Snoqualmie Pass comparison are documented in the
+[coverage storage plan](../../cell-coverage-cloudflare-hosting.md), with
+[conversion code](full-conversion/README.md) and
+[comparison code and images](comparison/README.md). The findings below record
+the earlier bounded feasibility experiment; its anonymous-access failure does
+not describe the later authenticated run. Conversion remains stopped.
+
 October 24, 2026. **Browser-side processing and viewport rendering worked for a
 small real-data sample. Direct FCC bulk downloading and full-state performance
 remain unverified.** No extension runtime, dependency manifest, permission,

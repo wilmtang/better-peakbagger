@@ -1,0 +1,11 @@
+.secrets/
+.venv/
+__pycache__/
+data/
+work/
+tiles/
+metadata/
+verification/
+tools/
+*.pmtiles
+*.log

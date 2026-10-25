@@ -1,0 +1,61 @@
+{
+  "publicTileUrl": "https://raw.githubusercontent.com/wispiANt/cell-site-atlas-tiles/28f72437259d20268dd89a0686a05c0c0b507a19/fcc-coverage/tiles/coverage-lte-r8-att-0.pmtiles",
+  "tile": [
+    8,
+    41,
+    89
+  ],
+  "extent": 4096,
+  "sourceLayerFields": [
+    "dbm"
+  ],
+  "h3GeometrySamples": [
+    {
+      "bestResolution": 8,
+      "distancesInTileUnits": {
+        "6": 213.529,
+        "7": 34.57,
+        "8": 0.564,
+        "9": 13.635
+      }
+    },
+    {
+      "bestResolution": 8,
+      "distancesInTileUnits": {
+        "6": 226.969,
+        "7": 67.096,
+        "8": 0.542,
+        "9": 13.625
+      }
+    },
+    {
+      "bestResolution": 8,
+      "distancesInTileUnits": {
+        "6": 196.921,
+        "7": 34.695,
+        "8": 0.588,
+        "9": 13.34
+      }
+    },
+    {
+      "bestResolution": 8,
+      "distancesInTileUnits": {
+        "6": 121.357,
+        "7": 34.62,
+        "8": 0.572,
+        "9": 13.67
+      }
+    },
+    {
+      "bestResolution": 8,
+      "distancesInTileUnits": {
+        "6": 212.448,
+        "7": 63.943,
+        "8": 0.628,
+        "9": 13.94
+      }
+    }
+  ],
+  "h3Res8AverageAreaKm2": 0.7373275975944177,
+  "h3Res8AverageEdgeMeters": 531.41401
+}

@@ -1,0 +1,14 @@
+certifi==2026.10.23
+cffi==2.1.1
+curl_cffi==0.16.3
+h3==4.5.0
+mapbox-vector-tile==2.2.0
+numpy==2.5.4
+packaging==26.3
+pmtiles==3.8.1
+protobuf==6.33.6
+pyarrow==26.0.0
+pyclipper==1.4.0
+pycparser==3.12
+pyogrio==0.13.0
+shapely==2.2.0

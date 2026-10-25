@@ -1,0 +1,78 @@
+{
+  "status": "partial",
+  "method": "isolated headless Chrome for Testing",
+  "browser": "156.0.8078.4",
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+  "viewport": {
+    "width": 960,
+    "height": 640
+  },
+  "pmtilesVersion": "4.5.0",
+  "maplibreVersion": "6.13.0",
+  "scope": "Generated national PMTiles via local HTTPS range server; no extension integration or external basemap",
+  "archives": [
+    {
+      "provider": "tmobile",
+      "variant": "lte",
+      "path": "tiles/tmobile-lte-2025-12-31.pmtiles",
+      "cases": [
+        {
+          "state": "Washington",
+          "point": [
+            -122.32718549999996,
+            45.97004350000006
+          ],
+          "properties": {
+            "frn": "0006945950",
+            "providerid": 130403,
+            "brandname": "T-Mobile",
+            "technology": 400,
+            "mindown": 5,
+            "minup": 1,
+            "minsignal": -110,
+            "environmnt": 0
+          },
+          "renderedSourceMatch": true
+        },
+        {
+          "state": "California",
+          "point": [
+            -122.28631199999995,
+            39.716638500000045
+          ],
+          "properties": {
+            "frn": "0006945950",
+            "providerid": 130403,
+            "brandname": "T-Mobile",
+            "technology": 400,
+            "mindown": 5,
+            "minup": 1,
+            "minsignal": -110,
+            "environmnt": 0
+          },
+          "renderedSourceMatch": true
+        },
+        {
+          "state": "New York",
+          "point": [
+            -73.52935199999996,
+            42.11519000000004
+          ],
+          "properties": {
+            "frn": "0006945950",
+            "providerid": 130403,
+            "brandname": "T-Mobile",
+            "technology": 400,
+            "mindown": 5,
+            "minup": 1,
+            "minsignal": -110,
+            "environmnt": 0
+          },
+          "renderedSourceMatch": true
+        }
+      ],
+      "rangeRequests": 22,
+      "requestedBytes": 123039
+    }
+  ]
+}

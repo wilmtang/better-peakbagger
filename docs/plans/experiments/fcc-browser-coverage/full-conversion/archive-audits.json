@@ -1,0 +1,61 @@
+[
+  {
+    "provider": "tmobile",
+    "variant": "lte",
+    "path": "tiles/tmobile-lte-2025-12-31.pmtiles",
+    "bytes": 3315322831,
+    "sha256": "5c47d29bf4e4709060c6c6f704cf3dd80baa10137a6440c146e3821116296318",
+    "sha256Verified": true,
+    "allTileGzipChecksumsVerified": true,
+    "uniqueTilePayloads": 177217,
+    "decompressedBytes": 8167048636,
+    "byZoom": {
+      "4": {
+        "addressedTiles": 13,
+        "storedPayloadBytes": 33312826,
+        "maximumTileBytes": 10058011
+      },
+      "5": {
+        "addressedTiles": 24,
+        "storedPayloadBytes": 87085910,
+        "maximumTileBytes": 13726587
+      },
+      "6": {
+        "addressedTiles": 63,
+        "storedPayloadBytes": 214980707,
+        "maximumTileBytes": 9675132
+      },
+      "7": {
+        "addressedTiles": 193,
+        "storedPayloadBytes": 405983002,
+        "maximumTileBytes": 5023585
+      },
+      "8": {
+        "addressedTiles": 658,
+        "storedPayloadBytes": 460398988,
+        "maximumTileBytes": 1557068
+      },
+      "9": {
+        "addressedTiles": 2391,
+        "storedPayloadBytes": 476600840,
+        "maximumTileBytes": 459153
+      },
+      "10": {
+        "addressedTiles": 9021,
+        "storedPayloadBytes": 489980008,
+        "maximumTileBytes": 136601
+      },
+      "11": {
+        "addressedTiles": 34236,
+        "storedPayloadBytes": 511836984,
+        "maximumTileBytes": 40858
+      },
+      "12": {
+        "addressedTiles": 130629,
+        "storedPayloadBytes": 634772626,
+        "maximumTileBytes": 16926
+      }
+    },
+    "seconds": 15.59
+  }
+]

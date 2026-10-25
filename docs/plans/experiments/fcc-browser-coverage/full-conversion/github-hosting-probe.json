@@ -1,0 +1,83 @@
+{
+  "method": "Chrome background-tab cross-origin fetch, credentials omitted",
+  "origin": "null",
+  "range": "bytes=0-16383",
+  "raw": {
+    "url": "https://raw.githubusercontent.com/wispiANt/cell-site-atlas-tiles/28f72437259d20268dd89a0686a05c0c0b507a19/fcc-coverage/tiles/coverage-lte-r8-att-0.pmtiles",
+    "browserStatus": 206,
+    "bytesRead": 16384,
+    "magic": "PMTiles",
+    "corsReadable": true
+  },
+  "release": {
+    "url": "https://github.com/shiwaku/mlit-urban-planning-converter/releases/download/data-20260707/youto.pmtiles",
+    "browserError": "TypeError: Failed to fetch",
+    "consoleReason": "No Access-Control-Allow-Origin header",
+    "httpStatus": 206,
+    "contentRange": "bytes 0-16383/64274811",
+    "corsReadable": false
+  },
+  "checkedDate": "2026-10-25",
+  "recordedAt": "2026-10-25T06:30:09.152827+00:00",
+  "pmtilesBrowserReader": {
+    "version": "4.5.0",
+    "source": "GitHub raw URL above",
+    "headerZoomRange": [
+      3,
+      10
+    ],
+    "fields": {
+      "dbm": "Number"
+    },
+    "tileCoordinates": [
+      [
+        8,
+        41,
+        89
+      ],
+      [
+        8,
+        41,
+        95
+      ],
+      [
+        8,
+        41,
+        89
+      ]
+    ],
+    "decodedTileBytes": [
+      86299,
+      46944,
+      86299
+    ],
+    "requests": [
+      {
+        "range": "bytes=0-16383",
+        "status": 206,
+        "bytes": 16384
+      },
+      {
+        "range": "bytes=6540-6938",
+        "status": 206,
+        "bytes": 399
+      },
+      {
+        "range": "bytes=7892993-7920342",
+        "status": 206,
+        "bytes": 27350
+      },
+      {
+        "range": "bytes=8693027-8707954",
+        "status": 206,
+        "bytes": 14928
+      },
+      {
+        "range": "bytes=7892993-7920342",
+        "status": 206,
+        "bytes": 27350
+      }
+    ],
+    "verificationScope": "Browser index and tile-byte retrieval; no rendered map inspection"
+  }
+}
