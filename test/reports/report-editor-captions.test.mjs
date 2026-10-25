@@ -140,7 +140,7 @@ test('typing Markdown delimiters in captions preserves literal text', async () =
         modeButton(dom.window.document, 'Markdown').click();
         modeButton(dom.window.document, 'Rich text').click();
         assert.equal(ui.querySelector('figcaption').textContent, literal);
-        assert.equal(ui.querySelector('img').getAttribute('alt'), 'Rocky ridge');
+        assert.equal(ui.querySelector('.bpb-re-image-resize img').getAttribute('alt'), 'Rocky ridge');
     } finally { dom.window.close(); }
 });
 
@@ -156,7 +156,7 @@ test('adding, typing, undoing and removing a caption preserves the photo and sur
         assert.equal(captionButton(ui, 'Edit caption').getAttribute('aria-label'), 'Edit caption');
         editor.commands.insertContent('North ridge');
         assert.equal(ui.querySelector('figcaption').textContent, 'North ridge');
-        assert.equal(ui.querySelector('img').getAttribute('alt'), 'Rocky ridge');
+        assert.equal(ui.querySelector('.bpb-re-image-resize img').getAttribute('alt'), 'Rocky ridge');
         assert.equal(saved(dom), `[b]Before[/b]\n\n${figure}\n\n[i]After[/i]`);
         modeButton(dom.window.document, 'Rich text').click();
         selectImage(editors(dom).rich);
