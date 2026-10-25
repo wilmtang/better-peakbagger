@@ -1,6 +1,6 @@
 # Server repository boundary
 
-The independent local server repository is `~/Dev/better-peakbagger-server`.
+The independent local server repository is `~/Dev/map-server`.
 It has its own Git history, dependency lockfile, setup instructions and tests.
 No GitHub repository or remote was created by this extraction.
 
@@ -29,9 +29,9 @@ pointer and the [coverage plan](plans/cell-coverage-cloudflare-hosting.md) keeps
 client integration requirements.
 
 In the server checkout, `full-conversion/README.md` is the runbook,
-`~/Dev/better-peakbagger-server/docs/research.md` contains the complete hosting investigation, and
+`~/Dev/map-server/docs/research.md` contains the complete hosting investigation, and
 `comparison/README.md` contains the rendered comparison. The provenance record
-is `~/Dev/better-peakbagger-server/docs/ownership-transfer.json`. Unqualified paths are server-relative. The two
+is `~/Dev/map-server/docs/ownership-transfer.json`. Unqualified paths are server-relative. The two
 repositories are not automatically synchronized; new backend work belongs in
 the server repository, with no executable copy maintained here.
 
@@ -51,6 +51,6 @@ paid resource was part of creating the local server repository.
 Private host identifiers were removed from the local histories of both
 repositories. Current provenance records use rewritten commit IDs; the mapping
 for earlier references is in
-`~/Dev/better-peakbagger-server/docs/history-redaction.json`. Tracked host names
+`~/Dev/map-server/docs/history-redaction.json`. Tracked host names
 are documentation placeholders. Live SSH configuration and VPS services remain
 unchanged, and no GitHub refs were rewritten.

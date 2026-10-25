@@ -23,7 +23,7 @@
   Full US size, production rendering and live Cloudflare behavior remain unverified.
 
 - [FCC tooling migration pointer](experiments/fcc-browser-coverage/README.md)
-  — executable experiments and their evidence moved to better-peakbagger-server;
+  — executable experiments and their evidence moved to map-server;
   this directory retains a pointer to the maintained server checkout.
 
 - [Wildfire map overlay](wildfire-map-overlay.md)

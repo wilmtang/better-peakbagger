@@ -1,17 +1,17 @@
 # FCC cell coverage: server ownership and extension integration
 
 The FCC download, conversion, delivery-compaction and verification pipeline is
-maintained in the independent **`~/Dev/better-peakbagger-server`** repository.
+maintained in the independent **`~/Dev/map-server`** repository.
 See the [server repository boundary](../server-repository.md).
 
 The complete hosting investigation, measured sizes, conversion policy, proof
 limits and rendered comparison moved with the tooling:
 
-- `~/Dev/better-peakbagger-server/docs/research.md`: the full research and hosting report.
+- `~/Dev/map-server/docs/research.md`: the full research and hosting report.
 - `full-conversion/README.md`: conversion and VPS runbook.
 - `full-conversion/compaction-deployment.json`: deployed-policy and benchmark evidence.
 - `comparison/README.md`: Snoqualmie Pass comparison and reproduction.
-- `~/Dev/better-peakbagger-server/docs/ownership-transfer.json`: source-path and checksum provenance.
+- `~/Dev/map-server/docs/ownership-transfer.json`: source-path and checksum provenance.
 
 Unqualified paths above are relative to the server checkout. The server currently has no
 configured Git remote. Earlier versions remain in this repository's Git history;

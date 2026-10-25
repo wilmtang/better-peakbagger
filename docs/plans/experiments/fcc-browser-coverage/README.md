@@ -2,7 +2,7 @@
 
 The executable FCC experiments, downloader, conversion pipeline, delivery
 compaction, systemd templates, tests, receipts and rendered comparison now live
-in the independent `~/Dev/better-peakbagger-server` checkout.
+in the independent `~/Dev/map-server` checkout.
 
 - `full-conversion/README.md`: conversion, compaction and VPS operations.
 - `comparison/README.md`: the rendered FCC polygon versus H3 comparison.
