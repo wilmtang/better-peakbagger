@@ -128,7 +128,8 @@ page snapshot. It needs an opaque initiating-map handle and typed preview replie
 ### Stable feedback and accessibility
 
 Use compact states: **Loading**, **Partly loaded**, **Lower detail**, **Zoom in**,
-**Outside bounds**, **No data returned**, **Couldn't load** and **Source too large**.
+**Outside bounds**, **No data returned**, **Check URL / CORS**, **Couldn't load**
+and **Source too large**.
 Successful empty data means only that the provider returned no features/pixels,
 not that a location is safe or a dataset has complete coverage.
 
@@ -168,10 +169,74 @@ must identify the tested mode; checking 3D may occur only after existing consent
 Existing unrelated host grants must not become a recovery path. Test a clean
 profile and one with BC/transfer grants to catch accidental dependence on them.
 
-Browsers often report CORS, DNS and TLS failures as the same fetch error. Say
-**Couldn't access this source** with a concise troubleshooting link; do not
-claim a diagnosed CORS error unless available evidence establishes it. Explain
-that the provider must allow browser access and that BPB supplies no proxy.
+### CORS and source-configuration error prompts
+
+A source that cannot be accessed must produce an explicit, actionable prompt
+after **Preview**, enablement or Reload. Do not leave a blank map, a permanent
+spinner or a generic failure that never mentions CORS. This applies to raster
+tiles, TileJSON, MVT and GeoJSON, including cases where metadata succeeds but
+the tile endpoint is configured differently.
+
+Browsers do not expose the detailed reason for a failed CORS request to ordinary
+JavaScript; the browser's developer console has the useful diagnosis. A rejected
+fetch can also mean DNS, TLS, blocking software or another transport problem.
+Therefore the normal runtime prompt explicitly mentions **possible CORS
+misconfiguration** without asserting a confirmed cause:
+
+> **Couldn't load this source**
+>
+> Check the URL and the provider's CORS settings. The source must allow browser
+> access from this map.
+
+In the editor, place that feedback below the URL/preview result with
+`aria-describedby`; in the Overlays menu show **Check URL / CORS** and the same
+explanation in the expanded detail. Include the affected provider host, resource
+kind (metadata, raster tile, vector tile or GeoJSON) and tested mode (2D or 3D),
+without a query string or key. If only part of an overlay failed, retain
+**Partly loaded** and put the URL/CORS guidance in its detail.
+
+Offer **How to fix**, **Edit source** and **Retry** as appropriate to the owning
+surface. The inline prompt remains readable until dismissed or replaced by a
+new result; it is not a transient toast or a blocking alert repeated per tile.
+Opening the detail/help does not fetch again, move the camera or steal focus.
+Reserve its feedback area so asynchronous failure does not move the active
+Preview/Retry control. Announce the aggregate failure once through the existing
+status region, without treating every failed tile as another announcement.
+
+**How to fix** expands concise guidance:
+
+1. Check the URL template, HTTPS endpoint, selected format and native zoom range.
+2. For a public source, configure its server to return the appropriate
+   `Access-Control-Allow-Origin` response header. `*` supports these anonymous
+   public requests across both map origins; a restrictive configuration must
+   allow the actual requesting origin. Metadata and tile endpoints both need
+   compatible headers, including any relevant error responses. BPB cannot add
+   that permission from its client, and offers no proxy or permission fallback.
+3. If the user does not control the server, use the provider's browser-compatible
+   endpoint or contact the provider. Opening the image URL successfully does not
+   establish CORS compatibility. Link to the browser-console troubleshooting
+   guide for the exact blocked request/reason; never request a token-bearing URL
+   or raw console dump for diagnostics.
+
+The ordinary fetch path cannot reliably produce a **Blocked by CORS** diagnosis.
+Use that stronger wording only if a future trusted diagnostic surface actually
+supplies a specific browser reason; do not infer it from `TypeError`, a response
+status of zero, an unreadable header or successful image embedding. A successful
+2D load also cannot clear an unresolved 3D-origin error, or the reverse.
+
+Malformed input remains an inline field-validation error before requests.
+Readable HTTP 401/403, 404/410, 429, invalid payloads and oversized sources keep
+their specific handling rather than all becoming CORS errors. An ambiguous
+fetch rejection pauses that source's pending batch and asks for explicit Retry;
+it is an exception to automatic transient retry, preventing a misconfigured
+source from generating repeated requests/prompts. Known retryable HTTP failures
+retain the existing bounded retry policy. Abort/obsolete completions are silent.
+
+Retry replaces the prompt with pending feedback and clears the error only when
+the relevant data actually validates and renders; a sent request, successful
+metadata read or saved definition is insufficient. Saving a source after a
+failed Preview remains allowed, but preserves the failed/unchecked result and
+does not silently enable it.
 
 ### URLs, metadata and credentials
 
@@ -518,6 +583,7 @@ has visual proof; those are implementation gates.
 | --- | --- |
 | Pure schema/storage | Unknown IDs/types, hostile URLs, query preservation, malformed/deep JSON, oversized metadata, duplicate IDs, stale editors, failed startup/storage, serialized writes and corrupt-record preservation |
 | Direct requests | CORS success and denial from actual Peakbagger and extension origins; no new permission/proxy/worker fetch; credentials/referrers absent; redirects rejected; metadata cannot silently add a host |
+| CORS/configuration prompts | Denied metadata and denied tiles after successful metadata; raster/MVT/GeoJSON; mode-specific and partial failures; visible URL/CORS help, Edit/Retry and one accessible announcement; generic fetch rejection does not falsely claim confirmed CORS, repeat requests or become empty data; known HTTP errors retain their specific copy |
 | Tile selection | Both raster sizes, fractional zoom, maximum overzoom, below-minimum silence, TMS rows, equal-view 2D/3D canonical coordinates, bounds and antimeridian copies |
 | Missing tiles | 404/410 parent crop/clip, two-level stop, shared-parent deduplication, no fallback on 200-transparent/empty, auth/rate limits/network/invalid data, truthful lower-detail/partial status |
 | Vector correctness | Real packaged parser plus real Leaflet/MapLibre; MVT layer IDs, missing/empty sublayers, polygon holes, buffered tile seams, overzoom stroke widths, Multi* data and shared opacity/style ordering |
@@ -597,6 +663,10 @@ Documentation-only validation for this proposal is recorded below separately.
 - [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS) and
   [WebGL textures](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Using_textures_in_WebGL#cross-domain_textures)
   — why ordinary image display is insufficient for these rendering paths.
+- [CORS error diagnosis](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS/Errors)
+  and [missing Allow-Origin header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS/Errors/CORSMissingAllowOrigin)
+  — browser-console troubleshooting, JavaScript diagnosis limits and public-source
+  server configuration for the inline error guidance.
 - [Gaia's historical overzoom explanation](https://www.reddit.com/r/GaiaGPS/comments/io8zu4)
   — September 2020 firsthand explanation of lower-resolution fallback and the
   blank-successful-tile exception; not a test of today's Gaia implementation.
