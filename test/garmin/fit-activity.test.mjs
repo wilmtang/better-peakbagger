@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
-import { fixtures, matches } from '../../docs/plans/experiments/fit-decoders/fixtures.mjs';
+import { fixtures, matches, crc } from '../../docs/plans/experiments/fit-decoders/fixtures.mjs';
 import { readFitMessages } from '../../src/garmin/fit-message-reader.js';
 import { projectRaw } from '../../docs/plans/experiments/fit-decoders/projection.mjs';
 import { decodeFitActivity, decodeGarminRecording } from '../../src/garmin/fit-activity.js';
@@ -65,4 +65,48 @@ test('FIT course points retain only permitted waypoint fields and respect opt-ou
     assert.deepEqual(decodeFitActivity(bytes).waypoints, [{ lat: 0, lon: 0, name: 'Peak' }]);
     assert.deepEqual(decodeFitActivity(bytes, { retainWaypoints: false }).waypoints, []);
     assert.equal(decodeFitActivity(bytes).segments.flat().length, 1, 'Course points do not become track points');
+});
+
+const reframe = body => {
+    const source = fixtures().find(f => f.name === 'ordinary-enhanced-altitude').bytes;
+    const out = new Uint8Array(source[0] + body.length + 2); out.set(source.subarray(0, source[0])); out.set(body, source[0]);
+    const view = new DataView(out.buffer); view.setUint32(4, body.length, true);
+    view.setUint16(12, crc(out.subarray(0, 12)), true);
+    view.setUint16(out.length - 2, crc(out.subarray(0, -2)), true); return out;
+};
+test('activity projection requires a file_id even when record geometry and CRCs are valid', () => {
+    const source = fixtures().find(f => f.name === 'ordinary-enhanced-altitude').bytes;
+    // Independent fixture starts with the 9-byte file_id definition and 2-byte data.
+    assert.throws(() => decodeFitActivity(reframe(source.subarray(source[0] + 11, -2))), /damaged/);
+});
+test('compressed waypoint timestamps do not discard an otherwise valid activity', () => {
+    const source = fixtures().find(f => f.name === 'ordinary-enhanced-altitude').bytes;
+    const waypoint = [0x41, 0, 0, 32, 0, 3, 2, 4, 0x85, 3, 4, 0x85, 6, 6, 7,
+        0xa1, 0, 0, 0, 0, 0, 0, 0, 0, 80, 101, 97, 107, 0, 0];
+    const bytes = reframe(Uint8Array.from([...source.subarray(source[0], -2), ...waypoint]));
+    const result = decodeFitActivity(bytes);
+    assert.equal(result.segments.flat().length, 1);
+    assert.deepEqual(result.waypoints, [{ lat: 0, lon: 0, name: 'Peak' }]);
+    assert.deepEqual(decodeFitActivity(bytes, { retainWaypoints: false }).waypoints, []);
+});
+test('cancellation during ZIP inflation preserves the caller abort reason', async () => {
+    const fixture = fixtures().find(f => f.name === 'ordinary-enhanced-altitude');
+    const zip = new JSZip(); zip.file('activity.fit', fixture.bytes);
+    const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+    const controller = new AbortController(), reason = new DOMException('Import cancelled', 'AbortError');
+    const load = JSZip.loadAsync; let chunks = 0;
+    JSZip.loadAsync = async (...args) => {
+        const archive = await load(...args), entry = archive.files['activity.fit'];
+        const internalStream = entry.internalStream.bind(entry);
+        entry.internalStream = (...options) => {
+            const stream = internalStream(...options);
+            stream.on('data', () => { chunks++; controller.abort(reason); });
+            return stream;
+        };
+        return archive;
+    };
+    try {
+        await assert.rejects(decodeGarminRecording(bytes, { signal: controller.signal }), error => error === reason);
+        assert.equal(chunks, 1, 'Cancellation occurs after actual decompression starts');
+    } finally { JSZip.loadAsync = load; }
 });

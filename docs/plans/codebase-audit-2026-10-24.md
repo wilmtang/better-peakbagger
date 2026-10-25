@@ -206,6 +206,11 @@ Independent commits for drag ownership and report/observer surfaces:
   Reviewed live gate passed; production audit has zero vulnerabilities. The same
   exact development-only node-forge exception expires October 31 at 07:00 UTC.
 
+- F8: activity file identity is mandatory, compressed waypoint timestamps are
+  ignored safely, and ZIP cancellation preserves its reason. All three new
+  regressions failed against the prior implementation; 31 FIT/CSP tests and
+  focused ESLint passed after the fix.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

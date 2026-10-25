@@ -25,17 +25,19 @@ const scalar = (message, number, type, width, signed = false) => {
 // segment. Multisport recordings require explicit per-session handling first.
 export function decodeFitActivity(bytes, { retainWaypoints = true } = {}) {
     const waypoints = [];
-    const segments = []; let segment = []; let count = 0; let sessions = 0; let activities = 0;
+    const segments = []; let segment = []; let count = 0; let sessions = 0; let activities = 0; let activityFile = false;
     const flush = () => { if (segment.length) segments.push(segment); segment = []; };
     readFitMessages(bytes, { maxInputBytes: FIT_MAX_BYTES, messageNumbers: Object.keys(fields).map(Number), fields,
         onMessage(message) {
             const n = message.globalMessageNumber;
-            if (n === 0 && scalar(message, 0, 0, 1) !== 4) throw failure();
+            if (n === 0) {
+                if (scalar(message, 0, 0, 1) !== 4) throw failure();
+                activityFile = true;
+            }
             if (n === 18) { if (++sessions > 1) throw new Error('Multisport recordings are not supported. Import each activity separately as GPX.'); flush(); }
             if (n === 34 && ++activities > 1) throw failure();
             if (n === 21 && scalar(message, 0, 0, 1) === 0) flush();
             if (retainWaypoints && n === 32) {
-                if (message.compressedTimestamp !== undefined) throw failure();
                 const lat = scalar(message, 2, 5, 4, true), lon = scalar(message, 3, 5, 4, true);
                 if (lat !== null && lon !== null && Math.abs(lat * 180 / 2 ** 31) <= 90 && Math.abs(lon * 180 / 2 ** 31) <= 180) {
                     if (waypoints.length >= MAX_GPX_WAYPOINTS) throw new Error('This recording has too many waypoints. Disable retained waypoints or use a smaller GPX.');
@@ -54,6 +56,7 @@ export function decodeFitActivity(bytes, { retainWaypoints = true } = {}) {
                 time: message.timestamp === undefined ? null : fitTimestampToUnixMilliseconds(message.timestamp) });
             if (segments.length >= MAX_GPX_TRACK_SEGMENTS) throw new Error('This recording has too many separate route segments.');
         } });
+    if (!activityFile) throw failure();
     flush();
     return { segments, waypoints };
 }
@@ -73,6 +76,7 @@ export async function decodeGarminRecording(bytes, { signal, retainWaypoints = t
         || view.getUint16(end + 6, true) !== 0 || view.getUint16(end + 10, true) > 4
         || end + 22 + view.getUint16(end + 20, true) !== bytes.length) throw failure();
     const zip = await JSZip.loadAsync(bytes);
+    signal?.throwIfAborted();
     const entries = Object.values(zip.files).filter(entry => !entry.dir);
     if (entries.length !== 1 || !/\.fit$/i.test(entries[0].name)) throw new Error('This activity does not contain one supported FIT recording. Use Garmin’s GPX export instead.');
     const entry = entries[0];
@@ -80,7 +84,7 @@ export async function decodeGarminRecording(bytes, { signal, retainWaypoints = t
     const chunks = []; let size = 0; let crc = 0xffffffff;
     await new Promise((resolve, reject) => {
         const stream = entry.internalStream('uint8array');
-        const abort = () => { stream.pause(); signal?.removeEventListener('abort', abort); reject(failure()); };
+        const abort = () => { stream.pause(); signal?.removeEventListener('abort', abort); reject(signal?.aborted ? signal.reason : failure()); };
         signal?.addEventListener('abort', abort, { once: true });
         stream.on('data', chunk => {
             size += chunk.length;
