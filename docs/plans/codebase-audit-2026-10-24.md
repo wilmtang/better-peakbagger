@@ -216,6 +216,11 @@ Independent commits for drag ownership and report/observer surfaces:
   The new regression failed before the fix; 10 account/page tests, focused
   ESLint and hidden real-extension Chrome verification passed.
 
+- F5: provisional blank tabs no longer authorize injection; completed login
+  redirects still return recovery. The blank-tab regression failed before the
+  fix; 19 provider route tests, focused ESLint and hidden Chrome extension
+  verification passed. Live provider navigation remains unproven.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

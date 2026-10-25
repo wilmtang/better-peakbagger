@@ -30,7 +30,7 @@ export function createGpxHandoffRoutes({
         let tab;
         do {
             tab = await ext.tabs.get(tabId);
-            if (tab?.status === 'complete') return tab;
+            if (tab?.status === 'complete' && tab.url && tab.url !== 'about:blank') return tab;
             await new Promise(resolve => setTimeout(resolve, 100));
         } while (Date.now() < deadline);
         throw new Error(`${provider.name} did not finish loading.`);

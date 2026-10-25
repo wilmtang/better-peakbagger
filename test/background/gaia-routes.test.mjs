@@ -129,3 +129,18 @@ test('an uncertain executeScript failure suppresses blind retry', async () => {
     assert.equal(result.code, 'handoff-unconfirmed');
     assert.equal(result.targetTabId, 20);
 });
+
+test('handoff waits past a provisional complete blank tab before injecting', async () => {
+    const h = harness(); const get = h.ext.tabs.get; let reads = 0;
+    h.ext.tabs.get = async id => ++reads === 1 ? { id, status: 'complete', url: 'about:blank' } : get(id);
+    const result = await h.routes.handlers.GAIA_IMPORT_PREPARE(message, sender);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(reads, 2); assert.equal(h.injections.length, 1);
+});
+test('completed login redirects return recovery without waiting for the import URL', async () => {
+    const h = harness();
+    h.ext.tabs.get = async id => ({ id, windowId: 9, status: 'complete', url: 'https://www.gaiagps.com/login/' });
+    const result = await h.routes.handlers.GAIA_IMPORT_PREPARE(message, sender);
+    assert.equal(result.ok, false); assert.equal(h.injections.length, 0);
+    assert.equal(result.targetTabId, 20);
+});
