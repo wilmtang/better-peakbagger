@@ -1035,7 +1035,14 @@ async function mapCase(page, origin, variant) {
             await page.locator(retry).blur();
             assert.equal(await page.locator(retry).isVisible(), false, 'completion is not a clickable placeholder');
             if (id === 'sentinel') {
-                const select = page.locator(`${detail} select`), before = await geometry(page, `${detail} select`);
+                const select = page.locator(`${detail} select`);
+                // Firefox exposes the native select by scrolling its tall menu.
+                // That requested navigation precedes the capture transaction;
+                // preserve native page geometry, then measure the settled field.
+                await select.scrollIntoViewIfNeeded(); await select.focus();
+                for (const index of [0, 5, 6, 7]) stable(baseline[index], await geometry(page, selectors[index]), 'capture navigation preserves native content');
+                baseline = await Promise.all(selectors.map(selector => geometry(page, selector)));
+                const before = await geometry(page, `${detail} select`);
                 await select.selectOption('older'); await anchored('capture selection');
                 stable(before, await geometry(page, `${detail} select`), 'capture picker');
                 assert.equal(await select.locator('option').count(), 2);
