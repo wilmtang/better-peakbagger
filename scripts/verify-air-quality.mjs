@@ -3,12 +3,13 @@
 /* global document, window */
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { waitForCondition } from './browser-verification-fixtures.mjs';
 import { mkdir } from 'node:fs/promises';
 export async function verifyAirQuality({ origin, evaluate, navigate, click, press, resize, setZoom, setSettings, wait, setMode, release, evidence, networkErrors, screenshotPage, firefoxMode }) {
     const output = process.env.BPB_VERIFY_AQI_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const count = () => evidence.filter(request => request.host === 'air-quality-api.open-meteo.com').length;
-    await setSettings({ showWeather: true, theme: 'light' });
+    await setSettings({ showWeather: true, showSummitCloud: false, theme: 'light' });
     await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map`);
     await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start' }));
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'weather ready before AQI activation');
@@ -31,7 +32,7 @@ export async function verifyAirQuality({ origin, evaluate, navigate, click, pres
     };
     const cases = [];
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) for (const zoom of [1, 2]) {
-        await setZoom(1); await resize(width, 1100); await setSettings({ theme }); await setZoom(zoom);
+        await setZoom(1); await resize(width, 1100); await setSettings({ theme, showSummitCloud: false }); await setZoom(zoom);
         await wait(() => {
             const button = document.querySelector('[aria-label="Refresh air quality"]');
             button.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -69,6 +70,20 @@ export async function verifyAirQuality({ origin, evaluate, navigate, click, pres
         cases.push({ width, theme, zoom, states: ['ready', 'pending', 'success', 'error', 'keyboard-retry'] });
     }
     const loaded = count(); await click('[data-period="forecast"]'); await click('[data-period="aqi"]'); assert.equal(count(), loaded, 'returning tab reuses memory');
+    setMode('aqi-weather-error');
+    await evaluate(() => window.postMessage({ __bpbPeakWeather: true, type: 'select', latitude: 46.8, longitude: -121.7, x: 100, y: 100 }, window.location.origin));
+    await waitForCondition(() => evaluate(() => ({
+        weatherBusy: document.querySelector('#bpb-peak-weather').getAttribute('aria-busy'),
+        status: document.querySelector('.bpb-week-status').textContent,
+        aqiBusy: document.querySelector('#bpb-peak-weather-air').getAttribute('aria-busy'),
+        location: document.querySelector('.bpb-week-location-name').textContent,
+    })), { description: 'independent AQI success with failed location weather', timeoutMs: 20000,
+        isReady: state => state.weatherBusy === 'false' && state.status.includes('Could not load') && state.aqiBusy === 'false' });
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-location-name').textContent), '46.8000, -121.7000');
+    await click('[data-period="forecast"]');
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-location-name').textContent), 'At the summit');
+    await click('[data-period="aqi"]');
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-location-name').textContent), '46.8000, -121.7000');
     assert.equal(cases.length, 8); assert.deepEqual(networkErrors, []);
     return { cases, requests: count(), screenshots: output || null };
 }

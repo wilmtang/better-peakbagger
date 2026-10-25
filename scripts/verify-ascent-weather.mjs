@@ -122,7 +122,7 @@ try {
         if (mode === 'negative-precipitation') for (const [key, values] of Object.entries(replyBody.hourly)) {
             if (key === 'precipitation' || key === 'precipitation_meteofrance_arpege_world') values[45] = -0.1;
         }
-        return { status: !snowMapMode && mode === 'error' ? 429 : !snowMapMode && mode === 'service-error' ? 503 : 200,
+        return { status: !snowMapMode && mode === 'error' ? 429 : !snowMapMode && ['service-error', 'aqi-weather-error'].includes(mode) ? 503 : 200,
             body: JSON.stringify(replyBody), headers: !snowMapMode && mode === 'error' ? { 'retry-after': '120' } : {} };
     };
     const checkRequest = (url, headers) => {

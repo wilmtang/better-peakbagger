@@ -1795,3 +1795,20 @@ test('unchanged card visibility preserves AQI rows instead of triggering a layou
         assert.equal(env.doc.querySelector('.bpb-air-table tbody tr'), first, 'layout notifications must not replace the forecast and retrigger layout');
     } finally { env.close(); }
 });
+
+test('AQI labels the requested point when weather fails and restores retained weather identity on return', async () => {
+    const env = setup({ fetchFn: url => Number(new URL(url).searchParams.get('latitude')) === 46.8 ? new Response('', { status: 503 }) : reply(url) });
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length > 0);
+        selectLocation(env, 46.8, -121.7);
+        await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false'
+            && env.doc.querySelector('#bpb-peak-weather-air').getAttribute('aria-busy') === 'false');
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, '46.8000, -121.7000', 'AQI must name its own request location despite retained summit weather');
+        assert.equal(new URL(env.requests.filter(request => request.url.includes('air-quality-api.')).at(-1).url).searchParams.get('latitude'), '46.8');
+        env.doc.querySelector('[data-period="forecast"]').click();
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit', 'retained weather still names its actual source location');
+        env.doc.querySelector('[data-period="aqi"]').click();
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, '46.8000, -121.7000');
+    } finally { env.close(); }
+});

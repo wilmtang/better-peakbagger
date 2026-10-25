@@ -195,15 +195,20 @@ export function mountPeakWeather() {
         measurement === 'freezing' ? 'elevation' : measurement);
     const format = (value, kind) => units.formatWeather(value, kind, unitSystem(kind));
     const unitSignature = () => ['elevation', 'temperature', 'precipitation', 'wind'].map(unitSystem).join('/');
+    const updateHeaderLocation = () => {
+        const target = aqiActive ? requestedSubject : subject;
+        const atSummit = target === summit;
+        headingText.textContent = atSummit ? 'Summit weather' : 'Location weather';
+        selectedLocation.textContent = atSummit ? 'At the summit' : weatherLocationLabel(target);
+        selectedLocation.title = atSummit ? summit.name : `Selected map location: ${weatherLocationLabel(target)}`;
+    };
     const renderLabels = week => {
         const first = week.days[0].date, last = week.days.at(-1).date;
         range.textContent = `${dateLabel(first, { month: 'short', day: 'numeric', ...(first.slice(0, 4) !== last.slice(0, 4) ? { year: 'numeric' } : {}) })} – ${dateLabel(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
         const interval = period === 'past' ? `${week.days.length} completed days · Today excluded`
             : week.days[0].date === mountainTime.localDate(zone, Date.now()) ? week.days.length === 1 ? 'Today' : `Today + ${week.days.length - 1} ${week.days.length === 2 ? 'day' : 'days'}` : `${week.days.length}-day forecast · Previous dates`;
         const atSummit = subject === summit;
-        headingText.textContent = atSummit ? 'Summit weather' : 'Location weather';
-        selectedLocation.textContent = atSummit ? 'At the summit' : weatherLocationLabel(subject);
-        selectedLocation.title = atSummit ? summit.name : `Selected map location: ${weatherLocationLabel(subject)}`;
+        updateHeaderLocation();
         updatesNote.textContent = `${atSummit ? 'Summit' : 'Selected location'} local time. Next updates are estimates. Provider-wide availability may vary between servers.`;
         locationLabel.textContent = `${subject.elevation === null ? 'Terrain elevation' : units.formatElevation(subject.elevation, unitSystem())} · ${interval}${zone.estimated ? ' · Estimated local time' : ''}`;
     };
@@ -325,6 +330,7 @@ export function mountPeakWeather() {
     }
     const choosePeriod = next => {
         aqiActive = next === 'aqi';
+        updateHeaderLocation();
         periodPanel.hidden = aqiActive; source.hidden = aqiActive || !current; refresh.hidden = aqiActive;
         airQuality.select(aqiActive);
         if (aqiActive) cancelUpdates();
@@ -418,7 +424,7 @@ export function mountPeakWeather() {
         if (sameLocation(next, requestedSubject) && (pending || (current && sameLocation(next, subject) && !notice?.kind))) return;
         if (next !== summit && requestedSubject === summit) summitChoices = { ...choices };
         if (next === summit && summitChoices) { Object.assign(choices, summitChoices); summitChoices = null; }
-        cancelUpdates(); cancel(); requestedSubject = next; airQuality.locationChanged();
+        cancelUpdates(); cancel(); requestedSubject = next; updateHeaderLocation(); airQuality.locationChanged();
         requestedWindow = weatherPeakWindow(mountainTime.resolve(next.latitude, next.longitude));
         for (const key of Object.keys(choices)) {
             if (!eligiblePeakWeatherModels(next, requestedWindow, key).some(model => model.id === choices[key])) choices[key] = 'gfs_global';
