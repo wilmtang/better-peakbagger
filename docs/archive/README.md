@@ -13,10 +13,9 @@ living docs in [`docs/`](../).
   transfer consent and standalone climber files. Includes focused commits,
   browser evidence and retained live/native proof limits. The maintained
   [storage report](../settings-storage-and-sync.md) owns current behavior.
-- [CascadeClimbers weather feature gaps — 2026-10-21](cascadeclimbers-weather-feature-gaps-2026-10-21.md) —
-  Chrome inspection of Weather Research and Weather Lab compared with the
-  plugin source, separating missing comparisons, atmospheric data, inline
-  hazards and vertical forecasts from existing features and unproven claims.
+- [Consolidated weather research and audit history](../weather.md#audit-closure-ledger) —
+  weather-only archived records now live with the maintained guide, including
+  the dated CascadeClimbers comparison and its proof limits.
 - [CI, UI, and maintainability follow-up — 2026-10-10](ci-ux-maintainability-audit-2026-10-10.md) —
   shared production release/capture gates, Firefox moved-tab recovery, outdoor
   extension panels, unclipped popup results, and reduced duplicate owners.

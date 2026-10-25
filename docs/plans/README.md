@@ -6,10 +6,9 @@
   Full suite and hidden Chrome/Firefox matrices passed; external proof limits
   and intentionally separate policies remain in the closure ledger.
 
-- [Open-Meteo peak-page request audit — October 24](open-meteo-peak-request-audit-2026-10-24.md)
-  — user-action request counts, endpoint purposes and a plain-language quota
-  explanation; five default requests once both cards load, 23 request-count
-  scenarios and the verified collapsed-read fix. Shared cache work remains open.
+- [Weather guide and open API optimizations](../weather.md)
+  — consolidated feature/request documentation and historical weather audits;
+  cloud usage and cross-card/page cache work remain open in its ledger.
 
 - [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
   — R2/Worker free-tier budgets, measured small-sample PMTiles sizes and a
@@ -156,11 +155,9 @@ are implemented in focused commits. The closure ledger records 2,708 passing
 tests, 14 scale checks, real Chrome/Firefox and Metal rendering evidence, and
 retained upstream advisory/native/live verification gaps.
 
-The [peak weather location audit](../archive/peak-weather-location-audit-2026-10-12.md)
-is closed locally: twelve reproduced state, focus, map lifecycle, keyboard and
-fixture findings are corrected in seven focused commits. Its ledger records
-2,666 passing tests, Chrome/Firefox and Metal evidence, retained boundaries and
-manual proof limits.
+Historical weather implementation, feature/UX and location audit outcomes now
+live in the single [weather closure ledger](../weather.md#audit-closure-ledger),
+including focused commits, dated evidence and retained external proof limits.
 
 The [peak-page presentation follow-up](../archive/peak-page-presentation-2026-10-12.md)
 corrects the map/legend/weather order, weather actions and source coordinates,
@@ -178,17 +175,8 @@ variants and 112 integrated layout cases pass on the fixed build. The archive
 retains native/live proof gaps and the two unchanged README test failures.
 Earlier counts and browser results remain historical evidence.
 
-The [weather feature audit](../archive/weather-feature-audit-2026-10-11.md)
-has eight implemented fixes and local browser/regression evidence. Its closure
-ledger retains screen-reader/live-provider proof gaps and two pre-existing
-README test failures.
-
 The [code-removal audit](../archive/code-removal-audit-2026-10-09.md) is closed
 locally with its removal evidence, retained boundaries, and verification limits.
-The [historical ascent-weather implementation](../archive/ascent-historical-weather.md)
-is complete locally, with its browser/model evidence and remaining live-site and
-accessibility proof gaps retained. [Ascent weather](../ascent-weather.md) owns the
-runtime design.
 The [CI, UI, and maintainability follow-up](../archive/ci-ux-maintainability-audit-2026-10-10.md)
 is closed locally with three consecutive packaged-browser pairs; hosted CI and
 external proof gaps remain explicit.

@@ -104,8 +104,8 @@ The diagram encodes six important boundaries:
 - [Photo topo editor and local library](#deep-dive-photo-topo-editor-and-local-library)
 - [GPX Analyzer and native 2D map integration](#deep-dive-gpx-analyzer-and-native-2d-map-integration)
 - [Sun and Moon position calculator](sun-position.md)
-- [Historical ascent weather](ascent-weather.md)
-- [Summit forecasts and recent weather](peak-weather.md)
+- [Historical ascent weather](weather.md#historical-ascent-weather)
+- [Summit forecasts and recent weather](weather.md#peak-forecasts-and-map-point-weather)
 - [Nearby SNOTEL observations](nearby-snow.md)
 - [Opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
@@ -933,67 +933,22 @@ the current integration contracts and execution-world boundaries.
 
 ### Independent historical weather
 
-Saved ascent weather uses a separate isolated-world bundle and runs without a
-GPX or native map. Its strict reader identifies the native ascent date and
-summit, then reads the matching peak page through the existing Peakbagger
-transport. The card defaults below Summary Total Data and the GPS links in the
-resizable right column. Its grip supports insertion above or below the report,
-summary, or dedicated GPS links, using pointer dragging, a click menu, or arrow
-keys. Portable `bpbAscentWeatherColumn` and `bpbAscentWeatherSlot` store only
-these bounded layout identifiers; old column-only preferences remain valid.
-The existing card, chart selection, and native GPS controls survive movement,
-including when GPX analysis mounts later. GPS controls stay in the summary
-column and the native map stays in place. Unrecognized table layouts retain a
-map/metadata fallback. It does not mutate native weather
-fields. An optional hourly cursor follows GPX hover and selection through the
-narrow local `gpx-time-cursor.js` channel: exact-shape, source/origin-validated
-epoch timestamps and flags only, with no coordinates or privileged actions.
-Hover is transient; clicked/keyboard selection persists. Missing or suspect
-times and points outside the displayed summit-local day have no cursor line.
-This presentation channel never changes weather requests or the saved date.
-Previous/Next day controls browse the selected model's available archive, starting
-at the saved ascent date and stopping at today's local date. Pending or failed
-navigation retains the displayed day. Hourly charts and the horizontal Conditions
-table share keyboard sampling and the optional GPX cursor.
+Saved-ascent weather runs in an isolated bundle without a GPX/map dependency.
+Its strict saved-date/peak reader performs a guarded first-party summit lookup;
+public-provider weather reads omit credentials/referrers and have bounded
+responses and page-memory caches. The archive supplies a timestamp-only validated
+GPX cursor channel, not track/location transfer or a privileged settings bridge.
+Native report/Save ownership and restored GPS-node handlers remain intact.
 
-The archive's explicit model ID is remembered in portable settings as
-`bpbAscentWeatherModel`, independently of peak forecast/history choices. A
-bounded startup read restores an eligible choice before the first request;
-an ineligible saved model uses Best Match for that ascent without rewriting
-the preference. Explicit selections use the settings worker. Only the model ID
-travels through browser sync, files and GitHub backup; ascent IDs, dates,
-coordinates and weather payloads remain excluded.
+Peak weather independently reads current-page summit metadata and supports an
+explicit map-point action. Cloud pressure profiles and AQI have their own input,
+capability and cache owners. Portable model/placement preferences contain no
+coordinates, ascent identity or downloaded weather. Shared helpers do not merge
+historical dates, provider policy or cross-IIFE cache state.
 
-The weather client accepts only packaged model endpoints, omits credentials
-and referrers, and has bounded requests and a small tab-memory cache. It needs
-no API permission or privileged bridge. Historical local-day aggregation uses
-the packaged summit timezone, handles DST and preceding-hour precipitation,
-and retains missing values as partial data. See [ascent-weather.md](ascent-weather.md)
-for model defaults, coverage limits, retries and privacy.
-
-Peak pages use a separate isolated `content/peak-weather.js` bundle. It appends
-a row beneath the map in the native right-hand table, including when no map is
-present, without moving native content or waiting for the MAIN-world enhancer.
-It reuses the strict summit-coordinate reader, offline timezone, daily summary
-and private transport, but uses a fixed forecast endpoint and a separate
-792-hour response cap. Each period has an independent named-model selector,
-defaulting to GFS and remembering its model/metric choices in portable settings
-that travel through browser sync, settings files and GitHub backup. One padded UTC request for at most two allowlisted
-models supplies both sixteen completed local days and today plus fifteen
-forecast days, capped at the API's sixteen UTC-day forecast horizon. Shorter-range
-models show their available days; explicit choices never silently fall back.
-The ascent client's three-day/72-row
-limits and future-date rejection remain unchanged. Forecast summaries use whole
-local days; past days exclude today. Both retain DST and missing-data semantics,
-including incomplete final forecast days. A visible accuracy warning and model
-disclosure explain possible sources without inventing per-hour model provenance.
-Period tabs, hourly SVG graphs, and a horizontal Conditions table reuse the same
-response. Opening Models & source details loads bounded, coordinate-free provider
-update metadata; those clocks do not identify the exact run behind each hour.
-The peak-owned
-renderer includes interval boundary semantics, keyboard sampling, resize cleanup,
-a five-minute memory cache and refresh on returning to a visible expired card.
-See [peak-weather.md](peak-weather.md).
+The single [weather guide](weather.md) owns feature behavior, model selection,
+request counts, forecast/archival day semantics, limits, verification and audit
+history. The [card conventions](card-conventions.md) own shared UI contracts.
 
 ### The fragile Leaflet seam
 

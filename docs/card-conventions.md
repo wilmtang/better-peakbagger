@@ -210,7 +210,7 @@ content. Do not copy this exception to other cards.
 
 Ascent cards do not currently have a universal header-collapse controller.
 Keep existing feature disclosures and do not add peak collapse attributes or
-a competing global registry. See [historical ascent weather](ascent-weather.md)
+a competing global registry. See [historical ascent weather](weather.md#historical-ascent-weather)
 for the archive's date/model semantics and GPX cursor integration.
 
 ## Embedded panels and ascent forms

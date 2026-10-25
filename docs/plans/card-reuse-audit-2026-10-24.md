@@ -31,7 +31,7 @@ lazy-load observers, request cancellation and lifecycle callbacks. The shared
 page lifecycle correctly distinguishes suspension from disposal, but it does not
 own card eligibility. As a result, a collapsed peak weather card can still fetch,
 while the cloud card checks collapse before loading. The
-[Open-Meteo audit](open-meteo-peak-request-audit-2026-10-24.md#om-01--p2--collapsing-summit-weather-does-not-suppress-its-forecast-request)
+[Open-Meteo audit](../weather.md#fixed-and-verified)
 reproduced one GET with both peak cards saved collapsed.
 
 Evidence: [peak weather load/visibility](../../src/weather/peak-weather.js#L363),
@@ -183,7 +183,7 @@ reproduced here; this is a lower-priority duplication concern.
 while B is pending; disable/suspend during a held read; failed settings saves and
 late reads after newer gestures. Importing the helper in two IIFEs does not share
 cache state. Cross-page Open-Meteo deduplication remains the separate design in
-the [request audit](open-meteo-peak-request-audit-2026-10-24.md#om-03--optimization--metadata-and-page-caches-have-separate-owners).
+the [request audit](../weather.md#open-or-not-fully-proven).
 
 ### CR-06 · P3 · Share test contracts alongside the helpers
 

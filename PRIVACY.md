@@ -425,7 +425,7 @@ address. Model selection is saved in extension settings; profiles stay in page
 memory (six entries, five-minute freshness). Date/model changes, Refresh and
 returning to an expired visible card can request data again. Collapse, disabling
 the feature or page suspension cancels pending work. See
-[method and limitations](docs/summit-cloud.md).
+[method and limitations](docs/weather.md#summit-cloud-cover).
 
 ### Nearby snow observations
 

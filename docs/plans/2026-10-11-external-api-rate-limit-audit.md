@@ -44,18 +44,11 @@ statuses. Navigation and opaque image requests are listed below as boundaries.
 
 ### Fixed and verified
 
-- Open-Meteo: provider-named inline warning, bounded Retry-After time,
-  retained weather, and per-page request/retry cooldown. Summit lookup retains
-  typed Peakbagger errors. Unreadable 429 bodies cannot mask the warning.
-  Verified: build, 63 weather/shared-helper tests, 19 ascent weather tests
-  including summit-lookup refusal, focused ESLint, and real
-  unpacked extension in hidden Chrome 153 HTTPS ascent/peak fixtures at
-  375/681/768/1440 × 1100. Inspected narrow peak and wide ascent warnings.
-  Retry-After is usable only when CORS exposes it; otherwise no reset time is
-  shown. The browser fixture initially omitted that exposure; corrected it
-  and both checks passed.
-  Hidden Firefox 157.0.1 peak and ascent fixtures also passed at the same
-  relevant widths in light/dark; inspected the 375-pixel ascent warning.
+- Open-Meteo: fixed and verified. The provider-named warnings, Retry-After/CORS
+  boundary, retained results, cooldown and historical verification now live in
+  the [weather guide](../weather.md#time-transport-and-privacy) and its
+  [closure ledger](../weather.md#audit-closure-ledger). This report retains the
+  other services' rate-limit boundaries below.
 
 - GitHub: REST 429 and primary-limit 403 survive unreadable bodies; secondary
   message classification remains distinct from ordinary access denial. Device

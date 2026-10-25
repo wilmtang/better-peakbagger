@@ -83,7 +83,7 @@ Check sunrise, sunset, Moon phase, and Sun and Moon directions on a peak map
 or GPX route with the offline **Sun & Moon** calculator. Move the time slider
 to explore the light throughout the day. Times assume a level horizon and do
 not account for terrain shadows.
-[Forecast guide](docs/peak-weather.md) · [Historical weather](docs/ascent-weather.md) · [Sun and Moon guide](docs/sun-position.md)
+[Weather guide](docs/weather.md) · [Sun and Moon guide](docs/sun-position.md)
 
 ### Find useful ascent beta faster
 
@@ -264,7 +264,7 @@ temperatures to the summit elevation when available. That can make a summit
 forecast cooler than one for the model's lower terrain. “Overcast” can also mean
 high cloud above the mountain, without fog at the summit. Open **Source details**
 in the weather card to explore the model, forecast location, and elevation used.
-[More about summit weather](docs/peak-weather.md).
+[More about summit weather](docs/weather.md#peak-forecasts-and-map-point-weather).
 
 **Summit Cloud Cover · Experimental** adds hourly estimates of cloud at summit
 height and possible nearby view obstruction. Browse every hour, including
@@ -273,7 +273,7 @@ Automatic compares two models over a ten-day outlook; individual models offer
 their available horizon up to 16 days. Missing data stays unavailable. Expand
 **Why this prediction** for the actual inputs and reasoning. These estimates
 are not yet calibrated against summit observations and do not describe snow
-conditions. [Method and limitations](docs/summit-cloud.md).
+conditions. [Method and limitations](docs/weather.md#summit-cloud-cover).
 
 ### Does Better Peakbagger place extra demand on Peakbagger or bypass its protections?
 

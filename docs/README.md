@@ -13,8 +13,8 @@ shipped subsystem.
 - [Peak and ascent card conventions](card-conventions.md) — shared appearance,
   settings, lifecycle and stability rules, plus each surface's mounting,
   movement, disclosure and verification contract for every agent.
-- [Summit Cloud Cover](summit-cloud.md) — experimental method, model compatibility
-  and remaining forecast-validation work.
+- [Weather](weather.md) — peak forecasts/history, ascent archives, experimental
+  summit clouds, AQI, API calls by user action, quota, validation and audit ledger.
 - [Browser store releases](releasing.md) — release checklist and the manual
   checks that automation cannot establish.
 - [Privacy and data handling](../PRIVACY.md) — canonical public disclosure and
@@ -38,8 +38,6 @@ subsystem changes.
 - [Peakbagger peak dots on 3D terrain](3d-peak-markers.md)
 - [Chart times in the climb's local timezone](mountain-local-time.md)
 - [Sun and Moon planning](sun-position.md)
-- [Summit forecasts and recent weather](peak-weather.md)
-- [Historical ascent weather](ascent-weather.md)
 - [Dark-mode startup without a light-page flash](dark-mode-flash.md)
 - [`verify -- chrome` flakes under machine load](verify-extension-load-flake.md)
   — what was measured, and the timeout that was wrongly blamed

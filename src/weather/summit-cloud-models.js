@@ -4,8 +4,8 @@
 import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
 
 // Pressure profiles are a separate capability from the surface-weather menu.
-// Live field checks and sources: docs/summit-cloud.md. Do not substitute IFS 9 km
-// or the 13 km GFS surface grid for these pressure-level products.
+// Live field checks and sources: docs/weather.md#cloud-models-and-horizons.
+// Do not substitute IFS 9 km or the 13 km GFS surface grid for these products.
 const dense = [1000, 925, 850, 800, 750, 700, 650, 600, 500, 400, 300, 250];
 const sparse = [1000, 925, 850, 700, 600, 500, 400, 300, 250];
 const specifications = [
