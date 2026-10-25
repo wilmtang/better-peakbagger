@@ -47,6 +47,16 @@ export function createCustomOverlayStore({ storage, canRead, canEdit }) {
                     await storage.set({ [CUSTOM_PREFERENCES_KEY]: current.preferences });
                     return { ok: true, ...current };
                 }
+                if (message.type === 'CUSTOM_OVERLAYS_REORDER') {
+                    const ids = message.ids;
+                    if (message.expectedRevision !== current.registry.revision) throw new Error('The layer list changed. Try reordering again.');
+                    if (!Array.isArray(ids) || ids.length !== current.registry.sources.length || new Set(ids).size !== ids.length
+                        || ids.some(id => !current.registry.sources.some(source => source.id === id))) throw new Error('Invalid layer order.');
+                    current.registry.sources = ids.map(id => current.registry.sources.find(source => source.id === id));
+                    current.registry.revision++;
+                    await storage.set({ [CUSTOM_REGISTRY_KEY]: current.registry });
+                    return { ok: true, ...current };
+                }
                 const index = current.registry.sources.findIndex(source => source.id === message.id);
                 if (index >= 0 ? current.registry.sources[index].revision !== message.expectedRevision : message.expectedRevision !== 0) throw new Error('This overlay changed. Reload its settings.');
                 if (message.type === 'CUSTOM_OVERLAYS_REMOVE') {

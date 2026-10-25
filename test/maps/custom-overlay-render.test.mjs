@@ -16,7 +16,7 @@ test('GeoJSON refresh retains last good geometry on failure, opacity makes no re
     dom.window.fetch = async () => { requests++; if (denied) throw new TypeError('Failed to fetch'); return Response.json({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { hostile: '<script>' }, geometry: { type: 'Point', coordinates: [1, 2] } }] }); };
     const map = { getStyle: () => ({ layers: [...layers.values()] }), getSource: id => sources.get(id), getLayer: id => layers.get(id),
         addSource(id, value) { sources.set(id, { ...value, setData(data) { this.data = data; } }); }, addLayer(value) { layers.set(value.id, value); },
-        removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), setPaintProperty(id, key, value) { layers.get(id).paint[key] = value; } };
+        removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), moveLayer(id) { const layer = layers.get(id); layers.delete(id); layers.set(id, layer); }, setPaintProperty(id, key, value) { layers.get(id).paint[key] = value; } };
     const protocols = new Map(), renderer = createCustomRenderer({ win: dom.window, map, maplibre: { addProtocol: (key, fn) => protocols.set(key, fn), removeProtocol: key => protocols.delete(key) },
         parse: async job => parseCustomData(job), onStatus: (_id, status) => statuses.push(status) });
     const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, kind: 'geojson', source: { dataUrl: 'https://tiles.example.com/data.geojson' },
@@ -60,4 +60,23 @@ test('parser workers terminate on a hard deadline and queued/active work cancels
     const pending = [parser.parse(job), parser.parse(job), parser.parse(job)]; const cancelled = pending.map(promise => assert.rejects(promise, { name: 'AbortError' }));
     assert.equal(workers.length, 4, 'two active workers, one queued'); parser.dispose(); await Promise.all(cancelled);
     assert.ok(workers.every(worker => worker.terminated)); await assert.rejects(parser.parse(job), { name: 'AbortError' });
+});
+test('saved order controls vector stacking without recreating sources or requesting data again', async () => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const sources = new Map(), layers = new Map(); let requests = 0;
+    dom.window.fetch = async () => { requests++; return Response.json({ type: 'FeatureCollection', features: [] }); };
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getSource: id => sources.get(id), getLayer: id => layers.get(id),
+        addSource(id, value) { sources.set(id, value); }, addLayer(layer) { layers.set(layer.id, layer); },
+        moveLayer(id) { const layer = layers.get(id); layers.delete(id); layers.set(id, layer); }, removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id) };
+    const renderer = createCustomRenderer({ win: dom.window, map, maplibre: { addProtocol() {}, removeProtocol() {} }, parse: async job => parseCustomData(job), onStatus() {} });
+    const first = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, kind: 'geojson', source: { dataUrl: 'https://tiles.example.com/first.json' },
+        attribution: { text: '' }, appearance: { opacity: 60, rules: [{ geometry: 'point', color: '#26734d', radius: 5 }] } };
+    const second = { ...first, id: 'custom:1537a032-271c-4d11-9b8c-0edc566b47c1', source: { dataUrl: 'https://tiles.example.com/second.json' } };
+    try {
+        renderer.update([first, second]); for (let i = 0; i < 10 && layers.size < 2; i++) await settle();
+        assert.equal(layers.size, 2); assert.match([...layers.values()].at(-1).source, /0537a032/);
+        const originalSources = [...sources.values()]; renderer.update([second, first]);
+        assert.match([...layers.values()].at(-1).source, /1537a032/); assert.equal(requests, 2);
+        assert.deepEqual([...sources.values()], originalSources, 'reorder keeps live source objects');
+    } finally { renderer.dispose(); dom.window.close(); }
 });

@@ -45,3 +45,17 @@ test('restores reject intervening source/opacity changes and invalidate old revi
     assert.equal(reply.registry.sources[0].name, valid.name, 'restore drops temporary drafts');
     assert.equal((await store.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id: valid.id, source: valid, expectedRevision: 1 }, sender)).ok, false);
 });
+test('saved order is an authorized, revision-checked permutation without changing definitions or opacity', async () => {
+    const values = {}, storage = { get: async () => structuredClone(values), set: async patch => Object.assign(values, structuredClone(patch)) };
+    const store = createCustomOverlayStore({ storage, canRead: () => true, canEdit: sender => sender.editor });
+    const first = source(), second = { ...source(), id: 'custom:1537a032-271c-4d11-9b8c-0edc566b47c1', name: 'Second' };
+    for (const item of [first, second]) await store.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id: item.id, source: item, expectedRevision: 0 }, { editor: true });
+    const snapshot = await store.snapshot(), message = { type: 'CUSTOM_OVERLAYS_REORDER', ids: [second.id, first.id], expectedRevision: snapshot.registry.revision };
+    assert.equal((await store.handle(message, {})).ok, false);
+    assert.equal((await store.handle({ ...message, ids: [first.id, first.id] }, { editor: true })).ok, false);
+    const result = await store.handle(message, { editor: true }); assert.equal(result.ok, true);
+    assert.deepEqual(result.registry.sources.map(item => item.id), message.ids); assert.deepEqual(result.registry.sources.map(item => item.revision), [1, 1]);
+    assert.deepEqual(result.preferences, snapshot.preferences); assert.equal(result.registry.generation, undefined);
+    assert.equal((await store.handle(message, { editor: true })).ok, false, 'stale reorder cannot overwrite a concurrent edit');
+    assert.notDeepEqual(customLayerBackup(snapshot).sources, customLayerBackup(result).sources, 'backup preserves the saved order');
+});

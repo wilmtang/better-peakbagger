@@ -26,6 +26,19 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
     const client = createCustomClient({ fetchImpl: win.fetch.bind(win), parse, pool, bitmap: win.createImageBitmap?.bind(win) });
     let disposed = false, canvasBytes = 0, lastUpdate = null;
     const before = () => map.getStyle().layers.find(layer => layer.type === 'symbol' || /^(bpb-(?:route|peaks|highlight|fire|snotel))/.test(layer.id))?.id;
+    const order = () => {
+        // The first saved row is the topmost custom overlay in either renderer.
+        for (const source of (lastUpdate?.[0] || []).slice().reverse()) {
+            const entry = entries.get(source.id); if (!entry) continue;
+            if (terrain) { for (const id of entry.layers) if (map.getLayer(id)) map.moveLayer(id, before()); }
+            else {
+                const pane = map.getPane('bpb-custom-overlays');
+                for (const container of entry.renderers?.map(renderer => renderer._container) || [entry.layer?._container]) {
+                    if (container?.parentNode === pane) pane.appendChild(container);
+                }
+            }
+        }
+    };
     const status = entry => {
         if (!disposed && entries.get(entry.source.id) === entry) onStatus(entry.source.id, {
             pending: entry.pending > 0, error: entry.failed > 0, partial: entry.failed > 0 && entry.loaded > 0,
@@ -96,10 +109,11 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                 const L = win.L, pane = 'bpb-custom-overlays';
                 if (!map.getPane(pane)) { map.createPane(pane); map.getPane(pane).style.cssText = 'z-index:280;pointer-events:none'; }
                 if (data) {
-                    const groups = source.appearance.rules.map(rule => L.geoJSON(data, { pane, interactive: false,
-                        renderer: L.canvas({ pane }), filter: feature => feature.geometry && geometryType(feature.geometry.type) === rule.geometry,
+                    entry.renderers = source.appearance.rules.map(() => L.canvas({ pane }));
+                    const groups = source.appearance.rules.map((rule, index) => L.geoJSON(data, { pane, interactive: false,
+                        renderer: entry.renderers[index], filter: feature => feature.geometry && geometryType(feature.geometry.type) === rule.geometry,
                         style: { color: rule.color, weight: rule.width, opacity: entry.opacity / 100, fillColor: rule.color, fillOpacity: rule.fillOpacity * entry.opacity / 100, interactive: false },
-                        pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { pane, radius: rule.radius, color: rule.color, fillColor: rule.color, fillOpacity: entry.opacity / 100, opacity: entry.opacity / 100, interactive: false }),
+                        pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { pane, renderer: entry.renderers[index], radius: rule.radius, color: rule.color, fillColor: rule.color, fillOpacity: entry.opacity / 100, opacity: entry.opacity / 100, interactive: false }),
                     }));
                     const previous = entry.layer;
                     entry.layer = L.layerGroup(groups); entry.layer.getAttribution = () => attribution(source); entry.layer.addTo(map); entry.data = data;
@@ -154,7 +168,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                     });
                 for (const spec of specs) { map.addLayer({ ...spec, source: key }, before()); entry.layers.push(spec.id); }
             }
-            status(entry);
+            order(); status(entry);
         } catch (error) { if (error.name !== 'AbortError') { entry.failed++; entry.failure = error.message; entry.code = error.code; status(entry); } }
     };
     const visibility = () => {
@@ -195,6 +209,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             entry = { source, opacity, reload: reloads[source.id], key: 'bpb-custom-' + source.id.slice(7) + '-' + source.revision + '-' + (reloads[source.id] || 0), controller: new AbortController(), tiles: new Map(), outcomes: new Map(), layers: [], pending: 0, failed: 0, loaded: 0, lower: false };
             entries.set(source.id, entry); void paint(entry);
         }
+        order();
     }, refresh() {
         if (!terrain || !map.coveringTiles) return;
         for (const entry of entries.values()) {
