@@ -94,24 +94,25 @@ export function createColumnResize({ wrapper, handle, storage, storageKey, initi
         catch { /* Pointer capture is an enhancement, not a mount gate. */ }
         event.preventDefault();
     });
-    handle.addEventListener('pointermove', event => {
+    const pointerTarget = doc.defaultView || handle;
+    pointerTarget.addEventListener('pointermove', event => {
         if (!drag || pointerIdOf(event) !== drag.pointerId) return;
         suppressClick = true;
         applyPercent(drag.startPercent
             + (event.clientX - drag.startX) / drag.availableWidth * 100);
         event.preventDefault();
     });
-    handle.addEventListener('pointerup', event => {
+    pointerTarget.addEventListener('pointerup', event => {
         if (!drag || pointerIdOf(event) !== drag.pointerId) return;
         finishDrag({ persist: true });
     });
-    handle.addEventListener('pointercancel', event => {
+    pointerTarget.addEventListener('pointercancel', event => {
         if (!drag || pointerIdOf(event) !== drag.pointerId) return;
-        finishDrag({ persist: true });
+        finishDrag({ restore: true });
     });
     handle.addEventListener('lostpointercapture', event => {
         if (!drag || pointerIdOf(event) !== drag.pointerId) return;
-        finishDrag({ persist: true });
+        finishDrag({ restore: true });
     });
     handle.addEventListener('keydown', event => {
         if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -137,7 +138,7 @@ export function createColumnResize({ wrapper, handle, storage, storageKey, initi
         event.preventDefault();
         finishDrag({ restore: true });
     }, true);
-    doc.defaultView?.addEventListener('blur', () => finishDrag({ persist: true }));
+    doc.defaultView?.addEventListener('blur', () => finishDrag({ restore: true }));
 
     applyPercent(leftPercent);
     return { get leftPercent() { return leftPercent; }, applyPercent };

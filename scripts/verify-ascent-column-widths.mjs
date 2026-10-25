@@ -126,6 +126,14 @@ export async function verifyAscentColumnWidths(page, origin, variant, { asset, c
                 isReady: state => !state.animating && Math.abs(state.canvas - state.container) <= 1 });
             await aligned(`${variant.name}/${share}`);
         }
+        if (desktop) {
+            const before = await handle.getAttribute('aria-valuenow');
+            await handle.dispatchEvent('pointerdown', { button: 0, pointerId: 7, clientX: 400 });
+            await handle.dispatchEvent('pointermove', { pointerId: 7, clientX: 450 });
+            await handle.dispatchEvent('pointercancel', { pointerId: 7 });
+            assert.equal(await handle.getAttribute('aria-valuenow'), before, 'pointer cancellation restores column width');
+            await aligned('cancelled column drag');
+        }
         await page.locator('#bpb-ascent-weather').scrollIntoViewIfNeeded();
         await capture(page, `${variant.name}-ascent-columns`);
         const picker = page.locator('#bpb-ascent-weather-model');

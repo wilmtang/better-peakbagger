@@ -334,6 +334,12 @@ Independent commits for drag ownership and report/observer surfaces:
   retains validated occlusions. The previous-region regression failed before the
   fix; 37 terrain tests, build and ESLint passed. True-extension Chrome passed.
 
+- F13 column resize: pointer cancellation/capture loss/blur restore the starting
+  share; window pointer handlers finish gestures when capture fails. Both new
+  expectations failed before the fix; 26 split/card tests, build and ESLint passed.
+  Hidden Chrome/Firefox passed 16 layout cases at 390/1280 px and 150% zoom in
+  both themes, including cancelled drag and subsequent weather updates.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
@@ -347,7 +353,8 @@ Independent commits for drag ownership and report/observer surfaces:
 
 - F10 hardware Chrome reached Apple M3 Pro Metal but stopped before 3D at a
   pre-existing native-toggle gap (41 px, verifier limit 40 px). Firefox terrain
-  verification is still running; hardware rendering is not yet claimed complete.
+  probe timed out before rendering (authorization-attempt counter remained zero);
+  hardware terrain verification is not yet claimed complete.
 - Audit corrections only. Runtime items above remain open until their focused
   regression checks pass; source inspection alone is not UI or live-service proof.
 - Live Garmin/ImgBB/GitHub/provider operations, native browser chrome/focus, assistive

@@ -159,7 +159,7 @@ test('pointer dragging resizes both columns and persists once released', () => {
     } finally { restore(); }
 });
 
-test('touch cancellation and capture loss persist the visible split once', () => {
+test('touch cancellation and capture loss restore the original split', () => {
     const writes = [];
     const storage = {
         getItem: () => null,
@@ -185,8 +185,8 @@ test('touch cancellation and capture loss persist the visible split once', () =>
         split.handle.dispatchEvent(pointerEvent(dom, 'lostpointercapture', touch));
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerup', touch));
 
-        assert.equal(writes.length, 1, 'duplicate terminal events cannot persist twice');
-        assert.equal(JSON.parse(writes[0][1]).leftPercent, split.leftPercent);
+        assert.equal(writes.length, 0, 'cancelled gestures do not commit');
+        assert.equal(split.leftPercent, initial);
         assert.equal(dom.window.document.documentElement.classList
             .contains('bpb-ascent-table-split-resizing'), false);
     } finally { restore(); }
@@ -269,5 +269,22 @@ test('clicking the divider offers single-pointer resizing without dragging or lo
         split.handle.click();
         dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         assert.equal(menu.hidden, true); assert.equal(dom.window.document.activeElement, split.handle);
+    } finally { restore(); }
+});
+
+test('a failed pointer capture still receives movement and completion outside the handle', () => {
+    const writes = [], storage = { getItem: () => null, setItem: (...args) => writes.push(args) };
+    const { dom, split, restore } = setup({ storage });
+    try {
+        split.wrapper.getBoundingClientRect = () => ({ width: 1013 });
+        split.handle.getBoundingClientRect = () => ({ width: 13 });
+        const initial = split.leftPercent;
+        split.handle.setPointerCapture = () => { throw new Error('capture unavailable'); };
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', { pointerId: 2, button: 0, clientX: 500 }));
+        dom.window.dispatchEvent(pointerEvent(dom, 'pointermove', { pointerId: 2, clientX: 600 }));
+        dom.window.dispatchEvent(pointerEvent(dom, 'pointerup', { pointerId: 2, clientX: 600 }));
+        assert.equal(split.leftPercent, initial + 10);
+        assert.equal(writes.length, 1);
+        assert.equal(dom.window.document.documentElement.classList.contains('bpb-ascent-table-split-resizing'), false);
     } finally { restore(); }
 });
