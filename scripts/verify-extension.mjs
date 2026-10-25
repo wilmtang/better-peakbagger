@@ -2378,15 +2378,33 @@ try {
         null, { timeout: 5000 });
         await optionsPage.close();
 
+        // Opening a popup as a tab grants no activeTab permission. Chrome 128
+        // omits even that extension tab's URL, unlike current Chrome. Select a
+        // known host-permitted fixture so this unsupported-activity assertion
+        // exercises the same authorized tab metadata on both versions.
+        const popupActiveUrl = `https://www.peakbagger.com:${port}/popup-active-tab.html`;
+        await context.route(popupActiveUrl, route => route.fulfill({ contentType: 'text/html',
+            body: '<!doctype html><title>Popup active-tab fixture</title><p>Peakbagger fixture</p>' }));
+        const popupActivePage = await context.newPage();
+        await popupActivePage.goto(popupActiveUrl);
         const popupPage = await context.newPage();
+        await popupActivePage.bringToFront();
         await popupPage.goto(`chrome-extension://${extensionId}/popup/popup.html`);
         const popupState = await popupPage.waitForFunction(() => {
             const text = document.getElementById('state')?.textContent || '';
             return /Open an activity to begin/.test(text) ? text : false;
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        const popupDiagnostics = popupState ? null : await popupPage.evaluate(async () => ({
+            state: document.getElementById('state')?.textContent,
+            tabs: (await chrome.tabs.query({ active: true, currentWindow: true })).map(tab => ({
+                id: tab.id, url: tab.url, active: tab.active,
+            })),
+        }));
         check(/Garmin Connect or Strava/.test(popupState || ''),
-            `the Chrome popup did not query its real active tab and render the worker response: ${JSON.stringify(popupState)}`);
+            `the Chrome popup did not query its real active tab and render the worker response: ${JSON.stringify({ popupState, popupDiagnostics })}`);
         await popupPage.close();
+        await popupActivePage.close();
+        await context.unroute(popupActiveUrl);
     }
 
     const openAscent = async () => {
