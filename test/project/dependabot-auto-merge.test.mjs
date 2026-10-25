@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import yaml from 'js-yaml';
 
 import {
     ENTRIES,
@@ -144,6 +145,24 @@ test('npm groups preserve release paths and catch otherwise separate updates', (
     assert.doesNotMatch(developmentGuide, /\| `(?:editor|vendored)` \|/);
     assert.match(developmentGuide,
         /versioning-strategy: increase[\s\S]*already-satisfied TipTap siblings/);
+});
+
+test('manual-only Actions updates are monthly while npm keeps its fortnightly cadence', () => {
+    const updates = yaml.load(dependabotConfig).updates;
+    assert.equal(updates.length, 2);
+    const npm = updates.find(update => update['package-ecosystem'] === 'npm');
+    const actions = updates.find(update => update['package-ecosystem'] === 'github-actions');
+    assert.deepEqual(npm.schedule, {
+        interval: 'cron', cronjob: '0 9 * * mon%2', timezone: 'Etc/UTC',
+    });
+    assert.deepEqual(actions.schedule, {
+        interval: 'monthly', time: '09:00', timezone: 'Etc/UTC',
+    });
+    assert.deepEqual(actions.groups, { actions: { patterns: ['*'] } });
+    assert.equal(actions['open-pull-requests-limit'], 1);
+    assert.deepEqual(actions.cooldown, {
+        'semver-patch-days': 7, 'semver-minor-days': 14, 'semver-major-days': 30,
+    });
 });
 
 test('the declared and locked TipTap family moves as one version', () => {

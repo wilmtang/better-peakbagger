@@ -103,10 +103,10 @@ updates:
   # is defense in depth rather than authorization to merge.
   - package-ecosystem: github-actions
     directory: /
-    # Match the npm update cadence above.
+    # Manual-review updates arrive on the first day of each month at 09:00 UTC.
     schedule:
-      interval: cron
-      cronjob: "0 9 * * mon%2"
+      interval: monthly
+      time: "09:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 1
     cooldown:
