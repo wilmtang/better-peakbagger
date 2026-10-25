@@ -1,12 +1,13 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Shared privacy scanner for fixture tests and the repository-local pre-commit
-// hook. Identifiers are salted and hashed so the guard does not publish the
+// Shared privacy scanner for fixture tests and repository-local commit hooks.
+// Identifiers are salted and hashed so the guard does not publish the
 // values it is intended to block.
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,10 +42,37 @@ const COMMIT_BANNED_HASHES = new Set([
     '8ed47ae6ca5fb9c0cb9cbb86b9044c23f113cdd49249ec755c11b4c784023cc5'
 ]);
 
+// Whole host identifiers, not their common words or individual IP octets.
+// Keys bound the candidate lengths; only salted digests belong in this table.
+const STRUCTURED_BANNED_HASHES = new Map([
+    [7, new Set(['1108891fe52ef7bdf7341279dece54659f809fcf76c905256413ca85a0a5c726'])],
+    [12, new Set(['a477ee117ffaa28ab59a87febd7f2acef51f9c9cdcaf2682c30f405e4eb776b4'])],
+]);
+
+export const containsHashedStructuredIdentifier = (input, denylist = STRUCTURED_BANNED_HASHES) => {
+    const text = Buffer.isBuffer(input) ? input.toString('utf8') : String(input);
+    const seen = new Set();
+    for (const [chunk] of text.toLowerCase().matchAll(/[a-z0-9]+(?:[.-][a-z0-9]+)+/g)) {
+        for (const boundary of chunk.matchAll(/(?:^|[.-])(?=[a-z0-9])/g)) {
+            const start = boundary.index + boundary[0].length;
+            for (const [length, hashes] of denylist) {
+                const end = start + length;
+                if (end > chunk.length || /[a-z0-9]/.test(chunk[end] ?? '')) continue;
+                const candidate = chunk.slice(start, end);
+                if (!/[a-z0-9]$/.test(candidate) || seen.has(candidate)) continue;
+                seen.add(candidate);
+                if (hashes.has(hashToken(candidate))) return true;
+            }
+        }
+    }
+    return false;
+};
+
 const containsHashedIdentifier = (input, denylist) => {
     const text = Buffer.isBuffer(input) ? input.toString('utf8') : String(input);
     const tokens = new Set(text.toLowerCase().match(TOKEN_PATTERN) ?? []);
-    return [...tokens].some(token => denylist.has(hashToken(token)));
+    return [...tokens].some(token => denylist.has(hashToken(token)))
+        || containsHashedStructuredIdentifier(text);
 };
 
 export const containsFixtureBannedIdentifier = input =>
@@ -53,10 +81,11 @@ export const containsFixtureBannedIdentifier = input =>
 export const containsCommitBannedIdentifier = input =>
     containsHashedIdentifier(input, COMMIT_BANNED_HASHES);
 
-const runGit = args => {
+const runGit = (args, cwd) => {
     const result = spawnSync('git', args, {
+        cwd,
         encoding: null,
-        maxBuffer: MAX_GIT_OUTPUT
+        maxBuffer: MAX_GIT_OUTPUT,
     });
     if (result.error || result.status !== 0) {
         throw new Error('Git privacy scan failed');
@@ -64,13 +93,13 @@ const runGit = args => {
     return result.stdout;
 };
 
-const stagedPaths = () =>
-    runGit(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'])
+const stagedPaths = cwd =>
+    runGit(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'], cwd)
         .toString('utf8')
         .split('\0')
         .filter(Boolean);
 
-const stagedEntry = pathname => {
+const stagedEntry = (pathname, cwd) => {
     const records = runGit([
         '--literal-pathspecs',
         'ls-files',
@@ -78,7 +107,7 @@ const stagedEntry = pathname => {
         '-z',
         '--',
         pathname
-    ]).toString('utf8').split('\0');
+    ], cwd).toString('utf8').split('\0');
 
     for (const record of records) {
         const separator = record.indexOf('\t');
@@ -89,17 +118,17 @@ const stagedEntry = pathname => {
     throw new Error('Git privacy scan could not read the staged entry');
 };
 
-export const findStagedPrivacyLeaks = () => {
+export const findStagedPrivacyLeaks = ({ cwd, isBanned = containsCommitBannedIdentifier } = {}) => {
     const leaks = [];
-    for (const pathname of stagedPaths()) {
-        if (containsCommitBannedIdentifier(pathname)) {
+    for (const pathname of stagedPaths(cwd)) {
+        if (isBanned(pathname)) {
             leaks.push({ kind: 'path' });
             continue;
         }
 
-        const { mode, oid } = stagedEntry(pathname);
+        const { mode, oid } = stagedEntry(pathname, cwd);
         if (mode === '160000') continue;
-        if (containsCommitBannedIdentifier(runGit(['cat-file', 'blob', oid]))) {
+        if (isBanned(runGit(['cat-file', 'blob', oid], cwd))) {
             leaks.push({ kind: 'content', pathname });
         }
     }
@@ -111,20 +140,29 @@ const isMain = process.argv[1] &&
 
 if (isMain) {
     try {
-        const leaks = findStagedPrivacyLeaks();
-        if (leaks.length > 0) {
-            console.error('Commit blocked: staged data matches the private identifier denylist.');
-            for (const leak of leaks) {
-                if (leak.kind === 'path') {
-                    console.error('- A staged path contains a blocked identifier.');
-                } else {
-                    console.error(`- ${JSON.stringify(leak.pathname)} contains a blocked identifier.`);
-                }
+        const args = process.argv.slice(2);
+        if (args.length) {
+            if (args.length !== 2 || args[0] !== '--message-file') throw new Error('Invalid guard arguments');
+            if (containsCommitBannedIdentifier(readFileSync(args[1]))) {
+                console.error('Commit blocked: message matches the private identifier denylist.');
+                process.exitCode = 1;
             }
-            process.exitCode = 1;
+        } else {
+            const leaks = findStagedPrivacyLeaks();
+            if (leaks.length > 0) {
+                console.error('Commit blocked: staged data matches the private identifier denylist.');
+                for (const leak of leaks) {
+                    if (leak.kind === 'path') {
+                        console.error('- A staged path contains a blocked identifier.');
+                    } else {
+                        console.error(`- ${JSON.stringify(leak.pathname)} contains a blocked identifier.`);
+                    }
+                }
+                process.exitCode = 1;
+            }
         }
     } catch {
-        console.error('Commit blocked: the staged privacy scan could not complete.');
+        console.error('Commit blocked: the privacy scan could not complete.');
         process.exitCode = 1;
     }
 }

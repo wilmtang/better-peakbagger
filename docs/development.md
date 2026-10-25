@@ -18,9 +18,12 @@ Better Peakbagger module uses a global as an internal dependency.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
   (esbuild, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
   Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
-  which is what makes `.githooks/pre-commit` run the staged privacy scan in
-  `scripts/privacy-guard.mjs`. That scan refuses to commit any file containing
-  the account holder's identifiers, so it is the one check whose absence is
+  which makes `.githooks/pre-commit` scan staged contents and paths and
+  `.githooks/commit-msg` scan the proposed message through
+  `scripts/privacy-guard.mjs`. Salted hashes cover personal identifiers and
+  complete private hostnames/IPs, including compound resource names; common
+  hostname words and individual IP octets are not banned. Never commit the
+  plaintext identifiers as test cases. This is the one check whose absence is
   invisible until something has already been committed. If you already set
   `core.hooksPath` yourself the install leaves it alone and says so; enable the
   scan by hand with `git config core.hooksPath .githooks`.
