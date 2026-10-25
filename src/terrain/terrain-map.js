@@ -391,6 +391,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         focusPeak: data.focusPeak,
         snowStations: readSnotelMapStations(data.snowStations) || [],
         conditions: [],
+        occlusions: readSnotelMapOcclusions(data.occlusions),
         routeStyle: data.routeStyle,
         theme: data.theme,
         basemap: data.basemap,
@@ -525,6 +526,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 const pending = pendingLaunch || pendingInit;
                 if (pending) {
                     pending.snowStations = snowStations; pending.revealSnowStations = reveal;
+                    pending.occlusions = readSnotelMapOcclusions(data.occlusions);
                     pending.conditions = (conditions || pending.conditions).filter(id => snowStations.some(station => station.id === id));
                 }
                 postToFrame('snowStations', { snowStations, reveal, conditions, occlusions: readSnotelMapOcclusions(data.occlusions) });
@@ -559,7 +561,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             // snapshot once it can accept updates, including a toggle-off.
             if (pendingInit) {
                 if (pendingInit.updatePending) postToFrame('update', { routeStyle: pendingInit.routeStyle, theme: pendingInit.theme });
-                postToFrame('snowStations', { snowStations: pendingInit.snowStations, reveal: pendingInit.revealSnowStations === true, conditions: pendingInit.conditions });
+                postToFrame('snowStations', { snowStations: pendingInit.snowStations, reveal: pendingInit.revealSnowStations === true, conditions: pendingInit.conditions, occlusions: pendingInit.occlusions });
             }
             pendingInit = null;
             frameLoaded = true;

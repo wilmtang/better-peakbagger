@@ -233,8 +233,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // coarser ancestor and reports elevation 0 where it has none, so a view over
     // ground the provider does not cover renders as a convincing flat plane
     // rather than as a failure. A cache hit counts as data, since it is.
-    let demTilesWithData = 0;
-    let demTilesMissing = 0;
+    const demOutcomes = new Map();
     let elevationChecked = false;
     // Warming writes into the DEM cache, so a zero cache budget makes it pure
     // waste: every tile would be fetched and then thrown away.
@@ -435,8 +434,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (terrainCache) void terrainCache.close();
         terrainCache = null;
         terrainCacheWarmable = false;
-        demTilesWithData = 0;
-        demTilesMissing = 0;
+        demOutcomes.clear();
         elevationChecked = false;
         tiltWarmAt = 0;
         tiltWarmedTiles.clear();
@@ -474,6 +472,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // nothing.
     const suspendTerrain = () => {
         suspended = true;
+        showNotice('');
+        if (routePopup) { routePopup.remove(); routePopup = null; }
         cancelTiltWarm();
         map?.stop?.();
         snowReveal.cancel();
@@ -1877,12 +1877,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
             terrainCache = TerrainCache.create({ limitMb: cacheLimitMb });
             terrainCacheWarmable = cacheLimitMb > 0;
+            const cacheOwner = terrainCache;
+            const recordDem = (url, outcome) => {
+                if (terrainCache !== cacheOwner) return;
+                demOutcomes.delete(url); demOutcomes.set(url, outcome);
+                if (demOutcomes.size > 1000) demOutcomes.delete(demOutcomes.keys().next().value);
+            };
             maplibre.addProtocol(TerrainCache.PROTOCOL, (parameters, controller) =>
-                terrainCache.load(parameters, controller).then(result => {
-                    demTilesWithData++;
-                    return result;
+                cacheOwner.load(parameters, controller).then(result => {
+                    recordDem(parameters.url, 'data'); return result;
                 }, error => {
-                    if (TerrainCache.isMissingTile(error)) demTilesMissing++;
+                    if (TerrainCache.isMissingTile(error)) recordDem(parameters.url, 'missing');
                     throw error;
                 }));
             terrainProtocolRegistered = true;
@@ -2019,7 +2024,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             // only when it errored and never loaded a single tile (an entire
             // layer blocked by CORS), but keep it through partial coverage gaps.
             terrainMap.on('idle', () => {
-                if (map !== terrainMap || !loaded) return;
+                if (map !== terrainMap || !loaded || suspended) return;
                 // A view whose every elevation tile was absent has no surface to
                 // render. MapLibre draws that as a flat plane at sea level, which
                 // is a far worse answer than 2D: it looks like a working 3D map of
@@ -2028,7 +2033,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 // the provider does not cover.
                 if (!elevationChecked) {
                     elevationChecked = true;
-                    if (demTilesMissing > 0 && demTilesWithData === 0) {
+                    const bounds = demOutcomes.size ? terrainMap.getBounds() : null;
+                    const outcomes = [...demOutcomes].filter(([url]) => {
+                        const match = /^bpb-dem:\/\/(\d+)\/(\d+)\/(\d+)\.webp$/.exec(url);
+                        if (!match) return false;
+                        const [, z, x, y] = match.map(Number);
+                        return x >= TerrainTiles.lonToTileX(bounds.getWest(), z) && x <= TerrainTiles.lonToTileX(bounds.getEast(), z)
+                            && y >= TerrainTiles.latToTileY(bounds.getNorth(), z) && y <= TerrainTiles.latToTileY(bounds.getSouth(), z);
+                    }).map(([, outcome]) => outcome);
+                    if (outcomes.includes('missing') && !outcomes.includes('data')) {
                         fail('coverage');
                         return;
                     }
@@ -2180,6 +2193,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const resumeTerrain = data => {
         if (!map || !loaded) return false;
         suspended = false;
+        elevationChecked = false;
+        basemapChecked = basemapErrored = basemapContentLoaded = false;
         snowStations = readSnotelMapStations(data.snowStations) || [];
         snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : []);
         if (!snowMarkers.replace(map, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');

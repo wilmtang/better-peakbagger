@@ -380,7 +380,7 @@ for (const action of ['init', 'resume']) test(`terrain ${action} replays style, 
         assert.equal(original.theme, 'light');
         dispatchPage({ type: 'update', routeStyle: { color: '#347a3f', width: 6 } });
         dispatchPage({ type: 'update', theme: 'dark' });
-        dispatchPage({ type: 'snowStations', snowStations: [station], conditions: [station.id, 'not-a-station'], reveal: true });
+        dispatchPage({ type: 'snowStations', snowStations: [station], conditions: [station.id, 'not-a-station'], reveal: true, occlusions: [[0, 0, .2, .4]] });
         const beforeLoaded = frameMessages.length;
         dispatchFrame({ type: 'loaded' });
         const replay = frameMessages.slice(beforeLoaded);
@@ -388,6 +388,7 @@ for (const action of ['init', 'resume']) test(`terrain ${action} replays style, 
         assert.equal(replay.find(message => message.type === 'update')?.routeStyle.color, '#347a3f');
         assert.deepEqual(Array.from(replay.find(message => message.type === 'snowStations').conditions || []), [station.id], 'membership crosses the ready replay');
         assert.equal(replay.find(message => message.type === 'snowStations').reveal, true);
+        assert.deepEqual(Array.from(replay.find(message => message.type === 'snowStations').occlusions || [], row => Array.from(row)), [[0, 0, .2, .4]]);
         assert.equal(original.theme, 'light', 'the fixture models structured message serialization');
     } finally { window.close(); }
 });
@@ -2580,6 +2581,7 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
         isZooming() { return false; }
         isRotating() { return false; }
         fitBounds() {}
+        jumpTo() {}
         resize() {}
         remove() { this.removed = true; }
     }
@@ -2623,7 +2625,7 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
     const loadTiles = async (...urls) => Promise.all(urls.map(url =>
         protocol({ url }, new AbortController()).then(() => 'data', error => error)));
 
-    return { dom, window, messages, maps, requested, loadTiles, fireLoad: () => fireLoad() };
+    return { dom, window, messages, maps, requested, loadTiles, dispatch: payload => window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin, data: { __bpbTerrainFrame: true, dir: 'toFrame', ...payload } })), fireLoad: () => fireLoad() };
 };
 
 test('a region the elevation provider does not cover returns to 2D instead of paving the mountain', async () => {
@@ -2638,7 +2640,7 @@ test('a region the elevation provider does not cover returns to 2D instead of pa
     assert.equal(host.messages.at(-1).type, 'loaded', 'a coverage gap must not block the boot handshake');
 
     const outcomes = await host.loadTiles(
-        'bpb-dem://12/662/1443.webp', 'bpb-dem://11/331/721.webp', 'bpb-dem://10/165/360.webp');
+        'bpb-dem://12/662/1411.webp', 'bpb-dem://11/331/705.webp', 'bpb-dem://10/165/352.webp');
     assert.ok(outcomes.every(outcome => outcome.status === 404), 'every tile was absent');
 
     map.handlers.get('idle')();
@@ -2661,7 +2663,7 @@ test('an elevation gap above the provider level keeps the 3D view on the coarser
     const map = host.maps[0];
 
     const outcomes = await host.loadTiles(
-        'bpb-dem://14/2650/5772.webp', 'bpb-dem://13/1325/2886.webp', 'bpb-dem://12/662/1443.webp');
+        'bpb-dem://14/2650/5644.webp', 'bpb-dem://13/1325/2822.webp', 'bpb-dem://12/662/1411.webp');
     assert.deepEqual(outcomes.map(outcome => outcome.status ?? outcome), [404, 'data', 'data']);
 
     map.handlers.get('idle')();
@@ -2738,4 +2740,30 @@ test('a loaded DEM limit keeps the working terrain and shows one contextual noti
         assert.equal(map.removed, undefined);
         assert.equal(host.messages.some(message => message.type === 'error'), false);
     } finally { host.dom.window.close(); }
+});
+
+test('resumed coverage cannot borrow successful DEM tiles from the previous region', async () => {
+    const host = bootFrameWithTileHost({ tileStatus: url => url.includes('/662/') ? 200 : 404 });
+    try {
+        await new Promise(resolve => host.window.queueMicrotask(resolve));
+        const map = host.maps[0];
+        await host.loadTiles('bpb-dem://12/662/1411.webp'); map.handlers.get('idle')();
+        host.dispatch({ type: 'suspend' });
+        map.getBounds = () => ({ getWest: () => 10, getEast: () => 11, getSouth: () => 45, getNorth: () => 46 });
+        host.dispatch({ type: 'resume', focus: [45.5, 10.5], focusZoom: 12, theme: 'light' });
+        await new Promise(resolve => host.window.queueMicrotask(resolve));
+        await host.loadTiles('bpb-dem://12/2167/1465.webp'); map.handlers.get('idle')();
+        assert.equal(host.messages.at(-1).reason, 'coverage');
+    } finally { host.window.close(); }
+});
+
+test('parking the terrain renderer clears transient provider notices', async () => {
+    const host = bootFrameWithTileHost({ tileStatus: () => 200 });
+    try {
+        await new Promise(resolve => host.window.queueMicrotask(resolve));
+        host.maps[0].handlers.get('error')({ sourceId: 'terrain', error: { status: 429, retryAt: Date.now() + 60000 } });
+        assert.equal(host.window.document.querySelector('.bpb-terrain-notice').hidden, false);
+        host.dispatch({ type: 'suspend' });
+        assert.equal(host.window.document.querySelector('.bpb-terrain-notice').hidden, true);
+    } finally { host.window.close(); }
 });

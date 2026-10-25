@@ -328,6 +328,12 @@ Independent commits for drag ownership and report/observer surfaces:
   25 map-layer tests, build and focused ESLint passed. Broader browser checks are
   still in progress and are not represented as terrain renderer evidence.
 
+- F10 renderer/replay: suspend clears transient route popups/notices; bounded DEM
+  outcomes are checked against resumed view bounds, retaining cached parent coverage
+  without borrowing another region. Basemap checks re-arm; pending station replay
+  retains validated occlusions. The previous-region regression failed before the
+  fix; 37 terrain tests, build and ESLint passed. True-extension Chrome passed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
@@ -339,6 +345,9 @@ Independent commits for drag ownership and report/observer surfaces:
 
 ### Changed but not fully proven
 
+- F10 hardware Chrome reached Apple M3 Pro Metal but stopped before 3D at a
+  pre-existing native-toggle gap (41 px, verifier limit 40 px). Firefox terrain
+  verification is still running; hardware rendering is not yet claimed complete.
 - Audit corrections only. Runtime items above remain open until their focused
   regression checks pass; source inspection alone is not UI or live-service proof.
 - Live Garmin/ImgBB/GitHub/provider operations, native browser chrome/focus, assistive
