@@ -221,6 +221,11 @@ Independent commits for drag ownership and report/observer surfaces:
   fix; 19 provider route tests, focused ESLint and hidden Chrome extension
   verification passed. Live provider navigation remains unproven.
 
+- F6: local-photo submission explicitly flushes hosted URLs into Plain-mode
+  recovery drafts through the existing guarded persistence queue. The new stale-URL
+  test failed before the fix; report-photo/draft tests, build and focused ESLint
+  passed after it. Native Peakbagger POST behavior remains a live proof limit.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

@@ -816,14 +816,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             : then.toLocaleDateString([], { month: 'short', day: 'numeric' });
     };
 
-    const saveDraftNow = () => {
+    const saveDraftNow = ({ includePlain = false } = {}) => {
         if (!draftKey) return;
         if (state.autosaveTimer !== null) {
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
         }
         if (state.terminalSubmission) return;
-        if (!['rich', 'markdown'].includes(state.mode) && !state.nativeHandoff
+        if (!includePlain && !['rich', 'markdown'].includes(state.mode) && !state.nativeHandoff
             && !PendingPhoto.ids(textarea.value).length) return;
         flushSync();
         const revision = draftEditRevision;
@@ -1629,7 +1629,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     if (!isProfile) localPhotos = installReportLocalPhotos({
         ext, form, textarea, ui, getEditor: () => richEditor,
-        flush: flushSync, saveDraft: saveDraftNow, launchEditor: launchPhotoEditor,
+        flush: flushSync, saveDraft: () => saveDraftNow({ includePlain: true }), launchEditor: launchPhotoEditor,
         replaceText: replacements => {
             flushSync();
             const replace = text => {

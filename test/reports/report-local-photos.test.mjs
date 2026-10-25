@@ -242,3 +242,27 @@ test('rate-limit advice remains visible while pending photos and native editing 
         assert.equal(h.ui.querySelector('.bpb-re-local-photo-status').dataset.state, 'error');
     } finally { h.dom.window.close(); }
 });
+
+test('plain-mode photo upload replaces pending URLs in an existing recovery draft before native submission', async () => {
+    const text = `[img src="${src}" alt="Mountain"]`; let submissions = 0;
+    const dom = await loadEditor({ report: text, settings: { reportEditorMode: 'plain' },
+        drafts: { [DRAFT_KEY]: { text, mode: 'plain', savedAt: Date.now() } }, prepare: d => {
+            d.chrome.runtime.sendMessage = async message => {
+                if (message.type === 'PHOTO_REPORT_READ') return { ok: true, dataUrl: 'data:image/png;base64,eA==' };
+                if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'activation' };
+                if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'grant' };
+                if (message.type === 'TRUSTED_ACTION_END') return { ok: true };
+                if (message.type === 'PHOTO_REPORT_UPLOAD') return { ok: true, url: hosted };
+                if (message.type === 'PHOTO_REPORT_INSERTED') return { ok: true, recorded: true };
+            };
+            // Keep the page alive as it would be after an unconfirmed/failed native POST.
+            d.window.document.getElementById('JournalText').form.requestSubmit = () => { submissions++; };
+        } });
+    try {
+        await editorReady(dom);
+        fireTrustedEvent(dom.window.document.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+        await waitFor(dom, () => submissions === 1);
+        assert.match(dom.chrome._localStore[DRAFT_KEY].text, /https:\/\/i\.ibb\.co/);
+        assert.doesNotMatch(dom.chrome._localStore[DRAFT_KEY].text, /bpb-photo\.invalid/);
+    } finally { dom.window.close(); }
+});
