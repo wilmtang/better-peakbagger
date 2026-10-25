@@ -4039,4 +4039,8 @@ test('report-photo editing keeps its accepted image and does not dirty an unchan
     const otherCard = page.doc.querySelector(`[data-local-id="${otherId}"]`);
     assert.equal(otherCard.querySelector('[data-action=edit]'), null);
     assert.equal(otherCard.querySelector('[data-action=insert]'), null);
+    page.doc.getElementById('show-library').click();
+    page.doc.querySelector(`[data-local-id="${localId}"] [data-action=edit]`).click();
+    await waitFor(page.dom, () => !page.doc.getElementById('editor-view').hidden && !page.doc.getElementById('upload-insert').disabled);
+    assert.match(page.doc.getElementById('editor-status').textContent, /Edits stay on this device/);
 });

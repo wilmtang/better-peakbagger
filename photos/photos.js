@@ -2822,6 +2822,9 @@ const editAsNewVersion = async (item, control = null) => {
         decodedBitmap?.close?.();
         if (newVersionTransaction === owner) newVersionTransaction = null;
         setBusy(false);
+        if (opened) setEditorStatus(LOCAL_PHOTO_ID
+            ? 'Edits stay on this device. Save and return to update the TR.'
+            : 'Photo opened. Edits stay on this device.');
         if (opened || draftDirty) setView('editor');
         if (control) {
             control.disabled = false;

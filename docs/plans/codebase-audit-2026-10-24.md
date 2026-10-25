@@ -282,6 +282,11 @@ Independent commits for drag ownership and report/observer surfaces:
   themes; the report-context controls, caption status, empty text and Undo passed
   and rendered editor/library states were inspected. External APIs were stubbed.
 
+- F7 rendered follow-up: visual inspection found a completed library reopen still
+  saying “Opening photo…”. The new status assertion failed before the fix; five
+  focused switching/editor tests and the hidden Chrome/Firefox report-edit matrix
+  passed after it, with the completed rendered status inspected again.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

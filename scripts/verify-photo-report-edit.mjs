@@ -62,5 +62,6 @@ export async function verifyPhotoReportEdit(page, origin, variant, { capture }) 
     await page.locator(`[data-local-id="${original.localId}"] [data-action=edit]`).click();
     await page.locator('#editor-workspace').waitFor();
     await page.locator('#upload-insert').filter({ hasText: 'Save and return' }).waitFor();
+    await page.locator('#editor-status').filter({ hasText: 'Edits stay on this device' }).waitFor();
     await capture(page, `${variant.name}-report-photo-edit`);
 }
