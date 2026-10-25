@@ -27,6 +27,23 @@ connection during the narrow analyzer case.
 
 ### Fixed and verified
 
+- **Later matrix failures:** [the second published run](https://github.com/wilmtang/better-peakbagger/actions/runs/40237887393)
+  passed all 3,582 tests, scale checks, Firefox 152/current, and both browsers'
+  GPU checks. Its later card cases exposed a real enlarged-text defect: a 216px
+  hidden status reservation left a 104px keyboard action in a 47px body. Cap
+  that reservation after reserving one full action and recovery controls; long
+  status copy remains keyboard-scrollable. Preserve all geometry/readability
+  assertions and include live bounds on failure. All 19 card tests and all
+  eight Chrome/Firefox climber matrices passed afterward, including 540px
+  subcases, both themes and doubled text; detail renders were inspected.
+  The capture-flow observer now uses the authorized popup path, distinguishes
+  itself from the native toolbar target, and explicitly clicks Capture after
+  proving popup opening starts no provider read. Its full Chrome flow passed
+  all export/privacy/cancellation/Preview/no-Save cases. Finally, Chrome 128
+  hides the active extension-tab URL when no toolbar gesture granted activeTab;
+  the popup inspection now selects a host-permitted HTTPS fixture instead.
+  The original failure reproduced in pinned Chrome 128 and its complete real
+  extension check then passed, including teardown, with no permission change.
 - **Published-head follow-up:** [the first published Test run](https://github.com/wilmtang/better-peakbagger/actions/runs/40237076937)
   passed Node/scale checks but exposed additional browser failures. A duplicate
   final Settings scroll notification replaced the correct near-bottom fragment
@@ -132,6 +149,9 @@ Follow-through combined checks: `npm ci`, all **3,576** tests, **14** scale test
 `npm run lint` (eight owned warnings), and the reviewed-advisory gate passed.
 The subsequently added five focused terrain assertions passed separately;
 the full terrain verifier passed. All 20 immutable changelog sections passed.
+After the later card and capture-fixture repairs, the full local **3,582** tests
+and `npm run lint` passed again (the same eight owned warnings). Final published
+CI is checked separately; do not infer its result from these local runs.
 The initial investigation's real unpacked extension passed hidden Chrome for Testing
 156.0.8078.4 verification at 1000×760, including analyzer controls at
 1600/800/390px, both themes, and enlarged text. Teardown passed. That earlier
