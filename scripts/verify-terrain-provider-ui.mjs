@@ -45,10 +45,23 @@ const readCredits = () => {
     const style = getComputedStyle(credits);
     const link = credits.querySelector('a[href="https://www.openstreetmap.org/copyright"]');
     const hint = doc.querySelector('.bpb-terrain-hint');
+    // The credit block can wrap around an anchored zoom stack. Its bounding
+    // box includes empty space; measure painted text fragments for overlap.
+    const lines = [];
+    const walker = doc.createTreeWalker(credits, window.NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+        if (!walker.currentNode.textContent.trim()) continue;
+        const range = doc.createRange();
+        range.selectNodeContents(walker.currentNode);
+        for (const rect of range.getClientRects()) lines.push({
+            x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom,
+        });
+    }
     return {
         visible: style.display !== 'none' && style.visibility !== 'hidden' && credits.getClientRects().length > 0,
         linkVisible: Boolean(link?.getClientRects().length), credits: box(credits),
-        creditText: credits.textContent, frameWidth: doc.documentElement.clientWidth,
+        creditText: credits.textContent, lines,
+        frameWidth: doc.documentElement.clientWidth, frameHeight: doc.documentElement.clientHeight,
         hint: box(hint), hintVisible: !hint.hidden && getComputedStyle(hint).opacity !== '0',
         nav: box(doc.querySelector('.maplibregl-ctrl-group')),
         scale: box(doc.querySelector('.maplibregl-ctrl-scale')),
@@ -76,10 +89,30 @@ const restoreCredits = () => {
     delete window.__bpbCreditsProbe;
 };
 
-export const assertStableTerrainGeometry = (before, after, label, keys = ['nav', 'scale', 'picker', 'toggle', 'heading', 'following', 'mount', 'scroll']) => {
+// Attribution may change when a failed source is removed. The informational
+// scale follows the resulting credit inset; actions and reading position must
+// stay anchored, and painted credits must avoid the scale in both states.
+export const assertStableTerrainGeometry = (before, after, label, keys = ['nav', 'picker', 'toggle', 'heading', 'following', 'mount', 'scroll']) => {
+    for (const state of [before, after]) if (state.lines) assertTerrainCreditLayout(state, label);
     for (const key of keys) for (const field of Object.keys(before[key])) {
         assert.ok(Math.abs(before[key][field] - after[key][field]) <= 1,
             `${label}: ${key}.${field} moved (${before[key][field]} → ${after[key][field]})`);
+    }
+};
+
+export const assertTerrainCreditLayout = (state, label) => {
+    assert.ok(state.lines.length > 0, `${label}: no painted credit text`);
+    const controls = ['nav', 'scale', 'picker', ...(state.hintVisible ? ['hint'] : [])];
+    for (const line of state.lines) {
+        assert.ok(line.x >= -1 && line.y >= -1 && line.right <= state.frameWidth + 1
+            && line.bottom <= state.frameHeight + 1,
+        `${label}: credit text leaves the map: ${JSON.stringify(state)}`);
+        for (const key of controls) {
+            const control = state[key];
+            const overlaps = line.x < control.right - 1 && line.right > control.x + 1
+                && line.y < control.bottom - 1 && line.bottom > control.y + 1;
+            assert.ok(!overlaps, `${label}: credit text overlaps ${key}: ${JSON.stringify(state)}`);
+        }
     }
 };
 
@@ -98,13 +131,7 @@ export async function verifyTerrainCredits({ evaluate, screenshot }) {
             const after = await evaluate(`(${readCredits})()`);
             assert.ok(after.visible && after.linkVisible, `${label}: expanded credits remain visible`);
             assert.match(after.creditText, /Regional mapping contributors/, `${label}: long provider attribution was applied`);
-            assert.ok(after.credits.y >= 0, `${label}: credits must stay inside the map`);
-            assert.ok(after.credits.x >= 0 && after.credits.right <= after.frameWidth - 60,
-                `${label}: credits must wrap clear of the zoom controls: ${JSON.stringify(after)}`);
-            if (after.hintVisible) {
-                assert.ok(after.hint.y >= 0, `${label}: gesture hint must stay inside the map`);
-                assert.ok(after.hint.bottom <= after.credits.y, `${label}: gesture hint covers credits`);
-            }
+            assertTerrainCreditLayout(after, label);
             assertStableTerrainGeometry(before, after, label);
             if (screenshot) await screenshot(`terrain-credits-${label}`);
             cases++;
