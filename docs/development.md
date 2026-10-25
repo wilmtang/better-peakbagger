@@ -701,14 +701,18 @@ upstream change and the workflows it reaches before merging one.
 2. `dependabot-auto-merge.yml` runs on `pull_request_target`, so the privileged
    job comes from trusted `main`, not from the proposed merge commit. It never
    checks out, downloads, or executes the pull-request branch.
-3. On every opened, reopened, or changed head, the job first clears any existing
-   auto-merge request. It then asks GitHub for up to two commits and requires
+3. On every opened, reopened, or changed head, jobs serialize per PR. The job
+   checks that the event still names the current open head, clears any existing
+   auto-merge request, and verifies removal. API errors fail the job rather than
+   being hidden. It then asks GitHub for up to two commits and requires
    exactly one: the event's current head, authored by `dependabot[bot]`, with a
    verified signature. A hand-pushed commit therefore leaves the PR manual.
 4. `dependabot/fetch-metadata` parses that verified Dependabot commit. Only an
    `npm` ecosystem result reaches `gh pr merge --auto --merge`, and the command
    uses `--match-head-commit` so the head cannot change between verification and
-   queueing. GitHub Actions updates stop here for human review.
+   queueing. A final read confirms that exact head is queued with the merge
+   method or already merged; CLI success alone is insufficient. GitHub Actions
+   updates stop here for human review.
 5. Queueing sets a flag and nothing more. GitHub merges once the `main` ruleset
    is satisfied, which means the pull request is current with `main` and the
    four stable required checks in `test.yml` have passed against that base. The

@@ -22,6 +22,15 @@ on:
 permissions:
   contents: read
 
+# A reset from an older run must not race a newer head's queue decision.
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   auto-merge:
     name: Auto-merge dependency updates
@@ -40,9 +49,27 @@ jobs:
       # an existing auto-merge request. Reset it before inspecting every new
       # head so a failed provenance check always leaves the PR manual.
       - name: Reset any previously queued merge
-        run: gh pr merge --disable-auto "$PR_URL" 2>/dev/null || true
+        run: |
+          state="$(gh pr view "$PR_URL" --json state,headRefOid,autoMergeRequest)"
+          if ! jq -e --arg head "$HEAD_SHA" '
+            .state == "OPEN" and .headRefOid == $head
+          ' <<<"$state" >/dev/null; then
+            echo 'Refusing stale merge decision: the PR is closed or its head changed.' >&2
+            exit 1
+          fi
+          if jq -e '.autoMergeRequest != null' <<<"$state" >/dev/null; then
+            gh pr merge --disable-auto "$PR_URL"
+          fi
+          state="$(gh pr view "$PR_URL" --json state,headRefOid,autoMergeRequest)"
+          if ! jq -e --arg head "$HEAD_SHA" '
+            .state == "OPEN" and .headRefOid == $head and .autoMergeRequest == null
+          ' <<<"$state" >/dev/null; then
+            echo 'Refusing auto-merge: could not confirm a cleared queue at the event head.' >&2
+            exit 1
+          fi
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # fetch-metadata validates only the first commit. Dependabot PRs are
@@ -78,7 +105,20 @@ jobs:
         # fetch-metadata uses Dependabot's internal npm ecosystem identifier,
         # not the shorter package-ecosystem value from dependabot.yml.
         if: steps.metadata.outputs.package-ecosystem == 'npm_and_yarn'
-        run: gh pr merge --auto --merge --match-head-commit "$HEAD_SHA" "$PR_URL"
+        run: |
+          gh pr merge --auto --merge --match-head-commit "$HEAD_SHA" "$PR_URL"
+          state="$(gh pr view "$PR_URL" --json state,headRefOid,autoMergeRequest)"
+          if ! jq -e --arg head "$HEAD_SHA" '
+            .headRefOid == $head and (
+              .state == "MERGED" or (
+                .state == "OPEN" and .autoMergeRequest.mergeMethod == "MERGE"
+              )
+            )
+          ' <<<"$state" >/dev/null; then
+            echo 'Auto-merge was not confirmed at the verified head; inspect the PR and required checks.' >&2
+            exit 1
+          fi
+          echo 'Verified npm merge queued or completed. Required checks still gate the merge.' >> "$GITHUB_STEP_SUMMARY"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
