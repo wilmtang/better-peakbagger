@@ -104,6 +104,7 @@ independent of the existing targets.
 - [verify-terrain-cache-owners.mjs](verify-terrain-cache-owners.mjs)
 - [verify-terrain-lod.mjs](verify-terrain-lod.mjs)
 - [verify-terrain-popup.mjs](verify-terrain-popup.mjs)
+- [verify-terrain-provider-ui.mjs](verify-terrain-provider-ui.mjs)
 - [verify-terrain-visual.mjs](verify-terrain-visual.mjs)
 
 ## Climbers and profiles
