@@ -6,9 +6,12 @@ runtime, source editor, parser worker or new permission has been implemented.
 ## Decision
 
 Let users save their own **raster tiles, vector tiles and GeoJSON overlays** and
-enable them from the existing **Overlays** menu on peak, ascent, Full Screen and
-standalone native maps. Preserve the selection when switching between 2D and
-supported 3D. Keep the existing basemap picker separate.
+enable them from the existing **Overlays** menu on **every interactive map on
+Peakbagger**, including BigMap/Full Screen, ascent maps, peak maps, the **10 most
+recent tracks** map, different-routes maps and the other map contexts below.
+This is a site-wide map capability, not a feature restricted to three page types.
+Preserve the selection when switching between 2D and supported 3D. Keep the
+existing basemap picker separate.
 
 Use **direct HTTPS requests to the user's selected providers**. There is no
 BPB/Gaia/third-party proxy, no background-worker tile relay and no new optional
@@ -35,11 +38,77 @@ separate follow-up, rather than a hidden limitation that only appears in 2D.
 | [Camera conversion](../../src/terrain/terrain-camera.js) offsets Leaflet and MapLibre zoom by one. Raster and vector sources also have different logical tile-size conventions. | Derive canonical tile coordinates and style zoom consistently. Copying `map.getZoom()` into both adapters would request different detail levels at the same view. |
 | [Tile loading](../../src/maps/map-overlay-tiles.js) already omits credentials/referrers, limits bodies, cancels obsolete work and distinguishes rate limits. | Extract a small reusable transport boundary where necessary; preserve built-in provider behavior and avoid an unrelated loader rewrite. |
 | [Layer bridge](../../src/maps/map-layer-bridge.js), [typed protocol](../../src/maps/map-layer-protocol.js) and [Full Screen handoff](../../src/background/map-layer-handoff.js) reject unrecognized data. | Extend these contracts explicitly. Configuration, session selection and remote feature data are different payloads. |
+| [Map-type inventory](../peakbagger-map-types.md) includes recent/different-route groups and many non-route contexts. The current overlay bootstrap recognizes selected outer pages, while the manifest and browser fixtures cover specific path spellings. | Make coverage a map-instance contract. Audit injection and parent/frame ownership together; the current small page matrix does not establish every map context or URL variant. |
 | [Privacy policy](../../PRIVACY.md) promises no developer-operated data server. [Settings portability](../settings-storage-and-sync.md) uses explicit export/sync inventories. | Direct requests preserve the server boundary. Store source definitions locally in a separate registry and exclude them from existing generic settings exports/backups. |
 
 The UI proposal applies the repository's
 [UI/UX skill](../../.agents/skills/ui-ux-pro-max/SKILL.md): reuse existing controls,
 make network work explicit, validate near the field and reserve feedback space.
+
+## Map coverage: every Peakbagger map
+
+The same device-local custom-source library, Add/Edit controls, opacity and
+CORS feedback must be available on every interactive Peakbagger map. Saving a
+source once makes it selectable everywhere; users do not recreate it for each
+page or map type. Availability is global to the installation; enabling a layer
+remains an explicit choice for each map session, not automatic requests from
+every open map.
+
+The following is a **required coverage checklist**, not a closed allowlist:
+
+| Surface or context | Required overlay coverage |
+| --- | --- |
+| Peak page Dynamic Map | Embedded peak map, before/without any GPX or 3D activation |
+| Ascent page map | With or without a GPS track, GPX Analyzer or completed GPX load |
+| BigMap / Full Screen | Single ascent, peak and grouped-route variants |
+| 10 most recent tracks / recent routes | Group map `t=G`, `gt=rc`; custom overlays preserve each native route's color, hover, popup and click behavior |
+| Different routes | Group map `t=G`, `gt=rt`, with the same controls and route preservation |
+| Peak lists, climber maps and ranges | Known contexts `t=L`, `t=C` and `t=R` |
+| Wilderness, key col, isolation, jut and shore distance | Known contexts `t=W`, `t=K`, `t=I`, `t=J` and `t=S` |
+| Peak edit/update location maps | Known contexts `t=E` and `t=U`; overlays remain noninteractive and preserve native placement/drag/save controls |
+| Completion and reference maps | Known contexts `t=M` and `t=F`; preserve their native vector/cookie behavior |
+| Standalone or embedded MasterMap | Direct links, maps inside other Peakbagger pages, late-loaded/replaced frames and multiple distinct map instances on one page |
+| Other existing or newly discovered map contexts | Use the shared adapter when compatible; add an adapter and coverage case when needed instead of silently dropping that map from scope |
+
+The `t`/`gt` meanings above come from the repository's
+[map-type inventory](../peakbagger-map-types.md) and
+[group-map tests](../../test/maps/big-map.test.mjs), not a fresh survey of the
+live site. Record any additional renderer or host layout discovered during
+implementation and prove its attachment path before calling coverage complete.
+Static images and external mapping websites are not interactive Peakbagger map
+instances; no injection into third-party websites is part of this design.
+
+### Map attachment and ownership
+
+- Attach by a validated native map instance and its owning frame, not only by
+  an outer page name or `t=A/P/G`. In particular, the route/subject allowlist in
+  the BigMap **3D coordinator** must not gate custom overlays on native 2D maps.
+  No subject peak ID, account identity, GPS track or route download is needed
+  merely to expose the custom-source library.
+- Audit the MAIN overlay entry, isolated registry bridge, editor host and helper
+  resources together. Cover `www`/bare Peakbagger and known path/case variants,
+  including `/Map/BigMap.aspx` as well as `/map/BigMap.aspx`. A child must not
+  defer ownership solely because its parent's pathname looks recognized when
+  that parent never received or attached the overlay integration.
+- Give each actual map one control, one session identity and one active renderer
+  owner. A parent/frame ownership handshake prevents duplicate controls and
+  request batches. Multiple maps in one document must not share a single
+  implicit `window.map` selection or route Preview/Retry to the wrong map.
+- Where the outer page owns the control, anchor it to that map's visible box.
+  Where no outer owner attaches, the MasterMap frame owns its own control and
+  receives the same source library. Lazy loading, frame replacement, BFCache
+  and map removal must detach/rebind by instance without losing another map's
+  controls or leaking its pending work.
+- Keep controls available when 3D is disabled, unsupported or ineligible. For
+  surfaces that already support 3D, preserve custom selections through renderer
+  changes; this feature does not make every specialized/edit map 3D-capable.
+- Bind editor/preview handles and Full Screen selection to the initiating map
+  instance, not just the tab. Saved definitions and opacity preferences can be
+  shared; enablement, draft previews, loading/errors and cancellation cannot.
+
+Do not mark this scope complete because peak, ascent and one generic BigMap
+fixture pass. The per-surface checklist, both group modes, frame ownership and
+path/case coverage are release gates.
 
 ## Supported source contract
 
@@ -512,8 +581,8 @@ them only with explicit fixture/performance evidence.
 | Raster tile | 4 MiB body; declared 256/512 dimensions and at most a documented 2× pixel-ratio variant |
 | MVT tile | 2 MiB decoded HTTP body; 32 data layers, 10,000 features, 100,000 vertices, bounded tags/strings/command counts |
 | GeoJSON collection | 5 MiB body, 10,000 features, 100,000 positions, bounded properties/depth |
-| Network queue | 4 concurrent / 64 queued custom requests per active map, shared fairly among its sources |
-| Decoder | 2 active jobs per map; 2-second hard deadline per job, terminable; no synchronous UI-thread fallback |
+| Network queue | 4 concurrent / 64 queued custom requests per tab, shared fairly among its visible map instances and their sources |
+| Decoder | 2 active jobs per tab across map instances; 2-second hard deadline per job, terminable; no synchronous UI-thread fallback |
 | Decoded retention | 32 MiB accounted tile bytes/geometry per map, LRU eviction; bound vertex totals and canvas/texture ownership as well |
 | Request deadline | 15 seconds including body consumption, cancelled when its owner is retired |
 
@@ -541,25 +610,30 @@ cannot erase provider responses from the browser's general cache.
 
 Each step is a coherent implementation unit with its own checks. Preserve
 unrelated working-tree changes. Do not call the feature complete after only
-the raster step; GeoJSON and MVT are part of this design's requested scope.
+the raster step or only the three common page types; GeoJSON, MVT and the full
+map coverage checklist are part of this design's requested scope.
 
-1. **Source schema and local registry.** Add pure typed validation and atomic
+1. **Map-instance coverage and ownership.** Inventory every map family above,
+   establish one owner per native map, fix injection/frame handoff gaps, and
+   prove controls/bridge attachment without GPX or 3D eligibility. Include both
+   group modes, known URL variants and multiple maps per document.
+2. **Source schema and local registry.** Add pure typed validation and atomic
    editor-only mutations; extend session snapshot/handoff readers, ID/revision
    resolution and stale-edit tests. No provider requests yet.
-2. **Direct transport and raster adapters.** Add bounded direct CORS loading,
+3. **Direct transport and raster adapters.** Add bounded direct CORS loading,
    origin review, zoom/bounds semantics, rate limits and parent fallback in both
    renderers. Keep the feature unreleased until the editor/activation path exists.
-3. **Editor and menu management.** Add the packaged editor, local listing,
+4. **Editor and menu management.** Add the packaged editor, local listing,
    preview transaction and stable row controls; verify real extension loading
    and narrow/zoomed layouts before claiming the UI implemented.
-4. **GeoJSON overlays.** Add the shared geometry/style contract, bounded parser
+5. **GeoJSON overlays.** Add the shared geometry/style contract, bounded parser
    worker, native/terrain adapters and atomic refresh. Verify holes, Multi*
    geometry, invalid CRS/dateline rejection and no HTML/property execution.
-5. **MVT overlays.** Prove the packaged native-map decoder path first, explicitly
+6. **MVT overlays.** Prove the packaged native-map decoder path first, explicitly
    declare/audit parser dependencies, then implement shared styles, canonical
    grids, source-layer selection, clipped parent fallback and both adapters.
    Do not expose an enabled MVT option until both modes and teardown pass.
-6. **Release contract and complete verification.** Update [map layers](../map-layers.md),
+7. **Release contract and complete verification.** Update [map layers](../map-layers.md),
    [architecture](../architecture.md), [privacy](../../PRIVACY.md), storage/export
    inventories, dependency acknowledgements and packaging where actually changed.
    Archive this proposal with its completed/intentional/unproven ledger intact.
@@ -581,6 +655,8 @@ has visual proof; those are implementation gates.
 
 | Boundary | Required evidence |
 | --- | --- |
+| Every map surface | Execute the coverage checklist explicitly, including `t=G` with `gt=rc` and `gt=rt`, non-route/edit/reference contexts, `www`/bare host, path/case variants and 3D disabled. Each exposes the same saved library and can add/enable/preview raster, GeoJSON and MVT without GPX/subject prerequisites; test supported 3D separately. |
+| Map-instance ownership | One menu and request owner per map; parent absent/uninitialized, direct MasterMap, arbitrary containing page, lazy/replaced frames and two maps in one document. Preview, CORS errors, opacity, Retry, removal and Full Screen selection affect the intended instance only; shared queue limits still hold. |
 | Pure schema/storage | Unknown IDs/types, hostile URLs, query preservation, malformed/deep JSON, oversized metadata, duplicate IDs, stale editors, failed startup/storage, serialized writes and corrupt-record preservation |
 | Direct requests | CORS success and denial from actual Peakbagger and extension origins; no new permission/proxy/worker fetch; credentials/referrers absent; redirects rejected; metadata cannot silently add a host |
 | CORS/configuration prompts | Denied metadata and denied tiles after successful metadata; raster/MVT/GeoJSON; mode-specific and partial failures; visible URL/CORS help, Edit/Retry and one accessible announcement; generic fetch rejection does not falsely claim confirmed CORS, repeat requests or become empty data; known HTTP errors retain their specific copy |
@@ -640,6 +716,9 @@ Documentation-only validation for this proposal is recorded below separately.
   Browser compatibility, CORS behavior, parser performance/worker delivery,
   rendered parity, fallback quality and UI stability remain unimplemented and
   unproven. Proposed numerical budgets require measurement before release.
+- Site-wide map coverage is a requirement, not a verified current capability.
+  The native type inventory predates this proposal; additional live map layouts,
+  injection/path variants and per-instance ownership need implementation proof.
 - Remote style support may later need a different shared rendering strategy for
   labels/collision/sprites. Do not promise full MapLibre style compatibility by
   relaxing the simple-rule parser or only supporting it in 3D.

@@ -1,8 +1,9 @@
 # Active plans
 
 - [Custom map overlays: direct raster and vector sources](custom-map-overlays.md)
-  — proposed; user-managed raster tiles, MVT vector tiles and GeoJSON in native
-  2D and supported 3D, with direct CORS requests, shared appearance rules,
+  — proposed; user-managed raster tiles, MVT vector tiles and GeoJSON on every
+  Peakbagger map, including recent/different-route groups, in 2D and supported
+  3D, with direct CORS requests, shared appearance rules,
   device-local definitions and explicit zoom/failure/lifecycle verification gates.
 
 - [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
