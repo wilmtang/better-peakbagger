@@ -1,10 +1,11 @@
 # FCC full-source conversion experiment
 
-October 25, 2026. **Stopped by the user: 122 of 460 source archives verified,
-one of nine national archives complete.** These scripts are research tooling,
-outside the extension build. Adding them to this report does not resume the
-batch. Original data, credentials, tools and generated PMTiles remain outside
-the repository, normally in `~/Dev/fcc-tiles`.
+October 25, 2026. **The local run was stopped at 122 of 460 source archives,
+with one of nine national archives complete. A later explicit request resumed
+the job on `build-host`; local converters remain stopped.** These scripts are
+research tooling outside the extension build. See the
+[VPS deployment record](vps-deployment.json) and the remote-execution section
+below. Original data, credentials, tools and PMTiles remain outside Git.
 
 The [run snapshot](run-snapshot.json) records 246 downloaded archives, 122
 verified conversions representing 5,197,020 source features, and one verified
@@ -23,7 +24,10 @@ that a process is still running. There is no complete national manifest.
 | [fcc_status.py](fcc_status.py) | Read local progress, sizes and discrepancy receipts without printing credentials. |
 | [fcc_verify_browser.mjs](fcc_verify_browser.mjs) | Hidden hardware-WebGL rendering of selected source classifications in Washington, California and New York. |
 | [fcc_audit.py](fcc_audit.py) | Archive hashes, PMTiles directory counts, every unique gzip tile payload and final inventory/catalog/browser consistency. |
-| [test_fcc_tiles.py](test_fcc_tiles.py) | Small regression fixtures for source counts, national completeness, catalog safety, holes, modes, small islands, merging and corrupted payloads. |
+| [fcc_run_vps.py](fcc_run_vps.py) | Persistent VPS supervision, imported-output verification, sequential assembly and data-only final audit. |
+| [fcc_sizes.py](fcc_sizes.py) | Exact source-size survey using existing receipts or at most 64 KiB of a ZIP central directory per missing archive. |
+| [start-vps.sh](start-vps.sh) | Linux-only systemd launcher with CPU/memory limits and a mounted-data-disk prerequisite. |
+| [test_fcc_tiles.py](test_fcc_tiles.py) | Nine small regression fixtures covering data/geometry, safe resume, raw sizes, ZIP tails, completed-build and national-assembly restarts. |
 
 The checked-in copies share `FCC_TILE_ROOT`, defaulting to `~/Dev/fcc-tiles`.
 Set `FCC_TIPPECANOE_DIR` if the tool binaries are elsewhere. The browser verifier
@@ -32,6 +36,90 @@ Compared with the interrupted local scripts, these copies have portable paths,
 corrected environment descriptions, a **one-worker default and one encoder
 thread**, and explicitly omit Playwright's software-WebGL fallback argument.
 They do not modify or relaunch the stopped local jobs.
+
+`FCC_ENCODER_THREADS` explicitly overrides the default encoder thread count;
+the VPS profile uses two threads with one converter. It does not change the
+local default or start local processes.
+
+## Remote execution on build-host
+
+The user approved a **separate 200 GiB zonal Balanced Persistent Disk**,
+`build-host-fcc-tiles` in `us-west1-a`, and explicitly approved exporting the FCC
+credential to this machine. The disk is privately mounted at `/mnt/fcc-tiles`,
+with an `/etc/fstab` UUID entry. The boot disk was not resized. At Google's
+[listed pricing](https://cloud.google.com/compute/disks-image-pricing), this
+adds approximately **USD 20/month, or USD 0.66/day**, prorated by time. It stays
+billable until deleted; finishing the conversion does not delete its data.
+
+The VM is `e2-medium`, with two shared vCPUs, 4 GiB RAM and no GPU. The Python
+environment and native Tippecanoe 2.79.0 build are under `~/Dev/fcc-tiles`.
+Missing SQLite development files were extracted privately from an Ubuntu
+package; system packages were not upgraded. The native Linux regression run
+passed **nine tests**. A real AT&T DC 5G 35/3 source (file 1859524) converted
+4,455 features to a 380,011-byte PMTiles in 2.38 seconds and passed source/tile
+checks. This small test does not establish peak memory or total build time for
+the largest states.
+
+`fcc-tiles-conversion.service` survives SSH disconnects. Both current jobs are
+parented by VPS PID 1. All 71 imported output files (10,357,582,168 bytes) are
+on the VPS and passed SHA-256 checks. The [handoff proof](vps-handoff-status.json)
+records **125/460** source conversions and both services active. The Mac may
+sleep or disconnect; no Mac process, tunnel, mount or open SSH session is
+required. No Codex reminder or monitoring automation was created because the
+user will ask for a fresh status later.
+
+Persistent service definitions under `/etc/systemd/system` and matching
+`multi-user.target.wants` links are installed for the next VPS boot. The
+current transient service processes were left running with unchanged PIDs.
+`systemd-analyze verify` passed; an actual reboot was not performed. Resume
+tests cover imported states already superseded by verified national archives
+and prevent a completed data build from starting downloads again.
+
+The conversion service admits one converter
+and two encoder threads, with `CPUQuota=200%`, `MemoryHigh=1800M` and
+`MemoryMax=2400M` (MiB units). OOM/fatal child errors stop the service; it does
+not blindly restart. The downloader retains the shared 6.5-second API-start
+spacing and bounded cache. National assembly runs after conversion, reducing
+simultaneous RAM use. The existing 122 source receipts and 71 completed output
+files (10,357,582,168 bytes) are imported rather than recomputed. Transfer can
+overlap new conversion, but imported files must all arrive and pass SHA-256
+checks before final assembly.
+
+The first remote resume reproduced a missing-ZIP bug: historical receipt
+presence was treated as source availability, while raw caches were deliberately
+not copied. The queue now admits only a published `.zip` file; `.zip.part` and
+receipt-only entries remain unavailable. A regression case covers this exact
+migration boundary, and all seven tests then passed on both Mac and VPS before the
+service restarted.
+
+`fcc-raw-size-survey.service` independently measures remaining archives with
+bounded ZIP-tail reads. It uses the same API lock/rate stamp as the downloader,
+so the combined traffic stays below ten starts per minute. Its summary is
+`/mnt/fcc-tiles/metadata/raw-size-survey.json`; `complete` must be true before
+calling its byte sums the complete selected corpus. Individual source-size
+proofs do not claim that the full archive payload was downloaded or validated.
+
+Useful read-only commands:
+
+```sh
+ssh build-host '~/Dev/fcc-tiles/status.sh'
+ssh build-host 'cat /mnt/fcc-tiles/metadata/vps-run.json'
+ssh build-host 'cat /mnt/fcc-tiles/metadata/raw-size-survey.json'
+```
+
+Explicitly stopping the owned services uses:
+
+```sh
+ssh build-host 'sudo systemctl stop fcc-tiles-conversion fcc-raw-size-survey'
+```
+
+Child logs are under `/mnt/fcc-tiles/logs/`. Success requires `manifest.json`,
+`catalog.json` and `verification/vps-final-data-audit.json`. The VPS audit checks
+all selected source IDs, source-feature totals, national hashes, catalog
+agreement and every unique tile's gzip integrity. It explicitly leaves browser
+verification pending: the GPU-less VPS does not run software-WebGL checks or
+pretend that data validation proves rendered behavior. Existing local render
+evidence remains limited to the earlier completed layer and comparison.
 
 ## Selected source and geometry policy
 

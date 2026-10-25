@@ -1,5 +1,6 @@
 """Stream FCC source archives to attribute-preserving, coalesced coverage PMTiles."""
 import argparse
+from contextlib import closing
 import fcntl
 from collections import defaultdict, OrderedDict
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
@@ -30,6 +31,8 @@ from fcc_download import ROOT, atomic_json
 BIN = Path(os.environ.get('FCC_TIPPECANOE_DIR', ROOT/'tools/felt-tippecanoe-68ab8dc')).expanduser().resolve()
 PROVIDERS = {'130077': 'att', '131425': 'verizon', '130403': 'tmobile'}
 MINZOOM, MAXZOOM = 4, 12
+ENCODER_THREADS = int(os.environ.get('FCC_ENCODER_THREADS', '1'))
+assert 1 <= ENCODER_THREADS <= 32, 'FCC_ENCODER_THREADS must be between 1 and 32'
 FIELDS = ['frn', 'providerid', 'brandname', 'technology', 'mindown', 'minup', 'minsignal', 'environmnt']
 
 
@@ -46,7 +49,7 @@ def validate_source(gpkg, info, row, entry_name):
     if result['catalogFeatures'] != result['packageFeatures']:
         # The FCC can publish a catalog count differing from both source formats.
         # Verify the actual package independently; never fabricate missing rows.
-        with sqlite3.connect(gpkg.as_uri() + '?mode=ro', uri=True) as db:
+        with closing(sqlite3.connect(gpkg.as_uri() + '?mode=ro', uri=True)) as db:
             assert db.execute('PRAGMA quick_check').fetchall() == [('ok',)], 'Source database integrity failure'
             quoted = '"' + layer.replace('"', '""') + '"'
             counted = db.execute('SELECT COUNT(*) FROM ' + quoted).fetchone()[0]
@@ -61,6 +64,14 @@ def tile_key(lon, lat, zoom):
     x = (lon + 180) / 360 * count
     y = (1 - math.asinh(math.tan(math.radians(max(-85.05112878, min(85.05112878, lat))))) / math.pi) / 2 * count
     return min(count-1, max(0, math.floor(x))), min(count-1, max(0, math.floor(y))), x % 1, y % 1
+
+
+def available_sources(complete, active):
+    # A migrated historical receipt does not imply that its raw ZIP was copied.
+    # The downloader publishes only complete archives under the .zip suffix.
+    return [path.stem for path in (ROOT/'metadata/downloads').glob('*.json')
+            if path.stem not in complete and path.stem not in active
+            and (ROOT/'data'/(path.stem+'.zip')).is_file()]
 
 
 def verify_tiles(path, samples):
@@ -194,7 +205,7 @@ def convert_one(file_id):
                '--layer=coverage', '--coalesce', '--no-feature-limit', '--no-tile-size-limit',
                '--no-tiny-polygon-reduction', '--no-simplification-of-shared-nodes',
                '--full-detail=12', '--low-detail=12', '--output='+str(temporary), str(sequence)]
-    environment = {**os.environ, 'TIPPECANOE_MAX_THREADS': '1', 'TMPDIR': str(work)}
+    environment = {**os.environ, 'TIPPECANOE_MAX_THREADS': str(ENCODER_THREADS), 'TMPDIR': str(work)}
     with (ROOT/'logs'/('tile-'+file_id+'.log')).open('w') as log:
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env=environment, check=True)
     stage('verifying')
@@ -251,8 +262,7 @@ def main():
                 atomic_json(ROOT/'metadata/conversion-complete.json', {'count': len(complete)})
                 return
             assert complete <= expected
-            ready = [p.stem for p in (ROOT/'metadata/downloads').glob('*.json')
-                     if p.stem not in complete and p.stem not in active.values()]
+            ready = available_sources(complete, active.values())
             for fid in sorted(ready, key=int):
                 if len(active) >= args.jobs:
                     break

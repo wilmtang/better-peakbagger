@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import time
 
-from fcc_convert import ROOT, BIN, verify_tiles
+from fcc_convert import ROOT, BIN, ENCODER_THREADS, verify_tiles
 from fcc_download import atomic_json
 
 
@@ -71,7 +71,7 @@ def merge_group(provider, variant, records):
     print(json.dumps({'state':'merging','name':name,'sourceFiles':len(files),'sourceTileBytes':source_bytes}),flush=True)
     with (ROOT/'logs'/('merge-'+name+'.log')).open('w') as log:
         subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,
-                       env={**os.environ,'TIPPECANOE_MAX_THREADS':'1','TMPDIR':str(work)},check=True)
+                       env={**os.environ,'TIPPECANOE_MAX_THREADS':str(ENCODER_THREADS),'TMPDIR':str(work)},check=True)
     verification = verify_tiles(temporary,[sample for record in records for sample in record['sourceSamples']])
     with temporary.open('rb') as source:
         digest = hashlib.file_digest(source,'sha256').hexdigest()

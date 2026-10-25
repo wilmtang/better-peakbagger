@@ -1,0 +1,49 @@
+{
+  "observedAt": "2026-10-25T08:22:14Z",
+  "units": {
+    "fcc-tiles-conversion": {
+      "MainPID": "3966600",
+      "MemoryCurrent": "1887199232",
+      "CPUQuotaPerSecUSec": "2s",
+      "MemoryMax": "2516582400",
+      "ActiveState": "active",
+      "SubState": "running",
+      "processParent": "1",
+      "persistentUnitFile": true,
+      "bootTargetLink": true
+    },
+    "fcc-raw-size-survey": {
+      "MainPID": "3965594",
+      "MemoryCurrent": "25260032",
+      "CPUQuotaPerSecUSec": "100ms",
+      "MemoryMax": "201326592",
+      "ActiveState": "active",
+      "SubState": "running",
+      "processParent": "1",
+      "persistentUnitFile": true,
+      "bootTargetLink": true
+    }
+  },
+  "conversionStage": "downloading_and_converting",
+  "verifiedSourceConversions": 125,
+  "migration": {
+    "verified": true,
+    "importedSourceConversions": 122,
+    "verifiedOutputFiles": 71,
+    "verifiedOutputBytes": 10357582168,
+    "importPlanSha256": "6a9de7579ca4674e9120e22dafe2ff99615ffe9dd51b27e6aa9a2ff0e0c792e9",
+    "seconds": 169.99,
+    "verifiedAt": "2026-10-25T08:19:41Z"
+  },
+  "sourceSizeSurvey": {
+    "scope": "AT&T, Verizon, T-Mobile; US LTE and both 5G tiers; 2025-12-31",
+    "expectedSourceArchives": 460,
+    "measuredSourceArchives": 314,
+    "complete": false,
+    "compressedZipBytes": 40233276569,
+    "uncompressedGeoPackageBytes": 91554205696,
+    "method": "Download receipts where available; otherwise bounded ZIP central-directory reads",
+    "updatedAt": "2026-10-25T08:22:07Z"
+  },
+  "macRequired": false
+}

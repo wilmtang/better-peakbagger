@@ -6,9 +6,53 @@ shows the additional boundary detail and smaller coverage gaps.** Different
 representations, retained semantics and native zooms account for the difference;
 they are not interchangeable compression settings. The GitHub inventory totals
 826.9 MB across all three carriers and resolutions, or 583.7 MB for r8 alone.
-The full-source batch was stopped by the user at **122 of 460 verified source
-archives and one of nine national archives**. It remains unfinished. No
-extension runtime or external deployment changed.
+The local batch was stopped at **122 of 460 verified source archives and one
+of nine national archives**; a later explicit request resumed it on `build-host`.
+It remains unfinished. The extension runtime is unchanged; the remote build
+workspace and approved storage are described below. At the independent VPS
+handoff, **125 of 460** source conversions were verified, all imported output
+hashes matched, and both remote jobs were active.
+
+## October 25: resumed conversion on build-host
+
+The user approved moving the build to `build-host`, adding a removable **200 GiB
+Balanced Persistent Disk** at approximately **USD 20/month (USD 0.66/day)**,
+and securely exporting the supplied FCC credential to a private mode-600 file.
+The boot disk was not expanded. The new data disk is mounted at
+`/mnt/fcc-tiles`; it remains billable until deleted. See the
+[deployment record](experiments/fcc-browser-coverage/full-conversion/vps-deployment.json)
+and [remote runbook](experiments/fcc-browser-coverage/full-conversion/README.md#remote-execution-on-build-host).
+
+This is an `e2-medium` with two shared vCPUs, 4 GiB RAM and no GPU. The resumed
+service uses one converter with two encoder threads, a two-CPU quota and a
+2,400 MiB memory ceiling. It survives SSH disconnects, stops on fatal errors,
+and runs national assembly after source conversion. Existing receipts and
+10.36 GB of verified outputs are reused, with checksums required before final
+assembly. Local converters remain stopped. Native Linux tests and a real
+4,455-feature FCC source conversion passed; largest-state memory and total
+runtime remain unproven.
+
+The first 246 downloaded sources had **17,263,051,949 compressed ZIP bytes**
+and **50,204,299,264 uncompressed GeoPackage bytes**. These were partial totals,
+not the size of the complete 460-file corpus. T-Mobile's complete 156-file
+portion alone was 5,972,005,474 ZIP bytes and 30,371,549,184 GeoPackage bytes.
+The independent remote survey measures missing sizes using at most 64 KiB of
+each ZIP plus HTTP Content-Range totals, sharing the downloader's rate limiter.
+It avoids extrapolating from unequal states/providers. Its complete result is
+recorded when every selected archive has a receipt or size proof.
+
+The [handoff status](experiments/fcc-browser-coverage/full-conversion/vps-handoff-status.json)
+records both service processes parented by VPS PID 1, all 71 imported output
+files verified by SHA-256, persistent unit files and boot-target links. No Mac
+process, tunnel, shared mount or open SSH connection is required. The last
+handoff size measurement covered 314/460 sources (40,233,276,569 ZIP bytes and
+91,554,205,696 GeoPackage bytes), still a partial total. The user will request
+a fresh status later; no reminder or Codex monitoring automation was created.
+
+The remote data audit will verify all selected IDs, source-feature totals,
+archive checksums, catalog agreement and every unique gzip tile payload.
+Browser/GPU verification remains a separate proof obligation. No tile upload,
+hosted coverage endpoint or shipped map layer was added by moving the build.
 
 ## October 25: detailed conversion and rendered comparison
 
@@ -22,8 +66,9 @@ ZIPs remain outside Git.
 
 The [stopped run snapshot](experiments/fcc-browser-coverage/full-conversion/run-snapshot.json)
 records 246 downloads, 122 verified source conversions representing 5,197,020
-features, and one completed national archive. Incomplete intermediates are
-retained locally. This report update does not resume processing.
+features, and one completed national archive. These are the local stop-point
+figures; the later approved VPS resume has its own progress record above.
+Incomplete local intermediates are retained.
 
 ### Actual detail: Snoqualmie Pass, T-Mobile LTE
 
@@ -93,7 +138,7 @@ Four workers, each launching a two-thread encoder, caused severe CPU
 contention reported by the user. Every converter, downloader, assembler,
 catalog/audit watcher and owned verification browser was stopped. The
 checked-in research copies default to **one worker and one encoder thread**;
-scheduling priority is not a CPU cap. A future resume needs an explicit
+scheduling priority is not a CPU cap. A future local resume needs an explicit
 instruction and a resource budget. Reading or updating this report must not
 silently restart the batch.
 
@@ -160,11 +205,13 @@ and [bandwidth policy](https://docs.github.com/en/site-policy/acceptable-use-pol
   national T-Mobile LTE hashes/payloads and sampled geometry; three local
   hardware-WebGL source cases; corrected two-view static comparison with
   outdoor codes 0 and 1.
-- **Intentionally not changed:** conversion remains stopped; credentials and
-  full data stay outside Git; no extension feature, permission, bucket, Worker,
-  DNS or public upload was added.
-- **Changed but not fully proven:** research scripts and a local catalog exist,
-  but 338 selected sources and eight national outputs are unfinished. Public
+- **Intentionally not changed:** local conversion remains stopped; credentials
+  and full data stay outside Git; no extension feature, permission, bucket,
+  Worker, DNS or public upload was added. The later approved VPS resume is
+  described separately above.
+- **Changed but not fully proven:** research scripts and a local catalog exist;
+  the local stop point left 338 sources and eight national outputs unfinished.
+  Current remote progress is tracked separately. Public
   derivative provenance, national footprint, optimized overview behavior,
   resource-bounded resume, live hosting and product integration remain open.
 

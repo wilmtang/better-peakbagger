@@ -12,7 +12,7 @@
 
 - [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
   — conversion code, actual national-layer sizes and a rendered raw-polygon/H3
-  comparison; batch stopped at 122/460 sources and one national archive.
+  comparison; local batch stopped at 122/460 sources, then resumed on build-host.
   Full US size, production settings and live Cloudflare behavior remain unverified.
 
 - [Cell coverage in-browser feasibility experiment](experiments/fcc-browser-coverage/README.md)

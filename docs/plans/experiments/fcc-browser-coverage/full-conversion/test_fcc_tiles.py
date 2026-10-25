@@ -1,5 +1,6 @@
 """Small independent geometry checks for the coverage tile pipeline."""
 import gzip
+from contextlib import closing
 import json
 import mmap
 from pathlib import Path
@@ -11,20 +12,95 @@ import unittest
 from unittest.mock import patch
 import hashlib
 import zlib
+import io
+import zipfile
 
 from pmtiles.reader import Reader
 from pmtiles.tile import Compression
 import mapbox_vector_tile
 from shapely.geometry import Point, shape
 
-from fcc_convert import BIN, MAXZOOM, MINZOOM, FIELDS, tile_key, verify_tiles, validate_source
+from fcc_convert import BIN, MAXZOOM, MINZOOM, FIELDS, tile_key, verify_tiles, validate_source, available_sources
 from fcc_finalize import ready_groups
 from fcc_catalog import build_catalog
 from fcc_audit import audit_archive
+from fcc_run_vps import raw_sizes, verify_migration, main as vps_main
+from fcc_sizes import parse_tail
 from pmtiles.tile import deserialize_directory
 
 
 class TileGeometryTests(unittest.TestCase):
+    def test_resume_accepts_imported_states_superseded_by_verified_national_output(self):
+        with tempfile.TemporaryDirectory(prefix='fcc-import-check-') as name:
+            root=Path(name)
+            for folder in ['metadata/national','metadata/converted','tiles']:(root/folder).mkdir(parents=True,exist_ok=True)
+            payload=b'verified national archive'
+            (root/'tiles/national.pmtiles').write_bytes(payload)
+            record={'path':'tiles/national.pmtiles','bytes':len(payload),'sha256':hashlib.sha256(payload).hexdigest(),'sourceFileIds':[1]}
+            (root/'metadata/national/group.json').write_text(json.dumps(record))
+            (root/'metadata/converted/1.json').write_text(json.dumps({'tileFile':'tiles/states/1.pmtiles'}))
+            plan={'importedSourceFileIds':['1'],'files':[{'path':'tiles/states/1.pmtiles','bytes':10,'sha256':'unused because superseded'}]}
+            (root/'metadata/import-plan.json').write_text(json.dumps(plan))
+            with patch('fcc_run_vps.ROOT',root),patch.object(Path,'is_mount',return_value=True):
+                verify_migration()
+            marker=json.loads((root/'metadata/migration-complete.json').read_text())
+            self.assertTrue(marker['verified'])
+            self.assertEqual(marker['supersededImportedStateFiles'],1)
+
+    def test_completed_vps_build_does_not_start_downloader_again(self):
+        with tempfile.TemporaryDirectory(prefix='fcc-finished-check-') as name:
+            root=Path(name);(root/'verification').mkdir()
+            for path in ['verification/vps-final-data-audit.json','manifest.json','catalog.json']:
+                (root/path).write_text(json.dumps({'status':'complete'}))
+            with patch('fcc_run_vps.ROOT',root),patch.object(Path,'is_mount',return_value=True),\
+                    patch('fcc_run_vps.sys.argv',['fcc_run_vps.py']),patch('fcc_run_vps.signal.signal'),\
+                    patch('fcc_run_vps.status') as report,patch('fcc_run_vps.launch') as launch:
+                vps_main()
+            launch.assert_not_called()
+            report.assert_called_once_with('complete',browserVerification='pending separately')
+
+    def test_migrated_receipts_and_partial_downloads_are_not_ready_to_convert(self):
+        with tempfile.TemporaryDirectory(prefix='fcc-resume-check-') as name:
+            root=Path(name)
+            (root/'metadata/downloads').mkdir(parents=True)
+            (root/'data').mkdir()
+            for fid in ['1','2','3']:(root/'metadata/downloads'/(fid+'.json')).write_text('{}')
+            (root/'data/1.zip.part').write_bytes(b'partial')
+            (root/'data/2.zip').write_bytes(b'published')
+            (root/'data/3.zip').write_bytes(b'published')
+            with patch('fcc_convert.ROOT',root):
+                self.assertEqual(available_sources({'3'},set()),['2'])
+                self.assertEqual(available_sources({'3'},{'2'}),[])
+                (root/'data/1.zip.part').rename(root/'data/1.zip')
+                self.assertEqual(set(available_sources({'3'},set())),{'1','2'})
+
+    def test_bounded_zip_tail_reports_original_sizes_and_rejects_truncation(self):
+        target=io.BytesIO()
+        with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr('source.gpkg',b'x'*100000)
+        data=target.getvalue();tail=data[-65536:]
+        result=parse_tail(tail,f'bytes {len(data)-len(tail)}-{len(data)-1}/{len(data)}')
+        self.assertEqual(result['bytes'],len(data))
+        self.assertEqual(result['entries'][0]['bytes'],100000)
+        with self.assertRaises(AssertionError):
+            parse_tail(tail[:-1],f'bytes {len(data)-len(tail)}-{len(data)-1}/{len(data)}')
+
+    def test_raw_size_totals_use_receipts_and_require_every_selected_archive(self):
+        with tempfile.TemporaryDirectory(prefix='fcc-size-check-') as name:
+            root=Path(name)
+            (root/'metadata/downloads').mkdir(parents=True)
+            (root/'metadata/selected-downloads.json').write_text(json.dumps([{'file_id':1},{'file_id':2}]))
+            (root/'metadata/downloads/1.json').write_text(json.dumps({'bytes':10,'entries':[{'bytes':20}]}))
+            (root/'metadata/downloads/3.json').write_text(json.dumps({'bytes':999,'entries':[{'bytes':999}]}))
+            with patch('fcc_run_vps.ROOT',root):
+                partial=raw_sizes()
+                self.assertFalse(partial['complete'])
+                self.assertEqual((partial['compressedZipBytes'],partial['uncompressedGeoPackageBytes']),(10,20))
+                (root/'metadata/downloads/2.json').write_text(json.dumps({'bytes':5,'entries':[{'bytes':15}]}))
+                complete=raw_sizes()
+                self.assertTrue(complete['complete'])
+                self.assertEqual((complete['measuredSourceArchives'],complete['compressedZipBytes'],complete['uncompressedGeoPackageBytes']),(2,15,35))
+
     def test_complete_catalog_cannot_publish_a_partial_dataset(self):
         record = dict(provider='tmobile',variant='lte',path='tiles/tmobile-lte.pmtiles',bytes=100,
                       sha256='a'*64,verification=dict(bounds=[-180,-20,180,80],minimumZoom=4,
@@ -53,7 +129,7 @@ class TileGeometryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='fcc-source-check-') as name:
             source = Path(name)/'source.gpkg'
             layer = 'bdc_11_130077_5GNR_7_1_mobile_broadband_D25_23jun2026'
-            with sqlite3.connect(source) as db:
+            with closing(sqlite3.connect(source)) as db, db:
                 db.execute('CREATE TABLE "'+layer+'" (fid INTEGER)')
                 db.executemany('INSERT INTO "'+layer+'" VALUES (?)', [(1,), (2,)])
             row = dict(file_name=layer.replace('23jun2026', '19oct2026'), record_count='3')
