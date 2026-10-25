@@ -1,6 +1,8 @@
 # Repository audit and remediation — October 24, 2026
 
-Status: **Implementation in progress**, independently rechecked against `4c57323f`.
+Status: **Confirmed runtime changes implemented and locally verified**.
+Independently rechecked against `4c57323f`; intentional behavior and remaining
+verification limits are recorded below.
 
 The original draft mixed confirmed defects, intentional behavior and source-only
 hypotheses. This corrected plan records the implementation scope authorized after
@@ -24,6 +26,23 @@ checks. Browser, live-service and native-UI evidence remain distinct.
   arrived; cancelling Done left “Working…”; dismissal moved focus to body;
   waiting-to-error review status stayed stale. Storage and worker replies were
   mocked. No live Garmin writes or Peakbagger Saves were automated.
+
+## Final local verification
+
+- Full Node suite after the final build: **3,452 passed**, zero failed/skipped.
+  The first integration runs caught stale inventories and concurrent terrain-test
+  expectations; both affected groups passed before the full suite was repeated.
+- Repository ESLint, the 52-bundle build and packaged web-ext lint passed with the
+  same eight owned warnings. No push, release or store submission was performed.
+- The live reviewed dependency gate passed; the production npm audit reports zero
+  vulnerabilities. The raw development-only exception remains time-limited below.
+- Hidden real-extension Chrome 156 passed, including BFCache and teardown.
+  Firefox 158.0.1 also passed with BFCache and teardown after replacing an obsolete
+  raw sync fixture write with the worker settings API. Focused UI and hardware
+  Firefox terrain evidence is recorded per finding. Targeted real-extension
+  Chrome terrain/SNOTEL passed on Apple M3 Pro Metal at 375/1440 px, light/dark,
+  including 3D/2D/resume, occlusion-aware reveal, error/Retry, opt-out and 200% zoom.
+  The complete Chrome terrain verifier retains its native-toggle gap failure.
 
 ## Findings and acceptance checks
 
@@ -325,8 +344,8 @@ Independent commits for drag ownership and report/observer surfaces:
 
 - F10 native lifecycle: entering 3D detaches the native adapter and stops binding
   polls; returning to 2D creates one adapter. The regression failed before the fix;
-  25 map-layer tests, build and focused ESLint passed. Broader browser checks are
-  still in progress and are not represented as terrain renderer evidence.
+  25 map-layer tests, build and focused ESLint passed. Real-extension Chrome/
+  Firefox and the targeted hardware terrain transitions passed as recorded above.
 
 - F10 renderer/replay: suspend clears transient route popups/notices; bounded DEM
   outcomes are checked against resumed view bounds, retaining cached parent coverage
@@ -361,7 +380,8 @@ Independent commits for drag ownership and report/observer surfaces:
   regression failed before the fix; all 31 snow tests, build and ESLint passed.
   Hidden real-extension Chrome 156/Firefox 158 passed the snow matrix at
   375/681/1440 px, both themes and 200% zoom, including slow/error/Retry, keyboard
-  station changes and geometry negative controls.
+  station changes and geometry negative controls. Wide/light and narrow/dark
+  rendered cards were inspected.
 
 ### Intentionally not changed
 
@@ -378,12 +398,18 @@ Independent commits for drag ownership and report/observer surfaces:
 
 ### Changed but not fully proven
 
-- F10 hardware Chrome reached Apple M3 Pro Metal but stopped before 3D at a
-  pre-existing native-toggle gap (41 px, verifier limit 40 px). Firefox terrain
-  probe initially stopped before rendering because its fixture omitted local
-  settings storage. The repaired fixture reaches hardware terrain; its full
-  interaction matrix remains in progress.
-- Audit corrections only. Runtime items above remain open until their focused
-  regression checks pass; source inspection alone is not UI or live-service proof.
-- Live Garmin/ImgBB/GitHub/provider operations, native browser chrome/focus, assistive
-  technology and stores are separate proof limits and must survive archival.
+- The complete Chrome hardware-terrain verifier reaches Apple M3 Pro Metal but
+  stops before 3D at the existing native-toggle gap (41 px, verifier limit 40 px).
+  The committed Firefox 157 hardware matrix passed after repairing the fixtures'
+  strict local settings read and loading the real overlay-preferences bridge:
+  1000×760, light/dark 1000/375 px popups, authorization negatives, camera/resize,
+  compasses and Sentinel suspend/resume. Targeted real-extension Chrome terrain/
+  SNOTEL also passed on Metal, including 3D/2D/resume, reveal and 200% zoom. The
+  full Chrome verifier's separate gap failure remains open; fixture rendering does
+  not prove live-provider behavior.
+- Live Garmin/ImgBB/GitHub/provider operations, native browser chrome/focus,
+  assistive technology and store verification remain separate release proof.
+  Hidden checks do not establish focus or window placement on the user's display.
+- The raw development dependency graph still has the narrowly reviewed node-forge
+  chain. The exact exception expires October 31 at 07:00 UTC; upstream patching is
+  still required. The reviewed gate passes and the production audit reports zero.

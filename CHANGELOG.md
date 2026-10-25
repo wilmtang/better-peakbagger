@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Recover activity imports safely.** Explicit Garmin inbox runs finish in Manual
+  mode, Undo resumes preparation, account ownership survives empty responses, and
+  failed draft setup can recover without duplicating uncertain handoffs. FIT
+  imports validate activity identity and preserve cancellation.
+- **Keep drafts and photo edits recoverable.** Plain-mode report drafts retain
+  hosted photos after upload. Photo replacements verify their parent at the write
+  boundary, preserve the return context, and support clearing text with Undo.
+- **Keep review actions stable.** Inbox and list confirmations retain focus and
+  availability, imported credentials refresh Settings, concurrent settings imports
+  preserve newer edits, and report filters keep their action and reading position.
+- **Correct weather and map transitions.** Summit resets refresh stale weather,
+  selected-location clocks and distant Moon dates are labelled correctly, GPX
+  processing offers a fresh retry, and terrain resumes check the current region.
+
 - **Keep shared backups safe.** Settings and favorites require review before
   replacing a different first-seen or externally changed GitHub file. Approval
   applies only to the reviewed snapshots and connection, including retries.

@@ -1,10 +1,9 @@
 # Active plans
 
 - [Repository bugs, performance, engineering, and UX audit — October 24](codebase-audit-2026-10-24.md)
-  — implementation in progress after independent verification; confirmed
-  Garmin, settings, handoff, report/photo, terrain and UI defects have focused
-  commit boundaries. The corrected ledger records intentional behavior,
-  dependency exceptions and browser/live proof gaps.
+  — confirmed runtime fixes implemented in focused commits after independent
+  verification and local checks. The closure ledger retains intentional
+  behavior, the reviewed dependency exception and browser/live proof gaps.
 
 - [Signed-out Peakbagger feature gates and remediation](signed-out-peakbagger-audit-2026-10-23.md)
   — all four findings implemented and locally verified: Buddy-filter recovery,
