@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { satisfies } from 'semver';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -28,7 +29,10 @@ function matchesDevelopmentAdvisory(audit, lockfile) {
             version: '1.4.0', isDirect: false, effects: ['@devicefarmer/adbkit'],
         },
         'web-ext': {
-            version: '10.7.0', isDirect: true, via: ['@devicefarmer/adbkit'], effects: [],
+            // A compatible parent-tool release does not change the reviewed
+            // advisory. The exact vulnerable versions and dependency edges
+            // below still pin its scope; major and prerelease updates stop.
+            range: '^10.7.0', isDirect: true, via: ['@devicefarmer/adbkit'], effects: [],
         },
     };
     if (!isDeepStrictEqual(Object.keys(audit.vulnerabilities).sort(), Object.keys(expected).sort())) return false;
@@ -42,7 +46,8 @@ function matchesDevelopmentAdvisory(audit, lockfile) {
         if (finding?.name !== name || finding.severity !== 'high'
             || finding.isDirect !== policy.isDirect || !isDeepStrictEqual(finding.nodes, [nodePath])
             || !isDeepStrictEqual(finding.effects, policy.effects)
-            || resolved?.version !== policy.version || resolved.dev !== true
+            || !(policy.range ? satisfies(resolved?.version || '', policy.range)
+                : resolved?.version === policy.version) || resolved.dev !== true
             || Object.keys(lockfile.packages).filter(key => key.endsWith(nodePath)).length !== 1) return false;
         if (policy.via && !isDeepStrictEqual(finding.via, policy.via)) return false;
     }

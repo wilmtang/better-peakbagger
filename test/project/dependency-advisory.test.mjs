@@ -49,6 +49,19 @@ test('strict default rejects the advisory and explicit review accepts only the r
     assert.equal(evaluateAudit(baseline, options()).status, 'accepted-development-advisory');
 });
 
+test('compatible web-ext updates preserve review when the advisory path is unchanged', () => {
+    for (const version of ['10.7.1', '10.8.0', '10.99.0']) {
+        const opts = options();
+        opts.lockfile.packages['node_modules/web-ext'].version = version;
+        assert.equal(evaluateAudit(baseline, opts).status, 'accepted-development-advisory');
+    }
+    for (const version of ['10.6.0', '11.0.0', '10.8.0-beta.1', 'invalid']) {
+        const opts = options();
+        opts.lockfile.packages['node_modules/web-ext'].version = version;
+        assert.throws(() => evaluateAudit(baseline, opts), /Unowned/);
+    }
+});
+
 test('clean output remains clean with or without the review option', () => {
     const clean = { vulnerabilities: {}, metadata: { vulnerabilities: { total: 0 } } };
     assert.deepEqual(evaluateAudit(clean), { status: 'clean' });
