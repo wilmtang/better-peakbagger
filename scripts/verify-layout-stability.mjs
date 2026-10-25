@@ -19,7 +19,7 @@ import { verifyClimberFiles } from './verify-climber-files.mjs';
 import { verifyPhotoReportEdit } from './verify-photo-report-edit.mjs';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
 import { verifyReportCaptionStability } from './verify-report-caption-stability.mjs';
-import { verifyAscentColumnWidths } from './verify-ascent-column-widths.mjs';
+import { verifyAscentColumnWidths, verifyPeakColumnWidths } from './verify-ascent-column-widths.mjs';
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
@@ -1387,6 +1387,7 @@ const cases = { 'report-filter': reportFilterCase, sun: sunCase, 'photo-report-e
     'climber-files': (page, origin, variant) => verifyClimberFiles(page, origin, variant, { capture }),
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'ascent-columns': (page, origin, variant) => verifyAscentColumnWidths(page, origin, variant, { asset, capture }),
+    'peak-columns': (page, origin, variant) => verifyPeakColumnWidths(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
     captions: (page, origin, variant) => verifyReportCaptionStability(page, origin, variant, { asset, capture }) };
 for (const argument of process.argv.slice(2)) {
@@ -1412,7 +1413,7 @@ try {
             : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }) });
         try {
             for (const theme of ['light', 'dark']) for (const width of [390, 1280])
-                for (const zoom of ['timestamps', 'ascent-columns', 'report-filter'].includes(selected) ? [1, 1.5] : [1]) {
+                for (const zoom of ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter'].includes(selected) ? [1, 1.5] : [1]) {
                     for (const [surface, check] of Object.entries(cases)) {
                         if (selected && selected !== surface) continue;
                         const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: Math.floor(width / zoom), height: Math.floor(900 / zoom) }, deviceScaleFactor: zoom, colorScheme: theme });

@@ -114,6 +114,12 @@ export async function verifyAscentColumnWidths(page, origin, variant, { asset, c
             && /^Interactive Stats:/.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''));
         assert.equal(await page.locator('iframe').evaluate(frame => frame.closest('table')?.id), 'summarydata', 'map must remain nested in the native summary table');
         assert.equal(await page.locator('#bpb-ascent-report-column > table').evaluate(table => getComputedStyle(table).tableLayout), 'auto', 'report column sizing must remain content-driven');
+        const summaryWidths = await page.locator('#summarydata').evaluate(table => {
+            const row = [...table.rows].find(row => row.cells.length === 2 && row.cells[0].textContent.includes('Total Elevation Gain'));
+            return [...row.cells].map(cell => cell.getBoundingClientRect().width);
+        });
+        assert.ok(Math.abs(summaryWidths[0] - summaryWidths[1]) > 2,
+            `summary labels and values must size to their different content, not equal halves: ${JSON.stringify(summaryWidths)}`);
         const handle = page.locator('#bpb-ascent-table-resize-handle');
         const desktop = variant.width > 680;
         for (const share of desktop ? ['Home', 'End', 'Home'] : ['stacked']) {
@@ -165,4 +171,58 @@ export async function verifyAscentColumnWidths(page, origin, variant, { asset, c
             && document.querySelector('.bpb-weather-model-description').textContent.includes('Using GFS'));
         await stable(before, 'retry complete');
     } finally { release(); }
+}
+
+// Native peak metadata, the production split/map owners and an oversized saved
+// map preference. Storage and the frame response remain fixture-owned.
+export async function verifyPeakColumnWidths(page, origin, variant, { asset, capture }) {
+    const html = (await readFile(path.join(projectRoot, 'test/fixtures/pages/peak-rainier.html'), 'utf8'))
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+    await page.route('https://**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await page.route('**/peak.aspx**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.addInitScript(({ theme }) => {
+        localStorage.setItem('pbPeakMapViewport.v1', JSON.stringify({ width: 900, height: 425 }));
+        const area = { get: async () => ({ bpbSettings: { theme, enable3dMap: false } }) };
+        globalThis.chrome = { storage: { sync: area, local: { get: async () => ({}) },
+            onChanged: { addListener() {}, removeListener() {} } } };
+    }, variant);
+    await page.goto(`${origin}/peak.aspx?pid=2296`);
+    for (const file of ['css/column-resize.css', 'css/peak-card-layout.css', 'css/terrain-map.css', 'css/sun-calculator.css']) {
+        await page.addStyleTag({ content: (await asset(file)).toString() });
+    }
+    for (const file of ['content/theme.js', 'content/peak-cards.js', 'content/peak-map.js']) {
+        await page.addScriptTag({ content: (await asset(file)).toString() });
+    }
+    await page.locator('.bpb-peak-map-region #bpb-map-viewport').waitFor();
+    const inspect = async label => {
+        const state = await page.evaluate(() => {
+            const rect = element => {
+                const r = element.getBoundingClientRect(); return { right: r.right, width: r.width };
+            };
+            return [...document.querySelectorAll('#bpb-peak-table-split .bpb-peak-native-table')].map(table => {
+                const row = [...table.rows].find(row => row.cells.length === 2 && row.cells[0].colSpan === 1);
+                return { table: rect(table), column: rect(table.parentElement),
+                    cells: [...row.cells].map(cell => rect(cell).width),
+                    map: table.querySelector('#bpb-map-viewport') ? rect(table.querySelector('#bpb-map-viewport')) : null };
+            });
+        });
+        assert.equal(state.length, 2, `${label}: both native metadata tables`);
+        for (const item of state) {
+            assert.ok(Math.abs(item.cells[0] - item.cells[1]) > 2,
+                `${label}: metadata labels and values must size to content: ${JSON.stringify(item)}`);
+            assert.ok(item.table.right <= item.column.right + 1,
+                `${label}: natural table sizing must stay within its column: ${JSON.stringify(item)}`);
+            if (item.map) assert.ok(item.map.right <= item.column.right + 1,
+                `${label}: the saved 900px map must shrink to its column: ${JSON.stringify(item)}`);
+        }
+    };
+    await inspect('initial peak columns');
+    if (await page.evaluate(() => window.innerWidth > 680)) {
+        for (const key of ['Home', 'End', 'Home']) {
+            await page.locator('#bpb-peak-table-resize-handle').press(key);
+            await inspect(`peak divider ${key}`);
+        }
+    }
+    await page.locator('#bpb-peak-table-split').scrollIntoViewIfNeeded();
+    await capture(page, `${variant.name}-peak-columns`);
 }

@@ -31,10 +31,10 @@
     container: bpb-ascent-column / inline-size;
 }
 
-/* The nested map's preferred pixel width must not become the native table's
- * minimum width and push its edge past the GPS and weather cards below it. */
-#bpb-ascent-summary-column > .bpb-ascent-table-split__summary {
-    table-layout: fixed;
+/* A saved map size is a preference, not an intrinsic minimum for the label /
+ * value columns. Contain only its full-width host; keep native table sizing. */
+#bpb-ascent-summary-column > .bpb-ascent-table-split__summary td[colspan="2"] > :is(p, div):has(iframe) {
+    contain: inline-size;
 }
 
 /* Saved dimensions are preferred sizes, not minimum table widths. Let images
