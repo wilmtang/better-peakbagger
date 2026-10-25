@@ -506,6 +506,15 @@ export async function verifyCardFeedback(page, origin, variant, retryOnly = fals
             const p = document.querySelector('.bpb-climber-card-feedback-details p'), r = p.getBoundingClientRect();
             const c = document.getElementById('bpb-climber-card').getBoundingClientRect();
             return r.top >= c.top && r.bottom <= c.bottom && r.height >= parseFloat(getComputedStyle(p).lineHeight) + 16;
+        }).catch(async error => {
+            const state = await page.evaluate(() => {
+                const p = document.querySelector('.bpb-climber-card-feedback-details p');
+                const card = document.getElementById('bpb-climber-card');
+                const rect = node => { const r = node.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; };
+                return { detail: rect(p), card: rect(card), lineHeight: getComputedStyle(p).lineHeight,
+                    detailSpace: card.style.getPropertyValue('--bpb-card-detail-space') };
+            });
+            throw new Error(`Card details did not become readable: ${JSON.stringify({ variant, anchorTop, state })}`, { cause: error });
         });
         await capture(page, variant, `card-details-${anchorTop}`);
         await details.locator('summary').click();
@@ -551,10 +560,18 @@ export async function verifyCardFeedback(page, origin, variant, retryOnly = fals
         await page.keyboard.press('Enter');
         assert.equal(await page.evaluate(() => document.activeElement.id), 'bpb-climber-card-ignore');
         assert.equal(await page.evaluate(() => globalThis.scrollY), scroll, 'explicit focus reveals only the local body');
-        assert.equal(await page.locator('#bpb-climber-card-ignore').evaluate(element => {
+        const focusedAction = await page.locator('#bpb-climber-card-ignore').evaluate(element => {
             const r = element.getBoundingClientRect(), b = element.closest('.bpb-climber-card-main').getBoundingClientRect();
-            return r.top >= b.top - 1 && r.bottom <= b.bottom + 1;
-        }), true, 'the chosen enabled keyboard action must actually be visible');
+            const card = document.getElementById('bpb-climber-card');
+            const sizing = document.querySelector('.bpb-climber-card-feedback-sizing');
+            const feedback = document.querySelector('.bpb-climber-card-feedback');
+            return { visible: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
+                action: { top: r.top, bottom: r.bottom, height: r.height }, body: { top: b.top, bottom: b.bottom, height: b.height },
+                card: card.getAttribute('style'), mainStyle: element.closest('.bpb-climber-card-main').getAttribute('style'),
+                sizing: { height: sizing.getBoundingClientRect().height, font: getComputedStyle(sizing).fontSize },
+                feedback: { height: feedback.getBoundingClientRect().height, font: getComputedStyle(feedback).fontSize } };
+        });
+        assert.equal(focusedAction.visible, true, `the chosen enabled keyboard action must actually be visible: ${JSON.stringify({ variant, anchorTop, focusedAction })}`);
         // Wheel is an independent user gesture. Do not restore its scroll
         // while the compositor may still be processing that gesture, then
         // misreport its remaining motion as a save/recovery layout shift.

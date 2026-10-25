@@ -62,7 +62,7 @@ const mount = () => {
     for (const text of [buddyText, favoriteText, ignoreText]) text.reserve(actionLabels);
     createStableText(favoriteSizing).reserve(actionLabels);
     const detail = D.element('div', { id: 'bpb-climber-card-ignore-detail', class: 'bpb-climber-card-detail' });
-    const contextSizing = D.element('div', { class: 'bpb-climber-card-detail' });
+    const contextSizing = D.element('div', { class: 'bpb-climber-card-detail bpb-climber-card-context-sizing' });
     createStableText(contextSizing).reserve(['Show their reports again', 'Remove from both lists to ignore', 'Remove from favorites to ignore',
         'Remove from your Buddy List to ignore', 'Refresh your Buddy List before ignoring', 'Ignored climbers can hold up to 1,500 entries.', 'Hide their reports',
         'Checking lists…', 'Check buddy status.', "Couldn't finish.", 'Settings unavailable.', 'Lists unavailable.', 'Loading lists…',
@@ -78,9 +78,9 @@ const mount = () => {
         D.element('summary', { text: 'Details' }), failureText,
     ]);
     const recovery = D.element('div', { class: 'bpb-climber-card-recovery', hidden: '' }, [retry, failureDetails, cacheRecovery]);
-    const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' }, [
-        D.element('div', { class: 'bpb-climber-card-context' }, [detail, summaryText]), recovery,
-    ]);
+    const statusContext = D.element('div', { class: 'bpb-climber-card-context', tabindex: '-1', role: 'region',
+        'aria-label': 'Climber status' }, [detail, summaryText]);
+    const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' }, [statusContext, recovery]);
     // Measure the largest footer outside layout. Placement leaves room for
     // recovery below the actions, without painting an empty footer at idle.
     const feedbackSizing = D.element('div', { class: 'bpb-climber-card-feedback-sizing', 'aria-hidden': 'true' }, [
@@ -266,14 +266,22 @@ const mount = () => {
             + parseFloat(styles.borderTopWidth) + parseFloat(styles.borderBottomWidth);
         const block = node => node.hidden ? 0 : node.getBoundingClientRect().height
             + parseFloat(getComputedStyle(node).marginTop) + parseFloat(getComputedStyle(node).marginBottom);
+        const primaryRoom = main.hidden ? 0 : Math.min(main.scrollHeight,
+            Math.max(buddy.getBoundingClientRect().height, favoriteSlot.getBoundingClientRect().height, ignore.getBoundingClientRect().height));
+        // Worst-case account copy must not reserve the only room in which an
+        // enlarged keyboard action can fit. Keep recovery outside the scrolling
+        // context and cap the same reservation used by both context surfaces.
+        const recoveryRoom = block(feedbackSizing.querySelector('.bpb-climber-card-recovery'));
+        const feedbackMargin = parseFloat(getComputedStyle(feedbackSizing).marginTop);
+        card.style.setProperty('--bpb-card-context-space', `${Math.max(0,
+            height - 24 - spacing - block(heading) - primaryRoom - recoveryRoom - feedbackMargin - 8)}px`);
+        statusContext.tabIndex = statusContext.scrollHeight > statusContext.clientHeight + 1 ? 0 : -1;
         const fixedHeight = spacing + block(heading) + block(feedbackSizing);
         const naturalHeight = fixedHeight + (main.hidden ? 0 : main.scrollHeight);
         const below = Math.max(0, topEdge + height - rect.bottom - 18);
         const above = Math.max(0, rect.top - topEdge - 18);
         const placeBelow = below >= naturalHeight || below >= above;
         const side = placeBelow ? below : above;
-        const primaryRoom = main.hidden ? 0 : Math.min(main.scrollHeight,
-            Math.max(buddy.getBoundingClientRect().height, favoriteSlot.getBoundingClientRect().height, ignore.getBoundingClientRect().height));
         const readingRoom = Math.max(primaryRoom, failureDetails.open ? Math.min(120, parseFloat(getComputedStyle(feedback).fontSize) * 3 + 20) : 0);
         const overlay = side < fixedHeight + readingRoom;
         const available = Math.max(0, Math.min(overlay ? height - 24 : side, naturalHeight));

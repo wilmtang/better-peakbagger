@@ -57,6 +57,8 @@
 #bpb-climber-card :is(.bpb-climber-card-feedback,.bpb-climber-card-feedback-sizing) { position:relative; margin-top:6px; display:grid; align-items:start; }
 #bpb-climber-card .bpb-climber-card-feedback-sizing { position:absolute; inset-inline:16px; top:0; visibility:hidden; pointer-events:none; font-size:.857143em; }
 #bpb-climber-card .bpb-climber-card-context { display:grid; }
+#bpb-climber-card :is(.bpb-climber-card-context,.bpb-climber-card-context-sizing) { max-height:var(--bpb-card-context-space,none); overflow:auto; overscroll-behavior:contain; }
+#bpb-climber-card .bpb-climber-card-context-sizing { overflow:hidden; }
 #bpb-climber-card .bpb-climber-card-context > * { grid-area:1/1; min-width:0; }
 #bpb-climber-card .bpb-climber-card-recovery { display:flex; align-items:flex-start; gap:12px; }
 #bpb-climber-card .bpb-climber-card-retry, #bpb-climber-card .bpb-climber-card-feedback-details summary { box-sizing:border-box; min-height:1.5em; margin:0; border:0; background:none; color:var(--bpb-cc-link); padding:0; font:inherit; cursor:pointer; }
