@@ -318,6 +318,11 @@ Independent commits for drag ownership and report/observer surfaces:
   at 390/1280 px in both themes. The native legacy form retains horizontal overflow
   at narrow widths; desktop recovery rendering was inspected. Worker replies stubbed.
 
+- F12 archive labels: repeated refusal after page restoration appends the
+  unavailable suffix once. The regression failed before the fix; 54 ascent-weather
+  tests, build and ESLint passed. Refusal on another date still leaves the displayed
+  date model enabled; Retry already reset labels correctly.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

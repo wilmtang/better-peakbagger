@@ -1232,3 +1232,14 @@ test('weather reorders within its column while preserving GPS ownership and its 
         assert.equal(restored.doc.querySelector('.bpb-ascent-table-split__summary').previousElementSibling.id, 'bpb-ascent-weather');
     } finally { restored.close(); }
 });
+
+test('repeated archive refusals after page restoration keep one unavailable suffix', async () => {
+    const env = setup({ fetchWeather: () => new Response('', { status: 400 }) });
+    try {
+        await waitFor(() => env.doc.querySelector('option[value="best_match"]')?.disabled);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(() => env.requests.length === 3 && env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(env.doc.querySelector('option[value="best_match"]').textContent, 'Best Match (Open-Meteo) — unavailable');
+    } finally { env.close(); }
+});

@@ -524,7 +524,10 @@ export function mountAscentWeather() {
                 if (ownGeneration !== generation) return;
                 if (error.code === 'unavailable' && targetDate === dayWindow.date) {
                     const option = [...select.options].find(candidate => candidate.value === model.id);
-                    if (option) { option.disabled = true; option.textContent += ' — unavailable'; }
+                    if (option) {
+                        option.disabled = true;
+                        if (!option.textContent.endsWith(' — unavailable')) option.textContent += ' — unavailable';
+                    }
                 }
                 throw error;
             }
