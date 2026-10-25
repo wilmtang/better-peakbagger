@@ -4,6 +4,18 @@
 
 import assert from 'node:assert/strict';
 
+export const readSentinelCooldown = () => {
+    const frame = document.getElementById('bpb-terrain-frame')?.contentWindow;
+    const control = document.querySelector('[aria-label="Sentinel-2 (experimental) settings"]');
+    const retry = control?.querySelector('.bpb-layers-retry');
+    const message = control?.querySelector('.bpb-layers-feedback')?.textContent || '';
+    const requests = frame?.__bpbCatalogLimitRequests || 0;
+    const visible = Boolean(control && !control.hidden && retry && !retry.hidden);
+    const disabled = retry?.getAttribute('aria-disabled') === 'true';
+    return { ready: requests > 0 && visible && disabled && /Service busy.*Retry after/.test(message),
+        requests, visible, disabled, message, zoom: frame?.__bpbTerrainTestMap?.getZoom() };
+};
+
 const configureCredits = ({ width, theme, largeText, long }) => {
     const mount = document.getElementById('bpb-map-viewport');
     const frame = document.getElementById('bpb-terrain-frame');

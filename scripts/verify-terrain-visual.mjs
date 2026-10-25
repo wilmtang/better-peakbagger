@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
-import { verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
+import { readSentinelCooldown, verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
 
 import {
     assertMapToggleAnchor,
@@ -2091,8 +2091,14 @@ try {
     await evaluate(cdp, `(() => {
         const win = document.getElementById('bpb-terrain-frame').contentWindow;
         win.__apiLimitOriginalFetch = win.fetch;
-        win.fetch = (url, init) => String(url).startsWith('https://planetarycomputer.microsoft.com/')
-            ? Promise.resolve(new win.Response('unreadable', { status: 429, headers: { 'retry-after': '120' } })) : win.__apiLimitOriginalFetch(url, init);
+        win.__bpbCatalogLimitRequests = 0;
+        win.fetch = (url, init) => {
+            if (String(url) === 'https://planetarycomputer.microsoft.com/api/stac/v1/search') {
+                win.__bpbCatalogLimitRequests++;
+                return Promise.resolve(new win.Response('unreadable', { status: 429, headers: { 'retry-after': '120' } }));
+            }
+            return win.__apiLimitOriginalFetch(url, init);
+        };
         const trigger = document.querySelector('.bpb-layers-trigger');
         if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
         const disclosure = document.querySelector('[data-layer="sentinel"] button');
@@ -2100,14 +2106,12 @@ try {
         const checkbox = document.querySelector('[data-layer="sentinel"] input');
         checkbox.checked = true; checkbox.dispatchEvent(new Event('change'));
     })()`);
-    await waitForPageState(cdp, `(() => {
-        const control = document.querySelector('[aria-label="Sentinel-2 (experimental) settings"]');
-        return { ready: control.textContent.includes('Satellite service is busy') && control.querySelector('button').getAttribute('aria-disabled') === 'true' };
-    })()`);
+    await waitForPageState(cdp, `(${readSentinelCooldown})()`);
     await capture(cdp, path.join(outputDir, 'sentinel-rate-limit.png'));
     await evaluate(cdp, `(() => {
         const win = document.getElementById('bpb-terrain-frame').contentWindow;
         win.fetch = win.__apiLimitOriginalFetch; delete win.__apiLimitOriginalFetch;
+        delete win.__bpbCatalogLimitRequests;
         win.document.getElementById('bpb-terrain-map').dataset.theme = 'light';
         const checkbox = document.querySelector('[data-layer="sentinel"] input'); checkbox.checked = false; checkbox.dispatchEvent(new Event('change'));
         const picker = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('[aria-label="Base map"]');
