@@ -105,6 +105,11 @@
 /* An author layout rule must never outrank the native hidden state. */
 [hidden] { display: none !important; }
 
+/* Elastic scrolling must not reveal the browser's unthemed root canvas.
+   Contain each panel scroller without intercepting wheel/keyboard input. */
+html { background: var(--bg); overscroll-behavior-y: none; }
+.content, .side-nav { overscroll-behavior-y: none; }
+
 body {
     margin: 0;
     color: var(--text);

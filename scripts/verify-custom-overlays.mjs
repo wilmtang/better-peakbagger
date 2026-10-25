@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document, window, chrome, scrollY, innerWidth, getComputedStyle */
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:https';
@@ -98,6 +98,15 @@ try {
         await admin.goto(`chrome-extension://${extension.id}/options/options.html#custom-map-layers`);
         const library = admin.locator('#custom-layer-list'); await library.locator('li').nth(2).waitFor();
         assert.equal(await library.locator('li').count(), 3, 'central Options manager shows the shared library');
+        if (process.env.BPB_PREVIOUS_PANEL_CSS) {
+            const original = await readFile(process.env.BPB_PREVIOUS_PANEL_CSS, 'utf8');
+            await admin.evaluate(() => { document.querySelector('link[href$="panel.css"]').disabled = true; });
+            const prior = await admin.addStyleTag({ content: original });
+            const old = await admin.evaluate(() => ({ root: getComputedStyle(document.documentElement).overscrollBehaviorY,
+                content: getComputedStyle(document.querySelector('.content')).overscrollBehaviorY, canvas: getComputedStyle(document.documentElement).backgroundColor }));
+            assert.equal(old.root, 'auto'); assert.equal(old.content, 'auto'); assert.equal(old.canvas, 'rgba(0, 0, 0, 0)', 'previous CSS reproduces the exposed unthemed root');
+            await prior.evaluate(element => element.remove()); await admin.evaluate(() => { document.querySelector('link[href$="panel.css"]').disabled = false; });
+        }
         await admin.setViewportSize({ width: 375, height: 800 }); await admin.evaluate(() => document.documentElement.dataset.bpbTheme = 'dark');
         await admin.locator('#custom-layer-add').click();
         const optionsEditor = admin.frameLocator('#custom-layer-dialog iframe');
@@ -117,6 +126,20 @@ try {
         for (const [width, theme] of [[1000, 'light'], [375, 'dark']]) {
             await admin.setViewportSize({ width, height: 800 });
             await admin.evaluate(theme => document.documentElement.dataset.bpbTheme = theme, theme);
+            await admin.locator('#custom-map-layers').scrollIntoViewIfNeeded();
+            const policy = await admin.evaluate(() => ({ background: getComputedStyle(document.documentElement).backgroundColor,
+                root: getComputedStyle(document.documentElement).overscrollBehaviorY, content: getComputedStyle(document.querySelector('.content')).overscrollBehaviorY,
+                sidebar: getComputedStyle(document.querySelector('.side-nav')).overscrollBehaviorY }));
+            assert.equal(policy.root, 'none'); assert.equal(policy.content, 'none'); assert.equal(policy.sidebar, 'none');
+            assert.ok(policy.background !== 'rgba(0, 0, 0, 0)', 'Options root canvas has a theme background');
+            const scroller = admin.locator('.content');
+            await scroller.evaluate(element => element.scrollTo({ top: 0, behavior: 'instant' }));
+            const top = await scroller.boundingBox(); await admin.mouse.move(top.x + top.width / 2, top.y + 30); await admin.mouse.wheel(0, -1200);
+            assert.equal(await scroller.evaluate(element => element.scrollTop), 0, 'top boundary does not scroll the outer frame');
+            await admin.mouse.wheel(0, 300); await admin.waitForFunction(() => document.querySelector('.content').scrollTop > 0);
+            await scroller.evaluate(element => element.scrollTo({ top: element.scrollHeight, behavior: 'instant' })); await admin.mouse.wheel(0, 1200);
+            assert.ok(await scroller.evaluate(element => Math.abs(element.scrollTop - (element.scrollHeight - element.clientHeight)) <= 1), 'bottom boundary remains clamped');
+            assert.equal(await admin.evaluate(() => window.scrollY), 0, 'overscroll never chains into the root');
             await admin.locator('#custom-map-layers').scrollIntoViewIfNeeded();
             assert.ok(await admin.locator('#custom-map-layers').evaluate(element => element.scrollWidth <= element.clientWidth), 'central manager fits');
             if (screenshots) { await mkdir(screenshots, { recursive: true }); await admin.screenshot({ path: path.join(screenshots, `custom-options-${theme}.png`) }); }
@@ -170,6 +193,8 @@ try {
         await secondary.getByRole('checkbox', { name: 'Custom MVT', exact: true }).check();
         await page.evaluate(() => window.extraCustomMap.remove()); await page.waitForFunction(() => document.querySelectorAll('.bpb-map-layers').length === 1);
         await page.goto(`${origin}/peak.aspx?pid=2829`);
+        await page.evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
+        assert.equal(await page.locator('html').evaluate(root => getComputedStyle(root).overscrollBehaviorY), 'none', 'dark Peakbagger page disables vertical bounce');
         await page.getByRole('button', { name: /^Overlays/ }).click(); await page.getByRole('checkbox', { name: 'Custom raster', exact: true }).check();
         await page.getByRole('link', { name: 'Click Here for a Full Screen Map' }).click();
         await page.getByRole('button', { name: /^Overlays/ }).click();
@@ -193,11 +218,13 @@ try {
         const terrainRaster = page.locator('.bpb-custom-source').filter({ hasText: 'Custom raster' }); await terrainRaster.locator('summary').first().focus(); await terrainRaster.locator('summary').first().press('Enter');
         await terrainRaster.getByRole('button', { name: 'Edit source', exact: true }).click();
         await editor.locator('#test').click(); await editor.locator('#feedback').filter({ hasText: 'This area (3D)' }).waitFor();
+        const editorPolicy = await editor.locator('html').evaluate(root => ({ background: getComputedStyle(root).backgroundColor, overscroll: getComputedStyle(root).overscrollBehaviorY }));
+        assert.equal(editorPolicy.overscroll, 'none'); assert.ok(editorPolicy.background !== 'rgba(0, 0, 0, 0)', 'embedded editor root canvas is painted');
         assert.ok(requests.length > requestCount, '3D probes make uncached direct requests');
         await editor.locator('#cancel').click();
         if (screenshots) await page.screenshot({ path: path.join(screenshots, 'custom-terrain.png') });
         assert.deepEqual(errors, []);
-        console.log(JSON.stringify({ verification: 'custom-overlays', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true }));
+        console.log(JSON.stringify({ verification: 'custom-overlays', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true, scrollBoundaries: true, previousCanvasProof: !!process.env.BPB_PREVIOUS_PANEL_CSS }));
     }
 } catch (error) { failure = error; try { const live = await failurePage?.frameLocator('iframe[title="Custom map overlays"]').locator('#feedback').textContent({ timeout: 1000 }); console.error(JSON.stringify({ live, ...diagnostics?.() })); } catch { /* Preserve the original failure. */ } }
 await resources.dispose(failure);
@@ -264,6 +291,18 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await driver.manage().window().setRect({ width: 480, height: 900 });
     await evaluate(() => document.getElementById('custom-map-layers').scrollIntoView());
     assert.ok(await evaluate(() => { const panel = document.getElementById('custom-map-layers'); return panel.scrollWidth <= panel.clientWidth; }), 'Firefox Options layer list fits');
+    assert.deepEqual(await evaluate(() => ['html', '.content', '.side-nav'].map(selector => getComputedStyle(document.querySelector(selector)).overscrollBehaviorY)), ['none', 'none', 'none']);
+    assert.notEqual(await evaluate(() => getComputedStyle(document.documentElement).backgroundColor), 'rgba(0, 0, 0, 0)');
+    await evaluate(() => document.querySelector('.content').scrollTo({ top: 0, behavior: 'instant' }));
+    const scrollTarget = await evaluate(() => { const rect = document.querySelector('.content').getBoundingClientRect(); return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + 30) }; });
+    await driver.actions({ async: true }).scroll(scrollTarget.x, scrollTarget.y, 0, -1200).perform();
+    assert.equal(await evaluate(() => document.querySelector('.content').scrollTop), 0);
+    await driver.actions({ async: true }).scroll(scrollTarget.x, scrollTarget.y, 0, 300).perform();
+    await wait(() => evaluate(() => document.querySelector('.content').scrollTop > 0), 'normal panel scrolling remains available');
+    await evaluate(() => { const content = document.querySelector('.content'); content.scrollTo({ top: content.scrollHeight, behavior: 'instant' }); });
+    await driver.actions({ async: true }).scroll(scrollTarget.x, scrollTarget.y, 0, 1200).perform();
+    assert.ok(await evaluate(() => { const content = document.querySelector('.content'); return Math.abs(content.scrollTop - (content.scrollHeight - content.clientHeight)) <= 1 && scrollY === 0; }));
+    await evaluate(() => document.getElementById('custom-map-layers').scrollIntoView());
     if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await writeFile(path.join(process.env.BPB_CUSTOM_SCREENSHOTS, 'custom-options-firefox-dark.png'), await driver.takeScreenshot(), 'base64'); }
     await driver.get(`${origin}/map/MasterMap.aspx?t=G&gt=rc`);
     await send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width: 1000, height: 760 } } });
@@ -287,6 +326,7 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width: 375, height: 800 } } });
     await driver.switchTo().frame(await driver.findElement(By.css('iframe[title="Custom map overlays"]')));
     await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'packaged editor ready');
+    assert.equal(await evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY), 'none');
     assert.ok(await evaluate(() => document.documentElement.scrollWidth <= innerWidth && getComputedStyle(document.body).color !== 'rgb(35, 54, 41)'), 'narrow dark editor fits');
     const screenshots = process.env.BPB_CUSTOM_SCREENSHOTS;
     if (screenshots) { await mkdir(screenshots, { recursive: true }); await writeFile(path.join(screenshots, 'custom-editor-firefox-narrow.png'), await driver.takeScreenshot(), 'base64'); }
@@ -306,5 +346,5 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     if (screenshots) await writeFile(path.join(screenshots, 'custom-terrain-firefox.png'), await driver.takeScreenshot(), 'base64');
     assert.ok(origins.has(origin) && [...origins].some(value => value?.startsWith('moz-extension://')), 'both real request origins reached the provider');
     assert.deepEqual(networkErrors, []);
-    console.log(JSON.stringify({ verification: 'custom-overlays-firefox', browser: (await driver.getCapabilities()).getBrowserVersion(), hidden: true, renderer, requests: requests.length, nativePixels: true, vectorWorkers: true, corsRecovery: true, keyboardRetry: true }));
+    console.log(JSON.stringify({ verification: 'custom-overlays-firefox', browser: (await driver.getCapabilities()).getBrowserVersion(), hidden: true, renderer, requests: requests.length, nativePixels: true, vectorWorkers: true, corsRecovery: true, keyboardRetry: true, scrollBoundaries: true }));
 }

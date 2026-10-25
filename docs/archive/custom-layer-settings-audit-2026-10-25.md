@@ -73,3 +73,42 @@ contract is [settings storage, export and sync](../settings-storage-and-sync.md)
   transaction; the source registry and its opacity are one local atomic write.
 - New manager checks have no historical pre-feature UI comparison. Model
   regressions and rendered transitions are the recorded evidence.
+
+## Scroll-boundary follow-up
+
+The shared panel stylesheet painted only `body`; Options fixes that body inside
+the viewport while its content/sidebar scroll. The source editor also left its
+root transparent. Their default boundary policy allowed vertical elastic
+scrolling and chaining, exposing an unthemed canvas in dark mode.
+
+### Fixed and verified
+
+- Shared panels and the custom-source editor now paint the root with their own
+  theme token. Options content/navigation scroll containers and editor roots use
+  `overscroll-behavior-y: none`; dark site roots apply it in both early and full
+  theme stages. No event listener intercepts wheel or keyboard input.
+- Hidden Chrome/Firefox checks assert computed canvas/boundary policy, exercise
+  top → normal in-range scrolling → bottom wheel paths and verify the outer frame
+  does not scroll. The existing manager and rendering checks run alongside them.
+- Chrome can load the actual prior panel stylesheet from a disposable file via
+  `BPB_PREVIOUS_PANEL_CSS`, reproducing its transparent root and automatic
+  boundary policy before restoring the fixed stylesheet. This establishes the
+  CSS regression; it does not simulate a physical macOS rubber-band gesture.
+- Final follow-up checks: 3,565 full-suite tests passed; lint passed with eight
+  owned warnings. Chrome and Firefox custom-overlay/Options matrices passed,
+  including the previous-canvas proof and vertical wheel boundaries. Owned
+  browser processes and custom test profiles were absent after teardown.
+
+### Intentionally not changed
+
+- Horizontal gestures, browser history behavior and map interaction are not
+  globally intercepted. The site rule is dark-theme scoped; shared extension
+  panels use the same vertical boundary policy in both themes.
+- Body/content layout, theme tokens and focus/navigation ownership are retained.
+
+### Changed but not fully proven
+
+- Headless protocol wheel input and screenshots cannot establish native macOS
+  trackpad momentum/rubber-band animation, browser chrome or focus placement.
+  The CSS policy and opaque canvas are verified; native gesture proof remains
+  separate from these hidden checks.

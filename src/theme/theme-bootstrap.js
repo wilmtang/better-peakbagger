@@ -14,6 +14,7 @@ const earlyDarkCss = `
 html[data-bpb-theme="dark"] {
     color-scheme: dark !important;
     background: #181a1b !important;
+    overscroll-behavior-y: none;
 }
 html[data-bpb-theme="dark"] body,
 html[data-bpb-theme="dark"] body :not(iframe) {

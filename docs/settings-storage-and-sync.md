@@ -247,6 +247,13 @@ Changing those choices no longer changes other browser profiles. See
 
 ## Verification and remaining limits
 
+Options uses one content scroller and a separate navigation scroller. Both stop
+vertical scroll chaining and elastic overscroll; the root canvas follows the
+selected theme. The custom-source editor applies the same vertical boundary
+policy and paints its own root. Dark Peakbagger pages apply the policy in both
+the first-paint fallback and the full theme. Wheel, keyboard and ordinary
+in-range scrolling remain available; no JavaScript wheel interception is used.
+
 The [closure ledger](archive/settings-portability-remediation.md) records unit,
 full-suite and browser evidence. The overwrite regression was reproduced against
 the prior worker. Deterministic tests cover remote conflicts, snapshot-bound
