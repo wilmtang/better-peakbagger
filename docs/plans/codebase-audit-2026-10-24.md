@@ -236,6 +236,14 @@ Independent commits for drag ownership and report/observer surfaces:
   validation; empty account responses preserve known ownership. Regression failed
   before the fix; 33 Garmin import/API tests, build and focused ESLint passed.
 
+- F2: durable pre-opening reservations recover after payload failure/restart;
+  opening reservations remain authoritative, current selections retry after
+  rollback, and earlier uncertain saves cannot be replaced. Public recovery errors
+  survive the Garmin boundary while raw storage errors remain private. Three
+  regressions failed before the fix; 259 worker/import tests, focused ESLint and
+  hidden real-extension Chrome verification passed. Legacy/expired handoffs that
+  may have opened forms retain their lock and manual review/Done recovery.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

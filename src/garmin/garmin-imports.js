@@ -5,6 +5,7 @@ import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from '
 import { decodeGarminRecording } from './fit-activity.js';
 import { createPackagedPageMatcher } from '../background/sender-policy.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { publicErrors as PublicErrors } from '../background/public-errors.js';
 
 export const GARMIN_ALARM = 'bpb-garmin-check';
 // The stored "walking" preference remains compatible with existing installations.
@@ -375,7 +376,9 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
                 if (!['GARMIN_STATUS', 'GARMIN_SUMMARY'].includes(message.type) && !(await settings.requireCurrent()).enableGarminInbox) throw new GarminError('disabled');
                 return await handlers[message.type](message, sender);
             }
-            catch (error) { return { ok: false, error: { code: error instanceof GarminError ? error.code : 'garmin-failed', message: error instanceof GarminError ? error.message : 'Garmin could not finish this action. Your existing drafts are safe.' } }; }
+            catch (error) { return { ok: false, error: error instanceof GarminError
+                ? { code: error.code, message: error.message }
+                : PublicErrors.expose(error, { code: 'garmin-failed', message: 'Garmin could not finish this action. Your existing drafts are safe.' }) }; }
         },
         async saved(activityId, peakId, aid, jobId, cid) {
             if (!positiveId(activityId) || !positiveId(peakId) || !positiveId(aid)) return;

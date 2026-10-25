@@ -3601,40 +3601,72 @@ import { GarminError } from '../garmin/garmin-api.js';
         },
         openDrafts: async (message, sender) => {
             const state = await garminImports.store.read(); const item = state.items[message.id];
-            if (!item?.analysis || !item.cid || item.phase === 'dismissed') throw new Error('This activity is not ready.');
+            if (!item?.analysis || !item.cid || item.phase === 'dismissed') throw PublicErrors.exception('garmin-not-ready', 'This activity is not ready.');
             await garminBinding(item.cid);
             const tabId = sender.tab?.id ?? Number(message.tabId);
             const source = await ext.tabs.get(tabId);
-            if (!createPackagedPageMatcher(ext, ['options/inbox.html'])({ ...sender, url: source.url })) throw new Error('Invalid inbox tab.');
+            if (!createPackagedPageMatcher(ext, ['options/inbox.html'])({ ...sender, url: source.url })) throw PublicErrors.exception('garmin-inbox-tab', 'Open the activity inbox to continue.');
             return serializeLifecycle(tabId, async () => {
                 const jobs = await readMap(JOBS_KEY); const existing = jobs[tabId];
+                if (item.handoff?.phase === 'preparing') {
+                    // This durable stage precedes every call that can create a
+                    // draft tab. It is safe to retry after interrupted setup,
+                    // but never reinterpret a recorded opening as setup.
+                    const handoff = item.handoff;
+                    const priorJob = jobs[handoff.tabId];
+                    const drafts = await readMap(DRAFTS_KEY);
+                    if (Object.values(drafts).some(draft => draft.jobId === handoff.jobId)
+                        || priorJob?.id === handoff.jobId && priorJob.phase !== 'ready') throw new GarminError('handoff');
+                    await garminImports.store.mutate(current => {
+                        if (current.items[item.id]?.handoff?.jobId === handoff.jobId
+                            && current.items[item.id].handoff.phase === 'preparing') delete current.items[item.id].handoff;
+                    });
+                    delete item.handoff;
+                }
                 if (item.handoff) {
                     if (!isFresh(existing) || existing.id !== item.handoff.jobId) throw new GarminError('handoff');
                     return { ok: true, ...await openDraftsTransaction({ ...message, tabId }, tabId) };
                 }
-                if (existing && (await inspectRecordedDrafts(existing.id, await readMap(DRAFTS_KEY))).live.length) throw new Error('Finish reviewing the previous activity’s draft forms first.');
+                if (existing) {
+                    const inspected = await inspectRecordedDrafts(existing.id, await readMap(DRAFTS_KEY));
+                    if (existing.saveRecoveryRequired || inspected.saveRecoveryRequired) throw PublicErrors.exception('draft-save-unverified', SAVE_RECOVERY_MESSAGE);
+                    if (inspected.live.length) throw PublicErrors.exception('garmin-previous-drafts', 'Finish reviewing the previous activity’s draft forms first.');
+                }
                 const preferences = await readCapturePreferences();
                 const analysis = item.analysis;
                 const matches = analysis.matches.filter(match => !item.saved.includes(String(match.id)));
                 if (!Array.isArray(message.selectedIds) || !message.selectedIds.length
-                    || message.selectedIds.some(pid => !matches.some(match => match.id === pid))) throw new Error('Select current summit matches before opening drafts.');
-                const id = makeId();
-                await garminImports.store.mutate(current => {
-                    const live = current.items[item.id];
-                    if (current.epoch !== state.epoch || !live || live.handoff || live.phase === 'dismissed'
-                        || (live.revision || 0) !== (item.revision || 0)) throw new Error('The inbox changed.');
-                    current.items[item.id].handoff = { jobId: id, tabId };
-                });
-                await installLifecycleJob({ id, sourceTabId: tabId, provider: 'garmin', activityId: item.id,
-                    inboxActivityId: item.id, cid: item.cid, phase: 'ready', createdAt: now(), updatedAt: now(), expiresAt: now() + JOB_TTL_MS,
-                    matches, selectedIds: [], capturePreferences: preferences, tripName: analysis.tripName,
-                    nightsOut: analysis.nightsOut, dayStats: analysis.dayStats, trackSummary: analysis.trackSummary });
+                    || message.selectedIds.some(pid => !matches.some(match => match.id === pid))) throw PublicErrors.exception('garmin-selection', 'Select current summit matches before opening drafts.');
                 const waypoints = preferences.retainWaypoints ? Core.sanitizeWaypoints(analysis.waypoints) : [];
                 const route = Core.sanitizeTrack(analysis.route).segments;
                 if (route.reduce((n, segment) => n + segment.length, 0) + waypoints.length > Core.MAX_UPLOAD_POINTS) throw new Error('Invalid retained route.');
                 const upload = Core.serializeUploadGpx(route, waypoints);
-                await installCapturePayload(tabId, id, upload, {},
-                    preferences.removeGpxTimestamps ? Core.serializeUploadGpx(route, waypoints, { includeTimestamps: false }) : null);
+                const id = makeId();
+                await garminImports.store.mutate(current => {
+                    const live = current.items[item.id];
+                    if (current.epoch !== state.epoch || !live || live.handoff || live.phase === 'dismissed'
+                        || (live.revision || 0) !== (item.revision || 0)) throw PublicErrors.exception('garmin-inbox-changed', 'The inbox changed. Review the activity again.');
+                    current.items[item.id].handoff = { jobId: id, tabId, phase: 'preparing' };
+                });
+                try {
+                    await installLifecycleJob({ id, sourceTabId: tabId, provider: 'garmin', activityId: item.id,
+                        inboxActivityId: item.id, cid: item.cid, phase: 'ready', createdAt: now(), updatedAt: now(), expiresAt: now() + JOB_TTL_MS,
+                        matches, selectedIds: [], capturePreferences: preferences, tripName: analysis.tripName,
+                        nightsOut: analysis.nightsOut, dayStats: analysis.dayStats, trackSummary: analysis.trackSummary });
+                    await installCapturePayload(tabId, id, upload, {},
+                        preferences.removeGpxTimestamps ? Core.serializeUploadGpx(route, waypoints, { includeTimestamps: false }) : null);
+                    await garminImports.store.mutate(current => {
+                        if (current.epoch !== state.epoch || current.items[item.id]?.handoff?.jobId !== id) throw PublicErrors.exception('garmin-inbox-changed', 'The inbox changed. Review the activity again.');
+                        current.items[item.id].handoff.phase = 'opening';
+                    });
+                } catch (error) {
+                    // No draft-opening call has occurred. Release only this
+                    // operation's reservation; a failed cleanup remains durable.
+                    try { await garminImports.store.mutate(current => {
+                        if (current.items[item.id]?.handoff?.jobId === id) delete current.items[item.id].handoff;
+                    }); } catch (cleanupError) { console.error('Better Peakbagger: Garmin setup cleanup failed', cleanupError); }
+                    throw error;
+                }
                 return { ok: true, ...await openDraftsTransaction({ ...message, tabId }, tabId) };
             });
         },

@@ -4397,3 +4397,74 @@ test('a completed active Peakbagger visit wakes the durable Garmin queue without
     assert.equal(h.windowCreates.length, 0);
     await store.close();
 });
+
+const garminInboxHarness = async () => {
+    const database = new IDBFactory(), h = createHarness({ garminDatabase: database });
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    const derived = h.values.bpbCaptureJobs[1], store = createGarminStore(database);
+    h.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
+    await store.mutate(state => {
+        state.items['123'] = { id: '123', cid: '77', owner: '1234', saved: [], phase: 'ready',
+            analysis: { matches: derived.matches, trackSummary: derived.trackSummary,
+                route: [[{ lat: 0, lon: 0, ele: 100, time: 1 }, { lat: 0, lon: 0.001, ele: 110, time: 2 }]], waypoints: [] } };
+    });
+    return { ...h, database, store, sender: { tab: { id: 9 }, url: h.tabs.get(9).url },
+        message: { type: 'GARMIN_OPEN_DRAFTS', id: '123', tabId: 9, selectedIds: [7] } };
+};
+test('failed Garmin payload installation releases only its pre-opening durable intent', async () => {
+    const h = await garminInboxHarness();
+    try {
+        h.faults.payloadSet = 'private payload failure';
+        const failed = await h.send(h.message, h.sender);
+        assert.equal(failed.ok, false);
+        assert.equal((await h.store.read()).items['123'].handoff, undefined);
+        const retry = await h.send(h.message, h.sender);
+        assert.equal(retry.ok, true, JSON.stringify(retry)); assert.equal(retry.tabIds.length, 1);
+    } finally { await h.store.close(); }
+});
+test('an interrupted pre-opening Garmin intent is recoverable without erasing opened handoffs', async () => {
+    const h = await garminInboxHarness();
+    try {
+        await h.store.mutate(state => { state.items['123'].handoff = { jobId: 'uninstalled-job', tabId: 9, phase: 'preparing' }; });
+        const restarted = createHarness({ garminDatabase: h.database, sessionValues: h.values, browserTabs: h.tabs });
+        const result = await restarted.send(h.message, h.sender);
+        assert.equal(result.ok, true, JSON.stringify(result));
+        assert.equal((await h.store.read()).items['123'].handoff.phase, 'opening');
+        const again = await restarted.send(h.message, h.sender);
+        assert.equal(again.reused, true); assert.deepEqual(again.tabIds, result.tabIds);
+    } finally { await h.store.close(); }
+});
+test('Garmin actions expose intentional recovery errors but keep storage exceptions private', async () => {
+    const h = await garminInboxHarness();
+    try {
+        const invalid = await h.send({ ...h.message, selectedIds: [] }, h.sender);
+        assert.match(invalid.error.message, /Select current summit matches/);
+        h.faults.payloadSet = 'secret storage details';
+        const failed = await h.send(h.message, h.sender);
+        assert.doesNotMatch(failed.error.message, /secret storage details/);
+    } finally { await h.store.close(); }
+});
+
+test('a rolled-back Garmin opening retries the current selection without duplicating forms', async () => {
+    const h = await garminInboxHarness();
+    try {
+        h.faults.tabCreate = 'draft tab failed';
+        assert.equal((await h.send(h.message, h.sender)).ok, false);
+        assert.equal(h.values.bpbCaptureJobs[9].phase, 'ready');
+        assert.deepEqual(h.values.bpbCaptureJobs[9].selectedIds, []);
+        delete h.faults.tabCreate;
+        const retried = await h.send(h.message, h.sender);
+        assert.equal(retried.ok, true, JSON.stringify(retried)); assert.equal(retried.tabIds.length, 1);
+        const repeated = await h.send(h.message, h.sender);
+        assert.equal(repeated.reused, true); assert.deepEqual(repeated.tabIds, retried.tabIds);
+    } finally { await h.store.close(); }
+});
+test('new Garmin handoffs cannot replace an earlier uncertain-save job', async () => {
+    const h = await garminInboxHarness();
+    try {
+        h.values.bpbCaptureJobs[9] = { ...h.values.bpbCaptureJobs[1], id: 'previous-uncertain-save', sourceTabId: 9, saveRecoveryRequired: true };
+        const response = await h.send(h.message, h.sender);
+        assert.equal(response.ok, false); assert.equal(response.error.code, 'draft-save-unverified');
+        assert.equal((await h.store.read()).items['123'].handoff, undefined);
+    } finally { await h.store.close(); }
+});
