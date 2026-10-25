@@ -26,6 +26,7 @@ const configureCredits = ({ width, theme, largeText, long }) => {
     window.__bpbCreditsProbe ??= {
         mountStyle: mount.getAttribute('style'), theme: surface.dataset.theme,
         attribution: source.attribution,
+        fontSize: getComputedStyle(surface).fontSize,
         hintClass: doc.querySelector('.bpb-terrain-hint').className,
         hintHidden: doc.querySelector('.bpb-terrain-hint').hidden,
     };
@@ -43,7 +44,28 @@ const configureCredits = ({ width, theme, largeText, long }) => {
         : '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>';
     map.fire('sourcedata', { dataType: 'source', sourceDataType: 'metadata' });
     map.resize();
-    return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    // Native menulist metrics can trail a font/color-scheme change. That is
+    // matrix setup, before the attribution transition whose stability we test.
+    // Wait for applied typography and stable control bounds, not two blind ticks.
+    const expectedFont = largeText ? '24px' : window.__bpbCreditsProbe.fontSize;
+    return new Promise((resolve, reject) => {
+        const deadline = performance.now() + 5000;
+        let previous = '', stable = 0;
+        const sample = () => {
+            const picker = doc.querySelector('.bpb-terrain-picker');
+            const box = picker.getBoundingClientRect();
+            const value = { theme: surface.dataset.theme, font: getComputedStyle(surface).fontSize,
+                pickerFont: getComputedStyle(picker).fontSize, x: box.x, y: box.y, width: box.width, height: box.height };
+            const signature = JSON.stringify(value);
+            stable = value.theme === theme && value.font === expectedFont && value.pickerFont === expectedFont
+                && signature === previous ? stable + 1 : 0;
+            previous = signature;
+            if (stable >= 3) resolve();
+            else if (performance.now() >= deadline) reject(new Error(`Terrain control setup did not settle: ${signature}; expected font ${expectedFont}`));
+            else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+    });
 };
 
 const readCredits = () => {
