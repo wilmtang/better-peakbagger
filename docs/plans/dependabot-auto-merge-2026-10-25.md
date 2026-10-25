@@ -27,6 +27,20 @@ connection during the narrow analyzer case.
 
 ### Fixed and verified
 
+- **Screenshot-enabled Firefox input ownership:** [the fourth published run](https://github.com/wilmtang/better-peakbagger/actions/runs/40241538978)
+  passed both full layout matrices and the entire Chrome snow/card suite. Its
+  Firefox card check then timed out on Sun's keyboard disclosure. Persistence
+  polling switched to Settings and back immediately before Enter. With the
+  CI screenshot path enabled, a new guard reproduced those hidden/visible
+  transitions on the former read. Read the extension's Settings context over
+  BiDi without switching tabs; the guard and full screenshot-enabled Chrome
+  156/Firefox 158 card matrices then passed at 375/1440px in both themes.
+  Firefox placement and interaction matrices also passed through 200% zoom.
+  Include live focus/visibility in disclosure failures. Native onscreen focus
+  is not established by these hidden runs.
+  The successful Chrome job took 18m15s. Increase only the layout job budget
+  from 20 to 30 minutes for measured setup, timeout-path and cleanup headroom.
+  The budget regression failed first; all seven setup tests passed afterward.
 - **Final fixture follow-up:** [the third published run](https://github.com/wilmtang/better-peakbagger/actions/runs/40239868354)
   passed Chrome current/128, Firefox current/152, Node/scale, and both browsers'
   terrain and snow GPU checks. Its layout jobs exposed timestamp stubs missing
