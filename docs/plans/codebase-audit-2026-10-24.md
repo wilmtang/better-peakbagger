@@ -323,6 +323,11 @@ Independent commits for drag ownership and report/observer surfaces:
   tests, build and ESLint passed. Refusal on another date still leaves the displayed
   date model enabled; Retry already reset labels correctly.
 
+- F10 native lifecycle: entering 3D detaches the native adapter and stops binding
+  polls; returning to 2D creates one adapter. The regression failed before the fix;
+  25 map-layer tests, build and focused ESLint passed. Broader browser checks are
+  still in progress and are not represented as terrain renderer evidence.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

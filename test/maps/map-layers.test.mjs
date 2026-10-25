@@ -35,7 +35,7 @@ function setup(terrain = false, { preferences = true } = {}) {
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
     const panStart = () => { for (const handler of events.get('movestart') || []) handler({ target: map }); };
     const pan = () => { for (const handler of events.get('moveend') || []) handler({ target: map }); };
-    return { win, messages, moves, removed, popups, rasterPaints, send, toggle, request, pan, panStart,
+    return { win, messages, moves, removed, popups, rasterPaints, events, send, toggle, request, pan, panStart,
         view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner.dispose(); win.close(); } };
 }
@@ -259,5 +259,18 @@ test('terrain discovery receives the union of the overlay trigger and expanded m
         const request = env.request(); env.send({type:'stations',requestId:request.requestId,stations:[station],nearby:true});
         const reveal = env.messages.filter(message => message.type === 'snowStations' && message.reveal).at(-1);
         assert.deepEqual(reveal.occlusions, [[.0125,.025,.3025,.8]]);
+    } finally { env.close(); }
+});
+
+test('native adapter stays detached through terrain boot and rebinds on return', () => {
+    const env = setup();
+    try {
+        assert.equal(env.events.get('moveend').size, 1);
+        env.send({ type: 'init', dir: 'toCS' }, '__bpbTerrain');
+        assert.equal(env.events.get('moveend').size, 0, 'entering 3D must not immediately recreate the disposed adapter');
+        env.send({ type: 'loaded' }, '__bpbTerrain');
+        assert.equal(env.events.get('moveend').size, 0);
+        env.send({ type: 'destroyed' }, '__bpbTerrain');
+        assert.equal(env.events.get('moveend').size, 1, 'returning to 2D restores exactly one adapter');
     } finally { env.close(); }
 });

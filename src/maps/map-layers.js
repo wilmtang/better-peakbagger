@@ -210,7 +210,7 @@ export function installMapLayers(win = window) {
         binding = null;
     };
     const bind = () => {
-        if (!active || disposed) return false;
+        if (!active || disposed || frameMode || booting) return false;
         const frame = frameLifecycle.current();
         const candidates = [];
         try { if (frame?.contentWindow) candidates.push({ win: frame.contentWindow, frame }); } catch { /* Wait for replacement. */ }
@@ -263,7 +263,7 @@ export function installMapLayers(win = window) {
     };
     const stopPolling = () => { clearInterval(polling); polling = null; };
     const start = () => {
-        stopPolling(); if (bind()) return;
+        stopPolling(); if (!active || disposed || frameMode || booting || bind()) return;
         const began = Date.now(); polling = win.setInterval(() => { if (bind() || Date.now() - began >= 30000) stopPolling(); }, 250);
     };
     const handle = event => {
@@ -345,14 +345,15 @@ export function installMapLayers(win = window) {
         if (data.__bpbTerrain !== true) return;
         if (data.dir === 'toCS' && data.type === 'init') {
             locationMenu.close();
-            booting = true; binding?.sentinel.deactivate(); binding?.engine.dispose();
+            booting = true; stopPolling();
             // Recreate the native adapter only when returning to 2D.
-            if (binding) { unbind(); start(); }
+            unbind();
             requestId++; post({ type: 'cancel' });
         } else if (data.dir === 'toPage' && data.type === 'loaded') {
+            stopPolling();
             frameMode = true; terrainMoving = false; booting = false; revision++; apply(); loadStations();
         } else if (data.dir === 'toPage' && ['destroyed', 'error'].includes(data.type)) {
-            frameMode = booting = terrainMoving = false; terrainView = null; revision++; apply(); refresh();
+            frameMode = booting = terrainMoving = false; terrainView = null; revision++; start(); apply(); refresh();
         } else if (data.dir === 'toPage' && data.type === 'layerMoveStart' && frameMode) {
             terrainMoving = true; navigationStarted();
         } else if (data.dir === 'toPage' && data.type === 'layerStatus' && frameMode) {
