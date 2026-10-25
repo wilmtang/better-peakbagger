@@ -69,7 +69,18 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     const timeLabel = (row, key = metric) => accumulation(key) || key === 'gust'
         ? `${localTime(row.start)} – ${localTime(row.time)}${row.time === day.window.end ? ' (next midnight)' : ''}` : localTime(row.time);
     const valueLabel = (value, key = metric) => format(value, key === 'gust' ? 'wind' : key);
-    const readingLabel = (row, key = metric) => `${timeLabel(row, key)} · ${Number.isFinite(row.value) ? valueLabel(row.value, key) : 'Unavailable'}${row.partialInterval ? accumulation(key) ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
+    const samplesByTime = new Map(samples.map(sample => [sample.time, sample]));
+    const detailLabel = (row, key) => {
+        const sample = samplesByTime.get(row.sourceTime);
+        if (key === 'temperature') return ` · Feels like ${Number.isFinite(sample?.apparent) ? format(sample.apparent, 'temperature') : 'Unavailable'}`;
+        if (key === 'wind') {
+            const direction = sample?.direction;
+            const compass = Number.isFinite(direction) ? ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(direction / 45) % 8] : null;
+            return ` · Wind from ${compass ? `${compass} (${Math.round(direction)}°)` : 'Unavailable'}`;
+        }
+        return '';
+    };
+    const readingLabel = (row, key = metric) => `${timeLabel(row, key)} · ${Number.isFinite(row.value) ? valueLabel(row.value, key) : 'Unavailable'}${detailLabel(row, key)}${row.partialInterval ? accumulation(key) ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
     const overviewFor = (key, candidates) => {
         const values = candidates.map(row => row.value).filter(Number.isFinite);
         if (!values.length) return 'Hourly readings unavailable';
@@ -141,7 +152,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         // Dots retain isolated readings and expose exact local times in SVG titles.
         for (const row of rows.filter(sample => Number.isFinite(sample.value))) {
             const point = svgElement('circle', { class: 'bpb-week-point', cx: x(row.time), cy: y(row.value), r: 2, 'data-time': row.sourceTime });
-            point.append(svgElement('title', {}, `${timeLabel(row)} · ${valueLabel(row.value)}`)); svg.append(point);
+            point.append(svgElement('title', {}, readingLabel(row))); svg.append(point);
         }
         drawCursor();
     }
@@ -159,7 +170,8 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const isConditions = metric === 'code';
         conditions.hidden = !isConditions; frame.hidden = isConditions; readout.hidden = isConditions;
         if (isConditions) {
-            const { table } = createWeatherHourlyTable({ window: day.window, samples, zone, format });
+            const { table } = createWeatherHourlyTable({ window: day.window, samples, zone, format,
+                keys: ['code', 'temperature', 'precipitation', 'wind'] });
             conditions.replaceChildren(table);
             note.textContent = `${clockLabel} · Scroll for all hours.`;
         } else {
@@ -171,9 +183,9 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
             precipitation: 'Rain/snow is total precipitation as liquid water equivalent, including rain and melted snow. Open-Meteo converts the snow portion to estimated snowfall depth using a fixed 1:7 water-to-snow depth ratio (1 cm of water → 7 cm of snow). Actual snow density varies. Values cover the preceding hour; partial boundary intervals are estimated.',
             gust: 'Gusts are maxima for the preceding hour. A partial boundary hour can include time outside this day.',
             cloud: 'Cloud cover is the percentage of sky covered by clouds: 0% is clear and 100% is overcast. It does not indicate cloud-base height or whether the summit is inside cloud.',
-            code: 'Hourly model estimates in local time. Rain/snow is water equivalent. Rain/snow and gusts cover the hour starting at the shown time. Freezing level is altitude above sea level. Missing readings stay unavailable.',
-            temperature: 'Air temperature at two meters above ground, adjusted to the requested elevation when available. These are model estimates, not station observations.',
-            wind: 'Wind speed at ten meters above ground. These are model estimates; terrain and exposure can change local conditions.',
+            code: 'Hourly model estimates in local time. Rain/snow is water equivalent for the hour starting at the shown time. Explore the other tabs for detailed readings. Missing readings stay unavailable.',
+            temperature: 'Air temperature at two meters above ground, adjusted to the requested elevation when available. Explore an hour to see its feels-like temperature too. These are model estimates, not station observations.',
+            wind: 'Wind speed at ten meters above ground. Explore an hour to see the direction the wind comes from. These are model estimates; terrain and exposure can change local conditions.',
         };
         explanation.textContent = information[metric];
         info.setAttribute('aria-label', `About ${metrics.find(([key]) => key === metric)[1].toLowerCase()}`);

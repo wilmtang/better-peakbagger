@@ -358,7 +358,7 @@ test('every hourly data tab survives navigation; keyboard choices persist withou
     }
 });
 
-test('cloud graph and conditions share one request, preserve gaps and use a fixed percentage axis', async () => {
+test('cloud details stay in their graph, preserve gaps and use a fixed percentage axis without another request', async () => {
     for (const units of ['imperial', 'metric']) {
         const env = setup({ storedSettings: { units } });
         try {
@@ -367,15 +367,15 @@ test('cloud graph and conditions share one request, preserve gaps and use a fixe
             assert.ok(query.get('hourly').split(',').includes('cloud_cover'));
             env.doc.querySelector('.bpb-week-day > summary').click();
             const day = env.doc.querySelector('.bpb-week-day[open]');
-            const values = [...day.querySelectorAll('[data-weather-row="cloud"] td')].map(cell => cell.textContent);
-            assert.equal(values.length, 24);
-            for (const value of ['0%', '25%', '50%', '100%', '—']) assert.ok(values.includes(value), value);
+            assert.equal(day.querySelector('[data-weather-row="cloud"]'), null);
             day.querySelector('[data-metric="cloud"]').click();
             const chart = day.querySelector('.bpb-week-chart');
+            const values = [...chart.querySelectorAll('.bpb-week-point title')].map(node => node.textContent);
+            for (const value of ['0%', '25%', '50%', '100%']) assert.ok(values.some(text => text.endsWith(`· ${value}`)), value);
             assert.equal(chart.dataset.weatherMetric, 'cloud');
             assert.deepEqual([...chart.querySelectorAll('.bpb-week-axis')].slice(0, 3).map(node => node.textContent), ['0%', '50%', '100%']);
             assert.ok(chart.querySelector('.bpb-week-line').getAttribute('d').split('M').length > 2, 'missing cloud hours break the line');
-            assert.equal(chart.querySelectorAll('.bpb-week-point').length, values.filter(value => value !== '—').length);
+            assert.ok(values.length < 24, 'missing cloud hours do not receive points');
             chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
             assert.ok(day.querySelector('.bpb-week-cursor'));
             assert.match(day.querySelector('.bpb-week-readout').textContent, /%|Unavailable/);
@@ -438,7 +438,7 @@ test('rain/snow explains the fixed conversion without a separate snowfall displa
         assert.doesNotMatch(day.querySelector('.bpb-week-readout').textContent, /ft/);
         day.querySelector('[data-metric="code"]').click();
         assert.equal(day.querySelector('[data-weather-row="snowfall"]'), null);
-        assert.ok(day.querySelector('[data-weather-row="freezing"]'));
+        assert.equal(day.querySelector('[data-weather-row="freezing"]'), null);
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
@@ -1113,17 +1113,16 @@ test('missing hours break numeric lines and remain unavailable in conditions; mi
     } finally { env.close(); }
 });
 
-test('horizontal Conditions exposes all measurements, interval values and retained scroll on a unit change', async () => {
+test('Conditions keeps the four overview rows, interval values and scroll on a unit change', async () => {
     const env = setup();
     try {
         await settled(env); env.doc.querySelector('.bpb-week-day > summary').click();
         env.doc.querySelector('[data-metric="code"]').click();
         const grid = env.doc.querySelector('.bpb-week-conditions');
         assert.deepEqual([...grid.querySelectorAll('.bpb-weather-hourly-table > tbody > tr > th')].map(node => node.textContent),
-            ['Conditions', 'Cloud cover', 'Temperature', 'Feels like', 'Rain/snow', 'Freezing level', 'Wind', 'Gusts', 'Wind from']);
+            ['Conditions', 'Temperature', 'Rain/snow', 'Wind']);
         assert.equal(grid.querySelectorAll('.bpb-weather-conditions-hour').length, 24);
-        assert.match(grid.querySelector('[data-weather-row="apparent"]').textContent, /18°F/);
-        assert.match(grid.querySelector('[data-weather-row="direction"]').textContent, /SW/);
+        assert.match(grid.querySelector('[data-weather-row="temperature"]').textContent, /°F/);
         const rain = [...grid.querySelectorAll('[data-weather-row="precipitation"] td')];
         assert.match(rain[0].title, /12:00 AM PST.*01:00 AM PST/);
         assert.match(rain.at(-1).title, /11:00 PM PST.*12:00 AM PST/);
@@ -1131,7 +1130,49 @@ test('horizontal Conditions exposes all measurements, interval values and retain
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         const next = env.doc.querySelector('.bpb-week-conditions');
         assert.equal(next.scrollLeft, 340); assert.equal(env.doc.activeElement, next);
-        assert.match(next.querySelector('[data-weather-row="apparent"]').textContent, /−8°C/);
+        assert.match(next.querySelector('[data-weather-row="temperature"]').textContent, /°C/);
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('Temperature and Wind expose the matching hour feels-like and direction readings without a request', async () => {
+    const env = setup();
+    try {
+        await settled(env); env.doc.querySelector('.bpb-week-day > summary').click();
+        const firstReading = metric => {
+            const day = env.doc.querySelector('.bpb-week-day[open]');
+            day.querySelector(`[data-metric="${metric}"]`).click();
+            day.querySelector('.bpb-week-chart').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+            return day.querySelector('.bpb-week-readout').textContent;
+        };
+        assert.match(firstReading('temperature'), /12:00 AM PST.*Feels like 18°F/);
+        const day = env.doc.querySelector('.bpb-week-day[open]');
+        assert.match(day.querySelector('.bpb-week-point title').textContent, /Feels like 18°F/);
+        assert.match(firstReading('wind'), /12:00 AM PST.*Wind from SW \(225°\)/);
+        assert.match(day.querySelector('.bpb-week-point title').textContent, /Wind from SW \(225°\)/);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
+        assert.match(firstReading('temperature'), /Feels like −8°C/);
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('detail readings keep missing hours unavailable and accept a north wind of zero degrees', async () => {
+    const env = setup({ fetchFn: async url => {
+        const body = await reply(url).json();
+        body.hourly.apparent_temperature.fill(null); body.hourly.wind_direction_10m.fill(null);
+        body.hourly.wind_direction_10m[body.hourly.time.indexOf(Date.parse('2024-11-04T08:00:00Z') / 1000)] = 0;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env); env.doc.querySelector('.bpb-week-day > summary').click();
+        const day = env.doc.querySelector('.bpb-week-day[open]');
+        const read = key => day.querySelector('.bpb-week-chart').dispatchEvent(new env.win.KeyboardEvent('keydown', { key, bubbles: true }));
+        day.querySelector('[data-metric="temperature"]').click(); read('Home');
+        assert.match(day.querySelector('.bpb-week-readout').textContent, /°F · Feels like Unavailable/);
+        day.querySelector('[data-metric="wind"]').click(); read('Home');
+        assert.match(day.querySelector('.bpb-week-readout').textContent, /Wind from N \(0°\)/);
+        read('ArrowRight');
+        assert.match(day.querySelector('.bpb-week-readout').textContent, /01:00 AM PST.*mph · Wind from Unavailable/);
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });

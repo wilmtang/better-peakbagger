@@ -77,9 +77,11 @@ initial data tab; the last explicit selection is a portable setting, restored
 across peak pages and reloads and included in browser sync, files and backups.
 Missing or invalid saved selections fall back to Conditions. Temperature, rain/snow,
 freezing level, clouds, wind and gusts use responsive line graphs; Conditions
-shows a horizontally scrollable hourly table of condition icons,
-cloud cover, temperature, feels-like, rain/snow, freezing level,
-wind, gusts and wind direction. Row labels
+shows a compact horizontally scrollable hourly table of condition icons,
+temperature, rain/snow and wind. Cloud cover, freezing level and gusts live
+in their own tabs. Exploring an hour in **Temperature** also shows its feels-like
+temperature; **Wind** readings include the direction the wind comes from.
+These details also appear in graph-point titles. Row labels
 stay visible while scrolling; clear hours use a Moon icon at night.
 **Clouds** shows total cloud cover on a fixed 0–100% scale, with percentages
 unchanged by the unit preference. It describes modelled sky coverage, not cloud

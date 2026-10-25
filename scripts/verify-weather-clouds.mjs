@@ -15,6 +15,11 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
     const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const card = '#bpb-peak-weather', day = `${card} .bpb-week-day[open]`, cases = [];
+    // Actual tab activations save synced preferences. Across the full matrix,
+    // wait for Chrome's write budget rather than failing the next setup write.
+    const configure = values => waitForCondition(async () => {
+        await setSettings({ ...values, showSummitCloud: false }); return true;
+    }, { description: 'weather fixture settings write', timeoutMs: 65_000, intervalMs: 1000 });
     // At 200% zoom on a narrow viewport the native Peakbagger table is wider
     // than the viewport. WebDriver's vertical-only reveal cannot expose every
     // tab; pan to the real control before asking the transport to click it.
@@ -51,7 +56,7 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
         && document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'cloud graph rendered');
     for (const theme of ['light', 'dark']) for (const zoom of [1, 2]) for (const width of [1440, 375]) {
         const units = theme === 'light' ? 'imperial' : 'metric';
-        await setSettings({ theme, units }); await resize(width, 1100);
+        await configure({ theme, units }); await resize(width, 1100);
         setMode('complete'); const beforeLoad = evidence.length;
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=no-map`);
         await visible();
@@ -70,8 +75,6 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
             await click(`${day} [data-metric="code"]`);
             await verifyWeatherConditions(evaluate);
             assert.equal(await evaluate(() => document.querySelector('.bpb-week-day[open] [data-metric="snowfall"], .bpb-week-day[open] [data-weather-row="snowfall"]')), null);
-            const values = await evaluate(() => [...document.querySelectorAll('.bpb-week-day[open] [data-weather-row="cloud"] td')].map(cell => cell.textContent));
-            for (const value of ['0%', '25%', '50%', '100%', '—']) assert.ok(values.includes(value), `${units}: ${value}`);
             if (output) {
                 await evaluate(() => document.querySelector('.bpb-week-day[open] > summary').scrollIntoView({ block: 'start', behavior: 'instant' }));
                 await screenshotPage(path.join(output, `${label}-conditions.png`));
@@ -81,6 +84,8 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
             await press(firefoxMode ? '\uE014' : 'ArrowRight'); await graph();
             assert.equal(await evaluate(() => document.activeElement.dataset.metric), 'cloud');
             assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.bpb-week-day[open] .bpb-week-axis')].slice(0, 3).map(node => node.textContent)), ['0%', '50%', '100%']);
+            const values = await evaluate(() => [...document.querySelectorAll('.bpb-week-day[open] .bpb-week-point title')].map(node => node.textContent));
+            for (const value of ['0%', '25%', '50%', '100%']) assert.ok(values.some(text => text.endsWith(`· ${value}`)), `${units}: ${value}`);
             const line = await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-line').getAttribute('d'));
             assert.ok(line.split('M').length > 2, 'missing cloud hours leave visible gaps');
             await evaluate(() => {
@@ -116,6 +121,21 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
                 assert.ok(frames.every(frame => Math.abs(frame.scroll - before.scroll) <= 1
                     && Math.abs(frame.top - before.boxes[5].y) <= 1
                     && Math.abs(frame.tabs - before.boxes[4].height) <= 1), `intermediate graph movement: ${JSON.stringify(frames)}`);
+                if (metric === 'temperature' || metric === 'wind') {
+                    await evaluate(() => {
+                        const chart = document.querySelector('.bpb-week-day[open] .bpb-week-chart');
+                        chart.scrollIntoView({ block: 'center', behavior: 'instant' }); chart.focus({ preventScroll: true });
+                    });
+                    const initial = await evaluate(snapshot);
+                    for (const key of [firefoxMode ? '\uE011' : 'Home', firefoxMode ? '\uE010' : 'End', firefoxMode ? '\uE00C' : 'Escape']) {
+                        await press(key);
+                        const text = await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-readout').textContent);
+                        if (key === (firefoxMode ? '\uE00C' : 'Escape')) assert.match(text, /Low.*High/);
+                        else assert.match(text, metric === 'temperature' ? /Feels like .*°[CF]/ : /Wind from SW \(225°\)/);
+                        stable(initial, await evaluate(snapshot), `${label}: ${metric} detail reading`);
+                        if (output && key === (firefoxMode ? '\uE011' : 'Home')) await screenshotPage(path.join(output, `${label}-${metric}-reading.png`));
+                    }
+                }
                 if (metric === 'precipitation' || metric === 'freezing') {
                     await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'rain/freezing plot rendered');
                     if (metric === 'freezing') assert.ok(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-reference')));
@@ -160,7 +180,7 @@ export async function verifyWeatherClouds({ origin, evaluate, navigate, click: c
     }
     // Retain the cloud chart and its keyboard target through a held refresh,
     // service failure and a successful retry. Missing cloud data is supplemental.
-    await setSettings({ theme: 'light', units: 'imperial' }); await resize(1440, 1100);
+    await configure({ theme: 'light', units: 'imperial' }); await resize(1440, 1100);
     setMode('complete'); await navigate(`${origin}/peak.aspx?pid=2296&week-weather=no-map`);
     await visible();
     await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start' })); await ready();

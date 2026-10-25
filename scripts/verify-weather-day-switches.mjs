@@ -146,7 +146,7 @@ export async function verifyWeatherConditions(evaluate) {
     assert.equal(state.afterWidth, state.pageWidth, 'scrolling hourly columns widened the page');
     assert.ok(state.scrollHeight <= state.height + 1, 'Conditions needs vertical scrolling');
     assert.equal(state.hours, 24);
-    assert.deepEqual(state.rowLabels, ['Conditions', 'Cloud cover', 'Temperature', 'Feels like', 'Rain/snow', 'Freezing level', 'Wind', 'Gusts', 'Wind from']);
+    assert.deepEqual(state.rowLabels, ['Conditions', 'Temperature', 'Rain/snow', 'Wind']);
 }
 
 export async function verifyWeatherTabWrapping(evaluate) {
@@ -159,14 +159,20 @@ export async function verifyWeatherTabWrapping(evaluate) {
             for (let width = 280; width <= 500; width += 2) {
                 card.style.width = `${width}px`;
                 const heights = buttons.map(button => {
-                    button.click();
+                    // This sweep checks selected-tab styling, not activation.
+                    // Real clicks here enqueue hundreds of synced preference
+                    // writes and exhaust Chrome's per-minute storage quota.
+                    buttons.forEach(candidate => candidate.setAttribute('aria-selected', String(candidate === button)));
                     return { metric: button.dataset.metric, height: tabs.getBoundingClientRect().height,
                         overflow: tabs.scrollWidth > tabs.clientWidth + 1 };
                 });
                 const spread = Math.max(...heights.map(row => row.height)) - Math.min(...heights.map(row => row.height));
                 if (spread > 1 || heights.some(row => row.overflow)) results.push({ width, heights });
             }
-        } finally { card.style.cssText = previous; original.click(); }
+        } finally {
+            card.style.cssText = previous;
+            buttons.forEach(button => button.setAttribute('aria-selected', String(button === original)));
+        }
         return results;
     });
 }
