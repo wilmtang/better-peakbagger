@@ -285,8 +285,12 @@ runtime changes require the real-browser checks in the convention and AGENTS.
   collapse cancels pending reads, and fresh retained data survives expansion.
   Both new regressions failed on the original implementation, then all 85 peak
   weather tests passed after a 53-bundle build. `git diff --check` passed.
+  CR-02's calm-axis defect is fixed with a readable minimum wind range. The new
+  regression failed with the original `0, 1, 1` labels; all 55 ascent-weather tests
+  then passed in metric and imperial coverage. The retained axis probe now checks
+  correctness by default; `--expect-regression` is for the historical bundle only.
 - **Intentionally not changed:** native mounting, settings keys, provider policy,
-  worker-write ownership and unrelated work. The remaining extractions and CR-02
-  correctness fix are still being implemented.
+  worker-write ownership and unrelated work. The remaining extractions are still
+  being implemented.
 - **Changed but not fully proven:** real-browser collapse/expansion and broader
   interaction/visual checks are pending. Local tests do not establish them.

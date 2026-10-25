@@ -391,7 +391,8 @@ export function mountAscentWeather() {
         if (!finite.length) { add('text', { x: width / 2, y: 70, 'text-anchor': 'middle' }, 'Hourly data unavailable'); drawCursor(); drawReading(); return; }
         const values = finite.map(row => convert(row.value, metric));
         const low = metric === 'temperature' ? Math.floor(Math.min(...values) - 2) : 0;
-        const high = Math.max(low + 1, Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
+        // Integer wind labels need room for three distinct rounded ticks.
+        const high = Math.max(low + (metric === 'wind' ? 4 : 1), Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
         const left = 42, right = width - 16, top = 26, bottom = 124;
         const x = time => left + (right - left) * (time - dayWindow.start) / (dayWindow.end - dayWindow.start);
         const y = value => bottom - (convert(value, metric) - low) / (high - low) * (bottom - top);

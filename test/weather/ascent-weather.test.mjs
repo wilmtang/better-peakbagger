@@ -217,6 +217,22 @@ test('verification prose in a real ascent report does not suppress weather', asy
     finally { report.close(); }
 });
 
+test('calm ascent wind keeps three distinct axis labels in either unit system', async () => {
+    for (const system of ['metric', 'imperial']) for (const wind of [0, 0.4]) {
+        const env = setup({ storedSettings: { units: system }, fetchWeather: async url => {
+            const body = await archiveResponse(url).json(); body.hourly.wind_speed_10m.fill(wind);
+            return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+        } });
+        try {
+            await openChart(env); env.doc.querySelector('[data-metric="wind"]').click();
+            const labels = [...env.doc.querySelectorAll('.bpb-weather-chart text[text-anchor="end"]')]
+                .map(node => node.textContent).filter(value => /^\d+$/.test(value));
+            assert.equal(labels.length, 3);
+            assert.equal(new Set(labels).size, 3, `${system}, ${wind} km/h: axis labels ${labels}`);
+        } finally { env.close(); }
+    }
+});
+
 test('negative daily temperatures stay distinct across zero and unit changes without refetching', async () => {
     for (const [low, high, fahrenheit] of [[-35, -29, '−31° / −20°F'], [-2, 3, '28° / 37°F']]) {
         const env = setup({ storedSettings: { units: 'metric' }, fetchWeather: async url => {

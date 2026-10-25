@@ -1,4 +1,4 @@
-// Read-only reproduction of the ascent wind-axis drift discussed in the audit.
+// Read-only regression check; --expect-regression is for the original bundle.
 // Run npm run build, then node docs/plans/evidence/card-reuse-audit.mjs.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -7,7 +7,8 @@ import { execFileSync } from 'node:child_process';
 import { JSDOM } from 'jsdom';
 import { weatherFixture } from '../../../test/helpers/weather-fixture.mjs';
 
-if (process.argv.length !== 2) throw new Error('This audit probe takes no arguments.');
+const expectRegression = process.argv.length === 3 && process.argv[2] === '--expect-regression';
+if (process.argv.length !== (expectRegression ? 3 : 2)) throw new Error('Usage: node docs/plans/evidence/card-reuse-audit.mjs [--expect-regression]');
 const [ascent, peak, layout, bundle] = await Promise.all([
     readFile('test/fixtures/pages/climber-ascent.html', 'utf8'), readFile('test/fixtures/pages/peak-rainier.html', 'utf8'),
     readFile('dist/content/ascent-layout.js', 'utf8'), readFile('dist/content/ascent-weather.js', 'utf8'),
@@ -40,7 +41,8 @@ try {
     const chart = doc.querySelector('.bpb-weather-chart');
     const labels = [...chart.querySelectorAll('text[text-anchor="end"]')].map(node => node.textContent).filter(value => /^\d+$/.test(value));
     assert.equal(labels.length, 3);
-    assert.deepEqual(labels, ['0', '1', '1']);
+    if (expectRegression) assert.deepEqual(labels, ['0', '1', '1']);
+    else assert.equal(new Set(labels).size, 3, `Axis labels must be distinct: ${labels}`);
     console.log(JSON.stringify({ auditedHead: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         ascentSourceSha256: createHash('sha256').update(await readFile('src/ascent/ascent-weather.js')).digest('hex'),
         peakChartSourceSha256: createHash('sha256').update(await readFile('src/weather/peak-weather-hourly.js')).digest('hex'),
