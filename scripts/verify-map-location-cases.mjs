@@ -107,6 +107,9 @@ export async function verifyMapLocationCases({ evaluate, evaluateTerrain, naviga
         await wait(() => document.getElementById('bpb-peak-weather-menu').dataset.state === 'loading', 'elevation pending');
         assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-menu button').hidden), true, 'weather opt-out preserves elevation only');
         const before = await evaluate(geometry);
+        if (output && url.startsWith('/Peak') && theme === 'dark' && width === 375) {
+            await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-location-pending.png`));
+        }
         await evaluate(() => {
             window.__bpbLocationFrames = [];
             window.__bpbCollectLocation = true;
@@ -127,6 +130,25 @@ export async function verifyMapLocationCases({ evaluate, evaluateTerrain, naviga
         assert.ok(await evaluate(() => document.querySelector('.bpb-map-location-value').textContent.startsWith('≈ ')));
         assert.equal(await evaluate(() => [...document.querySelectorAll('#bpb-peak-weather-menu [data-sizing-text]')].every(node => node.getAttribute('aria-hidden') === 'true' && getComputedStyle(node).visibility === 'hidden')), true);
         if (output && url.startsWith('/Peak')) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-location-${theme}-${width}.png`));
+        const compact = await evaluate(() => {
+            const menu = document.getElementById('bpb-peak-weather-menu');
+            const primary = menu.querySelector('.bpb-map-location-value').getBoundingClientRect();
+            const secondary = menu.querySelector('.bpb-map-location-alternative').getBoundingClientRect();
+            return { width: menu.offsetWidth, height: menu.offsetHeight,
+                sharedLine: secondary.left >= primary.right && secondary.top < primary.bottom };
+        });
+        assert.ok(compact.width <= 244 && compact.height <= 112 && compact.sharedLine,
+            `elevation readout must stay compact with both units on one line: ${JSON.stringify(compact)}`);
+        // Stress the complete accepted elevation range in both unit orders.
+        // Only the visible labels change; the real sizing reservations and CSS
+        // must keep the surrounding page and popup stable without clipping.
+        for (const labels of [['≈ -39,370 ft', '-12,000 m'], ['≈ -12,000 m', '-39,370 ft'], ['≈ 10,000 m', '32,808 ft']]) {
+            await evaluate(([primary, secondary]) => {
+                document.querySelector('.bpb-map-location-value > span').textContent = primary;
+                document.querySelector('.bpb-map-location-alternative > span').textContent = secondary;
+            }, labels);
+            stable(before, await evaluate(geometry));
+        }
         await press(firefoxMode ? '\uE00C' : 'Escape');
         assert.equal(await evaluate(() => document.getElementById('bpb-peak-weather-menu').hidden), true);
         cases.push(`${url} ${theme} ${width} pending/success`); measurements.push(before);
@@ -137,6 +159,7 @@ export async function verifyMapLocationCases({ evaluate, evaluateTerrain, naviga
         setMode(mode); await navigate(origin + urls[0]); await open(); const pending = await evaluate(geometry);
         await wait(() => ['unavailable', 'limited'].includes(document.getElementById('bpb-peak-weather-menu').dataset.state), mode);
         stable(pending, await evaluate(geometry));
+        if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-location-${mode}.png`));
         if (mode === 'elevation-error') {
             await press(firefoxMode ? '\uE00C' : 'Escape'); setMode('complete'); await open();
             await wait(() => document.getElementById('bpb-peak-weather-menu').dataset.state === 'ready', 'reopened transient failure recovers');

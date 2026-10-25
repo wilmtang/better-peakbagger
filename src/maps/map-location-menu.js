@@ -29,7 +29,7 @@ export function createMapLocationMenu({ window: win = window, client = createEle
     const alternative = element('div', 'bpb-map-location-alternative');
     const valueText = createStableText(value), alternativeText = createStableText(alternative);
     valueText.reserve(['Loading…', 'Unavailable', '≈ −39,370 ft']);
-    alternativeText.reserve(['Checking terrain data', 'Try again later', 'Try another location']);
+    alternativeText.reserve(['Checking data…', 'Try again later', 'Try another point', '−12,000 m']);
     reading.setAttribute('role', 'status'); reading.setAttribute('aria-live', 'polite'); reading.setAttribute('aria-atomic', 'true');
     reading.append(label, value, alternative);
     const coordinates = element('div', 'bpb-weather-menu-coordinates'); coordinates.setAttribute('aria-label', 'Coordinates');
@@ -60,7 +60,7 @@ export function createMapLocationMenu({ window: win = window, client = createEle
             alternativeText.set(`${number(other)} ${other === 'metric' ? 'm' : 'ft'}`);
         } else {
             valueText.set(state === 'loading' ? 'Loading…' : 'Unavailable');
-            alternativeText.set(state === 'loading' ? 'Checking terrain data' : state === 'limited' ? 'Try again later' : 'Try another location');
+            alternativeText.set(state === 'loading' ? 'Checking data…' : state === 'limited' ? 'Try again later' : 'Try another point');
         }
     };
     const close = (restore = false) => {
