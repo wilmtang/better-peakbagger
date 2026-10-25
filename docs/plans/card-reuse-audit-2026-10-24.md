@@ -1,6 +1,7 @@
 # Peak and ascent card reuse audit
 
-Date: October 24, 2026 (America/Los_Angeles). Status: remediation in progress.
+Initial audit: October 24, 2026. Remediation completed locally October 25, 2026
+(America/Los_Angeles). Status: implemented and verified within the limits below.
 The findings below preserve the original audit; current implementation status
 is recorded in the closure ledger.
 
@@ -236,7 +237,8 @@ Do not unify:
 
 ## Suggested implementation order
 
-Each step is a focused, independently verified commit; none is implemented here.
+This was the implementation order. Completed work and intentionally retained
+boundaries are recorded in the closure ledger.
 
 1. Add correctness regressions and fix collapsed-weather loading and calm ascent
    axis labels independently. Preserve their pre-fix evidence.
@@ -255,7 +257,7 @@ Extract shared test contracts with each migration. Avoid a large all-at-once
 card framework rewrite. Document new APIs in the convention only when they
 actually exist and identify which callers have migrated.
 
-## Verification and proof limits
+## Initial audit verification and proof limits
 
 - Source inspection covered the shared UI helpers, peak layout, peak weather/
   cloud/snow controllers, historical ascent weather, shared weather data/table
@@ -278,53 +280,89 @@ not a visual inspection. No new focus/drag/layout transition, live-provider,
 native host, screen-reader or cross-world integration proof is claimed. Future
 runtime changes require the real-browser checks in the convention and AGENTS.
 
+## Remediation verification — October 25
+
+The [machine-readable evidence](evidence/card-reuse-remediation-2026-10-25.json)
+records tested bundle hashes, matrices, pre-fix proof and teardown checks.
+
+| Check | Result |
+| --- | --- |
+| Build | 53 bundles built into `dist/` |
+| Full Node suite | **3,524 passed, 0 failed** |
+| ESLint | Passed across source, extension surfaces, scripts and tests |
+| web-ext lint | Passed with the existing 8 owned warnings |
+| Documentation/link tests and diff whitespace | Passed |
+| Current request probe | 23 scenarios passed; both collapsed cards now issue 0 requests |
+| Current axis probe | Distinct zero-wind labels: `0, 2, 4` |
+| Hidden Chrome real-extension startup | 156.0.8078.4; 1000×760; BFCache restored; teardown passed |
+| Hidden ascent matrices | Chrome 156.0.8078.4 / Firefox 158.0.1; 375/681/768/1440 px, light/dark |
+| Hidden peak-card matrices | Same browsers; 375/1440 px, both themes, real 200% browser zoom |
+| Hidden cloud matrices | Same browsers; 320/390/820/1440 px; both themes; simulated 150% CSS zoom case |
+
+Ascent checks cover remembered models, pending model switches, success/error/retry,
+geometry, native GPS preservation, GPX cursors, chart selection, pointer/keyboard
+docking, menus, late layouts and no-GPX/no-map variants. Peak checks cover zero
+collapsed reads, expansion, pending-collapse abort, retained node identity, stable
+action/card/following-content geometry and scroll, reorder/columns, pointer
+ownership, Escape, edge autoscroll, keyboard focus, failure/retry and zoom.
+Reduced-motion policy is covered by a focused adapter test. Both drag adapters
+execute the same threshold/unrelated-pointer/cancellation contract.
+
+New regressions failed on the original collapsed-load and calm-axis defects
+before their fixes. Visual inspection then caught a dark-header color regression
+from the CSS extraction; a new browser color assertion reproduced it, and the
+common heading token/theme exclusions fixed it in both browsers. Selected
+[narrow peak](evidence/card-reuse-remediation/peak-firefox-dark-375.png) and
+[narrow ascent](evidence/card-reuse-remediation/ascent-chrome-dark-375.png)
+captures were inspected alongside the cloud and wide-column views.
+
+The verifiers were corrected where their old assumptions conflicted with current
+behavior: portable preferences are read from sync, theme resets preserve them,
+hidden cloud IDs remain in schema order/columns, and collapsed reloads do not
+wait for a forbidden forecast download. Firefox's 62.000061 px caret measurement
+is quantized to 0.001 px; the existing 1 px geometry tolerance remains unchanged.
+Test-owned process command lines and exact disposable paths were inspected after
+completion: no owned browser/debug processes remained and reported profiles were
+removed. The user's browser profile was not used.
+
 ## Closure ledger
 
-- **Fixed and verified:** conventions document the extraction/adapter boundaries.
-  CR-01's collapsed-weather defect is fixed: saved collapse suppresses loading,
-  collapse cancels pending reads, and fresh retained data survives expansion.
-  Both new regressions failed on the original implementation, then all 85 peak
-  weather tests passed after a 53-bundle build. `git diff --check` passed.
-  CR-02's calm-axis defect is fixed with a readable minimum wind range. The new
-  regression failed with the original `0, 1, 1` labels; all 55 ascent-weather tests
-  then passed in metric and imperial coverage. The retained axis probe now checks
-  correctness by default; `--expect-regression` is for the historical bundle only.
-  CR-01 now shares `createCardReadGate` across peak weather, clouds and ascent
-  weather. The helper owns eligibility transitions and cancellable viewport waits;
-  features retain request/TTL policy. Shared gate and integration coverage passed
-  146 tests after a build. Settings/theme updates do not restart eligible reads.
-  CR-02 now shares pure range/tick selection and hourly series construction across
-  the ascent/peak charts. All 71 scale/chart/ascent tests and focused ESLint passed.
-  The renderers retain their bar/line, GPX and reference-height differences.
-  CR-03 shares opt-in weather shell/palette rules in `card.css`, loaded through
-  the real manifest, and makes common peak headers attribute-based. The 49
-  manifest/layout tests passed. Hidden Chrome 156.0.8078.4 passed real-extension
-  startup at 1000×760, the ascent matrix at 375/681/768/1440 px in both themes,
-  and five cloud cases including 320/390/820/1440 px and simulated 150% text zoom.
-  Narrow dark ascent and narrow light cloud captures were visually inspected.
-  The ascent verifier was corrected to read portable choices from sync, preserve
-  them across theme resets and compare the actual pre-drag preference.
-  CR-04 shares pointer ownership, threshold, capture, cancellation and autoscroll
-  through `createCardPointerDrag`; peak ghost and ascent transform previews and
-  destination/keyboard policies remain local. CR-06 adds one shared contract run
-  against both real layout adapters: threshold/unrelated-pointer handling and
-  Escape, blur, resize, pointer cancellation and capture loss. All 33 movement
-  tests, build and focused ESLint passed; browser movement checks are pending.
-  CR-05 shares `createLatestRead` across peak forecast/metadata, clouds and ascent
-  weather. It guards ownership before abort notifications and prevents stale
-  finalizers from clearing newer work. All 147 focused ownership/integration
-  tests and ESLint passed, including late responses and reentrant abort handlers.
-  Final peak-card matrices passed in Chrome/Firefox, including request suppression,
-  pending-collapse cancellation, retained nodes, stable geometry, movement and
-  200% zoom. A new color assertion first failed on the dark-header regression
-  introduced by lower specificity; shared heading color and generic theme-owned
-  button exclusions then fixed it in both browsers. All 103 focused theme,
-  manifest and movement tests passed. Reduced-motion animation policy is tested.
-- **Intentionally not changed:** native mounting, settings keys, provider policy,
-  worker-write ownership and unrelated work. Settings reconciliation remains
-  surface-specific: ascent serial placement writes and peak per-field optimistic
-  patches have different contracts. Full renderer unification and an ascent card
-  registry remain deliberately deferred; shared scale/series and gesture input
-  mechanisms address the demonstrated duplication without combining policies.
-- **Changed but not fully proven:** real-browser collapse/expansion and broader
-  interaction/visual checks are pending. Local tests do not establish them.
+### Fixed and verified
+
+| Finding | Result and focused commits |
+| --- | --- |
+| CR-01 | Collapsed weather suppression/cancellation fixed in `96ba0225`; `3c663bcc` shares eligibility and cancellable viewport waits across peak weather, clouds and ascent weather. Callers retain TTL/request policy |
+| CR-02 | Calm wind labels fixed in `c911812a`; `960b8abe` shares pure chart range/ticks and hourly series. The correctness probe passes; historical `--expect-regression` mode is explicit |
+| CR-03 | `37ffef00` adds real manifest-loaded opt-in card styles and attribute-based peak headers; `54b6d0bb` fixes native dark heading/button interference and verifies consistent colors |
+| CR-04 | `208f7535` shares pointer ownership, threshold, capture, cancellation and autoscroll through `createCardPointerDrag`; peak/ascent visual and placement adapters remain intact |
+| CR-05 | `aaa4f5e2` shares latest-read ownership across peak forecast/metadata, cloud and ascent reads, including stale finalizers and reentrant abort safety |
+| CR-06 | Shared drag contracts run against both actual adapters; read-gate/ownership/scale contracts and faithful integration/browser checks cover the extracted mechanisms |
+
+The maintained [conventions](../card-conventions.md) and
+[architecture](../architecture.md#independent-historical-weather) describe the
+implemented modules and their remaining policy boundaries.
+
+### Intentionally not changed
+
+- Native mounting, identity/date readers, existing settings keys and provider
+  selection/freshness policies; worker-owned remote mutations remain separate.
+- Settings reconciliation remains local: ascent serial placement writes and
+  peak per-field optimistic patches have different contracts. No settings race
+  was reproduced that justifies merging those policies.
+- Ascent bars/GPX cursors and peak extra metrics/reference heights retain their
+  renderers; common series/range math was extracted instead of a universal chart.
+- Peak ghost previews and ascent transform previews remain distinct. No global
+  ascent-card registry or framework was introduced for one standalone consumer.
+- Snow station/map-client eligibility and MAIN-world Analyzer/Sun ownership were
+  not migrated into weather-read policy. Cross-page Open-Meteo cache sharing is
+  still separate work under the request audit.
+
+### Changed but not fully proven
+
+Provider responses are intercepted in browser fixtures. Cloud tests inject the
+built bundles and settings stubs; peak/ascent/startup tests load the real unpacked
+extension. These establish local interaction and rendered-layout behavior, not
+live provider freshness/quota consumption, forecast accuracy, native screen-reader
+behavior or visible browser window/Space placement. All checks ran hidden with
+native browser CSS/SVG rendering; no WebGL renderer measurement was needed.
+These external/manual proof gaps remain explicit and no release was performed.

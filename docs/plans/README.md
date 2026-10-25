@@ -1,14 +1,15 @@
 # Active plans
 
 - [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
-  — updated conventions plus source-grounded extraction opportunities for
-  eligibility, charts, visual tokens and gestures; calm-axis and collapsed-load
-  defects reproduced locally. Runtime changes remain proposed.
+  — implemented in focused commits: collapsed-read/calm-axis fixes, shared
+  eligibility, chart math, card styles, pointer gestures and latest-read ownership.
+  Full suite and hidden Chrome/Firefox matrices passed; external proof limits
+  and intentionally separate policies remain in the closure ledger.
 
 - [Open-Meteo peak-page request audit — October 24](open-meteo-peak-request-audit-2026-10-24.md)
-  — five default HTTP requests once both cards enter the loading margin;
-  weighted quota estimates, 23 request-count probes, collapsed-weather fetching
-  and separate caches. Report only; runtime findings remain open.
+  — user-action request counts, endpoint purposes and a plain-language quota
+  explanation; five default requests once both cards load, 23 request-count
+  scenarios and the verified collapsed-read fix. Shared cache work remains open.
 
 - [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
   — R2/Worker free-tier budgets, measured small-sample PMTiles sizes and a

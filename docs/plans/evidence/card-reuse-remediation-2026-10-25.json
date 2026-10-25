@@ -1,0 +1,433 @@
+{
+  "date": "2026-10-25",
+  "head": "54b6d0bb19f9cd772ba9a71948bfe75eccf528fd",
+  "tests": {
+    "full_suite": 3524,
+    "failures": 0,
+    "eslint": "passed",
+    "web_ext_lint": "passed with 8 owned warnings",
+    "documentation_links": 3
+  },
+  "browser_checks": [
+    {
+      "label": "ascent chrome",
+      "hidden": true,
+      "browser": "chromium",
+      "version": "156.0.8078.4",
+      "viewports": [
+        375,
+        681,
+        768,
+        1440
+      ],
+      "themes": [
+        "light",
+        "dark"
+      ],
+      "fixtures": [
+        "local-model-memory",
+        "model-refresh-layout",
+        "negative-temperature",
+        "archive-day-navigation",
+        "gpx-container-reflow",
+        "hourly-conditions",
+        "conditions-without-model-field",
+        "gpx-hover-selection-cursor",
+        "no-gpx",
+        "no-map",
+        "long-report",
+        "divider-resize",
+        "loading",
+        "long-model",
+        "partial",
+        "rate-limit",
+        "invalid",
+        "challenge-navigation"
+      ],
+      "teardown": "passed"
+    },
+    {
+      "label": "ascent firefox",
+      "hidden": true,
+      "browser": "firefox",
+      "version": "158.0.1",
+      "viewports": [
+        375,
+        681,
+        768,
+        1440
+      ],
+      "themes": [
+        "light",
+        "dark"
+      ],
+      "fixtures": [
+        "local-model-memory",
+        "model-refresh-layout",
+        "negative-temperature",
+        "archive-day-navigation",
+        "gpx-container-reflow",
+        "hourly-conditions",
+        "conditions-without-model-field",
+        "gpx-hover-selection-cursor",
+        "no-gpx",
+        "no-map",
+        "long-report",
+        "divider-resize",
+        "loading",
+        "long-model",
+        "partial",
+        "rate-limit",
+        "invalid",
+        "challenge-navigation"
+      ],
+      "teardown": "passed"
+    },
+    {
+      "label": "peak chrome",
+      "hidden": true,
+      "verification": "peak-cards",
+      "browser": "chromium",
+      "version": "156.0.8078.4",
+      "cases": [
+        {
+          "case": "weather-read-gate",
+          "collapsedRequests": 0,
+          "expandedRequests": 1,
+          "cancelledRefresh": true
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "light",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "dark",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload",
+            "cross-column-pointer",
+            "stable-preview"
+          ]
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload",
+            "cross-column-pointer",
+            "stable-preview"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "light",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "dark",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "dark",
+          "states": [
+            "long-station"
+          ]
+        },
+        {
+          "states": [
+            "expanded-card-drag",
+            "edge-autoscroll"
+          ]
+        }
+      ],
+      "teardown": "passed"
+    },
+    {
+      "label": "peak firefox",
+      "hidden": true,
+      "verification": "peak-cards",
+      "browser": "firefox",
+      "version": "158.0.1",
+      "cases": [
+        {
+          "case": "weather-read-gate",
+          "collapsedRequests": 0,
+          "expandedRequests": 1,
+          "cancelledRefresh": true
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "light",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "dark",
+          "states": [
+            "automatic-units",
+            "header-hit-area",
+            "collapse",
+            "keyboard",
+            "pointer",
+            "cancel",
+            "reload",
+            "weather-refresh-error-retry",
+            "pending",
+            "closed-error",
+            "retry",
+            "feature-off-on"
+          ]
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload",
+            "cross-column-pointer",
+            "stable-preview"
+          ]
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload",
+            "cross-column-pointer",
+            "stable-preview"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "light",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "dark",
+          "states": [
+            "column-keyboard",
+            "column-reorder",
+            "move-menu",
+            "column-reload"
+          ]
+        },
+        {
+          "width": 375,
+          "theme": "dark",
+          "states": [
+            "long-station"
+          ]
+        },
+        {
+          "states": [
+            "expanded-card-drag",
+            "edge-autoscroll"
+          ]
+        }
+      ],
+      "teardown": "passed"
+    },
+    {
+      "label": "cloud chrome",
+      "hidden": true,
+      "browser": "Chrome for Testing",
+      "version": "156.0.8078.4",
+      "cases": 5
+    },
+    {
+      "label": "cloud firefox",
+      "hidden": true,
+      "browser": "Firefox",
+      "version": "158.0.1",
+      "cases": 5
+    },
+    {
+      "label": "extension startup",
+      "hidden": true,
+      "verification": "extension",
+      "browser": "chromium",
+      "version": "156.0.8078.4",
+      "viewport": {
+        "width": 1000,
+        "height": 760
+      },
+      "bfcache": {
+        "restored": true
+      },
+      "teardown": "passed"
+    }
+  ],
+  "rendering": "Native browser CSS/SVG; no WebGL renderer measurement. No visible browser windows.",
+  "transport": "Provider/Peakbagger responses intercepted; real unpacked extension for ascent/peak/startup, stubbed settings and bundle injection for cloud fixture.",
+  "pre_fix_proof": [
+    "Saved collapsed weather fetched once; new suppression assertion failed.",
+    "Collapse left pending transport active; new abort assertion failed.",
+    "Calm ascent wind rendered 0,1,1; new distinct-label assertion failed.",
+    "New shared dark heading color assertion failed on native blue text before the style fix."
+  ],
+  "teardown": {
+    "owned_browser_processes_remaining": 0,
+    "reported_disposable_profiles_exist": false
+  },
+  "inspected_screenshots": [
+    "peak-firefox-dark-375.png",
+    "ascent-chrome-dark-375.png"
+  ],
+  "limitations": [
+    "No live provider quota, forecast accuracy, screen-reader, native browser focus/Space or visible window-placement proof.",
+    "Cloud verifier uses CSS zoom for 150 percent enlarged-text case."
+  ],
+  "bundles": {
+    "dist/content/ascent-weather.js": "fb676395dab80a477278dac6d1fa035ea037432962592584371c321e42500664",
+    "dist/content/peak-weather.js": "01d0f85425c721e56ef4b366037e2bdebee2c823ceba75005e3ad1d51edd206c",
+    "dist/content/summit-cloud.js": "f671205f4bc163fd8374f4591e4667b62ccf9a90a45f6e22dca08d8301be17f5",
+    "dist/content/peak-cards.js": "3d32e73c564fbce0145b36365f6a8dd2b623dac39baec900bf022c6f7cd7df75",
+    "dist/content/theme.js": "206bcec704c40b789cf0683193076f7b1e9e581ac3150caff96ed333fbdc7ea2"
+  }
+}

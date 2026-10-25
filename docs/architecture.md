@@ -918,6 +918,19 @@ or follow (`details-bottom`) the native peak details; existing saved `details`
 placements stay above. Missing cards retain their settings slots. Arrow keys and the
 shared `src/ui/layout-menu.js` provide alternatives to dragging.
 
+Peak layout and ascent card docking share `src/ui/card-pointer-drag.js` for
+pointer ownership, threshold, capture/cancellation and edge autoscroll. Their
+ghost/transform previews, native destinations, keyboard placement and settings
+policies remain with their adapters. Peak weather, Summit Cloud Cover and ascent
+weather share `src/ui/card-read-gate.js` for read eligibility/lazy start and
+`src/ui/latest-read.js` for cancellation and latest-response ownership. Visibility
+does not choose freshness or erase retained results. Weather charts share
+`src/weather/weather-chart-scale.js` and interval-aware hourly series/table code;
+the ascent chart retains historical/GPX overlays and the peak chart its additional
+metrics/reference heights. Opt-in `src/ui/card.css` supplies both weather cards'
+palette/shell before feature CSS. See [card conventions](card-conventions.md) for
+the current integration contracts and execution-world boundaries.
+
 ### Independent historical weather
 
 Saved ascent weather uses a separate isolated-world bundle and runs without a
