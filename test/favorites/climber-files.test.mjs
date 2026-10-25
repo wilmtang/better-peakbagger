@@ -76,3 +76,21 @@ for (const kind of ['favorites', 'ignored']) {
 test('legacy GitHub favorites files remain usable without a kind field', () => {
     assert.equal(Files.parseListFile('favorites', JSON.stringify(list('favorites', [entry(1)]))).entries.length, 1);
 });
+
+test('file replacement enters its confirmation so Escape cancels and restores the trigger', async t => {
+    const dom = new JSDOM('<div id="root"></div>', { url: 'https://options.test' }); t.after(() => dom.window.close());
+    const root = dom.window.document.getElementById('root');
+    mountClimberFileTransfer({ root, kind: 'favorites', api: {
+        storage: { local: { get: async () => ({ bpbFavoriteClimbers: list('favorites', []) }) } },
+        runtime: { sendMessage: async () => { throw new Error('No write expected'); } },
+    } });
+    const trigger = root.querySelector('[data-file-action="import"]'); trigger.focus();
+    const input = root.querySelector('input');
+    Object.defineProperty(input, 'files', { value: [new Blob([Files.serializeListFile('favorites', list('favorites', [entry(2)]))])] });
+    input.dispatchEvent(new dom.window.Event('change'));
+    await settle(() => !root.hasAttribute('aria-busy'));
+    assert.equal(dom.window.document.activeElement.dataset.fileAction, 'cancel');
+    dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(root.querySelector('.climber-file-preview').hidden, true);
+    assert.equal(dom.window.document.activeElement, trigger);
+});

@@ -94,7 +94,7 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
             else {
                 if (panel.contains(document.activeElement) || document.activeElement === undo) nextFocus = trigger;
                 panel.hidden = true; pending = null;
-                if (response.undo) { undoRecord = response.undo; undo.hidden = false; }
+                undoRecord = response.undo || null; undo.hidden = !undoRecord;
                 status.textContent = response.state?.phase === 'synced' ? 'Ignored climbers synced.'
                     : response.state?.phase === 'pending' ? 'Pending changes'
                         : response.state?.phase === 'restored' ? 'Ignored climbers restored.' : 'Ignored climbers backed up.';

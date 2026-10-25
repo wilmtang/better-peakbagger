@@ -45,12 +45,16 @@ export function mountClimberFileTransfer({ root, kind, api }) {
         return Files.readStoredList(kind, stored[key]);
     };
     const show = (current, replacement) => {
+        const opening = preview.hidden;
         pending = { current, replacement };
         const changes = Files.membershipChanges(current.entries, replacement.entries);
         const countName = current.entries.length === 1 ? kind === 'favorites' ? 'favorite' : 'ignored climber' : name;
         impact.textContent = `Replace ${current.entries.length} ${countName} with ${replacement.entries.length} from this file? `
             + `${changes.added} added, ${changes.removed} removed. Names and saved details also come from the file.`;
         preview.hidden = false;
+        if (opening && (doc.activeElement === importButton || doc.activeElement === doc.body)) {
+            cancel.focus({ preventScroll: true });
+        }
     };
     const hide = () => {
         const focused = preview.contains(doc.activeElement);

@@ -118,6 +118,7 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             review: { path, scope: 'fixture', localSignature: 'local', remoteSignature: 'remote' } }), path);
         const panel = action.locator('xpath=ancestor::*[contains(@class,"subsection")][1]').locator('.backup-replacement');
         await panel.waitFor({ state: 'visible' });
+        assert.equal(await panel.getByRole('button', { name: 'Cancel backup replacement', exact: true }).evaluate(element => document.activeElement === element), true, 'replacement enters its Cancel action');
         const accept = panel.getByRole('button', { name: 'Replace GitHub backup with this device’s copy', exact: true });
         await accept.scrollIntoViewIfNeeded();
         const before = await accept.boundingBox();

@@ -1282,3 +1282,12 @@ test('every settings subsection has exactly one sidebar entry in document order'
     assert.deepEqual([...doc.querySelectorAll('.side-nav .nav-subitem')].map(link => link.hash),
         [...doc.querySelectorAll('.content .subsection')].map(section => `#${section.id}`));
 });
+
+test('nested ignored-climber backup fragments activate their owning sidebar section', async () => {
+    const dom = await loadOptions({}, { hash: '#ignored-github' });
+    assert.equal(activeLinks(dom)[0].getAttribute('href'), '#github-favorites-backup');
+    dom.window.location.hash = '#general';
+    await waitFor(dom, () => activeLinks(dom)[0].getAttribute('href') === '#general');
+    dom.window.location.hash = '#ignored-github';
+    await waitFor(dom, () => activeLinks(dom)[0].getAttribute('href') === '#github-favorites-backup');
+});

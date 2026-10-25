@@ -117,3 +117,23 @@ test('metadata conflicts expose both names and do not accept an undecided versio
     el(dom, 'ignored-review-confirm').click(); await waitFor(dom, () => /Choose a version/.test(el(dom, 'ignored-github-status').textContent));
     assert.equal(h.writes, 0); assert.equal((await h.store.read()).entries[0].name, 'Climber 1');
 });
+
+test('a backup with no Undo result clears an older restore Undo', async () => {
+    const h = harness({ remote: [entry(2)] });
+    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
+        h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
+        chrome.permissions = { contains: async () => true };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'me', name: 'backup' } };
+            if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
+            return { ok: true };
+        };
+    } });
+    await waitFor(dom, () => !el(dom, 'ignored-restore').disabled);
+    el(dom, 'ignored-restore').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
+    el(dom, 'ignored-review-confirm').click(); await waitFor(dom, () => !el(dom, 'ignored-restore-undo').hidden);
+    await waitFor(dom, () => !el(dom, 'ignored-github').hasAttribute('aria-busy'));
+    el(dom, 'ignored-backup').click();
+    await waitFor(dom, () => /Backed up|backed up/.test(el(dom, 'ignored-github-status').textContent));
+    assert.equal(el(dom, 'ignored-restore-undo').hidden, true);
+});

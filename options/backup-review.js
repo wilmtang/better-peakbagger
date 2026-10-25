@@ -37,5 +37,11 @@ export function createBackupReview({ anchor, submit }) {
             UI.setButtonBusy(accept, false); UI.setButtonBusy(cancel, false);
         }
     });
-    return { show(value) { review = value; panel.hidden = false; }, clear };
+    return { show(value) {
+        const opening = panel.hidden;
+        review = value; panel.hidden = false;
+        if (opening && (document.activeElement === anchor || document.activeElement === document.body)) {
+            cancel.focus({ preventScroll: true });
+        }
+    }, clear };
 }

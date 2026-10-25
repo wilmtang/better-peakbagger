@@ -129,6 +129,7 @@ export const initIgnored = api => {
         tab.addEventListener('keydown', event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : 1 - index;
+            history.replaceState(null, '', next ? '#ignored' : '#favorites');
             activate(next); tabs[next].focus();
         });
     });

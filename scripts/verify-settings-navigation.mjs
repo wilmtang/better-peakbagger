@@ -168,6 +168,10 @@ export async function verifySettingsNavigation({ navigate, evaluate, resize, cli
                 await forward();
                 await landing(garminLanded, `${label}-garmin-forward`);
             }
+            await navigate('#ignored-github');
+            await landing(() => document.querySelector('.side-nav [aria-current]')?.getAttribute('href') === '#github-favorites-backup'
+                && document.querySelector('.content').style.scrollBehavior === '', `${label}-ignored-deep-link`);
+            await checkFrame(before, `${label}-ignored-deep-link`);
             await navigate('#capture-garmin');
             await evaluate(theme === 'dark'
                 ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }

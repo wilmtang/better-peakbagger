@@ -63,8 +63,16 @@ export async function verifyClimberFiles(page, origin, variant, { capture }) {
             const entries = [{ cid: kind === 'favorites' ? 2 : 4, name: 'A climber with a deliberately long display name', addedAt: 2, source: 'manual' }];
             const replacement = { schemaVersion: 1, revision: 0, entries };
             await page.evaluate(() => { globalThis.__calls = []; });
-            await root.locator('input[type=file]').setInputFiles({ name: `${kind}.json`, mimeType: 'application/json',
-                buffer: Buffer.from(Files.serializeListFile(kind, replacement)) });
+            const importButton = root.locator('[data-file-action=import]'); await importButton.focus();
+            const file = { name: `${kind}.json`, mimeType: 'application/json',
+                buffer: Buffer.from(Files.serializeListFile(kind, replacement)) };
+            await root.locator('input[type=file]').setInputFiles(file);
+            await preview.waitFor();
+            assert(await root.locator('[data-file-action=cancel]').evaluate(element => document.activeElement === element));
+            await root.locator('[data-file-action=cancel]').press('Escape');
+            assert(await preview.isHidden());
+            assert(await importButton.evaluate(element => document.activeElement === element));
+            await root.locator('input[type=file]').setInputFiles(file);
             await preview.waitFor();
             assert.deepEqual(await page.evaluate(() => globalThis.__calls), [], 'file preview does not mutate or contact GitHub');
             await confirm.scrollIntoViewIfNeeded();

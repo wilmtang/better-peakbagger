@@ -23,6 +23,12 @@ export const initSectionNav = () => {
         })
         .filter(Boolean);
     if (!entries.length) return;
+    const fragmentTarget = () => {
+        const section = document.getElementById(location.hash.slice(1));
+        if (!section || !content.contains(section)) return null;
+        const owner = [...entries].reverse().find(entry => entry.section === section || entry.section.contains(section));
+        return owner ? { ...owner, section } : null;
+    };
 
     // Initial fragment navigation happens after this script runs. Override
     // the pane's CSS smooth behavior until that one native landing finishes;
@@ -157,7 +163,7 @@ export const initSectionNav = () => {
     }
     window.addEventListener('hashchange', () => {
         finishInitialScroll(false);
-        const target = entries.find(entry => entry.link.hash === location.hash);
+        const target = fragmentTarget();
         if (target) {
             // History can restore only the document's scroll position and
             // leave a nested pane at the previous fragment. Align this pane
@@ -171,7 +177,7 @@ export const initSectionNav = () => {
     });
 
     // Initial state: honor a deep-link hash, otherwise the first section.
-    const initial = entries.find(entry => entry.link.hash === location.hash);
+    const initial = fragmentTarget();
     if (initial) {
         initialScrollOverride = true;
         initialScrollTarget = initial.section;

@@ -260,6 +260,15 @@ Independent commits for drag ownership and report/observer surfaces:
   pending/error/retry/cancel, geometry, focus and duplicate-activation guards.
   Worker/network replies and permission prompts remain stubbed.
 
+- F11 list transfers/navigation: new confirmation panels focus Cancel and Escape
+  restores the trigger; stale reviews keep the active action focused. Empty Undo
+  results clear prior restore authority; keyboard tabs update the hash, and nested
+  ignored-backup fragments activate their owning sidebar section. Focus/fragment
+  regressions failed before the fix; 70 focused tests and ESLint passed. Hidden
+  Chrome/Firefox file-transfer and Settings-action matrices passed in both themes
+  at 390/1280 px, including enlarged file text, pending/error/stale/retry and
+  geometry/focus checks. File chooser and live GitHub remain manual proof gaps.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry

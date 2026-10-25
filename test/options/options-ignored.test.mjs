@@ -169,3 +169,12 @@ test('Ignored lookup reports Peakbagger limits and retains the entered climber',
     assert.equal(el(dom, 'ignored-add-input').value, '900002');
     assert.equal(dom.chrome._localStore.bpbIgnoredClimbers?.entries.length || 0, 0);
 });
+
+test('keyboard climber-list tab changes preserve their deep-link hash', async () => {
+    const dom = await loadFavoritesPage({});
+    el(dom, 'favorites-tab').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    assert.equal(dom.window.location.hash, '#ignored');
+    assert.equal(el(dom, 'ignored-workspace').hidden, false);
+    el(dom, 'ignored-tab').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    assert.equal(dom.window.location.hash, '#favorites');
+});
