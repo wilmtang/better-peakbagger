@@ -211,10 +211,21 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
             if (palette.button) assert.equal(palette.button, 'rgb(52, 59, 55)');
         }
     };
-    const popupSettled = () => wait(() => {
-        const win = document.getElementById('Gmap').contentWindow, popup = win.document.querySelector('.leaflet-popup');
-        return popup && win.getComputedStyle(popup).opacity === '1' && !win.mapsPlaceholder._panAnim?._inProgress;
-    }, 'fully painted native popup and settled pan');
+    const popupSettled = () => {
+        let previous = '', stable = 0;
+        return waitForCondition(() => evaluate(() => {
+            const win = document.getElementById('Gmap').contentWindow, popup = win.document.querySelector('.leaflet-popup');
+            const map = win.mapsPlaceholder, box = popup?.getBoundingClientRect();
+            return { ready: !!popup && win.getComputedStyle(popup).opacity === '1'
+                && !map._panAnim?._inProgress && !map._animatingZoom,
+            center: map.getCenter(), box: box && { x: box.x, y: box.y, width: box.width, height: box.height } };
+        }), { description: 'fully painted native popup and settled pan', isReady: state => {
+            const signature = JSON.stringify(state);
+            stable = state.ready && signature === previous ? stable + 1 : 0;
+            previous = signature;
+            return stable >= 3;
+        } });
+    };
     const popupGeometry = () => evaluate(() => {
         const win = document.getElementById('Gmap').contentWindow, doc = win.document;
         const rect = selector => {
@@ -229,16 +240,19 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         const marker = [...document.querySelectorAll('.bpb-snotel-marker')].find(node => node.title.startsWith('Paradise'));
         const popup = document.querySelector('.bpb-snotel-map-popup'), tip = popup.querySelector('.maplibregl-popup-tip');
         const r = marker.getBoundingClientRect(), t = tip.getBoundingClientRect();
-        return { tipVisible: getComputedStyle(tip).display !== 'none',
+        return { popupName: popup.querySelector('strong')?.textContent, tipVisible: getComputedStyle(tip).display !== 'none',
             dx: Math.abs(t.x + t.width / 2 - r.x - r.width / 2), dy: Math.abs(t.bottom - r.y - r.height / 2),
             marker: { top: r.top, bottom: r.bottom, left: r.left, right: r.right }, viewport: { width: window.innerWidth, height: window.innerHeight } };
     });
     const anchored = state => {
+        assert.equal(state.popupName, 'Paradise', 'the popup must belong to the station being measured');
         assert.equal(state.tipVisible, true, 'the popup has a visible geographic arrow');
         assert.ok(state.dx <= 2 && state.dy <= 20, `popup arrow stays beside its station: ${JSON.stringify(state)}`);
         assert.ok(state.marker.top >= 0 && state.marker.bottom <= state.viewport.height
             && state.marker.left >= 0 && state.marker.right <= state.viewport.width, `the popup's station stays visible: ${JSON.stringify(state)}`);
     };
+    const settledAnchor = () => waitForCondition(popupAnchor, { description: 'rendered popup arrow beside Paradise',
+        isReady: state => state.popupName === 'Paradise' && state.tipVisible && state.dx <= 2 && state.dy <= 20 });
     for(const width of selection==='all'?[1440,375]:[])for(const theme of ['light','dark']){
         await prepare(width,theme);const initial=await geometry();await open(true);
         await evaluate(()=>document.querySelector('[data-layer="snotel"] input').focus({preventScroll:true}));await press(key('Space'));
@@ -247,10 +261,11 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         stable(initial,await geometry(),'ready');
         assert.equal(await evaluate(()=>document.getElementById('Gmap').contentWindow.nativeLayers.every(layer=>document.getElementById('Gmap').contentWindow.mapsPlaceholder.hasLayer(layer))),true);
         await image(`${width}-${theme}-ready`);
-        await evaluate(()=>document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-marker').focus());await press(key('Enter'));await popupSettled();
+        await evaluate(()=>document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-marker[title="Paradise · SNOTEL"]').focus());await press(key('Enter'));await popupSettled();
         themedPopup(await popupPalette(),theme);
         await wait(()=>!!document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-show-conditions'),'authorized nearby card action');
         await evaluate(()=>document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-show-conditions').focus({preventScroll:true}));
+        await popupSettled();
         const popupBefore=await popupGeometry();
         for(const next of [theme==='dark'?'light':'dark',theme]){
             await setSettings({theme:next,units:'imperial',enable3dMap:true,showSunMoon:false,showWeather:true,showSnotel:true});
@@ -270,9 +285,9 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     await click('#bpb-terrain-toggle');await frameWait(()=>document.querySelectorAll('.bpb-snotel-marker').length===2,'3D viewport stations');
     const renderer=await evaluateTerrain(()=>{const gl=document.querySelector('canvas.maplibregl-canvas').getContext('webgl2'),info=gl.getExtension('WEBGL_debug_renderer_info');return info?gl.getParameter(info.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);});
     assert.ok(renderer&&!/swiftshader|software|llvmpipe/i.test(renderer),`hardware renderer required: ${renderer}`);
-    await evaluateTerrain(()=>document.querySelector('.bpb-snotel-marker').focus());await press(key('Enter'));await frameWait(()=>!!document.querySelector('.bpb-snotel-popup'),'3D keyboard popup');anchored(await popupAnchor());
+    await evaluateTerrain(()=>document.querySelector('.bpb-snotel-marker[title="Paradise · SNOTEL"]').focus());await press(key('Enter'));await frameWait(()=>!!document.querySelector('.bpb-snotel-popup'),'3D keyboard popup');anchored(await settledAnchor());
     await evaluateTerrain(()=>{const style=document.createElement('style');style.id='snow-anchor-negative';style.textContent='.bpb-snotel-map-popup{left:12px!important;top:92px!important;transform:none!important}.bpb-snotel-map-popup .maplibregl-popup-tip{display:none!important}';document.head.append(style);});
-    const detached=await popupAnchor();assert.throws(()=>anchored(detached));await evaluateTerrain(()=>document.getElementById('snow-anchor-negative').remove());anchored(await popupAnchor());
+    const detached=await popupAnchor();assert.throws(()=>anchored(detached));await evaluateTerrain(()=>document.getElementById('snow-anchor-negative').remove());anchored(await settledAnchor());
     await press(key('Escape'));await frameWait(()=>!document.querySelector('.bpb-snotel-popup'),'Escape closes popup before exiting 3D');
     await click('#bpb-snow-map-toggle');await frameWait(()=>!document.querySelector('.bpb-snotel-marker'),'3D stations off');await click('#bpb-snow-map-toggle');await frameWait(()=>document.querySelectorAll('.bpb-snotel-marker').length===2,'3D stations restored');
     await click('#bpb-terrain-toggle');await waitMarkers(2);await click('#bpb-terrain-toggle');await frameWait(()=>document.querySelectorAll('.bpb-snotel-marker').length===2,'parked 3D resume');
