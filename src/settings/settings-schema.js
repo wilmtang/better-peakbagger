@@ -15,6 +15,7 @@
 // src/settings/settings.js owns storage access and layers it on top of this module.
 
 import { photoToolPreferences as ToolPreferences } from '../photos/photo-tool-preferences.js';
+import { customOverlaySchema } from '../maps/custom-overlay-schema.js';
 
 const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
 const CHART_DEFAULT_SERIES = Object.freeze(['both', 'distance', 'time']);
@@ -338,6 +339,7 @@ const clean = raw => {
 };
 
 const API = {
+    customOverlay: customOverlaySchema,
     DEVICE_KEYS, TRANSFER_KEYS, PERSONAL_KEYS, PORTABLE_KEYS,
     MAP_OVERLAY_IDS,
     MAP_OVERLAY_OPACITY,
