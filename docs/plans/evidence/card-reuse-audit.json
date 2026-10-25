@@ -1,0 +1,14 @@
+{
+  "auditedHead": "991ee692c790049a92338dabde73d641cbf2aa30",
+  "ascentSourceSha256": "89ed08849fe8ad30a1ba60ef17a909819082d07329a00e0698fbb1035ccc702e",
+  "peakChartSourceSha256": "dc61732a47e481b95cff24c6a28d2b1e0eab39cfb1b960c5aa862ccb9dc9511f",
+  "ascentBundleSha256": "478ab25b0cc105c71c3ce0f11a7a2255bbb563e8e9ed8270d921ff20bcf89d3d",
+  "inputWindKmh": 0,
+  "displayedUnit": "km/h",
+  "axisLabels": [
+    "0",
+    "1",
+    "1"
+  ],
+  "method": "Built dist bundle in jsdom, stubbed transport/settings and 620px chart bounds; no real browser or live network"
+}

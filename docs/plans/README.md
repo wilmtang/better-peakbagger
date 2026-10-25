@@ -1,5 +1,10 @@
 # Active plans
 
+- [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
+  — updated conventions plus source-grounded extraction opportunities for
+  eligibility, charts, visual tokens and gestures; calm-axis and collapsed-load
+  defects reproduced locally. Runtime changes remain proposed.
+
 - [Open-Meteo peak-page request audit — October 24](open-meteo-peak-request-audit-2026-10-24.md)
   — five default HTTP requests once both cards enter the loading margin;
   weighted quota estimates, 23 request-count probes, collapsed-weather fetching
