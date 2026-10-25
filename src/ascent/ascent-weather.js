@@ -8,6 +8,7 @@ import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createCardReadGate } from '../ui/card-read-gate.js';
+import { createLatestRead } from '../ui/latest-read.js';
 import { createCardDrag } from '../ui/card-drag.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { requestDeadline } from '../net/request-deadline.js';
@@ -195,13 +196,14 @@ export function mountAscentWeather() {
 
     let summit = null, dayWindow = null, candidates = [], current = null;
     let retryDate = subject.date, refreshLabel = '';
-    let metric = 'conditions', generation = 0, controller = null, started = false;
+    let metric = 'conditions', started = false;
     const client = createWeatherClient();
+    const reads = createLatestRead();
     let lifecycle;
     const readGate = createCardReadGate({ card, enabled: () => enabled() && !subject.reason && subject.date >= '1940-01-01',
         active: () => lifecycle?.state === 'active', onChange: eligible => {
             if (!eligible) { cancel(); cooldown.suspend(); }
-            else { cooldown.resume(); if (!current && !controller) beginWhenVisible(); }
+            else { cooldown.resume(); if (!current && !reads.pending) beginWhenVisible(); }
         } });
     let rememberedModel = ARCHIVE_BEST_MATCH.id, modelRevision = 0, modelSaveError = '';
     let modelWrites = Promise.resolve();
@@ -476,7 +478,7 @@ export function mountAscentWeather() {
         updateModelDescription();
         updateNavigation();
     };
-    const cancel = () => { generation++; controller?.abort(); controller = null; busy(false); };
+    const cancel = () => { reads.cancel(); busy(false); };
     const updateModels = (targetDate, restore = false) => {
         const selected = restore ? rememberedModel : select.value;
         candidates = eligibleWeatherModels(summit, targetDate)
@@ -500,7 +502,7 @@ export function mountAscentWeather() {
     async function load(targetDate = dayWindow?.date || subject.date) {
         if (!readGate.eligible()) return;
         readGate.cancelWait();
-        cancel(); const ownGeneration = generation; controller = new AbortController(); const signal = controller.signal;
+        cancel(); const request = reads.start(), signal = request.signal;
         retryDate = targetDate;
         refreshLabel = current ? targetDate === dayWindow.date ? `Updating… Showing ${current.model.label}`
             : `Loading ${displayDate(targetDate)}… Showing ${displayDate(dayWindow.date)}.` : '';
@@ -514,16 +516,16 @@ export function mountAscentWeather() {
         }
         try {
             await modelReady;
-            if (ownGeneration !== generation || signal.aborted) return;
+            if (!request.isCurrent()) return;
             await prepare(signal);
-            if (ownGeneration !== generation) return;
+            if (!request.isCurrent()) return;
             const requestedWindow = weatherDayWindow(targetDate, mountainTime.resolve(summit.latitude, summit.longitude));
             const model = eligibleWeatherModels(summit, targetDate).find(candidate => candidate.id === select.value);
             if (!model) throw new Error('This model does not cover the selected archive day. Choose another model.');
             let data;
             try { data = await client.request(summit, requestedWindow, model, { signal }); }
             catch (error) {
-                if (ownGeneration !== generation) return;
+                if (!request.isCurrent()) return;
                 if (error.code === 'unavailable' && targetDate === dayWindow.date) {
                     const option = [...select.options].find(candidate => candidate.value === model.id);
                     if (option) {
@@ -533,7 +535,7 @@ export function mountAscentWeather() {
                 }
                 throw error;
             }
-            if (ownGeneration !== generation) return;
+            if (!request.isCurrent()) return;
             const day = summarizeWeatherDay(data, requestedWindow);
             if (!day.useful) throw new Error('No weather data is available for this model and archive day. Choose another model.');
             if (targetDate !== dayWindow.date) {
@@ -548,14 +550,14 @@ export function mountAscentWeather() {
             status.textContent = dayWindow.partial ? 'Partial day · Weather so far' : day.partial ? 'Partial data · Some hours or measurements are unavailable' : '';
             retry.hidden = !day.partial && !dayWindow.partial;
         } catch (error) {
-            if (ownGeneration !== generation || signal.aborted) return;
+            if (!request.isCurrent()) return;
             if (!current) resultArea.hidden = true;
             delete status.dataset.kind;
             if (error.code === 'rate-limit') { status.dataset.kind = 'rate-limit'; cooldown.set(error.retryAt); }
             status.textContent = `${current ? targetDate === dayWindow.date ? `Showing ${current.model.label}. `
                 : `Could not load ${displayDate(targetDate)}. Showing ${displayDate(dayWindow.date)}. ` : ''}${error.message}`; retry.hidden = false;
         } finally {
-            if (ownGeneration === generation) busy(false);
+            if (request.finish()) busy(false);
         }
     }
     select.addEventListener('change', () => {

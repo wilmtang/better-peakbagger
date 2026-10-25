@@ -8,6 +8,7 @@ import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createCardReadGate } from '../ui/card-read-gate.js';
+import { createLatestRead } from '../ui/latest-read.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { createStableText } from '../ui/stable-text.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
@@ -71,8 +72,9 @@ export function mountSummitCloud() {
     if (mapRow?.closest('table') === subject.table) mapRow.after(row); else subject.table.tBodies[0].append(row);
 
     const client = createSummitCloudClient();
+    const reads = createLatestRead();
     let preference = settings.DEFAULTS, ready = false, selection = 'auto', requestedDate = '', current = null;
-    let generation = 0, controller = null, pending = false, lifecycle, writeGeneration = 0;
+    let pending = false, lifecycle, writeGeneration = 0;
     let selectedIndex = 0, offset = 0, failed = false, savingChoice = false;
     const enabled = () => ready && preference.showSummitCloud;
     const readGate = createCardReadGate({ card, enabled, active: () => lifecycle?.state === 'active',
@@ -148,7 +150,7 @@ export function mountSummitCloud() {
     }
     function cancel() {
         if (pending) statusText.set('Forecast paused. Expand to continue.');
-        generation++; controller?.abort(); controller = null; pending = false;
+        reads.cancel(); pending = false;
         card.setAttribute('aria-busy', 'false'); cooldown.refresh(); readGate.cancelWait();
     }
     async function load({ refresh: force = false } = {}) {
@@ -159,17 +161,17 @@ export function mountSummitCloud() {
         const day = weatherDayWindow(requestedDate, zone, Date.now(), { forecast: true });
         try { models = resolveSummitCloudModels(subject, selection, (Date.parse(requestedDate) - Date.parse(mountainTime.localDate(zone, Date.now()))) / DAY); }
         catch { failed = true; statusText.set('Choose another model for this summit.'); paint(); return; }
-        cancel(); const owner = generation, requestController = new AbortController(); controller = requestController;
+        cancel(); const request = reads.start();
         pending = true; failed = false; card.setAttribute('aria-busy', 'true'); cooldown.refresh(); statusText.set('Loading cloud profiles…');
         if (!current) { selectNearNow(displayed()); paint(); }
         const results = await Promise.allSettled(models.map(model => {
             // API horizon bounds are UTC dates. The local day's remaining hours
             // remain visible as unavailable instead of rejecting the whole day.
             const end = Math.min(day.end, Date.parse(new Date().toISOString().slice(0, 10)) + Math.ceil(model.days) * DAY);
-            return client.request(subject, { ...day, end }, model, { signal: requestController.signal, refresh: force });
+            return client.request(subject, { ...day, end }, model, { signal: request.signal, refresh: force });
         }));
-        if (owner !== generation || requestController.signal.aborted || !active()) return;
-        pending = false; controller = null; card.setAttribute('aria-busy', 'false');
+        if (!request.isCurrent() || !active()) return;
+        request.finish(); pending = false; card.setAttribute('aria-busy', 'false');
         const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
         const datasets = results.filter(result => result.status === 'fulfilled').map(result => result.value);
         const limited = errors.find(error => error.code === 'rate-limit'); if (limited) cooldown.set(limited.retryAt);

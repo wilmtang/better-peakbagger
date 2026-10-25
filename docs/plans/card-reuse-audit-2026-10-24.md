@@ -310,8 +310,15 @@ runtime changes require the real-browser checks in the convention and AGENTS.
   against both real layout adapters: threshold/unrelated-pointer handling and
   Escape, blur, resize, pointer cancellation and capture loss. All 33 movement
   tests, build and focused ESLint passed; browser movement checks are pending.
+  CR-05 shares `createLatestRead` across peak forecast/metadata, clouds and ascent
+  weather. It guards ownership before abort notifications and prevents stale
+  finalizers from clearing newer work. All 147 focused ownership/integration
+  tests and ESLint passed, including late responses and reentrant abort handlers.
 - **Intentionally not changed:** native mounting, settings keys, provider policy,
-  worker-write ownership and unrelated work. The remaining extractions are still
-  being implemented.
+  worker-write ownership and unrelated work. Settings reconciliation remains
+  surface-specific: ascent serial placement writes and peak per-field optimistic
+  patches have different contracts. Full renderer unification and an ascent card
+  registry remain deliberately deferred; shared scale/series and gesture input
+  mechanisms address the demonstrated duplication without combining policies.
 - **Changed but not fully proven:** real-browser collapse/expansion and broader
   interaction/visual checks are pending. Local tests do not establish them.

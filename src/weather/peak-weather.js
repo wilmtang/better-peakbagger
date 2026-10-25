@@ -8,6 +8,7 @@ import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createCardReadGate } from '../ui/card-read-gate.js';
+import { createLatestRead } from '../ui/latest-read.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.js';
@@ -92,19 +93,17 @@ export function mountPeakWeather() {
     periodPanel.after(airQuality.panel);
     const updateClient = createPeakModelUpdateClient();
     const updateClocks = new Map();
-    let updatesController = null, updatesGeneration = 0;
-    let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, lifecycle;
+    const reads = createLatestRead(), updateReads = createLatestRead();
+    let preference = settings.DEFAULTS, current = null, lifecycle;
     let settingsReady = false, modelsReady = false, locationMenu = null;
     const enabled = () => settingsReady && modelsReady && preference.showWeather;
     const readGate = createCardReadGate({ card, enabled, active: () => lifecycle?.state === 'active',
         collapsed: () => preference.peakWeatherCollapsed, onChange: () => visibility() });
     const readable = readGate.eligible;
-    const cancelUpdates = () => { updatesGeneration++; updatesController?.abort(); updatesController = null; };
+    const cancelUpdates = () => updateReads.cancel();
     async function loadUpdates() {
         if (!readable() || aqiActive || !source.open || !current) return;
-        cancelUpdates();
-        const updateController = new AbortController(); updatesController = updateController;
-        const owner = updatesGeneration;
+        const update = updateReads.start();
         // Keep update clocks tied to the displayed weather, including when
         // a failed model change retains the previous result.
         const models = [current.models[period]];
@@ -143,12 +142,12 @@ export function mountPeakWeather() {
         // Fetch only when the disclosure is open, with at most three metadata
         // requests in flight. A failure never replaces usable weather data.
         await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
-            while (queue.length && !updateController.signal.aborted) {
+            while (queue.length && update.isCurrent()) {
                 const domain = queue.shift();
                 let result;
-                try { result = await updateClient.request(domain, { signal: updateController.signal }); }
+                try { result = await updateClient.request(domain, { signal: update.signal }); }
                 catch { return; }
-                if (owner !== updatesGeneration || updateController.signal.aborted) return;
+                if (!update.isCurrent()) return;
                 if (result.data) updateClocks.set(domain, result.data);
                 const data = updateClocks.get(domain), text = data ? clockText(data) : { last: 'Unavailable', next: 'Unavailable', interval: 'Unavailable' };
                 for (const { last, next, interval } of targets.get(domain)) {
@@ -157,7 +156,7 @@ export function mountPeakWeather() {
                 }
             }
         }));
-        if (owner === updatesGeneration) updatesController = null;
+        update.finish();
     }
     source.addEventListener('toggle', () => { if (source.open) void loadUpdates(); else cancelUpdates(); });
     let started = false, pending = false, hourlyMetric = 'code';
@@ -355,12 +354,12 @@ export function mountPeakWeather() {
     });
     choosePeriod(period);
     populateModels();
-    const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); };
+    const cancel = () => { reads.cancel(); pending = false; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); };
     async function load({ clear = false } = {}) {
         if (!readable() || pending || cooldown.active()) return;
         readGate.cancelWait();
         started = true; pending = true;
-        controller = new AbortController(); const owner = ++generation;
+        const request = reads.start();
         card.setAttribute('aria-busy', 'true'); cooldown.refresh();
         const target = requestedSubject, targetZone = mountainTime.resolve(target.latitude, target.longitude);
         const changingLocation = target !== subject;
@@ -372,8 +371,8 @@ export function mountPeakWeather() {
             if (!current) { subject = target; zone = targetZone; renderLabels(window[period]); }
             if (clear) { client.clear(); cancelUpdates(); updateClient.clear(); }
             const models = resolvePeakWeatherModels(target, window, choices);
-            const response = await client.request(target, window, [...new Set(Object.values(models))], { signal: controller.signal });
-            if (owner !== generation || lifecycle.state !== 'active') return;
+            const response = await client.request(target, window, [...new Set(Object.values(models))], { signal: request.signal });
+            if (!request.isCurrent() || lifecycle.state !== 'active') return;
             // Short-range choices must not display sixteen empty future days.
             // Retain full-day expectations through their last useful day so
             // unavailable boundary hours remain labelled as incomplete.
@@ -391,12 +390,12 @@ export function mountPeakWeather() {
             if (subject === summit) summitResult = current;
             renderResult();
         } catch (error) {
-            if (owner !== generation || lifecycle.state !== 'active' || error.name === 'AbortError') return;
+            if (!request.isCurrent() || lifecycle.state !== 'active' || error.name === 'AbortError') return;
             if (error.code === 'rate-limit') cooldown.set(error.retryAt);
             notice = { kind: error.code, text: `${changingLocation ? `Could not load ${target === summit ? 'summit weather' : weatherLocationLabel(target)}. ` : ''}${error.message || 'Weather could not be loaded.'}${current ? '' : ' Use Refresh to try again.'}` }; paintStatus();
             if (source.open) void loadUpdates();
         } finally {
-            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); paintStatus(); }
+            if (request.finish()) { pending = false; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); paintStatus(); }
         }
     }
     select.addEventListener('change', () => {
