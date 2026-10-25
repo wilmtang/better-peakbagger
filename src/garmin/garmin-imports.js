@@ -23,7 +23,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     decode = decodeGarminRecording, prepare, binding, openDrafts, clock = Date.now, date = today } = {}) {
     const trusted = createPackagedPageMatcher(ext, ['options/options.html', 'options/inbox.html']);
     const popup = createPackagedPageMatcher(ext, ['popup/popup.html']);
-    let visiting = null; let running = null; let queuedFull = null; let controller = null; let opening = null; let client = null; let clientEpoch = -1; let publicCache = null;
+    let visiting = null; let running = null; let queuedFull = null; let queuedResume = null; let controller = null; let opening = null; let client = null; let clientEpoch = -1; let publicCache = null;
     const mutateEpoch = (epoch, mutate) => store.mutate(state => {
         if (state.epoch !== epoch) throw new GarminError('cancelled'); return mutate(state);
     });
@@ -37,9 +37,10 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     const reconcile = async () => {
         await ext.alarms.clear(GARMIN_ALARM);
         const [state, prefs] = await Promise.all([store.read(), settings.requireCurrent()]);
-        if (!prefs.enableGarminInbox || !state.connection?.key || !state.connection.enabled || !prefs.garminCheckHours || state.error?.code === 'key-rejected' || !await permission()
+        if (!prefs.enableGarminInbox || !state.connection?.key || !state.connection.enabled || state.error?.code === 'key-rejected' || !await permission()
             || (state.error?.code === 'capacity' && !state.preparePending)) return;
         const continuing = state.scan || (state.preparePending && !state.peakbaggerBlocked);
+        if (!continuing && !prefs.garminCheckHours) return;
         const due = continuing ? Math.max(clock() + 60000, state.retryAt || 0) : Math.max(clock() + 60000, state.lastCheck + prefs.garminCheckHours * 3600000, state.retryAt || 0);
         await ext.alarms.create(GARMIN_ALARM, { when: due });
     };
@@ -88,16 +89,18 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         });
         await ext.alarms.clear(GARMIN_ALARM); await ext.permissions.remove({ origins: [GARMIN_PERMISSION] });
     };
+    const pruneDismissed = state => {
+        for (const [id, item] of Object.entries(state.items)) {
+            if (item.phase === 'dismissed' && item.undoUntil <= clock()) delete state.items[id];
+        }
+        if (state.error?.code === 'capacity' && Object.keys(state.items).length < 200) state.error = null;
+    };
     const snapshot = async (includeItems = true) => {
         const [initialMeta, prefs] = await Promise.all([store.summary(), settings.requireCurrent()]);
         if (!prefs.enableGarminInbox) return { featureEnabled: false, enabled: false, configured: false, pending: 0, queued: 0, items: [], history: [] };
         let meta = initialMeta;
         if (meta.undoDue <= clock()) {
-            await store.mutate(state => { for (const [id, item] of Object.entries(state.items)) {
-                if (item.phase === 'dismissed' && item.undoUntil <= clock()) delete state.items[id];
-            }
-            if (state.error?.code === 'capacity') state.error = null;
-            });
+            await store.mutate(pruneDismissed);
             await reconcile();
             meta = await store.summary();
         }
@@ -118,7 +121,11 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     };
     const runCheck = async (full, continuation = false, { prepareOnly = false, resume = false, tabId = null } = {}) => {
         controller = new AbortController(); clientEpoch = -1;
-        const state = await store.read(); const connection = state.connection;
+        let state = await store.read();
+        if (Object.values(state.items).some(item => item.phase === 'dismissed' && item.undoUntil <= clock())) {
+            await store.mutate(pruneDismissed); state = await store.read();
+        }
+        const connection = state.connection;
         const prefs = await settings.requireCurrent();
         if (!prefs.enableGarminInbox || !connection?.key || !connection.enabled) return;
         if (!await permission()) throw new GarminError('permission');
@@ -137,7 +144,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             : importRange(prefs, connection.connectedDate, state.lastCheck, fullScan, date());
         const signature = JSON.stringify({ ...range, types: prefs.garminActivityTypes });
         let scan = state.scan?.signature === signature ? state.scan : { ...range, scope, signature, offset: 0, full: fullScan, head: null };
-        const skipDiscovery = prepareOnly || continuation && (state.error?.code === 'capacity' || (!state.scan && clock() - state.lastCheck < prefs.garminCheckHours * 3600000));
+        const skipDiscovery = prepareOnly || continuation && (state.error?.code === 'capacity' || (!state.scan && (!prefs.garminCheckHours || clock() - state.lastCheck < prefs.garminCheckHours * 3600000)));
         for (let page = 0; page < (skipDiscovery ? 0 : 3); page++) {
             const rows = await service.list({ ...range, start: scan.offset });
             const fingerprint = rows.map(row => row.id).join(',');
@@ -226,7 +233,8 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     };
     const check = (full = false, continuation = false, options = {}) => {
         if (running) {
-            if (full) return queuedFull ||= running.then(() => check(true)).finally(() => { queuedFull = null; });
+            if (full) return queuedFull ||= running.then(() => { queuedFull = null; return check(true, false, options); });
+            if (options.resume) return queuedResume ||= running.then(() => { queuedResume = null; return check(false, continuation, options); });
             return running;
         }
         running = runCheck(full, continuation, options).catch(async error => {
@@ -294,7 +302,11 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         GARMIN_UNDO: async message => {
             await store.mutate(state => { const item = state.items[message.id];
                 if (!item || item.phase !== 'dismissed' || item.undoUntil <= clock()) throw new GarminError('handoff');
-                item.phase = item.previousPhase || 'waiting'; delete item.undoUntil; delete item.previousPhase; delete state.receipts[message.id]; });
+                item.revision = (item.revision || 0) + 1;
+                item.phase = item.previousPhase || 'waiting';
+                if (item.phase === 'waiting') state.preparePending = true;
+                delete item.undoUntil; delete item.previousPhase; delete state.receipts[message.id]; });
+            await reconcile();
             return { ok: true };
         },
         GARMIN_DONE: async message => {

@@ -256,3 +256,81 @@ test('turning the inbox off cancels in-flight preparation and preserves the queu
         assert.equal((await imports.snapshot()).featureEnabled, false);
     } finally { await store.close(); }
 });
+
+test('manual checks finish their bounded preparation without starting a new discovery cycle', async () => {
+    let lists = 0;
+    const rows = Array.from({ length: 4 }, (_, i) => ({ id: String(i + 1), owner: '123', date: '2026-10-23', type: 'hiking' }));
+    const h = await setup({ prefs: { garminCheckHours: 0 }, api: { list: async () => { lists++; return rows; } } });
+    try {
+        await h.imports.check();
+        assert.equal((await h.store.read()).preparePending, true);
+        assert.equal(h.alarms.size, 1, 'An explicit manual check must finish its queued work');
+        const before = lists;
+        await h.imports.check(false, true);
+        assert.equal(lists, before, 'Preparation continuation must not rediscover activities');
+        assert.equal(h.counts.preparations, 4); assert.equal(h.alarms.size, 0);
+    } finally { await h.store.close(); }
+});
+test('Undo requeues waiting work with a new revision in manual mode', async () => {
+    const h = await setup({ prefs: { garminCheckHours: 0 } });
+    try {
+        await h.imports.check();
+        await h.store.mutate(state => { state.items['12'].phase = 'waiting'; state.items['12'].analysis = null; state.preparePending = false; });
+        await h.imports.handle({ type: 'GARMIN_DISMISS', id: '12' }, sender);
+        const revision = (await h.store.read()).items['12'].revision;
+        await h.imports.handle({ type: 'GARMIN_UNDO', id: '12' }, sender);
+        const state = await h.store.read();
+        assert.equal(state.items['12'].revision, revision + 1);
+        assert.equal(state.preparePending, true); assert.equal(h.alarms.size, 1);
+    } finally { await h.store.close(); }
+});
+test('background discovery prunes expired dismissed snapshots before checking capacity', async () => {
+    const h = await setup();
+    try {
+        await h.store.mutate(state => {
+            for (let i = 1000; i < 1200; i++) {
+                state.items[i] = { id: String(i), phase: 'dismissed', undoUntil: 0 };
+                state.receipts[i] = { dismissed: true };
+            }
+        });
+        await h.imports.check(); const state = await h.store.read();
+        assert.equal(state.error, null); assert.equal(Object.keys(state.items).length, 1);
+        assert.equal(Object.keys(state.receipts).length, 200, 'Pruning must retain import tombstones');
+        assert.equal(h.counts.preparations, 1);
+    } finally { await h.store.close(); }
+});
+test('an explicit resume arriving during a check runs after the blocked pass', async () => {
+    let release, entered, calls = 0, bindings = 0;
+    const started = new Promise(resolve => { entered = resolve; });
+    const hold = new Promise(resolve => { release = resolve; });
+    const h = await setup({ api: { list: async () => {
+        if (++calls === 1) { entered(); await hold; }
+        return [{ id: '12', owner: '123', date: '2026-10-23', type: 'hiking' }];
+    } }, binding: async (_cid, options) => {
+        // Enable has no options; the first actual preparation discovers a block.
+        if (!options) return { cid: '456' };
+        if (++bindings === 1) throw new GarminError('cloudflare');
+        assert.equal(options.tabId, 42); return { cid: '456' };
+    } });
+    try {
+        const first = h.imports.check(); await started;
+        const resumed = h.imports.check(false, false, { resume: true, tabId: 42 });
+        release(); await Promise.all([first, resumed]);
+        assert.equal((await h.store.read()).items['12'].phase, 'ready');
+        assert.equal(bindings, 2);
+    } finally { release(); await h.store.close(); }
+});
+
+test('manual full-history checks continue pagination and stop once queued tracks are prepared', async () => {
+    const rows = Array.from({ length: 151 }, (_, i) => ({ id: String(i + 1), owner: '123', date: '2026-10-23', type: 'hiking' }));
+    const h = await setup({ prefs: { garminCheckHours: 0 }, api: { list: async ({ start }) => rows.slice(start, start + 50) } });
+    try {
+        await h.imports.check(true); assert.equal((await h.store.read()).scan.offset, 135);
+        assert.equal(h.alarms.size, 1);
+        // Each pass remains bounded while completing this explicit request.
+        for (let pass = 0; pass < 60 && h.alarms.size; pass++) await h.imports.check(false, true);
+        const state = await h.store.read();
+        assert.equal(state.scan, null); assert.equal(state.preparePending, false);
+        assert.equal(h.counts.preparations, 151); assert.equal(h.alarms.size, 0);
+    } finally { await h.store.close(); }
+});

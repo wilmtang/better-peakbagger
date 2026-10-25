@@ -226,6 +226,12 @@ Independent commits for drag ownership and report/observer surfaces:
   test failed before the fix; report-photo/draft tests, build and focused ESLint
   passed after it. Native Peakbagger POST behavior remains a live proof limit.
 
+- F3 continuation/retention: explicit Manual-only work completes in bounded
+  passes, Undo advances revision and schedules preparation, headless pruning
+  preserves tombstones, and late resume intent runs after an active check. Four
+  regressions failed before the fix; 27 import tests, 226 bundled-worker tests,
+  build, focused ESLint and hidden Chrome extension verification passed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
