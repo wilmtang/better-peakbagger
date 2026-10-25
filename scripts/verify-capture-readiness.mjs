@@ -234,7 +234,7 @@ async function run(browserName) {
             });
             const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
             const page = await context.newPage();
-            await page.goto(`chrome-extension://${new URL(worker.url()).host}/options/options.html`);
+            await page.goto(`chrome-extension://${new URL(worker.url()).host}/popup/popup.html`);
             try {
                 await verify((fn, arg) => page.evaluate(fn, arg), fixture, `Chrome ${context.browser().version()}`);
             } catch (error) {
@@ -264,7 +264,7 @@ async function run(browserName) {
             await driver.setContext(firefox.Context.CHROME);
             const baseUrl = await driver.executeScript('return WebExtensionPolicy.getByID(arguments[0]).getURL("")', addonId);
             await driver.setContext(firefox.Context.CONTENT);
-            await driver.get(`${baseUrl}options/options.html`);
+            await driver.get(`${baseUrl}popup/popup.html`);
             const evaluate = async (fn, arg) => {
                 const result = await driver.executeAsyncScript(`
                     const done = arguments[arguments.length - 1];
