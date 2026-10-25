@@ -1,0 +1,24 @@
+{
+  "status": "stopped_by_user",
+  "observedDate": "2026-10-25",
+  "asOfDate": "2025-12-31",
+  "expectedSourceArchives": 460,
+  "downloadedSourceArchives": 246,
+  "verifiedSourceArchives": 122,
+  "verifiedSourceFeatures": 5197020,
+  "verifiedNationalArchives": 1,
+  "fullConversionComplete": false,
+  "incompleteSourceIntermediatesRetained": true,
+  "sourceCountDiscrepancies": [
+    {
+      "fileId": 1859332,
+      "catalogFeatures": 8836,
+      "packageFeatures": 8793,
+      "countedFeatures": 8793,
+      "catalogCountDiffers": true,
+      "policy": "All actual source rows retained; FCC catalog count differs"
+    }
+  ],
+  "resourceFinding": "Four converter workers each launched a two-thread encoder; the user reported severe CPU contention and requested termination.",
+  "completionPolicy": "Conversion stays stopped; this documentation update does not authorize resuming."
+}

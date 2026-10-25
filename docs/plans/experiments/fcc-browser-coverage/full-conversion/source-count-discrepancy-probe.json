@@ -1,0 +1,12 @@
+{
+  "fileId": 1859332,
+  "catalogCount": 8836,
+  "geoPackageCount": 8793,
+  "sqliteQuickCheck": "ok",
+  "freshGeoPackageDownloadSha256": "0ab2ccf519cf4151f0c2bb21d423de52d0828bc79e6871d1ad07cec164a98a14",
+  "freshGeoPackageMatchesOriginal": true,
+  "shapefileDbfCount": 8793,
+  "shapefileZipSha256": "eacddc4e2868c178f464fc21ef1161d3e6016b6cb337102dc46319656461a536",
+  "checkedDate": "2026-10-25",
+  "recordedAt": "2026-10-25T06:30:09.153483+00:00"
+}

@@ -1,0 +1,7 @@
+<svg viewBox="0 0 800 470" role="img" aria-label="detail-github">
+    <defs><clipPath id="mapclip"><rect width="800" height="470"/></clipPath></defs>
+    <g clip-path="url(#mapclip)"><image href="detail-hillshade.png" width="800" height="470" opacity="0.62"/>
+    <g fill-rule="evenodd" opacity="0.76"><path d="M584.78,466.72L548.78,322.72L394.78,290.72L278.78,404.72L124.78,372.72L88.78,228.72L204.78,114.72L358.78,146.72L474.78,32.72L628.78,64.72L664.78,210.72L800.00,237.06L800.00,0.00L0.00,0.00L0.00,470.00L581.45,470.00L584.78,466.72Z" fill="#4a96bc"/><path d="M664.78,210.72L548.78,322.72L584.78,466.72L581.45,470.00L800.00,470.00L800.00,237.06L664.78,210.72ZM204.78,114.72L88.78,228.72L124.78,372.72L278.78,404.72L394.78,290.72L358.78,146.72L204.78,114.72Z" fill="#2379a5"/><path d="M548.78,322.72L664.78,210.72L628.78,64.72L474.78,32.72L358.78,146.72L394.78,290.72L548.78,322.72Z" fill="#083f6b"/></g></g>
+    <g class="north"><rect x="752" y="12" width="34" height="48" rx="8"/><text x="769" y="30" text-anchor="middle">N</text><path d="M769,36l-5,11h10Z"/></g>
+    <g class="scale"><rect x="12" y="425" width="184.8" height="33" rx="6"/><path d="M24,440v7h154.8v-7"/><text x="24" y="437">500 m</text></g>
+    </svg>

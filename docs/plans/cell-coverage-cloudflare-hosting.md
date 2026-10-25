@@ -1,12 +1,172 @@
 # FCC cell coverage on Cloudflare: storage and free-tier investigation
 
-October 24, 2026. **A public GitHub repository contains 826.9 MB of prebuilt
-three-carrier LTE/5G PMTiles across three named resolution variants. Its stored
-bytes fit comfortably within R2's included 10 GB allowance.** Original FCC
-source completeness, reporting vintage, quality and production serving remain
-unverified. R2 plus a small tile-serving Worker is a supported deployment
-architecture; a zero-dollar deployment depends on all usage allowances. This
-is research and a local size experiment; nothing has been deployed.
+Updated October 25, 2026. **The detailed national T-Mobile LTE conversion is
+3.315 GB; the public GitHub H3 counterpart is 109.2 MB. The comparison below
+shows the additional boundary detail and smaller coverage gaps.** Different
+representations, retained semantics and native zooms account for the difference;
+they are not interchangeable compression settings. The GitHub inventory totals
+826.9 MB across all three carriers and resolutions, or 583.7 MB for r8 alone.
+The full-source batch was stopped by the user at **122 of 460 verified source
+archives and one of nine national archives**. It remains unfinished. No
+extension runtime or external deployment changed.
+
+## October 25: detailed conversion and rendered comparison
+
+Authenticated FCC bulk downloads succeeded with the supplied API token. The
+earlier anonymous edge 403 is historical evidence, not a current block on this
+experiment. The selected corpus is AT&T, Verizon and T-Mobile LTE and both 5G
+speed tiers (7/1 and 35/3 Mbps), retaining the original environment and signal
+fields. Its 460 listed state/provider/technology files would produce nine
+national carrier/technology archives. Credentials, complete PMTiles and source
+ZIPs remain outside Git.
+
+The [stopped run snapshot](experiments/fcc-browser-coverage/full-conversion/run-snapshot.json)
+records 246 downloads, 122 verified source conversions representing 5,197,020
+features, and one completed national archive. Incomplete intermediates are
+retained locally. This report update does not resume processing.
+
+### Actual detail: Snoqualmie Pass, T-Mobile LTE
+
+![Detailed raw FCC coverage versus public GitHub H3 coverage at the same location and scale](experiments/fcc-browser-coverage/comparison/comparison.png)
+
+[Full-size comparison](experiments/fcc-browser-coverage/comparison/comparison.png)
+· [Four-times enlarged close-up](experiments/fcc-browser-coverage/comparison/close-up.png)
+· [Local HTML page](experiments/fcc-browser-coverage/comparison/index.html)
+· [Comparison code and reproduction](experiments/fcc-browser-coverage/comparison/README.md)
+· [Tile ranges and browser evidence](experiments/fcc-browser-coverage/comparison/comparison-evidence.json)
+
+Both sides show actual decoded geometry over the same Esri hillshade, bounds,
+signal colors, opacity and scale. Left is the FCC December 31, 2025 raw-polygon
+conversion at native zoom 12. Right is the pinned GitHub T-Mobile LTE H3 r8
+product at native maximum zoom 10. The regional view has a zoom-12 footprint;
+the close-up enlarges the same geometry four times to a zoom-14 footprint.
+Overzoom does not create new source detail.
+
+The detailed product retains small gaps and irregular signal boundaries where
+the compact product uses broad hexagons. However, the public product does not
+document its environment selection, aggregation rule or independently verified
+original FCC vintage. Signal disagreements cannot all be assigned to spatial
+resolution; finer modeled shapes do not prove better reception predictions.
+
+**Corrected environment interpretation:** the FCC's
+[field specification](https://help.bdc.fcc.gov/hc/en-us/articles/6047425308187-Formatting-Mobile-Broadband-Availability-Coverage-Maps)
+defines `0` as outdoor stationary **only**, and `1` as **both** in-vehicle
+mobile and outdoor stationary. The final outdoor comparison includes **0 and
+1**, with stronger signal bins drawn after weaker bins. An initial code-0-only
+render omitted eligible outdoor coverage and was replaced before delivery.
+The conversion itself retained both codes. An in-vehicle overlay selects 1.
+
+The final static comparison was visually inspected in hidden Chrome for
+Testing 156.0.8078.4 at **1704 × 1440**, using SVG composition, one raster
+thread and no WebGL. Six local zoom-12 tiles and one public zoom-10 tile supply
+both views. The public archive needed only **7,634 bytes in three ranges**,
+plus two cached terrain images. All four terrain-image loads and browser errors
+were checked. The owned browser, server, disposable profile and certificate
+were removed; no converter was started for this comparison.
+
+### What made the detailed product larger
+
+| T-Mobile LTE, United States | Public GitHub r8 | Detailed conversion |
+| --- | ---: | ---: |
+| Stored PMTiles bytes | 109,192,608 | 3,315,322,831 |
+| Native maximum zoom | 10 | 12 |
+| Geometry | H3 resolution-8 cells | Raw coverage polygons, quantized to MVT |
+| Retained fields | `dbm` | All eight source coverage fields |
+| Environment selection | Not documented | Both original codes retained |
+
+The detailed output is about **30.4 times larger**. Extra geometry, attributes,
+environment distinctions, repeated tile-pyramid geometry and conservative
+encoder settings all contribute. Their individual byte contributions have not
+been isolated in a controlled experiment; size does not imply a proportional
+benefit to the map user.
+
+The configuration uses zooms 4–12, identical-attribute coalescing, no feature
+or tile-size dropping, no tiny-polygon reduction and no shared-node
+simplification. Overview geometry is too heavy for an assumed lightweight
+product: the largest compressed T-Mobile LTE tile is **13,726,587 bytes** at
+zoom 5. Zooms 11–12 account for 1,146,609,610 payload bytes; omitting those zooms
+alone would still leave about **2.17 GB**. See the
+[directory-derived sizes by zoom](experiments/fcc-browser-coverage/full-conversion/tmobile-lte-zoom-sizes.json).
+Overview performance and a compact production policy remain open.
+
+Four workers, each launching a two-thread encoder, caused severe CPU
+contention reported by the user. Every converter, downloader, assembler,
+catalog/audit watcher and owned verification browser was stopped. The
+checked-in research copies default to **one worker and one encoder thread**;
+scheduling priority is not a CPU cap. A future resume needs an explicit
+instruction and a resource budget. Reading or updating this report must not
+silently restart the batch.
+
+### Code, completed evidence and remaining decisions
+
+The [conversion code and reproduction notes](experiments/fcc-browser-coverage/full-conversion/README.md)
+include the downloader, source validator/encoder, national assembler, portable
+catalog, status reader, browser verifier, exhaustive payload audit, pinned
+dependencies, selected public inventory and regression fixtures. The
+[comparison code](experiments/fcc-browser-coverage/comparison/README.md) includes
+the bounded tile reader/SVG renderer, hidden screenshot tool, small cached
+inputs, HTML, SVG panels and both PNGs. This is research tooling outside the
+extension build. Repository copies use portable paths and corrected environment
+labels; the stopped local jobs were not modified or relaunched.
+
+The completed national archive assembled all 52 selected T-Mobile LTE sources
+and passed 1,295 independent source-point classification checks. The
+[payload audit](experiments/fcc-browser-coverage/full-conversion/archive-audits.json)
+verified its SHA-256 and every one of **177,217 unique gzip tile payloads**.
+The [national browser check](experiments/fcc-browser-coverage/full-conversion/national-browser-results.json)
+rendered three selected source classifications in Washington, California and
+New York in hidden Chrome 156.0.8078.4 at **960 × 640**, with Apple M3 Pro /
+ANGLE Metal hardware WebGL. This used local HTTPS range serving. It does not
+prove complete polygon equivalence, real reception, external latency, extension
+integration, native focus or visible window placement. Its exact-environment
+sample filter is a source-classification check, not a complete outdoor overlay.
+
+The source-count gate exposed an upstream discrepancy: FCC file 1859332 lists
+8,836 records, but fresh GeoPackage and Shapefile downloads each contain 8,793.
+The repeated package hash and SQLite integrity check match. The code retains
+every actual row and records the difference. See the
+[source-format probe](experiments/fcc-browser-coverage/full-conversion/source-count-discrepancy-probe.json).
+
+Before restarting a national build, measure a controlled regional compromise:
+preserve useful hiking-scale boundaries, simplify overview tiles, retain needed
+styling/selection fields, and verify gaps, islands, environment eligibility and
+request sizes. The visual difference supports this measurement; it does not
+select a final configuration.
+
+The FCC's [license and attribution page](https://broadbandmap.fcc.gov/about?version=dec2025)
+states that public BDC availability data are free of copyright restriction,
+supporting redistribution of this mobile coverage conversion. CostQuest's
+location Fabric has separate licensing and is not included. Credit FCC BDC,
+preserve dates, identify the conversion, and follow the
+[FCC API terms](https://www.fcc.gov/reports-research/developers/api-terms-service)
+without implying endorsement.
+
+For GitHub, an index can resolve versioned archive URLs; PMTiles already has
+the internal tile-to-range index. The
+[browser hosting probe](experiments/fcc-browser-coverage/full-conversion/github-hosting-probe.json)
+read a raw archive's index and two nonempty tiles successfully. The tested
+Release asset supports HTTP ranges but lacks browser CORS. Ordinary GitHub
+files have a **100 MiB** limit and Release assets must be **under 2 GiB**;
+this 3.315 GB archive exceeds both. Geographic shards, a range-forwarding
+Worker or R2 serving require separate verification. An index does not remove
+storage or bandwidth constraints. See [file limits](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github),
+[Release limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)
+and [bandwidth policy](https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies#9-excessive-bandwidth-use).
+
+### Evidence ledger
+
+- **Fixed and verified:** authenticated source access; explicit source-count
+  discrepancy handling; complete-group assembly; four small regression tests;
+  national T-Mobile LTE hashes/payloads and sampled geometry; three local
+  hardware-WebGL source cases; corrected two-view static comparison with
+  outdoor codes 0 and 1.
+- **Intentionally not changed:** conversion remains stopped; credentials and
+  full data stay outside Git; no extension feature, permission, bucket, Worker,
+  DNS or public upload was added.
+- **Changed but not fully proven:** research scripts and a local catalog exist,
+  but 338 selected sources and eight national outputs are unfinished. Public
+  derivative provenance, national footprint, optimized overview behavior,
+  resource-bounded resume, live hosting and product integration remain open.
 
 ## Follow-up: public prebuilt coverage tiles found on GitHub
 
@@ -40,8 +200,9 @@ HTTP 206 with CORS `*`, correct PMTiles v3 magic, and total file lengths matchin
 the Git inventory. Their headers report zooms 3–10, gzip-compressed MVT, a
 `coverage` layer and a numeric `dbm` property. Sample shard bounds include parts
 of the western US and, in some cases, Alaska/Hawaii. We did not download the
-whole 826.9 MB, decode coverage tiles, render them or verify the complete
-national footprint and semantic accuracy. Higher zoom viewing would overzoom
+whole 826.9 MB or verify the complete national footprint and semantic accuracy.
+The October 25 follow-up adds bounded tile decoding, sampled H3 geometry checks
+and the Snoqualmie Pass render. Higher zoom viewing would overzoom
 this product rather than reveal new native detail. It is not interchangeable
 with a freshly generated full-detail FCC product.
 
@@ -51,8 +212,8 @@ manifest and grouped totals. The [six probes](experiments/fcc-browser-coverage/p
 record response sizes, CORS, header metadata and bounds. Each recorded initial
 range read was 16,384 bytes. These prove an accessible prebuilt candidate
 exists and provide a concrete hosting size. No FCC account is needed to
-retrieve these public derivative archives. Source validation and a real
-renderer check remain necessary before selecting it as the runtime provider.
+retrieve these public derivative archives. Source validation and product-level
+renderer/hosting checks remain necessary before selecting a runtime provider.
 
 A second concrete example,
 [jebowe3/nc_cell_signal_strength_map](https://github.com/jebowe3/nc_cell_signal_strength_map/tree/0becc44005765a5c49cc8174f345aa3ac073bef3/data),
@@ -146,8 +307,10 @@ The three completed builds and their decode assertions passed. The first
 validation attempt incorrectly treated decoded layer collections as features;
 the assertion traversal was corrected, and the complete experiment reran.
 The [result JSON](experiments/fcc-browser-coverage/tile-size-results.json) records
-commands, hashes, tile counts and checks. No browser render, HTTP Range server,
-R2 upload, cache hit, live latency or Cloudflare CPU measurement was performed.
+commands, hashes, tile counts and checks. This earlier Sedona measurement did
+not include browser rendering, HTTP range serving, R2 upload, cache hits, live
+latency or Cloudflare CPU measurement; the October 25 follow-up separately adds
+local range serving and renders for the national/public candidate comparison.
 Commands in that JSON shorten temporary paths for readability. Build-path
 metadata can change archive sizes by a few bytes; the table records the final
 completed run. Its three PMTiles files are retained locally under the earlier
@@ -224,10 +387,10 @@ archive, followed by representative larger/fragmented states and finally the
 complete selected US build. Record source vintage, bytes, peak build disk/RAM,
 zoom/detail policy, total PMTiles bytes and largest tile. Verify source identity
 and geometry behavior rather than selecting settings only to hit a size target.
-The previous direct FCC access restriction remains: no valid account token was
-available, and anonymous requests hit an edge 403. A custom build's national
-size cannot be confirmed until its selected corpus is built; the public
-prebuilt candidate above now provides a separately measured alternative.
+The October 25 follow-up above supersedes this original next step: authenticated
+downloads and one national layer are now verified, while the remaining batch
+is stopped. Full-corpus size still cannot be confirmed until that corpus is
+built; the public prebuilt candidate provides a separately measured alternative.
 
 Before a hosted trial, review the source download terms, preserve attribution
 and dates, make the FCC token a build-only secret, serve only allowlisted
