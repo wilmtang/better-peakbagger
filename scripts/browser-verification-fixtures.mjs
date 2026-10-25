@@ -38,6 +38,17 @@ export const storeUrls = Object.freeze({
     firefox: 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/',
 });
 
+// Mode changes may alter the gap to different renderers' zoom stacks, but
+// must keep the active pointer target anchored. Allow one CSS pixel rounding.
+export function assertMapToggleAnchor(before, after) {
+    for (const key of ['left', 'top', 'width', 'height']) {
+        if (!Number.isFinite(before?.[key]) || !Number.isFinite(after?.[key])
+            || Math.abs(before[key] - after[key]) > 1) {
+            throw new Error(`Map mode toggle moved or resized: ${JSON.stringify({ before, after })}`);
+        }
+    }
+}
+
 // Self-contained for serialization into either browser protocol. Both broad
 // verifiers must enforce the independent card row and native-map ownership.
 export function readPeakSunPlacement() {

@@ -10,6 +10,7 @@ import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.js
 
 import {
     activateToolbarTarget,
+    assertMapToggleAnchor,
     installAnalyzerBfcacheProbe,
     readAnalyzerBfcacheState,
     readAnalyzerChartState,
@@ -32,6 +33,17 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('map mode checks require an anchored action instead of identical renderer spacing', () => {
+    const rect = { left: 400, top: 300, width: 44, height: 32 };
+    assert.doesNotThrow(() => assertMapToggleAnchor(rect, { ...rect, top: 300.5 }));
+    for (const key of Object.keys(rect)) {
+        assert.throws(() => assertMapToggleAnchor(rect, { ...rect, [key]: rect[key] + 8 }),
+            /Map mode toggle moved or resized/);
+        assert.throws(() => assertMapToggleAnchor(rect, { ...rect, [key]: NaN }), /moved or resized/);
+    }
+    assert.throws(() => assertMapToggleAnchor(rect, null), /moved or resized/);
+});
 
 test('the report photo probe skips editor spacer images', () => {
     const dom = new JSDOM(`<div id="bpb-report-editor"><div class="bpb-re-surface"><figure>

@@ -12,6 +12,7 @@ import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-re
 import { verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
 
 import {
+    assertMapToggleAnchor,
     createFixtureCertificate,
     resolveFixtureFile,
     sendFixtureError,
@@ -416,14 +417,28 @@ const clickTerrainToggle = async cdp => {
 };
 
 const openTerrainWithTrustedClick = async cdp => {
-    await waitForPageState(cdp, `(() => {
+    const before = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const nativeMap = document.querySelector('iframe[src*="MasterMap.aspx" i]');
         let nativeReady = false;
         try { nativeReady = Boolean(nativeMap?.contentWindow?.mapsPlaceholder); } catch {}
-        return { ready: Boolean(toggle && !toggle.disabled && nativeReady) };
+        const rect = toggle?.getBoundingClientRect();
+        return { ready: Boolean(toggle && !toggle.disabled && nativeReady),
+            left: rect?.left, top: rect?.top, width: rect?.width, height: rect?.height };
     })()`);
-    return clickTerrainToggle(cdp);
+    const focused = await clickTerrainToggle(cdp);
+    const after = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const message = document.getElementById('bpb-terrain-message');
+        const rect = toggle?.getBoundingClientRect();
+        const active = toggle?.textContent === '2D' && frame?.style.opacity === '1';
+        const fallback = toggle?.textContent === '3D' && !frame && message?.getClientRects().length > 0;
+        return { ready: active || fallback,
+            left: rect?.left, top: rect?.top, width: rect?.width, height: rect?.height };
+    })()`);
+    assertMapToggleAnchor(before, after);
+    return focused;
 };
 
 const exerciseSolarBearing = async (cdp, label) => {
@@ -999,7 +1014,8 @@ try {
     const ascent2dMetrics = await measureNative2dGap(cdp);
     if (!Number.isFinite(ascent2dMetrics.gap)) throw new Error('Could not measure the 2D toggle against the native zoom');
     if (ascent2dMetrics.gap < 0) throw new Error(`Ascent 2D toggle overlaps the native zoom (gap ${ascent2dMetrics.gap}px)`);
-    if (!providerUiOnly && ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
+    // The shared slot can sit higher above Leaflet than MapLibre. Its position
+    // across activation is checked by openTerrainWithTrustedClick instead.
     await capture(cdp, path.join(outputDir, 'map-default-450.png'));
 
     // The showcase runs the production bundles without an extension worker,
@@ -1673,7 +1689,6 @@ try {
     const bigMap2dMetrics = await measureBigMap2dGap(cdp);
     if (!Number.isFinite(bigMap2dMetrics.gap)) throw new Error('Could not measure the BigMap 2D toggle against the native zoom');
     if (bigMap2dMetrics.gap < 0) throw new Error(`BigMap 2D toggle overlaps the native zoom (gap ${bigMap2dMetrics.gap}px)`);
-    if (bigMap2dMetrics.gap > 40) throw new Error(`BigMap 2D toggle floats too far above the native zoom (gap ${bigMap2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'bigmap-2d.png'));
 
     await showTerrainFailure(cdp, 'BigMap light failure', 'light');
