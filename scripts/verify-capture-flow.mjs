@@ -113,7 +113,9 @@ try {
     const extension = extensions.find(item => item.name === 'Better Peakbagger');
     assert.equal(extension.path, path.resolve('dist'));
     const control = await context.newPage();
-    await control.goto(`chrome-extension://${extension.id}/options/options.html`);
+    // Capture controls are popup-only. A query distinguishes this observer tab
+    // from the actual toolbar popup target without changing its trusted path.
+    await control.goto(`chrome-extension://${extension.id}/popup/popup.html?verification=observer`);
     const popupState = () => control.evaluate(() => {
         const win = chrome.extension.getViews({ type: 'popup' })[0];
         if (!win) return null;
@@ -158,7 +160,7 @@ try {
         if (!button || button.disabled) throw new Error(`Unavailable popup control: ${selector}`);
         button.click();
     }, selector);
-    const invoke = async page => {
+    const invoke = async (page, startCapture = false) => {
         await closePopup();
         await waitForCondition(async () => (await popupState()) === null, Boolean, { message: 'previous toolbar popup did not close' });
         // Reopening preserves the URL; each fixture document has a unique
@@ -178,10 +180,19 @@ try {
             });
             throw error;
         });
-        return control.evaluate(async ({ url, title }) =>
+        const tabId = await control.evaluate(async ({ url, title }) =>
             (await chrome.tabs.query({})).find(tab => tab.url === url && tab.title === title)?.id, { url: page.url(), title });
+        if (startCapture) {
+            assert.equal(await jobFor(tabId), null, 'opening the popup must not start a provider read');
+            await waitForCondition(popupState, ui => ui?.title === 'Prepare this activity',
+                { timeoutMs: 5000, message: 'explicit capture action was not displayed' });
+            await clickPopup('#state button');
+        }
+        return tabId;
     };
     const jobFor = tabId => control.evaluate(tabId => chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId }), tabId);
+    assert.notEqual((await jobFor(-1))?.error?.code, 'forbidden',
+        'the capture observer must use an authorized popup context');
     const terminal = tabId => waitForCondition(() => jobFor(tabId), job => ['ready', 'error', 'no-gps'].includes(job?.phase),
         { timeoutMs: 30_000, message: 'capture did not settle' });
     let activityId = 100;
@@ -194,7 +205,7 @@ try {
             const tab = await chrome.tabs.getCurrent();
             await chrome.tabs.update(tab.id, { active: true });
         });
-        return { page, tabId: await invoke(page) };
+        return { page, tabId: await invoke(page, true) };
     };
     const completed = [];
     for (const provider of ['garmin', 'strava']) {
@@ -274,7 +285,7 @@ try {
             await reopened.waitForLoadState('load');
             assert.equal(source.page.isClosed(), false, 'Reopen activity must preserve the source and any unsaved notes');
             assert.equal(state.exports, before, 'reopening must not export without a new toolbar gesture');
-            const reopenedId = await invoke(reopened);
+            const reopenedId = await invoke(reopened, true);
             assert.notEqual(reopenedId, source.tabId, 'recovery must capture the fresh tab, even with the same URL');
             const recovered = await terminal(reopenedId);
             assert.equal(recovered.phase, 'ready', JSON.stringify(recovered.error));
