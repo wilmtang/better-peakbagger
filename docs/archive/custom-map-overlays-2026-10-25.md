@@ -1,7 +1,8 @@
 # Custom map overlays: direct raster and vector sources
 
-Status: proposed design, October 25, 2026. Documentation only; no custom-source
-runtime, source editor, parser worker or new permission has been implemented.
+Status: implemented locally, October 25, 2026. The original design is retained
+below; the closure ledger records shipped behavior, intentional boundaries and
+remaining proof limits. See [the maintained user guide](../map-layers.md).
 
 ## Decision
 
@@ -769,36 +770,91 @@ Documentation-only validation for this proposal is recorded below separately.
 
 ### Fixed and verified
 
-- No runtime finding is claimed fixed. Current map, schema, bridge, storage,
-  privacy, build and vector-style owners were inspected to ground this proposal.
-- The installed dependency tree was inspected: MVT/PBF parsers are present
-  transitively through MapLibre, not declared as direct application imports.
-- Documentation validation: `node --test test/project/documentation.test.mjs`
-  passed all three checks (target extraction, heading slugs, and repository-wide
-  relative links/maintained paths). Runtime and browser tests were not run for
-  this documentation-only change.
+- A separate validated local registry, serialized atomic writes, revision checks,
+  ephemeral previews and typed selection/opacity handoffs are implemented.
+  Source editing stays inside the packaged editor. No proxy, remote host
+  permission or worker provider-fetch route was added.
+- The editor supports raster templates/TileJSON, GeoJSON and MVT, simple shared
+  style rules, metadata/manual zoom provenance, retained declared metadata
+  bounds, explicit host review, temporary Preview, bounded mode-specific probes,
+  remove/edit, inline URL/CORS help and keyboard recovery.
+- Native Leaflet and packaged MapLibre render all three formats. Raster headers
+  are checked before pixel allocation; parser workers have hard termination and
+  cancellation. Requests, raw byte caches, geometry, queue lengths and canvas
+  memory are bounded. HTTP 404/410 parent fallback is cropped/clipped; successful
+  empty tiles remain empty. Retry retains painted content/last good GeoJSON.
+  Vector overzoom redraws at display resolution to preserve stroke sizes.
+- Document-start Leaflet discovery and per-instance ownership support unnamed,
+  late and multiple maps. The shared adapter is independent of GPX/3D subject
+  gates. Custom requests follow the active renderer and stop when hidden or
+  removed. Separate map instances keep independent selections.
+- Pure/model regressions cover source validation, stale writes, shared-request
+  cancellation, parent clipping/re-encoding, zoom probes, raster allocation
+  bounds, atomic GeoJSON refresh, discovery and hard parser termination.
+- Final `npm test`: 3,557 passed, zero failed, including 13 focused custom-overlay
+  regressions. Final `npm run lint` passed with the eight already owned vendor/
+  cross-browser warnings. The final `npm run verify -- custom-overlays` passed
+  both browsers after the compact enlarged-editor correction. Relative-link
+  documentation checks also passed. No result is inferred from source inspection.
+- Hidden Chrome 156.0.8078.4 feature verification used actual HTTPS Peakbagger
+  documents and an actual HTTPS provider with and without CORS headers. Raster
+  pixels, packaged vector workers, all 15 native map-type fixtures, 2D/3D source
+  tests, multiple map instances, one-use Full Screen selection, 375px editor,
+  actual 200% browser zoom and anchored Retry passed. The provider observed both
+  page and extension request origins, with no cookies/referrers.
+- Hidden Firefox 158.0.1 passed native raster/GeoJSON/MVT pixels, packaged workers,
+  actual CORS denial/recovery, keyboard Retry, a 375px dark editor and all three
+  source formats in real 3D. Both browsers used 1000×760 desktop viewports and
+  hardware ANGLE/Metal on Apple M3 Pro, with software renderers rejected.
+- `npm run verify -- browsers` passed real-manifest startup/worker/bridge checks
+  in Chrome and Firefox, with teardown reported by both. Chrome restored BFCache;
+  Firefox exercised its nonpersisted lifecycle fallback. This is separate from
+  the feature fixtures and does not imply universal BFCache proof.
+- User guidance, architecture, privacy, storage/export inventory, parser notices,
+  build resources and the repeatable `custom-overlays` verification target are
+  updated. The three direct parser dependencies use the already locked versions.
 
 ### Intentionally not changed
 
-- No runtime, manifest permission, build asset, provider request path or public
-  privacy promise changes in this documentation task.
-- Initial scope excludes custom basemaps, arbitrary style imports, labels/icons,
-  feature popups, private authenticated sources, archives and offline downloads.
-  GeoJSON and MVT are included implementation work, not deferred substitutes.
-- Direct-only access intentionally leaves non-CORS providers unsupported.
+- Custom basemaps, arbitrary styles, labels/icons, feature popups, private
+  authenticated sources, archives and offline downloads remain outside scope.
+- Direct-only access leaves incompatible providers unsupported. Fetch failures
+  offer URL/CORS troubleshooting without claiming JavaScript proved CORS.
+- The existing trusted basemap loader, MAIN-world settings-write allowlist,
+  GPX/capture privacy rules and built-in provider policies remain separate.
+- Source definitions and keys are deliberately excluded from generic settings
+  exports, browser sync and GitHub backups. No custom data/location persistence
+  or automated live provider survey was introduced.
+- Four concurrent requests and a 64-item queue are shared by same-origin native
+  maps. The extension-origin terrain frame has its own four-request scheduler.
+  A single cross-origin/tab-wide scheduler from the proposal was not added;
+  enforcing that stricter aggregate budget needs an additional cross-world
+  coordination protocol. Each renderer remains bounded, without relaying bytes.
 
 ### Changed but not fully proven
 
-- This proposal and its active-plan index entry are documentation changes only.
-  Browser compatibility, CORS behavior, parser performance/worker delivery,
-  rendered parity, fallback quality and UI stability remain unimplemented and
-  unproven. Proposed numerical budgets require measurement before release.
-- Site-wide map coverage is a requirement, not a verified current capability.
-  The native type inventory predates this proposal; additional live map layouts,
-  injection/path variants and per-instance ownership need implementation proof.
-- Remote style support may later need a different shared rendering strategy for
-  labels/collision/sprites. Do not promise full MapLibre style compatibility by
-  relaxing the simple-rule parser or only supporting it in 3D.
+- The map-type matrix uses a faithful Leaflet renderer with synthetic native
+  routes/markers. It proves shared attachment and rendering across typed URLs,
+  not a fresh authenticated survey of every live Peakbagger layout, edit form,
+  path spelling, nested/cross-origin frame or browser/profile combination.
+- Local fixtures and hidden rendering do not establish native window placement,
+  physical pointer behavior, screen-reader output, every pan/zoom/partial-failure
+  transition, all geometry seam/overzoom combinations or low-end device budgets.
+  Chrome's enlarged editor and Firefox's narrow dark editor were inspected;
+  every theme/zoom/format combination has not been exhaustively inspected.
+- This feature had no original custom-source surface for a pre-feature browser
+  regression comparison. The enlarged-footer word-wrapping assertion does prove
+  failure with the earlier CSS restored read-only in the fixture and success
+  after removing that override. Other new UI checks have no historical failure
+  proof beyond the targeted model regressions and recorded rendered checks.
+- `npm run audit:ci` currently fails on three high findings in the existing
+  `web-ext` → `@devicefarmer/adbkit` → `node-forge` development-tool chain
+  (GHSA-86w9-cpqp-85rv). These versions predate this feature and are not shipped
+  runtime packages. The audit exception was not widened and unrelated tooling
+  was not changed. This remains a release-gate failure, not a passing audit.
+- Live source availability, provider-specific CORS policies and legal usage
+  rights are provider/user responsibilities; fixture success does not prove
+  that an arbitrary public URL will work.
 
 ## References
 

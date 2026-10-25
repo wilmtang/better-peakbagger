@@ -23,6 +23,9 @@ commits, verification, intentional boundaries and remaining live checks.
 - **Credentials remain local.** Manual settings files include them only with
   the unchecked-by-default **Include saved credentials (ImgBB, GitHub and Garmin)**
   option. GitHub settings backups never include credentials.
+- **Custom map sources remain local.** Their definitions and opacity use a
+  separate validated registry, excluded from settings files, sync and GitHub
+  backups. Saving a source makes it available on every map without enabling it.
 
 ## Transfer matrix
 
@@ -33,6 +36,7 @@ computer. “Settings file” means **Export settings**, not a complete profile 
 | --- | --- | --- | --- | --- |
 | 67 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
 | Nine device settings | `storage.local.bpbDeviceSettings` | No | No | No |
+| Custom map sources and opacity | `storage.local.bpbCustomMapOverlaysV1`, `bpbCustomMapOverlayPreferencesV1` | No | No | No |
 | ImgBB API key | `storage.local.bpbImgbbAuth` | No | Credential opt-in only | Never in GitHub settings backup |
 | GitHub token and repository | `storage.local.bpbGithubAuth` | No | Credential opt-in and complete connection only | Never in GitHub settings backup |
 | Garmin Personal API key | IndexedDB `bpb-garmin-v1` | No | Credential opt-in only | Never in GitHub settings backup |

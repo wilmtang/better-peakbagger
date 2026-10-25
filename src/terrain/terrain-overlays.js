@@ -7,6 +7,11 @@ import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM, rasterTileStatus } from '../maps/map-overlay-providers.js';
 import { readLayerSnapshot, mergeLandCooldowns } from '../maps/map-layer-protocol.js';
 import { createBCTileFetch } from '../maps/bc-land-client.js';
+import { createCustomRenderer } from '../maps/custom-overlay-render.js';
+import { createCustomParser } from '../maps/custom-overlay-parser.js';
+import { readCustomRegistry } from '../maps/custom-overlay-schema.js';
+import { createCustomClient, createCustomPool, customFailure } from '../maps/custom-overlay-client.js';
+import { probeCustomSource } from '../maps/custom-overlay-probe.js';
 
 // The authorized renderer searches its own catalog. No scene geometry, remote
 // tile URLs or executable styles cross the page/frame boundary.
@@ -14,6 +19,30 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     let snapshot = null, scenes = [], sceneRevision = 0, landRevision = 0, sourceRevision = 0, disposed = false, registered = false;
     let sentinelStatus = {}, wildfireStatus = {}, wildfire = null;
     const rasterStatus = {};
+    let custom = null, customParser = null, customGeneration = 0, customSignature = '';
+    const customPool = createCustomPool(), customTasks = new Map(); let taskListener = false;
+    const cancelCustomTasks = () => { for (const controller of customTasks.values()) controller.abort(); customTasks.clear(); };
+    const updateCustom = next => {
+        const signature = JSON.stringify([next.custom, next.customSession, next.customRevision, next.customReloads, next.customOpacity]);
+        if (signature === customSignature) return;
+        customSignature = signature; const generation = ++customGeneration;
+        if (!next.custom?.length) { custom?.dispose(); custom = null; customParser?.dispose(); customParser = null; return; }
+        const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
+        if (!runtime) return;
+        void runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_GET', mapId: next.customSession }).then(reply => {
+            if (disposed || generation !== customGeneration) return;
+            const registry = reply?.ok && readCustomRegistry(reply.registry);
+            if (!registry) return;
+            if (!custom) {
+                customParser = createCustomParser(runtime.getURL('custom-overlay/worker.js'));
+                custom = createCustomRenderer({ win: doc.defaultView, map, maplibre, pool: customPool, parse: customParser.parse, onStatus(id, status) {
+                    post('customLayerStatus', { id, status, revision: snapshot?.revision });
+                } });
+            }
+            const selected = registry.sources.filter(source => next.custom.some(item => item.id === source.id && item.sourceRevision === source.revision && item.enabled));
+            custom.update(selected, { ...reply.preferences, ...next.customOpacity }, next.customReloads);
+        }).catch(() => {});
+    };
     const loadingMessage = id => id === 'land' ? 'Loading public lands' : 'Loading slope shading';
     const reportRaster = (id, patch) => {
         rasterStatus[id] = { ...rasterStatus[id], ...patch };
@@ -107,6 +136,29 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             map.coveringTiles({ tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : 15 }).map(tile => tile.canonical));
     };
     return {
+        async customTask(data) {
+            if (data.action === 'cancel') { customTasks.get(data.requestId)?.abort(); return; }
+            cancelCustomTasks();
+            const controller = new AbortController(), runtime = (globalThis.browser || globalThis.chrome)?.runtime;
+            if (!runtime || disposed) return;
+            if (!taskListener) { map.on('movestart', cancelCustomTasks); taskListener = true; }
+            customTasks.set(data.requestId, controller);
+            const parser = createCustomParser(runtime.getURL('custom-overlay/worker.js'));
+            const client = createCustomClient({ fetchImpl: doc.defaultView.fetch.bind(doc.defaultView), parse: parser.parse, pool: customPool });
+            try {
+                // Resolve only an editor-approved draft from this tab's worker registry.
+                // Arbitrary page-supplied provider URLs never cross into this frame.
+                const reply = await runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_GET', mapId: data.mapId });
+                const registry = reply?.ok && readCustomRegistry(reply.registry);
+                const source = registry?.sources.find(item => item.id === data.id && item.revision === data.sourceRevision);
+                if (!source || controller.signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
+                const value = data.action === 'resolve' ? await client.resolve(source, controller.signal, false)
+                    : await probeCustomSource(client, source, { center: map.getCenter(), zoom: map.getZoom() }, controller.signal, '3D');
+                if (!controller.signal.aborted) post('customTaskReply', { requestId: data.requestId, mapId: data.mapId, reply: { ok: true, value } });
+            } catch (failure) {
+                post('customTaskReply', { requestId: data.requestId, mapId: data.mapId, reply: { ok: false, error: failure.name === 'AbortError' ? 'Test cancelled. The map or source changed.' : customFailure(failure) } });
+            } finally { customTasks.delete(data.requestId); client.clear(); parser.dispose(); if (!customTasks.size && taskListener) { map.off('movestart', cancelCustomTasks); taskListener = false; } }
+        },
         update(value) {
             const next = readLayerSnapshot(value); if (!next || snapshot && next.revision < snapshot.revision) return;
             const first = snapshot === null;
@@ -115,6 +167,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
                 next.landCooldowns = mergeLandCooldowns(snapshot.landCooldowns, next.landCooldowns);
             }
             snapshot = next;
+            updateCustom(next);
             if (!wildfire && next.state.wildfire.enabled) wildfire = createTerrainWildfires({ map, maplibre, document: doc, onStatus: status => {
                 wildfireStatus = status; post('layerStatus', { id: 'wildfire', revision: snapshot?.revision, ...status });
             } });
@@ -152,13 +205,13 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
                 }
             }
         },
-        refresh() { retainOverlays(); sentinel.refresh(); wildfire?.refresh(); },
+        refresh() { custom?.refresh(); retainOverlays(); sentinel.refresh(); wildfire?.refresh(); },
         tileError(source, failure) {
             for (const [id, current] of layers) if (current === source && !(id === 'sentinel' ? sentinelStatus.error : rasterStatus[id]?.error)) error(id, failure);
         },
         menuOpen: () => snapshot?.menuOpen === true,
-        suspend() { wildfire?.dispose(); wildfire = null; snapshot = null; sentinel.deactivate(); for (const id of [...layers.keys()]) remove(id); },
+        suspend() { cancelCustomTasks(); customGeneration++; customSignature = ''; custom?.dispose(); custom = null; customParser?.dispose(); customParser = null; wildfire?.dispose(); wildfire = null; snapshot = null; sentinel.deactivate(); for (const id of [...layers.keys()]) remove(id); },
         basemapChanged() { paint(); wildfire?.paint(); },
-        dispose() { disposed = true; wildfire?.dispose(); wildfire = null; sentinel.dispose(); for (const id of [...layers.keys()]) remove(id); tiles.dispose(); if (registered) maplibre.removeProtocol(protocol); },
+        dispose() { disposed = true; cancelCustomTasks(); if (taskListener) { map.off('movestart', cancelCustomTasks); taskListener = false; } customGeneration++; custom?.dispose(); customParser?.dispose(); wildfire?.dispose(); wildfire = null; sentinel.dispose(); for (const id of [...layers.keys()]) remove(id); tiles.dispose(); if (registered) maplibre.removeProtocol(protocol); },
     };
 }

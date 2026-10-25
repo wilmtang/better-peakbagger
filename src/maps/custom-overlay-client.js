@@ -3,6 +3,7 @@
 import { CUSTOM_LIMITS, customUrl, readCustomSource } from './custom-overlay-schema.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
+import { validateCustomRaster } from './custom-overlay-raster.js';
 
 export const customFailure = error => error?.code === 'access' ? 'Check the URL and the provider’s CORS settings. The source must allow browser access from this map.'
     : error?.code === 'origins' ? 'Review the tile provider hosts in Edit source before loading.'
@@ -21,8 +22,15 @@ export function createCustomPool() {
         queue.push(task); signal?.addEventListener('abort', abort, { once: true }); pump();
     }); } };
 }
+export function customPoolForWindow(win) {
+    let owner = win;
+    try { if (win.top.location.origin === win.location.origin) owner = win.top; } catch { /* Separate origin retains its own bounded scheduler. */ }
+    const key = Symbol.for('bpb.customOverlayPool');
+    return owner[key] || (owner[key] = createCustomPool());
+}
 export function createCustomClient({ fetchImpl = globalThis.fetch, pool = createCustomPool(), parse, bitmap = globalThis.createImageBitmap }) {
-    const request = (url, limit, signal, retry = true) => pool.run(async () => {
+    const cache = new Map(), flights = new Map(); let cacheBytes = 0;
+    const requestOnce = (url, limit, signal, retry = true) => pool.run(async () => {
         if (!customUrl(url)) throw new Error('Invalid source URL.');
         const origin = new URL(url).origin;
         if (pool.cooldowns.get(origin) > Date.now()) throw Object.assign(new Error('Provider cooldown.'), { code: 'rate-limit', retryAt: pool.cooldowns.get(origin) });
@@ -55,6 +63,28 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
             } finally { if (reader) { void reader.cancel().catch(() => {}); reader.releaseLock(); } else void response?.body?.cancel().catch(() => {}); signal?.removeEventListener('abort', abort); deadline.clear(); }
         }
     }, signal);
+    const request = async (url, limit, signal, retry = true) => {
+        if (!retry) return requestOnce(url, limit, signal, false);
+        if (signal?.aborted) throw new DOMException('Cancelled.', 'AbortError');
+        if (cache.has(url)) { const result = cache.get(url); cache.delete(url); cache.set(url, result); if (result.bytes.byteLength > limit) throw new Error('Source too large.'); return { ...result, bytes: result.bytes.slice(0) }; }
+        let flight = flights.get(url);
+        if (!flight) {
+            flight = { controller: new AbortController(), users: 0 };
+            const owner = flight;
+            flight.promise = requestOnce(url, limit, owner.controller.signal).then(result => {
+                while (cacheBytes + result.bytes.byteLength > 8 * 1024 * 1024 && cache.size) { const oldest = cache.keys().next().value; cacheBytes -= cache.get(oldest).bytes.byteLength; cache.delete(oldest); }
+                cache.set(url, result); cacheBytes += result.bytes.byteLength; return result;
+            }).finally(() => { if (flights.get(url) === owner) flights.delete(url); });
+            flights.set(url, flight);
+        }
+        flight.users++;
+        let rejectAbort;
+        const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+        const abort = () => rejectAbort(new DOMException('Cancelled.', 'AbortError'));
+        signal?.addEventListener('abort', abort, { once: true });
+        try { const result = await Promise.race([flight.promise, aborted]); if (result.bytes.byteLength > limit) throw new Error('Source too large.'); return { ...result, bytes: result.bytes.slice(0) }; }
+        finally { signal?.removeEventListener('abort', abort); if (--flight.users === 0) flight.controller.abort(); }
+    };
     const resolve = async (input, signal, retry = true) => {
         if (!input.source.metadataUrl) return { source: input, origins: [] };
         const { bytes } = await request(input.source.metadataUrl, CUSTOM_LIMITS.metadata, signal, retry);
@@ -64,6 +94,8 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
         const origins = [...new Set(metadata.tiles.map(url => new URL(url).origin))];
         const source = { ...input.source, tiles: metadata.tiles, scheme: metadata.scheme || 'xyz' };
         const maxDefault = metadata.tilejson.startsWith('3.') ? 30 : 22;
+        source.metadataZoom = { min: metadata.minzoom ?? 0, max: metadata.maxzoom ?? maxDefault,
+            minDeclared: metadata.minzoom != null, maxDeclared: metadata.maxzoom != null };
         for (const [field, key] of [['minNativeZoom', 'min'], ['maxNativeZoom', 'max']]) {
             const value = metadata[`${key}zoom`] ?? (key === 'min' ? 0 : maxDefault);
             if (!Number.isInteger(value) || value < 0 || value > 30) throw new Error('Invalid source zoom range.');
@@ -82,7 +114,8 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
     };
     const tile = async (source, coordinates, signal, fallback = true) => {
         const original = coordinates;
-        for (let delta = 0; delta <= (fallback ? 2 : 0) && original.z - delta >= source.source.minNativeZoom; delta++) {
+        const overzoom = Math.max(0, original.z - source.source.maxNativeZoom);
+        for (let delta = overzoom; delta <= overzoom + (fallback ? 2 : 0) && original.z - delta >= source.source.minNativeZoom; delta++) {
             const scale = 2 ** delta, n = 2 ** (original.z - delta);
             const canonical = { z: original.z - delta, x: Math.floor(original.x / scale), y: Math.floor(original.y / scale) };
             const x = (canonical.x % n + n) % n, y = source.source.scheme === 'tms' ? n - 1 - canonical.y : canonical.y;
@@ -91,7 +124,7 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
             try {
                 const result = await request(url, CUSTOM_LIMITS[source.kind], signal, fallback);
                 if (source.kind === 'raster') {
-                    if (!/^image\/(png|jpeg|webp)(?:;|$)/i.test(result.type)) throw new Error('Expected a PNG, JPEG or WebP tile.');
+                    validateCustomRaster(result.bytes, result.type, source.source.tileSize);
                     const image = await bitmap(new Blob([result.bytes], { type: result.type }));
                     const size = source.source.tileSize;
                     if (image.width !== image.height || ![size, size * 2].includes(image.width)) { image.close(); throw new Error('Unexpected tile dimensions.'); }
@@ -101,11 +134,11 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
                 const value = await parse({ kind: 'mvt', bytes: result.bytes, layers: [...new Set(source.appearance.rules.map(rule => rule.sourceLayer))],
                     transform: { scale, x: original.x - canonical.x * scale, y: original.y - canonical.y * scale } }, signal);
                 return { ...value, lower: delta > 0 };
-            } catch (error) { if (![404, 410].includes(error.status) || delta === (fallback ? 2 : 0) || canonical.z === source.source.minNativeZoom) throw error; }
+            } catch (error) { if (![404, 410].includes(error.status) || delta === overzoom + (fallback ? 2 : 0) || canonical.z === source.source.minNativeZoom) throw error; }
         }
         throw new Error('Tile is outside its zoom range.');
     };
-    return { request, resolve, tile, async geojson(source, signal) {
+    return { request, resolve, tile, evict() { cache.clear(); cacheBytes = 0; }, clear() { cache.clear(); cacheBytes = 0; for (const flight of flights.values()) flight.controller.abort(); flights.clear(); }, async geojson(source, signal) {
         const result = await request(source.source.dataUrl, CUSTOM_LIMITS.geojson, signal);
         return parse({ kind: 'geojson', bytes: result.bytes }, signal);
     } };

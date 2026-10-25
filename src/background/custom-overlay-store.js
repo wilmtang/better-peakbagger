@@ -5,6 +5,7 @@ import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry, readCu
 // The worker owns configuration only. There is deliberately no provider-fetch route.
 export function createCustomOverlayStore({ storage, canRead, canEdit }) {
     let queue = Promise.resolve();
+    const previews = new Map();
     const read = async () => {
         const data = await storage.get([CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY]);
         const registry = readCustomRegistry(data[CUSTOM_REGISTRY_KEY]);
@@ -19,7 +20,23 @@ export function createCustomOverlayStore({ storage, canRead, canEdit }) {
         const operation = async () => {
             try {
                 const current = await read();
-                if (!mutation) return { ok: true, ...current };
+                const mapKey = `${sender.tab?.id}:${message.mapId}`;
+                if (!mutation) {
+                    const preview = previews.get(mapKey);
+                    if (preview?.expires > Date.now()) current.registry.sources = [...current.registry.sources.filter(source => source.id !== preview.source.id), preview.source];
+                    else previews.delete(mapKey);
+                    return { ok: true, ...current };
+                }
+                if (message.type === 'CUSTOM_OVERLAYS_PREVIEW') {
+                    if (typeof message.mapId !== 'string' || !/^[a-z0-9-]{1,80}$/i.test(message.mapId)) throw new Error('Invalid map.');
+                    for (const [key, entry] of previews) if (entry.expires <= Date.now()) previews.delete(key);
+                    if (message.source == null) previews.delete(mapKey);
+                    else {
+                        const source = readCustomSource(message.source); if (!source || previews.size >= 32 || current.registry.sources.length >= 20 && !current.registry.sources.some(item => item.id === source.id)) throw new Error('Invalid preview.');
+                        previews.set(mapKey, { source, expires: Date.now() + 300000 });
+                    }
+                    return { ok: true };
+                }
                 if (message.type === 'CUSTOM_OVERLAYS_OPACITY') {
                     if (!customId(message.id) || !current.registry.sources.some(source => source.id === message.id)
                         || !Number.isFinite(message.opacity) || message.opacity < 0 || message.opacity > 100) throw new Error('Invalid opacity.');

@@ -37,6 +37,7 @@ import { createPackagedPageMatcher } from './sender-policy.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
 import { createMapLayerHandoff } from './map-layer-handoff.js';
 import { createBCLandRoutes } from './bc-land-routes.js';
+import { createCustomOverlayStore } from './custom-overlay-store.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
@@ -3449,6 +3450,18 @@ import { GarminError } from '../garmin/garmin-api.js';
         'options/inbox.html',
     ]);
     const isPopupPage = createPackagedPageMatcher(ext, ['popup/popup.html']);
+    const customPage = (sender, paths) => {
+        if (sender?.id !== ext.runtime.id || sender.tab && (!Number.isInteger(sender.tab.id) || !Number.isInteger(sender.frameId)
+            || sender.frameId > 0 && !isPeakbaggerSenderUrl(sender.tab.url))) return false;
+        try { const actual = new URL(sender.url); return paths.some(path => {
+            const expected = new URL(ext.runtime.getURL(path));
+            return actual.protocol === expected.protocol && actual.host === expected.host && actual.pathname === expected.pathname && !actual.username && !actual.password;
+        }); } catch { return false; }
+    };
+    const customEditor = sender => customPage(sender, ['custom-overlay/editor.html']);
+    const customReader = sender => customPage(sender, ['custom-overlay/editor.html', 'terrain/terrain.html']);
+    const customOverlays = createCustomOverlayStore({ storage: ext.storage.local,
+        canRead: sender => isPeakbaggerSender(sender) || customReader(sender), canEdit: customEditor });
     const bcLandRoutes = createBCLandRoutes({ ext, isPeakbaggerSender,
         isTerrainSender: sender => {
             if (sender.id !== ext.runtime.id || !Number.isInteger(sender.frameId) || sender.frameId < 1 || !isPeakbaggerSenderUrl(sender.tab?.url)) return false;
@@ -3831,6 +3844,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
+            if (typeof type === 'string' && type.startsWith('CUSTOM_OVERLAYS_')) return customOverlays.handle(message, sender);
             if (typeof type === 'string' && type.startsWith('GARMIN_')) return garminImports.handle(message, sender);
             const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? bcLandRoutes.handlers[type] : null;
             if (bcLandHandler) return bcLandHandler(message, sender);

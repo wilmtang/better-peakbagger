@@ -2368,6 +2368,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (data.type === 'layers') {
             const snapshot = readLayerSnapshot(data.snapshot);
             if (loaded && snapshot && overlays?.update(snapshot)) postOverlayView();
+        } else if (data.type === 'customTask') {
+            if (loaded) void overlays?.customTask(data);
         } else if (data.type === 'layerAction') {
             if (data.action === 'basemap') {
                 selectBasemap(data.selection);

@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createCustomOverlayControl } from './custom-overlay-control.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
@@ -18,13 +19,14 @@ import { bindMapLocationMenu } from './peak-weather-map.js';
 
 const MAP_PAGES = /\/(?:ascent|peak|bigmap)\.aspx$/i;
 const FRAME_SELECTOR = 'iframe#if, iframe[src*="MasterMap.aspx" i]';
-export function installMapLayers(win = window) {
+export function installMapLayers(win = window, { fixedMap = null, secondary = false } = {}) {
     const doc = win.document;
     // An embedded MasterMap's outer page owns controls even before its map has
     // loaded. Standalone MasterMap and other native map shells own themselves.
-    try { if (win.parent !== win && MAP_PAGES.test(win.parent.location.pathname)) return null; } catch { /* Standalone owner. */ }
+    try { if (!fixedMap && win.parent !== win && MAP_PAGES.test(win.parent.location.pathname) && win.parent.document.querySelector(FRAME_SELECTOR) === win.frameElement) return null; } catch { /* Standalone owner. */ }
     const locationMenu = createMapLocationMenu({ window: win });
     const state = Schema.mapOverlayState();
+    let custom = null, handoffActive = !secondary;
     let touched = false, preferencesReady = false, revision = 1, capture = null, landTypes = Schema.mapLandTypes();
     let binding = null, polling = null, frameMode = false, booting = false, active = true, disposed = false;
     let terrainView = null, snotelAllowed = false, requestId = 0, stations = [], coverage = null;
@@ -60,7 +62,7 @@ export function installMapLayers(win = window) {
         land: publicLandInfo(null),
         snotel: { legend: 'NRCS active stations in the visible map. Station observations may differ from route conditions.' },
     };
-    const post = detail => win.postMessage({ __bpbMapLayers: true, dir: 'toCS', ...detail }, win.location.origin);
+    const post = detail => { if (detail.type !== 'handoffState' || handoffActive) win.postMessage({ __bpbMapLayers: true, dir: 'toCS', ...detail }, win.location.origin); };
     const terrain = (type, detail = {}) => win.postMessage({ __bpbTerrain: true, dir: 'toCS', type, ...detail }, win.location.origin);
     const snowCard = detail => win.postMessage({ __bpbPeakSnow: true, dir: 'toCS', ...detail }, win.location.origin);
     const frameLifecycle = createMapFrameLifecycle({ document: doc, MutationObserver: win.MutationObserver, selector: FRAME_SELECTOR });
@@ -75,10 +77,10 @@ export function installMapLayers(win = window) {
             statuses.land = { ...statuses.land, ...info };
         }
         control.render({ state, landTypes, statuses, coverage, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
-        position();
+        custom?.refresh(); position();
     };
     const snapshot = () => ({ revision, state, landTypes, capture, menuOpen: control.isOpen(), landCooldowns: statuses.land.providerCooldowns,
-        cooldowns: Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id, statuses[id]?.retryAt || 0])) });
+        cooldowns: Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id, statuses[id]?.retryAt || 0])), ...custom?.snapshot() });
     const relay = () => {
         if (relayFrame !== null) return;
         // Keep the parked bridge current too. Otherwise its loaded replay could
@@ -190,6 +192,13 @@ export function installMapLayers(win = window) {
         },
         onOpen() { relay(); },
     });
+    custom = createCustomOverlayControl({ win, panel: control.element.querySelector('.bpb-layers-panel'), onChange: () => { revision++; relay(); post({ type: 'handoffState', snapshot: snapshot() }); },
+        readView: () => frameMode && terrainView ? { ...terrainView, center: { lat: (terrainView.bounds[1] + terrainView.bounds[3]) / 2, lng: (terrainView.bounds[0] + terrainView.bounds[2]) / 2 } }
+            : binding ? { center: binding.map.getCenter(), zoom: binding.map.getZoom() } : null });
+    const activateMap = () => win.dispatchEvent(new win.CustomEvent('bpb-map-owner', { detail: { mapId: custom.mapId } }));
+    const activeMap = event => { handoffActive = event.detail?.mapId === custom.mapId; if (handoffActive) post({ type: 'handoffState', snapshot: snapshot() }); };
+    control.element.addEventListener('pointerdown', activateMap); control.element.addEventListener('focusin', activateMap);
+    win.addEventListener('bpb-map-owner', activeMap);
     control.element.hidden = true; doc.body.append(control.element);
     const position = () => {
         // A visible control could mark defaults as user-owned before the
@@ -203,26 +212,34 @@ export function installMapLayers(win = window) {
         control.position(rect);
     };
     const unbind = () => {
-        nativeReveal.cancel();
+        nativeReveal.cancel(); custom?.suspend();
         if (!binding) return;
         binding.map.off('moveend', refresh);
         binding.map.off('movestart', binding.moveStarted);
+        binding.map.off('unload', binding.unloaded);
+        binding.map.getContainer().removeEventListener('pointerdown', activateMap);
         binding.unbindLocation();
         binding.observer?.disconnect(); binding.sentinel.dispose(); binding.engine.dispose();
+        if (binding.map.__bpbOverlayOwner === win) delete binding.map.__bpbOverlayOwner;
         binding = null;
     };
     const bind = () => {
         if (!active || disposed || frameMode || booting) return false;
         const frame = frameLifecycle.current();
         const candidates = [];
-        try { if (frame?.contentWindow) candidates.push({ win: frame.contentWindow, frame }); } catch { /* Wait for replacement. */ }
+        try { if (!fixedMap && frame?.contentWindow) candidates.push({ win: frame.contentWindow, frame }); } catch { /* Wait for replacement. */ }
         candidates.push({ win, frame: null });
         for (const candidate of candidates) {
             try {
-                const owner = candidate.win, map = [owner.mapsPlaceholder, owner.map].find(item => item?.getBounds && item?.eachLayer && item?.on && item?.off);
+                const owner = candidate.win, map = (fixedMap ? [fixedMap] : [owner.mapsPlaceholder, owner.map, ...owner[Symbol.for('bpb.leafletMaps')] || []]).find(item => !item?.__bpbOverlayRemoved && item?.getBounds && item?.eachLayer && item?.on && item?.off && (!item.__bpbOverlayOwner || item.__bpbOverlayOwner === win || candidate.frame));
                 if (!map || !owner.L?.GridLayer || !owner.L?.marker) continue;
                 if (binding?.map === map && binding.win.document === owner.document) { position(); return true; }
-                unbind();
+                const claim = map.__bpbOverlayOwner;
+                if (claim && claim !== win) {
+                    if (candidate.frame && claim === candidate.win) candidate.win.dispatchEvent(new candidate.win.CustomEvent('bpb-overlay-yield', { detail: { map } }));
+                    else continue;
+                }
+                unbind(); map.__bpbOverlayOwner = win;
                 const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onWildfireStatus(status) {
                     if (!active || frameMode || booting) return;
                     const previous = statuses.wildfire.retryAt || 0;
@@ -258,12 +275,14 @@ export function installMapLayers(win = window) {
                     onCapture: target => { capture = target; revision++; relay(); post({ type: 'handoffState', snapshot: snapshot() }); },
                 });
                 const unbindLocation = bindMapLocationMenu({ ownerWindow: owner, map, frame: candidate.frame, menu: locationMenu });
-                const moveStarted = () => { if (binding?.map === map) binding.moving = true; navigationStarted(); };
-                binding = { ...candidate, map, engine, sentinel, unbindLocation, moveStarted, moving: false };
+                const moveStarted = () => { if (binding?.map === map) binding.moving = true; custom?.cancelTasks(); navigationStarted(); };
+                const unloaded = () => { map.__bpbOverlayRemoved = true; if (secondary) lifecycle.dispose(); else { unbind(); control.element.hidden = true; start(); } };
+                binding = { ...candidate, map, engine, sentinel, unbindLocation, moveStarted, unloaded, moving: false };
                 map.on('movestart', moveStarted);
                 map.on('moveend', refresh);
+                map.on('unload', unloaded); map.getContainer().addEventListener('pointerdown', activateMap);
                 if (win.ResizeObserver) { binding.observer = new win.ResizeObserver(position); binding.observer.observe(candidate.frame || map.getContainer()); }
-                apply(); refresh(); return true;
+                custom?.mode(false); custom?.bind(owner, map); apply(); refresh(); return true;
             } catch (error) { console.warn('Better Peakbagger: map layers could not bind', error); unbind(); }
         }
         if (binding && (!binding.frame?.isConnected || binding.win.document !== binding.map.getContainer()?.ownerDocument)) unbind();
@@ -315,7 +334,7 @@ export function installMapLayers(win = window) {
                 const next = readLayerSnapshot(data.snapshot);
                 if (next) {
                     statuses.land.providerCooldowns = mergeLandCooldowns(statuses.land.providerCooldowns, next.landCooldowns);
-                    Object.assign(state, next.state); capture = next.capture; landTypes = next.landTypes;
+                    custom?.adopt(next.custom); Object.assign(state, next.state); capture = next.capture; landTypes = next.landTypes;
                     for (const id of Schema.MAP_OVERLAY_IDS) if (next.cooldowns[id] > Date.now()) statuses[id] = { ...statuses[id], retryAt: Math.max(statuses[id].retryAt || 0, next.cooldowns[id]), error: true, retry: true, message: 'Map service is busy. Try again later.' };
                     changed(); loadStations();
                 }
@@ -350,18 +369,20 @@ export function installMapLayers(win = window) {
                 if (statuses.snotel.retryAt > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
             }
         }
-        if (data.__bpbTerrain !== true) return;
+        if (data.__bpbTerrain !== true || secondary) return;
+        if (data.dir === 'toPage' && data.type === 'customTaskReply') { custom?.taskReply(data); return; }
+        if (data.dir === 'toPage' && data.type === 'customLayerStatus') { custom?.status(data.id, data.status); return; }
         if (data.dir === 'toCS' && data.type === 'init') {
             locationMenu.close();
-            booting = true; stopPolling();
+            booting = true; custom?.mode(true); stopPolling();
             // Recreate the native adapter only when returning to 2D.
             unbind();
             requestId++; post({ type: 'cancel' });
         } else if (data.dir === 'toPage' && data.type === 'loaded') {
             stopPolling();
-            frameMode = true; terrainMoving = false; booting = false; revision++; apply(); loadStations();
+            custom?.mode(true); frameMode = true; terrainMoving = false; booting = false; revision++; apply(); loadStations();
         } else if (data.dir === 'toPage' && ['destroyed', 'error'].includes(data.type)) {
-            frameMode = booting = terrainMoving = false; terrainView = null; revision++; start(); apply(); refresh();
+            custom?.mode(false); frameMode = booting = terrainMoving = false; terrainView = null; revision++; start(); apply(); refresh();
         } else if (data.dir === 'toPage' && data.type === 'layerMoveStart' && frameMode) {
             terrainMoving = true; navigationStarted();
         } else if (data.dir === 'toPage' && data.type === 'layerStatus' && frameMode) {
@@ -396,9 +417,20 @@ export function installMapLayers(win = window) {
         onSuspend() { active = false; locationMenu.close(); cancelReveal(); stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
         onResume() { active = true; start(); post({ type: 'preferences' }); },
         onDispose() { disposed = true; active = false; stopPolling(); clearTimeout(stationTimer); if (relayFrame !== null) win.cancelAnimationFrame(relayFrame);
-            post({ type: 'cancel' }); unbind(); frameLifecycle.dispose(); themeObserver.disconnect(); control.dispose(); locationMenu.dispose();
-            win.removeEventListener('message', handle); win.removeEventListener('scroll', position, true); win.removeEventListener('resize', position); },
+            post({ type: 'cancel' }); unbind(); frameLifecycle.dispose(); themeObserver.disconnect(); custom?.dispose(); control.dispose(); locationMenu.dispose();
+            win.removeEventListener('message', handle); win.removeEventListener('scroll', position, true); win.removeEventListener('resize', position); win.removeEventListener('bpb-overlay-yield', yieldMap); win.removeEventListener('bpb-map-owner', activeMap); },
     });
+    const yieldMap = event => { if (event.detail?.map === binding?.map) lifecycle.dispose(); };
+    win.addEventListener('bpb-overlay-yield', yieldMap);
     return { dispose: () => lifecycle.dispose() };
 }
-if (typeof window !== 'undefined') installMapLayers();
+if (typeof window !== 'undefined') {
+    installMapLayers();
+    const extra = new WeakSet();
+    const attach = map => {
+        if (!map?.getContainer || map.__bpbOverlayOwner || extra.has(map)) return;
+        extra.add(map); installMapLayers(window, { fixedMap: map, secondary: true });
+    };
+    for (const map of [window.mapsPlaceholder, window.map, ...window[Symbol.for('bpb.leafletMaps')] || []]) attach(map);
+    window.addEventListener('bpb-map-ready', event => attach(event.detail?.map));
+}

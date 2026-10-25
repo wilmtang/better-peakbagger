@@ -1,5 +1,60 @@
 # Map overlays
 
+## Custom sources
+
+Choose **Overlays → Add custom overlay** on any interactive Peakbagger map, or
+manage the same device-local library from Settings. Saved sources are available
+on peak, ascent, BigMap, recent/different-route, list, climber and other native
+Leaflet maps. Each map starts with custom sources off; enable up to three at a
+time. Selection survives supported 2D/3D switches and the one-use Full Screen
+handoff. Separate maps have separate selections.
+
+Supported formats are raster PNG/JPEG/WebP XYZ tiles, MVT/PBF vector tiles and
+small GeoJSON FeatureCollections. Tiled sources accept a `{z}/{x}/{y}` template
+or TileJSON 2/3 metadata. **Advanced** offers reversed Y (TMS), raster tile size,
+native zoom range, optional bounds and attribution. Metadata supplies the range
+where declared; raw templates start at 0–18, marked unchecked. Manual bounds
+survive subsequent metadata reads; **Use source values** restores discovery.
+The effective maximum is 22, while declared metadata values are retained.
+Zooming beyond the maximum enlarges/clips the last available detail; below the
+minimum the layer requests no tiles and says **Zoom in**.
+
+Vector sources need point, line or polygon rules. MVT rules also name the vector
+source layer; TileJSON layer IDs are offered as suggestions. Both renderers use
+the same color, CSS-pixel line width/radius and fill opacity. Provider feature
+properties are discarded, overlays are noninteractive, and native routes,
+markers and interactions stay above them. Full MapLibre styles, labels, icons,
+authenticated services, offline archives and custom basemaps are not supported.
+
+**Preview** is temporary until saved. Closing an unsaved edit restores that
+map's previous selection. **Test source** explicitly samples at most six zoom
+levels at the current center, from the active 2D or 3D request origin. It reports
+only those samples, never changes the range or proves global coverage. A valid
+empty tile stays empty. HTTP 404/410 may fall back to at most two parent levels
+during rendering, with **Lower detail** feedback; probes do not borrow parents.
+
+All provider requests use direct HTTPS with CORS, omit cookies/referrers and
+reject redirects. Additional hosts discovered in metadata require review.
+**Check URL / CORS** guidance explains configuration failures without claiming
+every failed fetch proves CORS. A working image link alone does not establish
+canvas/WebGL access. Use a public CORS-compatible endpoint; BPB supplies no proxy
+or provider permission bypass. HTTP access errors and rate limits keep their
+own feedback. Retry retains painted tiles or last good GeoJSON; opacity changes
+do not fetch the source again. Hidden/removed renderers cancel their work.
+
+Keep URL keys public: Peakbagger page scripts can see source configuration.
+Definitions and opacity stay in separate local records, excluded from generic
+settings export, browser sync and GitHub backup. The extension does not persist
+custom geometry, tile data or probe locations. See [privacy](../PRIVACY.md).
+
+Implementation verification: `node scripts/verify-custom-overlays.mjs` (Chrome)
+and the same command with `--firefox`, after `npm run build`. They use the real
+unpacked extension, HTTPS fixtures, actual CORS enforcement, packaged parser
+workers and hardware-rendered 3D. Fixture map types exercise the shared adapter;
+they are not a fresh survey of every live Peakbagger host layout.
+
+## Built-in overlays
+
 The **Overlays** button at the upper-left of ascent, peak, Full Screen and
 standalone native maps opens one compact overlay menu. The basemap selector
 stays at the upper-right in both 2D and 3D. Enable any combination of overlays;

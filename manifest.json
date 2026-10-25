@@ -49,6 +49,19 @@
   },
   "content_scripts": [
     {
+      "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
+      "js": ["content/map-discovery.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
+      "js": ["content/custom-overlays-bridge.js"],
+      "run_at": "document_end",
+      "all_frames": true
+    },
+    {
       "matches": [
         "https://www.peakbagger.com/*MasterMap.aspx*",
         "https://peakbagger.com/*MasterMap.aspx*",
@@ -65,7 +78,9 @@
         "https://peakbagger.com/climber/Ascent.aspx*",
         "https://peakbagger.com/climber/ascent.aspx*",
         "https://peakbagger.com/*BigMap.aspx*",
-        "https://peakbagger.com/*bigmap.aspx*"
+        "https://peakbagger.com/*bigmap.aspx*",
+        "https://www.peakbagger.com/*",
+        "https://peakbagger.com/*"
       ],
       "js": [
         "content/map-layers.js"
@@ -94,7 +109,9 @@
         "https://peakbagger.com/climber/Ascent.aspx*",
         "https://peakbagger.com/climber/ascent.aspx*",
         "https://peakbagger.com/*BigMap.aspx*",
-        "https://peakbagger.com/*bigmap.aspx*"
+        "https://peakbagger.com/*bigmap.aspx*",
+        "https://www.peakbagger.com/*",
+        "https://peakbagger.com/*"
       ],
       "js": [
         "content/peak-snow.js"
@@ -476,7 +493,7 @@
     {
       "resources": [
         "terrain/terrain.html",
-        "photos/guide.html"
+        "photos/guide.html", "custom-overlay/editor.html"
       ],
       "matches": [
         "https://www.peakbagger.com/*",

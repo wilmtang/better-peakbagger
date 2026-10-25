@@ -542,6 +542,12 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 if (!snapshot || latestLayers && snapshot.revision < latestLayers.revision) return;
                 latestLayers = snapshot;
                 if (frameLoaded && !suspended) postToFrame('layers', { snapshot });
+            } else if (data.type === 'customTask') {
+                if (!frameLoaded || suspended || !['resolve', 'test', 'cancel'].includes(data.action)
+                    || typeof data.requestId !== 'string' || !/^[a-z0-9-]{1,80}$/i.test(data.requestId)
+                    || typeof data.mapId !== 'string' || !/^[a-z0-9-]{1,80}$/i.test(data.mapId)) return;
+                postToFrame('customTask', { requestId: data.requestId, mapId: data.mapId, action: data.action,
+                    id: typeof data.id === 'string' ? data.id.slice(0, 80) : '', sourceRevision: Number.isSafeInteger(data.sourceRevision) ? data.sourceRevision : 0 });
             } else if (data.type === 'layerAction') {
                 if (!frameLoaded || suspended) return;
                 if (data.action === 'basemap' && typeof data.selection === 'string' && /^(?:terrain|vector|\d{1,3})$/.test(data.selection)) {
@@ -605,6 +611,10 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             postToPage('loaded', { navTop: data.navTop, camera: terrainCamera.clean(data.camera) });
         } else if (data.type === 'layerResume') {
             if (!suspended && frameLoaded && latestLayers) postToFrame('layers', { snapshot: latestLayers });
+        } else if (data.type === 'customTaskReply') {
+            if (!suspended) postToPage('customTaskReply', { requestId: data.requestId, mapId: data.mapId, reply: data.reply });
+        } else if (data.type === 'customLayerStatus') {
+            if (!suspended && latestLayers?.custom.some(item => item.id === data.id) && data.revision === latestLayers.revision) postToPage('customLayerStatus', { id: data.id, status: data.status });
         } else if (data.type === 'layerStatus') {
             const status = readLayerStatus(data);
             if (!suspended && status && status.revision === latestLayers?.revision) postToPage('layerStatus', status);

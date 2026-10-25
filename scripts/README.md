@@ -128,6 +128,7 @@ independent of the existing targets.
 - [verify-air-quality.mjs](verify-air-quality.mjs) — lazy AQI requests and refresh stability through the weather browser harness.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
+- [verify-custom-overlays.mjs](verify-custom-overlays.mjs) — real unpacked overlay editor, direct HTTPS/CORS tiles, packaged vector workers, map ownership and 2D/3D rendering.
 - [verify-peak-cards.mjs](verify-peak-cards.mjs)
 - [verify-summit-cloud.mjs](verify-summit-cloud.mjs) — hidden Chrome/Firefox
   forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.

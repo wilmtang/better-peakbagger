@@ -57,6 +57,16 @@ and stylesheet are copied unmodified under `vendor/`.
 - License: BSD 3-Clause
 - Packaged license text: `vendor/maplibre-LICENSE.txt` (copied from the npm package at build time)
 
+### Vector tile codecs
+
+Custom overlays bundle `@mapbox/vector-tile` and `pbf` (BSD 3-Clause), and
+`@maplibre/vt-pbf` (MIT) into the packaged parser worker. They decode MVT geometry
+and re-encode cropped parent tiles for the shared 2D/3D rendering contract.
+Their complete license notices are included in `THIRD_PARTY_NOTICES.txt`.
+
+- Sources: [vector-tile-js](https://github.com/mapbox/vector-tile-js),
+  [pbf](https://github.com/mapbox/pbf), [vt-pbf](https://github.com/maplibre/vt-pbf)
+
 ### Marked
 
 Better Peakbagger distributes the locked, unmodified Marked UMD browser build

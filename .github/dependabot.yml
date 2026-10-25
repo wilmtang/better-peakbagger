@@ -57,6 +57,9 @@ updates:
           - tz-lookup
           - suncalc
           - jszip
+          - "@mapbox/vector-tile"
+          - "@maplibre/vt-pbf"
+          - pbf
       # Copied into dist/vendor as browser builds.
       copied-runtime:
         patterns:

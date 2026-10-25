@@ -1,11 +1,5 @@
 # Active plans
 
-- [Custom map overlays: direct raster and vector sources](custom-map-overlays.md)
-  — proposed; user-managed raster tiles, MVT vector tiles and GeoJSON on every
-  Peakbagger map, including recent/different-route groups, in 2D and supported
-  3D, with direct CORS requests, shared appearance rules,
-  device-local definitions and explicit zoom/failure/lifecycle verification gates.
-
 - [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
   — implemented in focused commits: collapsed-read/calm-axis fixes, shared
   eligibility, chart math, card styles, pointer gestures and latest-read ownership.
@@ -80,6 +74,11 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [custom map overlay implementation](../archive/custom-map-overlays-2026-10-25.md)
+adds direct raster, GeoJSON and MVT sources across native and supported 3D maps.
+Its ledger records Chrome/Firefox fixture evidence, the separate cross-origin
+request budgets, live/native proof limits and the existing dependency-audit failure.
 
 The [settings hierarchy audit](../archive/settings-hierarchy-audit-2026-10-25.md)
 is complete locally: readable subsection headings, a Features group under

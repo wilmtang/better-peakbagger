@@ -6,7 +6,7 @@ export const CUSTOM_PREFERENCES_KEY = 'bpbCustomMapOverlayPreferencesV1';
 export const CUSTOM_LIMITS = Object.freeze({ sources: 20, active: 3, url: 4096, registry: 262144,
     metadata: 262144, raster: 4194304, mvt: 2097152, geojson: 5242880,
     features: 10000, vertices: 100000, rules: 16, zoom: 22, deadline: 15000 });
-export const customId = value => typeof value === 'string' && /^custom:[0-9a-f-]{36}$/.test(value);
+export const customId = value => typeof value === 'string' && /^custom:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const finite = (value, min, max) => Number.isFinite(value) && value >= min && value <= max;
 const text = (value, max) => typeof value === 'string' && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value);
@@ -17,7 +17,7 @@ export function customUrl(value, tiled = false) {
     try {
         const parsed = new URL(value.replaceAll(/\{[zxy]\}/g, '0'));
         if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.hash
-            || !parsed.hostname.includes('.') || /(?:^localhost$|\.localhost$|\.local$|\.internal$|\.test$|\.invalid$)/i.test(parsed.hostname)
+            || !parsed.hostname.includes('.') || parsed.hostname.endsWith('.') || /(?:^localhost$|\.localhost$|\.local$|\.internal$|\.test$|\.invalid$)/i.test(parsed.hostname)
             || /^[\d.]+$/.test(parsed.hostname) || parsed.hostname.includes(':') || parsed.hostname.includes('[')) return null;
         return value;
     } catch { return null; }
@@ -48,13 +48,19 @@ export function readCustomSource(value) {
                 || !finite(raw.minNativeZoom, 0, CUSTOM_LIMITS.zoom) || !finite(raw.maxNativeZoom, raw.minNativeZoom, CUSTOM_LIMITS.zoom)) return null;
             Object.assign(source, { scheme: raw.scheme, minNativeZoom: raw.minNativeZoom, maxNativeZoom: raw.maxNativeZoom,
                 zoomOrigin: Object.fromEntries(['min', 'max'].map(key => [key, ['metadata', 'manual', 'default'].includes(raw.zoomOrigin?.[key]) ? raw.zoomOrigin[key] : 'default'])) });
+            if (raw.metadataZoom != null) {
+                if (!Number.isInteger(raw.metadataZoom.min) || !Number.isInteger(raw.metadataZoom.max)
+                    || !finite(raw.metadataZoom.min, 0, 30) || !finite(raw.metadataZoom.max, raw.metadataZoom.min, 30)) return null;
+                source.metadataZoom = { min: raw.metadataZoom.min, max: raw.metadataZoom.max,
+                    minDeclared: raw.metadataZoom.minDeclared === true, maxDeclared: raw.metadataZoom.maxDeclared === true };
+            }
             if (value.kind === 'raster') { if (![256, 512].includes(raw.tileSize)) return null; source.tileSize = raw.tileSize; }
         }
         source.bounds = customBounds(raw.bounds);
         const origins = value.approvedOrigins;
         if (!Array.isArray(origins) || origins.length > 4 || new Set(origins).size !== origins.length
             || origins.some(origin => !customUrl(origin) || new URL(origin).origin !== origin)) return null;
-        const endpoints = value.kind === 'geojson' ? [source.dataUrl] : source.tiles;
+        const endpoints = value.kind === 'geojson' ? [source.dataUrl] : [...source.tiles, ...source.metadataUrl ? [source.metadataUrl] : []];
         if (endpoints.some(endpoint => !origins.includes(new URL(endpoint).origin))) return null;
         const attribution = value.attribution || {};
         if (!text(attribution.text || '', 600) || attribution.url && !customUrl(attribution.url)) return null;

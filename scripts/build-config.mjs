@@ -48,6 +48,10 @@ export function resolvePageSource(name) {
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
+    { out: 'content/map-discovery.js', sources: ['maps/map-discovery.js'] },
+    { out: 'custom-overlay/worker.js', sources: ['maps/custom-overlay-worker.js'] },
+    { out: 'custom-overlay/editor.js', sources: ['maps/custom-overlay-editor.js'] },
+    { out: 'content/custom-overlays-bridge.js', sources: ['maps/custom-overlay-bridge.js'] },
     { out: 'options/garmin.js', sources: ['garmin-settings-page.js'], page: true },
     { out: 'options/inbox.js', sources: ['garmin-inbox-page.js'], page: true },
     { out: 'content/profile-editor.js', sources: ['reports/report-editor.js'] },
@@ -137,6 +141,8 @@ export const AUTHORED_SOURCE_ROOTS = Object.freeze([...new Set(
 
 // Static files copied verbatim into dist. [from (root-relative), to (dist-relative)].
 export const COPY_FILES = [
+    ['src/maps/custom-overlay-editor.html', 'custom-overlay/editor.html'],
+    ['src/maps/custom-overlay-editor.css', 'custom-overlay/editor.css'],
     ['options/inbox.html', 'options/inbox.html'],
     ['options/garmin.css', 'css/garmin.css'],
     ['third_party/fit-file-parser-LICENSE.txt', 'vendor/fit-file-parser-LICENSE.txt'],

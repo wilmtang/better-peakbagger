@@ -32,6 +32,11 @@ Data leaves the browser only when a feature requires it:
   **Send** button. Final Upload, Import, and Save actions remain manual.
 - **Media hosts** receive ordinary browser requests when remote report media is
   displayed.
+- **Custom overlay providers** receive direct metadata, tile or GeoJSON requests
+  only after the user enables, previews or tests a source. Tile coordinates reveal
+  the viewed/tested area. Requests omit cookies and referrers and use ordinary
+  browser CORS; there is no proxy or extra provider permission. Public URL keys
+  remain visible to the Peakbagger page and provider.
 
 The Sun and Moon calculator is not a data-transfer feature. Its coordinate,
 date, time, map bearing, and astronomical results remain in the Peakbagger tab.
@@ -76,6 +81,7 @@ permission to read device location. It covers:
 | `storage.sync` | Theme, units, chart, route/map appearance, weather models/metric/card placement, capture, editor, beta-filter, favorite-source and photo-tool appearance preferences | May sync through the browser account; included in settings files and optional GitHub settings backup. No coordinates, weather results or annotation contents. |
 | `storage.local` | Device settings (map dimensions, terrain cache budget and GitHub transfer consent), DEM cache index, custom favorites, ignored climbers, Buddy cache/intents, GitHub token/repository, ImgBB API key, report drafts and backup/sync state | Device-local; never browser-synced. |
 | `storage.sync` map overlay preferences | Raster opacity percentages and selected public-land type IDs | Included in settings sync, exports and backups. Enabled layers remain in page memory. |
+| `storage.local.bpbCustomMapOverlaysV1` and `bpbCustomMapOverlayPreferencesV1` | User-entered overlay definitions, public URLs/keys, attribution, appearance and opacity | Device-local; excluded from browser sync, settings exports and GitHub backups. Remove sources in the overlay editor. Custom enablement, parsed geometry, tile bytes and probe locations are not persisted by the extension. |
 | `storage.local` public snow catalog | Public SNOTEL station metadata only, with a fetch timestamp | Refreshed after seven days when next used; expired metadata can remain until replaced or extension data is cleared. No peak/location query or observations; excluded from settings exports, sync and backups. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
@@ -539,6 +545,19 @@ after 90 days. Free hosted API access is for non-commercial use. The card
 credits Open-Meteo; underlying datasets retain their provider licences.
 
 ## Optional map overlays and 3D terrain
+
+Custom raster, MVT and GeoJSON overlays use the user's public HTTPS endpoints
+directly from the active 2D page or packaged 3D frame. Metadata can discover tile
+hosts, but an additional host requires explicit review in the editor. The source
+must allow the actual renderer's origin through CORS. Tests sample at most six
+zoom levels at the visible map center; they do not store that location or change
+the configured range. Missing tiles may request up to two coarser parents.
+Downloaded bytes and validated geometry remain in bounded memory caches, cleared
+on renderer teardown. Browser HTTP caching remains subject to provider headers.
+Configuration drafts used for Preview/Test expire in worker memory after five
+minutes or are removed when the editor closes. Full Screen handoffs carry typed
+source IDs/revisions and opacity only, alongside the existing overlay state;
+they contain no custom source URLs, URL keys or feature data.
 
 Right-clicking a native or 3D map opens a location readout with coordinates and
 an approximate elevation. That explicit gesture requests public Mapterhorn DEM

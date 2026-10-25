@@ -17,7 +17,11 @@ export function readLayerSnapshot(value) {
     const cooldowns = Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id,
         Number.isFinite(value.cooldowns?.[id]) && value.cooldowns[id] > Date.now() && value.cooldowns[id] <= Date.now() + 86400000 ? value.cooldowns[id] : 0]));
     return { revision: value.revision, state: Schema.mapOverlayState(value.state), capture: sentinelTarget(value.capture), menuOpen: value.menuOpen === true, cooldowns,
-        landCooldowns: readLandCooldowns(value.landCooldowns), landTypes: Schema.mapLandTypes(value.landTypes) };
+        landCooldowns: readLandCooldowns(value.landCooldowns), landTypes: Schema.mapLandTypes(value.landTypes), custom: Schema.customOverlay.selection(value.custom),
+        customSession: typeof value.customSession === 'string' && /^[a-z0-9-]{1,80}$/i.test(value.customSession) ? value.customSession : '',
+        customRevision: Number.isSafeInteger(value.customRevision) ? value.customRevision : 0,
+        customOpacity: Object.fromEntries(Schema.customOverlay.selection(value.custom).filter(item => Number.isFinite(value.customOpacity?.[item.id]) && value.customOpacity[item.id] >= 0 && value.customOpacity[item.id] <= 100).map(item => [item.id, value.customOpacity[item.id]])),
+        customReloads: Object.fromEntries(Schema.customOverlay.selection(value.custom).map(item => [item.id, Number.isSafeInteger(value.customReloads?.[item.id]) ? value.customReloads[item.id] : 0])) };
 }
 export function readLayerStatus(value) {
     if (!value || !Schema.MAP_OVERLAY_IDS.includes(value.id)) return null;
