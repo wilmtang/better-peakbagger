@@ -25,6 +25,8 @@ import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
 import { verifySnotelOptions } from './verify-snotel-options.mjs';
 import { verifyPeakCards } from './verify-peak-cards.mjs';
+import { airQualityFixture } from '../test/helpers/air-quality-fixture.mjs';
+import { verifyAirQuality } from './verify-air-quality.mjs';
 import { verifyPeakWeatherInteractions } from './verify-peak-weather-interactions.mjs';
 import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
@@ -39,13 +41,14 @@ const interactionsMode = process.argv.includes('--interactions');
 const verificationLocale = Intl.getCanonicalLocales(process.env.BPB_VERIFY_WEATHER_LOCALE || 'en-US')[0];
 const cardsPlacementMode = process.argv.includes('--cards-placement');
 const cardsMode = process.argv.includes('--cards') || cardsPlacementMode || interactionsMode;
+const airQualityMode = process.argv.includes('--air-quality');
 const cloudMode = process.argv.includes('--clouds');
 const snowMode = process.argv.includes('--snow') || snowMapMode || cardsMode;
-const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--cards-placement', '--interactions', '--clouds', '--map-location'].includes(arg));
-if (unknown.length || (snowMode && live) || (cloudMode && (snowMode || live))
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards', '--cards-placement', '--interactions', '--clouds', '--map-location', '--air-quality'].includes(arg));
+if (unknown.length || (airQualityMode && process.argv.slice(2).some(arg => !['--air-quality', '--firefox'].includes(arg))) || (snowMode && live) || (cloudMode && (snowMode || live))
     || (cardsPlacementMode && process.argv.slice(2).some(arg => !['--cards-placement', '--firefox'].includes(arg)))
     || (mapLocationMode && (snowMode || cloudMode || live))) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
-const peakMode = process.argv.includes('--peak') || snowMode || cloudMode || mapLocationMode;
+const peakMode = process.argv.includes('--peak') || snowMode || cloudMode || mapLocationMode || airQualityMode;
 const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
 const resources = createResourceStack();
 let primaryError = null, summary;
@@ -61,9 +64,10 @@ try {
     const elevationEvidence = [], evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
     let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readSettings, setZoom, readLocal, writeLocal, version, withOptions;
-    const providerPattern = /^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov|tiles\.mapterhorn\.com)\//;
+    const providerPattern = /^https:\/\/(?:(?:api|archive-api|historical-forecast-api|air-quality-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov|tiles\.mapterhorn\.com)\//;
     const replyFor = url => {
         const requested = new URL(url);
+        if (requested.hostname === 'air-quality-api.open-meteo.com') return { status: mode === 'service-error' ? 503 : 200, headers: {}, body: JSON.stringify(airQualityFixture()) };
         if (requested.hostname === 'tiles.mapterhorn.com') return { status: mode === 'elevation-missing' ? 404 : mode === 'elevation-error' ? 503 : mode === 'elevation-limited' ? 429 : 200,
             body: snowMapDem, contentType: 'image/webp', headers: { 'cache-control': 'no-store', ...(mode === 'elevation-limited' ? { 'retry-after': '120' } : {}) } };
         if (requested.hostname === 'wcc.sc.egov.usda.gov') {
@@ -191,13 +195,14 @@ try {
                 { type: 'pattern', protocol: 'https', hostname: 'archive-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'historical-forecast-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'api.open-meteo.com' },
+                { type: 'pattern', protocol: 'https', hostname: 'air-quality-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'wcc.sc.egov.usda.gov' },
                 { type: 'pattern', protocol: 'https', hostname: 'tiles.mapterhorn.com' },
             ] } });
         } else {
             await bidi.subscribe('network.beforeRequestSent');
             const listener = params => {
-                if (/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//.test(params.request.url) && params.request.method === 'GET') {
+                if (/^https:\/\/(api|archive-api|historical-forecast-api|air-quality-api)\.open-meteo\.com\//.test(params.request.url) && params.request.method === 'GET') {
                     checkRequest(params.request.url, params.request.headers.map(header => ({ name: header.name, value: header.value.value })));
                 }
             };
@@ -328,7 +333,7 @@ try {
             await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': reply.contentType || 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
         });
         else page.on('request', request => {
-            if (/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//.test(request.url()) && request.method() === 'GET') {
+            if (/^https:\/\/(api|archive-api|historical-forecast-api|air-quality-api)\.open-meteo\.com\//.test(request.url()) && request.method() === 'GET') {
                 void request.allHeaders().then(headers => checkRequest(request.url(), Object.entries(headers).map(([name, value]) => ({ name, value }))))
                     .catch(error => networkErrors.push(error.message));
             }
@@ -560,6 +565,9 @@ try {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakSnowCases({ origin, evaluate, navigate, click, press, movePointer, clickPoint, resize, screenshot, screenshotPage, setSettings, setZoom, wait, writeLocal,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };
+    } else if (airQualityMode) {
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true,
+            ...await verifyAirQuality({ origin, evaluate, navigate, click, press, resize, setZoom, setSettings, wait, setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, networkErrors, screenshotPage, firefoxMode }) };
     } else if (peakMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, clickPoint, resize, screenshot, screenshotPage, setSettings, wait,

@@ -16,6 +16,7 @@ import { readPeakWeatherSubject } from './peak-weather-subject.js';
 import { PEAK_BEST_MATCH, eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 import { createPeakModelUpdateClient, peakModelUpdateDomains } from './peak-weather-updates.js';
 import { createWeatherIcon } from './weather-icon.js';
+import { createAirQualityView } from './air-quality-view.js';
 import { createWeatherLocationMenu, weatherLocationLabel } from './peak-weather-location.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
@@ -46,10 +47,11 @@ export function mountPeakWeather() {
     const mapHint = element('span', { class: 'bpb-week-map-hint', text: 'Right-click the map for weather at any point.' });
     mapHint.hidden = !document.querySelector('iframe#Gmap');
     const resetLocation = element('button', { type: 'button', class: 'bpb-week-location-reset', text: 'Reset to summit', disabled: '' });
-    const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`]];
+    let aqiActive = false;
+    const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`], ['aqi', 'Air quality']];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
     const periodButtons = periods.map(([key, text]) => element('button', { type: 'button', role: 'tab', 'aria-label': text, 'data-label': text,
-        id: `${ID}-${key}`, 'data-period': key, 'aria-controls': `${ID}-period` }, [element('span', { class: 'bpb-week-tab-label', text })]));
+        id: `${ID}-${key}`, 'data-period': key, 'aria-controls': `${ID}-${key === 'aqi' ? 'air' : 'period'}` }, [element('span', { class: 'bpb-week-tab-label', text })]));
     periodTabs.append(...periodButtons);
     const range = element('p', { class: 'bpb-week-range' });
     const locationLabel = element('p', { class: 'bpb-week-sub' });
@@ -85,6 +87,16 @@ export function mountPeakWeather() {
     else subject.table.tBodies[0].append(row);
 
     const client = createPeakWeatherClient();
+    const airQuality = createAirQualityView({ readLocation: () => requestedSubject, available: () => enabled() && lifecycle?.state === 'active' && document.visibilityState === 'visible' && !card.hidden && card.dataset.bpbCardCollapsed !== 'true' });
+    let airVisible = !card.hidden && card.dataset.bpbCardCollapsed !== 'true';
+    const airVisibilityObserver = new MutationObserver(() => {
+        const visible = !card.hidden && card.dataset.bpbCardCollapsed !== 'true';
+        if (visible === airVisible) return;
+        airVisible = visible;
+        if (visible) airQuality.resume(); else airQuality.suspend();
+    });
+    airVisibilityObserver.observe(card, { attributes: true, attributeFilter: ['hidden', 'data-bpb-card-collapsed'] });
+    periodPanel.after(airQuality.panel);
     const updateClient = createPeakModelUpdateClient();
     const updateClocks = new Map();
     let updatesController = null, updatesGeneration = 0;
@@ -93,7 +105,7 @@ export function mountPeakWeather() {
     const enabled = () => settingsReady && modelsReady && preference.showWeather;
     const cancelUpdates = () => { updatesGeneration++; updatesController?.abort(); updatesController = null; };
     async function loadUpdates() {
-        if (!enabled() || lifecycle.state !== 'active' || !source.open || !current) return;
+        if (!enabled() || lifecycle.state !== 'active' || aqiActive || !source.open || !current) return;
         cancelUpdates();
         const updateController = new AbortController(); updatesController = updateController;
         const owner = updatesGeneration;
@@ -255,7 +267,7 @@ export function mountPeakWeather() {
         const modelDetails = model === PEAK_BEST_MATCH
             ? 'Best Match. Open-Meteo automatic blend; source models vary.'
             : `${model.label}, ${model.resolution}.`;
-        help.hidden = !summaries.some(day => day.useful); source.hidden = false;
+        help.hidden = !summaries.some(day => day.useful); source.hidden = aqiActive;
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
         renderLabels(current.window[period]);
         clearChart();
@@ -312,7 +324,11 @@ export function mountPeakWeather() {
         if (source.open) void loadUpdates();
     }
     const choosePeriod = next => {
-        if (next !== period) {
+        aqiActive = next === 'aqi';
+        periodPanel.hidden = aqiActive; source.hidden = aqiActive || !current; refresh.hidden = aqiActive;
+        airQuality.select(aqiActive);
+        if (aqiActive) cancelUpdates();
+        if (!aqiActive && next !== period) {
             openDates.set(period, expandedDates());
             period = next;
             populateModels();
@@ -320,7 +336,7 @@ export function mountPeakWeather() {
             else if (requestedWindow) renderLabels(requestedWindow[period]);
         }
         for (const button of periodButtons) {
-            const active = button.dataset.period === period;
+            const active = button.dataset.period === (aqiActive ? 'aqi' : period);
             button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
         }
         periodPanel.setAttribute('aria-labelledby', `${ID}-${period}`);
@@ -402,7 +418,7 @@ export function mountPeakWeather() {
         if (sameLocation(next, requestedSubject) && (pending || (current && sameLocation(next, subject) && !notice?.kind))) return;
         if (next !== summit && requestedSubject === summit) summitChoices = { ...choices };
         if (next === summit && summitChoices) { Object.assign(choices, summitChoices); summitChoices = null; }
-        cancelUpdates(); cancel(); requestedSubject = next;
+        cancelUpdates(); cancel(); requestedSubject = next; airQuality.locationChanged();
         requestedWindow = weatherPeakWindow(mountainTime.resolve(next.latitude, next.longitude));
         for (const key of Object.keys(choices)) {
             if (!eligiblePeakWeatherModels(next, requestedWindow, key).some(model => model.id === choices[key])) choices[key] = 'gfs_global';
@@ -428,6 +444,7 @@ export function mountPeakWeather() {
         visibilityObserver.observe(card);
     };
     const visibility = () => {
+        if (document.visibilityState !== 'visible') airQuality.suspend(); else airQuality.resume();
         if (!enabled() || document.visibilityState !== 'visible' || lifecycle.state !== 'active' || !started || pending || notice?.kind) return;
         const today = mountainTime.localDate(zone, Date.now());
         if (!current || today !== current.window.today || Date.now() - current.loadedAt >= 5 * 60_000) beginWhenVisible();
@@ -441,19 +458,19 @@ export function mountPeakWeather() {
         locationMenu.updateAvailability();
         if (!enabled()) {
             locationMenu.close();
-            cooldown.suspend(); cancel(); cancelUpdates(); clearChart();
+            airQuality.suspend(); cooldown.suspend(); cancel(); cancelUpdates(); clearChart();
             visibilityObserver?.disconnect(); visibilityObserver = null;
         } else if (lifecycle.state === 'active') {
-            cooldown.resume();
+            cooldown.resume(); airQuality.resume();
             if (!wasEnabled || previousUnits !== unitSignature()) renderResult();
             if (!wasEnabled) beginWhenVisible();
         }
     };
     const unsubscribe = settings.subscribe(applyPreference);
-    const stop = () => { locationMenu.close(); cooldown.suspend(); cancel(); cancelUpdates(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { airQuality.suspend(); locationMenu.close(); cooldown.suspend(); cancel(); cancelUpdates(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
-        onResume: () => { document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); renderResult(); beginWhenVisible(); } },
-        onDispose: () => { stop(); locationMenu.dispose(); cooldown.dispose(); unsubscribe(); client.clear(); updateClient.clear(); },
+        onResume: () => { document.addEventListener('visibilitychange', visibility); if (enabled()) { airQuality.resume(); cooldown.resume(); renderResult(); beginWhenVisible(); } },
+        onDispose: () => { stop(); airVisibilityObserver.disconnect(); airQuality.dispose(); locationMenu.dispose(); cooldown.dispose(); unsubscribe(); client.clear(); updateClient.clear(); },
     });
     document.addEventListener('visibilitychange', visibility);
     // Resolve local choices before the first request, including a late sync

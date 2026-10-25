@@ -123,6 +123,8 @@ independent of the existing targets.
 
 ## Weather and snow
 
+- [verify-air-quality.mjs](verify-air-quality.mjs) — lazy AQI requests and refresh stability through the weather browser harness.
+
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
 - [verify-peak-cards.mjs](verify-peak-cards.mjs)
 - [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { build } from 'esbuild';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
+import { airQualityFixture } from '../helpers/air-quality-fixture.mjs';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
 import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
@@ -25,7 +26,7 @@ const reply = url => {
         latitude: Number(query.get('latitude')), longitude: Number(query.get('longitude')),
         elevation: query.has('elevation') ? Number(query.get('elevation')) : 1200 })), { headers: { 'content-type': 'application/json' } });
 };
-function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn } = {}) {
+function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn, aqiFn } = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], metadataRequests = [], listeners = [], observers = [], resizeObservers = [];
     let clock = Date.parse(now);
@@ -59,6 +60,7 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
                 last_run_availability_time: Math.floor(clock / 1000) - 600, update_interval_seconds: 21600 }), { headers: { 'content-type': 'application/json' } });
         }
         requests.push({ url, init });
+        if (new URL(url).hostname === 'air-quality-api.open-meteo.com') return aqiFn ? aqiFn(url, init) : new Response(JSON.stringify(airQualityFixture({ now: clock })), { headers: { 'content-type': 'application/json' } });
         const response = await fetchFn(url, init);
         if (!response.ok) return response;
         const body = weatherModelFixture(await response.json(), new URL(url).searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
@@ -1721,5 +1723,75 @@ for (const now of ['2024-11-05T12:06:00Z', '2024-11-06T12:00:00Z']) test(`summit
         await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === 'At the summit'
             && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
         assert.equal(env.requests.length, 3, 'Reset must not present an expired summit snapshot as current');
+    } finally { env.close(); }
+});
+
+
+test('air quality is lazy until its tab is selected and reuses the forecast on return', async () => {
+    const env = setup();
+    const count = () => env.requests.filter(request => request.url.includes('air-quality-api.')).length;
+    try {
+        await settled(env, { past: false }); assert.equal(count(), 0);
+        env.doc.querySelector('[data-period="past"]').click(); assert.equal(count(), 0);
+        env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length > 0);
+        assert.equal(count(), 1); assert.equal(env.doc.getElementById('bpb-peak-weather-period').hidden, true);
+        assert.equal(env.doc.querySelector('[data-period="aqi"]').getAttribute('aria-selected'), 'true');
+        assert.match(env.doc.querySelector('.bpb-air-summary').textContent, /US AQI/);
+        env.doc.querySelector('[data-period="forecast"]').click();
+        assert.equal(env.doc.getElementById('bpb-peak-weather-air').hidden, true);
+        env.doc.querySelector('[data-period="aqi"]').click(); await pause(); assert.equal(count(), 1);
+        env.doc.querySelector('[aria-label="Refresh air quality"]').click();
+        await waitFor(() => count() === 2 && env.doc.getElementById('bpb-peak-weather-air').getAttribute('aria-busy') === 'false');
+    } finally { env.close(); }
+});
+test('leaving the AQI tab cancels transport and ignores late completions', async () => {
+    let finish, signal;
+    const env = setup({ aqiFn: (_, init) => { signal = init.signal; return new Promise(resolve => { finish = resolve; }); } });
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => signal); env.doc.querySelector('[data-period="past"]').click();
+        assert.equal(signal.aborted, true);
+        finish(new Response(JSON.stringify(airQualityFixture({ now: env.win.Date.now() })), { headers: { 'content-type': 'application/json' } }));
+        await pause(); assert.equal(env.doc.querySelectorAll('.bpb-air-table tbody tr').length, 0);
+    } finally { env.close(); }
+});
+test('AQI does not request in a hidden browser tab and starts on visibility', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        Object.defineProperty(env.doc, 'visibilityState', { configurable: true, value: 'hidden' });
+        env.doc.querySelector('[data-period="aqi"]').click(); await pause(); assert.equal(env.requests.length, 1);
+        Object.defineProperty(env.doc, 'visibilityState', { configurable: true, value: 'visible' });
+        env.doc.dispatchEvent(new env.win.Event('visibilitychange'));
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length > 0);
+        assert.equal(env.requests.filter(request => request.url.includes('air-quality-api.')).length, 1);
+    } finally { env.close(); }
+});
+
+test('AQI aborts on card collapse, weather opt-out and page suspension', async () => {
+    for (const action of ['collapse', 'disable', 'suspend', 'hidden']) {
+        let signal;
+        const env = setup({ aqiFn: (_, init) => { signal = init.signal; return new Promise(() => {}); } });
+        try {
+            await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click(); await waitFor(() => signal);
+            if (action === 'collapse') env.doc.getElementById('bpb-peak-weather').dataset.bpbCardCollapsed = 'true';
+            if (action === 'disable') env.listeners.forEach(listener => listener({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+            if (action === 'suspend') env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+            if (action === 'hidden') { Object.defineProperty(env.doc, 'visibilityState', { configurable: true, value: 'hidden' }); env.doc.dispatchEvent(new env.win.Event('visibilitychange')); }
+            await waitFor(() => signal.aborted); assert.equal(signal.aborted, true, action);
+        } finally { env.close(); }
+    }
+});
+
+test('unchanged card visibility preserves AQI rows instead of triggering a layout repaint loop', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length > 0);
+        const first = env.doc.querySelector('.bpb-air-table tbody tr');
+        env.doc.getElementById('bpb-peak-weather').dataset.bpbCardCollapsed = 'false';
+        await pause();
+        assert.equal(env.doc.querySelector('.bpb-air-table tbody tr'), first, 'layout notifications must not replace the forecast and retrigger layout');
     } finally { env.close(); }
 });

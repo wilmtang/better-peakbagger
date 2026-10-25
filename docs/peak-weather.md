@@ -420,3 +420,19 @@ screenshots were inspected. The hidden Chrome manifest smoke check also passed
 at 1000 × 760 with BFCache restoration. Provider responses were stubbed; these
 HTML/SVG checks do not establish physical touch, screen-reader speech or native
 window focus/placement, and no WebGL renderer was asserted.
+
+## Air quality
+
+Select **Air quality** in the weather period tabs to load a five-day regional
+US AQI and PM2.5 forecast from Open-Meteo/CAMS. It makes no AQI request before
+selection. Weather settings, selected map locations, page visibility and lifecycle
+control its requests. Leaving the tab cancels pending work; returning reuses
+five-minute page-memory data. Refresh retains the last usable forecast on failure.
+The hourly table uses the selected location's local time, includes text categories
+beside the colored AQI cue, and preserves missing values. This is a regional surface
+forecast (roughly 45 km globally and 11 km in Europe), not a summit measurement.
+
+Focused hidden-browser checks: `node scripts/verify-ascent-weather.mjs --air-quality`
+and the same command with `--firefox`. Set `BPB_VERIFY_AQI_SCREENSHOT_DIR` to retain
+screenshots. Both use HTTPS fixtures and the packaged extension; provider responses
+are controlled fixtures, so these do not establish live forecast accuracy.

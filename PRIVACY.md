@@ -433,6 +433,22 @@ card may request observations again. Disabling SNOTEL cancels pending snow
 work and prevents new requests. The source link navigates to the selected
 station's public NRCS report. See [Nearby snow](docs/nearby-snow.md).
 
+### Air-quality forecast
+
+The **Air quality** tab in Summit weather requests a five-day regional forecast
+from `air-quality-api.open-meteo.com` only after that tab is selected and the
+browser document is visible. Opening the page or using the weather forecast/past
+tabs makes no air-quality request. Requests contain latitude/longitude, the
+US AQI and PM2.5 fields, and a fixed UTC forecast window, with no credentials,
+referrer, summit elevation, route, account or activity data. The provider also
+receives IP address and ordinary network metadata. Switching away, hiding the
+browser document, disabling weather, or leaving the page cancels pending AQI
+work. A selected tab can revalidate on return; there is no background polling.
+Results remain in bounded page memory for reuse for five minutes, are cleared on
+location changes, and are never written to browser storage. Failed refreshes
+retain the labelled loaded forecast for at most 30 minutes before revalidation.
+CAMS/Open-Meteo provide regional surface model estimates, not summit observations.
+
 ### Forecast and historical weather
 
 **Settings → General → Show weather cards** controls both historical ascent
