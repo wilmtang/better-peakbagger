@@ -1,9 +1,65 @@
 # FCC cell coverage on Cloudflare: storage and free-tier investigation
 
-October 24, 2026. **R2 plus a small tile-serving Worker is a supported deployment
-architecture. A zero-dollar deployment is possible within the included usage,
-but a complete current US tileset has not been obtained or measured.** This is
-research and a local size experiment; nothing has been deployed.
+October 24, 2026. **A public GitHub repository contains 826.9 MB of prebuilt
+three-carrier LTE/5G PMTiles across three named resolution variants. Its stored
+bytes fit comfortably within R2's included 10 GB allowance.** Original FCC
+source completeness, reporting vintage, quality and production serving remain
+unverified. R2 plus a small tile-serving Worker is a supported deployment
+architecture; a zero-dollar deployment depends on all usage allowances. This
+is research and a local size experiment; nothing has been deployed.
+
+## Follow-up: public prebuilt coverage tiles found on GitHub
+
+GitHub code search found
+[wispiANt/cell-site-atlas-tiles](https://github.com/wispiANt/cell-site-atlas-tiles),
+which the earlier general web searches missed. The pinned
+[manifest](https://github.com/wispiANt/cell-site-atlas-tiles/blob/28f72437259d20268dd89a0686a05c0c0b507a19/fcc-coverage/tiles/sources.json)
+lists 96 actual PMTiles for AT&T, Verizon and T-Mobile, LTE and 5G-NR, with
+variants named `r6`, `r7` and `r8`. Every manifest path exists in the
+nontruncated GitHub tree; these are normal binary Git blobs, not LFS pointers.
+The following are actual inventory byte sums, not estimates:
+
+| Carrier, LTE plus 5G | All three resolution variants | r8 variant alone |
+| --- | ---: | ---: |
+| AT&T | 267,958,930 bytes | 188,654,150 bytes |
+| Verizon | 268,958,859 bytes | 189,251,052 bytes |
+| T-Mobile | 289,991,491 bytes | 205,787,871 bytes |
+| **Total** | **826,909,280 bytes (826.9 MB)** | **583,693,073 bytes (583.7 MB)** |
+
+The repository declares
+[CC0 1.0](https://github.com/wispiANt/cell-site-atlas-tiles/blob/28f72437259d20268dd89a0686a05c0c0b507a19/LICENSE).
+Its data commit on July 3, 2026 says
+["D25 5G-NR + LTE, res 6/7/8"](https://github.com/wispiANt/cell-site-atlas-tiles/commit/788fd16fb8c1f2f591add6dd09b29aef5add7eb1).
+The October 4 update added the license, not new coverage data. Treat `D25` as
+the publisher's label; the original FCC source dates and transformation
+methodology have not been independently established. Neither repository size
+nor the existence of national-looking bounds proves complete US coverage.
+
+Six small binary range reads, one r8 shard per carrier/technology, returned
+HTTP 206 with CORS `*`, correct PMTiles v3 magic, and total file lengths matching
+the Git inventory. Their headers report zooms 3–10, gzip-compressed MVT, a
+`coverage` layer and a numeric `dbm` property. Sample shard bounds include parts
+of the western US and, in some cases, Alaska/Hawaii. We did not download the
+whole 826.9 MB, decode coverage tiles, render them or verify the complete
+national footprint and semantic accuracy. Higher zoom viewing would overzoom
+this product rather than reveal new native detail. It is not interchangeable
+with a freshly generated full-detail FCC product.
+
+The [inventory](experiments/fcc-browser-coverage/public-pmtiles-inventory.json)
+records the commit, every file's size and Git blob ID, the complete source
+manifest and grouped totals. The [six probes](experiments/fcc-browser-coverage/public-pmtiles-probes.json)
+record response sizes, CORS, header metadata and bounds. Each recorded initial
+range read was 16,384 bytes. These prove an accessible prebuilt candidate
+exists and provide a concrete hosting size. No FCC account is needed to
+retrieve these public derivative archives. Source validation and a real
+renderer check remain necessary before selecting it as the runtime provider.
+
+A second concrete example,
+[jebowe3/nc_cell_signal_strength_map](https://github.com/jebowe3/nc_cell_signal_strength_map/tree/0becc44005765a5c49cc8174f345aa3ac073bef3/data),
+contains North Carolina PMTiles: AT&T 17,606,084 bytes, T-Mobile 19,500,723 bytes
+and Verizon 18,986,165 bytes, or 56,092,972 bytes combined. Its map credits both
+FCC and CoverageMap.com; downstream data reuse and vintage require separate
+verification. It is a state-specific example, not a second national corpus.
 
 ## Findings
 
@@ -168,9 +224,10 @@ archive, followed by representative larger/fragmented states and finally the
 complete selected US build. Record source vintage, bytes, peak build disk/RAM,
 zoom/detail policy, total PMTiles bytes and largest tile. Verify source identity
 and geometry behavior rather than selecting settings only to hit a size target.
-The previous FCC access restriction remains: no valid account token was
-available, and anonymous requests hit an edge 403. National storage cannot be
-confirmed until the actual selected corpus is built.
+The previous direct FCC access restriction remains: no valid account token was
+available, and anonymous requests hit an edge 403. A custom build's national
+size cannot be confirmed until its selected corpus is built; the public
+prebuilt candidate above now provides a separately measured alternative.
 
 Before a hosted trial, review the source download terms, preserve attribution
 and dates, make the FCC token a build-only secret, serve only allowlisted
