@@ -1218,6 +1218,40 @@ test('a dry day plots a flat rain line with distinct axis labels in both unit sy
     } finally { env.close(); }
 });
 
+test('collapsed peak weather waits for expansion and never refetches on unchanged visibility', async () => {
+    const storedSettings = { peakWeatherCollapsed: true }, env = setup({ storedSettings });
+    try {
+        const card = env.doc.getElementById('bpb-peak-weather');
+        await waitFor(() => !card.hidden); await pause();
+        assert.equal(env.requests.length, 0, 'saved collapse must suppress the first forecast');
+        storedSettings.peakWeatherCollapsed = false;
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'imperial', ...storedSettings } } }, 'sync'));
+        await settled(env, { past: false });
+        assert.equal(env.requests.length, 1);
+        card.dataset.bpbCardCollapsed = 'false'; await pause();
+        env.doc.dispatchEvent(new env.win.Event('visibilitychange')); await pause();
+        assert.equal(env.requests.length, 1, 'unchanged visibility must reuse the loaded forecast');
+    } finally { env.close(); }
+});
+
+test('collapsing peak weather aborts a pending read and preserves the last result on expansion', async () => {
+    let release, hold = false;
+    const env = setup({ fetchFn: async url => { if (hold) await new Promise(resolve => { release = resolve; }); return reply(url); } });
+    try {
+        await settled(env, { past: false });
+        const card = env.doc.getElementById('bpb-peak-weather'), firstDay = env.doc.querySelector('.bpb-week-day');
+        hold = true; env.doc.querySelector('.bpb-week-refresh').click(); await waitFor(() => env.requests.length === 2);
+        card.dataset.bpbCardCollapsed = 'true';
+        await pause();
+        assert.equal(env.requests[1].init.signal.aborted, true, 'collapse must cancel the transport');
+        assert.equal(card.getAttribute('aria-busy'), 'false');
+        release(); await pause();
+        assert.equal(env.doc.querySelector('.bpb-week-day'), firstDay, 'cancelled completion must not replace retained content');
+        card.dataset.bpbCardCollapsed = 'false'; await pause();
+        assert.equal(env.requests.length, 2, 'fresh retained data needs no request on expansion');
+    } finally { release?.(); env.close(); }
+});
+
 test('missing map retains right-column card; lazy loading never starts before visibility', async () => {
     const env = setup({ html: peak.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, ''), lazy: true });
     try {

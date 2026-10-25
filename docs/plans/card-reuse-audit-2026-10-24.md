@@ -1,7 +1,8 @@
 # Peak and ascent card reuse audit
 
-Date: October 24, 2026 (America/Los_Angeles). Status: conventions updated;
-runtime improvements proposed, not implemented.
+Date: October 24, 2026 (America/Los_Angeles). Status: remediation in progress.
+The findings below preserve the original audit; current implementation status
+is recorded in the closure ledger.
 
 **Share read eligibility, chart mechanics, visual tokens and gesture handling;
 keep mounting, identity, placement and provider policy with each surface.**
@@ -279,13 +280,13 @@ runtime changes require the real-browser checks in the convention and AGENTS.
 
 ## Closure ledger
 
-- **Fixed and verified:** card conventions now inventory existing shared helpers,
-  define extraction/adapter boundaries and distinguish source reuse from shared
-  cache state. The guide also names the existing archive startup fallback.
-- **Intentionally not changed:** runtime code, native mounting, settings keys,
-  current drag/collapse behavior and unrelated in-progress work. CR-01/CR-02
-  remain open defects; CR-03–CR-06 remain proposed engineering work.
-- **Changed but not fully proven:** audit documentation and reproduction evidence;
-  duplicate-axis output and collapsed-weather fetching have local fixture proof,
-  while future extracted implementations and browser/visual behavior remain
-  unproven. No runtime refactoring was performed.
+- **Fixed and verified:** conventions document the extraction/adapter boundaries.
+  CR-01's collapsed-weather defect is fixed: saved collapse suppresses loading,
+  collapse cancels pending reads, and fresh retained data survives expansion.
+  Both new regressions failed on the original implementation, then all 85 peak
+  weather tests passed after a 53-bundle build. `git diff --check` passed.
+- **Intentionally not changed:** native mounting, settings keys, provider policy,
+  worker-write ownership and unrelated work. The remaining extractions and CR-02
+  correctness fix are still being implemented.
+- **Changed but not fully proven:** real-browser collapse/expansion and broader
+  interaction/visual checks are pending. Local tests do not establish them.

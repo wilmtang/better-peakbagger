@@ -87,13 +87,13 @@ export function mountPeakWeather() {
     else subject.table.tBodies[0].append(row);
 
     const client = createPeakWeatherClient();
-    const airQuality = createAirQualityView({ readLocation: () => requestedSubject, available: () => enabled() && lifecycle?.state === 'active' && document.visibilityState === 'visible' && !card.hidden && card.dataset.bpbCardCollapsed !== 'true' });
+    const airQuality = createAirQualityView({ readLocation: () => requestedSubject, available: () => readable() });
     let airVisible = !card.hidden && card.dataset.bpbCardCollapsed !== 'true';
     const airVisibilityObserver = new MutationObserver(() => {
         const visible = !card.hidden && card.dataset.bpbCardCollapsed !== 'true';
         if (visible === airVisible) return;
         airVisible = visible;
-        if (visible) airQuality.resume(); else airQuality.suspend();
+        visibility();
     });
     airVisibilityObserver.observe(card, { attributes: true, attributeFilter: ['hidden', 'data-bpb-card-collapsed'] });
     periodPanel.after(airQuality.panel);
@@ -103,9 +103,11 @@ export function mountPeakWeather() {
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
     let settingsReady = false, modelsReady = false, locationMenu = null;
     const enabled = () => settingsReady && modelsReady && preference.showWeather;
+    const readable = () => enabled() && lifecycle?.state === 'active' && document.visibilityState === 'visible'
+        && !card.hidden && !preference.peakWeatherCollapsed && card.dataset.bpbCardCollapsed !== 'true';
     const cancelUpdates = () => { updatesGeneration++; updatesController?.abort(); updatesController = null; };
     async function loadUpdates() {
-        if (!enabled() || lifecycle.state !== 'active' || aqiActive || !source.open || !current) return;
+        if (!readable() || aqiActive || !source.open || !current) return;
         cancelUpdates();
         const updateController = new AbortController(); updatesController = updateController;
         const owner = updatesGeneration;
@@ -361,7 +363,7 @@ export function mountPeakWeather() {
     populateModels();
     const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); };
     async function load({ clear = false } = {}) {
-        if (!enabled() || lifecycle.state !== 'active' || pending || cooldown.active()) return;
+        if (!readable() || pending || cooldown.active()) return;
         visibilityObserver?.disconnect(); visibilityObserver = null;
         started = true; pending = true;
         controller = new AbortController(); const owner = ++generation;
@@ -405,7 +407,7 @@ export function mountPeakWeather() {
     }
     select.addEventListener('change', () => {
         if (cooldown.active()) { select.value = choices[period]; return; }
-        if (!enabled() || lifecycle.state !== 'active') return;
+        if (!readable()) return;
         if (!eligiblePeakWeatherModels(requestedSubject, requestedWindow || weatherPeakWindow(zone), period).some(model => model.id === select.value)) return;
         choices[period] = select.value;
         // Separate keys avoid overwriting the other period's choice from a
@@ -441,8 +443,7 @@ export function mountPeakWeather() {
     locationMenu = createWeatherLocationMenu({ enabled: () => enabled() && lifecycle.state === 'active', canSelect: () => !cooldown.active(), onSelect: chooseLocation });
     resetLocation.addEventListener('click', () => chooseLocation(summit));
     const beginWhenVisible = () => {
-        visibilityObserver?.disconnect();
-        if (!enabled() || lifecycle.state !== 'active') return;
+        if (!readable() || visibilityObserver) return;
         if (typeof IntersectionObserver !== 'function') { void load(); return; }
         visibilityObserver = new IntersectionObserver(entries => {
             if (entries.some(entry => entry.isIntersecting)) { visibilityObserver?.disconnect(); visibilityObserver = null; void load(); }
@@ -450,14 +451,20 @@ export function mountPeakWeather() {
         visibilityObserver.observe(card);
     };
     const visibility = () => {
-        if (document.visibilityState !== 'visible') airQuality.suspend(); else airQuality.resume();
-        if (!enabled() || document.visibilityState !== 'visible' || lifecycle.state !== 'active' || !started || pending || notice?.kind) return;
+        if (!readable()) {
+            airQuality.suspend(); cooldown.suspend(); cancel(); cancelUpdates();
+            visibilityObserver?.disconnect(); visibilityObserver = null;
+            return;
+        }
+        cooldown.resume(); airQuality.resume();
+        if (pending || notice?.kind) return;
         const today = mountainTime.localDate(zone, Date.now());
-        if (!current || today !== current.window.today || Date.now() - current.loadedAt >= 5 * 60_000) beginWhenVisible();
+        if (!started || !current || today !== current.window.today || Date.now() - current.loadedAt >= 5 * 60_000) beginWhenVisible();
     };
     refresh.addEventListener('click', () => { void load({ clear: true }); });
     const applyPreference = next => {
         const wasEnabled = !row.hidden && enabled();
+        const wasCollapsed = preference.peakWeatherCollapsed;
         const previousUnits = unitSignature();
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();
@@ -469,7 +476,7 @@ export function mountPeakWeather() {
         } else if (lifecycle.state === 'active') {
             cooldown.resume(); airQuality.resume();
             if (!wasEnabled || previousUnits !== unitSignature()) renderResult();
-            if (!wasEnabled) beginWhenVisible();
+            if (!wasEnabled || wasCollapsed !== preference.peakWeatherCollapsed) visibility();
         }
     };
     const unsubscribe = settings.subscribe(applyPreference);
