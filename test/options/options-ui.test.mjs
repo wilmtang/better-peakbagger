@@ -1068,12 +1068,12 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
         'Ascent and report backup options');
 });
 
-test('General groups feature switches under Features and keeps Theme outside that group', async () => {
+test('General groups feature switches under Feature switch and keeps Theme outside that group', async () => {
     const dom = await loadOptions({}, { hash: '#general-features' });
     const doc = dom.window.document, general = doc.getElementById('general');
     const features = doc.getElementById('general-features');
     assert.ok(features, 'Feature switches need a named subsection');
-    assert.equal(features.querySelector('h3').textContent, 'Features');
+    assert.equal(features.querySelector('h3').textContent, 'Feature switch');
     assert.equal(features.getAttribute('aria-labelledby'), features.querySelector('h3').id);
     assert.equal(features.getAttribute('role'), 'group');
     assert.deepEqual([...features.querySelectorAll('input[type="checkbox"]')].map(input => input.id),
