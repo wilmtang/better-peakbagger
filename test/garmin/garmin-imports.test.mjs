@@ -334,3 +334,20 @@ test('manual full-history checks continue pagination and stop once queued tracks
         assert.equal(h.counts.preparations, 151); assert.equal(h.alarms.size, 0);
     } finally { await h.store.close(); }
 });
+
+test('matching Garmin subjects preserve known ownership on empty accounts and reject conflicting owners', async () => {
+    let account = { subject: 'stable-subject', owner: '123' };
+    const h = await setup({ api: { owner: async () => account } });
+    try {
+        account = { subject: 'stable-subject', owner: null };
+        await h.imports.connect('replacement-key');
+        assert.equal((await h.store.read()).connection.owner, '123');
+        const previous = await h.imports.readSnapshot();
+        assert.equal((await h.imports.verifyImportedKey('imported-key', previous)).owner, '123');
+        await h.imports.check(); assert.equal((await h.store.read()).error, null);
+        account = { subject: 'stable-subject', owner: '999' };
+        await assert.rejects(h.imports.connect('wrong-owner-key'), error => error.code === 'identity');
+        await assert.rejects(h.imports.verifyImportedKey('wrong-owner-key', previous), error => error.code === 'identity');
+        assert.equal((await h.store.read()).connection.key, 'replacement-key');
+    } finally { await h.store.close(); }
+});

@@ -34,6 +34,11 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     const permission = () => ext.permissions.contains({ origins: [GARMIN_PERMISSION] });
     const identity = async service => { const result = await service.owner();
         return typeof result === 'string' ? { subject: result, owner: result } : result; };
+    const verifiedAccount = (previous, account) => {
+        if (previous && ((previous.subject || previous.owner) !== account.subject
+            || previous.owner && account.owner && previous.owner !== account.owner)) throw new GarminError('identity');
+        return { ...account, owner: account.owner || previous?.owner || null };
+    };
     const reconcile = async () => {
         await ext.alarms.clear(GARMIN_ALARM);
         const [state, prefs] = await Promise.all([store.read(), settings.requireCurrent()]);
@@ -68,8 +73,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         if (!(await settings.requireCurrent()).enableGarminInbox) throw new GarminError('disabled');
         if (!await permission()) throw new GarminError('permission');
         const previous = await store.read();
-        const candidate = clientFactory({ key }); const account = await identity(candidate);
-        if (previous.connection && (previous.connection.subject || previous.connection.owner) !== account.subject) throw new GarminError('identity');
+        const candidate = clientFactory({ key }); const account = verifiedAccount(previous.connection, await identity(candidate));
         controller?.abort(); clientEpoch = -1; client = null;
         await mutateEpoch(previous.epoch, state => {
             state.epoch++;
@@ -132,8 +136,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         if (state.error?.code === 'key-rejected') throw new GarminError('key-rejected');
         if (state.retryAt > clock()) throw new GarminError('rate', state.retryAt);
         const epoch = state.epoch, service = api(state);
-        const account = await identity(service);
-        if (account.subject !== (connection.subject || connection.owner) || (connection.owner && account.owner !== connection.owner)) throw new GarminError('identity');
+        const account = verifiedAccount(connection, await identity(service));
         if (!connection.owner && account.owner) {
             connection.owner = account.owner;
             await mutateEpoch(epoch, current => { current.connection.owner = account.owner; });
@@ -334,8 +337,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         async verifyImportedKey(key, previous) {
             if (key === null) return previous.connection ? { ...previous.connection, key: null, enabled: false } : null;
             if (!await permission()) throw new GarminError('permission');
-            const account = await identity(clientFactory({ key }));
-            if (previous.connection && (previous.connection.subject || previous.connection.owner) !== account.subject) throw new GarminError('identity');
+            const account = verifiedAccount(previous.connection, await identity(clientFactory({ key })));
             return { ...previous.connection, key, ...account, connectedDate: previous.connection?.connectedDate || date(), enabled: previous.connection?.enabled === true };
         },
         async replaceIfSnapshot(expected, replacement) {

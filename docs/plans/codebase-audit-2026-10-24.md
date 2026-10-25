@@ -232,6 +232,10 @@ Independent commits for drag ownership and report/observer surfaces:
   regressions failed before the fix; 27 import tests, 226 bundled-worker tests,
   build, focused ESLint and hidden Chrome extension verification passed.
 
+- F3 identity: reconnect/import/check share stable-subject and non-null owner
+  validation; empty account responses preserve known ownership. Regression failed
+  before the fix; 33 Garmin import/API tests, build and focused ESLint passed.
+
 ### Intentionally not changed
 
 - Explicit-null credential deletion; single-owner weather cancellation; busy Retry
