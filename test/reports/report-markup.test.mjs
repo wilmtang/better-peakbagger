@@ -679,3 +679,16 @@ test('deleting a Markdown table caption keeps the image and unrelated empty mark
         '[table border="1"][tr][th]Photo[/th][/tr][tr][td][img src="https://example.com/a.jpg"][/td][/tr][/table]');
     assert.equal(Markup.markdownToBracket('Before [b][/b]after'), 'Before after');
 });
+
+test('standalone Instagram posts round-trip as ordinary canonical links without provider HTML',()=>{
+    const url='https://www.instagram.com/p/fA9uwTtkSN/';
+    const bracket=`[a href="${url}"]${url}[/a]`;
+    assert.equal(Markup.markdownToBracket(url+'?utm_source=share'),bracket);
+    assert.equal(Markup.bracketToMarkdown(bracket),url);
+    assert.equal(Markup.bracketToEditorHtml(bracket),`<p><a href="${url}">${url}</a></p>`);
+    assert.equal(Markup.domToBracket(new JSDOM(Markup.bracketToEditorHtml(bracket)).window.document.body),bracket);
+    assert.equal(Markup.markdownToBracket('See '+url),`See [a href="${url}"]${url}[/a]`);
+    const pasted=`<blockquote class="instagram-media" data-instgrm-permalink="${url}"><a href="${url}">View this post</a></blockquote>`;
+    assert.equal(Markup.markdownToBracket(pasted),bracket);
+    assert.doesNotMatch(Markup.markdownToPreviewHtml(pasted),/<script|<iframe|instagram-media/);
+});

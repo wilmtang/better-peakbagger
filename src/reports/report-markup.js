@@ -25,6 +25,8 @@
 // Idempotent: safe to inject more than once into the same global.
 
 
+import { instagramBlocks, instagramPasteUrl } from './instagram-url.js';
+
 const INLINE_TAGS = new Map([
     ['b', 'b'], ['strong', 'b'],
     ['i', 'i'], ['em', 'i'],
@@ -712,7 +714,7 @@ function domChildrenToBlocks(root) {
     return blocks;
 }
 
-const domToAst = root => domChildrenToBlocks(root);
+const domToAst = root => instagramBlocks(domChildrenToBlocks(root));
 
 // The first editor release serialized visual lists as literal "- "/"1. "
 // lines. Continue recognizing those reports on import while emitting real
@@ -1090,6 +1092,8 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
     if (token.type === 'hr') return [{ type: 'hr' }];
     if (token.type === 'html') {
         const raw = token.raw || token.text || '';
+        const instagram = instagramPasteUrl(raw);
+        if (instagram) return [{type:'instagram',url:instagram}];
         if (/^\s*<table[\s>]/i.test(raw) && /<\/table>\s*$/i.test(raw)) {
             const parsed = parseBracketWithDiagnostics(raw);
             if (!parsed.diagnostics.length && parsed.ast.length === 1
@@ -1137,7 +1141,7 @@ const parseMarkdown = source => {
         }
     );
     const extensions = protectMarkdownExtensions(input);
-    return markedBlocks(lexer(extensions.source, { gfm: true, breaks: false }), extensions);
+    return instagramBlocks(markedBlocks(lexer(extensions.source, { gfm: true, breaks: false }), extensions));
 };
 
 // ---- AST -> Peakbagger bracket markup ---------------------------------
@@ -1168,6 +1172,7 @@ const inlinesToBracket = kids => (kids || []).map(node => {
 }).join('');
 
 const blocksToBracket = blocks => (blocks || []).map(block => {
+    if (block.type === 'instagram') return `[a href="${escapeAttribute(block.url)}"]${escapeBracketText(block.url)}[/a]`;
     if (block.type === 'p') return inlinesToBracket(block.kids);
     if (block.type === 'heading') return `[h${block.level}]${inlinesToBracket(block.kids)}[/h${block.level}]`;
     if (block.type === 'blockquote') return `[blockquote]${blocksToBracket(block.blocks)}[/blockquote]`;
@@ -1223,6 +1228,7 @@ const inlinesToHtml = kids => (kids || []).map(node => {
 }).join('');
 
 const blockToHtml = block => {
+    if (block.type === 'instagram') return `<p><a href="${escapeAttribute(block.url)}">${escapeHtml(block.url)}</a></p>`;
     if (block.type === 'p' && block.kids.length === 1 && block.kids[0].t === 'figure') {
         return inlinesToHtml(block.kids);
     }
@@ -1350,6 +1356,7 @@ const listToMarkdown = block => block.items.map((item, index) => {
 
 function blocksToMarkdown(blocks) {
     return (blocks || []).map(block => {
+        if (block.type === 'instagram') return block.url;
         if (block.type === 'p') return inlinesToMarkdown(block.kids);
         if (block.type === 'heading') return `${'#'.repeat(block.level)} ${inlinesToMarkdown(block.kids)}`;
         if (block.type === 'blockquote') {
