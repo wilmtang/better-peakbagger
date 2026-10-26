@@ -421,7 +421,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         externalLink('Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'),
         ', ',
         externalLink('Imgur', 'https://imgur.com/upload'),
-        ', and ImgBB work. To resize, select the image and drag its lower-right handle.'
+        ', and ',
+        externalLink('ImgBB', 'https://imgbb.com/'),
+        ' work. To resize, select the image and drag its lower-right handle.'
     );
     if (!isProfile) imageBox.append(imageActions, imageEditHint, imageLaunchStatus, imageDivider);
     imageBox.append(

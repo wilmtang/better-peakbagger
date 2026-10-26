@@ -63,6 +63,12 @@ test('the image popover validates the source and inserts an optional caption', a
             href: 'https://imgur.com/upload',
             target: '_blank',
             rel: 'noopener noreferrer'
+        },
+        {
+            label: 'ImgBB',
+            href: 'https://imgbb.com/',
+            target: '_blank',
+            rel: 'noopener noreferrer'
         }
     ]);
     const guideLink = ui.querySelectorAll('.bpb-re-image-hosting')[0].querySelector('a');
