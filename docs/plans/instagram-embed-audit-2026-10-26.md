@@ -71,84 +71,88 @@ evidence. **The boundary guard is a defensive mitigation, not a demonstrated
 repair of Instagram's internal media-counting logic. The precise cause remains
 unresolved.** No runtime behavior was changed by this attribution correction.
 
-## Implementation and acceptance
+## Resolved cause and replacement fix — October 26
 
-1. Add an optional Instagram display permission with an explicit Settings action.
-   Its native browser scope is `https://www.instagram.com/*`; explain that scope
-   and confine BPB's helper to captioned embeds inside its own packaged wrapper.
-   Denial leaves the existing native viewer and external link usable. Revocation
-   unregisters the helper and restores existing embeds' native presentation.
-2. Register packaged CSS/isolated-world code only after the permission exists.
-   No remote script, proxy, API token, caption extraction or image download is
-   introduced. Authenticate configuration by the actual parent WindowProxy and
-   extension origin. Keep the native player sandbox and report CSP intact.
-3. Derive carousel limits from the recognized native slot geometry, not a fixed
-   ten-item limit or whether virtualized slots currently contain an image. Guard
-   the terminal Next control and recover a recognized out-of-bounds end state.
-   Unknown layouts retain native behavior. Test longer carousels, sparse slots,
-   partial transitions, repeated activation and clean restoration.
-4. Apply a restrained dark palette to provider chrome/text/icons through scoped
-   packaged CSS. Do not invert/filter media. Follow BPB's resolved light/dark
-   theme live without reloading the frame, losing carousel position or causing
-   requests. Check keyboard focus, captions, links and video controls.
-5. Extend packaged Chrome/Firefox fixtures and the public-post check to verify
-   every media slot, decoded video playback, terminal navigation, reversibility,
-   theme transitions, unchanged media colors, no contact before loading, and the
-   retained Peakbagger-cookie/script isolation. Build and run the full unit suite,
-   manifest/startup checks and focused lint/documentation checks.
+The original failure is now reproduced with the navigation helper disabled.
+The earlier inconclusive comparisons used a different loading order; they were
+insufficient grounds either to blame Instagram generally or to rule out BPB.
+
+### BPB changes the native viewport while the carousel initializes
+
+The card has a 2px left border and 10px left padding. Absolute positioning starts
+inside that border. The pending media used `left: 12px`, giving it 2px less
+content width than the completed, normally positioned media. At the fixture's
+1000×900 viewport, the measured frame widened from **460.59375px pending** to
+**462.59375px loaded**; Instagram saw rounded viewports of **461px then 463px**.
+A full-width post similarly changed from 526px to 528px.
+
+Ordinary fast-avatar loads often finished before Instagram mounted its carousel,
+so earlier direct/iframe tests correctly stopped at the final video. To exercise
+the different loading order, the diagnostic held only the header avatar request
+until Instagram created its real ten-item carousel, then released the request.
+No media list, native state, navigation handler or arrow was altered. Packaged
+BPB ran without optional Instagram access. The browser was hidden Chrome
+156.0.8078.4 at 1000×900, using a disposable copy of committed `35296b7d`.
+
+### The resize loses Instagram's visible-width update
+
+The actual native modules `PolarisHScrollAnimationController.react` and
+`PolarisHScrollContainer.react` decide Next from remaining measured space, not
+from the media count: content width − visible width − scroll position.
+Instagram animates item widths during resizing and updates content/visible
+widths through separate callbacks. Each callback copies the other dimension
+from the old React state. When both updates share a batch, the later update can
+overwrite the earlier update's new dimension.
+
+An observation-only trace recorded this interleaving during the failed load:
+
+- Visible-width update submitted content **4614.375**, visible **463** while
+  the previous visible width was **0**.
+- About **0.3ms** later, content-width update submitted content **4616.875**,
+  visible **0**, still reading the old state. The committed visible width
+  remained **0** after the animation finished.
+- At the final video, native state was content **4630**, visible **0**, scroll
+  **4167**. Its formula reported **463px** remaining and displayed Next.
+- Clicking that native Next moved scroll to **4630**, putting all ten items
+  offscreen at **index 10**, exactly reproducing the reported blank step.
+
+A second un-delayed run retained the old 461px width instead of 463px, producing
+an unnecessary 2px terminal step. This is the same lost update with a different
+initial value, not an eleventh media object. A real-session resize trace also
+captured the same two-callback overwrite with differing nonzero widths.
+
+### Fix the loading geometry and leave navigation native
+
+`instagram.css` now uses `left: 10px`, matching the card's content padding.
+Pending and completed frames have identical widths. The same slow-avatar load
+then retained **462.59375px** throughout; Instagram's cached visible width
+settled at **463**, and its own Next disappeared at the final video. All ten
+items remained reachable, with no optional permission or navigation helper.
+
+The former slot inspection, MutationObserver, click interception, arrow-hiding,
+overflow recovery and focus-moving code has been removed. The optional helper
+only applies BPB's theme and is labelled **Instagram theme → Match BPB theme**.
+It does not inspect, alter or advance Instagram's carousel.
 
 ## Closure ledger
 
 ### Fixed and verified
 
-- **IG01 symptom guard:** `instagram-provider.js` derives the recognized horizontal slot
-  bounds, guards repeated terminal activation, hides unavailable arrows and
-  recovers a single recognized overflow. It retains sparse 2/10/20-item lists,
-  RTL and localized controls. Firefox's empty virtual slots have different
-  vertical baselines, so vertical alignment is deliberately not an invariant.
-  Viewport-unit widths may include the scrollbar gutter. Completed CSS
-  transitions and native mutations reconcile the controls; disappearing arrows
-  transfer focus to a usable native control without scrolling.
-- **IG02:** scoped packaged CSS themes headers, location text, captions, links,
-  footer and monochrome sprite icons. Photos, posters and video have no filter.
-  Stored/system theme changes configure the existing player without replacing
-  it, changing carousel position or reflowing report content. Actual light/dark
-  header and caption/footer renders were visually inspected in both browsers.
-- **IG03:** the packaged verifier now checks backward/forward traversal at the
-  final video and terminal activation. Its native public-post run verified ten
-  slots and decoded video frames in hidden Chrome 156.0.8078.4 and Firefox
-  158.0.1 at 1000×900. Both retained slot index 9 and the same iframe across
-  dark/light changes. A fixture disables the helper to reproduce the empty end,
-  re-enables it to recover, and verifies focus and restoration. The virtual-slot
-  regression assertion also fails on the earlier equal-height/baseline
-  assumption with the actual extra-slide index defect, then passes on the fix.
-- **IG04:** Instagram remains an **optional** host permission requested only
-  from the explicit Settings checkbox. Registration is serialized and reconciled
-  before a valid native player loads. The helper is isolated, packaged, matched
-  only to captioned endpoints, and inactive without configuration from the
-  actual BPB parent and extension origin. The worker supplies the authoritative
-  permission boolean because Firefox restricts APIs in embedded extension
-  pages. Stale replies/page disposal are guarded. Tests cover denial, busy
-  duplicate actions, retry/grant, removal and registration cleanup.
-- **Focused checks:** build passed; 68 Instagram, manifest, origin and settings
-  contract tests passed. ESLint over `src options popup photos scripts test`
-  passed. The real unpacked Chrome startup/bridge check passed at 1000×760.
-- **Browser fixtures:** both no-access viewers and display-enabled matrices
-  passed in hidden Chrome/Firefox. Report states covered idle, pending,
-  cancel/error/retry, loaded and hidden at 1000/375×900, light/dark and normal/26px
-  text. Settings keyboard/pending/denied/retry/grant/removal paths kept the
-  control, row and following heading within one pixel: Chrome 1000/375×900,
-  Firefox 1000/500×900 (its privileged window minimum), with narrow row text
-  enlarged to 22px. The native permission results were stubbed in a disposable
-  copy. Fixture positioning is instantaneous so setup scrolling does not get
-  mistaken for interaction jitter.
-- **Security:** the six hostile saved-report cases passed in each browser at
-  1000×760, with zero provider or attack requests. The Instagram fixture also
-  retained blocked parent/top access, forms, popups and navigation while its
-  same-origin lazy video loader decoded frames. No live ascent was edited,
-  submitted or saved.
-- Owned browser-process command lines and disposable profile paths were checked
-  after teardown; no verification browser processes or profiles remained.
+- **IG01:** correct BPB's pending/completed width invariant, removing the
+  initialization resize that triggers the traced native lost update. The
+  controlled native load reproduced the complete blank step before the fix and
+  ended naturally at the final video after it, without the former guard.
+- **IG02/IG04:** retain authenticated optional theme access, packaged isolated
+  CSS/code, stored/system theme updates and native media colors. Permission
+  state remains browser-owned; navigation no longer requires Instagram access.
+- **IG03:** real-browser fixture assertions compare pending and completed iframe
+  widths at desktop/narrow widths in both themes and enlarged text. The new
+  assertion fails on the original CSS with the actual 2px viewport movement,
+  then passes with corrected CSS. Native terminal navigation is checked outside
+  the optional-theme branch, so a theme helper cannot mask a broken endpoint.
+- The theme unit checks explicitly verify that native markup, clicks and
+  navigation are left untouched, including theme removal and page disposal.
+- Detailed current verification results are recorded below.
 
 ### Intentionally not changed
 
@@ -162,27 +166,48 @@ unresolved.** No runtime behavior was changed by this attribution correction.
 
 ### Changed but not fully proven
 
-- **IG01 cause:** fresh direct, plain/sandboxed iframe and current/earlier BPB
-  wrapper comparisons did not reproduce the original empty tail. Do not describe
-  this as a proven general Instagram bug or claim the underlying cause is fixed;
-  the verified guard prevents/reverses a recognized out-of-range state.
-- Display-enabled runs pregranted the optional host only in a disposable test
-  manifest. Restoration configurations and native permission outcomes were
-  supplied by fixture-only packaged hooks. This proves the shipped helper and
-  controller behavior, not the browser-owned permission prompt or real native
-  grant/revocation UI. The user's installed profile and permissions were not
-  changed. Headless checks do not prove visible-window focus, placement,
-  browser zoom, touch or assistive-technology behavior.
-- `npm test`: 3,647/3,648 passed; the unchanged hover-card case **own profile links
-  stay undecorated in headings, lists, report rows, and late content** timed out
-  at `test/favorites/climber-hover-card.test.mjs:147`. A full run with concurrency
-  four also hit that timeout; the isolated file passed 19/19. This remains a
-  suite/check defect to investigate separately, not a green full-suite result.
-- `npm run lint`: ESLint passed, but the packaging gate rejects an existing
-  unowned `UNSAFE_VAR_ASSIGNMENT` at `custom-overlay/editor.js:619`, originating
-  from the unchanged static-template construction in
-  `src/maps/custom-overlay-editor.js:22`. Raw web-ext results have zero errors,
-  zero notices and nine warnings. No warning allowance or unrelated overlay
-  code was changed to make this audit appear green.
-- Future Instagram markup, availability and login policies remain provider
-  controlled. Unknown carousel layouts intentionally preserve native behavior.
+- Verification below uses a disposable copy of committed `35296b7d` plus only
+  this change. Concurrent custom-map relay work in the shared checkout is
+  preserved and excluded from the test source/commit.
+- Native permission-prompt appearance and native grant/revocation UI remain
+  unverified. Display-enabled fixtures pregrant optional access only in a
+  disposable manifest and stub native permission outcomes for the Settings
+  controller checks. The user's installed profile/permissions were not changed.
+- The provider has its own lost-update behavior under resizing; this change
+  removes BPB's unnecessary initialization resize. It does not patch Instagram's
+  private React state or claim to repair all provider-controlled manual-resize,
+  login or availability behavior.
+- Hidden checks do not establish visible-window placement, browser zoom, touch
+  or assistive-technology behavior. The existing native Chrome profile was also
+  inspected read-only and its controls exercised, without raising its window.
+- Full-source checks and any remaining unrelated failures are listed below;
+  no failed gate is described as a complete pass.
+
+### Current verification
+
+- Build and 24 focused Instagram tests passed in the isolated source. Full-source
+  ESLint passed. The full unit run executed 3,646 tests: 3,645 passed, with one
+  script-inventory mismatch caused by accidentally copying the concurrent map
+  relay's new README entry without its new module. Removing only that foreign
+  entry from the disposable copy and re-running the metadata/documentation/
+  fixture tests passed. The first archive run also lacked a Git inventory; that
+  test setup was corrected. These were test-copy setup failures, not suppressed
+  runtime assertions; the initial commands are not described as green runs.
+- The new viewport-width assertion failed against the original CSS on the actual
+  2px movement and passed against the fix. Chrome 156.0.8078.4 and Firefox 158.0.1
+  packaged fixture matrices passed at 1000/375×900, both themes and normal/26px
+  text, including error/retry/cancel, native video, theme removal/re-enable and
+  stable geometry. Settings checks passed at Chrome 1000/375×900 and Firefox
+  1000/500×900, with 22px narrow text and stubbed permission outcomes.
+- The controlled Chrome slow-avatar comparison reproduced native cached width
+  zero and the complete extra step before the fix. The same initialization
+  sequence after the fix naturally ended at index 9, with native visible width
+  463 and no optional Instagram permission. No native React state was patched.
+- Firefox's public photo/Reel/carousel check passed without optional access,
+  including all ten slots, decoded final-video frames, and native backward/
+  forward terminal navigation. Chrome's real manifest/worker/startup/bridge
+  verifier passed at 1000×760. No runtime map-relay files were included.
+- Settings screenshots were visually inspected at the narrow viewport; the
+  theme helper retains the already-verified dark CSS. No remote ascent was
+  submitted or saved. Temporary live diagnostic styles/listeners were restored,
+  and task-created public tabs were closed while the user's report stayed open.

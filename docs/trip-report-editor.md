@@ -1199,25 +1199,24 @@ deleted or non-embeddable posts. The external link remains available. The player
 does not gain popups, forms, top-level navigation, Peakbagger access or extension
 APIs; opening Instagram itself is the separate link beside the load control.
 
-### Dark mode and carousel display fixes
+### Dark mode
 
-In **Settings → Report editor → Instagram display fixes**, turn on **Allow
-display fixes** and accept the browser's optional Instagram permission. Reload
-an already-open post afterward. This is separate from loading consent: posts
-still wait for **Load post** unless automatic loading is enabled.
+In **Settings → Report editor → Instagram theme**, turn on **Match BPB theme**
+and accept the browser's optional Instagram permission. Reload an already-open
+post afterward. This is separate from loading consent: posts still wait for
+**Load post** unless automatic loading is enabled.
 
 The helper follows BPB's light/dark theme, including changes while a post is
 open. Headers, captions, links and icon controls are themed; photos and video
-retain their colors. It also stops the native carousel from advancing past its
-last real media slot, including carousels ending in a video. It counts native
-slots rather than assuming ten items or discarding unloaded slots. Unknown
-Instagram layouts retain native navigation.
+retain their colors. It does not change carousel navigation.
 
 The browser's permission covers `www.instagram.com`; BPB activates its packaged
 helper only in captioned embeds inside its own wrapper. It does not extract
 caption text, media URLs or cookies. Turning the option off removes access and
-restores native display. Without this permission, Instagram's original player
-remains available, including its provider-controlled theme and navigation.
+restores native display. Without this permission, Instagram's original theme
+remains available. The loading-width fix works with no Instagram permission:
+BPB keeps the player's viewport width unchanged when loading completes, avoiding
+the resize race that could leave Next available after the final video.
 
 Run `npm run verify -- instagram` for the real packaged Chrome/Firefox fixture
 matrix, including a same-origin lazy video loader and blocked parent/top access,
@@ -1228,10 +1227,10 @@ final video's decoded frames and advancing playback. Avatar images cannot
 satisfy the media-rendering assertion. The optional `BPB_INSTAGRAM_LIVE_POST`
 environment variable adds one validated public permalink to that live check.
 Add `--display` to exercise the optional display helper: live checks cover the
-last valid slide, repeated terminal activation, backward/forward navigation and
+last valid slide, backward/forward navigation and
 live dark/light transitions without reloading or filtering media. The fixture
-also reproduces the empty end with the helper disabled, then checks recovery,
-focus and restoration. It pregrants access only in a disposable test manifest;
+checks identical pending/loaded viewport widths, focus and theme restoration.
+Native terminal navigation is checked both with and without optional access. It pregrants access only in a disposable test manifest;
 it does not prove the native permission prompt or change an installed profile.
 The fixture substitutes provider content and normal
 native form data; no live ascent is submitted and the OS clipboard is untouched.

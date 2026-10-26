@@ -814,16 +814,22 @@ theme. The worker owns permission checks; the exact child wrapper can query only
 the read-only boolean. Permission events notify extension views and Peakbagger
 frames so wrappers re-read authoritative state, including Firefox's restricted
 embedded-extension API context. Removal unregisters future injection and clears
-existing helpers' theme/control markers. No page-world settings bridge is widened.
+existing helpers' theme marker. No page-world settings bridge is widened.
 
-The provider helper recognizes one horizontal list of uniform, viewport-width
-native slots, including empty virtualized slots and differing vertical
-baselines. It guards/hides terminal arrows and recovers one recognized overflow;
-ambiguous layouts retain native navigation. Mutations, completed transitions
-and resizing reconcile markers. Scoped CSS colors chrome/text and monochrome
-icon sprites; it never filters images or video. The wrapper follows the shared
-stored theme and system theme changes without reloading or resizing the post.
-Captions, media URLs and cookies are never extracted or messaged.
+The provider helper only applies the authenticated theme. It does not inspect
+carousel slots, hide controls, intercept clicks or move the native player.
+Scoped CSS colors chrome/text and monochrome icon sprites; it never filters
+images or video. The wrapper follows stored/system theme changes without
+reloading or resizing the post. Captions, media URLs and cookies are never
+extracted or messaged.
+
+The pending player uses the same content width as the completed player. The
+absolute offset starts inside the card's border, so it matches the 10px padding,
+not padding plus border. A two-pixel increase at completion formerly triggered
+Instagram's asynchronous resize-state race: its inner/outer width updates could
+overwrite each other and leave the cached visible width at zero, enabling an
+extra whole-slide step. Fixing BPB's width removes that trigger without needing
+Instagram permission or changing Instagram's controls.
 
 `src/reports/report-protection.json` installs Chrome's saved-ascent response CSP
 before parsing. Firefox uses the synchronous `report-protection-firefox.js`

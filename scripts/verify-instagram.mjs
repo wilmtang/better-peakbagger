@@ -120,7 +120,8 @@ export async function verifyInstagram(kind,{live=false,screenshots,display=false
                 +'<script>try{parent.document.body;document.body.dataset.parentBlocked="no"}catch{document.body.dataset.parentBlocked="yes"}'
                 +'try{top.document.cookie;document.body.dataset.topBlocked="no"}catch{document.body.dataset.topBlocked="yes"}'
                 +'document.body.dataset.extensionApi=typeof chrome!=="undefined"&&!!chrome.runtime?"yes":"no";'
-                +'let index=0;const list=document.querySelector("ul");const move=()=>{list.style.transform=`translateX(${-index*innerWidth}px)`;};document.querySelector("[aria-label=\\"Go back\\"]").onclick=()=>{index--;move()};'
+                +'let index=0;const list=document.querySelector("ul"),next=document.querySelector("[aria-label=Next]"),back=document.querySelector("[aria-label=\\"Go back\\"]");'
+                +'const move=()=>{list.style.transform=`translateX(${-index*innerWidth}px)`;next.hidden=index>=1;back.hidden=index<=0;};move();back.onclick=()=>{index--;move()};'
                 +'document.querySelector("[aria-label=Next]").onclick=async()=>{index++;move();'
                 +'try{top.location.href="https://www.peakbagger.com/escape";document.body.dataset.navigationBlocked="no"}catch{document.body.dataset.navigationBlocked="yes"}'
                 +'try{document.body.dataset.popupBlocked=window.open("https://www.instagram.com/escape")?"no":"yes"}catch{document.body.dataset.popupBlocked="yes"}'
@@ -271,10 +272,12 @@ export async function verifyInstagram(kind,{live=false,screenshots,display=false
                     await play();const playback=await waitForCondition(player,{description:'mixed carousel video playback',timeoutMs:25_000,
                         isReady:s=>s?.videos.some(v=>v.width>0&&v.ready>=2&&v.time>0.25&&v.frames>=2)});
                     console.log(JSON.stringify({kind,carouselSlides:initial.carousel.slides,playback:playback.videos}));
+                    // The native pager must stop correctly without optional
+                    // site access: the theme helper never edits navigation.
+                    await waitForCondition(player,{description:'native terminal carousel control absent',isReady:s=>s?.carousel.index===9&&!s.next});
+                    await previousSlide();await waitForCondition(player,{description:'previous real media slot',isReady:s=>s?.carousel.index===8&&s.next});
+                    await nextSlide();await waitForCondition(player,{description:'native final media slot retained',isReady:s=>s?.carousel.index===9&&!s.next});
                     if(display){
-                        await waitForCondition(player,{description:'terminal carousel control hidden',isReady:s=>s?.carousel.index===9&&!s.next});
-                        await previousSlide();await waitForCondition(player,{description:'previous real media slot',isReady:s=>s?.carousel.index===8&&s.next});
-                        await nextSlide();await waitForCondition(player,{description:'last real media slot retained',isReady:s=>s?.carousel.index===9&&!s.next});
                         await nextSlide(true);
                         const terminal=await player();assert.equal(terminal.carousel.index,9,'Next advanced outside the ten real media slots');
                         await evaluate(()=>document.querySelector('.bpb-instagram-frame').dataset.verification='theme-retained');
@@ -323,7 +326,10 @@ export async function verifyInstagram(kind,{live=false,screenshots,display=false
                 await shot('error');
                 await key('Space');await waitState('pending');await waitForCondition(()=>requests>=startRequests+2,{description:'fresh retry'});
                 stable(before,await geometry());
+                const pendingWidth=await evaluate(()=>document.querySelector('.bpb-instagram-frame').getBoundingClientRect().width);
                 held=false;for(const response of waiting)provider(response);waiting.clear();await waitState('loaded');
+                const loadedWidth=await evaluate(()=>document.querySelector('.bpb-instagram-frame').getBoundingClientRect().width);
+                assert(Math.abs(pendingWidth-loadedWidth)<.1,`Instagram viewport changed during load: ${pendingWidth} → ${loadedWidth}`);
                 stable(before,await geometry(),{expanded:true});assert.equal((await state()).frames,1,'one click enabled a second post');assert((await state()).focus);
                 const remote=await player();assert.equal(remote.parentBlocked,'yes');assert.equal(remote.extensionApi,'no');
                 assert(remote.captionLength>0,'the provider must include its native caption');
@@ -354,21 +360,15 @@ export async function verifyInstagram(kind,{live=false,screenshots,display=false
             console.log(JSON.stringify({kind,fixtureCarouselPlayback:videoState.videos,providerIsolation:true}));
             if(display){
                 await waitForCondition(player,{description:'fixture terminal control',isReady:s=>s?.theme==='light'&&s.carousel.index===1&&!s.next});
-                await nextSlide(true);assert.equal((await player()).carousel.index,1,'fixture advanced to the empty native end slot');
                 await patch({theme:'dark'});await waitForCondition(player,{description:'fixture live dark theme',isReady:s=>s?.theme==='dark'&&s.background==='rgb(32, 34, 36)'});
                 stable(beforeVideo,await geometry());
                 const count=requests;
                 await displayConfig({__bpbInstagramDisplay:true,enabled:false});
-                await waitForCondition(player,{description:'display helper restoration',isReady:s=>s?.theme===null&&s.next&&s.background==='rgb(255, 255, 255)'});
-                await nextSlide(true);assert.equal((await player()).carousel.index,-1,'the unfixed native player should reproduce the empty end');
-                // Re-enable from the actual packaged parent to prove one-slot
-                // overflow recovery and keyboard focus when its arrow vanishes.
-                await providerEvaluate(()=>document.querySelector('[aria-label="Next"]').focus());
+                await waitForCondition(player,{description:'theme restoration preserves native controls',isReady:s=>s?.theme===null&&!s.next&&s.carousel.index===1&&s.background==='rgb(255, 255, 255)'});
                 await displayConfig({__bpbInstagramDisplay:true,enabled:true,theme:'dark'});
-                await waitForCondition(player,{description:'overflow recovery',isReady:s=>s?.carousel.index===1&&!s.next});
+                await waitForCondition(player,{description:'theme re-enabled preserves navigation',isReady:s=>s?.theme==='dark'&&s.carousel.index===1&&!s.next});
                 assert.equal(requests,count);stable(beforeVideo,await geometry());
-                assert(await providerEvaluate(()=>document.activeElement?.getAttribute('aria-label')==='Go back'),'hidden Next retained keyboard focus');
-                console.log(JSON.stringify({kind,displayFixture:true,emptyEndReproducedWithoutHelper:true,overflowRecovered:true,themeRetained:true,restored:true,permissionFixture:'pregranted'}));
+                console.log(JSON.stringify({kind,displayFixture:true,nativeNavigationUnchanged:true,themeRetained:true,restored:true,permissionFixture:'pregranted'}));
             }
             const beforeHelp=requests;
             await verifyReportImageHelp({kind,version,evaluate,navigate,viewport,patch,click,hover,press,screenshot,screenshots,origin});

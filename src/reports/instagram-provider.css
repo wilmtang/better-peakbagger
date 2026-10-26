@@ -1,6 +1,5 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later */
-html[data-bpb-instagram-theme] [data-bpb-instagram-end] { display: none !important; }
 /* Color only the provider chrome. Never filter/invert images, posters or video. */
 html[data-bpb-instagram-theme="dark"] {
     color-scheme: dark;

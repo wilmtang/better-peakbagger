@@ -22,7 +22,11 @@ html .bpb-instagram .bpb-instagram-link:link, html .bpb-instagram .bpb-instagram
 .bpb-instagram-media { height: clamp(360px, 75vh, 760px); margin-top: 8px; }
 /* Loading stays out of flow. Success adopts one bounded caption-inclusive
    measurement, then remains steady; unusually long content scrolls inside. */
-.bpb-instagram-media[data-pending] { position: absolute; top: 100%; left: 12px; right: 0; margin: 0; opacity: 0; pointer-events: none; }
+/* Absolute offsets start inside the border. Match the 10px content padding,
+   so completing a load changes height only, never the player's viewport width.
+   A width change during Instagram hydration can corrupt its pager's cached
+   visible width (including zero), allowing navigation past the final item. */
+.bpb-instagram-media[data-pending] { position: absolute; top: 100%; left: 10px; right: 0; margin: 0; opacity: 0; pointer-events: none; }
 .bpb-instagram-frame { width: 100%; height: 100%; border: 0; display: block; color-scheme: light; }
 .bpb-instagram [hidden] { display: none !important; }
 :root[data-bpb-theme="dark"] .bpb-instagram { --ig-control: #292f2b; --ig-border: #4b554d; --ig-text: #eeeade; --ig-sub: #b5beb5; --ig-link: #a2d8b5; }

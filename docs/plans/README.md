@@ -1,11 +1,10 @@
 # Active plans
 
 - [Instagram embed display audit — October 26](instagram-embed-audit-2026-10-26.md)
-  — carousel limits and native-player dark mode implemented behind optional
-  access; Chrome/Firefox native playback, theme and security checks passed.
-  The original overflow's precise cause remains unresolved after direct/embed
-  comparisons; the boundary guard is a verified mitigation. Native permission
-  UI proof and unrelated suite/lint failures remain in the closure ledger.
+  — reproduced the initialization race: BPB widened the player by 2px after
+  loading, and overlapping Instagram resize updates could retain visible width
+  zero. Corrected the width and removed navigation interception; optional access
+  now controls theme only. Verification and proof limits are in the ledger.
 
 - [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
   — implemented in focused commits: collapsed-read/calm-axis fixes, shared

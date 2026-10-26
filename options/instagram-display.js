@@ -27,8 +27,8 @@ export function initInstagramDisplay({ extensionApi: api, flash }) {
                 : await api.permissions.remove({ origins: INSTAGRAM_DISPLAY_ORIGINS });
             if (!changed) { flash(enable ? 'Instagram access wasn’t granted.' : 'Instagram access could not be removed.', { error: true }); return; }
             const reply = await api.runtime.sendMessage({ type: 'INSTAGRAM_DISPLAY_SYNC' });
-            if (!reply?.ok) throw new Error('Instagram display fixes could not be updated. Reload the post to retry.');
-            flash(enable ? 'Instagram display fixes enabled. Reload an open post to apply them.' : 'Instagram display fixes disabled.');
+            if (!reply?.ok) throw new Error('Instagram theme could not be updated. Reload the post to retry.');
+            flash(enable ? 'Instagram theme enabled. Reload an open post to apply it.' : 'Instagram theme disabled.');
         } catch (error) { flash(error.message || 'Instagram access could not be changed.', { error: true }); }
         finally { busy = false; control.removeAttribute('aria-busy'); control.setAttribute('aria-disabled', 'false'); void refresh(); }
     });

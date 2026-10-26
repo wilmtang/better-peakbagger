@@ -291,10 +291,10 @@ the reported ten-slide mixed carousel, including captions and decoded video
 playback after carousel navigation. Avatar images do not count as loaded media.
 `--display` clones `dist/` into a disposable test source with the optional
 Instagram host pregranted. It verifies packaged injection, terminal carousel
-bounds, helper restoration/recovery and theme transitions without reloading or
-filtering media. It does not test the native permission prompt. The production
+bounds, stable pending/loaded viewport widths and theme transitions without
+reloading or filtering media. It does not test the native permission prompt. The production
 manifest retains optional access. Fixture-only code in the disposable copy
-lets the packaged parent send restoration configurations and stubs native
+lets the packaged parent send theme restoration configurations and stubs native
 permission results in Settings; the shipped controller, keyboard/focus and
 worker sync remain real. Pending, denial, retry/grant and removal compare the
 control, row and following heading geometry with a one-pixel tolerance. Narrow

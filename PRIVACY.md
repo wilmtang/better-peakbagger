@@ -53,7 +53,7 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and climber-list management on Peakbagger. |
 | Optional GitHub host access | Access to `github.com` and `api.github.com` is requested only when the user connects GitHub. It supports device-flow sign-in and the one repository the user grants. |
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
-| Optional Instagram host access | Requested only by **Allow display fixes** in Settings → Report editor. The browser grants `www.instagram.com`; BPB registers packaged code only for captioned post/Reel embeds, and activates it only inside BPB's own authenticated wrapper. It styles player chrome and checks carousel geometry; it does not extract captions, media URLs, cookies or browsing history. Ordinary post loading does not require this permission. |
+| Optional Instagram host access | Requested only by **Match BPB theme** in Settings → Report editor. The browser grants `www.instagram.com`; BPB registers packaged code only for captioned post/Reel embeds, and activates it only inside BPB's own authenticated wrapper. It styles player chrome; it does not extract captions, media URLs, cookies or browsing history. Ordinary post loading does not require this permission. |
 | Optional Gaia GPS host access | Access to `www.gaiagps.com` is requested only when the user clicks **Send to Gaia**. It lets the extension open Gaia's map and supply the saved GPX to Gaia's visible import preview; the extension does not click Gaia's **Save** control. |
 | Optional onX host access | Access to `backcountry.onxmaps.com` is requested only when the user clicks **Send to onX**. It lets the extension open onX Backcountry's import page and supply the saved GPX to its visible preview; the extension does not click onX's **Import** control and has no access to `identity.onxmaps.com`. |
 | Optional CalTopo host access | Access to `caltopo.com` is requested only when the user clicks **Send to CalTopo**. File selection sends the saved GPX to CalTopo for parsing and object review; the extension does not confirm **Import** or **Save**. |
@@ -835,14 +835,13 @@ The optional display helper additionally sends a content-free readiness signal
 to the wrapper.
 Provider markup, styles and later resize messages are not applied to the report.
 
-**Instagram display fixes** is a separate optional browser permission, not
+**Instagram theme** is a separate optional browser permission, not
 automatic-loading consent. After granting it, reload an open post to apply the
 helper. It matches the post's chrome to BPB's theme without filtering photos or
-video, and prevents navigation beyond the recognized native carousel slots.
+video. Carousel navigation is left entirely to Instagram.
 The isolated helper remains inactive on standalone Instagram pages and embeds
 outside BPB's own packaged parent. Only an authenticated light/dark/enabled
 configuration and a readiness signal cross that boundary; provider content is
 not sent to the worker or report. Removing access unregisters the helper and
-restores native presentation in open BPB embeds. Unknown carousel layouts keep
-Instagram's own controls. Permission state is owned by the browser and is not
-copied into settings backups or browser sync.
+restores native presentation in open BPB embeds. Permission state is owned by
+the browser and is not copied into settings backups or browser sync.
