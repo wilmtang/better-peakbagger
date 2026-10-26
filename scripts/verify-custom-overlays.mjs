@@ -8,12 +8,13 @@ import path from 'node:path';
 import { createServer } from 'node:https';
 import { chromium } from 'playwright';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
-import { createBrowserFixtureServer, createFixtureCertificate } from './browser-verification-fixtures.mjs';
+import { createBrowserFixtureServer, createFixtureCertificate, waitForCondition } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
 import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
+import { verifyCustomEditor } from './custom-overlay-editor-verification.mjs';
 
 const firefoxMode = process.argv[2] === '--firefox';
 assert.ok(process.argv.length === 2 || process.argv.length === 3 && firefoxMode, 'Usage: node scripts/verify-custom-overlays.mjs [--firefox]');
@@ -32,6 +33,10 @@ try {
         assert.equal(request.headers.cookie, undefined); assert.equal(request.headers.referer, undefined);
         if (held) await new Promise(resolve => releases.push(resolve));
         const geo = request.url.endsWith('.geojson'), vector = request.url.endsWith('.pbf');
+        if (request.url === '/metadata.json') {
+            response.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+            response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 2, maxzoom: 14, scheme: 'tms', tiles: [`https://${request.headers.host}/{z}/{x}/{y}.png`] })); return;
+        }
         response.writeHead(200, { 'content-type': geo ? 'application/geo+json' : vector ? 'application/vnd.mapbox-vector-tile' : 'image/png', 'cache-control': 'no-store', ...denied ? {} : { 'access-control-allow-origin': '*' } });
         response.end(geo ? JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 48], [-122, 48], [-122, 46]]] } }] }) : vector ? mvt : png);
     });
@@ -71,6 +76,17 @@ try {
         assert.equal(await page.locator('iframe[title="Custom map overlays"]').count(), 0, 'map navigation never opens an inline editor');
         const editor = admin.frameLocator('#custom-layer-dialog iframe');
         await admin.locator('#custom-layer-add').click();
+        await editor.locator('#name').waitFor();
+        const editorFrame = admin.frames().find(frame => frame.url().includes('/custom-overlay/editor.html'));
+        const editorProof = await verifyCustomEditor({ evaluate: (...args) => editorFrame.evaluate(...args), click: selector => editor.locator(selector).click(),
+            hover: selector => editor.locator(selector).hover(),
+            press: (selector, key) => editor.locator(selector).press(key), fill: (selector, value) => editor.locator(selector).fill(value),
+            select: (selector, value) => editor.locator(selector).selectOption(value),
+            wait: (condition, message) => waitForCondition(condition, { description: message, timeoutMs: 10000 }),
+            viewport: width => admin.setViewportSize({ width, height: 800 }), providerOrigin,
+            screenshot: async name => { if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await admin.screenshot({ path: path.join(process.env.BPB_CUSTOM_SCREENSHOTS, `editor-${name}.png`) }); } } });
+        await editor.locator('#cancel').click(); await admin.locator('#custom-layer-add').click();
+        await editorFrame.waitForFunction(() => document.getElementById('name').value === '');
         await editor.locator('#name').fill('Custom raster'); await editor.locator('#url').fill(`${providerOrigin}/{z}/{x}/{y}.png`);
         png = Buffer.from(await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256; const context = canvas.getContext('2d'); context.fillStyle = '#ef2719'; context.fillRect(0, 0, 256, 256); return canvas.toDataURL().split(',')[1]; }), 'base64');
         await editor.locator('#save').click(); await editor.locator('#feedback').filter({ hasText: 'Saved on this device' }).waitFor();
@@ -235,6 +251,31 @@ try {
         assert.ok((await editor.locator('#save').boundingBox()).width > 50);
         await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 2); }, admin.url());
         assert.ok(await editor.locator('#form').evaluate(form => form.scrollWidth <= form.clientWidth), 'editor fits at 200% browser zoom');
+        await editor.locator('#advanced').evaluate(element => { element.open = true; });
+        const hoverInfo = editor.locator('#kind-label .info');
+        await hoverInfo.evaluate(button => button.scrollIntoView({ block: 'center' }));
+        const hoverBefore = await hoverInfo.boundingBox(); await hoverInfo.hover(); await hoverInfo.click();
+        const hoverAfter = await hoverInfo.boundingBox();
+        for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(hoverBefore[key] - hoverAfter[key]) <= 1, `200% pointer help keeps its trigger ${key} stable`);
+        await hoverInfo.press('Escape'); await hoverInfo.blur();
+        for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds', 'attribution', 'attribution-url']) {
+            const info = editor.locator(`#${id}-label .info`); await info.focus();
+            const readFit = () => editor.locator(`#${id}-help`).evaluate(tip => {
+                const box = tip.getBoundingClientRect();
+                const button = document.querySelector(`[aria-describedby="${tip.id}"]`), anchor = button.getBoundingClientRect();
+                const hit = document.elementFromPoint(anchor.x + anchor.width / 2, anchor.y + anchor.height / 2);
+                return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: innerWidth, height: window.innerHeight,
+                    triggerVisible: anchor.top >= 0 && anchor.bottom <= window.innerHeight && button.contains(hit),
+                    anchor: { top: anchor.top, bottom: anchor.bottom }, hit: hit?.outerHTML.slice(0, 150) };
+            });
+            const fit = await waitForCondition(readFit, { description: `200% ${id} tooltip and focused trigger are visible`, timeoutMs: 2000,
+                isReady: value => value.triggerVisible && value.left >= 0 && value.right <= value.width && value.top >= 0 && value.bottom <= value.height });
+            assert.ok(fit.left >= 0 && fit.right <= fit.width && fit.top >= 0 && fit.bottom <= fit.height, `200% ${id} tooltip fits: ${JSON.stringify(fit)}`);
+            assert.ok(fit.triggerVisible, `200% ${id} tooltip trigger remains visible above the actions: ${JSON.stringify(fit)}`);
+            if (screenshots && id === 'bounds') await admin.screenshot({ path: path.join(screenshots, 'custom-editor-zoom-help.png') });
+            await info.press('Escape');
+        }
+        await editor.locator('#advanced').evaluate(element => { element.open = false; });
         const wordsFit = () => editor.locator('footer.actions').evaluate(footer => [...footer.querySelectorAll('button')].filter(button => button.getClientRects().length).every(button => {
             const text = button.firstChild;
             return [...text.textContent.matchAll(/\S+/g)].every(match => { const range = document.createRange(); range.setStart(text, match.index); range.setEnd(text, match.index + match[0].length); return range.getClientRects().length === 1; });
@@ -298,7 +339,7 @@ try {
         await editor.locator('#cancel').click();
         if (screenshots) await page.screenshot({ path: path.join(screenshots, 'custom-terrain.png') });
         assert.deepEqual(errors, []);
-        console.log(JSON.stringify({ verification: 'custom-overlays', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true, scrollBoundaries: true, previousCanvasProof: !!process.env.BPB_PREVIOUS_PANEL_CSS }));
+        console.log(JSON.stringify({ verification: 'custom-overlays', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true, scrollBoundaries: true, editorProof, previousCanvasProof: !!process.env.BPB_PREVIOUS_PANEL_CSS }));
     }
 } catch (error) { failure = error; try { const live = await failurePage?.frameLocator('iframe[title="Custom map overlays"]').locator('#feedback').textContent({ timeout: 1000 }); console.error(JSON.stringify({ live, ...diagnostics?.() })); } catch { /* Preserve the original failure. */ } }
 await resources.dispose(failure);
@@ -360,6 +401,17 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await click('#custom-layer-add');
     await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
     await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Options editor initialized');
+    const editorProof = await verifyCustomEditor({ evaluate, click, wait, providerOrigin,
+        hover: async selector => driver.actions({ async: true }).move({ origin: await driver.findElement(By.css(selector)) }).perform(),
+        press: async (selector, key) => { const keys = { Space: Key.SPACE, Escape: Key.ESCAPE, ArrowDown: Key.ARROW_DOWN }; assert.ok(keys[key], `Unknown editor key: ${key}`); await (await driver.findElement(By.css(selector))).sendKeys(keys[key]); },
+        fill: async (selector, value) => { const input = await driver.findElement(By.css(selector)); await input.clear(); await input.sendKeys(value); },
+        select: async (selector, value) => { await evaluate((selector, value) => { const input = document.querySelector(selector); input.value = value; input.dispatchEvent(new window.Event('input', { bubbles: true })); input.dispatchEvent(new window.Event('change', { bubbles: true })); }, selector, value); },
+        viewport: async width => { await driver.switchTo().defaultContent(); await driver.manage().window().setRect({ width, height: 800 }); await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe'))); },
+        screenshot: async name => { if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await writeFile(path.join(process.env.BPB_CUSTOM_SCREENSHOTS, `editor-firefox-${name}.png`), await driver.takeScreenshot(), 'base64'); } } });
+    console.log(JSON.stringify({ verification: 'custom-overlay-editor', browser: 'Firefox', hidden: true, ...editorProof }));
+    await click('#cancel'); await driver.switchTo().defaultContent(); await click('#custom-layer-add');
+    await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
+    await wait(() => evaluate(() => document.getElementById('name').value === ''), 'fresh editor after verification');
     assert.equal(await evaluate(() => document.querySelectorAll('#library button').length), 0, 'Firefox embedded editor has no duplicate manager');
     await (await driver.findElement(By.id('name'))).sendKeys('Options Firefox source');
     await (await driver.findElement(By.id('url'))).sendKeys(`${providerOrigin}/{z}/{x}/{y}.png`);
@@ -428,7 +480,10 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await wait(() => driver.findElements(By.id('bpb-terrain-toggle')).then(elements => elements.length > 0), '3D toggle');
     await click('#bpb-terrain-toggle');
     if ((await driver.findElements(By.css('.bpb-terrain-consent-primary'))).length) await click('.bpb-terrain-consent-primary');
-    await wait(ready, 'all custom overlays loaded in real Firefox terrain');
+    await waitForCondition(() => evaluate(() => [...document.querySelectorAll('.bpb-custom-source summary')].map(element => element.textContent)), {
+        description: 'all custom overlays loaded in real Firefox terrain', timeoutMs: 30000,
+        isReady: rows => rows.filter(text => text.includes('60%')).length === 3,
+    });
     await driver.switchTo().frame(await driver.findElement(By.id('bpb-terrain-frame')));
     const renderer = await evaluate(() => { const gl = document.querySelector('canvas.maplibregl-canvas')?.getContext('webgl2'); const extension = gl?.getExtension('WEBGL_debug_renderer_info'); return extension && gl.getParameter(extension.UNMASKED_RENDERER_WEBGL); });
     assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `Firefox hardware renderer required: ${renderer}`);

@@ -6,6 +6,7 @@ import { createCustomParser } from './custom-overlay-parser.js';
 import { createCustomClient, customFailure } from './custom-overlay-client.js';
 
 const ext = globalThis.browser || globalThis.chrome, tag = '__bpbCustomOverlays';
+const helpLabel = (id, label, explanation) => `<div class="field-label" id="${id}-label"><label for="${id}">${label}</label><button type="button" class="info" aria-label="About ${label.toLowerCase()}" aria-describedby="${id}-help" aria-controls="${id}-help" aria-expanded="false"><span aria-hidden="true">ⓘ</span></button><span id="${id}-help" class="tooltip" role="tooltip" hidden>${explanation}</span></div>`;
 if (parent === window) {
     location.replace(ext.runtime.getURL('options/options.html#custom-map-layers'));
 } else {
@@ -20,25 +21,82 @@ if (parent === window) {
     root.innerHTML = `<h1>Custom map overlays</h1><section id="library"></section>
 <form id="form"><fieldset><legend id="form-title">Add custom overlay</legend>
 <label for="name">Name</label><input id="name" maxlength="80" required>
-<label for="kind">Source type</label><select id="kind"><option value="raster">Raster tiles</option><option value="mvt">Vector tiles (MVT)</option><option value="geojson">GeoJSON</option></select>
+${helpLabel('kind', 'Source type', 'Raster tiles are map images. MVT tiles and GeoJSON contain shapes you style. Choose the provider’s source type; BPB does not infer it from the URL.')}<select id="kind"><option value="raster">Raster tiles</option><option value="mvt">Vector tiles (MVT)</option><option value="geojson">GeoJSON</option></select>
 <label for="url">URL</label><input id="url" type="text" spellcheck="false" required aria-describedby="url-hint feedback">
 <p id="url-hint" class="hint">Use a public HTTPS source. URL keys are visible to the Peakbagger page; do not use confidential tokens.</p>
-<label id="format-label" for="format">URL format</label><select id="format"><option value="template">Tile template: {z}, {x}, {y}</option><option value="tilejson">TileJSON metadata</option></select>
-<details id="advanced"><summary>Advanced</summary><section id="tile-fields"><p>Available tile zoom range</p>
+${helpLabel('format', 'URL format', 'Use Tile template for {z}/{x}/{y} URLs, or TileJSON for metadata. Choose manually. Check source reads TileJSON tile URLs and zoom limits; it does not test tile coverage.')}<select id="format"><option value="template">Tile template: {z}, {x}, {y}</option><option value="tilejson">TileJSON metadata</option></select>
+<details id="advanced"><summary>Advanced</summary><section id="tile-fields">${helpLabel('minimum', 'Available tile zoom range', '0 shows the world; higher levels add detail. Templates start at unchecked 0–18. Check source reads TileJSON limits (up to 22). Manual edits override metadata; Use source values restores it.')}
 <p class="hint">Zooming in further enlarges the last available tile.</p><div class="fields">
-<div><label for="minimum">Minimum</label><input id="minimum" type="number" min="0" max="22" value="0"></div>
-<div><label for="maximum">Maximum</label><input id="maximum" type="number" min="0" max="22" value="18"></div></div>
+<div><label for="minimum">Minimum</label><input id="minimum" aria-describedby="minimum-help" type="number" min="0" max="22" value="0"></div>
+<div><label for="maximum">Maximum</label><input id="maximum" aria-describedby="minimum-help" type="number" min="0" max="22" value="18"></div></div>
 <p id="zoom-origin" class="hint">Default — not checked</p><button type="button" id="source-values">Use source values</button>
-<label for="scheme">Tile coordinates</label><select id="scheme"><option value="xyz">XYZ (normal Y)</option><option value="tms">TMS (reversed Y)</option></select>
-<label id="size-label" for="tile-size">Tile size</label><select id="tile-size"><option value="256">256 pixels</option><option value="512">512 pixels</option></select></section>
-<label for="bounds">Bounds (optional)</label><input id="bounds" placeholder="west, south, east, north">
-<label for="attribution">Attribution</label><input id="attribution" maxlength="600"><label for="attribution-url">Attribution link (optional)</label><input id="attribution-url" type="url">
+${helpLabel('scheme', 'Tile coordinates', 'Use XYZ unless the provider specifies TMS (reversed north–south numbering). Check source reads the TileJSON scheme.')}<select id="scheme"><option value="xyz">XYZ (normal Y)</option><option value="tms">TMS (reversed Y)</option></select>
+${helpLabel('tile-size', 'Tile size', 'Usually 256 pixels. Choose 512 only when specified by the provider. This is the logical tile size; a sharper @2x image may still use 256.')}<select id="tile-size"><option value="256">256 pixels</option><option value="512">512 pixels</option></select></section>
+${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west longitude, south latitude, east longitude, north latitude. West and south can be negative. Leave blank if unknown.')}<input id="bounds" placeholder="west, south, east, north">
+${helpLabel('attribution', 'Attribution', 'Credit shown on the map, such as © Example Maps. Enter the provider’s required credit as plain text; BPB does not fill it from TileJSON.')}<input id="attribution" maxlength="600">${helpLabel('attribution-url', 'Attribution link (optional)', 'A public HTTPS page for the provider or licence. Makes the map credit clickable. This is a website link, not a tile endpoint.')}<input id="attribution-url" type="url">
 </details><fieldset id="appearance"><legend>Appearance</legend><p class="hint">Simple points, lines and polygons. Full map styles, labels and icons are not supported.</p><datalist id="source-layers"></datalist><div id="rules"></div><button type="button" id="add-rule">Add style rule</button></fieldset>
-<p id="feedback" class="feedback" role="status" aria-live="polite"></p>
 <details class="help"><summary>How to fix URL / CORS errors</summary><p>Check the URL, format and zoom range. Public metadata and tile servers must allow browser access, usually with <code>Access-Control-Allow-Origin: *</code>. A normal image link working does not prove CORS support. Use a browser-compatible endpoint or contact the provider. BPB has no proxy.</p><a target="_blank" rel="noopener noreferrer" href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS/Errors">Browser troubleshooting guide</a></details>
-<footer class="actions"><button type="button" id="preview">Preview</button><button type="button" id="test">Test source</button><button type="submit" class="primary" id="save">Save</button><button type="button" id="cancel">Close</button><button type="button" id="remove">Remove</button></footer>
+<footer class="actions"><div id="notice" class="feedback" hidden><p id="feedback" role="status" aria-live="polite"></p><button type="button" id="dismiss-feedback" aria-label="Dismiss status">×</button></div><button type="button" id="preview">Preview</button><button type="button" id="test">Test source</button><button type="submit" class="primary" id="save">Save</button><button type="button" id="cancel">Close</button><button type="button" id="remove">Remove</button></footer>
 </fieldset></form>`;
-    const field = id => document.getElementById(id), feedback = message => { field('feedback').textContent = message; };
+    const field = id => document.getElementById(id), feedback = message => {
+        field('notice').hidden = !message; field('feedback').textContent = message;
+        if (message && field('feedback').scrollHeight > field('feedback').clientHeight) field('feedback').tabIndex = 0;
+        else field('feedback').removeAttribute('tabindex');
+    };
+    let feedbackControl = 'test';
+    field('dismiss-feedback').onclick = () => { feedback(''); field(feedbackControl).focus({ preventScroll: true }); };
+    let activeHelp = null, pinnedHelp = false, helpTimer, pointerHelp = null;
+    const closeHelp = () => {
+        clearTimeout(helpTimer);
+        if (!activeHelp) return;
+        field(activeHelp.getAttribute('aria-describedby')).hidden = true;
+        activeHelp.setAttribute('aria-expanded', 'false'); activeHelp = null; pinnedHelp = false;
+    };
+    const showHelp = button => {
+        clearTimeout(helpTimer);
+        if (activeHelp !== button) closeHelp();
+        activeHelp = button;
+        const tip = field(button.getAttribute('aria-describedby')); tip.hidden = false; tip.style.maxHeight = 'none'; button.setAttribute('aria-expanded', 'true');
+        const anchor = button.getBoundingClientRect(), box = tip.getBoundingClientRect(), gap = 8;
+        tip.style.left = `${Math.max(gap, Math.min(anchor.left, document.documentElement.clientWidth - box.width - gap))}px`;
+        const below = innerHeight - anchor.bottom - gap * 2, above = anchor.top - gap * 2;
+        const useBelow = box.height <= below || box.height > above && below >= above;
+        const available = Math.max(0, useBelow ? below : above);
+        tip.style.maxHeight = `${available}px`;
+        const top = useBelow ? anchor.bottom + gap : anchor.top - Math.min(box.height, available) - gap;
+        tip.style.top = `${Math.max(gap, top)}px`;
+        return box.height;
+    };
+    for (const button of document.querySelectorAll('.info')) {
+        const tip = field(button.getAttribute('aria-describedby'));
+        button.onpointerenter = () => showHelp(button);
+        button.onfocus = () => {
+            const height = showHelp(button);
+            if (pointerHelp === button) return;
+            const anchor = button.getBoundingClientRect();
+            const footerTop = document.querySelector('.actions').getBoundingClientRect().top;
+            let delta = Math.max(0, anchor.bottom - Math.min(innerHeight, footerTop) + 8);
+            if (anchor.top - delta < height + 16 && innerHeight - anchor.bottom + delta < height + 16) delta = Math.max(delta, anchor.bottom + height + 16 - innerHeight);
+            // Browser zoom rounds scrolling to device pixels. Leave a pixel of
+            // room so rounding cannot flip the tooltip back over its trigger.
+            if (delta) window.scrollBy({ top: Math.ceil(delta) + 1, behavior: 'instant' });
+            showHelp(button);
+        };
+        tip.onpointerenter = () => clearTimeout(helpTimer);
+        const leave = event => { if (!pinnedHelp && document.activeElement !== button && !button.contains(event.relatedTarget) && !tip.contains(event.relatedTarget)) helpTimer = setTimeout(closeHelp, 200); };
+        button.onpointerleave = tip.onpointerleave = leave;
+        button.onblur = () => { if (!button.matches(':hover') && !tip.matches(':hover')) closeHelp(); };
+        button.onclick = () => { if (activeHelp === button && pinnedHelp) closeHelp(); else { showHelp(button); pinnedHelp = true; } };
+    }
+    document.addEventListener('pointerdown', event => { pointerHelp = event.target.closest('.info'); if (!event.target.closest('.info,.tooltip')) closeHelp(); });
+    const endPointer = () => { pointerHelp = null; };
+    document.addEventListener('pointerup', endPointer); document.addEventListener('pointercancel', endPointer);
+    const repositionHelp = () => {
+        if (!activeHelp) return;
+        const box = activeHelp.getBoundingClientRect();
+        if (!box.width || box.bottom < 0 || box.top >= innerHeight) closeHelp(); else showHelp(activeHelp);
+    };
+    window.addEventListener('scroll', repositionHelp); window.addEventListener('resize', repositionHelp);
     const ruleValues = [];
     const addRule = (rule = { geometry: 'line', color: '#26734d', width: 2, radius: 5, fillOpacity: .3, sourceLayer: '' }) => {
         if (ruleValues.length >= 16) return;
@@ -63,7 +121,8 @@ if (parent === window) {
     function updateKind() {
         const kind = field('kind').value, geo = kind === 'geojson';
         field('tile-fields').hidden = geo; field('format').hidden = field('format-label').hidden = geo;
-        field('tile-size').hidden = field('size-label').hidden = kind !== 'raster'; field('appearance').hidden = kind === 'raster';
+        field('source-values').hidden = geo || field('format').value !== 'tilejson';
+        field('tile-size').hidden = field('tile-size-label').hidden = kind !== 'raster'; field('appearance').hidden = kind === 'raster';
         for (const wrap of document.querySelectorAll('[data-source-layer]')) wrap.hidden = kind !== 'mvt';
         field('preview').disabled = !mapId; field('preview').hidden = !mapId && parent !== window;
         field('test').textContent = mapId ? 'Test source' : 'Check source'; field('test').disabled = geo;
@@ -97,7 +156,7 @@ if (parent === window) {
     };
     const busy = value => { pending = value; for (const id of ['preview', 'test', 'save']) field(id).setAttribute('aria-disabled', String(value)); };
     const run = async action => {
-        if (pending) return; busy(true); controller = new AbortController(); feedback(action === 'save' ? 'Saving…' : 'Checking source…');
+        if (pending) return; feedbackControl = action === 'resolve' ? 'test' : action; busy(true); controller = new AbortController(); feedback(action === 'save' ? 'Saving…' : 'Checking source…');
         try {
             if (!field('form').reportValidity()) { feedback('Check the highlighted fields.'); return; }
             let source = sourceFromForm(action !== 'save');
@@ -136,6 +195,7 @@ if (parent === window) {
         finally { busy(false); controller = null; }
     };
     const reset = source => {
+        closeHelp();
         sourceId = source?.id || 'custom:' + crypto.randomUUID(); expectedRevision = source?.revision || 0; resolved = source || null; dirty = false;
         field('form-title').textContent = source ? 'Edit overlay' : 'Add custom overlay';
         field('name').value = source?.name || ''; field('kind').value = source?.kind || 'raster';
@@ -175,12 +235,13 @@ if (parent === window) {
     field('remove').onclick = async () => { if (pending || !expectedRevision) return; busy(true); try { const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_REMOVE', id: sourceId, expectedRevision }); if (!reply?.ok) throw new Error(reply?.error || 'Couldn’t remove.'); await stopPreview(); reset(); await library(); feedback('Overlay removed.'); } catch (error) { feedback(error.message); } finally { busy(false); } };
     field('cancel').onclick = () => { void stopPreview().finally(() => send({ type: 'close' })); };
     document.addEventListener('keydown', event => {
-        if (event.key === 'Tab' && parent !== window) { const controls = [...document.querySelectorAll('button,input,select,summary,a[href]')].filter(element => !element.disabled && element.getClientRects().length);
+        if (event.key === 'Tab' && parent !== window) { const controls = [...document.querySelectorAll('button,input,select,summary,a[href],[tabindex="0"]')].filter(element => !element.disabled && element.getClientRects().length);
             const index = controls.indexOf(document.activeElement); if (event.shiftKey && index <= 0) { event.preventDefault(); controls.at(-1)?.focus(); } else if (!event.shiftKey && index === controls.length - 1) { event.preventDefault(); controls[0]?.focus(); }
         }
-        if (event.key === 'Escape') { event.preventDefault(); field('cancel').click(); } });
+        if (event.key === 'Escape') { event.preventDefault(); if (activeHelp) closeHelp(); else field('cancel').click(); } });
     field('form').addEventListener('input', event => { dirty = true; resolved = null; if (['minimum', 'maximum'].includes(event.target.id)) event.target.dataset.origin = 'manual'; controller?.abort(); });
     field('kind').onchange = () => { void stopPreview(); updateKind(); };
+    field('format').onchange = () => { void stopPreview(); updateKind(); };
     field('url').onchange = () => { void stopPreview(); };
     window.addEventListener('message', event => {
         const data = event.data;

@@ -23,11 +23,22 @@ Supported formats are raster PNG/JPEG/WebP XYZ tiles, MVT/PBF vector tiles and
 small GeoJSON FeatureCollections. Tiled sources accept a `{z}/{x}/{y}` template
 or TileJSON 2/3 metadata. **Advanced** offers reversed Y (TMS), raster tile size,
 native zoom range, optional bounds and attribution. Metadata supplies the range
-where declared; raw templates start at 0–18, marked unchecked. Manual bounds
+where declared; raw templates start at 0–18, marked unchecked. Manual zoom limits
 survive subsequent metadata reads; **Use source values** restores discovery.
 The effective maximum is 22, while declared metadata values are retained.
 Zooming beyond the maximum enlarges/clips the last available detail; below the
 minimum the layer requests no tiles and says **Zoom in**.
+
+Choose the source type and URL format explicitly; BPB does not infer them from
+the URL or search for a metadata endpoint. **Check source** reads the selected
+TileJSON document's tile templates, zoom limits and coordinate scheme. It does
+not discover the complete zoom coverage of a raw template; **Use source values**
+is available for TileJSON only. Bounds describe the
+coverage rectangle in west, south, east, north degrees. Attribution is the
+provider's map credit, with an optional HTTPS link to its website or licence;
+enter that credit manually. Circled information buttons explain these fields
+on hover, focus or click; Escape dismisses the explanation. Status messages are
+dismissible above the actions and do not reserve an empty block in the form.
 
 Vector sources need point, line or polygon rules. MVT rules also name the vector
 source layer; TileJSON layer IDs are offered as suggestions. Both renderers use

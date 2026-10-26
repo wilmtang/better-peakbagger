@@ -131,6 +131,7 @@ independent of the existing targets.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
 - [verify-custom-overlays.mjs](verify-custom-overlays.mjs) — real unpacked overlay editor, direct HTTPS/CORS tiles, packaged vector workers, map ownership and 2D/3D rendering.
+- [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — shared Chrome/Firefox editor cases for compact spacing, field help, metadata zoom values and stable pending/error/retry status; invoked by the custom-overlay verifier.
 - [verify-peak-cards.mjs](verify-peak-cards.mjs)
 - [verify-summit-cloud.mjs](verify-summit-cloud.mjs) — hidden Chrome/Firefox
   forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.
