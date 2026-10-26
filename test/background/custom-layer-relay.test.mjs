@@ -67,16 +67,31 @@ test('grants expire, permission/source changes fail closed, worker restart loses
     const h = harness();await h.save();await h.grant();h.permission(false);assert.equal((await h.get()).ok, false);assert.equal(h.calls(), 0);h.permission(true);
     h.time(1000000 + PRIVATE_LIMITS.grantMs);assert.equal((await h.get()).ok, false);h.time(1000000);
     await h.grant();h.restart();assert.equal((await h.get()).ok, false);
-    await h.grant();h.privateRecords.set('budget:tiles.example.com', { start: 1000000, hour: 1000000, daily: 0, hourly: 1024, last: 1000000 });
+    await h.grant();h.privateRecords.set('budget:tiles.example.com', { start: 1000000, hour: 1000000, daily: 0, hourly: PRIVATE_LIMITS.hourlyRequests, last: 1000000 });
     assert.equal((await h.get()).ok, false);assert.equal(h.calls(), 0);
     h.restart();await h.grant();assert.equal((await h.get()).ok, false);
     h.privateRecords.set('budget:tiles.example.com', { start: 1000000, hour: 1000000, daily: 0, hourly: 0, last: 1000001 });assert.equal((await h.get()).ok, false, 'clock rollback cannot refresh budgets');
 });
+test('power-user planning can fetch 1,025 distinct tiles and continue six hours after approval', async () => {
+    const h = harness();await h.save();await h.grant();
+    for (let index = 0; index < 1025; index++) {
+        const reply = await h.get({ coordinates: { z: 11, x: index, y: 1 } });
+        assert(reply.ok, `tile ${index + 1} interrupted normal planning: ${reply.code}`);
+    }
+    h.time(1000000 + 6 * 3600000);
+    assert((await h.get({ coordinates: { z: 11, x: 1025, y: 1 } })).ok, 'an afternoon session must retain its approval');
+    assert.equal(h.calls(), 1026);
+    h.time(1000000 + 8 * 3600000 - 1);
+    assert((await h.get({ coordinates: { z: 11, x: 1026, y: 1 } })).ok);
+    h.time(1000000 + 8 * 3600000);
+    assert.equal((await h.get({ coordinates: { z: 11, x: 1027, y: 1 } })).code, 'approval');
+    assert.equal(h.calls(), 1027, 'expiry must reject before another network request');
+});
 test('request budget caps attempts, rejects redirects/oversize/secret errors and obeys shared 429 cooldown', async () => {
     const h = harness();await h.save();await h.grant();
     h.fetch(async () => { throw new Error('secret echoed private+key'); });
-    for (let i = 0; i < 256; i++) { const reply = await h.get();assert(!JSON.stringify(reply).includes('private+key')); }
-    assert.equal(h.calls(), 256);assert.equal((await h.get()).ok, false);assert.equal(h.calls(), 256);
+    for (let i = 0; i < PRIVATE_LIMITS.grantRequests; i++) { const reply = await h.get();assert(!JSON.stringify(reply).includes('private+key')); }
+    assert.equal(h.calls(), PRIVATE_LIMITS.grantRequests);assert.equal((await h.get()).code, 'approval');assert.equal(h.calls(), PRIVATE_LIMITS.grantRequests);
     const o = harness();await o.save();await o.grant();o.fetch(async () => new Response('oops', { headers: { 'content-type': 'image/png', 'content-length': String(10 ** 8) } }));assert.equal((await o.get()).ok, false);
     o.fetch(async () => { const response = new Response('redirect', { headers: { 'content-type': 'image/png' } });Object.defineProperty(response, 'redirected', { value: true });return response; });assert.equal((await o.get()).ok, false);
     o.fetch(async () => new Response(new Uint8Array(4194305), { headers: { 'content-type': 'image/png' } }));assert.equal((await o.get()).ok, false, 'chunked responses retain their byte cap without Content-Length');
@@ -147,12 +162,19 @@ test('untrusted readers cannot label arbitrary URLs as private; removing paramet
 
 
 test('two explicitly approved tabs and separate layers share one durable provider budget', async () => {
-    const h = harness();await h.save();await h.grant();
-    const otherId = 'custom:1537a032-271c-4d11-9b8c-0edc566b47c1', otherPage = { ...page, documentId: 'doc-other', tab: { ...page.tab, id: 9 } };
-    assert((await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_SAVE',id: otherId,source: { ...source,id: otherId },expectedRevision: 0,requestParameters: secret }, h.editor)).ok);
-    await h.grant(otherId, otherPage);
-    h.privateRecords.set('budget:tiles.example.com', { start: 1000000,hour: 1000000,last: 1000000,daily: 0,hourly: 1023 });
-    assert((await h.get()).ok);assert.equal((await h.get({ id: otherId }, otherPage)).code, 'budget');assert.equal(h.calls(), 1);
+    for (const [counter, limit] of [['hourly', PRIVATE_LIMITS.hourlyRequests], ['daily', PRIVATE_LIMITS.dailyRequests]]) {
+        const h = harness();await h.save();await h.grant();
+        const otherId = 'custom:1537a032-271c-4d11-9b8c-0edc566b47c1', otherPage = { ...page, documentId: 'doc-other', tab: { ...page.tab, id: 9 } };
+        assert((await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_SAVE',id: otherId,source: { ...source,id: otherId },expectedRevision: 0,requestParameters: secret }, h.editor)).ok);
+        await h.grant(otherId, otherPage);
+        h.privateRecords.set('budget:tiles.example.com', { start: 1000000,hour: 1000000,last: 1000000,daily: 0,hourly: 0,[counter]: limit - 1 });
+        assert((await h.get()).ok);assert.equal((await h.get({ id: otherId }, otherPage)).code, 'budget');assert.equal(h.calls(), 1);
+        h.restart();await h.grant(otherId, otherPage);
+        assert.equal((await h.get({ id: otherId }, otherPage)).code, 'budget', `${counter} exhaustion survives fresh approval and worker restart`);
+        h.time(1000000 + (counter === 'hourly' ? 3600000 : 86400000));await h.grant(otherId, otherPage);
+        assert((await h.get({ id: otherId }, otherPage)).ok, `${counter} allowance becomes available when its fixed window expires`);
+        assert.equal(h.calls(), 2);
+    }
 });
 
 test('a corrupt durable ledger fails closed instead of turning counters into NaN', async () => {

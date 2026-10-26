@@ -13,6 +13,7 @@ import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
+import { PRIVATE_LIMITS } from '../src/maps/custom-overlay-private.js';
 const [kind, ...args] = process.argv.slice(2);
 assert(['chrome', 'firefox'].includes(kind) && args.every(arg => arg.startsWith('--screenshots=')), 'Usage: node scripts/verify-private-layers.mjs chrome|firefox [--screenshots=PATH]');
 const shots = args.find(arg => arg.startsWith('--screenshots='))?.slice(14), secret = 'fixture_KEY+PRIVATE/123';
@@ -54,7 +55,7 @@ try {
         response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });response.end(png);
     });resources.defer('private provider', () => closeServer(server));await listenServer(server, 0, '127.0.0.1');
     const origin = `https://www.peakbagger.com:${fixture.port}`, provider = `https://tiles.example.com:${server.address().port}`;
-    let evaluate, admin, click, fill, inside, options, map, access, activate, openReview, setViewport, shot, extensionUrl, version, terrainEvaluate;
+    let evaluate, admin, click, fill, inside, options, map, access, activate, openReview, setViewport, setReviewViewport, shot, extensionUrl, version, terrainEvaluate;
     if (kind === 'chrome') {
         const { chromium } = await import('playwright');
         const trust = '--ignore-certificate-errors-spki-list=' + [fixture, cert].flatMap(item => item.chromeTrustArgs.map(arg => arg.split('=').slice(1).join('='))).join(',');
@@ -74,6 +75,7 @@ try {
         activate = surface => (surface === 'options' ? options : map).bringToFront();
         openReview = async () => { const next = context.waitForEvent('page');await click('map', '[data-bpb-private-layer]');access = await next;await access.waitForLoadState();return fn => access.evaluate(fn); };
         setViewport = size => options.setViewportSize(size);shot = (surface, file) => (surface === 'access' ? access : surface === 'options' ? options : map).screenshot({ path: file });version = context.browser().version();
+        setReviewViewport = size => access.setViewportSize(size);
         terrainEvaluate = (fn, arg) => map.frames().find(frame => frame.url().includes('/terrain/terrain.html'))?.evaluate(fn, arg);
     } else {
         const { Builder, By } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
@@ -98,6 +100,8 @@ try {
         };
         openReview = async () => { const before = await driver.getAllWindowHandles();await click('map', '[data-bpb-private-layer]');access = await waitForCondition(async () => (await driver.getAllWindowHandles()).find(handle => !before.includes(handle)), { description: 'Firefox approval tab' });return fn => run(access, fn); };
         setViewport = async size => { await driver.switchTo().window(options);await driver.manage().window().setRect({ width: Math.max(500, size.width), height: size.height + 85 }); };
+        // Firefox BiDi cannot override a privileged extension-page viewport.
+        setReviewViewport = async size => { await driver.switchTo().window(access);await driver.manage().window().setRect({ width: Math.max(500, size.width), height: size.height + 85 }); };
         shot = async (surface, file) => { await driver.switchTo().window(surface === 'access' ? access : surface === 'options' ? options : map);await writeFile(file, await driver.takeScreenshot(), 'base64'); };version = (await driver.getCapabilities()).getBrowserVersion();
         terrainEvaluate = async fn => { await driver.switchTo().window(map);try { await driver.switchTo().frame(await driver.findElement(By.id('bpb-terrain-frame')));return await driver.executeScript(`return (${fn})();`); } finally { await driver.switchTo().defaultContent(); } };
         await setFirefoxContentViewport(driver, { width: 1000, height: 900 });
@@ -138,9 +142,28 @@ try {
     await click('map', '.bpb-custom-source input[type=checkbox]');await waitForCondition(() => evaluate(() => ({ text: document.querySelector('.bpb-custom-feedback')?.textContent,summary: document.querySelector('.bpb-custom-source summary')?.textContent,
         frames: [...document.querySelectorAll('iframe')].map(frame => { try { const w = frame.contentWindow;return { url: w.location.pathname, hidden: w.document.hidden, width: w.innerWidth, height: w.innerHeight, tiles: w.document.querySelectorAll('.bpb-custom-overlays canvas').length, pane: w.mapsPlaceholder?.getPane('bpb-custom-overlays')?.outerHTML.slice(0,800),map: w.mapsPlaceholder && {zoom:w.mapsPlaceholder.getZoom(),size:w.mapsPlaceholder.getSize(),layers:Object.values(w.mapsPlaceholder._layers).map(l=>({grid:!!l.createTile,tiles:l._tiles&&Object.keys(l._tiles).length,min:l.options?.minZoom,max:l.options?.maxZoom,loaded:l._loading}))} }; } catch { return {}; } }) })), { description: 'unapproved request rejected',isReady: value => value.text?.includes('Approve') });assert.equal(requests.length, 0);
     await evaluate(() => document.querySelector('.bpb-custom-source').open = true);
+    const grantLabel = `${PRIVATE_LIMITS.grantRequests.toLocaleString('en-US')} requests for ${PRIVATE_LIMITS.grantMs / 3600000} hours`;
+    assert((await evaluate(() => document.querySelector('.bpb-custom-feedback').textContent)).includes(grantLabel), 'map must explain the enforced allowance');
     const review = await openReview();await waitForCondition(() => review(() => ({ ready: document.getElementById('allow').getAttribute('aria-disabled') === 'false', status: document.getElementById('status').textContent })), { description: 'approval details', isReady: value => value.ready });
-    if (shots) await shot('access', path.join(shots, `private-${kind}-approval.png`));
+    assert.equal(await review(() => document.querySelector('strong').textContent), grantLabel);
+    assert((await review(() => document.querySelector('.sub').textContent)).includes(`${PRIVATE_LIMITS.hourlyRequests.toLocaleString('en-US')} requests per hour and ${PRIVATE_LIMITS.dailyRequests.toLocaleString('en-US')} per day`));
+    for (const width of [1000, kind === 'firefox' ? 500 : 375]) for (const theme of ['light', 'dark']) {
+        await setReviewViewport({ width, height: 900 });await review(theme === 'dark'
+            ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
+            : () => { document.documentElement.dataset.bpbTheme = 'light'; });
+        const fit = await review(() => ({ overflow: document.documentElement.scrollWidth > innerWidth, actions: [...document.querySelectorAll('button')].map(button => {
+            const rect = button.getBoundingClientRect();return { left: rect.left, right: rect.right, height: rect.height, visible: !!button.getClientRects().length };
+        }) }));
+        assert(!fit.overflow);assert(fit.actions.every(action => action.visible && action.left >= 0 && action.right <= width && action.height >= 44), 'approval actions must fit the viewport');
+        if (shots) await shot('access', path.join(shots, `private-${kind}-approval-${width}-${theme}.png`));
+    }
+    const approvalGeometry = () => review(() => [...document.querySelectorAll('h1,.actions button')].map(element => {
+        const rect = element.getBoundingClientRect();return [rect.x, rect.y, rect.width, rect.height];
+    }).concat([[scrollY]]));
+    const approvalBefore = await approvalGeometry();
     await click('access', '#allow');await wait(() => review(() => document.getElementById('status').textContent.startsWith('Approved.')), 'approved map allowance');
+    const approvalAfter = await approvalGeometry();assert(approvalAfter.every((rect, index) => rect.every((value, axis) => Math.abs(value - approvalBefore[index][axis]) <= 1)), 'approval actions and reading position must remain anchored');
+    await setReviewViewport({ width: 1000, height: 900 });
     await activate('map');await click('map', '.bpb-custom-actions button:not([data-bpb-private-layer])');
     await waitForCondition(() => evaluate(() => ({ summary: document.querySelector('.bpb-custom-source summary')?.textContent, feedback: document.querySelector('.bpb-custom-feedback')?.textContent,
         replies: window.privateMessages.filter(text => text.includes('privateReply')).map(text => { const data = JSON.parse(text);return { ok: data.reply?.ok, code: data.reply?.code, diagnostic: data.reply?.diagnostic }; }).slice(-5) })), { description: 'private raster painted in 2D',timeoutMs: 30000,isReady: value => value.summary?.includes('60%') });assert(requests.length > 0);

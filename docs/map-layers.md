@@ -493,8 +493,8 @@ private layer and add a new public URL without credentials.
 On a map, select the protected layer, choose **Approve private access…**, review
 the provider in the separate BPB page and click **Allow map requests**. Return to
 the map and choose **Retry**. The browser permission allows provider access; this
-separate approval limits what the map may spend. It permits at most **256 network
-attempts for 10 minutes**, for that layer revision and current tab. Reloading,
+separate approval limits what the map may spend. It permits at most **20,000 network
+attempts for 8 hours**, for that layer revision and current tab. Reloading,
 leaving/closing the tab, changing sources, removing provider permission or a
 background-worker restart requires another approval. Native MasterMap child
 frames and the authenticated 3D renderer in the same tab can share the approval;
@@ -509,8 +509,12 @@ returned by the provider remain private. Metadata/GeoJSON/MVT/raster responses
 retain the existing bounded parsing and rendering paths.
 
 Shared limits apply across tabs and source edits: **four concurrent jobs**,
-**1,024 network attempts per hour** and **4,096 per day** for the configured
-provider hostname. Failures count too. Durable counters survive worker/browser
+**25,000 network attempts per hour** and **100,000 per day** for the configured
+provider hostname. These are fixed one-hour and 24-hour windows from the first
+counted attempt, rather than calendar-hour/day resets. The larger allowances
+support extended planning with several layers; they count network attempts,
+not provider billing units, and the provider's own quota still applies.
+Failures count too. Durable counters survive worker/browser
 restarts; clock rollback cannot reset them. Completed bytes use a bounded
 16 MiB in-memory cache; concurrent duplicate tiles share one GET, and cancelling
 one consumer does not cancel another. Cancelling all consumers or revoking

@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { customId, customUrl, readCustomSource } from './custom-overlay-schema.js';
 export const RELAY_HOST = 'relay.bpb.example';
-export const PRIVATE_LIMITS = Object.freeze({ parameters: 12, grantRequests: 256, grantMs: 600000,
-    hourlyRequests: 1024, dailyRequests: 4096, concurrency: 4, responseCache: 16777216 });
+// Allow extended multi-layer planning, while retaining finite spending budgets.
+// One 4K viewport can need about 160 256px tiles per layer before cache reuse.
+export const PRIVATE_LIMITS = Object.freeze({ parameters: 12, grantRequests: 20000, grantMs: 8 * 3600000,
+    hourlyRequests: 25000, dailyRequests: 100000, concurrency: 4, responseCache: 16777216 });
 export function readPrivateParameters(value) {
     if (!Array.isArray(value) || value.length > PRIVATE_LIMITS.parameters) throw new Error('Use up to 12 request parameters.');
     const names = new Set();

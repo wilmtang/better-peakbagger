@@ -57,13 +57,35 @@ live-provider and any broader suite failures explicit.
   redirects, cookies and referrers. Parameters stay on the original input
   origin. Raw metadata and signed tile URLs never cross to MAIN. Responses and
   errors are reduced to bounded bytes/safe status fields.
-- One-use, real-extension-page approval grants 256 attempts for 10 minutes in
+- One-use, real-extension-page approval grants 20,000 attempts for 8 hours in
   the original active tab, with source/navigation/permission revocation and
-  abortable transport. Four jobs, 1,024 attempts/hour and 4,096/day per configured
+  abortable transport. Four jobs, 25,000 attempts/hour and 100,000/day per configured
   provider hostname are enforced across layers/tabs using durable atomic
   counters. Failed attempts count, clock rollback fails closed and HTTP 429
   applies shared cooldown. Cache and duplicate sharing avoid additional GETs;
   one cancelled consumer cannot cancel a sibling, but cancelling all aborts.
+- Power-user allowances replace the initial preview-sized budgets. A 4K map can
+  cover about 160 256-pixel tiles per layer; 20,000 attempts leaves room for about
+  125 entirely fresh views of one layer before failures/metadata requests.
+  The shared 25,000/hour and 100,000/24-hour ceilings allow several active layers
+  and long planning sessions. These are geometric workload estimates, not user
+  telemetry or a guarantee for every workflow; larger approvals also permit
+  greater spending if an approved page is compromised. Provider billing rules
+  and quotas remain separate from BPB's network-attempt counters.
+- Allowance follow-up verification: 53 focused relay/client/control/manifest
+  tests and three documentation checks passed; `npm run lint` passed with the
+  same eight owned warnings. The new extended-planning regression failed on the
+  original implementation at tile 257, then passed for 1,025 distinct tiles,
+  six-hour continuation and the exact eight-hour expiry. Boundary coverage
+  exhausts 20,000 failed attempts and both provider counters, including sharing
+  across tabs/layers, restart persistence and fixed-window renewal.
+- Hidden Chrome 156.0.8078.4 and Firefox 158.0.1 private-layer checks passed again
+  with hardware Metal/Apple M3 Pro rendering. The longer allowance text fits
+  light/dark approval pages at 1000/375 px in Chrome and 1000/500 px in Firefox;
+  screenshots were visually inspected. The map and approval text match enforced
+  limits, actions remain within the viewport, and heading/buttons/scroll remain
+  anchored within one pixel through approval success. The real Chrome
+  startup/bridge check passed. Fixture grants still do not verify native prompts.
 - Parent-owned BigMap requests use the executing owner window for the isolated
   message bridge while drawing in MasterMap. Its native child and authenticated
   terrain renderer can use the same tab approval. Browser fixtures caught the

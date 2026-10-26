@@ -1903,10 +1903,12 @@ owner window, separately from the child window owning the canvas and Leaflet.
 The isolated bridge requires a trusted activation to open a full extension
 approval page. One-use pending approval is bound to the actual approval tab;
 it is not web-accessible. Approval grants one source revision in the original
-active map tab 256 network attempts for 10 minutes. Top navigation/closure,
+active map tab 20,000 network attempts for 8 hours. Top navigation/closure,
 permission removal and source changes cancel authority/transports; worker
 restart loses grants, while durable hourly/day budgets remain. Native MasterMap
 child frames and authenticated terrain frames in the same tab are supported.
+Shared provider-host budgets are 25,000 attempts per fixed one-hour window and
+100,000 per fixed 24-hour window, beginning with the first counted attempt.
 Cross-tab concurrency and provider budgets, 429 cooldowns, response limits,
 bounded caching and shared-flight cancellation constrain an approved hostile
 page; they do not make an authorized map incapable of spending its allowance.

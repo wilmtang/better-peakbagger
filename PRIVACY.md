@@ -861,11 +861,11 @@ controlling the browser/device. Even credential-inclusive exports exclude these
 values and private URLs. Restored descriptors require reconnecting locally.
 
 Map requests need explicit approval in a full BPB page, bound to a tab, layer
-revision and navigation lifetime: 256 attempts for 10 minutes. Native MasterMap
+revision and navigation lifetime: 20,000 attempts for 8 hours. Native MasterMap
 children and the authenticated 3D frame in that tab share it. Navigation/reload,
 tab closure, definition changes, permission removal and worker restart end
 approval. Only the active tab can request new data. Shared durable limits are
-four jobs, 1,024 attempts per hour and 4,096 per day per configured provider
+four jobs, 25,000 attempts per hour and 100,000 per day per configured provider
 hostname. Failures count; clock rollback cannot reset counters. An authorized
 hostile page can consume its approved allowance: this bounds spending, not
 all quota risk. No generic URL/header/method fetch endpoint exists.

@@ -4,6 +4,7 @@ import { readCustomRegistry, readCustomSource, readCustomSelection, CUSTOM_LIMIT
 import { createCustomClient, customPoolForWindow, customFailure } from './custom-overlay-client.js';
 import { probeCustomSource } from './custom-overlay-probe.js';
 import { createCustomRenderer } from './custom-overlay-render.js';
+import { PRIVATE_LIMITS } from './custom-overlay-private.js';
 
 export function createCustomOverlayControl({ win, panel, onChange = () => {}, readView }) {
     const tag = '__bpbCustomOverlays', mapId = crypto.randomUUID(), selected = new Map(), reloads = {}, rows = new Map(), parseJobs = new Map();
@@ -72,7 +73,7 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
             row.message.textContent = enabled ? zoomedOut ? 'Zoom in to this source’s available range.' : status.error && status.code === 'access' ? 'Source unavailable. Check the URL or provider CORS settings.' : status.message ? status.error ? customFailure(status) : status.message : 'Loading status appears here.' : 'Enable to load this source.';
             row.retry.setAttribute('aria-disabled', String(!enabled || status.pending || status.retryAt > Date.now()));
             row.approve.hidden = !source.privateRequests;row.approve.dataset.revision = source.revision;
-            if (source.privateRequests && enabled && status.code === 'approval') row.message.textContent = 'Approve access in BPB, then Retry. Each approval allows up to 256 requests for 10 minutes.';
+            if (source.privateRequests && enabled && status.code === 'approval') row.message.textContent = `Approve access in BPB, then Retry. Each approval allows up to ${PRIVATE_LIMITS.grantRequests.toLocaleString('en-US')} requests for ${PRIVATE_LIMITS.grantMs / 3600000} hours.`;
         }
         const focused = list.contains(win.document.activeElement) ? win.document.activeElement : null;
         sources.forEach((source, index) => { const row = rows.get(source.id); if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null); });
