@@ -64,10 +64,20 @@ try {
         };
         await chrome.storage.local.set({ bpbGithubAuth: { token: 'fixture-only',
             repo: { owner: 'fixture', name: 'backup', branch: 'main' } } });
-        await chrome.storage.sync.set({ bpbSettings: { enableGithubBackup: true, autoGithubBackup: false } });
+        // Backup consent is device-local. A sync-only fixture leaves the
+        // installation's existing disabled record authoritative.
+        const { bpbDeviceSettings } = await chrome.storage.local.get('bpbDeviceSettings');
+        await chrome.storage.local.set({ bpbDeviceSettings: { schemaVersion: 1,
+            settings: { ...bpbDeviceSettings?.settings, enableGithubBackup: true, autoGithubBackup: false } } });
     });
     await page.reload();
-    await page.locator('.bpb-gh-control').getByText('Checking GitHub…').waitFor();
+    try {
+        await page.locator('.bpb-gh-control').getByRole('status').filter({ hasText: 'Checking GitHub…' }).waitFor({ timeout: 10000 });
+    } catch (error) {
+        console.error('Backup fixture state:', await page.locator('.bpb-gh-control').evaluateAll(nodes => nodes.map(node => node.outerHTML)),
+            'requests:', await worker.evaluate(() => globalThis.__backupRequests));
+        throw error;
+    }
     await page.waitForFunction(() => !!document.querySelector('.bpb-gh-control'));
     // Wait against the worker itself; a mounted label can precede its request.
     await assert.doesNotReject(async () => {
