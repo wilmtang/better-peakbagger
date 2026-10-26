@@ -816,8 +816,10 @@ identity in extension session storage. It expires after 60 seconds; unused,
 expired records are removed on the next grant/claim or tab cleanup, and all
 session records disappear when the browser session ends. It is consumed by the
 packaged wrapper, invalidated on navigation/tab closure, and never sent to
-Instagram. The provider receives its post URL through a no-referrer, scripts-only
-sandbox with an opaque origin, without access to the Peakbagger document,
+Instagram. The provider receives its post URL through a no-referrer sandbox
+that permits scripts and retains only Instagram's own origin, so its video
+loader can make same-origin requests. It remains cross-origin from the packaged
+wrapper and Peakbagger, without access to the Peakbagger document,
 extension APIs, popups, forms or top-level navigation. BPB performs no oEmbed API
 lookup, proxying or provider-content scraping. The persistent network rule blocks
 Instagram resources initiated by Peakbagger; loading a post never unlocks the

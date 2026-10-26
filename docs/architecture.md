@@ -784,13 +784,19 @@ default-off preference never crosses the page-world settings bridge. Loading
 uses the trusted-action boundary and `src/background/instagram-frames.js` to
 issue a one-use capability tied to one tab, source document and private active
 load nonce. The packaged `reports/instagram.html` wrapper consumes that grant;
-only its scripts-only, opaque child frame runs provider code. It has no
+only its sandboxed cross-origin child frame runs provider code. It retains
+Instagram's own origin (`allow-scripts allow-same-origin`) because carousel video
+loaders make same-origin requests that fail CORS from an opaque origin. The
+wrapper's CSP confines child navigation to `https://www.instagram.com`. It has no
 Peakbagger-origin access or extension APIs. No API token, oEmbed lookup, remote
 extension code, proxy or new provider host access is involved.
+The [iframe sandbox semantics](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)
+retain the provider's own origin; they do not make it same-origin with its parent.
 
 The captioned provider endpoint keeps author text inside the sandbox. The wrapper
-accepts only a numeric `MEASURE` message from its actual opaque child WindowProxy,
-not merely a sender with origin `null`. `src/reports/instagram-sizing.js` bounds
+accepts only a numeric `MEASURE` message from its actual child WindowProxy
+**and** the exact `https://www.instagram.com` origin. Opaque/null and other origins
+are rejected. `src/reports/instagram-sizing.js` bounds
 that height to 320–1,600 pixels at both frame boundaries. Completion waits for the
 first valid measurement, with a one-second post-load fallback to a scrolling
 viewport; the report expands once and ignores later resizing. Pending content is

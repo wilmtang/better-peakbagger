@@ -1200,8 +1200,12 @@ does not gain popups, forms, top-level navigation, Peakbagger access or extensio
 APIs; opening Instagram itself is the separate link beside the load control.
 
 Run `npm run verify -- instagram` for the real packaged Chrome/Firefox fixture
-matrix. `npm run verify -- instagram --live` checks public photo/Reel rendering,
-native captions and muted Reel playback. The optional `BPB_INSTAGRAM_LIVE_POST`
+matrix, including a same-origin lazy video loader and blocked parent/top access,
+forms, popups and navigation. `npm run verify -- instagram --live` checks public
+post/Reel rendering, native captions, muted Reel playback and all ten slides of
+the mixed carousel from the reported Mount Jefferson ascent, including its
+final video's decoded frames and advancing playback. Avatar images cannot
+satisfy the media-rendering assertion. The optional `BPB_INSTAGRAM_LIVE_POST`
 environment variable adds one validated public permalink to that live check.
 The fixture substitutes provider content and normal
 native form data; no live ascent is submitted and the OS clipboard is untouched.
@@ -1243,5 +1247,10 @@ one-use, 60-second capability for one canonical post after a trusted activation
 document and a private nonce for that load. Cancellation revokes the nonce. The wrapper must claim it from a child
 frame, and the worker rechecks the live source document before returning the URL.
 Navigation, expiry and tab closure invalidate pending capabilities. The provider
-runs inside a separate scripts-only, opaque sandbox without extension APIs or
-Peakbagger-origin access; no remote script is loaded into the wrapper itself.
+runs inside a separate sandbox retaining only Instagram's own origin, without
+extension APIs or Peakbagger-origin access. This permits Instagram's lazy video
+loader; an opaque origin makes that request fail CORS and leaves carousel videos
+blank. Scripts and same-origin access apply only inside the cross-origin provider
+frame; forms, popups and top navigation remain blocked. The wrapper's CSP pins
+frame navigation to Instagram, and size messages require its exact origin and
+actual child window. No remote script is loaded into the wrapper itself.

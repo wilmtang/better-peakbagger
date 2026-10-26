@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { accelerateTimeout, evalBundle, waitFor } from '../helpers/load-page.mjs';
 
-test('the isolated player requests the native captioned embed without granting additional sandbox capabilities', async () => {
+test('the isolated captioned player retains only Instagram’s origin and authenticates size messages', async () => {
     const html=await readFile('src/reports/instagram.html','utf8');
     const token='ab'.repeat(24),url='https://www.instagram.com/p/Caption_Post/';
     const dom=new JSDOM(html,{url:'https://extension.test/reports/instagram.html#'+token,runScripts:'outside-only',pretendToBeVisual:true});
@@ -19,20 +19,23 @@ test('the isolated player requests the native captioned embed without granting a
         await waitFor(dom,()=>frame.hasAttribute('src'));
         assert.deepEqual(JSON.parse(JSON.stringify(sent)),[{type:'INSTAGRAM_FRAME_CLAIM',token}]);
         assert.equal(frame.src,url+'embed/captioned/');
-        assert.equal(frame.getAttribute('sandbox'),'allow-scripts');
+        assert.equal(frame.getAttribute('sandbox'),'allow-scripts allow-same-origin');
+        assert.match(dom.window.document.querySelector('meta[http-equiv="Content-Security-Policy"]').content,
+            /frame-src https:\/\/www\.instagram\.com;/, 'the provider cannot navigate into the extension or Peakbagger origin');
         assert.equal(frame.getAttribute('referrerpolicy'),'no-referrer');
         const measure=(source,origin,data)=>dom.window.dispatchEvent(new dom.window.MessageEvent('message',{source,origin,data}));
-        measure(dom.window,'null',JSON.stringify({type:'MEASURE',details:{height:1500}}));
-        measure(frame.contentWindow,'https://www.instagram.com',JSON.stringify({type:'MEASURE',details:{height:1500}}));
-        measure(frame.contentWindow,'null','not JSON');
-        measure(frame.contentWindow,'null',JSON.stringify({type:'MOUNTED',details:{styles:[['height','1500px']]}}));
-        measure(frame.contentWindow,'null',JSON.stringify({type:'MEASURE',details:{height:640}}));
-        measure(frame.contentWindow,'null',JSON.stringify({type:'MEASURE',details:{height:'900px'}}));
+        measure(dom.window,'https://www.instagram.com',JSON.stringify({type:'MEASURE',details:{height:1500}}));
+        measure(frame.contentWindow,'null',JSON.stringify({type:'MEASURE',details:{height:1500}}));
+        measure(frame.contentWindow,'https://evil.test',JSON.stringify({type:'MEASURE',details:{height:1500}}));
+        measure(frame.contentWindow,'https://www.instagram.com','not JSON');
+        measure(frame.contentWindow,'https://www.instagram.com',JSON.stringify({type:'MOUNTED',details:{styles:[['height','1500px']]}}));
+        measure(frame.contentWindow,'https://www.instagram.com',JSON.stringify({type:'MEASURE',details:{height:640}}));
+        measure(frame.contentWindow,'https://www.instagram.com',JSON.stringify({type:'MEASURE',details:{height:'900px'}}));
         frame.dispatchEvent(new dom.window.Event('load'));
         await waitFor(dom,()=>reported.length===1);
         assert.equal(frame.hidden,false);
         assert.deepEqual(JSON.parse(JSON.stringify(reported)),[[{__bpbInstagram:'loaded',height:640},'https://www.peakbagger.com']]);
-        measure(frame.contentWindow,'null',JSON.stringify({type:'MEASURE',details:{height:1200}}));
+        measure(frame.contentWindow,'https://www.instagram.com',JSON.stringify({type:'MEASURE',details:{height:1200}}));
         assert.equal(reported.length,1,'late provider resizing must not bounce the report');
     }finally{dom.window.close();}
 });
@@ -48,7 +51,7 @@ test('completion accepts a post-load measurement and has a bounded fallback when
             await evalBundle(dom.window,'reports/instagram-frame.js');
             const frame=dom.window.document.getElementById('post');await waitFor(dom,()=>frame.hasAttribute('src'));
             frame.dispatchEvent(new dom.window.Event('load'));assert.equal(reported.length,0,'load alone waits for measurement or its deadline');
-            if(measured)dom.window.dispatchEvent(new dom.window.MessageEvent('message',{source:frame.contentWindow,origin:'null',
+            if(measured)dom.window.dispatchEvent(new dom.window.MessageEvent('message',{source:frame.contentWindow,origin:'https://www.instagram.com',
                 data:JSON.stringify({type:'MEASURE',details:{height:581.25}})}));
             await waitFor(dom,()=>reported.length===1);
             assert.deepEqual(JSON.parse(JSON.stringify(reported)),[{__bpbInstagram:'loaded',...(measured&&{height:582})}]);

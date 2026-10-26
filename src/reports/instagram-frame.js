@@ -11,6 +11,7 @@ const report=(state,height)=>parent.postMessage({__bpbInstagram:state,...(height
         const response=await api.runtime.sendMessage({type:'INSTAGRAM_FRAME_CLAIM',token});
         const url=response?.ok&&canonicalInstagramUrl(response.url);
         if(!url||!response.parentOrigin)throw new Error('unavailable');
+        const providerOrigin=new URL(url).origin;
         parentOrigin=response.parentOrigin;
         const frame=document.getElementById('post');
         let height=null,reported=false,complete=false,fallback=null;
@@ -19,9 +20,9 @@ const report=(state,height)=>parent.postMessage({__bpbInstagram:state,...(height
             reported=true;clearTimeout(fallback);document.getElementById('status').hidden=true;report('loaded',height);
         };
         addEventListener('message',event=>{
-            // Opaque sandbox origins serialize as "null". The actual child
-            // WindowProxy, not that shared origin string, establishes identity.
-            if(reported||event.source!==frame.contentWindow||event.origin!=='null'
+            // Require both the canonical provider origin and the actual child
+            // WindowProxy; another Instagram window cannot resize this post.
+            if(reported||event.source!==frame.contentWindow||event.origin!==providerOrigin
                 ||typeof event.data!=='string'||event.data.length>2048)return;
             try{
                 const message=JSON.parse(event.data);
@@ -38,8 +39,10 @@ const report=(state,height)=>parent.postMessage({__bpbInstagram:state,...(height
             if(!reported)fallback=setTimeout(()=>finish(true),1000);
         },{once:true});
         frame.addEventListener('error',()=>report('error'),{once:true});
-        // The provider alone runs remote code, in a scripts-only opaque frame.
-        // It receives neither extension APIs nor the Peakbagger document origin.
+        // Retain Instagram's own origin so its lazy video-loader requests stay
+        // same-origin. The cross-origin provider cannot access this packaged
+        // wrapper or Peakbagger, or remove its sandbox. CSP pins frame navigation
+        // to Instagram; popups, forms and top navigation remain sandboxed.
         // Give the provider its real width while the parent is still hidden,
         // so its caption-inclusive height is measured at the intended size.
         frame.hidden=false;
