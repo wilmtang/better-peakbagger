@@ -48,8 +48,10 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     const ordinary = await load('workflows/test.yml');
     const job = ordinary.jobs.layout;
     assert.ok(job, 'the full layout matrix needs a job budget separate from package verification');
-    assert.equal(job['runs-on'], ordinary.jobs.chrome['runs-on']);
-    assert.equal(job['timeout-minutes'], 30, 'complete screenshot-enabled matrices need setup, timeout-path and cleanup headroom');
+    assert.equal(job['runs-on'], 'ubuntu-24.04', 'fixture-only shards must leave macOS capacity for real extensions');
+    assert.equal(job['timeout-minutes'], 15);
+    assert.deepEqual(job.strategy.matrix.shard, [1, 2, 3, 4]);
+    assert.deepEqual(job.needs, ['fixture-preflight']);
     assert.equal(job.if, undefined);
     assert.ok(job.strategy?.matrix, 'each complete browser matrix needs its own job budget');
     assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
@@ -66,7 +68,9 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.equal(ordinary.defaults.run.shell, 'bash', 'pipefail must preserve a verifier failure through tee');
     assert.equal(geometry.env.BPB_JITTER_ARTIFACTS, 'browser-evidence/layout-stability');
     assert.match(geometry.run, /2>&1 \| tee browser-evidence\/layout-stability\.log/);
-    assert.ok(geometry.run.includes('--${{ matrix.browser }}-only'), 'each job must select its complete browser matrix');
+    assert.ok(geometry.run.includes('--${{ matrix.browser }}-only'));
+    assert.ok(geometry.run.includes('--shard=${{ matrix.shard }}/4'));
+    assert.equal(job.env.BPB_VERIFY_SCREENSHOTS, 'references');
     assert.ok(job.steps.find(step => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(packageJson.scripts.verify, 'node scripts/verify.mjs');
@@ -90,11 +94,19 @@ test('layout browser selections reject conflicting engines and unknown selection
 
 test('ordinary CI requires snow/cards on both browsers and a separate hardware snow-map matrix', async () => {
     const ordinary = await load('workflows/test.yml');
-    const surfaces = ordinary.jobs.layout.steps.find(step => step.name === 'Verify snow and independent peak cards');
+    const surfaceJob = ordinary.jobs['peak-surfaces'];
+    assert.equal(surfaceJob.needs.includes('layout'), false, 'late surface failures must not wait behind layout');
+    assert.deepEqual(surfaceJob.strategy.matrix.browser, ['chrome', 'firefox']);
+    assert.deepEqual(surfaceJob.strategy.matrix.surface, ['snow', 'cards', 'cards-placement', 'interactions']);
+    assert.equal(surfaceJob.strategy['max-parallel'], 4);
+    assert.equal(surfaceJob.strategy['fail-fast'], false);
+    assert.ok(ordinary.jobs['chrome-required'].needs.includes('peak-surfaces'));
+    assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$SURFACE_RESULT" = success/);
+    const surfaces = surfaceJob.steps.find(step => step.name === 'Verify independent peak surface');
     assert.ok(surfaces, 'the required layout path must execute the newer surface matrices');
     assert.equal(surfaces.if, undefined);
     assert.equal(surfaces['continue-on-error'], undefined);
-    for (const mode of ['snow', 'cards']) assert.match(surfaces.run, new RegExp(`verify-ascent-weather\\.mjs --${mode} `));
+    assert.match(surfaces.run, /verify-ascent-weather\.mjs --"\$SURFACE"/);
     assert.equal(surfaces.env.BROWSER, '${{ matrix.browser }}');
     assert.match(surfaces.run, /firefox\) browser_args=\(--firefox\)/);
     assert.match(surfaces.run, /Unknown browser/);
@@ -114,24 +126,24 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
 
 test('the CI surface step selects the requested engine and preserves each verifier failure', async () => {
     const ordinary = await load('workflows/test.yml');
-    const step = ordinary.jobs.layout.steps.find(step => step.name === 'Verify snow and independent peak cards');
+    const step = ordinary.jobs['peak-surfaces'].steps.find(step => step.name === 'Verify independent peak surface');
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-surface-ci-'));
     const executable = path.join(directory, 'node'), commands = path.join(directory, 'commands');
     try {
         await writeFile(executable, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$BPB_SURFACE_COMMANDS"\nif [ "$2" = "$BPB_SURFACE_FAIL" ]; then exit 9; fi\n');
         await chmod(executable, 0o755);
         const modes = ['snow', 'cards', 'cards-placement', 'interactions'];
-        for (const browser of ['chrome', 'firefox', 'missing']) for (const fail of ['', ...modes.map(mode => `--${mode}`)]) {
+        for (const browser of ['chrome', 'firefox', 'missing']) for (const surface of [...modes, 'missing']) for (const fail of ['', `--${surface}`]) {
             await rm(commands, { force: true });
             const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', 'mkdir -p browser-evidence\n' + step.run], {
                 cwd: directory, encoding: 'utf8', timeout: 5000,
-                env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, BROWSER: browser,
+                env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, BROWSER: browser, SURFACE: surface,
                     BPB_SURFACE_COMMANDS: commands, BPB_SURFACE_FAIL: fail },
             });
             const calls = (await readFile(commands, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);
-            assert.equal(result.status === 0, browser !== 'missing' && !fail, result.stderr);
-            const executed = browser === 'missing' ? [] : fail ? modes.slice(0, modes.indexOf(fail.slice(2)) + 1) : modes;
-            assert.deepEqual(calls, executed.map(mode => `scripts/verify-ascent-weather.mjs --${mode}${browser === 'firefox' ? ' --firefox' : ''}`));
+            const valid = browser !== 'missing' && surface !== 'missing';
+            assert.equal(result.status === 0, valid && !fail, result.stderr);
+            assert.deepEqual(calls, valid ? [`scripts/verify-ascent-weather.mjs --${surface}${browser === 'firefox' ? ' --firefox' : ''}`] : []);
         }
     } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -153,4 +165,39 @@ test('shared setup exports the installed paths and versions and keeps exact tool
     }
     assert.ok(steps.some(step => step.run?.includes('verification-browser-identity.mjs --playwright-chromium')));
     assert.ok(steps.filter(step => step.uses).every(step => /@[a-f0-9]{40}$/.test(step.uses)));
+});
+
+test('fast fixture preflight is independently required and installs only its selected engine', async () => {
+    const ordinary = await load('workflows/test.yml');
+    const job = ordinary.jobs['fixture-preflight'];
+    assert.equal(job['runs-on'], 'ubuntu-24.04');
+    assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
+    assert.ok(job.steps.some(step => step.run?.includes('fixture-preflight --${{ matrix.browser }}-only')));
+    for (const name of ['fixture-preflight', 'layout']) {
+        const setup = ordinary.jobs[name].steps.find(step => step.uses === './.github/actions/setup-verification');
+        assert.equal(setup.with['fixture-browser'], '${{ matrix.browser }}');
+        assert.equal(setup.with['firefox-version'], undefined);
+        assert.equal(setup.with['chrome-version'], undefined);
+    }
+    assert.ok(ordinary.jobs['chrome-required'].needs.includes('fixture-preflight'));
+    assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$PREFLIGHT_RESULT" = success/);
+});
+
+test('fixture setup rejects unknown engines and downloads only the selected browser', async () => {
+    const setup = await load('actions/setup-verification/action.yml');
+    const step = setup.runs.steps.find(value => value.name === 'Install fixture browser');
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-fixture-setup-'));
+    try {
+        const calls = path.join(directory, 'calls');
+        await writeFile(path.join(directory, 'npx'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$BPB_FIXTURE_CALLS"\n');
+        await chmod(path.join(directory, 'npx'), 0o755);
+        for (const browser of ['chrome', 'firefox', 'typo']) {
+            await rm(calls, { force: true });
+            const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', step.run], { cwd: directory,
+                env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, FIXTURE_BROWSER: browser, BPB_FIXTURE_CALLS: calls }, encoding: 'utf8' });
+            assert.equal(result.status === 0, browser !== 'typo');
+            assert.equal(await readFile(calls, 'utf8').catch(() => ''), browser === 'typo' ? ''
+                : `playwright install --with-deps ${browser === 'chrome' ? 'chromium' : 'firefox'}\n`);
+        }
+    } finally { await rm(directory, { recursive: true, force: true }); }
 });

@@ -7,6 +7,9 @@ inputs:
   firefox-version:
     description: none, latest, or an explicit Firefox version
     default: none
+  fixture-browser:
+    description: none, chrome, or firefox; install only the selected Playwright fixture engine
+    default: none
   popup-firefox:
     description: Install Playwright Firefox for popup fixtures
     default: 'false'
@@ -21,6 +24,18 @@ runs:
     - name: Install locked dependencies
       shell: bash
       run: npm ci
+    - name: Install fixture browser
+      if: inputs.fixture-browser != 'none'
+      shell: bash
+      env:
+        FIXTURE_BROWSER: ${{ inputs.fixture-browser }}
+      run: |
+        case "$FIXTURE_BROWSER" in
+          chrome) engine=chromium ;;
+          firefox) engine=firefox ;;
+          *) echo "Unknown fixture browser: $FIXTURE_BROWSER" >&2; exit 1 ;;
+        esac
+        npx playwright install --with-deps "$engine"
     - name: Install current Chrome for Testing
       if: inputs.chrome-version == 'current'
       shell: bash
