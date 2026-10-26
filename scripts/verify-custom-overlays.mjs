@@ -15,6 +15,7 @@ import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { verifyCustomEditor } from './custom-overlay-editor-verification.mjs';
+import { readCustomLayerNavigation, assertCustomLayerNavigation } from './verify-settings-navigation.mjs';
 
 const firefoxMode = process.argv[2] === '--firefox';
 assert.ok(process.argv.length === 2 || process.argv.length === 3 && firefoxMode, 'Usage: node scripts/verify-custom-overlays.mjs [--firefox]');
@@ -72,7 +73,9 @@ try {
         assert.ok((await page.locator('.bpb-custom-section').boundingBox()).height <= 40, 'empty custom section is one compact row');
         await addLink.click();
         await admin.waitForURL('**/options/options.html#custom-map-layers');
-        await admin.getByRole('heading', { name: 'Map layers', exact: true }).waitFor();
+        await admin.getByRole('heading', { name: 'Custom map layers', level: 3, exact: true }).waitFor();
+        await admin.waitForFunction(() => document.querySelector('.nav-subitem[href="#custom-map-layers"]')?.getAttribute('aria-current') === 'true');
+        assertCustomLayerNavigation(await admin.evaluate(readCustomLayerNavigation));
         assert.equal(await page.locator('iframe[title="Custom map overlays"]').count(), 0, 'map navigation never opens an inline editor');
         const editor = admin.frameLocator('#custom-layer-dialog iframe');
         await admin.locator('#custom-layer-add').click();
@@ -391,6 +394,8 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     const optionsUrl = extensionUrl.replace('custom-overlay/editor.html', 'options/options.html');
     await driver.get(optionsUrl + '#custom-map-layers');
     await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li').length === 3), 'Firefox central layer manager');
+    await wait(() => evaluate(() => document.querySelector('.nav-subitem[href="#custom-map-layers"]')?.getAttribute('aria-current') === 'true'), 'Firefox selects the nested custom-layer link');
+    assertCustomLayerNavigation(await evaluate(readCustomLayerNavigation));
     await click('#custom-layer-list li:last-child .custom-layer-order button:first-child');
     await wait(() => evaluate(() => document.querySelectorAll('#custom-layer-list li strong')[1]?.textContent === 'Custom mvt'), 'Firefox reorder persisted');
     const moveAgain = await driver.findElement(By.css('#custom-layer-list li:nth-child(2) .custom-layer-order button:first-child'));

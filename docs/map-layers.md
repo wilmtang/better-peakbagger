@@ -3,10 +3,10 @@
 ## Custom sources
 
 Choose **Overlays → Add custom layer…** on any interactive Peakbagger map to
-open **Settings → Map layers**. This dedicated Settings section follows
-**Map & GPX chart** and contains the saved list, Add, Edit, Delete, opacity and
-Move up/down controls. It follows the selected light/dark theme, including an
-open source editor. The old standalone editor URL also opens this section.
+open **Settings → Map & GPX chart → Custom map layers**. This subsection sits
+after **Map** and before **Send GPX**, and contains the saved list, Add, Edit,
+Delete, opacity and Move up/down controls. It follows the selected light/dark theme, including an
+open source editor. The old standalone editor URL also opens this subsection.
 Saved sources are available
 on peak, ascent, BigMap, recent/different-route, list, climber and other native
 Leaflet maps. Each map starts with custom sources off; enable up to three at a

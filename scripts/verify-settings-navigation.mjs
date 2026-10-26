@@ -5,6 +5,26 @@
 
 import assert from 'node:assert/strict';
 
+export const readCustomLayerNavigation = () => {
+    const group = document.getElementById('custom-map-layers'), heading = group.querySelector('h3');
+    const link = document.querySelector('.side-nav a[href="#custom-map-layers"]');
+    return { section: group.closest('.settings-section')?.id, heading: heading?.textContent,
+        parentLink: link.closest('.nav-sublist')?.parentElement.querySelector('.nav-item')?.hash,
+        order: [...group.parentElement.querySelectorAll(':scope > .subsection')].map(element => element.id),
+        sidebarOrder: [...link.closest('.nav-sublist')?.querySelectorAll('a') || []].map(element => element.hash.slice(1)),
+        current: link.getAttribute('aria-current'), activeParent: document.querySelector('.nav-parent-active')?.hash };
+};
+
+export function assertCustomLayerNavigation(state) {
+    assert.equal(state.section, 'map-chart', 'custom layers belong to Map & GPX chart');
+    assert.equal(state.heading, 'Custom map layers');
+    assert.equal(state.parentLink, '#map-chart');
+    assert.deepEqual(state.order, ['map-chart-chart', 'map-chart-map', 'custom-map-layers', 'map-handoffs']);
+    assert.deepEqual(state.sidebarOrder, state.order, 'sidebar and content use the same map-settings order');
+    assert.equal(state.current, 'true', 'the existing deep link selects the subsection');
+    assert.equal(state.activeParent, '#map-chart', 'the map-settings parent is highlighted');
+}
+
 export const readSettingsHierarchy = () => {
     const type = node => {
         const style = getComputedStyle(node);

@@ -152,9 +152,10 @@ settings can subsequently propagate through browser sync.
 
 ### Custom map layer management and transfer
 
-**Map layers** is a dedicated Options section directly after **Map & GPX chart**,
-with its own top-level sidebar link. Add/Edit opens the packaged editor in a
-modal; the saved list shows format, provider host, opacity, Edit/Delete and
+**Custom map layers** is a subsection of **Map & GPX chart**, after **Map** and
+before **Send GPX**, with a matching nested sidebar link. The established
+`#custom-map-layers` URL still opens this group. Add/Edit opens the packaged
+editor in a modal; the saved list shows format, provider host, opacity, Edit/Delete and
 Move up/down controls. The top saved row renders above the rows below it in both
 map modes. Reordering preserves source revisions and active map selections,
 rejects stale writes, and is included in backup signatures and exports.

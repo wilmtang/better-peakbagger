@@ -320,13 +320,13 @@ test('settings are grouped by the surface they affect', async () => {
         'General',
         'Capture & reports',
         'Map & GPX chart',
-        'Map layers',
         'Ascent beta filter',
         'Backup & sync',
         'About'
     ]);
 
-    const [general, capture, mapChart, mapLayers, beta, github, about] = sections;
+    const [general, capture, mapChart, beta, github, about] = sections;
+    const mapLayers = mapChart.querySelector('#custom-map-layers');
     assert.ok(mapLayers.querySelector('#custom-layer-add')); assert.ok(mapLayers.querySelector('#custom-layer-list'));
     const favorites = beta.querySelector('#favorites');
     assert.equal(beta.children[1], favorites, 'climber lists comes before the other beta settings');
@@ -334,13 +334,13 @@ test('settings are grouped by the surface they affect', async () => {
         'Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.');
     assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
     assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
-        ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
+        ['map-chart-chart', 'map-chart-map', 'custom-map-layers', 'map-handoffs']);
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('#github-backup .desc').textContent, /automatically back up new and edited ascents/i);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
-    for (const section of [general, capture, mapChart, mapLayers, beta, github]) {
+    for (const section of [general, capture, mapChart, beta, github]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
         assert.ok(section.querySelector('.card'), 'the section carries a settings card');
@@ -393,7 +393,7 @@ test('settings are grouped by the surface they affect', async () => {
     }
     assert.ok(capture.querySelector('#capture-photos #imgbb-key'),
         'the ImgBB key should belong to Report photos');
-    // Map & GPX chart → GPX chart / Map
+    // Map & GPX chart → GPX chart / Map / Custom map layers / Send GPX
     for (const id of ['chart-series']) {
         assert.ok(mapChart.querySelector(`#map-chart-chart #${id}`), `${id} should belong to GPX chart`);
     }
@@ -1036,7 +1036,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'custom-map-layers', 'beta', 'github', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
@@ -1045,7 +1045,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
-            '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#favorites', '#github-connection',
+            '#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
     for (const link of subLinks) {
@@ -1091,6 +1091,24 @@ test('General groups feature switches under Feature switch and keeps Theme outsi
 
 const activeLinks = dom =>
     Array.from(dom.window.document.querySelectorAll('.nav-item[aria-current], .nav-subitem[aria-current]'));
+
+test('custom map layers belongs to Map & GPX chart between Map and Send GPX', async () => {
+    const dom = await loadOptions({}, { hash: '#custom-map-layers' });
+    const doc = dom.window.document, group = doc.getElementById('custom-map-layers');
+    assert.equal(group.closest('.settings-section')?.id, 'map-chart');
+    assert.equal(group.querySelector('h3')?.textContent, 'Custom map layers');
+    assert.equal(group.getAttribute('aria-labelledby'), group.querySelector('h3')?.id);
+    assert.equal(group.previousElementSibling.id, 'map-chart-map');
+    assert.equal(group.nextElementSibling.id, 'map-handoffs');
+    assert.equal(group.querySelector('.card .title'), null, 'the card does not repeat its subsection title');
+    const link = doc.querySelector('.nav-subitem[href="#custom-map-layers"]');
+    assert.equal(link?.textContent, 'Custom map layers');
+    assert.equal(link?.closest('.nav-sublist').parentElement.querySelector('.nav-item').hash, '#map-chart');
+    assert.equal(activeLinks(dom)[0].hash, '#custom-map-layers', 'existing deep links select the moved subsection');
+    assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#map-chart');
+    link.click();
+    assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#map-chart');
+});
 
 test('the sidebar marks the first section active on load', async () => {
     const dom = await loadOptions({});
