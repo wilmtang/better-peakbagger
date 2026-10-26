@@ -1099,6 +1099,73 @@ Saved standalone post links labelled `instagram.com` or `www.instagram.com`
 are recognized too. Links inside prose, custom captions and the separate
 external-report URL field remain ordinary links.
 
+### Recognition rules
+
+BPB checks both **the destination URL** and **how it appears in the report**.
+An Instagram hostname somewhere in a link is not enough.
+
+1. **The destination is a supported post permalink.** It must use HTTPS and
+   exactly `instagram.com` or `www.instagram.com`, with `/p/<shortcode>` or
+   `/reel/<shortcode>`. The shortcode is 1–64 ASCII letters, digits, underscores
+   or hyphens. A trailing slash is optional. Hostnames are case-insensitive;
+   `p`/`reel` must be lowercase, and the shortcode's case is preserved. Other subdomains,
+   deceptive suffix hosts, credentials, nondefault ports, encoded/extra path
+   segments and paths rewritten by URL normalization are rejected. Explicit
+   port 443 is accepted. URLs are limited to 2,048 characters.
+2. **It stands alone in ordinary report prose.** A plain URL or one plain-text
+   hyperlink must occupy its own line/paragraph, apart from whitespace. Native
+   Peakbagger `<br>` line separators count. Text before or after the link on
+   that same line keeps it inline. Use a top-level paragraph for predictable
+   results; automatic import/preview recognition does not search inside lists,
+   block quotes, table cells, headings or code blocks.
+3. **A hyperlink's visible label identifies that destination.** The plain-text
+   label must be the same post URL, `instagram.com`, or `www.instagram.com`.
+   Hostname labels are case-insensitive. URL labels may differ in tracking
+   parameters as long as they resolve to the same canonical post identity.
+   Custom labels such as “Summit photos” or “Instagram post” stay ordinary
+   links, even when they stand alone. **Use link** deliberately uses that
+   ordinary-link fallback. A hostname label pointing to a different website
+   never qualifies.
+4. **The link is in the report body.** The separate **URL Link to External Trip
+   Report** field stays an ordinary link, including when it points to Instagram.
+   Place a standalone link in the report body to get a post placeholder.
+
+Accepted destinations are normalized to
+`https://www.instagram.com/p/<shortcode>/` or
+`https://www.instagram.com/reel/<shortcode>/`; query parameters and fragments
+are discarded. BPB does not follow `/share/…` links or other redirects to find
+a post, and does not turn profile, Stories, `/tv/…`, or arbitrary embed URLs
+into players.
+
+| Report content / context | Result |
+| --- | --- |
+| `https://www.instagram.com/p/ABC123/` on its own line | Post placeholder |
+| `https://instagram.com/reel/ABC123/?igsh=tracking` on its own line | Reel placeholder; tracking removed |
+| `[a href="https://www.instagram.com/p/ABC123/"]www.instagram.com[/a]` on its own line | Post placeholder; recognizes Peakbagger's shortened label |
+| `See [a href="https://www.instagram.com/p/ABC123/"]www.instagram.com[/a]` | Ordinary inline link |
+| `[a href="https://www.instagram.com/p/ABC123/"]Summit photos[/a]` on its own line | Ordinary link with a custom label |
+| An existing post URL imported from code, a nested list/table, or the external-report field | Ordinary text/link; no automatic post block |
+| A profile, Stories or `/share/…` URL | Ordinary text/link; unsupported destination |
+
+For copied embed code, the importer requires one `blockquote` with class
+`instagram-media`, one valid `data-instgrm-permalink`, and no conflicting post
+identity. Malformed/ambiguous snippets or other prose outside that block are not
+imported as a post. Input is bounded to 65,536 characters. Supplied scripts and
+markup are discarded, never executed. Paste into an empty paragraph/line (or
+select the entire existing paragraph/line to replace it).
+
+These checks recognize a post; they do not prove it is public or embeddable.
+They make no Instagram request. Recognition creates the placeholder; provider
+loading still requires **Load Instagram post** or this device's automatic-load
+consent. No link/image toolbar tool or Instagram API key is required.
+
+The shared URL/label/standalone-line rules live in
+[instagram-url.js](../src/reports/instagram-url.js), with regression examples in
+[instagram-url.test.mjs](../test/reports/instagram-url.test.mjs) and the native
+reader case in [report-security.test.mjs](../test/reports/report-security.test.mjs).
+
+### Loading and privacy
+
 Rich text, Markdown preview and saved-ascent readers show a compact placeholder
 with **Load Instagram post** and **Open on Instagram**. No Instagram metadata,
 thumbnail or player is requested until loading is authorized. In Rich text,
@@ -1126,7 +1193,7 @@ native form data; no live ascent is submitted and the OS clipboard is untouched.
 
 ## Saved-report protection
 
-BPB adds an always-on response Content Security Policy to saved-ascent and
+BPB adds an always-on response Content Security Policy to saved-ascent
 documents. It blocks page scripts (including event handlers),
 objects and base tags before parsing. The reader then rebuilds recognized report
 cells through the existing allowlisted AST, removing active DOM, unknown frames,
