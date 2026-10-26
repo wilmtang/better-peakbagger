@@ -249,6 +249,8 @@ selected verifier; there is no second npm `--` separator. For example:
 ```sh
 npm run verify -- browsers
 npm run verify -- layout-stability --surface=maps --firefox-only
+npm run verify -- fixture-preflight --chrome-only
+npm run verify -- layout-stability --chrome-only --shard=1/4
 npm run verify -- capture-readiness firefox
 npm run verify -- terrain firefox
 npm run verify -- terrain chrome /private/tmp/bpb-terrain-evidence
@@ -261,6 +263,39 @@ The `packages` target checks existing archives without rebuilding `dist/`;
 `release:verify-packages` creates and checks fresh store packages. Missing or
 unknown targets fail before any build or browser launch. Gaia and onX coverage
 is part of `map-handoffs`.
+The required CI path runs `fixture-preflight` first on both browsers. It checks
+the real worker sender policy and locale/evidence contracts, then exercises the
+shipped popup, timestamp, Settings and map fixtures, including lifecycle cleanup.
+It supplements the complete suites. A fixture exception fails while the page is
+still available for evidence.
+
+Layout CI runs four deterministic shards per browser on Linux. Each shard owns
+one theme/viewport combination and all 24 surfaces; the eight shards contain the
+same 192 cases as the complete command, exactly once. Focused `--surface` commands
+retain their existing additional zoom cases. Unknown, duplicate, conflicting or
+empty selections fail before launch. Every result includes its duration and each
+shard checks the executed count against its complete plan.
+
+Snow, card disclosure, card placement and weather interactions run independently
+on macOS, rather than waiting behind the layout suite. At most four surface jobs
+run concurrently, leaving capacity for the real-manifest, toolbar and GPU jobs.
+Fixture-only shards install only their chosen Playwright engine. Real extensions
+and hardware GPU checks retain their existing browser/runner contracts. The
+required aggregate rejects failed or skipped preflight, shards and surface jobs.
+
+CI uses `BPB_VERIFY_SCREENSHOTS=references` for layout and peak surfaces, preserving
+selected reference states and all geometry assertions. Failures retain the failed
+fixture before teardown regardless of this selection. `all` (the local default)
+captures all requested intermediate images; `failure` skips passing captures.
+An explicit evidence-directory environment variable is still required. Live pages
+and unrelated extension pages are excluded from screenshots. Passing reference
+images are included with other evidence if that job fails.
+
+For a repair, start with the matching `--surface`/browser or independent peak
+surface command and the preflight, then run the complete published pipeline once
+the focused checks pass. A rerun of a failing job without code changes is useful
+for infrastructure diagnosis; passing on retry alone does not establish a fix.
+
 The [script inventory](../scripts/README.md) groups executable drivers and shared
 case/fixture modules; imported diagnostics are retained when a current runner
 uses them.
@@ -269,7 +304,7 @@ uses them.
 | --- | --- |
 | `garmin` | Builds and checks Garmin connection, inbox and popup in hidden Chrome and Firefox. Covers rejected keys, range descriptions, dismissal Undo, refreshed matches, draft-opening recovery and stable pending/error controls at 1180/390px, both themes and 200% CSS zoom. Uses shipped UI with stubbed permissions and provider/session replies; native permission prompts and live sessions remain separate checks. |
 | `capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×600 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
-| `layout-stability` | Builds and checks state-dependent action geometry across eighteen surface groups in hidden Chrome and Firefox at 390×900 and 1280×900, light/dark. Uses controlled pending/error/retry/completion responses, repeated progress and enlarged-text cases; movement tolerance is one CSS pixel. Set `BPB_JITTER_ARTIFACTS` to retain screenshots or pass `--surface=maps` after the target for one group. The `settings-actions` and `photo-backup` groups run shipped page code with held replies, checking keyboard focus, duplicate activation, deliberate focus changes, restore confirmation and doubled control text. Text scaling does not establish native zoom. These HTTPS fixtures load shipped assets and selected component layouts; run `verify -- browsers` separately for real manifest/worker proof. |
+| `layout-stability` | Builds and checks state-dependent action geometry across 24 surface groups in hidden Chrome and Firefox at 390×900 and 1280×900, light/dark. Uses controlled pending/error/retry/completion responses, repeated progress and enlarged-text cases; movement tolerance is one CSS pixel. Set `BPB_JITTER_ARTIFACTS` to retain screenshots or pass `--surface=maps` after the target for one group. The `settings-actions` and `photo-backup` groups run shipped page code with held replies, checking keyboard focus, duplicate activation, deliberate focus changes, restore confirmation and doubled control text. Text scaling does not establish native zoom. These HTTPS fixtures load shipped assets and selected component layouts; run `verify -- browsers` separately for real manifest/worker proof. |
 | `gpx-header` | Builds and checks the real extension's compact GPX header in hidden Chrome at 1600×900, 800×900 and 390×900, light/dark, including doubled panel text and segment review controls. Samples series-toggle geometry through keyboard and pointer activation (1px tolerance). GPX and map APIs use HTTPS fixtures; no live provider or native focus proof. Set `BPB_VERIFY_GPX_HEADER_ARTIFACTS` to retain screenshots. The shared header checks also run in `browsers`, including Firefox. |
 | `multi-summit` | Verifies sequential Preview and simulated manual Save for multiple summit drafts in hidden Chrome, with isolated HTTPS Peakbagger fixtures. Checks complete GPX retention, shared trip identity, and session payload cleanup. |
 | `draft-recovery` | Checks slow preparation, rollback, repeated errors, keyboard reload and Preview recovery in hidden Chrome and Firefox at 390 and 1000 by 760, light/dark and 100%/200% CSS zoom. Compares Save, heading, following content, scroll and recovery-action geometry. Uses the native HTTPS form fixture and shipped bundle; worker replies and the native Preview postback are stubbed. `BPB_DRAFT_RECOVERY_ARTIFACTS` retains screenshots. |
