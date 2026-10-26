@@ -37,3 +37,12 @@ test('invalid or empty selections fail before any browser can launch', () => {
         ['--surface=timestamps', '--surface=report-filter']]) assert.throws(() => layoutVerificationPlan(args, surfaces));
     assert.throws(() => layoutVerificationPlan([], []));
 });
+
+test('preflight runs the actual API, focus and settings fixtures without replacing full coverage', () => {
+    const plan = layoutVerificationPlan(['--chrome-only', '--preflight'], [...surfaces, 'popup', 'settings', 'maps']);
+    assert.deepEqual(plan.cases.map(value => value.surface), ['popup', 'timestamps', 'settings', 'maps']);
+    assert.ok(plan.cases.every(value => value.browser === 'chrome' && value.width === 390 && value.theme === 'light'));
+    assert.throws(() => layoutVerificationPlan(['--preflight', '--shard=1/4'], surfaces));
+    assert.throws(() => layoutVerificationPlan(['--preflight', '--surface=timestamps'], surfaces));
+    assert.throws(() => layoutVerificationPlan(['--preflight'], []));
+});

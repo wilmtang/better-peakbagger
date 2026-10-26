@@ -111,7 +111,7 @@ async function popupCase(page, origin, variant) {
     await load(page, origin, 'popup/popup.html', ({ theme }) => {
         globalThis.__progress = { phase: 'searching-summits', provider: 'garmin', progress: { completed: 1, total: 12 } };
         globalThis.chrome = { tabs: { query: async () => [{ id: 9 }] },
-            storage: { sync: { get: async () => ({ bpbSettings: { theme } }) }, onChanged: { addListener() {} } },
+            storage: { sync: { get: async () => ({ bpbSettings: { theme } }) }, onChanged: { addListener() {}, removeListener() {} } },
             runtime: { sendMessage: async message => {
                 if (message.type === 'CAPTURE_CANCEL') return new Promise(resolve => { globalThis.__finishCancel = () => resolve({ ok: true }); });
                 return globalThis.__progress;
@@ -144,7 +144,7 @@ async function accessCase(page, origin, variant) {
         await load(page, origin, `${id}/access.html`, ({ theme }) => {
             globalThis.chrome = {
                 storage: { sync: { get: async () => ({ bpbSettings: { theme } }) },
-                    onChanged: { addListener() {} } },
+                    onChanged: { addListener() {}, removeListener() {} } },
                 permissions: { request: () => new Promise((resolve, reject) => {
                     globalThis.__permissionCalls = (globalThis.__permissionCalls || 0) + 1;
                     globalThis.__finishPermission = result => result === 'error' ? reject(new Error('Unavailable')) : resolve(result);
@@ -1431,8 +1431,14 @@ try {
                     });
                     const page = await context.newPage();
                     page.setDefaultTimeout(10000);
-                    page.on('pageerror', error => console.error(`${surface}: ${error.message}`));
-                    await check(page, origin, variant); executedCases++;
+                    const pageErrors = [];
+                    page.on('pageerror', error => pageErrors.push(error.message));
+                    await check(page, origin, variant);
+                    // Exercise disposal while the page can still provide
+                    // evidence; context.close() otherwise hides cleanup errors.
+                    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+                    assert.deepEqual(pageErrors, [], `${surface}: fixture bootstrap or lifecycle failed`);
+                    executedCases++;
                     console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,
                         surface, theme, viewport: `${Math.floor(width / zoom)}x${Math.floor(900 / zoom)}`, deviceScaleFactor: zoom, layoutZoom: zoom, durationMs: Math.round(performance.now() - startedAt), result: 'passed' }));
                 } catch (error) {
