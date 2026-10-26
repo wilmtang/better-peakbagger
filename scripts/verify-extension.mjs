@@ -5635,6 +5635,12 @@ try {
                     href: 'https://imgur.com/upload',
                     target: '_blank',
                     rel: 'noopener noreferrer'
+                },
+                {
+                    label: 'ImgBB',
+                    href: 'https://imgbb.com/',
+                    target: '_blank',
+                    rel: 'noopener noreferrer'
                 }
             ]), `image-hosting help links were incomplete or unsafe (state=${
                 JSON.stringify(imageHostingHelp)})`);
