@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canonicalInstagramUrl, instagramPasteUrl, instagramBlocks } from '../../src/reports/instagram-url.js';
+import { JSDOM } from 'jsdom';
+import { canonicalInstagramUrl, instagramPasteUrl, instagramBlocks, instagramParagraphUrl } from '../../src/reports/instagram-url.js';
 const URL='https://www.instagram.com/p/fA9uwTtkSN/';
 test('Instagram identity accepts only canonical HTTPS post/reel paths and strips tracking',()=>{
     assert.equal(canonicalInstagramUrl(' https://instagram.com/p/fA9uwTtkSN/?utm_source=ig_web_copy_link#tracking '),URL);
@@ -31,4 +32,19 @@ test('only standalone post lines become blocks; inline and labelled links remain
     const inline={type:'p',kids:[{t:'text',text:'See '},link]};assert.deepEqual(instagramBlocks([inline]),[inline]);
     const labelled={type:'p',kids:[{...link,kids:[{t:'text',text:'my photo'}]}]};assert.deepEqual(instagramBlocks([labelled]),[labelled]);
     const code={type:'pre',text:URL};assert.deepEqual(instagramBlocks([code]),[code]);
+});
+test('standalone saved-post links recognize Peakbagger hostname labels through the shared identity rule',()=>{
+    for(const label of ['instagram.com','www.instagram.com','WWW.Instagram.Com']){
+        const href=URL+'?igshid=fixture';
+        const dom=new JSDOM(`<p><a href="${href}">${label}</a></p>`);
+        try{assert.equal(instagramParagraphUrl(dom.window.document.querySelector('p')),URL,label);}
+        finally{dom.window.close();}
+        assert.deepEqual(instagramBlocks([{type:'p',kids:[{t:'a',href,kids:[{t:'text',text:label}]}]}]),[{type:'instagram',url:URL}],label);
+    }
+    for(const [href,label]of [[URL,'Instagram post'],[URL,'my photo'],['https://evil.test/p/x','www.instagram.com'],
+        [URL,'www.instagram.com.evil.test'],[URL,'https://www.instagram.com/p/other/']]){
+        const dom=new JSDOM(`<p><a href="${href}">${label}</a></p>`);
+        try{assert.equal(instagramParagraphUrl(dom.window.document.querySelector('p')),null,`${href}/${label}`);}
+        finally{dom.window.close();}
+    }
 });

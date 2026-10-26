@@ -43,6 +43,23 @@ test('reader rebuilds hostile report DOM even when it contains controls and pres
     } finally {dom.window.close();}
 });
 
+test('native saved-report hostname links become post blocks while the external-report field remains a link',async()=>{
+    const url='https://www.instagram.com/p/Native_Post/';
+    const html='<table class="gray"><tr><td colspan="2"><h2>Ascent Trip Report</h2>'
+        + `<b>URL Link: </b><a href="${url}?igshid=fixture">instagram.com</a><br><br>`
+        + `Before the post<br><br><a href="${url}?igshid=fixture">www.instagram.com</a><br><br>After the post</td></tr></table>`;
+    const dom=new JSDOM(html,{url:'https://www.peakbagger.com/climber/ascent.aspx?aid=1',runScripts:'outside-only'});
+    try{
+        await evalBundle(dom.window,'content/report-protection.js');
+        const cell=dom.window.document.querySelector('[data-bpb-report-protected]');
+        const post=[...cell.querySelectorAll('p')].find(p=>p.textContent===url);
+        assert(post,'the standalone hostname link must produce a recognizable canonical post paragraph');
+        assert.equal(post.querySelector('a').href,url);
+        assert.match(cell.textContent,/URL Link: instagram\.com/);
+        assert.match(cell.textContent,/Before the post/);assert.match(cell.textContent,/After the post/);
+    }finally{dom.window.close();}
+});
+
 test('packaged rules and Firefox transport retain one challenge marker and policy', async () => {
     for (const rule of rules.filter(rule => rule.action.type === 'modifyHeaders')) {
         assert.deepEqual(rule.condition.excludedResponseHeaders, [{header:Cloudflare.CHALLENGE_HEADER,values:[Cloudflare.CHALLENGE_VALUE]}]);

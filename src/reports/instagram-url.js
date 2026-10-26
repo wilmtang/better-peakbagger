@@ -79,6 +79,14 @@ export function instagramPasteUrl(raw) {
     return recognized && blocks===1 && depth===0 && posts.size===1 ? [...posts][0] : null;
 }
 
+// Peakbagger reports commonly display a post link as just its hostname. Keep
+// those native labels equivalent to a full permalink, but leave custom captions
+// (including Rich's "Instagram post" ordinary-link fallback) as ordinary links.
+const instagramLinkUrl=(href,label)=>{
+    const url=canonicalInstagramUrl(href),display=String(label??'').trim();
+    return url&&(canonicalInstagramUrl(display)===url||/^(?:www\.)?instagram\.com$/i.test(display))?url:null;
+};
+
 export function instagramParagraphUrl(element) {
     if (element?.tagName !== 'P') return null;
     const nodes=[...element.childNodes].filter(node=>node.nodeType!==3||node.nodeValue.trim());
@@ -86,8 +94,7 @@ export function instagramParagraphUrl(element) {
     const node=nodes[0];
     if(node.nodeType===3)return canonicalInstagramUrl(node.nodeValue);
     if(node.nodeName!=='A'||[...node.childNodes].some(child=>child.nodeType!==3))return null;
-    const url=canonicalInstagramUrl(node.getAttribute('href'));
-    return url && canonicalInstagramUrl(node.textContent)===url ? url : null;
+    return instagramLinkUrl(node.getAttribute('href'),node.textContent);
 }
 
 export function instagramBlocks(blocks) {
@@ -97,8 +104,7 @@ export function instagramBlocks(blocks) {
         const urlFor=kids=>{
             if(kids.length===1&&kids[0].t==='text')return canonicalInstagramUrl(kids[0].text);
             if(kids.length!==1||kids[0].t!=='a'||kids[0].kids.some(kid=>kid.t!=='text'))return null;
-            const url=canonicalInstagramUrl(kids[0].href);
-            return url&&canonicalInstagramUrl(kids[0].kids.map(kid=>kid.text).join(''))===url?url:null;
+            return instagramLinkUrl(kids[0].href,kids[0].kids.map(kid=>kid.text).join(''));
         };
         if(!lines.some(line=>urlFor(line)))return [block];
         const output=[];let pending=[];

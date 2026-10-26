@@ -1095,6 +1095,9 @@ or Markdown. Pasting Instagram's copied embed code into an empty paragraph/line
 also works: BPB extracts one validated permalink and discards the supplied HTML
 and scripts. Links inside prose and code stay ordinary text/links. Tracking
 parameters are removed; share/redirect URLs are not followed automatically.
+Saved standalone post links labelled `instagram.com` or `www.instagram.com`
+are recognized too. Links inside prose, custom captions and the separate
+external-report URL field remain ordinary links.
 
 Rich text, Markdown preview and saved-ascent readers show a compact placeholder
 with **Load Instagram post** and **Open on Instagram**. No Instagram metadata,

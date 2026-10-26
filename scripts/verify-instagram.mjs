@@ -40,7 +40,10 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
         const certificate=await createFixtureCertificate({directory:root});
         let saved=await readFile(path.join(projectRoot,'test/fixtures/pages/ascent-ignored-report.html'),'utf8');
         saved=saved.replace(/<figure>[\s\S]*?<\/iframe>/,'')
-            .replace('Synthetic report text',`<p>Before the post.</p><p><a href="${POST}">${POST}</a></p><p>After the post.</p><p><a href="${OTHER}">${OTHER}</a></p>Following report text`)
+            // Faithful native report shape: abbreviated hostname labels and
+            // <br> separators, plus the same post in the external-report field.
+            .replace('<a href="https://example.com/report">External report</a>',`<a href="${POST}?igshid=fixture">instagram.com</a>`)
+            .replace('Synthetic report text',`Before the post.<br><br><a href="${POST}?igshid=fixture">www.instagram.com</a><br><br>After the post.<br><br><a href="${OTHER}">instagram.com</a><br><br>Following report text`)
             .replace('</main>','<div id="following" style="clear:both">Following native content</div></main>');
         const edit=await readFile(path.join(projectRoot,'test/fixtures/pages/climber-ascentedit.html'),'utf8');
         let held=true,requests=0,connects=0;const waiting=new Set(),sockets=new Set();
@@ -160,6 +163,7 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 held=true;const startRequests=requests,startConnects=connects;
                 await viewport({width,height:900});await patch({theme,loadInstagramAutomatically:false});
                 await navigate(`${origin}/climber/ascent.aspx?aid=7654321&case=${cases}`);await waitState('idle');
+                assert.equal((await state()).count,2,'native hostname links should produce two standalone post cards without embedding the external-report field');
                 if(enlarged)await evaluate(()=>{const s=document.createElement('style');s.textContent='.bpb-instagram-title,.bpb-instagram-action,.bpb-instagram-link,.bpb-instagram-status{font-size:26px!important}';document.head.append(s);});
                 await evaluate(()=>{document.querySelector('.bpb-instagram-action').scrollIntoView({block:'center'});});
                 assert.equal(requests,startRequests);assert.equal(connects,startConnects);
