@@ -5598,7 +5598,8 @@ try {
                 // explains the upload action above it.
                 const hints = box ? [...box.querySelectorAll('.bpb-re-image-hosting')] : [];
                 const hint = hints[hints.length - 1];
-                const controls = box ? [...box.querySelectorAll('input, button')] : [];
+                const controls = box ? [...box.querySelectorAll('input, button')]
+                    .filter(control => !hint?.contains(control)) : [];
                 const hintRect = hint?.getBoundingClientRect();
                 const controlRects = controls.map(control => control.getBoundingClientRect());
                 return box && hint && hintRect && controlRects.length ? {

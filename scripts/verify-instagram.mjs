@@ -17,6 +17,7 @@ import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier
 import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
 import { readSettingsFragmentLanding, settingsFragmentLanded } from './settings-fragment-verification.mjs';
 import { canonicalInstagramUrl } from '../src/reports/instagram-url.js';
+import { verifyReportImageHelp } from './verify-report-image-help.mjs';
 
 const POST='https://www.instagram.com/p/fA9uwTtkSN/';
 // Public sample linked by its author: https://www.nps.gov/media/video/view.htm?id=0C5D889A-6097-4041-B8A2-E9CFE6C0E554
@@ -86,7 +87,7 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
         await listenServer(proxy,0,'127.0.0.1');
         const origin=`https://www.peakbagger.com:${server.address().port}`;
         const proxyUrl=`http://127.0.0.1:${proxy.address().port}`;
-        let evaluate,control,navigate,click,key,type,back,viewport,screenshot,optionsShot,version,player,play;
+        let evaluate,control,navigate,click,key,type,back,viewport,screenshot,optionsShot,version,player,play,hover,press;
         if(kind==='chrome') {
             const {chromium}=await import('playwright');assertChromeLaunchAllowed();
             const source=path.join(projectRoot,'dist');
@@ -100,6 +101,7 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
             const page=await context.newPage();
             evaluate=(fn,arg)=>page.evaluate(fn,arg);control=(fn,arg)=>options.evaluate(fn,arg);navigate=url=>page.goto(url);
             click=selector=>page.locator(selector).first().click();key=async value=>{await page.locator(ACTION).first().focus();await page.keyboard.press(value);};
+            hover=selector=>page.locator(selector).first().hover();press=value=>page.keyboard.press(value);
             type=async(selector,text)=>{await page.locator(selector).click();await page.keyboard.press('End');await page.keyboard.type(text);};back=()=>page.goBack();
             viewport=size=>page.setViewportSize(size);screenshot=file=>page.screenshot({path:file,fullPage:false});version=context.browser().version();
             optionsShot=async(width,file)=>{
@@ -130,6 +132,8 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
             evaluate=(fn,arg)=>driver.executeScript(`return (${fn})(arguments[0]);`,arg??null);
             control=async(fn,arg)=>{await driver.switchTo().window(optionsHandle);try{return await driver.executeScript(`return (${fn})(arguments[0]);`,arg??null);}finally{await driver.switchTo().window(readerHandle);}};
             navigate=url=>driver.get(url);click=selector=>driver.findElement(By.css(selector)).click();key=async value=>{const el=await driver.findElement(By.css(ACTION));await driver.executeScript('arguments[0].focus()',el);await el.sendKeys(value==='Enter'?Key.ENTER:Key.SPACE);};
+            hover=async selector=>driver.actions({async:true}).move({origin:await driver.findElement(By.css(selector))}).perform();
+            press=value=>driver.actions({async:true}).sendKeys(({Tab:Key.TAB,Escape:Key.ESCAPE,Enter:Key.ENTER,Space:Key.SPACE})[value]).perform();
             type=async(selector,text)=>{const el=await driver.findElement(By.css(selector));await el.click();await el.sendKeys(Key.END,text);};back=()=>driver.navigate().back();
             viewport=size=>setFirefoxContentViewport(driver,size);screenshot=async file=>{const {writeFile}=await import('node:fs/promises');await writeFile(file,await driver.takeScreenshot(),'base64');};version=(await driver.getCapabilities()).getBrowserVersion();
             optionsShot=async(width,file)=>{await driver.switchTo().window(optionsHandle);try{
@@ -209,6 +213,9 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 cases++;
             }
             assert.equal(cases,8);
+            const beforeHelp=requests;
+            await verifyReportImageHelp({kind,version,evaluate,navigate,viewport,patch,click,hover,press,screenshot,screenshots,origin});
+            assert.equal(requests,beforeHelp,'image help contacted Instagram');
             for(const width of [1280,375]){
                 await viewport({width,height:900});await patch({loadInstagramAutomatically:false,theme:'light',reportEditorMode:'rich'});
                 await navigate(`${origin}/climber/ascentedit.aspx?aid=7654321`);

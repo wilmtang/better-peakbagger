@@ -411,20 +411,65 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const guideUrl = ext.runtime?.getURL?.('photos/guide.html');
     if (guideUrl) imageEditHint.append(externalLink('How it works', guideUrl));
     const imageDivider = el('div', 'bpb-re-image-divider', 'Or paste a link to an image');
-    // The two ways a pasted link fails are worth naming: a viewer page rather
-    // than the file, and a host that refuses to be embedded elsewhere. Google
-    // Photos and Drive links fail both and are the most common attempt.
     const imageHostingHint = el('div', 'bpb-re-image-hosting',
-        'It must point at the image file itself and come from a host that lets other sites '
-        + 'show it — Google Photos, Drive, iCloud, and Dropbox links do not. ');
+        'Direct image links: ');
     imageHostingHint.append(
         externalLink('Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'),
         ', ',
         externalLink('Imgur', 'https://imgur.com/upload'),
-        ', and ',
+        ', ',
         externalLink('ImgBB', 'https://imgbb.com/'),
-        ' work. To resize, select the image and drag its lower-right handle.'
+        '. Drag an image’s corner to resize. '
     );
+    const instagramHelp = el('span', 'bpb-re-instagram-help', 'Instagram posts ');
+    const instagramInfo = button('bpb-re-image-info', '', 'About Instagram posts',
+        svg(
+            svgElement('circle', { cx: '8', cy: '8', r: '6.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3' }),
+            svgElement('path', { d: 'M8 7v4M8 4.5v.1', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round' })
+        ));
+    // The custom tooltip supports keyboard and touch as well as hover; a native
+    // title would duplicate it and would be unavailable on touch devices.
+    instagramInfo.removeAttribute('title');
+    const instagramTip = el('span', 'bpb-re-image-tooltip',
+        'Paste an Instagram post or Reel link on its own line in the report, '
+        + 'not in the image URL field. Embedded posts and captions are only visible with Better Peakbagger installed; '
+        + 'other readers see a link.');
+    instagramTip.id = 'bpb-re-instagram-help';
+    instagramTip.setAttribute('role', 'tooltip');
+    instagramInfo.setAttribute('aria-describedby', instagramTip.id);
+    instagramInfo.setAttribute('aria-controls', instagramTip.id);
+    let instagramHelpPinned = false;
+    const showInstagramHelp = () => {
+        instagramTip.hidden = false;
+        instagramInfo.setAttribute('aria-expanded', 'true');
+    };
+    const hideInstagramHelp = () => {
+        instagramTip.hidden = true;
+        instagramInfo.setAttribute('aria-expanded', 'false');
+        instagramHelpPinned = false;
+    };
+    hideInstagramHelp();
+    instagramInfo.addEventListener('pointerenter', showInstagramHelp);
+    instagramInfo.addEventListener('focus', showInstagramHelp);
+    instagramInfo.addEventListener('blur', hideInstagramHelp);
+    instagramInfo.addEventListener('click', () => {
+        if (instagramHelpPinned) hideInstagramHelp();
+        else { instagramHelpPinned = true; showInstagramHelp(); }
+    });
+    imageHostingHint.addEventListener('pointerleave', () => {
+        if (!instagramHelpPinned && document.activeElement !== instagramInfo) hideInstagramHelp();
+    });
+    // Capture Escape before the image field's existing handler can close the
+    // entire insertion panel, including when help was opened only by hover.
+    ui.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || instagramTip.hidden) return;
+        event.preventDefault();
+        event.stopPropagation();
+        hideInstagramHelp();
+    }, true);
+    instagramHelp.append(instagramInfo, instagramTip);
+    // Saved biography pages do not enhance Instagram links into embeds.
+    if (!isProfile) imageHostingHint.append(instagramHelp);
     if (!isProfile) imageBox.append(imageActions, imageEditHint, imageLaunchStatus, imageDivider);
     imageBox.append(
         imageSrcInput,
@@ -628,6 +673,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const boxes = [tableBar, captionBar, linkBox, imageBox, videoBox, moreBox];
     const manualBoxes = [linkBox, imageBox, videoBox, moreBox];
     const closeBoxes = () => {
+        hideInstagramHelp();
         for (const box of boxes) box.hidden = true;
         fieldErrors.forEach((error, input) => clearFieldError(input));
     };
@@ -1368,8 +1414,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // being swallowed by it, so the covered form is one click away. Focus
     // follows the press; do not pull it back into the editor here.
     const dismissOnOutsidePointer = event => {
-        if (!openManualBox()) return;
         const target = event.target;
+        if (!(target instanceof Node) || !instagramHelp.contains(target)) hideInstagramHelp();
+        if (!openManualBox()) return;
         if (target instanceof Node && ui.contains(target)) return;
         closeBoxes();
         refreshToolbar();

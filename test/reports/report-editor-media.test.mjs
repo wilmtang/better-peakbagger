@@ -37,12 +37,11 @@ test('the image popover validates the source and inserts an optional caption', a
     );
     assert.match(ui.querySelector('.bpb-re-image-divider').textContent,
         /paste a link to an image/i);
-    // The two ways a pasted link fails are named, because the most common
-    // attempt fails both and does so silently in the saved report.
-    assert.match(hostingHint.textContent, /point at the image file itself/);
-    assert.match(hostingHint.textContent, /Google Photos, Drive, iCloud, and Dropbox links do not/);
+    assert.match(hostingHint.textContent, /Direct image links:/);
+    assert.doesNotMatch(hostingHint.textContent, /Google Photos|Drive|iCloud|Dropbox/);
     assert.match(hostingHint.textContent,
-        /To resize, select the image and drag its lower-right handle\./);
+        /Drag an image’s corner to resize\./);
+    assert.match(hostingHint.textContent, /Instagram posts/);
     assert.equal(caption.placeholder, 'Caption (optional)');
     assert.equal(caption.maxLength, Library.ALT_LIMIT);
     assert.equal(ui.querySelector('[aria-label="Image description"]'), null);
@@ -86,6 +85,51 @@ test('the image popover validates the source and inserts an optional caption', a
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[img'));
     assert.equal(doc.getElementById('JournalText').value,
         '[figure][img src="https://example.com/topo.jpg"][figcaption]Topo[/figcaption][/figure]');
+});
+
+test('Instagram image help explains the report paste flow and dismisses without closing insertion', async t => {
+    const dom = await loadEditor();
+    t.after(() => dom.window.close());
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    ui.querySelector('[aria-label="Insert image"]').click();
+    const box = ui.querySelector('.bpb-re-imagebox');
+    const info = ui.querySelector('[aria-label="About Instagram posts"]');
+    assert.ok(info, 'Instagram support must be discoverable in the image popover');
+    assert.equal(info.type, 'button', 'help cannot submit the ascent form');
+    const tip = doc.getElementById(info.getAttribute('aria-describedby'));
+    assert.equal(tip.getAttribute('role'), 'tooltip');
+    assert.equal(tip.hidden, true);
+    assert.match(tip.textContent, /post or Reel link on its own line in the report/);
+    assert.match(tip.textContent, /not in the image URL field/);
+    assert.match(tip.textContent, /only visible with Better Peakbagger installed/);
+    assert.match(tip.textContent, /other readers see a link/);
+
+    info.focus();
+    assert.equal(tip.hidden, false, 'keyboard focus reveals the instructions');
+    assert.equal(info.getAttribute('aria-expanded'), 'true');
+    info.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(tip.hidden, true);
+    assert.equal(box.hidden, false, 'Escape dismisses only the tooltip');
+    assert.equal(doc.activeElement, info);
+
+    info.click();
+    assert.equal(tip.hidden, false, 'click or touch can open help');
+    info.click();
+    assert.equal(tip.hidden, true, 'a second activation closes help');
+    info.dispatchEvent(new dom.window.Event('pointerenter'));
+    assert.equal(tip.hidden, false, 'pointer hover reveals help');
+    ui.querySelector('[aria-label="Image URL (HTTPS)"]').focus();
+    assert.equal(tip.hidden, true, 'moving keyboard focus dismisses help');
+    info.dispatchEvent(new dom.window.Event('pointerenter'));
+    doc.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(tip.hidden, true, 'Escape also dismisses hover-only help');
+    assert.equal(box.hidden, false, 'hover-only dismissal must preserve insertion');
+    info.click();
+    ui.querySelector('.bpb-re-imagebox .bpb-re-boxclose').click();
+    ui.querySelector('[aria-label="Insert image"]').click();
+    assert.equal(tip.hidden, true, 'reopening insertion does not retain stale help');
+    assert.equal(doc.getElementById('JournalText').value, '', 'help never edits the report');
 });
 
 test('the image popover keeps an empty caption as an ordinary image', async () => {

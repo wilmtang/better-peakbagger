@@ -39,6 +39,8 @@ test('profile biography mounts the shared editor in its native form with profile
     assert.equal(ui.querySelector('.bpb-re-manage'), null);
     assert.equal(ui.querySelector('.bpb-re-local-photo-status'), null);
     assert.equal(ui.querySelector('.bpb-re-photo-launch'), null);
+    assert.equal(ui.querySelector('.bpb-re-instagram-help'), null,
+        'biographies must not advertise saved-report-only Instagram embeds');
 });
 
 test('profile rich edits flush before native Save and other account postbacks', async t => {

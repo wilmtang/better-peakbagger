@@ -323,10 +323,58 @@
 }
 
 .bpb-re-image-hosting {
+    position: relative;
     flex: 0 0 100%;
     color: #4f5660;
     font-size: x-small;
     line-height: 1.4;
+}
+
+.bpb-re-instagram-help {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.bpb-re .bpb-re-image-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 2px;
+    color: inherit;
+    vertical-align: middle;
+}
+
+.bpb-re-image-info:hover {
+    background: #e2e2df;
+}
+
+.bpb-re-image-tooltip {
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    z-index: 3;
+    box-sizing: border-box;
+    width: min(340px, 100%);
+    padding: 8px 10px;
+    border: 1px solid #b9b9b9;
+    border-radius: 6px;
+    background: #fbfbf9;
+    color: #333;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+}
+
+@media (pointer: coarse) {
+    .bpb-re .bpb-re-image-info {
+        width: 44px;
+        height: 44px;
+    }
 }
 
 .bpb-re-image-actions {
@@ -1191,6 +1239,16 @@ html[data-bpb-theme="dark"] .bpb-re-mode-hint {
 
 html[data-bpb-theme="dark"] .bpb-re-image-hosting {
     color: #a9a39a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-image-tooltip {
+    border-color: #525861;
+    background: #2c2f33;
+    color: #e8e4dd;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-image-info:hover {
+    background: #3a3f45;
 }
 
 html[data-bpb-theme="dark"] .bpb-re-image-divider {

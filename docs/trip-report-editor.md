@@ -1099,6 +1099,13 @@ Saved standalone post links labelled `instagram.com` or `www.instagram.com`
 are recognized too. Links inside prose, custom captions and the separate
 external-report URL field remain ordinary links.
 
+The Rich image popover keeps direct-image hosting guidance short. Its circled
+info button beside **Instagram posts** explains that post/Reel links belong on
+their own line in the report, rather than in the image URL field. Embedded posts
+and captions require Better Peakbagger; readers without it see the saved link.
+The tooltip opens on hover, keyboard focus or a tap, closes with Escape, and
+does not move the insertion controls or writing surface.
+
 ### Recognition rules
 
 BPB checks both **the destination URL** and **how it appears in the report**.
