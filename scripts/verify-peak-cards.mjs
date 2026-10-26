@@ -389,8 +389,23 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         }
         await focus('weather', '.bpb-peak-card-toggle'); await press(key('Enter')); await expanded('weather', true);
         await focus('weather', '.bpb-week-refresh');
+        // Disclosure precedes the lazy forecast read. A screenshot used to
+        // provide an accidental delay; refresh must start from a settled view.
+        await waitForCondition(() => evaluate(() => ({
+            expanded: document.querySelector('#bpb-peak-weather').dataset.bpbCardCollapsed,
+            busy: document.querySelector('#bpb-peak-weather').getAttribute('aria-busy'),
+            days: document.querySelectorAll('.bpb-week-day').length,
+            unavailable: document.querySelector('.bpb-week-refresh').getAttribute('aria-disabled'),
+            focused: document.activeElement === document.querySelector('.bpb-week-refresh'),
+        })), { description: 'settled expanded forecast before keyboard refresh', timeoutMs: 20_000,
+            isReady: state => state.expanded === 'false' && state.busy === 'false' && state.days === 16
+                && state.unavailable !== 'true' && state.focused });
         const weatherBefore = await geometry(); setMode('loading'); await press(key('Enter'));
-        await wait(() => document.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'true', 'weather refresh pending');
+        await waitForCondition(() => evaluate(() => ({ busy: document.querySelector('#bpb-peak-weather').getAttribute('aria-busy'),
+            status: document.querySelector('.bpb-week-status').textContent,
+            action: document.querySelector('.bpb-week-refresh').outerHTML,
+            focus: document.activeElement?.outerHTML?.slice(0, 300) })),
+        { description: 'weather refresh pending', timeoutMs: 20_000, isReady: state => state.busy === 'true' });
         await waitForCondition(heldCount, { description: 'weather response held by fixture', isReady: count => count > 0 });
         assert.equal(await evaluate(() => document.activeElement === document.querySelector('.bpb-week-refresh')), true,
             'weather Refresh keeps keyboard focus while unavailable');
