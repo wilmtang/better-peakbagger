@@ -63,11 +63,13 @@ independent of the existing targets.
 - [chrome-launch-guard.mjs](chrome-launch-guard.mjs)
 - [firefox-content-viewport.mjs](firefox-content-viewport.mjs)
 - [firefox-verifier-processes.mjs](firefox-verifier-processes.mjs)
+- [layout-verification-plan.mjs](layout-verification-plan.mjs) — Exact-once browser/theme/viewport partitions and focused preflight selection.
 - [peak-map-links-verification.mjs](peak-map-links-verification.mjs)
 - [resource-stack.mjs](resource-stack.mjs)
 - [verification-browser-identity.mjs](verification-browser-identity.mjs)
 - [verification-repetitions.mjs](verification-repetitions.mjs)
 - [verify.mjs](verify.mjs)
+- [verify-fixture-preflight.mjs](verify-fixture-preflight.mjs) — Early locale, evidence, worker authorization and shipped-fixture checks.
 
 ## Complete extension and package verification
 

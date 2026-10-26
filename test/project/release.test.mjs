@@ -564,7 +564,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: '128'/);
     assert.match(workflow, /firefox-version: \$\{\{ matrix\.firefox \}\}/);
-    assert.equal(workflow.match(/uses: \.\/\.github\/actions\/setup-verification/g)?.length, 7);
+    assert.equal(workflow.match(/uses: \.\/\.github\/actions\/setup-verification/g)?.length, 9);
     assert.match(workflow, /permissions:\s*\n\s+contents: read/);
     assert.match(workflow, /fetch-depth: 0[\s\S]*?run: npm run release:check-history/);
     await assert.rejects(
