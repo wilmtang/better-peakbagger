@@ -325,6 +325,13 @@ unsupported nesting—not by comparing serialized strings. Supported aliases,
 legacy list structure, and whitespace normalization therefore remain safe and
 do not produce false warnings.
 
+Bare bracketed words such as `[this]` or `[sic]` are literal prose when they are
+not real HTML tags and have neither attributes nor a matching closing tag.
+They remain visible in Rich text and Markdown without a conversion warning;
+after editing, their delimiters are entity-escaped in the submitted source so
+Peakbagger cannot interpret them as tags. Real HTML/foreign-content tags,
+attribute-bearing tokens and paired custom markup still use the guard.
+
 When the server report has any lossy diagnostic, the editor starts in Plain
 regardless of the saved mode preference. A concise status row names up to three
 specific constructs, keeps the original `JournalText` visible and unchanged,

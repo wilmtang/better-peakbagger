@@ -922,6 +922,27 @@ test('safe aliases and whitespace normalization do not trigger the conversion gu
     assert.equal(ui.querySelector('.bpb-re-conversion').hidden, true);
 });
 
+test('literal bracketed prose opens in the preferred editor and survives edits beside a link', async () => {
+    const report = 'Only [1\'\' of crust. Follow [this][a href="https://example.com/route"]route[/a].';
+    for (const mode of ['rich', 'markdown']) {
+        const dom = await loadEditor({ report, settings: { reportEditorMode: mode } });
+        const ui = await editorReady(dom), doc = dom.window.document;
+        assert.equal(ui.dataset.mode, mode);
+        assert.equal(ui.querySelector('.bpb-re-conversion').hidden, true);
+        assert.equal(doc.getElementById('JournalText').value, report, 'opening must not rewrite the original source');
+        const surface = mode === 'rich' ? ui.querySelector('.bpb-re-surface') : ui.querySelector('.bpb-re-preview');
+        assert.match(surface.textContent, /Follow \[this\]route\./);
+        assert.equal(surface.querySelector('a').href, 'https://example.com/route');
+        if (mode === 'rich') editors(dom).rich.chain().focus('end').insertContent(' Edited.').run();
+        else { const view = editors(dom).markdown.view; view.dispatch({ changes: { from: view.state.doc.length, insert: ' Edited.' } }); }
+        modeButton(doc, 'Plain').click();
+        const saved = doc.getElementById('JournalText').value;
+        assert.match(saved, /&#91;this&#93;/);
+        assert.match(saved, /\[a href="https:\/\/example.com\/route"(?: target="_blank")?\]route\[\/a\]/);
+        assert.match(saved, /Edited\./);
+    }
+});
+
 test('double-click opens the exact report image and replaces only that occurrence on return', async () => {
     const listeners = [];
     const opened = [];

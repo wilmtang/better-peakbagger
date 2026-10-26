@@ -360,6 +360,7 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
             start: hit.index,
             end: hit.index + hit[0].length,
             raw: hit[0],
+            bracket,
             closing,
             name,
             attrs,
@@ -368,12 +369,24 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
         });
     }
 
+    const closingNames = new Set(tokens.filter(token => token.closing).map(token => token.name));
+    let tagDocument;
+    const literalBracketWord = token => {
+        if (!token.bracket || token.attrs.trim() || closingNames.has(token.name)
+            || token.name === 'svg' || token.name === 'math') return false;
+        // A bare unknown word such as [this] is prose, not a markup feature
+        // being lost. Real HTML tags, attributes and paired custom tags still
+        // need the conversion guard. This never changes the rendering allowlist:
+        // the rejected token remains escaped literal text below.
+        tagDocument ||= getParserDocument('');
+        return tagDocument.createElement(token.name).constructor.name === 'HTMLUnknownElement';
+    };
     const stack = [];
     for (const token of tokens) {
         if (!token.closing) {
             const safe = safeOpening(token.name, token.attrs);
             if (!safe || (inlineOnly && (BLOCK_TAGS.has(token.name) || safe.tag === 'hr'))) {
-                if (!inlineOnly) addDiagnostic(diagnostics, {
+                if (!inlineOnly && (normalizedTag(token.name) || !literalBracketWord(token))) addDiagnostic(diagnostics, {
                     action: 'neutralize',
                     code: normalizedTag(token.name) ? 'unsafe-attribute' : 'unsupported-tag',
                     tag: token.name,

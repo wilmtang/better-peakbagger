@@ -365,6 +365,27 @@ test('unknown, unclosed, and unsafe tags become visible inert text', () => {
     }
 });
 
+test('bare bracketed words remain literal text without lossy-conversion diagnostics', () => {
+    for (const word of ['this', 'sic', 'THIS', 'route2']) {
+        const source = `Follow [${word}][a href="https://example.com/route"]route[/a].`;
+        const { ast, diagnostics } = Markup.parseBracketWithDiagnostics(source);
+        assert.deepEqual(diagnostics, [], word);
+        const saved = Markup.astToBracket(ast);
+        assert.equal(saved, `Follow &#91;${word}&#93;[a href="https://example.com/route"]route[/a].`);
+        const preview = body(Markup.astToHtml(ast));
+        assert.equal(preview.textContent, `Follow [${word}]route.`);
+        assert.equal(preview.querySelector('a').href, 'https://example.com/route');
+        assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(source)), saved);
+    }
+});
+
+test('real HTML and explicit custom markup still require deliberate conversion', () => {
+    for (const source of ['[script]', '[style]', '[details]', '[input]', '[svg]', '[math]',
+        '[this]text[/this]', '[this class="note"]', '[this/]', '<this>']) {
+        assert(Markup.parseBracketWithDiagnostics(source).diagnostics.length, source);
+    }
+});
+
 test('bracket diagnostics distinguish neutralized tags, dropped attributes, and unwrapped nesting', () => {
     const { diagnostics } = Markup.parseBracketWithDiagnostics([
         '[unknown]tag[/unknown]',
