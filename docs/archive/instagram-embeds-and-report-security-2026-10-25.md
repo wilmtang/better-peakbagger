@@ -1,27 +1,92 @@
 # Instagram embeds and trip-report script protection
 
-Date: October 25, 2026. Source baseline: `bb675408`.
+Investigation: October 25, 2026, baseline `bb675408`. Implementation completed
+October 26, 2026, through `2aed1871`; unreleased. The original investigation
+below is retained as historical evidence. The current contract is maintained in
+[the editor guide](../trip-report-editor.md#instagram-posts),
+[architecture](../architecture.md#deep-dive-trip-report-editor) and
+[privacy policy](../../PRIVACY.md#trip-report-reader-protection).
 
-Status: implementation in progress. Default response protection and safe report
-rebuilding are implemented; the post-link authoring model and isolated Instagram
-player are next. The findings below describe the original `bb675408` baseline.
+## Implemented behavior
 
-## Implementation progress
+- `ececbe5b`: Chrome installs static response CSP before saved-ascent parsing;
+  Firefox registers a synchronous blocking header listener with the same policy.
+  Recognized report cells are rebuilt through the existing allowlisted AST.
+  Native Quick Search has a fixed packaged replacement; native MasterMap
+  scripts and MAIN-world GPX integration remain available.
+- `a7b01d4f`: the top-level policy applies to saved ascents, not the unrelated
+  statistics/buddy-list route `report/report.aspx`. Nested Peakbagger documents
+  remain restricted, with the known native map exception. Percent-encoded
+  document paths fail closed. Existing site CSP is preserved and responses
+  marked as Cloudflare challenges retain normal site validation.
+- `825a4be2`: narrow HTTPS post/Reel parsing, bounded inert embed-snippet
+  extraction and the report AST canonicalize posts to ordinary saved links.
+  Rich/Markdown imports never execute the supplied HTML or scripts.
+- `70769aef`, `2aed1871`: saved ascents, Rich text and Markdown preview share
+  compact post placeholders. Automatic loading is off and device-local. Manual
+  loading authorizes one post instance, with a one-use, 60-second capability
+  bound to the tab, source document and private active-load nonce. Cancel/hide
+  revokes the nonce. A packaged wrapper loads only the canonical provider page
+  inside a scripts-only opaque sandbox. Remote code receives no extension APIs
+  or Peakbagger-origin access. No oEmbed API, proxy or provider host permission
+  is needed; the direct `/embed/` endpoint was verified empirically, not assumed
+  to be a permanent provider contract.
+- Static network rules block Instagram resources initiated by Peakbagger before
+  contact, including native embeds. One activated wrapper does not unlock the
+  tab. Pending/error/cancel/retry keep the action and following content stable;
+  success expands once. Narrow previews retain an external-link fallback.
 
-- Reader protection uses static Chrome CSP rules and a synchronous Firefox
-  response-header listener, with one shared policy and a narrowly identified
-  Cloudflare challenge exception. Native MasterMap frames remain available;
-  native Quick Search has a fixed packaged implementation.
-- The hostile-report verifier fails on observed script execution when protection
-  is removed from a disposable copy. It passes in hidden Chrome 156 and Firefox
-  158 with zero attack/provider requests, safe prose, native map execution,
-  route variants and the challenge exception. Five focused security/inventory
-  checks and 72 origin/Cloudflare/package/development checks passed. The full
-  Chrome extension check also passed; broader Firefox/full-suite gates continue.
-- Baseline limitations remain explicit: this does not protect non-BPB readers,
-  undo previously executed code, or constrain a pre-existing hostile site service
-  worker that synthesizes documents outside the browser's network stack.
+## Current verification
 
+```sh
+npm test
+npm run verify -- browsers
+npm run verify -- report-security
+npm run verify -- instagram
+npm run verify -- instagram --live
+```
+
+All 3,628 tests passed. The complete packaged Chrome 156.0.8078.4 and Firefox
+158.0.1 checks passed at the standard 1000×760 viewport, including real manifest,
+worker and bridge startup, editor/native-form fixtures, BFCache and teardown.
+The report security verifier passed six cases per browser at 1000×760: inline,
+module, external and handler execution; SVG, srcdoc and foreign-frame attempts;
+safe prose/native map scripts; route variants; Quick Search; challenge exception;
+and preservation of native list scripts. Attack and provider request counts were
+zero. Removing response protection from a disposable Chrome copy caused the
+assertion to fail on observed script execution.
+
+The Instagram verifier passed eight media-state cases per browser at 1000×900
+and 375×900, light/dark, normal/26px text. It compares action/card/heading,
+following content and scroll through held pending → error → retry → success,
+then hide/cancel. It also checks keyboard focus, zero provider contact before
+activation, opaque-origin isolation, a single-post grant, consent on/off,
+Rich snippet paste, ordinary-link fallback, Markdown player retention during
+unrelated typing, mode hiding and navigation restoration. Editor viewports were
+1280×900 and 375×900. The consent control wrote only device storage; Settings
+rendering was inspected at Chrome 1000/375×900 and Firefox 1000/500×900 (Firefox's
+minimum hidden window width and lack of privileged BiDi viewport overrides are
+reported rather than called 375px). These fixtures substitute provider content
+and native form data and never change the OS clipboard or submit a live ascent.
+
+Public photo `p/fA9uwTtkSN` rendered its text and images in both packaged browsers.
+Public Reel `reel/C8W_bpOJMGK`, linked by its author on the
+[National Park Service page](https://www.nps.gov/media/video/view.htm?id=0C5D889A-6097-4041-B8A2-E9CFE6C0E554),
+rendered and played muted in both browsers with video readyState 4 and width 720.
+Sandbox flags remained `allow-scripts` only. This is evidence for those public
+samples, not every provider availability/account state.
+
+ESLint, documentation/link checks and diff checks passed. `npm run lint` remains
+blocked by one existing `UNSAFE_VAR_ASSIGNMENT` at `custom-overlay/editor.js:618`:
+its unchanged source constructs a static editor template through `helpLabel`.
+The source, dependency lock and warning baseline match the pre-task `069ad6af`
+revision. No unrelated change or warning allowance was added.
+
+## Historical investigation
+
+The remaining investigation sections describe `bb675408`, before the changes
+above. Candidate designs, missing provider evidence and baseline vulnerabilities
+in those sections are historical, not the current implementation status.
 
 ## Findings and recommendation
 
@@ -43,7 +108,7 @@ player are next. The findings below describe the original `bb675408` baseline.
    browser-enforced response policy and a sanitized rendering boundary first.
    Keep native-map and form compatibility as explicit release gates.
 
-## What the current code actually protects
+## Baseline code boundaries
 
 | Boundary | Current behavior | Consequence |
 | --- | --- | --- |
@@ -68,25 +133,20 @@ Peakbagger-origin page code. Actual live Peakbagger cookie flags were not audite
 
 ## Reproduced security behavior
 
-Run after building `dist/`:
+The original probe ran before implementation in hidden Chrome for Testing on a
+masked HTTPS Peakbagger fixture, using synthetic cookies and local boolean
+observations only. The retained
+[entrypoint](../plans/experiments/instagram-report/security-probe.mjs) now delegates
+to the maintained real-extension security verifier. Its default checks the fixed
+implementation; `--baseline` deliberately removes response rules from a disposable
+copy and must fail. The original observer comparison remains available in Git
+history at `815effdd`.
 
-```sh
-npm run build
-node docs/plans/experiments/instagram-report/security-probe.mjs
-```
-
-On macOS under Codex, use the approved path outside the Seatbelt sandbox, as
-required by the repository's Chrome launch guard. The
-[probe](experiments/instagram-report/security-probe.mjs) loads the real extension
-in hidden Chrome for Testing, routes an HTTPS Peakbagger hostname to a local
-masked fixture, installs only synthetic cookies, and blocks other network
-traffic. Payloads record local booleans; they do not exfiltrate anything.
-
-Observed in Chrome 156.0.8078.4 at 1000×760:
+Historical observations in Chrome 156.0.8078.4 at 1000×760:
 
 | Fixture condition | Inline script | Image error handler | Same-origin `srcdoc` script |
 | --- | --- | --- | --- |
-| Current BPB, no added policy | Ran; synthetic accessible cookie read, HttpOnly cookie unreadable | Ran | Ran and accessed parent DOM |
+| Baseline BPB, no added policy | Ran; synthetic accessible cookie read, HttpOnly cookie unreadable | Ran | Ran and accessed parent DOM |
 | Early script-removal observer | This inline script was removed and did not run | Ran | Ran |
 | Response CSP: `script-src 'none'; object-src 'none'; base-uri 'none'` | Blocked | Blocked | Blocked |
 
@@ -285,6 +345,8 @@ should not claim to repair the website for everyone.
 
 ### Fixed and verified
 
+Prior UI/debugging work, retained from the original investigation:
+
 - `e70f94de`: filter settings above Climber lists; Newest ascents first directly
   below Has beta. Fifty options tests passed. Hidden Chrome 156 rendering checked
   1000×900 and 480×900, light/dark, plus 200% CSS zoom and stable checkbox geometry.
@@ -307,27 +369,54 @@ should not claim to repair the website for everyone.
 - The retained security probe passed with the table above. Sixty-two focused
   markup/editor-mode tests and all three documentation/link checks passed.
 
+Implementation and verification:
+
+- `ececbe5b`, `a7b01d4f`: response protection, safe report rebuilding, native
+  map/Quick Search compatibility and native-list scope. Real browser security
+  assertions fail when response protection is removed and pass in both browsers.
+- `825a4be2`: canonical post/Reel AST, copied-snippet extraction, hostile URL
+  rejection and ordinary-link round trips.
+- `70769aef`: one-use renderer grants, expiry, consent rechecks, source-document
+  nonce, wrong-sender/tab rejection, serialized claim and navigation cleanup.
+- `2aed1871`: shared reader/editor placeholders, device-local default-off consent,
+  per-load cancellation, stable feedback, keyed Markdown reconciliation and
+  actual browser/provider checks described under Current verification.
+- All 3,628 tests, complete real-extension checks in both browsers, focused
+  geometry/privacy/security tests, ESLint and documentation checks passed.
+
 ### Intentionally not changed
 
-- No Instagram runtime, new settings/permissions, CSP rules or reader rewrite was
-  added in this investigation. Existing YouTube behavior and Plain's documented
-  verbatim boundary remain. The report proposes deliberate changes to those
-  boundaries where needed; it does not treat them as already secured.
-- Native Save remains manual. No live report was changed, no attack was submitted,
-  and no message was sent to another person or service operator.
+- Plain retains its verbatim source escape hatch; the reader policy does not
+  rewrite stored reports. Existing YouTube handling remains. Instagram enhancement
+  is ascent-only; profile biographies do not gain players.
+- Native Preview/Save remains manual. No live ascent/report was changed, no
+  attack was submitted to Peakbagger, and no person/operator was contacted.
+- No oEmbed/Graph API, optional Instagram host access, app secret, backend/proxy,
+  scraping fallback or remotely hosted extension code was introduced.
+- Cloudflare challenge documents and known native MasterMap frames are deliberate
+  script-policy exceptions. Non-BPB readers and a pre-existing hostile site
+  service worker synthesizing documents outside the network stack are outside
+  this protection boundary.
+- The unrelated custom-overlay lint warning remains unchanged; its baseline was
+  not expanded to make this task green.
 
 ### Changed but not fully proven
 
-- The investigation adds a repeatable local security experiment and this design
-  report. Their results establish the client-side gap and a narrow CSP proof;
-  they do not establish production security coverage.
-- Instagram live rendering, API/CORS, sandbox behavior, precise optional host
-  requirements, permission/store review and provider eligibility failures remain
-  open. No verified current live-server exploit or cookie-flag audit is claimed.
-- The broader `npm test` run executed 3,603 tests: 3,602 passed and one failed.
-  `test/project/verifier-assets.test.mjs` found the unrelated, concurrently added
-  `scripts/settings-fragment-verification.mjs` missing from the script inventory.
-  Those settings-navigation changes were preserved; no full-suite pass is claimed.
-- All browser checks were hidden. They do not prove onscreen window placement,
-  native browser chrome/permission prompts or user-window focus. Static surfaces
-  did not use WebGL; no GPU-renderer result is claimed.
+- This client-side boundary is not a site-wide security repair or proof against
+  every HTML/navigation/CSS vector or compromised native map/server. Live server
+  acceptance of malicious markup and real cookie flags were not audited.
+  Dedicated offline/cache/304 and hostile-service-worker variants remain unproven;
+  browser BFCache and ordinary navigation restoration were exercised.
+- Public photo/Reel rendering and muted playback passed. Private, deleted,
+  account-restricted posts, authenticated Instagram/cookie behavior, every
+  provider failure/redirect, and future provider endpoint changes remain outside
+  the live sample. The external link is always retained and restrictions are
+  never loosened as a fallback.
+- Chrome/Firefox store review of the new permissions and isolated remote frame
+  has not occurred. No release/push was performed. The complete web-ext lint gate
+  remains blocked by the recorded pre-existing warning despite clean ESLint.
+- All browser checks were hidden. They do not establish visible window placement,
+  user-window focus, native browser chrome/permission prompts or screen-reader
+  behavior. Enlarged media text was a 26px fixture override, not a claim about
+  every browser zoom level. Static media/Settings checks make no GPU-renderer
+  claim.

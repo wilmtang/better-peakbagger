@@ -1,11 +1,5 @@
 # Active plans
 
-- [Instagram embeds and trip-report script protection — October 25](instagram-embeds-and-report-security-2026-10-25.md)
-  — investigation with a reproduced native-report execution gap, URL-based
-  Instagram authoring, default click-to-load placeholders, and response-policy
-  versus isolated-reader options. Runtime embedding/protection remains proposed;
-  live-provider and compatibility proof gaps are explicit.
-
 - [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
   — implemented in focused commits: collapsed-read/calm-axis fixes, shared
   eligibility, chart math, card styles, pointer gestures and latest-read ownership.
@@ -203,3 +197,8 @@ locally with its removal evidence, retained boundaries, and verification limits.
 The [CI, UI, and maintainability follow-up](../archive/ci-ux-maintainability-audit-2026-10-10.md)
 is closed locally with three consecutive packaged-browser pairs; hosted CI and
 external proof gaps remain explicit.
+
+The [Instagram and trip-report security implementation](../archive/instagram-embeds-and-report-security-2026-10-25.md)
+records the October 26 implementation, current browser/provider evidence and
+closure ledger, including the existing lint warning and external review limits.
+The maintained behavior is documented in [the editor guide](../trip-report-editor.md#instagram-posts).
