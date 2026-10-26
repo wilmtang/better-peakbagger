@@ -263,8 +263,9 @@ The `packages` target checks existing archives without rebuilding `dist/`;
 `release:verify-packages` creates and checks fresh store packages. Missing or
 unknown targets fail before any build or browser launch. Gaia and onX coverage
 is part of `map-handoffs`.
-The required CI path runs `fixture-preflight` first on both browsers. It checks
-the real worker sender policy and locale/evidence contracts, then exercises the
+CI launches the required `fixture-preflight` on both browsers alongside the
+independent suites. It reports fixture failures without serializing suite startup.
+It checks the real worker sender policy and locale/evidence contracts, then exercises the
 shipped popup, timestamp, Settings and map fixtures, including lifecycle cleanup.
 It supplements the complete suites. A fixture exception fails while the page is
 still available for evidence.

@@ -51,7 +51,7 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.equal(job['runs-on'], 'ubuntu-24.04', 'fixture-only shards must leave macOS capacity for real extensions');
     assert.equal(job['timeout-minutes'], 15);
     assert.deepEqual(job.strategy.matrix.shard, [1, 2, 3, 4]);
-    assert.deepEqual(job.needs, ['fixture-preflight']);
+    assert.equal(job.needs, undefined, 'preflight must not serialize independent suite startup');
     assert.equal(job.if, undefined);
     assert.ok(job.strategy?.matrix, 'each complete browser matrix needs its own job budget');
     assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
@@ -74,6 +74,7 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     const backups = ordinary.jobs['backup-layout'];
     assert.equal(backups['runs-on'], 'macos-15-intel');
     assert.deepEqual(backups.strategy.matrix.browser, ['chrome', 'firefox']);
+    assert.equal(backups.needs, undefined);
     assert.ok(backups.steps.some(step => step.run?.includes('--suite=backups')));
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('backup-layout'));
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$BACKUP_LAYOUT_RESULT" = success/);
@@ -102,7 +103,7 @@ test('layout browser selections reject conflicting engines and unknown selection
 test('ordinary CI requires snow/cards on both browsers and a separate hardware snow-map matrix', async () => {
     const ordinary = await load('workflows/test.yml');
     const surfaceJob = ordinary.jobs['peak-surfaces'];
-    assert.equal(surfaceJob.needs.includes('layout'), false, 'late surface failures must not wait behind layout');
+    assert.equal(surfaceJob.needs, undefined, 'surface failures must not wait behind layout or preflight installation');
     assert.deepEqual(surfaceJob.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.deepEqual(surfaceJob.strategy.matrix.surface, ['snow', 'cards', 'cards-placement', 'interactions']);
     assert.equal(surfaceJob.strategy['max-parallel'], 4);

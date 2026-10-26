@@ -118,8 +118,10 @@ jobs:
 
   fixture-preflight:
     name: Fixture preflight (${{ matrix.browser }})
+    # Required in the final aggregate, independent of suite startup so an OS
+    # package mirror cannot serialize every browser matrix.
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     strategy:
       fail-fast: false
       matrix:
@@ -154,7 +156,6 @@ jobs:
     name: Interaction layout stability (${{ matrix.browser }}, ${{ matrix.shard }}/4)
     # These load bundles into fixtures, not unpacked extensions. Linux leaves
     # scarce macOS slots for the real-manifest, native toolbar and GPU checks.
-    needs: [fixture-preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -194,7 +195,6 @@ jobs:
     # Native font metrics are part of these existing assertions. Linux
     # qualification exposed separate backup portability defects; preserve the
     # established macOS coverage rather than weakening it during CI work.
-    needs: [fixture-preflight]
     runs-on: macos-15-intel
     timeout-minutes: 10
     strategy:
@@ -229,7 +229,6 @@ jobs:
 
   peak-surfaces:
     name: Peak surface (${{ matrix.browser }}, ${{ matrix.surface }})
-    needs: [fixture-preflight]
     runs-on: macos-15-intel
     timeout-minutes: 10
     strategy:

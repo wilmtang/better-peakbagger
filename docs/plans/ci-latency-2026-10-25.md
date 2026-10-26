@@ -38,6 +38,13 @@ prevented premature cancellation and did not reduce this critical path.
   the original 192, with no duplicates or weakened assertions. All 60 focused
   planner/workflow/release tests and all 16 local backup cases passed afterward.
 
+- The second run showed a real setup bottleneck: Ubuntu's package mirror spent
+  about four minutes downloading Firefox OS packages, while the browser archive
+  itself downloaded in three seconds. Keep preflight independently required in
+  the aggregate, but remove it as a startup dependency of every suite. This
+  overlaps installations instead of serializing two setup waves; retain an
+  eight-minute bounded preflight budget for OS package and cleanup headroom.
+
 ## Intentionally not changed
 
 - Required status names, strict advisory/provenance gates, monthly manual Actions
