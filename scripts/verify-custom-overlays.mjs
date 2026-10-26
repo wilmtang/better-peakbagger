@@ -261,7 +261,7 @@ try {
         const hoverAfter = await hoverInfo.boundingBox();
         for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(hoverBefore[key] - hoverAfter[key]) <= 1, `200% pointer help keeps its trigger ${key} stable`);
         await hoverInfo.press('Escape'); await hoverInfo.blur();
-        for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds', 'attribution', 'attribution-url']) {
+        for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds']) {
             const info = editor.locator(`#${id}-label .info`); await info.focus();
             const readFit = () => editor.locator(`#${id}-help`).evaluate(tip => {
                 const box = tip.getBoundingClientRect();

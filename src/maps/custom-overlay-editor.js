@@ -14,6 +14,7 @@ if (parent === window) {
     const client = createCustomClient({ parse: parser.parse });
     let parentOrigin = null, mapId = '', expectedRevision = 0, sourceId = '', pending = false, dirty = false, resolved = null, controller = null;
     let openRevision = 0;
+    let savedAttribution = { text: '' };
     const jobs = new Map(), tasks = new Map();
     const send = detail => { if (parentOrigin) parent.postMessage({ [tag]: true, token, ...detail }, parentOrigin); };
     const root = document.getElementById('editor');
@@ -33,7 +34,6 @@ ${helpLabel('format', 'URL format', 'Use Tile template for {z}/{x}/{y} URLs, or 
 ${helpLabel('scheme', 'Tile coordinates', 'Use XYZ unless the provider specifies TMS (reversed north–south numbering). Check source reads the TileJSON scheme.')}<select id="scheme"><option value="xyz">XYZ (normal Y)</option><option value="tms">TMS (reversed Y)</option></select>
 ${helpLabel('tile-size', 'Tile size', 'Usually 256 pixels. Choose 512 only when specified by the provider. This is the logical tile size; a sharper @2x image may still use 256.')}<select id="tile-size"><option value="256">256 pixels</option><option value="512">512 pixels</option></select></section>
 ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west longitude, south latitude, east longitude, north latitude. West and south can be negative. Leave blank if unknown.')}<input id="bounds" placeholder="west, south, east, north">
-${helpLabel('attribution', 'Attribution', 'Credit shown on the map, such as © Example Maps. Enter the provider’s required credit as plain text; BPB does not fill it from TileJSON.')}<input id="attribution" maxlength="600">${helpLabel('attribution-url', 'Attribution link (optional)', 'A public HTTPS page for the provider or licence. Makes the map credit clickable. This is a website link, not a tile endpoint.')}<input id="attribution-url" type="url">
 </details><fieldset id="appearance"><legend>Appearance</legend><p class="hint">Simple points, lines and polygons. Full map styles, labels and icons are not supported.</p><datalist id="source-layers"></datalist><div id="rules"></div><button type="button" id="add-rule">Add style rule</button></fieldset>
 <details class="help"><summary>How to fix URL / CORS errors</summary><p>Check the URL, format and zoom range. Public metadata and tile servers must allow browser access, usually with <code>Access-Control-Allow-Origin: *</code>. A normal image link working does not prove CORS support. Use a browser-compatible endpoint or contact the provider. BPB has no proxy.</p><a target="_blank" rel="noopener noreferrer" href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS/Errors">Browser troubleshooting guide</a></details>
 <footer class="actions"><div id="notice" class="feedback" hidden><p id="feedback" role="status" aria-live="polite"></p><button type="button" id="dismiss-feedback" aria-label="Dismiss status">×</button></div><button type="button" id="preview">Preview</button><button type="button" id="test">Test source</button><button type="submit" class="primary" id="save">Save</button><button type="button" id="cancel">Close</button><button type="button" id="remove">Remove</button></footer>
@@ -136,7 +136,7 @@ ${helpLabel('attribution', 'Attribution', 'Credit shown on the map, such as © E
                 zoomOrigin: { min: field('minimum').dataset.origin || 'default', max: field('maximum').dataset.origin || 'default' }, scheme: field('scheme').value, tileSize: +field('tile-size').value } : { dataUrl: url }),
             bounds: field('bounds').value.trim() ? field('bounds').value.split(',').map(Number) : null },
             approvedOrigins: [...new Set([new URL(url).origin, ...(resolved?.approvedOrigins || [])])],
-            attribution: { text: field('attribution').value, ...(field('attribution-url').value ? { url: field('attribution-url').value } : {}) },
+            attribution: { ...savedAttribution },
             appearance: { opacity: resolved?.appearance.opacity ?? 60, rules: kind === 'raster' ? [] : ruleValues.map(({ controls }) => Object.fromEntries(Object.entries(controls).map(([key, input]) => [key, ['width', 'radius', 'fillOpacity'].includes(key) ? +input.value : key === 'sourceLayer' && !input.value && discover && field('format').value === 'tilejson' ? '__choose_layer__' : input.value]))) } };
         const source = readCustomSource(raw); if (!source) throw new Error('Check the name, zoom range, bounds and appearance. Vector rules need a source layer.');
         if (resolved && resolved.kind === kind && resolved.source.metadataUrl === source.source.metadataUrl) { source.source.tiles = resolved.source.tiles; if (resolved.source.metadataZoom) source.source.metadataZoom = resolved.source.metadataZoom; }
@@ -197,6 +197,9 @@ ${helpLabel('attribution', 'Attribution', 'Credit shown on the map, such as © E
     const reset = source => {
         closeHelp();
         sourceId = source?.id || 'custom:' + crypto.randomUUID(); expectedRevision = source?.revision || 0; resolved = source || null; dirty = false;
+        // These credits are no longer editable here. Keep existing/imported
+        // provider attribution through ordinary edits, checks and previews.
+        savedAttribution = { ...(source?.attribution || { text: '' }) };
         field('form-title').textContent = source ? 'Edit overlay' : 'Add custom overlay';
         field('name').value = source?.name || ''; field('kind').value = source?.kind || 'raster';
         field('url').value = source?.source.metadataUrl || source?.source.dataUrl || source?.source.tiles[0] || '';
@@ -206,7 +209,7 @@ ${helpLabel('attribution', 'Attribution', 'Credit shown on the map, such as © E
         field('zoom-origin').textContent = source ? `Minimum: ${field('minimum').dataset.origin}; maximum: ${field('maximum').dataset.origin}.` : 'Default — not checked';
         field('source-layers').replaceChildren();
         field('scheme').value = source?.source.scheme || 'xyz'; field('tile-size').value = source?.source.tileSize || 256;
-        field('bounds').value = source?.source.bounds?.join(', ') || ''; field('attribution').value = source?.attribution.text || ''; field('attribution-url').value = source?.attribution.url || '';
+        field('bounds').value = source?.source.bounds?.join(', ') || '';
         ruleValues.length = 0; field('rules').replaceChildren(); for (const rule of source?.appearance.rules.length ? source.appearance.rules : [undefined]) addRule(rule);
         field('remove').hidden = !source; feedback(''); updateKind();
     };

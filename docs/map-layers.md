@@ -22,7 +22,9 @@ link and layer controls; adding or editing sources happens in Settings.
 Supported formats are raster PNG/JPEG/WebP XYZ tiles, MVT/PBF vector tiles and
 small GeoJSON FeatureCollections. Tiled sources accept a `{z}/{x}/{y}` template
 or TileJSON 2/3 metadata. **Advanced** offers reversed Y (TMS), raster tile size,
-native zoom range, optional bounds and attribution. Metadata supplies the range
+native zoom range and optional bounds. Attribution text/link inputs are omitted;
+editing a saved or imported source preserves its existing credits, and new
+sources start with no custom credit. Metadata supplies the range
 where declared; raw templates start at 0–18, marked unchecked. Manual zoom limits
 survive subsequent metadata reads; **Use source values** restores discovery.
 The effective maximum is 22, while declared metadata values are retained.
@@ -34,9 +36,8 @@ the URL or search for a metadata endpoint. **Check source** reads the selected
 TileJSON document's tile templates, zoom limits and coordinate scheme. It does
 not discover the complete zoom coverage of a raw template; **Use source values**
 is available for TileJSON only. Bounds describe the
-coverage rectangle in west, south, east, north degrees. Attribution is the
-provider's map credit, with an optional HTTPS link to its website or licence;
-enter that credit manually. Circled information buttons explain these fields
+coverage rectangle in west, south, east, north degrees. Circled information
+buttons explain these fields
 on hover, focus or click; Escape dismisses the explanation. Status messages are
 dismissible above the actions and do not reserve an empty block in the form.
 
@@ -63,6 +64,10 @@ own feedback. Retry retains painted tiles or last good GeoJSON; opacity changes
 do not fetch the source again. Hidden/removed renderers cancel their work.
 
 Keep URL keys public: Peakbagger page scripts can see source configuration.
+These fields are map settings, not a secret store. A key in a source URL can be
+copied by scripts on Peakbagger or anyone who receives a backup containing it.
+Use only provider-issued public/browser map keys with the permissions needed
+to read maps; do not enter secret, server or administrative tokens.
 Definitions and opacity stay in separate local records and are included in
 settings exports and GitHub settings backups. They do not use browser sync.
 Restoring a library turns off existing selections. Public URLs and any public

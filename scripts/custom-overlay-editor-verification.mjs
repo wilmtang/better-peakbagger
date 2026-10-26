@@ -39,6 +39,8 @@ function holdEditorSave() {
 export async function verifyCustomEditor({ evaluate, click, press, hover, fill, select, wait, viewport, screenshot, providerOrigin }) {
     assert.ok(providerOrigin, 'editor verification needs its explicit fixture provider');
     let cases = 0; const frames = [];
+    assert.equal(await evaluate(() => document.querySelectorAll('#attribution, #attribution-url, #attribution-label, #attribution-url-label').length), 0,
+        'Attribution and Attribution link controls must be removed from Settings');
     assert.deepEqual(await evaluate(() => ['minimum', 'maximum'].map(id => document.getElementById(id).value)), ['0', '18'], 'new raw templates use the unchecked default');
     assert.equal(await evaluate(() => document.getElementById('source-values').hidden), true, 'raw templates cannot discover provider zoom limits');
     for (const [width, theme] of [[1000, 'light'], [375, 'dark']]) {
@@ -54,7 +56,7 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
         assert.equal(await evaluate(() => document.getElementById('format-help').hidden), false, 'pointer can enter the tooltip');
         await press('#format-label .info', 'Escape');
         await click('#advanced summary');
-        for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds', 'attribution', 'attribution-url']) {
+        for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds']) {
             const selector = `#${id}-label .info`;
             await evaluate(selector => document.querySelector(selector).focus(), selector);
             await wait(() => evaluate(id => !document.getElementById(`${id}-help`).hidden, id), `${id} help opens on focus`);
@@ -135,6 +137,6 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
         cases++;
     }
     await viewport(1000);
-    assert.ok(cases >= 18, 'editor verifier must execute its tooltip and status cases');
+    assert.equal(cases, 14, 'editor verifier must execute all six tooltip and one status case at both sizes');
     return { cases, requestedViewports: [1000, 375], frames, themes: ['light', 'dark'], compact: true, tooltips: true, statusAnchored: true, metadataZoom: true };
 }
