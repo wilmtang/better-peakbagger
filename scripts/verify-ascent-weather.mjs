@@ -32,9 +32,10 @@ import { verifyAirQuality } from './verify-air-quality.mjs';
 import { verifyPeakWeatherInteractions } from './verify-peak-weather-interactions.mjs';
 import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
-import { retainBrowserFailure } from './browser-verification-evidence.mjs';
+import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mjs';
 import { settingsSchema } from '../src/settings/settings-schema.js';
 
+verificationScreenshots(); // Reject invalid evidence configuration before any browser launch.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
 const live = process.argv.includes('--live'); // one optional public-coordinate CORS proof
@@ -430,6 +431,7 @@ try {
         }, { portable: Object.fromEntries(Object.entries(values).filter(([key]) => settingsSchema.PERSONAL_KEYS.includes(key))),
             local: Object.fromEntries(Object.entries(values).filter(([key]) => !settingsSchema.PERSONAL_KEYS.includes(key))) });
     }
+    failureEvidence.fixtureScreenshot = screenshotPage;
     const browserName = firefoxMode ? 'firefox' : 'chromium';
     console.log(`Verification browser: ${assertVerificationBrowser({ name: browserName, version, expectedName: browserName,
         expectedVersion: process.env[firefoxMode ? 'BPB_EXPECT_FIREFOX_VERSION' : 'BPB_EXPECT_CHROME_VERSION'] })}`);

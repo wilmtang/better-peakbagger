@@ -7,7 +7,30 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fixtureEvidenceUrl, retainBrowserFailure, watchFixtureRequests } from '../../scripts/browser-verification-evidence.mjs';
+import { fixtureEvidenceUrl, retainBrowserFailure, verificationScreenshots, watchFixtureRequests } from '../../scripts/browser-verification-evidence.mjs';
+
+test('reference mode suppresses passing intermediate screenshots without disabling reference captures', () => {
+    assert.equal(verificationScreenshots('references')(), false);
+    assert.equal(verificationScreenshots('references')(true), true);
+    assert.equal(verificationScreenshots('failure')(true), false);
+    assert.equal(verificationScreenshots('all')(), true);
+    assert.throws(() => verificationScreenshots('typo'), /Unknown verification screenshot mode/);
+});
+
+test('explicit Firefox screenshot transport is restricted to the fixture origin', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-fixture-evidence-'));
+    const captures = [];
+    try {
+        for (const url of [`${origin}/peak.aspx`, 'https://live.example/peak.aspx', 'moz-extension://verification-only/options/options.html']) {
+            await retainBrowserFailure({ directory, fixtureOrigin: origin, extensionBaseUrl: 'moz-extension://verification-only/',
+                fixtureScreenshot: async file => captures.push(file), driver: {
+                    getCapabilities: async () => ({ getBrowserVersion: () => '158' }),
+                    getCurrentUrl: async () => url, executeScript: async () => ({ readyState: 'complete' }),
+                } });
+        }
+        assert.deepEqual(captures, [path.join(directory, 'failed-page.png')]);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 const origin = 'https://www.peakbagger.com:12345';
 

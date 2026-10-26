@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { verificationScreenshots } from './browser-verification-evidence.mjs';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 export const readSnowCardPlacement = () => {
@@ -22,6 +23,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     setSettings, setZoom, wait, writeLocal, setMode, release, snowEvidence, networkErrors, firefoxMode }) {
     const output = process.env.BPB_VERIFY_SNOW_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
+    const captureRequested = verificationScreenshots();
     const browser = firefoxMode ? 'firefox' : 'chrome', cases = [];
     const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015', ArrowLeft: '\uE012',
         ArrowRight: '\uE014', Home: '\uE011', End: '\uE010', Escape: '\uE00C' }[name] : name;
@@ -79,8 +81,8 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         station: document.getElementById('bpb-peak-snow-station')?.value,
         focus: document.activeElement?.outerHTML?.slice(0, 350),
     })), { description: 'pending snow request', timeoutMs: 10_000, isReady: state => state.busy === 'true' });
-    const image = async name => {
-        if (!output) return;
+    const image = async (name, reference = false) => {
+        if (!output || !captureRequested(reference)) return;
         // Firefox element screenshots scroll even when the element already fits
         // the viewport. Capture the current page so evidence cannot move the
         // user's reading position between geometry assertions.
@@ -127,7 +129,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         stable(before, await geometry(), `${name}: pinned pointer reading`);
         // Chromium's element screenshot scrolls the page at tab zoom. Keep
         // the compositor viewport unchanged while the geometry trace is live.
-        if (zoomed && output) await screenshotPage(path.join(output, `${browser}-${name}-interactive-chart.png`));
+        if (zoomed && output && captureRequested()) await screenshotPage(path.join(output, `${browser}-${name}-interactive-chart.png`));
         else await image(`${name}-interactive-chart`);
         await press(key('Escape'));
         assert.match(await reading(), /Hover, tap or use ← →/);
@@ -175,7 +177,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         const placement = await evaluate(readSnowCardPlacement);
         assert.ok(placement.sameStack && placement.followsWeather,
             `snow must follow weather in the default card stack: ${JSON.stringify(placement)}`);
-        await image(`${name}-ready`);
+        await image(`${name}-ready`, true);
         await inspectChart(name);
         await click('#bpb-peak-snow summary'); await focusRefresh();
         const expanded = await geometry();
@@ -317,7 +319,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     await inspectChart('1440-200-percent-zoom', true);
     await focusRefresh();
     // A viewport capture also avoids Chromium element-clip coordinates at zoom.
-    if (output) await screenshotPage(path.join(output, `${browser}-1440-200-percent-zoom.png`));
+    if (output && captureRequested()) await screenshotPage(path.join(output, `${browser}-1440-200-percent-zoom.png`));
     const enlarged = await geometry(); setMode('loading');
     await press(key('Enter')); await pending(); stable(enlarged, await geometry(), '200% zoom pending refresh');
     setMode('service-error'); release();
@@ -330,7 +332,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     stable(enlarged, await geometry(), '200% zoom timeout');
     assert.equal(await evaluate(() => getComputedStyle(document.querySelector('.bpb-snow-refresh')).opacity), '1');
     assert.equal(await evaluate(() => document.activeElement.className), 'bpb-snow-refresh');
-    if (output) await screenshotPage(path.join(output, `${browser}-1440-200-percent-timeout.png`));
+    if (output && captureRequested()) await screenshotPage(path.join(output, `${browser}-1440-200-percent-timeout.png`));
     setMode('complete'); release(); await press(key('Enter')); await ready();
     stable(enlarged, await geometry(), '200% zoom timeout recovery');
     cases.push('200-percent-timeout-retry');

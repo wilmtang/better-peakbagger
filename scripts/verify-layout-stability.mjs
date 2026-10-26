@@ -10,6 +10,7 @@ import os from 'node:os';
 import { chromium, firefox } from 'playwright';
 import { JSDOM } from 'jsdom';
 import { layoutVerificationPlan } from './layout-verification-plan.mjs';
+import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mjs';
 import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
@@ -24,6 +25,7 @@ import { verifyAscentColumnWidths, verifyPeakColumnWidths } from './verify-ascen
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
 
 const output = process.env.BPB_JITTER_ARTIFACTS;
+const captureRequested = verificationScreenshots();
 if (output) await mkdir(output, { recursive: true });
 const assets = new Map();
 let fixtureDirectory;
@@ -44,8 +46,8 @@ async function assertActionFocus(page, selector, label) {
     await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
     assert.equal(await page.locator(selector).evaluate(element => document.activeElement === element), true, label);
 }
-async function capture(page, label) {
-    if (output) await page.screenshot({ path: path.join(output, `${label}.png`) });
+async function capture(page, label, reference = false) {
+    if (output && captureRequested(reference)) await page.screenshot({ path: path.join(output, `${label}.png`) });
 }
 async function load(page, origin, file, initialize, argument) {
     await page.addInitScript(initialize, argument);
@@ -104,7 +106,7 @@ async function popupCase(page, origin, variant) {
     await page.locator('#clear-capture').filter({ hasText: 'Delete captured track data' }).waitFor();
     stable(clearBefore, await geometry(page, '#clear-capture'), 'popup clear error');
     await assertActionFocus(page, '#clear-capture', 'popup delete error focus');
-    await capture(page, `${variant.name}-popup-error`);
+    await capture(page, `${variant.name}-popup-error`, true);
     await page.clock.install();
     await load(page, origin, 'popup/popup.html', ({ theme }) => {
         globalThis.__progress = { phase: 'searching-summits', provider: 'garmin', progress: { completed: 1, total: 12 } };
@@ -514,7 +516,7 @@ async function settingsCase(page, origin, variant) {
                 }
             });
             await row.scrollIntoViewIfNeeded();
-            if (output) await row.screenshot({ path: path.join(output, `${variant.name}-${id}-${zoom}.png`) });
+            if (output && captureRequested()) await row.screenshot({ path: path.join(output, `${variant.name}-${id}-${zoom}.png`) });
             const label = await row.locator('.label').boundingBox();
             const bounds = await list.boundingBox();
             const grip = await list.locator('.order-grip').first().boundingBox();
@@ -593,10 +595,10 @@ async function settingsCase(page, origin, variant) {
             await checkUnitsStable(success ? 'retry saved' : 'failed save restored');
         }
         await page.evaluate(() => { globalThis.__holdUnitSave = false; });
-        if (output) await page.locator('#status').waitFor({ state: 'hidden' });
+        if (output && captureRequested()) await page.locator('#status').waitFor({ state: 'hidden' });
         await page.locator('#general-units').evaluate(element => element.scrollIntoView({ block: 'start' }));
         await capture(page, `${variant.name}-units-collapsed-${zoom}`);
-        if (output) {
+        if (output && captureRequested()) {
             if (zoom === 1) await page.locator('#general-units').screenshot({ path: path.join(output, `${variant.name}-units-card-${zoom}.png`) });
             await page.locator('.unit-example').scrollIntoViewIfNeeded();
             await page.locator('.unit-example').screenshot({ path: path.join(output, `${variant.name}-units-preview-${zoom}.png`) });
@@ -610,7 +612,7 @@ async function settingsCase(page, origin, variant) {
         await page.locator('#unit-example-weather').filter({ hasText: '48°F · 0.17 in · 16 km/h' }).waitFor();
         stable(previewBefore, await geometry(page, '.unit-example'), `mixed unit preview zoom ${zoom}`, ['width', 'height']);
         stable(cardBefore, await geometry(page, '#general-units .card'), `mixed unit card zoom ${zoom}`, ['width', 'height']);
-        if (output) await page.locator('#status').waitFor({ state: 'hidden' });
+        if (output && captureRequested()) await page.locator('#status').waitFor({ state: 'hidden' });
         await page.locator('#general-units').evaluate(element => element.scrollIntoView({ block: 'start' }));
         await capture(page, `${variant.name}-units-custom-${zoom}`);
         await page.locator('#unit-reset').press('Enter');
@@ -652,7 +654,7 @@ async function settingsCase(page, origin, variant) {
         stable(filterRect, await filter.boundingBox(), `favorites selected zoom ${zoom}`);
     }
     await page.setViewportSize({ width: variant.width, height: 900 });
-    await capture(page, `${variant.name}-settings`);
+    await capture(page, `${variant.name}-settings`, true);
 }
 async function photoBackupCase(page, origin, variant) {
     await load(page, origin, 'photos/photos.html?mode=library', ({ theme }) => {
@@ -867,7 +869,7 @@ async function reportFilterCase(page, origin, variant) {
     assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).evaluate(node => document.activeElement === node), true, 'retry retains completion focus');
     assert.match(await page.locator('#bpb-peak-report-tools').textContent(), /1 of 30/);
     await assertNaturalColumns('filtered reports complete');
-    await capture(page, `${variant.name}-report-filter`);
+    await capture(page, `${variant.name}-report-filter`, true);
 }
 async function sunCase(page, origin, variant) {
     await page.goto(`${origin}/dist/photos/guide.html`);
@@ -899,7 +901,7 @@ async function sunCase(page, origin, variant) {
     await capture(page, `${variant.name}-sun-distant-date`);
     await page.evaluate(() => globalThis.__renderSun(66, '2026-12-23'));
     await page.waitForFunction(() => document.querySelector('.bpb-sun-calculator__moon-events-text').textContent.includes('above the level horizon all day'));
-    await capture(page, `${variant.name}-sun-all-day`);
+    await capture(page, `${variant.name}-sun-all-day`, true);
 }
 async function gpxSourceCase(page, origin, variant) {
     await page.goto(`${origin}/dist/photos/guide.html`);
@@ -1359,7 +1361,7 @@ async function reportCase(page, origin, variant) {
     const copyBefore = await geometry(page, '.bpb-re-save-copy');
     await page.locator('.bpb-re-save-feedback').evaluate(element => { element.textContent = 'Clipboard unavailable. The complete report is selected below for manual copying.'; });
     stable(copyBefore, await geometry(page, '.bpb-re-save-copy'), 'report recovery copy');
-    await capture(page, `${variant.name}-report-validation`);
+    await capture(page, `${variant.name}-report-validation`, true);
     await page.evaluate(() => {
         document.querySelector('.bpb-re-linkbox').hidden = true;
         const caption = document.createElement('div'); caption.className = 'bpb-re-box bpb-re-captionbar';
@@ -1433,6 +1435,10 @@ try {
                     await check(page, origin, variant); executedCases++;
                     console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,
                         surface, theme, viewport: `${Math.floor(width / zoom)}x${Math.floor(900 / zoom)}`, deviceScaleFactor: zoom, layoutZoom: zoom, durationMs: Math.round(performance.now() - startedAt), result: 'passed' }));
+                } catch (error) {
+                    await retainBrowserFailure({ context, fixtureOrigin: origin,
+                        directory: output ? path.join(output, `${variant.name}-${surface}-failure`) : undefined });
+                    throw error;
                 } finally { await context.close(); }
             }
         } finally { await browser.close(); }

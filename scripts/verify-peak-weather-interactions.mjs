@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { verificationScreenshots } from './browser-verification-evidence.mjs';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 export function assertFormattingLocale(actual, expected) {
@@ -17,6 +18,7 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
     setSettings, wait, setMode, heldCount, release, releaseOne, evidence, networkErrors, firefoxMode, screenshotPage, writeLocal, verificationLocale }) {
     const cases = [], chartCases = [], observedLocales = new Set(), output = process.env.BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
+    const captureRequested = verificationScreenshots();
     const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowDown: '\uE015', ArrowRight: '\uE014', Tab: '\uE004' }[name] : name;
     const focus = selector => evaluate(selector => {
         const node = document.querySelector(selector); node.scrollIntoView({ block: 'center' }); node.focus({ preventScroll: true });
@@ -73,7 +75,7 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         await waitForCondition(heldCount, { description: 'two held GFS metadata replies', isReady: count => count === 2 });
         await wait(() => document.querySelector('.bpb-week-source').open && document.querySelectorAll('[data-update-model]').length === 2, 'open metadata table');
         const metadataBefore = await metadataGeometry();
-        if (output && width === 375 && zoom === 1) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-metadata-pending.png`));
+        if (output && captureRequested() && width === 375 && zoom === 1) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-metadata-pending.png`));
         setMode('metadata-delayed'); releaseOne();
         await wait(() => document.querySelector('.bpb-week-updates').textContent.includes('(delayed)'), 'first delayed model clock');
         stable(metadataBefore, await metadataGeometry(), `${label}: first metadata reply`);
@@ -81,7 +83,7 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         await wait(() => document.querySelector('.bpb-week-updates').textContent.includes('Unavailable')
             && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'second model unavailable');
         stable(metadataBefore, await metadataGeometry(), `${label}: metadata failure`);
-        if (output && width === 375 && zoom === 1) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-metadata-ready.png`));
+        if (output && captureRequested(true) && width === 375 && zoom === 1) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-metadata-ready.png`));
         await press(key('Enter')); await wait(() => !document.querySelector('.bpb-week-source').open, 'source closed');
         setMode('complete');
         if (width === 1440 && zoom === 1) {
@@ -123,7 +125,7 @@ export async function verifyPeakWeatherInteractions({ origin, evaluate, navigate
         stable(before, await geometry(), `${label}: pending`);
         await press(key('Enter')); await press(key('Space')); await clickRefresh();
         assert.equal(evidence.length, count + 1, 'repeated keyboard and pointer activation does not duplicate work');
-        if (output && width === 375 && theme === 'dark') await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-pending.png`));
+        if (output && captureRequested() && width === 375 && theme === 'dark') await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${label}-pending.png`));
         setMode('service-error'); release(); await ready();
         await wait(() => document.querySelector('.bpb-week-status').textContent.includes('weather service is unavailable'), 'service failure');
         assert.equal(await focused('.bpb-week-refresh'), true, `${label}: failure focus`);

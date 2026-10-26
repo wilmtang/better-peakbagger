@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { verificationScreenshots } from './browser-verification-evidence.mjs';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
 
@@ -16,13 +17,14 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     setSettings = patch => applySettings({ showSummitCloud: false, ...patch });
     const output = process.env.BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR, cases = [];
     if (output) await mkdir(output, { recursive: true });
+    const captureRequested = verificationScreenshots();
     const browser = firefoxMode ? 'firefox' : 'chrome';
     const key = name => firefoxMode ? { Enter: '\uE007', Space: '\uE00D', ArrowUp: '\uE013', ArrowDown: '\uE015', ArrowLeft: '\uE012', ArrowRight: '\uE014', Home: '\uE011', End: '\uE010', Escape: '\uE00C', Tab: '\uE004' }[name] : name;
     const order = () => evaluate(() => [...document.querySelectorAll('[data-bpb-peak-card]:not([data-bpb-peak-card="cloud"])')].map(card => card.dataset.bpbPeakCard));
     const saved = (field, value) => waitForCondition(readSettings, { description: `saved ${field}`, timeoutMs: 7000,
         isReady: settings => isDeepStrictEqual(field === 'peakCardOrder' ? settings[field].filter(id => id !== 'cloud')
             : field === 'peakCardColumns' ? Object.fromEntries(Object.entries(settings[field]).filter(([id]) => id !== 'cloud')) : settings[field], value) });
-    const image = async name => { if (output) await screenshotPage(path.join(output, `${browser}-${name}.png`)); };
+    const image = async (name, reference = false) => { if (output && captureRequested(reference)) await screenshotPage(path.join(output, `${browser}-${name}.png`)); };
     const geometry = () => evaluate(() => {
         const rect = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
         return { cards: [...document.querySelectorAll('[data-bpb-peak-card]')].map(card => ({ key: card.dataset.bpbPeakCard, rect: rect(card) })),
@@ -215,7 +217,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
                 && document.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false',
             'expanded placement forecast settled');
-            await placement('weather', true); await image(`${width}-${theme}-below-details-expanded`);
+            await placement('weather', true); await image(`${width}-${theme}-below-details-expanded`, true);
             if (width === 375 && theme === 'dark') {
                 await setZoom(2); await focus('weather', '.bpb-peak-card-toggle');
                 await placement('weather', true); await image('below-details-200-percent'); await setZoom(1);
@@ -316,7 +318,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         assert.match(automatic.weather, /4391 m/); assert.match(automatic.station, /km away.*1570 m/);
         assert.equal(await evaluate(() => document.documentElement.getAttribute('data-bpb-theme')), theme);
         await compactSnow(`${width}/${theme}/automatic-units`);
-        await focus('snow', '.bpb-peak-card-toggle'); await image(`${width}-${theme}-automatic-units`);
+        await focus('snow', '.bpb-peak-card-toggle'); await image(`${width}-${theme}-automatic-units`, true);
         await evaluate(previous => {
             [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim())).textContent = previous;
         }, nativeHeading);

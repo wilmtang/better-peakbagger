@@ -5,6 +5,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+export function verificationScreenshots(mode = process.env.BPB_VERIFY_SCREENSHOTS || 'all') {
+    if (!['all', 'references', 'failure'].includes(mode)) throw new Error(`Unknown verification screenshot mode: ${mode}`);
+    return (reference = false) => mode === 'all' || mode === 'references' && reference;
+}
+
 // Evidence belongs only to isolated fixture checks. Never retain query strings,
 // request bodies, storage, form values, or arbitrary pages in a live profile.
 export function fixtureEvidenceUrl(value, fixtureOrigin, extensionBaseUrl = null) {
@@ -68,7 +73,7 @@ export function watchFixtureRequests(context, fixtureOrigin) {
 }
 
 export async function retainBrowserFailure({
-    context, driver, fixtureOrigin, extensionBaseUrl, requests = () => ({}),
+    context, driver, fixtureOrigin, extensionBaseUrl, fixtureScreenshot, requests = () => ({}),
     directory = process.env.BPB_VERIFY_ARTIFACTS,
     timeoutMs = 3000,
 }) {
@@ -109,6 +114,12 @@ export async function retainBrowserFailure({
             if (url) {
                 evidence.pages.push({ url, state: await bounded(() =>
                     driver.executeScript(readPageState), timeoutMs) });
+                // Explicit fixture-only transports may retain their synthetic
+                // page. Never invoke them for an extension or live origin.
+                if (fixtureScreenshot && fixtureEvidenceUrl(url, fixtureOrigin)) {
+                    await bounded(() => fixtureScreenshot(path.join(directory, 'failed-page.png')), timeoutMs);
+                    evidence.pages[0].screenshot = 'failed-page.png';
+                }
                 // WebDriver cannot reliably mask form fields without changing
                 // the failed document. Keep its bounded structural state only.
             }
