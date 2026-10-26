@@ -48,6 +48,7 @@ export function resolvePageSource(name) {
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
+    { out: 'reports/instagram-frame.js', sources: ['reports/instagram-frame.js'] },
     { out: 'content/report-protection.js', sources: ['reports/report-protection.js'] },
     { out: 'content/map-discovery.js', sources: ['maps/map-discovery.js'] },
     { out: 'custom-overlay/worker.js', sources: ['maps/custom-overlay-worker.js'] },
@@ -154,6 +155,8 @@ export const COPY_FILES = [
     ['README.md', 'README.md'],
     ['third_party/betacreator-LICENSE.txt', 'vendor/betacreator-LICENSE.txt'],
     ['manifest.json', 'manifest.json'],
+    ['src/reports/instagram.html', 'reports/instagram.html'],
+    ['src/reports/instagram-frame.css', 'reports/instagram-frame.css'],
     ['src/reports/report-protection.json', 'rules/report-protection.json'],
     ['src/reports/report-media.json', 'rules/report-media.json'],
     ['src/capture/draft-tab.html', 'capture/draft-tab.html'],

@@ -499,7 +499,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "terrain/terrain.html",
+        "terrain/terrain.html", "reports/instagram.html",
         "photos/guide.html", "custom-overlay/editor.html"
       ],
       "matches": [

@@ -1107,3 +1107,16 @@ Run `node scripts/verify-report-security.mjs chrome` and the `firefox` variant
 after building. `chrome --baseline` deliberately removes the response rules from
 a disposable copy and must fail on observed script execution. The fixture never
 submits report content or reads live cookies.
+
+
+### Instagram frame capabilities
+
+The extension-owned `reports/instagram.html` wrapper is public only to Peakbagger.
+It cannot choose or fetch an arbitrary URL. An isolated report surface obtains a
+one-use, 60-second capability for one canonical post after a trusted activation
+(or current automatic-loading consent). The worker binds it to the tab, source
+document and a private document nonce. The wrapper must claim it from a child
+frame, and the worker rechecks the live source document before returning the URL.
+Navigation, expiry and tab closure invalidate pending capabilities. The provider
+runs inside a separate scripts-only, opaque sandbox without extension APIs or
+Peakbagger-origin access; no remote script is loaded into the wrapper itself.

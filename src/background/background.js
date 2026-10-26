@@ -7,6 +7,7 @@
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import '../reports/report-protection-firefox.js';
+import { createInstagramFrames } from './instagram-frames.js';
 import { captureCore as Core } from '../capture/capture-core.js';
 import { createCaptureDiagnostics } from '../capture/capture-diagnostics.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
@@ -3517,6 +3518,8 @@ import { GarminError } from '../garmin/garmin-api.js';
         now,
     });
 
+    const instagramFrames = createInstagramFrames({ext,settings:Settings,trustedActions,isPeakbaggerSender,mutateMap,now});
+
     const terrainPrefetch = createTerrainPrefetch({
         isPeakbaggerSender,
         consumeActivation: terrainActivation.consumePrefetch,
@@ -3852,6 +3855,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
+            if (Object.hasOwn(instagramFrames.handlers, type)) return instagramFrames.handlers[type](message, sender);
             if (typeof type === 'string' && type.startsWith('CUSTOM_OVERLAYS_')) return customOverlays.handle(message, sender);
             if (typeof type === 'string' && type.startsWith('GARMIN_')) return garminImports.handle(message, sender);
             const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? bcLandRoutes.handlers[type] : null;
@@ -4014,6 +4018,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
 
     ext.tabs.onRemoved.addListener(tabId => {
+        runDetachedCleanup('Instagram tab cleanup', () => instagramFrames.forgetTab(tabId));
         bcLandRoutes.cancelTab(tabId);
         recentHelperActivations.delete(tabId);
         recentHelperNavigations.delete(tabId);
@@ -4049,6 +4054,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     ext.tabs.onUpdated?.addListener((tabId, changeInfo) => {
         if (changeInfo?.status === 'complete') runDetachedCleanup('Garmin queue on Peakbagger load', () => resumeGarminOnVisit(tabId));
         if (changeInfo?.status === 'loading') {
+            runDetachedCleanup('Instagram navigation cleanup', () => instagramFrames.forgetTab(tabId));
             runDetachedCleanup('photo source navigation cleanup', () =>
                 photoRoutes.forgetSourceTab(tabId));
         }

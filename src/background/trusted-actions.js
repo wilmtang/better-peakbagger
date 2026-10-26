@@ -26,6 +26,7 @@ const ACTIONS = Object.freeze({
     ONX_IMPORT: 'onx-import',
     PHOTO_EDITOR: 'photo-editor',
     REPORT_PHOTOS: 'report-photos',
+    INSTAGRAM_POST: 'instagram-post',
 });
 const ACTION_SET = new Set(Object.values(ACTIONS));
 const WORKFLOW_ACTIONS = new Set([
