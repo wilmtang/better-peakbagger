@@ -11,10 +11,11 @@ import { JSDOM } from 'jsdom';
 import { evalBundle } from '../helpers/load-page.mjs';
 
 test('report response policy covers route variants and nested documents without weakening site CSP', () => {
-    for (const path of ['/climber/ascent.aspx?aid=1', '/climber/AsCeNt.aspx', '//climber//ascent.aspx/extra', '/report/report.aspx', '/climber/%61scent.aspx']) {
+    for (const path of ['/climber/ascent.aspx?aid=1', '/climber/AsCeNt.aspx', '//climber//ascent.aspx/extra', '/climber/%61scent.aspx']) {
         assert(protectedReportDocument('https://www.peakbagger.com'+path), path);
     }
     assert(!protectedReportDocument('https://www.peakbagger.com/climber/ascentedit.aspx'));
+    assert(!protectedReportDocument('https://www.peakbagger.com/report/report.aspx?r=b'), 'native report lists are not trip report documents');
     assert(!protectedReportDocument('http://www.peakbagger.com/climber/ascent.aspx'));
     assert(!protectedReportDocument('https://www.peakbagger.com.evil.test/climber/ascent.aspx'));
     assert(!protectedReportDocument('https://www.peakbagger.com/map/MasterMap.aspx', 'sub_frame'));

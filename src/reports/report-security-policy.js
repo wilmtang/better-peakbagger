@@ -11,7 +11,7 @@ export function protectedReportDocument(value, type = 'main_frame') {
     if (raw.includes('%')) return true;
     const path = raw.toLowerCase().replace(/\/+/g, '/');
     if (type === 'sub_frame') return path !== '/map/mastermap.aspx';
-    return type === 'main_frame' && /^\/(climber\/ascent|report\/report)\.aspx(?:[\/;]|$)/.test(path);
+    return type === 'main_frame' && /^\/climber\/ascent\.aspx(?:[\/;]|$)/.test(path);
 }
 export function protectReportHeaders({ url, type, responseHeaders = [] }) {
     if (!protectedReportDocument(url, type)

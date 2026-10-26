@@ -35,6 +35,7 @@ export async function verifyReportSecurity(kind, { baseline = false } = {}) {
             const send = (body,headers={}) => {response.writeHead(200,{'content-type':'text/html',...headers});response.end(body);};
             if (request.headers.host?.startsWith('www.instagram.com')) {providerRequests++;return send('<p>Unexpected provider contact</p>');}
             if (url.pathname === '/search.aspx') return send('<html><body>Search fixture</body></html>');
+            if (url.pathname === '/report/report.aspx') return send('<html><script>document.documentElement.dataset.nativeList="ready"</script><body>Native buddy list fixture</body></html>');
             if (url.pathname === '/missing') {response.writeHead(404);return response.end();}
             if (url.pathname.startsWith('/security-')) {attackRequests++;return send('<script>parent.document.documentElement.dataset.attackRemote="ran"</script>');}
             if (/mastermap\.aspx/i.test(url.pathname)) return send('<html><script>document.documentElement.dataset.nativeMap="ready"</script><body>Native map fixture</body></html>');
@@ -85,7 +86,9 @@ export async function verifyReportSecurity(kind, { baseline = false } = {}) {
         await waitForCondition(()=>evaluate(()=>window.location.href),{description:'packaged quick-search behavior',isReady:v=>new URL(v).pathname==='/search.aspx'&&new URL(v).searchParams.get('ss')==='snow & ice'});
         await navigate(origin+'/climber/ascent.aspx?cf=1');
         await waitForCondition(()=>evaluate(()=>document.documentElement.dataset.challenge),{description:'Cloudflare exception',isReady:v=>v==='ran'});
-        console.log(JSON.stringify({verification:'report-security',kind,version,hidden:true,viewport:[1000,760],cases:5,baseline,providerRequests,attackRequests}));
+        await navigate(origin+'/report/report.aspx?r=b');
+        await waitForCondition(()=>evaluate(()=>document.documentElement.dataset.nativeList),{description:'native list scripts',isReady:v=>v==='ready'});
+        console.log(JSON.stringify({verification:'report-security',kind,version,hidden:true,viewport:[1000,760],cases:6,baseline,providerRequests,attackRequests}));
     } finally {await resources.dispose();}
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
