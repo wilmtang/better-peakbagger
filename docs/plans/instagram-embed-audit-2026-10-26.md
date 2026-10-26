@@ -14,8 +14,10 @@ hidden Chrome 156 at 1000×900, the video occupied slot 10 with its left edge at
 zero. Instagram still rendered **Next**. Clicking it shifted the first slot to
 −4630px for 463px-wide items, putting all ten slots offscreen and leaving an
 empty viewport. No eleventh media item appeared. **Go back** remained present.
-This is reproducible in Instagram's native captioned renderer; BPB currently
-hosts that renderer without DOM access.
+This was observed in Instagram's captioned renderer hosted inside BPB during
+the original check. That establishes an overflowing rendered state, not whether
+Instagram's code, BPB integration, timing or another environmental condition
+caused it. See the direct comparison below before attributing the cause.
 
 ### IG02 — theme is not applied to provider content (medium)
 
@@ -41,6 +43,33 @@ per-post loading consent authorizes loading the provider, not reading or
 changing its document. Styling and guarding native controls require optional
 Instagram access. It must remain separate from automatic-loading consent and
 must never be silently granted or become a required installation permission.
+
+## Follow-up: direct comparison and attribution correction — October 26
+
+The user challenged the claim that Instagram's own carousel miscounted its
+media. That causal claim was too strong. A fresh, read-only comparison used the
+same public post in hidden Chrome 156.0.8078.4 at 1000×900:
+
+| Environment | Result |
+| --- | --- |
+| Direct captioned embed URL, BPB absent | Ten slots; Next absent at the final video |
+| Plain 463px iframe, BPB absent | Ten slots; Next absent at the final video |
+| Same iframe with `allow-scripts allow-same-origin`, BPB absent | Ten slots; Next absent at the final video |
+| Current BPB wrapper, optional Instagram access absent | Ten slots; Next absent at the final video |
+| Earlier video-fix wrapper from `cb753a8c`, compiled into a disposable copy | Ten slots; Next absent at the final video |
+| Current BPB wrapper through the verifier's restrictive proxy, display fixes absent | Ten slots; Next absent after three seconds of video |
+
+The no-proxy wrapper comparisons also retained the correct endpoint after
+three seconds of playback. An additional plain-iframe check inspected Next
+immediately as the last transition began; it was already absent. These tests
+do not reproduce the original overflow and do not isolate the original session's
+conditions. They also do not cover every complete video/replay cycle or a
+provider version change.
+
+The original screenshot and recorded overflowing slot positions remain symptom
+evidence. **The boundary guard is a defensive mitigation, not a demonstrated
+repair of Instagram's internal media-counting logic. The precise cause remains
+unresolved.** No runtime behavior was changed by this attribution correction.
 
 ## Implementation and acceptance
 
@@ -72,7 +101,7 @@ must never be silently granted or become a required installation permission.
 
 ### Fixed and verified
 
-- **IG01:** `instagram-provider.js` derives the recognized horizontal slot
+- **IG01 symptom guard:** `instagram-provider.js` derives the recognized horizontal slot
   bounds, guards repeated terminal activation, hides unavailable arrows and
   recovers a single recognized overflow. It retains sparse 2/10/20-item lists,
   RTL and localized controls. Firefox's empty virtual slots have different
@@ -133,6 +162,10 @@ must never be silently granted or become a required installation permission.
 
 ### Changed but not fully proven
 
+- **IG01 cause:** fresh direct, plain/sandboxed iframe and current/earlier BPB
+  wrapper comparisons did not reproduce the original empty tail. Do not describe
+  this as a proven general Instagram bug or claim the underlying cause is fixed;
+  the verified guard prevents/reverses a recognized out-of-range state.
 - Display-enabled runs pregranted the optional host only in a disposable test
   manifest. Restoration configurations and native permission outcomes were
   supplied by fixture-only packaged hooks. This proves the shipped helper and
