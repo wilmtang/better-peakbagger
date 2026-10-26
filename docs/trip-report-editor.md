@@ -1079,3 +1079,31 @@ Break here[br]after break
 
 === END TEST ===
 ```
+
+
+## Saved-report protection
+
+BPB adds an always-on response Content Security Policy to saved-ascent and
+report-reading documents. It blocks page scripts (including event handlers),
+objects and base tags before parsing. The reader then rebuilds recognized report
+cells through the existing allowlisted AST, removing active DOM, unknown frames,
+forms and clobbering attributes. Native Quick Search has a packaged replacement;
+native MasterMap frames and canonical YouTube players remain separate contexts.
+
+Chrome uses packaged static declarative network rules. Firefox uses a synchronous
+blocking response-header listener because its DNR implementation cannot exclude
+Cloudflare challenge headers. Challenge responses bearing `cf-mitigated: challenge`
+retain their site policy so the user can complete the normal site check. An
+existing website CSP is preserved; BPB adds a separate restrictive policy.
+
+Instagram resources initiated by Peakbagger are blocked before network contact,
+including native embedded images and scripts. Loading a post requires the
+extension-owned per-post flow. This protection applies to BPB readers; Plain
+markup submitted to Peakbagger is still the author's responsibility for readers
+without BPB. This is not a guarantee against an already-compromised site or a
+pre-existing service worker synthesizing documents outside the network stack.
+
+Run `node scripts/verify-report-security.mjs chrome` and the `firefox` variant
+after building. `chrome --baseline` deliberately removes the response rules from
+a disposable copy and must fail on observed script execution. The fixture never
+submits report content or reads live cookies.

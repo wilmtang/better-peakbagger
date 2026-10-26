@@ -2439,14 +2439,14 @@ async function main() {
                 if (surface === 'detail') {
                     const boundary = await driver.executeScript(`return {
                         hidden: document.getElementById('bpb-ascent-report-content').parentElement.style.display === 'none',
-                        map: Boolean(document.getElementById('Gmap')), srcdoc: document.querySelector('#bpb-ascent-report-content iframe').getAttribute('srcdoc') };`);
+                        map: Boolean(document.getElementById('Gmap')), srcdoc: document.querySelector('#bpb-ascent-report-content iframe')?.getAttribute('srcdoc') ?? null };`);
                     assertState(boundary.hidden && boundary.map && boundary.srcdoc === null, 'Firefox detail boundary failed', boundary);
                 }
                 await captureIgnored(surface, surface === 'detail' ? '#bpb-ascent-report-tools' : '#pbaf-bar');
                 await driver.findElement(By.css('button[aria-label^="Show"][aria-label*="ignored"]')).sendKeys(Key.ENTER);
                 await waitForScript(driver, 'return Boolean(document.querySelector(\'button[aria-label^="Hide"][aria-label*="ignored"]\'));', `Firefox ${surface} keyboard reveal`);
                 if (surface === 'detail') {
-                    assertState(await driver.executeScript('return document.querySelector("#bpb-ascent-report-content iframe").getAttribute("srcdoc") === "<p>Synthetic player</p>";'), 'Firefox srcdoc reveal failed');
+                    assertState(await driver.executeScript('return document.querySelector("#bpb-ascent-report-content iframe") === null;'), 'Firefox restored an unsafe srcdoc frame');
                 }
             }
         } finally {

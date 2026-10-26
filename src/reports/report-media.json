@@ -1,0 +1,22 @@
+[
+  {
+    "id": 10,
+    "priority": 10,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "initiatorDomains": [
+        "peakbagger.com"
+      ],
+      "requestDomains": [
+        "instagram.com",
+        "cdninstagram.com",
+        "fbcdn.net"
+      ],
+      "excludedResourceTypes": [
+        "main_frame"
+      ]
+    }
+  }
+]

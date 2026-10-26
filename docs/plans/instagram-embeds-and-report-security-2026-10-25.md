@@ -2,9 +2,26 @@
 
 Date: October 25, 2026. Source baseline: `bb675408`.
 
-Status: investigation and proposed design. The options ordering, false draft
-conflict, and passive GitHub status fixes are implemented. Instagram embedding
-and default protection of native saved-report pages are **not implemented**.
+Status: implementation in progress. Default response protection and safe report
+rebuilding are implemented; the post-link authoring model and isolated Instagram
+player are next. The findings below describe the original `bb675408` baseline.
+
+## Implementation progress
+
+- Reader protection uses static Chrome CSP rules and a synchronous Firefox
+  response-header listener, with one shared policy and a narrowly identified
+  Cloudflare challenge exception. Native MasterMap frames remain available;
+  native Quick Search has a fixed packaged implementation.
+- The hostile-report verifier fails on observed script execution when protection
+  is removed from a disposable copy. It passes in hidden Chrome 156 and Firefox
+  158 with zero attack/provider requests, safe prose, native map execution,
+  route variants and the challenge exception. Five focused security/inventory
+  checks and 72 origin/Cloudflare/package/development checks passed. The full
+  Chrome extension check also passed; broader Firefox/full-suite gates continue.
+- Baseline limitations remain explicit: this does not protect non-BPB readers,
+  undo previously executed code, or constrain a pre-existing hostile site service
+  worker that synthesizes documents outside the browser's network stack.
+
 
 ## Findings and recommendation
 

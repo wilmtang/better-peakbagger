@@ -16,7 +16,8 @@
     "activeTab",
     "scripting",
     "tabGroups",
-    "alarms"
+    "alarms",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "https://peakbagger.com/*",
@@ -48,6 +49,12 @@
     "open_in_tab": true
   },
   "content_scripts": [
+    {
+      "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
+      "js": ["content/report-protection.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
     {
       "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
       "js": ["content/map-discovery.js"],
@@ -514,5 +521,19 @@
     "gecko_android": {
       "strict_min_version": "142.0"
     }
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "report-protection",
+        "enabled": true,
+        "path": "rules/report-protection.json"
+      },
+      {
+        "id": "report-media",
+        "enabled": true,
+        "path": "rules/report-media.json"
+      }
+    ]
   }
 }

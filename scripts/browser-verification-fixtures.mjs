@@ -467,12 +467,13 @@ Peaks: climbed and unclimbed by Zihao D<br>
 
 // Keep oversized media out of the analyzer fixture's normal geometry, while
 // exercising the real saved-ascent layout on an explicit fixture variant.
-const ascentImageSource = `data:image/svg+xml,${encodeURIComponent(
+const ascentImageSvg = (
     '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750">'
     + '<rect width="1200" height="750" fill="#477e86"/>'
     + '<path d="M0 750L400 100L700 550L950 250L1200 750Z" fill="#b3d5cc"/>'
-    + '</svg>',
-)}`;
+    + '</svg>'
+);
+const ascentImageSource = '/fixture-ascent-image.svg';
 const ascentImageHtml = [
     ['width-only', 'width="640"'],
     ['both-dimensions', 'width="640" height="400"'],
@@ -480,7 +481,7 @@ const ascentImageHtml = [
     ['original', ''],
     ['height-only', 'height="200"'],
 ].map(([id, dimensions]) => `<p>${id}<br><img id="split-image-${id}" ${dimensions}
-    src="${ascentImageSource}" alt="Synthetic mountain"></p>`).join('');
+    src="${ascentImageSource}" alt="Synthetic mountain ${id}"></p>`).join('');
 
 const bigMapHtml = `<!doctype html><html><head><title>Full Screen Map</title></head><body>
 <iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300"></iframe>
@@ -918,6 +919,7 @@ export async function createBrowserFixtureServer({
             return send('text/html; charset=utf-8',
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakBigMapHtml : bigMapHtml);
         }
+        if (url.pathname === '/fixture-ascent-image.svg') return send('image/svg+xml', ascentImageSvg);
         if (/mastermap\.aspx/i.test(url.pathname)) {
             return send('text/html; charset=utf-8',
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakMapDocument : masterMapDocument);

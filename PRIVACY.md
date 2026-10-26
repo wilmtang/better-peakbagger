@@ -789,3 +789,16 @@ at the summit or on a route.
 All extension code and libraries are packaged locally. A YouTube player is
 remote page content isolated in YouTube's cross-origin iframe; it is never
 loaded as extension code or given extension privileges.
+
+
+## Trip-report reader protection
+
+On saved-ascent and report-reading pages, BPB adds a restrictive response policy
+and rebuilds recognized report cells from safe markup. Chrome uses static network
+rules; Firefox uses a response-header listener scoped to Peakbagger documents.
+The listener inspects URL/type and response headers only, never response bodies
+or cookies. Website policies remain in effect. Cloudflare challenge responses are
+excluded so ordinary site validation can run. Known native map frames remain
+available. This client-side protection does not change stored reports or protect
+people who do not run BPB. Instagram resources initiated by Peakbagger are blocked
+by default, without inspecting their contents.

@@ -2833,7 +2833,7 @@ try {
                     handle: rect(document.getElementById('bpb-ascent-table-resize-handle')),
                     summary: rect(document.getElementById('ascent-summary')),
                     images: [...document.querySelectorAll('#ascent-report img')].map(image => ({
-                        ...rect(image), cell: rect(image.closest('td')), id: image.id,
+                        ...rect(image), cell: rect(image.closest('td')), id: image.alt,
                     })),
                     viewport: innerWidth,
                     pageWidth: document.documentElement.scrollWidth,
@@ -4643,7 +4643,7 @@ try {
                 if (surface === 'detail') {
                     check(await page.locator('#bpb-ascent-report-content').isVisible() === false, 'ignored detail report remained visible');
                     check(await page.locator('#Gmap').isVisible(), 'ignored detail concealed the map');
-                    check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === null, 'ignored detail retained a srcdoc player');
+                    check(await page.locator('#bpb-ascent-report-content iframe').count() === 0, 'ignored detail retained an unsafe player');
                     await page.locator('#bpb-ascent-table-split').waitFor({ state: 'visible' });
                     const readGeometry = () => page.evaluate(() => {
                         const tools = document.getElementById('bpb-ascent-report-tools');
@@ -4678,7 +4678,7 @@ try {
                             await reveal.focus(); await page.keyboard.press('Enter');
                             await page.locator('#bpb-ascent-report-content').waitFor({ state: 'visible' });
                             checkStable(before, await readGeometry(), `${theme} ${width}px reveal`);
-                            check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === '<p>Synthetic player</p>', 'revealed detail lost its srcdoc player');
+                            check(await page.locator('#bpb-ascent-report-content iframe').count() === 0, 'revealed detail must not restore an unsafe srcdoc player');
                             check(await page.locator('h2').filter({ hasText: /^Ascent Trip Report$/ }).count() === 1,
                                 'revealed detail duplicated its heading');
                             await capture('shown');

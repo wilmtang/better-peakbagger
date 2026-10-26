@@ -1,0 +1,105 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/+(climber/+ascent|report/+report)\\.aspx([/?#;]|$)",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": false,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/",
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": false,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/map/mastermap\\.aspx([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/[^?#]*%",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": false,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  }
+]

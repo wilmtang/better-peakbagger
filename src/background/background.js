@@ -6,6 +6,7 @@
 
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
+import '../reports/report-protection-firefox.js';
 import { captureCore as Core } from '../capture/capture-core.js';
 import { createCaptureDiagnostics } from '../capture/capture-diagnostics.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';

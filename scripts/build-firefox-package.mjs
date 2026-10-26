@@ -29,6 +29,13 @@ export function createFirefoxManifest(sourceManifest) {
 
     const manifest = structuredClone(sourceManifest);
     manifest.options_ui.open_in_tab = false;
+    // Firefox cannot exclude response headers in DNR conditions. Its blocking
+    // header listener implements the same policy and Cloudflare exception.
+    if (manifest.declarative_net_request) {
+        manifest.permissions = [...new Set([...(manifest.permissions || []), 'webRequest', 'webRequestBlocking'])];
+        manifest.declarative_net_request.rule_resources = manifest.declarative_net_request.rule_resources
+            .filter(rule => rule.id !== 'report-protection');
+    }
     return manifest;
 }
 

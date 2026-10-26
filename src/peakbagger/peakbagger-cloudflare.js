@@ -7,6 +7,8 @@
 // navigation status, so document detection uses the title or challenge markup.
 
 const BODY_PROBE_LENGTH = 2000;
+const CHALLENGE_HEADER = 'cf-mitigated';
+const CHALLENGE_VALUE = 'challenge';
 
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -17,9 +19,11 @@ const headerValue = (headers, name) => {
     return key ? trim(headers[key]) : '';
 };
 
+const hasChallengeHeader = headers => headerValue(headers, CHALLENGE_HEADER).toLowerCase() === CHALLENGE_VALUE;
+
 const isManagedChallenge = (status, headers, bodyText) => {
     if (Number(status) !== 403) return false;
-    if (headerValue(headers, 'cf-mitigated').toLowerCase() === 'challenge') return true;
+    if (hasChallengeHeader(headers)) return true;
     const body = typeof bodyText === 'string' ? bodyText : '';
     return body.slice(0, BODY_PROBE_LENGTH).includes('Just a moment');
 };
@@ -40,6 +44,9 @@ const recovery = ({ url = 'https://www.peakbagger.com/' } = {}) => ({
 
 export const peakbaggerCloudflare = {
     BODY_PROBE_LENGTH,
+    CHALLENGE_HEADER,
+    CHALLENGE_VALUE,
+    hasChallengeHeader,
     copy,
     isManagedChallenge,
     isChallengeDocument,
