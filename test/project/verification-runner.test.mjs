@@ -30,6 +30,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['provider-performance'], [['verify-provider-performance.mjs']]],
         [['map-handoffs'], [['verify-map-handoffs.mjs']]],
         [['map-layers'], [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']]],
+        [['settings-navigation'], [['verify-settings-fragments.mjs', 'chrome'], ['verify-settings-fragments.mjs', 'firefox']]],
         [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
         [['api-rate-limits'], [['verify-api-rate-limits.mjs']]],
         [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mjs']]],
@@ -116,6 +117,14 @@ test('profile editor rejects missing, unknown and extra selections before openin
         const result = spawnSync(process.execPath, [script('verify-profile-editor.mjs'), ...args], { encoding: 'utf8' });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: node scripts\/verify-profile-editor/);
+    }
+});
+
+test('settings navigation rejects unknown and extra selections before opening a browser', () => {
+    for (const args of [['chromee'], ['chrome', '--unknown']]) {
+        const result = spawnSync(process.execPath, [script('verify-settings-fragments.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /Usage: node scripts\/verify-settings-fragments/);
     }
 });
 

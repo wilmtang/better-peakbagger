@@ -1126,6 +1126,63 @@ test('a deep-link hash is the active section on load', async () => {
     assert.equal(active[0].getAttribute('href'), '#map-chart');
 });
 
+test('refresh lands the anchored subsection even when the browser restores the pane to the top without scrolling', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: window => {
+        const content = window.document.querySelector('.content');
+        content.getBoundingClientRect = () => ({ top: 100 });
+        window.document.getElementById('map-chart-chart').style.scrollMarginTop = '24px';
+        window.document.getElementById('map-chart-chart').getBoundingClientRect = () => ({ top: 3269 - content.scrollTop });
+    } });
+    const content = dom.window.document.querySelector('.content');
+    // Chrome can finish restoration without emitting scroll or scrollend.
+    content.scrollTop = 0;
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow'));
+    await waitFor(dom, () => content.scrollTop === 3145).catch(() => {
+        assert.equal(content.scrollTop, 3145, 'refresh must move the pane from the restored top to the requested subsection');
+    });
+    assert.equal(content.style.scrollBehavior, '');
+    assert.equal(activeLinks(dom)[0].hash, '#map-chart-chart');
+    assert.equal(dom.window.document.documentElement.scrollTop, 0);
+});
+
+test('an early native scrollend cannot finish alignment before document restoration', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: window => {
+        Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'loading' });
+        const pane = window.document.querySelector('.content'), target = window.document.getElementById('map-chart-chart');
+        pane.getBoundingClientRect = () => ({ top: 100 }); target.style.scrollMarginTop = '24px';
+        target.getBoundingClientRect = () => ({ top: 3269 - pane.scrollTop });
+    } });
+    const pane = dom.window.document.querySelector('.content');
+    pane.scrollTop = 3145; pane.dispatchEvent(new dom.window.Event('scrollend'));
+    assert.equal(pane.style.scrollBehavior, 'auto', 'native scrolling must not mark document restoration complete');
+    pane.scrollTop = 0; dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow'));
+    pane.dispatchEvent(new dom.window.Event('scrollend'));
+    assert.equal(pane.style.scrollBehavior, 'auto', 'a queued scrollend must not complete a pending restoration frame');
+    await waitFor(dom, () => pane.scrollTop === 3145 && pane.style.scrollBehavior === '');
+});
+
+test('restoring the document from history re-reads the current fragment and preserves later manual reading positions', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: window => {
+        const content = window.document.querySelector('.content');
+        content.getBoundingClientRect = () => ({ top: 100 });
+        for (const [id, top] of [['map-chart-chart', 3269], ['custom-map-layers', 3900]]) {
+            window.document.getElementById(id).style.scrollMarginTop = '24px';
+            window.document.getElementById(id).getBoundingClientRect = () => ({ top: top - content.scrollTop });
+        }
+    } });
+    const content = dom.window.document.querySelector('.content');
+    dom.window.history.replaceState(null, '', '#custom-map-layers');
+    content.scrollTop = 0;
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => content.scrollTop === 3776).catch(() => {
+        assert.equal(content.scrollTop, 3776, 'history restoration must align the current fragment rather than leave the pane at the top');
+    });
+    assert.equal(activeLinks(dom)[0].hash, '#custom-map-layers');
+    content.scrollTop = 4000;
+    await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
+    assert.equal(content.scrollTop, 4000, 'later settings updates must not keep snapping the reader to the hash');
+});
+
 test('a drafts deep link activates the TR-drafts manager', async () => {
     const dom = await loadOptions({}, {
         hash: '#drafts',
@@ -1152,8 +1209,8 @@ test('a drafts deep link activates the TR-drafts manager', async () => {
     assert.ok(active[0].classList.contains('nav-subitem'));
     assert.equal(dom.window.document.querySelector('.nav-item.nav-parent-active')?.getAttribute('href'),
         '#capture');
-    assert.equal(content.style.scrollBehavior, 'auto',
-        'the initial native fragment landing must not inherit smooth scrolling');
+    assert.equal(content.scrollTop, 326, 'the completed document aligns without waiting for scrollend');
+    assert.equal(content.style.scrollBehavior, '', 'the initial override is cleared after document restoration');
     content.dispatchEvent(new dom.window.Event('scrollend'));
     assert.equal(content.scrollTop, 326,
         'the nested content scroller should align the target to its scroll margin');

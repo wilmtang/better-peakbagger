@@ -32,6 +32,15 @@ records the centralized manager and version 6 backup/restore audit.
   URLs and any public keys in them are included; private tokens do not belong
   in custom source URLs. Saving/restoring never enables layers on a map.
 
+## Settings links and navigation
+
+Settings URLs retain their subsection anchors, including on refresh and browser
+Back/Forward. The navigation owner explicitly aligns the scrolling content pane
+after document restoration; the sidebar highlight alone is not proof of a
+correct landing. A subsequent preference update preserves the reader's manual
+scroll position. `npm run verify -- settings-navigation` exercises these paths
+in the packaged Chrome and Firefox pages.
+
 ## Transfer matrix
 
 “Local” means one browser profile or site origin, not every browser on the same

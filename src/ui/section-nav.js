@@ -35,6 +35,7 @@ export const initSectionNav = () => {
     // otherwise a newly opened deep link visibly travels down the page.
     let initialScrollOverride = false;
     let initialScrollTarget = null;
+    let documentRestored = false;
     let distanceScrollRevision = 0;
     const finishInitialScroll = alignTarget => {
         if (!initialScrollOverride) return;
@@ -46,7 +47,7 @@ export const initSectionNav = () => {
             const margin = parseFloat(getComputedStyle(initialScrollTarget).scrollMarginTop) || 0;
             const delta = initialScrollTarget.getBoundingClientRect().top
                 - content.getBoundingClientRect().top - margin;
-            if (Math.abs(delta) > 1) content.scrollTop += delta;
+            if (Math.abs(delta) > 1) content.scrollTop = Math.max(0, content.scrollTop + delta);
         }
         initialScrollTarget = null;
         content.style.removeProperty('scroll-behavior');
@@ -154,7 +155,7 @@ export const initSectionNav = () => {
     content.addEventListener('scrollend', () => {
         clearTimeout(navLockTimer);
         navLocked = false;
-        finishInitialScroll(true);
+        if (documentRestored) finishInitialScroll(true);
         lastScrollTop = content.scrollTop;
     });
     for (const { link, section } of entries) {
@@ -192,4 +193,28 @@ export const initSectionNav = () => {
         lockTo(initial.link);
     }
     else setActive(entries[0].link);
+
+    // Reload/history restoration can put the nested pane at zero without any
+    // scroll event. Reconcile after the browser has shown the document instead
+    // of waiting for scrollend from a scroll that may never happen.
+    const restoreFragment = () => {
+        if (!fragmentTarget()) { documentRestored = true; return; }
+        documentRestored = false;
+        content.style.scrollBehavior = 'auto';
+        const align = () => {
+            documentRestored = true;
+            const target = fragmentTarget();
+            if (!target) { content.style.removeProperty('scroll-behavior'); return; }
+            initialScrollOverride = true;
+            initialScrollTarget = target.section;
+            content.style.scrollBehavior = 'auto';
+            finishInitialScroll(true);
+            lastScrollTop = content.scrollTop;
+            lockTo(target.link);
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(align);
+        else setTimeout(align, 0);
+    };
+    window.addEventListener('pageshow', restoreFragment);
+    if (document.readyState === 'complete') restoreFragment();
 };
