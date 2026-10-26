@@ -70,6 +70,13 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.match(geometry.run, /2>&1 \| tee browser-evidence\/layout-stability\.log/);
     assert.ok(geometry.run.includes('--${{ matrix.browser }}-only'));
     assert.ok(geometry.run.includes('--shard=${{ matrix.shard }}/4'));
+    assert.ok(geometry.run.includes('--suite=portable'));
+    const backups = ordinary.jobs['backup-layout'];
+    assert.equal(backups['runs-on'], 'macos-15-intel');
+    assert.deepEqual(backups.strategy.matrix.browser, ['chrome', 'firefox']);
+    assert.ok(backups.steps.some(step => step.run?.includes('--suite=backups')));
+    assert.ok(ordinary.jobs['chrome-required'].needs.includes('backup-layout'));
+    assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$BACKUP_LAYOUT_RESULT" = success/);
     assert.equal(job.env.BPB_VERIFY_SCREENSHOTS, 'references');
     assert.ok(job.steps.find(step => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));

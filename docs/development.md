@@ -270,8 +270,9 @@ It supplements the complete suites. A fixture exception fails while the page is
 still available for evidence.
 
 Layout CI runs four deterministic shards per browser on Linux. Each shard owns
-one theme/viewport combination and all 24 surfaces; the eight shards contain the
-same 192 cases as the complete command, exactly once. Focused `--surface` commands
+one theme/viewport combination and 22 surfaces (`--suite=portable`). The two
+backup surfaces retain their established macOS font metrics (`--suite=backups`).
+The combined jobs contain the same 192 cases as the complete command, exactly once. Focused `--surface` commands
 retain their existing additional zoom cases. Unknown, duplicate, conflicting or
 empty selections fail before launch. Every result includes its duration and each
 shard checks the executed count against its complete plan.
@@ -281,7 +282,9 @@ on macOS, rather than waiting behind the layout suite. At most four surface jobs
 run concurrently, leaving capacity for the real-manifest, toolbar and GPU jobs.
 Fixture-only shards install only their chosen Playwright engine. Real extensions
 and hardware GPU checks retain their existing browser/runner contracts. The
-required aggregate rejects failed or skipped preflight, shards and surface jobs.
+required aggregate rejects failed or skipped preflight, shards, backup layout
+and surface jobs. Linux qualification exposed existing backup font-metric defects;
+retaining macOS coverage does not establish Linux backup geometry.
 
 CI uses `BPB_VERIFY_SCREENSHOTS=references` for layout and peak surfaces, preserving
 selected reference states and all geometry assertions. Failures retain the failed

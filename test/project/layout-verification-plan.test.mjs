@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { layoutVerificationPlan } from '../../scripts/layout-verification-plan.mjs';
 
-const surfaces = ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter', ...Array.from({ length: 20 }, (_, i) => `surface-${i}`)];
+const surfaces = ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter', 'ascent-backup', 'profile-backup', ...Array.from({ length: 18 }, (_, i) => `surface-${i}`)];
 const identity = value => JSON.stringify(value);
 
 test('four balanced shards preserve every browser, surface, theme and viewport exactly once', () => {
@@ -28,6 +28,24 @@ test('focused selections preserve their enlarged-text cases and browser selectio
         assert.equal(cases.length, 8);
         assert.deepEqual([...new Set(cases.map(c => c.zoom))], [1, 1.5]);
         assert.ok(cases.every(c => c.browser === 'firefox' && c.surface === surface));
+    }
+});
+
+test('portable shards and native-font backup checks partition the complete coverage exactly once', () => {
+    const full = layoutVerificationPlan([], surfaces).cases;
+    const actual = [];
+    for (const browser of ['chrome', 'firefox']) {
+        for (let i = 1; i <= 4; i++) {
+            const shard = layoutVerificationPlan([`--${browser}-only`, '--suite=portable', `--shard=${i}/4`], surfaces).cases;
+            assert.equal(shard.length, 22); actual.push(...shard);
+        }
+        const backups = layoutVerificationPlan([`--${browser}-only`, '--suite=backups'], surfaces).cases;
+        assert.equal(backups.length, 8); actual.push(...backups);
+    }
+    assert.equal(new Set(actual.map(identity)).size, full.length);
+    assert.deepEqual(actual.map(identity).sort(), full.map(identity).sort());
+    for (const args of [['--suite=missing'], ['--suite=backups', '--suite=portable'], ['--suite=portable', '--surface=timestamps'], ['--preflight', '--suite=portable']]) {
+        assert.throws(() => layoutVerificationPlan(args, surfaces));
     }
 });
 
