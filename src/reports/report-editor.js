@@ -775,7 +775,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     let draftDeletionEpoch = null;
     let draftPersistenceQueue = Promise.resolve();
     const draftContent = record => JSON.stringify([record.text, record.mode, record.source ?? null, record.pendingSave?.attemptId ?? null]);
-    const draftConflict = () => Object.assign(new Error('Another tab saved this draft.'), { code: 'draft-conflict' });
+    const draftConflict = () => Object.assign(new Error('The saved draft changed.'), { code: 'draft-conflict' });
 
     saveRecoveryCopy.addEventListener('click', async () => {
         flushSync();
@@ -871,7 +871,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             } catch (error) {
                 if (state.terminalSubmission || revision !== draftEditRevision) return;
                 setDraftPersistenceStatus(error.code === 'draft-conflict'
-                    ? 'Another tab saved this draft — keep this page open or copy your text'
+                    ? 'The saved draft changed — keep this page open or copy your text'
                     : removing ? 'Older saved draft couldn’t be removed' : 'Draft not saved — keep this page open',
                 { recovery: true, cleanup: removing && error.code !== 'draft-conflict' });
             }
@@ -900,7 +900,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             type: 'REPORT_DRAFT_SAVE_CANCEL',
             draftKey,
         });
-        void mutateDraft({
+        return mutateDraft({
             type: 'REPORT_DRAFT_REMOVE',
             ...(stored ? {
                 expectedGeneration: stored[ReportDrafts.GENERATION_FIELD] ?? null,
@@ -1069,7 +1069,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         if (!stored || typeof stored.text !== 'string' || typeof stored.savedAt !== 'number') return;
         const storedText = normalized(stored.text);
         if (Date.now() - stored.savedAt > ReportDrafts.TTL_MS || !storedText) {
-            clearDraft(stored);
+            await clearDraft(stored);
             return;
         }
         if (stored.pendingSave && typeof stored.pendingSave === 'object') {
@@ -1683,6 +1683,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         ui._bpbEditors = { get rich() { return richEditor; }, markdown: mdEditor };
 
         textarea.before(ui);
+        // Pruning retires deletion markers for all reports. Complete our own
+        // cleanup before observing this editor's version/deletion epoch, or an
+        // unrelated expired draft can make the first autosave look concurrent.
+        await pruneDrafts();
         await checkDraft();               // may adopt a markdown source pre-render
         const guarded = configureConversionGuard(textarea.value, settings.reportEditorMode);
         setMode(guarded ? 'plain' : settings.reportEditorMode, { persist: false });
@@ -1690,7 +1694,6 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         persistedDraftContent = draftContent({ text: textarea.value, mode: state.mode,
             ...(state.mode === 'markdown' && { source: mdEditor.getValue() }) });
         ext.runtime.onMessage.addListener(handlePhotoInsertion);
-        void pruneDrafts();
 
         // If the feature is turned off in the options while this page is open,
         // hand the form back to the native textarea.

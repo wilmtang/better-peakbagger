@@ -633,10 +633,17 @@ being sent as a real climber id.
 
 Identity is form-scoped, not tab-scoped or revision-scoped. Two open tabs
 editing the same ascent, two new-ascent tabs for the same `pid`, or two generic
-new-ascent tabs for the same `cid` share one key and can replace each other's
-latest recovery snapshot. There is no merge or compare-and-swap layer. That is
-an important current limitation, not an invitation to add a tab id without
-designing how the manager and restore flow would resolve multiple candidates.
+new-ascent tabs for the same `cid` share one key. The worker serializes mutations
+and compares the editor's observed storage generation before writing, so a stale
+editor cannot replace another editor's newer recovery copy. A conflict retains
+the current page text and offers **Copy Markdown**; it does not prove another tab
+is currently open. There is no automatic merge.
+
+Startup pruning completes before the editor reads its draft version and shared
+deletion epoch. Otherwise retiring an unrelated expired draft could invalidate
+this editor's absence snapshot and incorrectly reject its first autosave. Cleanup
+of the current expired record also completes before editing begins. The shared
+deletion barrier remains enforced for genuinely stale editors.
 
 ### Exact stored record
 
@@ -648,6 +655,7 @@ type ReportDraftRecord = {
   text: string;
   mode: "rich" | "markdown" | "plain";
   savedAt: number;
+  storageGeneration?: string;
   source?: string;
   label?: {
     peak?: string;
@@ -669,6 +677,7 @@ roles and authority boundaries:
 | `text` | Required | The flushed `JournalText` value: Peakbagger bracket markup plus newlines. This is the recovery copy of the submitted representation. It is never TipTap HTML, a ProseMirror document, preview HTML, or Markdown. |
 | `mode` | Required | The authoritative authoring mode at the write: `rich`, `markdown`, or `plain`. `plain` is written only after a live feature-disable handoff so later native edits can replace the prior recovery snapshot. Ordinary Plain mode and an editor disabled before initialization do not acquire autosave ownership. |
 | `savedAt` | Required | `Date.now()` in milliseconds at the write. It drives ordering, display, expiry, and pruning; it is not an ascent time or content revision id. |
+| `storageGeneration` | Worker-assigned | Opaque mutation identity used for compare-and-swap. Older records may omit it. |
 | `source` | Markdown only | The exact CodeMirror string, including the user's Markdown spelling and whitespace. It is an authoring-fidelity sidecar; `text` remains the Peakbagger-facing value. Rich writes omit it because a Rich edit invalidates any earlier Markdown spelling. |
 | `label.peak` | Optional | Display-only selected peak name, or the matching prepared-draft peak name when the native picker is not ready. It is trimmed and capped at 200 characters. The key, not this label, is identity. |
 | `label.date` | Optional | Display-only raw trimmed `DateText`, capped at 20 characters. It is intentionally not normalized into the backup date identity. |

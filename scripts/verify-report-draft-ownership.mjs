@@ -10,6 +10,8 @@ import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs'
 import { createResourceStack } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
+if (process.argv.length > 2) throw new Error('Usage: node scripts/verify-report-draft-ownership.mjs');
+
 const resources = createResourceStack();
 try {
     const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-draft-ownership-'));
@@ -42,6 +44,18 @@ try {
         await page.locator('.bpb-re-surface').waitFor();
         return page;
     };
+    const expiredKey = 'bpbReportDraft:900001:a123';
+    await control.evaluate(async draftKey => chrome.storage.local.set({ [draftKey]: {
+        text: 'Expired unrelated report', mode: 'rich', savedAt: Date.now() - 15 * 86400000,
+    } }), expiredKey);
+    const solo = await open();
+    await control.waitForFunction(async draftKey => !(await chrome.storage.local.get(draftKey))[draftKey], expiredKey);
+    await solo.locator('.bpb-re-surface').fill('Work in the only open editor');
+    await solo.locator('.bpb-re-status').filter({ hasText: /Draft saved|saved this draft|draft changed|Draft not saved/ }).waitFor();
+    assert.match(await solo.locator('.bpb-re-status').textContent(), /Draft saved on this device/,
+        'pruning another draft must not claim that a second tab saved this report');
+    await solo.close();
+    await control.evaluate(async draftKey => chrome.storage.local.remove(draftKey), key);
     const old = await open();
     const newer = await open();
     await newer.locator('.bpb-re-surface').fill('Newer recovery copy');
@@ -52,7 +66,7 @@ try {
     await newer.locator('.bpb-re-surface').fill('Newest recovery copy');
     await newer.getByText('Draft saved on this device', { exact: false }).waitFor();
     await conflict.locator('.bpb-re-surface').fill('Different work in this tab');
-    await conflict.getByText('Another tab saved this draft', { exact: false }).waitFor();
+    await conflict.getByText('The saved draft changed', { exact: false }).waitFor();
     assert.match((await control.evaluate(async draftKey => (await chrome.storage.local.get(draftKey))[draftKey], key)).text, /Newest recovery copy/);
     const output = process.env.BPB_DRAFT_OUTPUT;
     if (output) {

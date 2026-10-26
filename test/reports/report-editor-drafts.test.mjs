@@ -14,6 +14,22 @@ const sharedEditor = (first, options = {}) => loadEditor({ ...options, prepare: 
     Object.defineProperty(second.chrome.runtime, 'sendMessage', { value: first.chrome.runtime.sendMessage });
 } });
 
+test('startup pruning of an unrelated expired draft does not reject this editor’s first save', async () => {
+    const expiredKey = 'bpbReportDraft:900001:a123';
+    const dom = await loadEditor({ settings: { addReportCredit: false }, accelerateAutosave: true,
+        drafts: { [expiredKey]: { text: 'Expired unrelated report', mode: 'rich', savedAt: Date.now() - 15 * 86400000 } } });
+    try {
+        await editorReady(dom); await waitFor(dom, () => editors(dom).rich);
+        await waitFor(dom, () => !dom.chrome._localStore[expiredKey]);
+        typeRich(dom, '<p>Work in the only open editor</p>');
+        await waitFor(dom, () => /Draft saved|saved this draft|draft changed|Draft not saved/.test(
+            dom.window.document.querySelector('.bpb-re-status').textContent));
+        assert.match(dom.window.document.querySelector('.bpb-re-status').textContent, /Draft saved on this device/);
+        assert.equal(dom.chrome._localStore[DRAFT_KEY].text, 'Work in the only open editor');
+        assert.equal(dom.window.document.querySelector('.bpb-re-save-recovery').hidden, true);
+    } finally { dom.window.close(); }
+});
+
 test('an untouched old editor leaves another editor’s newer draft intact on page exit', async () => {
     for (const report of ['', 'Old report']) for (const persisted of [false, true]) {
         const first = await loadEditor({ report, settings: { addReportCredit: false } });
@@ -43,7 +59,7 @@ test('conflicting edits preserve the other editor’s version and expose a recov
         await waitFor(second, () => first.chrome._localStore[DRAFT_KEY]?.text === 'Other editor wins');
         for (const html of ['<p>Keep my conflicting text</p>', '<p></p>']) {
             typeRich(first, html);
-            await waitFor(first, () => /Another tab saved this draft/.test(first.window.document.querySelector('.bpb-re-status').textContent));
+            await waitFor(first, () => /The saved draft changed/.test(first.window.document.querySelector('.bpb-re-status').textContent));
             assert.equal(first.chrome._localStore[DRAFT_KEY].text, 'Other editor wins');
             assert.equal(first.window.document.querySelector('.bpb-re-save-recovery').hidden, false);
         }
@@ -67,7 +83,7 @@ test('queued edits in one editor adopt the completing writer’s version', async
         dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
         release();
         await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.text === 'Latest snapshot');
-        assert.doesNotMatch(dom.window.document.querySelector('.bpb-re-status').textContent, /Another tab/);
+        assert.doesNotMatch(dom.window.document.querySelector('.bpb-re-status').textContent, /The saved draft changed/);
     } finally { dom.window.close(); }
 });
 
@@ -81,7 +97,7 @@ test('retired deletion barriers still reject an older editor that originally saw
         const finalized = await managerRoutes.handlers.REPORT_DRAFT_FINALIZE_DELETE({ draftKey: DRAFT_KEY, generation: removal.generation }, {});
         assert.equal(finalized.finalized, true);
         typeRich(dom, '<p>Work from the older tab</p>');
-        await waitFor(dom, () => /Another tab saved this draft/.test(dom.window.document.querySelector('.bpb-re-status').textContent));
+        await waitFor(dom, () => /The saved draft changed/.test(dom.window.document.querySelector('.bpb-re-status').textContent));
         assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
         assert.equal(dom.window.document.querySelector('.bpb-re-save-recovery').hidden, false);
     } finally { dom.window.close(); }
