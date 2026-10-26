@@ -72,7 +72,54 @@ must never be silently granted or become a required installation permission.
 
 ### Fixed and verified
 
-- None yet; baseline investigation only.
+- **IG01:** `instagram-provider.js` derives the recognized horizontal slot
+  bounds, guards repeated terminal activation, hides unavailable arrows and
+  recovers a single recognized overflow. It retains sparse 2/10/20-item lists,
+  RTL and localized controls. Firefox's empty virtual slots have different
+  vertical baselines, so vertical alignment is deliberately not an invariant.
+  Viewport-unit widths may include the scrollbar gutter. Completed CSS
+  transitions and native mutations reconcile the controls; disappearing arrows
+  transfer focus to a usable native control without scrolling.
+- **IG02:** scoped packaged CSS themes headers, location text, captions, links,
+  footer and monochrome sprite icons. Photos, posters and video have no filter.
+  Stored/system theme changes configure the existing player without replacing
+  it, changing carousel position or reflowing report content. Actual light/dark
+  header and caption/footer renders were visually inspected in both browsers.
+- **IG03:** the packaged verifier now checks backward/forward traversal at the
+  final video and terminal activation. Its native public-post run verified ten
+  slots and decoded video frames in hidden Chrome 156.0.8078.4 and Firefox
+  158.0.1 at 1000×900. Both retained slot index 9 and the same iframe across
+  dark/light changes. A fixture disables the helper to reproduce the empty end,
+  re-enables it to recover, and verifies focus and restoration. The virtual-slot
+  regression assertion also fails on the earlier equal-height/baseline
+  assumption with the actual extra-slide index defect, then passes on the fix.
+- **IG04:** Instagram remains an **optional** host permission requested only
+  from the explicit Settings checkbox. Registration is serialized and reconciled
+  before a valid native player loads. The helper is isolated, packaged, matched
+  only to captioned endpoints, and inactive without configuration from the
+  actual BPB parent and extension origin. The worker supplies the authoritative
+  permission boolean because Firefox restricts APIs in embedded extension
+  pages. Stale replies/page disposal are guarded. Tests cover denial, busy
+  duplicate actions, retry/grant, removal and registration cleanup.
+- **Focused checks:** build passed; 68 Instagram, manifest, origin and settings
+  contract tests passed. ESLint over `src options popup photos scripts test`
+  passed. The real unpacked Chrome startup/bridge check passed at 1000×760.
+- **Browser fixtures:** both no-access viewers and display-enabled matrices
+  passed in hidden Chrome/Firefox. Report states covered idle, pending,
+  cancel/error/retry, loaded and hidden at 1000/375×900, light/dark and normal/26px
+  text. Settings keyboard/pending/denied/retry/grant/removal paths kept the
+  control, row and following heading within one pixel: Chrome 1000/375×900,
+  Firefox 1000/500×900 (its privileged window minimum), with narrow row text
+  enlarged to 22px. The native permission results were stubbed in a disposable
+  copy. Fixture positioning is instantaneous so setup scrolling does not get
+  mistaken for interaction jitter.
+- **Security:** the six hostile saved-report cases passed in each browser at
+  1000×760, with zero provider or attack requests. The Instagram fixture also
+  retained blocked parent/top access, forms, popups and navigation while its
+  same-origin lazy video loader decoded frames. No live ascent was edited,
+  submitted or saved.
+- Owned browser-process command lines and disposable profile paths were checked
+  after teardown; no verification browser processes or profiles remained.
 
 ### Intentionally not changed
 
@@ -86,6 +133,23 @@ must never be silently granted or become a required installation permission.
 
 ### Changed but not fully proven
 
-- IG01–IG04 remediation is pending implementation and browser verification.
-- Native permission-prompt appearance cannot be proved by a headless grant or a
-  fixture. Record the exact prompt/consent paths actually exercised.
+- Display-enabled runs pregranted the optional host only in a disposable test
+  manifest. Restoration configurations and native permission outcomes were
+  supplied by fixture-only packaged hooks. This proves the shipped helper and
+  controller behavior, not the browser-owned permission prompt or real native
+  grant/revocation UI. The user's installed profile and permissions were not
+  changed. Headless checks do not prove visible-window focus, placement,
+  browser zoom, touch or assistive-technology behavior.
+- `npm test`: 3,647/3,648 passed; the unchanged hover-card case **own profile links
+  stay undecorated in headings, lists, report rows, and late content** timed out
+  at `test/favorites/climber-hover-card.test.mjs:147`. A full run with concurrency
+  four also hit that timeout; the isolated file passed 19/19. This remains a
+  suite/check defect to investigate separately, not a green full-suite result.
+- `npm run lint`: ESLint passed, but the packaging gate rejects an existing
+  unowned `UNSAFE_VAR_ASSIGNMENT` at `custom-overlay/editor.js:619`, originating
+  from the unchanged static-template construction in
+  `src/maps/custom-overlay-editor.js:22`. Raw web-ext results have zero errors,
+  zero notices and nine warnings. No warning allowance or unrelated overlay
+  code was changed to make this audit appear green.
+- Future Instagram markup, availability and login policies remain provider
+  controlled. Unknown carousel layouts intentionally preserve native behavior.

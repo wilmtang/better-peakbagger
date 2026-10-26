@@ -49,6 +49,7 @@ export function resolvePageSource(name) {
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
     { out: 'reports/instagram-frame.js', sources: ['reports/instagram-frame.js'] },
+    { out: 'content/instagram-provider.js', sources: ['reports/instagram-provider.js'] },
     { out: 'content/report-protection.js', sources: ['reports/report-protection.js'] },
     { out: 'content/map-discovery.js', sources: ['maps/map-discovery.js'] },
     { out: 'custom-overlay/worker.js', sources: ['maps/custom-overlay-worker.js'] },
@@ -156,6 +157,7 @@ export const COPY_FILES = [
     ['third_party/betacreator-LICENSE.txt', 'vendor/betacreator-LICENSE.txt'],
     ['manifest.json', 'manifest.json'],
     ['src/reports/instagram.css', 'css/instagram.css'],
+    ['src/reports/instagram-provider.css', 'css/instagram-provider.css'],
     ['src/reports/instagram.html', 'reports/instagram.html'],
     ['src/reports/instagram-frame.css', 'reports/instagram-frame.css'],
     ['src/reports/report-protection.json', 'rules/report-protection.json'],

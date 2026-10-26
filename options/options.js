@@ -17,6 +17,7 @@ import { initPhotoBackup } from './photos.js';
 import { initSectionNav } from '../src/ui/section-nav.js';
 import { initUnitSettings } from './unit-settings.js';
 import { initCustomLayers } from './custom-layers.js';
+import { initInstagramDisplay } from './instagram-display.js';
 
 (() => {
     'use strict';
@@ -88,6 +89,7 @@ import { initCustomLayers } from './custom-layers.js';
         statusErrorDismissEl,
     });
     initCustomLayers({ extensionApi, flash });
+    initInstagramDisplay({ extensionApi, flash });
 
     const formatCacheBytes = bytes => {
         if (bytes < 1024) return `${Math.max(0, Math.floor(bytes))} B`;

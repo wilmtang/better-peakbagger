@@ -1,9 +1,10 @@
 # Active plans
 
 - [Instagram embed display audit — October 26](instagram-embed-audit-2026-10-26.md)
-  — confirmed native carousel overflow, missing provider theming and incomplete
-  end-state checks; approved remediation with an explicit optional-access
-  boundary and a three-part verification ledger.
+  — carousel limits and native-player dark mode implemented behind optional
+  access; Chrome/Firefox native playback, theme and security checks passed.
+  Native permission-prompt proof and unrelated suite/lint failures remain
+  explicit in the closure ledger.
 
 - [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
   — implemented in focused commits: collapsed-read/calm-axis fixes, shared

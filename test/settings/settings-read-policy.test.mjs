@@ -60,6 +60,7 @@ const AUTHORITATIVE = Object.freeze({
     ],
     'src/background/instagram-frames.js': [{ count: 2, kind: 'privacy', reason: 'automatic post grants require current device consent at both issue and claim' }],
     'src/reports/instagram-ui.js': [{ count: 1, kind: 'privacy', reason: 'automatic post presentation starts only after current device consent is available' }],
+    'src/reports/instagram-frame.js': [{ count: 1, kind: 'preservation', reason: 'resolve the stored display theme without overwriting a newer subscription update' }],
     'src/terrain/terrain-frame.js': [{ count: 1, kind: 'privacy', reason: 'gate provider-backed renderer startup inside the frame' }],
     'src/theme/theme.js': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
     'src/theme/panel-theme.js': [{ count: 1, kind: 'preservation', reason: 'preserve the panel mirror on failed reconciliation' }],

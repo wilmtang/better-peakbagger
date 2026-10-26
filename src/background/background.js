@@ -8,6 +8,7 @@
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import '../reports/report-protection-firefox.js';
 import { createInstagramFrames } from './instagram-frames.js';
+import { createInstagramDisplayRegistration } from '../reports/instagram-display-registration.js';
 import { captureCore as Core } from '../capture/capture-core.js';
 import { createCaptureDiagnostics } from '../capture/capture-diagnostics.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
@@ -48,6 +49,7 @@ import { peakbaggerAccount as PeakbaggerAccount } from '../peakbagger/peakbagger
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import {
     PEAKBAGGER_ORIGIN,
+    PEAKBAGGER_HOSTS,
     isPeakbaggerSenderUrl,
     isPeakbaggerUrl,
 } from '../peakbagger/peakbagger-origin.js';
@@ -3519,6 +3521,15 @@ import { GarminError } from '../garmin/garmin-api.js';
     });
 
     const instagramFrames = createInstagramFrames({ext,settings:Settings,trustedActions,isPeakbaggerSender,mutateMap,now});
+    const instagramDisplay = createInstagramDisplayRegistration(ext, { onChanged: async () => {
+        // Firefox treats embedded web-accessible pages like content scripts for
+        // several APIs. Notify both extension views and Peakbagger frames; each
+        // wrapper re-reads authoritative permission state through the worker.
+        const message = { type: 'INSTAGRAM_DISPLAY_CHANGED' };
+        await ext.runtime.sendMessage(message).catch(() => {});
+        const tabs = await ext.tabs.query({ url: [...PEAKBAGGER_HOSTS].map(host => `https://${host}/*`) });
+        await Promise.all(tabs.map(tab => ext.tabs.sendMessage(tab.id, message).catch(() => {})));
+    } });
 
     const terrainPrefetch = createTerrainPrefetch({
         isPeakbaggerSender,
@@ -3855,7 +3866,26 @@ import { GarminError } from '../garmin/garmin-api.js';
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
-            if (Object.hasOwn(instagramFrames.handlers, type)) return instagramFrames.handlers[type](message, sender);
+            if (Object.hasOwn(instagramFrames.handlers, type)) {
+                const reply = await instagramFrames.handlers[type](message, sender);
+                if (type === 'INSTAGRAM_FRAME_CLAIM' && reply?.ok) await instagramDisplay.sync().catch(() => false);
+                return reply;
+            }
+            if (type === 'INSTAGRAM_DISPLAY_SYNC') {
+                if (!isExtensionPage(sender) || !isOptionsPageUrl(sender?.url)) return { ok: false };
+                return { ok: true, allowed: await instagramDisplay.sync() };
+            }
+            if (type === 'INSTAGRAM_DISPLAY_STATE') {
+                // MessageSender.tab.url is absent for some embedded extension
+                // pages. This read-only boolean needs only our exact wrapper,
+                // extension identity and child-frame identity, like its claim.
+                const expected = new URL(ext.runtime.getURL('reports/instagram.html'));
+                let actual;try { actual = new URL(sender?.url); } catch { return { ok: false }; }
+                if (sender.id !== ext.runtime.id || !Number.isInteger(sender.tab?.id) || !(sender.frameId > 0)
+                    || actual.protocol !== expected.protocol || actual.host !== expected.host || actual.pathname !== expected.pathname
+                    || actual.username || actual.password || actual.search) return { ok: false };
+                return { ok: true, allowed: await instagramDisplay.sync() };
+            }
             if (typeof type === 'string' && type.startsWith('CUSTOM_OVERLAYS_')) return customOverlays.handle(message, sender);
             if (typeof type === 'string' && type.startsWith('GARMIN_')) return garminImports.handle(message, sender);
             const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? bcLandRoutes.handlers[type] : null;

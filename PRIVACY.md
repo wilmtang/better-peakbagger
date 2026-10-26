@@ -47,12 +47,13 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | --- | --- |
 | `storage` | Stores preferences, credentials, caches, drafts, and other extension data as detailed below. |
 | `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. This toolbar path has no persistent provider website access; the separate Garmin API connection is optional. |
-| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia, onX, AllTrails, or CalTopo after the matching **Send** click to use that site's visible importer. It never downloads or executes remote code. |
+| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for login and summit requests, and into Gaia, onX, AllTrails, or CalTopo after the matching **Send** click. Optional Instagram access additionally registers the confined display helper described below. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
 | `alarms` | Removes expired session records every five minutes and schedules automatic backups and the 30-second trailing / 15-minute periodic ignored-list sync checks when enabled. |
 | Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and climber-list management on Peakbagger. |
 | Optional GitHub host access | Access to `github.com` and `api.github.com` is requested only when the user connects GitHub. It supports device-flow sign-in and the one repository the user grants. |
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
+| Optional Instagram host access | Requested only by **Allow display fixes** in Settings → Report editor. The browser grants `www.instagram.com`; BPB registers packaged code only for captioned post/Reel embeds, and activates it only inside BPB's own authenticated wrapper. It styles player chrome and checks carousel geometry; it does not extract captions, media URLs, cookies or browsing history. Ordinary post loading does not require this permission. |
 | Optional Gaia GPS host access | Access to `www.gaiagps.com` is requested only when the user clicks **Send to Gaia**. It lets the extension open Gaia's map and supply the saved GPX to Gaia's visible import preview; the extension does not click Gaia's **Save** control. |
 | Optional onX host access | Access to `backcountry.onxmaps.com` is requested only when the user clicks **Send to onX**. It lets the extension open onX Backcountry's import page and supply the saved GPX to its visible preview; the extension does not click onX's **Import** control and has no access to `identity.onxmaps.com`. |
 | Optional CalTopo host access | Access to `caltopo.com` is requested only when the user clicks **Send to CalTopo**. File selection sends the saved GPX to CalTopo for parsing and object review; the extension does not confirm **Import** or **Save**. |
@@ -827,7 +828,21 @@ whole tab. Protection does not cover readers without BPB or a pre-existing
 hostile service worker synthesizing documents outside the network stack.
 
 After loading, Instagram's captioned player displays the author's caption inside
-the sandbox. BPB does not read, extract or store that text. Only a bounded numeric
-height measurement may cross from the actual provider frame to the packaged
+the sandbox. BPB does not read, extract or store that text. A bounded numeric
+height measurement crosses from the actual provider frame to the packaged
 wrapper, then to the report surface; it determines one initial layout expansion.
+The optional display helper additionally sends a content-free readiness signal
+to the wrapper.
 Provider markup, styles and later resize messages are not applied to the report.
+
+**Instagram display fixes** is a separate optional browser permission, not
+automatic-loading consent. After granting it, reload an open post to apply the
+helper. It matches the post's chrome to BPB's theme without filtering photos or
+video, and prevents navigation beyond the recognized native carousel slots.
+The isolated helper remains inactive on standalone Instagram pages and embeds
+outside BPB's own packaged parent. Only an authenticated light/dark/enabled
+configuration and a readiness signal cross that boundary; provider content is
+not sent to the worker or report. Removing access unregisters the helper and
+restores native presentation in open BPB embeds. Unknown carousel layouts keep
+Instagram's own controls. Permission state is owned by the browser and is not
+copied into settings backups or browser sync.

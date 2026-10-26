@@ -251,6 +251,7 @@ npm run verify -- browsers
 npm run verify -- report-security
 npm run verify -- instagram
 npm run verify -- instagram --live
+npm run verify -- instagram --display --live
 npm run verify -- layout-stability --surface=maps --firefox-only
 npm run verify -- fixture-preflight --chrome-only
 npm run verify -- layout-stability --chrome-only --shard=1/4
@@ -288,6 +289,17 @@ editor paste and Markdown retention use 1280/375×900. The provider and native
 form are fixtures. `--live` instead loads a public post, author-linked Reel and
 the reported ten-slide mixed carousel, including captions and decoded video
 playback after carousel navigation. Avatar images do not count as loaded media.
+`--display` clones `dist/` into a disposable test source with the optional
+Instagram host pregranted. It verifies packaged injection, terminal carousel
+bounds, helper restoration/recovery and theme transitions without reloading or
+filtering media. It does not test the native permission prompt. The production
+manifest retains optional access. Fixture-only code in the disposable copy
+lets the packaged parent send restoration configurations and stubs native
+permission results in Settings; the shipped controller, keyboard/focus and
+worker sync remain real. Pending, denial, retry/grant and removal compare the
+control, row and following heading geometry with a one-pixel tolerance. Narrow
+Settings checks enlarge the new row's text to 22px. Without `--display`, checks exercise the
+ordinary viewer without that access.
 `BPB_INSTAGRAM_LIVE_POST` optionally adds
 one validated public sample. Provider availability can change. It does not submit a
 live ascent or modify the user's clipboard. All runs are hidden and own their

@@ -219,6 +219,13 @@ const moduleImports = async source => {
     return metafile.inputs['module.mjs'].imports.map(entry => entry.path);
 };
 
+test('Instagram display access remains optional and its helper is packaged without static site injection', () => {
+    assert.ok(manifest.optional_host_permissions.includes('https://www.instagram.com/*'));
+    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('instagram.com')));
+    assert.ok(!manifest.content_scripts.some(entry => entry.matches.some(pattern => pattern.includes('instagram.com'))));
+    assert.deepEqual(bundleSources('content/instagram-provider.js'), ['reports/instagram-provider.js']);
+});
+
 test('packaged module imports include inline imports, re-exports and literal dynamic imports', async () => {
     assert.deepEqual(await moduleImports('const x = 1; import { y } from "./shared.mjs";'
         + 'export { z } from "https://example.test/remote.mjs";'

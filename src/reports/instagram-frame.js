@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { canonicalInstagramUrl } from './instagram-url.js';
 import { instagramEmbedHeight } from './instagram-sizing.js';
+import { settings } from '../settings/settings.js';
 const api=globalThis.browser||globalThis.chrome;
 const token=location.hash.slice(1);
 let parentOrigin='*';
@@ -14,6 +15,24 @@ const report=(state,height)=>parent.postMessage({__bpbInstagram:state,...(height
         const providerOrigin=new URL(url).origin;
         parentOrigin=response.parentOrigin;
         const frame=document.getElementById('post');
+        const scheme=matchMedia('(prefers-color-scheme: dark)');
+        let displayRevision=0,themeRevision=0,preference='system',disposed=false;
+        const configureDisplay=async()=>{
+            const revision=++displayRevision;
+            let enabled=false;
+            try{const reply=await api.runtime.sendMessage({type:'INSTAGRAM_DISPLAY_STATE'});enabled=reply?.ok===true&&reply.allowed===true;}catch{/* Native display is still usable. */}
+            if(disposed||revision!==displayRevision)return;
+            frame.contentWindow.postMessage({__bpbInstagramDisplay:true,enabled,theme:settings.resolveTheme(preference)},providerOrigin);
+        };
+        const changed=()=>{void configureDisplay();};
+        scheme.addEventListener('change',changed);
+        const unsubscribe=settings.subscribe(next=>{themeRevision++;preference=next.theme;changed();});
+        const initialThemeRevision=themeRevision;
+        void settings.requireCurrent().then(next=>{if(!disposed&&initialThemeRevision===themeRevision){preference=next.theme;changed();}}).catch(()=>{});
+        const displayChanged=(message,sender)=>{if(sender?.id===api.runtime.id&&message?.type==='INSTAGRAM_DISPLAY_CHANGED')changed();};
+        api.runtime.onMessage?.addListener(displayChanged);
+        addEventListener('pagehide',()=>{disposed=true;displayRevision++;unsubscribe();scheme.removeEventListener('change',changed);
+            api.runtime.onMessage?.removeListener(displayChanged);},{once:true});
         let height=null,reported=false,complete=false,fallback=null;
         const finish=(allowFallback=false)=>{
             if(reported||!complete||(height===null&&!allowFallback))return;
@@ -22,8 +41,9 @@ const report=(state,height)=>parent.postMessage({__bpbInstagram:state,...(height
         addEventListener('message',event=>{
             // Require both the canonical provider origin and the actual child
             // WindowProxy; another Instagram window cannot resize this post.
-            if(reported||event.source!==frame.contentWindow||event.origin!==providerOrigin
-                ||typeof event.data!=='string'||event.data.length>2048)return;
+            if(event.source!==frame.contentWindow||event.origin!==providerOrigin)return;
+            if(event.data?.__bpbInstagramProvider==='ready'){void configureDisplay();return;}
+            if(reported||typeof event.data!=='string'||event.data.length>2048)return;
             try{
                 const message=JSON.parse(event.data);
                 if(message?.type==='MEASURE'){
@@ -31,10 +51,13 @@ const report=(state,height)=>parent.postMessage({__bpbInstagram:state,...(height
                 }
             }catch{ /* Unknown provider messages never affect layout. */ }
         });
-        frame.addEventListener('load',()=>{
+        frame.addEventListener('load',async()=>{
             // Complete as soon as the loaded provider has measured its caption.
             // A missing/changed provider protocol falls back once to scrolling;
             // later measurements never bounce the report.
+            // The helper's document-start ready message may precede listener
+            // delivery in some browsers. Always configure the loaded child too.
+            await configureDisplay();if(disposed)return;
             complete=true;finish();
             if(!reported)fallback=setTimeout(()=>finish(true),1000);
         },{once:true});

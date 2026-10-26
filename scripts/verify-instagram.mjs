@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, ClipboardEvent, DataTransfer */
+/* global document, window, ClipboardEvent, DataTransfer, getComputedStyle */
 import assert from 'node:assert/strict';
-import { readFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, mkdir, rm, cp, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer as httpsServer } from 'node:https';
@@ -37,6 +37,9 @@ function readPlayer() {
         parentBlocked:document.body.dataset.parentBlocked,topBlocked:document.body.dataset.topBlocked,
         popupBlocked:document.body.dataset.popupBlocked,navigationBlocked:document.body.dataset.navigationBlocked,
         playerError:document.body.dataset.playerError,extensionApi:document.body.dataset.extensionApi,
+        theme:document.documentElement.dataset.bpbInstagramTheme||null,background:getComputedStyle(document.body).backgroundColor,
+        next:!!document.querySelector('[aria-label="Next"]')?.getClientRects().length,
+        mediaFilters:[...document.querySelectorAll('img,video')].filter(visible).map(node=>getComputedStyle(node).filter),
         images:[...document.images].filter(i=>visible(i)&&i.naturalWidth>0).length,
         videos:[...document.querySelectorAll('video')].filter(visible).map(v=>({ready:v.readyState,width:v.videoWidth,
             time:v.currentTime,frames:v.getVideoPlaybackQuality?.().totalVideoFrames||0})),
@@ -49,7 +52,7 @@ function stable(before,after,{expanded=false}={}) {
     assert(Math.abs(before.scroll-after.scroll)<=1,'reading position moved');
 }
 
-export async function verifyInstagram(kind,{live=false,screenshots}={}) {
+export async function verifyInstagram(kind,{live=false,screenshots,display=false}={}) {
     assert(['chrome','firefox'].includes(kind),'Choose chrome or firefox');
     const livePosts=[POST,REEL,CAROUSEL];
     if(live&&process.env.BPB_INSTAGRAM_LIVE_POST){const url=canonicalInstagramUrl(process.env.BPB_INSTAGRAM_LIVE_POST);assert(url,'Invalid live post URL');livePosts.push(url);}
@@ -57,6 +60,47 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
     try {
         const root=await mkdtemp(path.join(tmpdir(),'bpb-instagram-'));
         resources.defer('Instagram files',()=>rm(root,{recursive:true,force:true}));
+        let source=path.join(projectRoot,'dist');
+        if(display){
+            // An isolated fixture grants the OPTIONAL host up front. This
+            // proves packaged injection, not the native permission prompt.
+            source=path.join(root,'display-source');await cp(path.join(projectRoot,'dist'),source,{recursive:true});
+            const file=path.join(source,'manifest.json'),manifest=JSON.parse(await readFile(file,'utf8'));
+            manifest.host_permissions.push('https://www.instagram.com/*');
+            manifest.optional_host_permissions=manifest.optional_host_permissions.filter(value=>value!=='https://www.instagram.com/*');
+            await writeFile(file,JSON.stringify(manifest));
+            if(!live){
+                // Protocol drivers cannot reliably dereference a remote child
+                // WindowProxy in Firefox's privileged extension frame. This
+                // disposable fixture-only hook lets the packaged parent send
+                // restoration configurations from its own realm. No production
+                // bundle/permission is changed and no provider content is read.
+                const wrapper=path.join(source,'reports/instagram-frame.js');
+                await writeFile(wrapper,(await readFile(wrapper,'utf8'))+`;
+                    new MutationObserver(()=>{
+                        const root=document.documentElement,raw=root.getAttribute('data-bpb-verification-display');
+                        if(!raw)return;root.removeAttribute('data-bpb-verification-display');
+                        document.getElementById('post').contentWindow.postMessage(JSON.parse(raw),'https://www.instagram.com');
+                    }).observe(document.documentElement,{attributes:true,attributeFilter:['data-bpb-verification-display']});
+                `);
+                const options=path.join(source,'options/options.js');
+                await writeFile(options,(await readFile(options,'utf8'))+`;
+                    {const root=document.documentElement,api=globalThis.browser||globalThis.chrome;let state;
+                    const publish=()=>root.setAttribute('data-bpb-permission-state',JSON.stringify({requests:state?.requests||0,ready:!!state}));
+                    new MutationObserver(()=>{
+                        const raw=root.getAttribute('data-bpb-permission-command');if(!raw)return;
+                        root.removeAttribute('data-bpb-permission-command');const command=JSON.parse(raw),input=document.getElementById('instagram-display-fixes');
+                        if(command.type==='setup'){
+                            state={original:{contains:api.permissions.contains,request:api.permissions.request,remove:api.permissions.remove},checked:input.checked,allowed:false,requests:0};
+                            api.permissions.contains=async()=>state.allowed;
+                            const pending=enable=>{state.requests++;publish();return new Promise(resolve=>{state.release=result=>{if(result)state.allowed=enable;resolve(result);};});};
+                            api.permissions.request=()=>pending(true);api.permissions.remove=()=>pending(false);input.checked=false;input.focus({preventScroll:true});publish();
+                        }else if(command.type==='settle')state.release(command.result);
+                        else if(command.type==='restore'){Object.assign(api.permissions,state.original);input.checked=state.checked;state=null;publish();}
+                    }).observe(root,{attributes:true,attributeFilter:['data-bpb-permission-command']});}
+                `);
+            }
+        }
         const certificate=await createFixtureCertificate({directory:root});
         let saved=await readFile(path.join(projectRoot,'test/fixtures/pages/ascent-ignored-report.html'),'utf8');
         saved=saved.replace(/<figure>[\s\S]*?<\/iframe>/,'')
@@ -70,13 +114,14 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
         let held=true,requests=0,connects=0,videoLoads=0,formSubmissions=0;const waiting=new Set(),sockets=new Set();
         const provider=(response)=>{
             response.writeHead(200,{'content-type':'text/html','cache-control':'no-store'});
-            response.end('<html><head><meta name="viewport" content="width=device-width"></head><body style="font:16px system-ui;margin:16px"><h2>Fixture Instagram post</h2><p>Provider content</p>'
+            response.end('<html><head><meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;margin:0;background:white;color:#1c1e21}.Embed{overflow:hidden}.Embed ul{display:flex;list-style:none;margin:0;padding:0;transition:none}.Embed li{flex:0 0 100%;min-width:0;height:260px}.Header,.Caption{padding:8px}.Embed video{width:400px;max-width:100%}</style></head><body><div class="Embed"><h2 class="Header">Fixture Instagram post</h2><p>Provider content</p>'
                 +(response.bpbCaptioned?'<p class="Caption">An author caption, included by the provider after loading.</p>':'')
-                +'<button aria-label="Next">Next slide</button><div id="fixture-player"></div>'
+                +'<ul><li>Photo slot</li><li><div id="fixture-player"></div></li></ul><button aria-label="Go back">Previous</button><button aria-label="Next">Next slide</button></div>'
                 +'<script>try{parent.document.body;document.body.dataset.parentBlocked="no"}catch{document.body.dataset.parentBlocked="yes"}'
                 +'try{top.document.cookie;document.body.dataset.topBlocked="no"}catch{document.body.dataset.topBlocked="yes"}'
                 +'document.body.dataset.extensionApi=typeof chrome!=="undefined"&&!!chrome.runtime?"yes":"no";'
-                +'document.querySelector("button").onclick=async()=>{'
+                +'let index=0;const list=document.querySelector("ul");const move=()=>{list.style.transform=`translateX(${-index*innerWidth}px)`;};document.querySelector("[aria-label=\\"Go back\\"]").onclick=()=>{index--;move()};'
+                +'document.querySelector("[aria-label=Next]").onclick=async()=>{index++;move();'
                 +'try{top.location.href="https://www.peakbagger.com/escape";document.body.dataset.navigationBlocked="no"}catch{document.body.dataset.navigationBlocked="yes"}'
                 +'try{document.body.dataset.popupBlocked=window.open("https://www.instagram.com/escape")?"no":"yes"}catch{document.body.dataset.popupBlocked="yes"}'
                 +'const form=document.createElement("form");form.action="https://www.instagram.com/fixture-form";document.body.append(form);form.requestSubmit();'
@@ -120,10 +165,9 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
         await listenServer(proxy,0,'127.0.0.1');
         const origin=`https://www.peakbagger.com:${server.address().port}`;
         const proxyUrl=`http://127.0.0.1:${proxy.address().port}`;
-        let evaluate,control,navigate,click,key,type,back,viewport,screenshot,optionsShot,version,player,play,hover,press,nextSlide;
+        let evaluate,control,navigate,click,key,type,back,viewport,screenshot,optionsShot,optionKey,version,player,play,hover,press,nextSlide,previousSlide,providerEvaluate,displayConfig;
         if(kind==='chrome') {
             const {chromium}=await import('playwright');assertChromeLaunchAllowed();
-            const source=path.join(projectRoot,'dist');
             const context=await chromium.launchPersistentContext(path.join(root,'profile'),{channel:'chromium',headless:true,viewport:{width:1000,height:900},
                 proxy:{server:proxyUrl,bypass:'www.peakbagger.com,127.0.0.1,localhost'},
                 args:[...certificate.chromeTrustArgs,`--disable-extensions-except=${source}`,`--load-extension=${source}`,'--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1']});
@@ -140,17 +184,21 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
             optionsShot=async(width,file)=>{
                 await options.setViewportSize({width,height:900});await options.goto(options.url().split('#')[0]+'#capture-report');await options.reload();
                 await waitForCondition(()=>options.evaluate(readSettingsFragmentLanding),{description:'Report editor settings landing',isReady:value=>settingsFragmentLanded(value,'#capture-report')});
-                await options.evaluate(()=>document.getElementById('load-instagram-automatically').closest('.row').scrollIntoView({block:'center'}));
+                await options.evaluate(()=>document.getElementById('load-instagram-automatically').closest('.row').scrollIntoView({block:'center',behavior:'instant'}));
                 if(file)await options.screenshot({path:file});return {width,height:900};};
-            player=async()=>{const outer=page.frames().find(f=>f.url().includes('/reports/instagram.html'));const inner=outer?.childFrames()[0];
-                return inner?.evaluate(readPlayer);};
-            nextSlide=async()=>{const inner=page.frames().find(f=>f.url().includes('/reports/instagram.html'))?.childFrames()[0];await inner.locator('[aria-label="Next"]').click();};
+            optionKey=async()=>{await options.locator('#instagram-display-fixes').focus();await options.keyboard.press('Space');};
+            providerEvaluate=async(fn,arg)=>{const outer=page.frames().find(f=>f.url().includes('/reports/instagram.html'));return outer?.childFrames()[0]?.evaluate(fn,arg);};
+            player=()=>providerEvaluate(readPlayer);
+            displayConfig=data=>page.frames().find(f=>f.url().includes('/reports/instagram.html')).evaluate(next=>document.documentElement.setAttribute('data-bpb-verification-display',JSON.stringify(next)),data);
+            previousSlide=async()=>{const inner=page.frames().find(f=>f.url().includes('/reports/instagram.html'))?.childFrames()[0];await inner.locator('[aria-label="Go back"]').click();};
+            nextSlide=async(force=false)=>{const inner=page.frames().find(f=>f.url().includes('/reports/instagram.html'))?.childFrames()[0];
+                if(force)await inner.evaluate(()=>document.querySelector('[aria-label="Next"]')?.click());else await inner.locator('[aria-label="Next"]').click();};
             play=async()=>{const inner=page.frames().find(f=>f.url().includes('/reports/instagram.html'))?.childFrames()[0];
                 await inner.locator('video').evaluate(video=>{video.muted=true;});
                 await inner.locator('[aria-label="Control"]').click();};
         } else {
             const {Builder,By,Key}=await import('selenium-webdriver');const firefox=(await import('selenium-webdriver/firefox.js')).default;
-            const prepared=await prepareFirefoxSource({temporaryRoot:root});resources.defer('Instagram Firefox source',()=>prepared.cleanup());resources.defer('Instagram Firefox processes',()=>stopOwnedFirefoxProcesses(root));
+            const prepared=await prepareFirefoxSource({temporaryRoot:root,distDir:source});resources.defer('Instagram Firefox source',()=>prepared.cleanup());resources.defer('Instagram Firefox processes',()=>stopOwnedFirefoxProcesses(root));
             const profile=path.join(root,'profile');await mkdir(profile);
             const options=new firefox.Options().addArguments('-headless').enableBidi().setProfile(profile).setAcceptInsecureCerts(true)
                 .setPreference('network.dns.localDomains','www.peakbagger.com').setPreference('network.proxy.type',1)
@@ -177,13 +225,21 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 await driver.get(optionsUrl+'#capture-report');await driver.navigate().refresh();
                 await waitForCondition(()=>driver.executeScript(`return (${readSettingsFragmentLanding})();`),{description:'Report editor settings landing',isReady:value=>settingsFragmentLanded(value,'#capture-report')});
                 const actual=await driver.executeScript('return {width:innerWidth,height:innerHeight}');
-                await driver.executeScript('document.getElementById("load-instagram-automatically").closest(".row").scrollIntoView({block:"center"})');
+                await driver.executeScript('document.getElementById("load-instagram-automatically").closest(".row").scrollIntoView({block:"center",behavior:"instant"})');
                 if(file)await screenshot(file.replace(`-${width}.png`,`-${actual.width}.png`));return actual;
             }finally{await driver.switchTo().window(readerHandle);}};
-            player=async()=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));
-                return await evaluate(readPlayer);
+            optionKey=async()=>{await driver.switchTo().window(optionsHandle);try{await driver.findElement(By.id('instagram-display-fixes')).sendKeys(Key.SPACE);}finally{await driver.switchTo().window(readerHandle);}};
+            providerEvaluate=async(fn,arg)=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));
+                return await evaluate(fn,arg);
             }finally{await driver.switchTo().defaultContent();}};
-            nextSlide=async()=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));await driver.findElement(By.css('[aria-label="Next"]')).click();}finally{await driver.switchTo().defaultContent();}};
+            player=()=>providerEvaluate(readPlayer);
+            displayConfig=async data=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));
+                await driver.executeScript('document.documentElement.setAttribute("data-bpb-verification-display",arguments[0]);',JSON.stringify(data));
+            }finally{await driver.switchTo().defaultContent();}};
+            previousSlide=async()=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));
+                await driver.findElement(By.css('[aria-label="Go back"]')).click();}finally{await driver.switchTo().defaultContent();}};
+            nextSlide=async(force=false)=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));
+                if(force)await evaluate(()=>document.querySelector('[aria-label="Next"]')?.click());else await driver.findElement(By.css('[aria-label="Next"]')).click();}finally{await driver.switchTo().defaultContent();}};
             play=async()=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));
                 await evaluate(()=>{document.querySelector('video').muted=true;});await driver.findElement(By.css('[aria-label="Control"]')).click();
             }finally{await driver.switchTo().defaultContent();}};
@@ -194,6 +250,7 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
             theme:document.documentElement.dataset.bpbTheme,overflow:document.documentElement.scrollWidth>window.innerWidth}));
         const waitState=wanted=>waitForCondition(state,{description:`Instagram ${wanted}`,isReady:s=>s.state===wanted,timeoutMs:15_000});
         const geometry=()=>evaluate(Function(`return (()=>{const rect=${rect};return {button:rect(document.querySelector('${ACTION}')),card:rect(document.querySelector('${CARD}')),others:[...document.querySelectorAll('${CARD},#Gmap,#bpb-ascent-summary-column,#bpb-ascent-report-column')].map(rect),heading:rect(document.querySelector('main>h1')),following:rect(document.getElementById('following')),scroll:window.scrollY}})()`));
+        await viewport({width:1000,height:900});
         await patch({loadInstagramAutomatically:false,enableReportEditor:true,addReportCredit:false,reportEditorMode:'rich',showWeather:false,showSunMoon:false,showSummitCloud:false,showSnotel:false});
         if(live) {
             for(const [index,url]of livePosts.entries()){
@@ -207,12 +264,33 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 if(url===CAROUSEL){
                     const initial=await waitForCondition(player,{description:'mixed carousel controls',timeoutMs:20_000,isReady:s=>s?.carousel.slides===10&&s.carousel.index===0});
                     for(let step=1;step<initial.carousel.slides;step++){
+                        await waitForCondition(player,{description:`carousel Next for slide ${step+1}`,isReady:s=>s?.next});
                         await nextSlide();await waitForCondition(player,{description:`carousel slide ${step+1}`,isReady:s=>s?.carousel.index===step});
                     }
                     await waitForCondition(player,{description:'carousel video player',timeoutMs:20_000,isReady:s=>s?.videos.length>0});
                     await play();const playback=await waitForCondition(player,{description:'mixed carousel video playback',timeoutMs:25_000,
                         isReady:s=>s?.videos.some(v=>v.width>0&&v.ready>=2&&v.time>0.25&&v.frames>=2)});
                     console.log(JSON.stringify({kind,carouselSlides:initial.carousel.slides,playback:playback.videos}));
+                    if(display){
+                        await waitForCondition(player,{description:'terminal carousel control hidden',isReady:s=>s?.carousel.index===9&&!s.next});
+                        await previousSlide();await waitForCondition(player,{description:'previous real media slot',isReady:s=>s?.carousel.index===8&&s.next});
+                        await nextSlide();await waitForCondition(player,{description:'last real media slot retained',isReady:s=>s?.carousel.index===9&&!s.next});
+                        await nextSlide(true);
+                        const terminal=await player();assert.equal(terminal.carousel.index,9,'Next advanced outside the ten real media slots');
+                        await evaluate(()=>document.querySelector('.bpb-instagram-frame').dataset.verification='theme-retained');
+                        const beforeTheme=await geometry();
+                        for(const theme of ['dark','light']){
+                            await patch({theme});const themed=await waitForCondition(player,{description:`native embed ${theme} theme`,
+                                isReady:s=>s?.theme===theme&&s.background===(theme==='dark'?'rgb(32, 34, 36)':'rgb(255, 255, 255)')});
+                            assert.equal(themed.carousel.index,9);assert(themed.mediaFilters.every(value=>value==='none'),'theme recolored media');
+                            assert(await evaluate(()=>document.querySelector('.bpb-instagram-frame').dataset.verification==='theme-retained'),'theme reloaded the player');
+                            assert(!themed.next);stable(beforeTheme,await geometry());
+                            if(screenshots){await screenshot(path.join(screenshots,`instagram-${kind}-live-carousel-${theme}.png`));
+                                await evaluate(()=>window.scrollTo(0,600));await screenshot(path.join(screenshots,`instagram-${kind}-live-carousel-${theme}-footer.png`));
+                                await evaluate(scroll=>window.scrollTo(0,scroll),beforeTheme.scroll);}
+                        }
+                        console.log(JSON.stringify({kind,display:true,terminalIndex:9,themeRetained:true,mediaFilters:'none',permissionFixture:'pregranted'}));
+                    }
                 }
                 if(index!==1)assert(content.captionBottom<=content.viewportHeight+1,'the caption should fit the completed post viewport');
                 if(screenshots)await screenshot(path.join(screenshots,`instagram-${kind}-live-${index===0?'post':index===1?'reel':url===CAROUSEL?'carousel':'extra'}.png`));
@@ -274,6 +352,24 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
             for(const key of ['parentBlocked','topBlocked','popupBlocked','navigationBlocked'])assert.equal(videoState[key],'yes',key);
             assert.equal(videoState.extensionApi,'no');stable(beforeVideo,await geometry());
             console.log(JSON.stringify({kind,fixtureCarouselPlayback:videoState.videos,providerIsolation:true}));
+            if(display){
+                await waitForCondition(player,{description:'fixture terminal control',isReady:s=>s?.theme==='light'&&s.carousel.index===1&&!s.next});
+                await nextSlide(true);assert.equal((await player()).carousel.index,1,'fixture advanced to the empty native end slot');
+                await patch({theme:'dark'});await waitForCondition(player,{description:'fixture live dark theme',isReady:s=>s?.theme==='dark'&&s.background==='rgb(32, 34, 36)'});
+                stable(beforeVideo,await geometry());
+                const count=requests;
+                await displayConfig({__bpbInstagramDisplay:true,enabled:false});
+                await waitForCondition(player,{description:'display helper restoration',isReady:s=>s?.theme===null&&s.next&&s.background==='rgb(255, 255, 255)'});
+                await nextSlide(true);assert.equal((await player()).carousel.index,-1,'the unfixed native player should reproduce the empty end');
+                // Re-enable from the actual packaged parent to prove one-slot
+                // overflow recovery and keyboard focus when its arrow vanishes.
+                await providerEvaluate(()=>document.querySelector('[aria-label="Next"]').focus());
+                await displayConfig({__bpbInstagramDisplay:true,enabled:true,theme:'dark'});
+                await waitForCondition(player,{description:'overflow recovery',isReady:s=>s?.carousel.index===1&&!s.next});
+                assert.equal(requests,count);stable(beforeVideo,await geometry());
+                assert(await providerEvaluate(()=>document.activeElement?.getAttribute('aria-label')==='Go back'),'hidden Next retained keyboard focus');
+                console.log(JSON.stringify({kind,displayFixture:true,emptyEndReproducedWithoutHelper:true,overflowRecovered:true,themeRetained:true,restored:true,permissionFixture:'pregranted'}));
+            }
             const beforeHelp=requests;
             await verifyReportImageHelp({kind,version,evaluate,navigate,viewport,patch,click,hover,press,screenshot,screenshots,origin});
             assert.equal(requests,beforeHelp,'image help contacted Instagram');
@@ -303,7 +399,7 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 await evaluate(url=>{const input=document.getElementById('JournalText');input.value=url;input.dispatchEvent(new window.Event('input',{bubbles:true}));
                     [...document.querySelectorAll('.bpb-re-mode')].find(b=>b.textContent==='Markdown').click();},POST);
                 await waitState('idle');
-                await evaluate(()=>document.querySelector('.bpb-instagram-action').scrollIntoView({block:'center'}));
+                await evaluate(()=>document.querySelector('.bpb-instagram-action').scrollIntoView({block:'center',behavior:'instant'}));
                 const previewAvailable=await evaluate(()=>document.querySelector('.bpb-instagram').clientWidth>=320);
                 if(!previewAvailable){await click(ACTION);assert.match(await evaluate(()=>document.querySelector('.bpb-instagram-status').textContent),/widen/);assert.equal(requests,count);continue;}
                 await click(ACTION);await waitState('loaded');
@@ -322,7 +418,33 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 await patch({loadInstagramAutomatically:false,theme:width===1000?'dark':'light'});
                 await waitForCondition(()=>control(()=>document.getElementById('load-instagram-automatically').checked===false),{description:'off Instagram option'});
                 const actual=await optionsShot(width,screenshots&&path.join(screenshots,`instagram-${kind}-options-${width}.png`));
+                if(width===375){
+                    await control(()=>{const style=document.createElement('style');style.textContent='#instagram-display-row .label span,#instagram-display-row .check span{font-size:22px!important}';document.head.append(style);document.getElementById('instagram-display-row').scrollIntoView({block:'center',behavior:'instant'});});
+                }
                 console.log(JSON.stringify({kind,optionsViewport:actual}));
+                // Stub only the native permission result, leaving the shipped
+                // controller, worker sync, keyboard and layout real. This does
+                // not claim to exercise a browser-owned permission prompt.
+                if(display){
+                    const permissionCommand=command=>control(next=>document.documentElement.setAttribute('data-bpb-permission-command',JSON.stringify(next)),command);
+                    await permissionCommand({type:'setup'});
+                    await waitForCondition(()=>control(()=>JSON.parse(document.documentElement.getAttribute('data-bpb-permission-state')||'{}').ready),{description:'permission result fixture ready'});
+                    const optionState=()=>control(()=>{const input=document.getElementById('instagram-display-fixes');return {checked:input.checked,busy:input.getAttribute('aria-busy')==='true',
+                        focus:document.activeElement===input,requests:JSON.parse(document.documentElement.getAttribute('data-bpb-permission-state')).requests,boxes:[input,document.getElementById('instagram-display-row'),document.getElementById('capture-photos-heading')].map(node=>{const r=node.getBoundingClientRect();return [r.x,r.y,r.width,r.height];})};});
+                    const anchor=await optionState();
+                    const anchored=async()=>{const current=await optionState();assert(current.focus,'permission feedback lost keyboard focus');
+                        for(const [i,box]of current.boxes.entries())for(const [axis,value]of box.entries())assert(Math.abs(value-anchor.boxes[i][axis])<=1,`permission feedback moved the option or following content: ${JSON.stringify({anchor,current})}`);return current;};
+                    try{
+                        for(const result of [false,true,true]){
+                            const before=await optionState();await optionKey();await waitForCondition(optionState,{description:'pending display access',isReady:s=>s.busy});
+                            await optionKey();assert.equal((await anchored()).requests,before.requests+1,'busy keyboard activation repeated the permission request');
+                            await permissionCommand({type:'settle',result});
+                            await waitForCondition(optionState,{description:'settled display access',isReady:s=>!s.busy});await anchored();
+                        }
+                        assert.equal((await optionState()).checked,false,'permission removal should restore the unchecked option');
+                    }finally{await permissionCommand({type:'restore'});}
+                    console.log(JSON.stringify({kind,permissionOptionGeometry:true,viewport:actual,permissionResults:'stubbed',text:width===375?'22px':'normal'}));
+                }
                 await control(()=>document.getElementById('load-instagram-automatically').click());
                 await waitForCondition(()=>control(async()=>{const api=globalThis.browser||globalThis.chrome;const local=await api.storage.local.get('bpbDeviceSettings');const sync=await api.storage.sync.get('bpbSettings');return {local:local.bpbDeviceSettings,sync:sync.bpbSettings};}),
                     {description:'device-local Instagram consent',isReady:s=>s.local?.settings?.loadInstagramAutomatically===true&&!Object.hasOwn(s.sync||{},'loadInstagramAutomatically')});
@@ -335,6 +457,6 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
     const [kind,...args]=process.argv.slice(2);
-    if(args.some(arg=>arg!=='--live'&&!arg.startsWith('--screenshots='))){console.error('Unknown Instagram verification argument');process.exitCode=1;}
-    else verifyInstagram(kind,{live:args.includes('--live'),screenshots:args.find(a=>a.startsWith('--screenshots='))?.slice(14)}).catch(error=>{console.error(error);process.exitCode=1;});
+    if(args.some(arg=>arg!=='--live'&&arg!=='--display'&&!arg.startsWith('--screenshots='))){console.error('Unknown Instagram verification argument');process.exitCode=1;}
+    else verifyInstagram(kind,{live:args.includes('--live'),display:args.includes('--display'),screenshots:args.find(a=>a.startsWith('--screenshots='))?.slice(14)}).catch(error=>{console.error(error);process.exitCode=1;});
 }

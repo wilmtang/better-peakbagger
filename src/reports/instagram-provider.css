@@ -1,0 +1,31 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+html[data-bpb-instagram-theme] [data-bpb-instagram-end] { display: none !important; }
+/* Color only the provider chrome. Never filter/invert images, posters or video. */
+html[data-bpb-instagram-theme="dark"] {
+    color-scheme: dark;
+    --ig-primary-background: 32, 34, 36;
+    --ig-secondary-background: 41, 44, 47;
+    --ig-primary-text: 232, 228, 221;
+    --ig-secondary-text: 181, 190, 181;
+    --ig-tertiary-text: 169, 175, 169;
+    --ig-elevated-background: 41, 44, 47;
+    --ig-stroke: 75, 85, 77;
+    --ig-separator: 75, 85, 77;
+}
+html[data-bpb-instagram-theme="dark"] body,
+html[data-bpb-instagram-theme="dark"] :is(.Embed, .PrimaryCTA, .HoverCardRoot, .AvatarContainer, .EmbeddedMedia) {
+    background: #202224 !important; color: #e8e4dd !important;
+}
+html[data-bpb-instagram-theme="dark"] :is(.Caption, .Username, .UsernameText, .SocialProof, .Timestamp, .CaptionUsername, .HoverCardUser, .HoverCardUserName, .HoverCardStatus) {
+    color: #e8e4dd !important;
+}
+html[data-bpb-instagram-theme="dark"] .Location { color: #b5beb5 !important; }
+html[data-bpb-instagram-theme="dark"] :is(.Header, .Footer, .Feedback) {
+    border-color: #4b554d !important;
+}
+html[data-bpb-instagram-theme="dark"] :is(.Caption, .Footer, .SocialProof, .PrimaryCTA) a {
+    color: #a2d8b5 !important;
+}
+/* Instagram's monochrome glyphs are sprite <i>s, never media elements. */
+html[data-bpb-instagram-theme="dark"] :is(.Feedback, .Footer) i.img { filter: brightness(0) invert(.9); }

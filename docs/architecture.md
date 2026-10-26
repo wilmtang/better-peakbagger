@@ -789,7 +789,8 @@ Instagram's own origin (`allow-scripts allow-same-origin`) because carousel vide
 loaders make same-origin requests that fail CORS from an opaque origin. The
 wrapper's CSP confines child navigation to `https://www.instagram.com`. It has no
 Peakbagger-origin access or extension APIs. No API token, oEmbed lookup, remote
-extension code, proxy or new provider host access is involved.
+extension code or proxy is involved. Native post loading requires no Instagram
+host permission; the optional display helper below requests separate access.
 The [iframe sandbox semantics](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)
 retain the provider's own origin; they do not make it same-origin with its parent.
 
@@ -802,6 +803,27 @@ first valid measurement, with a one-second post-load fallback to a scrolling
 viewport; the report expands once and ignores later resizing. Pending content is
 unpainted and inert, rather than visibility-hidden, so the provider can measure
 without pausing its rendering callbacks or becoming keyboard accessible.
+
+`instagram-display-registration.js` serializes dynamic registration of packaged
+isolated-world `instagram-provider.js` and CSS after optional
+`https://www.instagram.com/*` permission is granted in Settings. Only captioned
+`/p/` and `/reel/` embed paths match. The helper inspects/changes the document only
+after a message from its actual packaged parent WindowProxy and exact extension
+origin. Its configuration contains only enabled state and a validated light/dark
+theme. The worker owns permission checks; the exact child wrapper can query only
+the read-only boolean. Permission events notify extension views and Peakbagger
+frames so wrappers re-read authoritative state, including Firefox's restricted
+embedded-extension API context. Removal unregisters future injection and clears
+existing helpers' theme/control markers. No page-world settings bridge is widened.
+
+The provider helper recognizes one horizontal list of uniform, viewport-width
+native slots, including empty virtualized slots and differing vertical
+baselines. It guards/hides terminal arrows and recovers one recognized overflow;
+ambiguous layouts retain native navigation. Mutations, completed transitions
+and resizing reconcile markers. Scoped CSS colors chrome/text and monochrome
+icon sprites; it never filters images or video. The wrapper follows the shared
+stored theme and system theme changes without reloading or resizing the post.
+Captions, media URLs and cookies are never extracted or messaged.
 
 `src/reports/report-protection.json` installs Chrome's saved-ascent response CSP
 before parsing. Firefox uses the synchronous `report-protection-firefox.js`
