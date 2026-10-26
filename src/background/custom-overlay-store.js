@@ -3,9 +3,11 @@
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry, readCustomSource, customId } from '../maps/custom-overlay-schema.js';
 import { customLayerBackup, readCustomLayerBackup } from '../maps/custom-overlay-transfer.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
+import { readPrivateParameters, publicPrivateSource } from '../maps/custom-overlay-private.js';
 
-// The worker owns configuration only. There is deliberately no provider-fetch route.
-export function createCustomOverlayStore({ storage, canRead, canEdit }) {
+// Public registry ownership. Private credentials and constrained fetches live
+// separately in custom-private-store.js and custom-layer-relay.js.
+export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPrivate = () => false, privateStore }) {
     let queue = Promise.resolve();
     const previews = new Map();
     const transact = operation => { const next = queue.then(operation); queue = next.catch(() => {}); return next; };
@@ -28,6 +30,12 @@ export function createCustomOverlayStore({ storage, canRead, canEdit }) {
                     const preview = previews.get(mapKey);
                     if (preview?.expires > Date.now()) current.registry.sources = [...current.registry.sources.filter(source => source.id !== preview.source.id), preview.source];
                     else previews.delete(mapKey);
+                    if (privateStore && await canReadPrivate(sender)) current.registry.sources = await Promise.all(current.registry.sources.map(async source => {
+                        if (!source.privateRequests) return source;
+                        const saved = (await privateStore.get(source.id))?.versions?.[source.revision];
+                        return saved && StorageValue.same(saved.public, source) ? { ...source, editSource: saved.source, requestParameters: saved.parameters }
+                            : { ...source, reconnect: true, requestParameters: [] };
+                    }));
                     return { ok: true, ...current };
                 }
                 if (message.type === 'CUSTOM_OVERLAYS_PREVIEW') {
@@ -64,13 +72,36 @@ export function createCustomOverlayStore({ storage, canRead, canEdit }) {
                     if (index < 0) throw new Error('Overlay no longer exists.');
                     current.registry.sources.splice(index, 1); delete current.preferences[message.id];
                 } else if (message.type === 'CUSTOM_OVERLAYS_SAVE') {
-                    const source = readCustomSource({ ...message.source, id: message.id, revision: message.expectedRevision + 1 });
+                    let source = readCustomSource({ ...message.source, id: message.id, revision: message.expectedRevision + 1, privateRequests: false });
                     if (!source) throw new Error('Check the source settings.');
+                    const parameters = readPrivateParameters(message.requestParameters || []);
+                    if (parameters.length || current.registry.sources[index]?.privateRequests) {
+                        if (!Array.isArray(message.requestParameters)) throw new Error('Open Settings to review this private source.');
+                        if (!await canReadPrivate(sender)) throw new Error('Open BPB Settings to edit private parameters.');
+                        if (!privateStore) throw new Error('Private layer storage is unavailable.');
+                        const projected = publicPrivateSource(source);
+                        // Store secrets first. A failed public write leaves an
+                        // unreachable private revision; reads fail closed.
+                        await privateStore.mutate(source.id, previous => ({ versions: {
+                            ...(current.registry.sources[index]?.privateRequests && previous?.versions?.[message.expectedRevision]
+                                ? { [message.expectedRevision]: previous.versions[message.expectedRevision] } : {}),
+                            [source.revision]: { source, parameters, public: projected },
+                        } }));
+                        source = projected;
+                    } else if (source.source.dataUrl?.includes('relay.bpb.example') || source.source.tiles?.some(url => url.includes('relay.bpb.example'))) {
+                        throw new Error('Reconnect this layer with its provider URL.');
+                    }
                     if (index < 0) current.registry.sources.push(source); else current.registry.sources[index] = source;
                 } else throw new Error('Unknown overlay operation.');
                 current.registry.revision++;
                 if (!readCustomRegistry(current.registry)) throw new Error('Overlay library is full.');
                 await storage.set({ [CUSTOM_REGISTRY_KEY]: current.registry, [CUSTOM_PREFERENCES_KEY]: current.preferences });
+                if (privateStore && message.type === 'CUSTOM_OVERLAYS_SAVE' && current.registry.sources.find(source => source.id === message.id)?.privateRequests) {
+                    // Once the public CAS commits, discard previous credentials.
+                    // Before that point the prior revision remains recoverable.
+                    await privateStore.mutate(message.id, saved => ({ versions: { [message.expectedRevision + 1]: saved.versions[message.expectedRevision + 1] } }));
+                }
+                if (privateStore && (message.type === 'CUSTOM_OVERLAYS_REMOVE' || message.type === 'CUSTOM_OVERLAYS_SAVE' && !current.registry.sources.find(source => source.id === message.id)?.privateRequests)) await privateStore.put(message.id, null);
                 return { ok: true, ...current };
             } catch (error) { return { ok: false, error: error.message }; }
         };

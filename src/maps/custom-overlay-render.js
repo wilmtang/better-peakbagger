@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createCustomClient } from './custom-overlay-client.js';
+import { createPagePrivateFetch, createPrivateLayerFetch } from './custom-private-client.js';
 
 const geometryType = type => /Point$/.test(type) ? 'point' : /LineString$/.test(type) ? 'line' : 'polygon';
 const attribution = source => {
@@ -21,9 +22,14 @@ export function drawCustomVector(context, features, rules, size) {
         else if (feature.type === 1) context.fill(); else context.stroke();
     }
 }
-export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus }) {
+export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus, requestWindow = win }) {
     const terrain = !!maplibre, entries = new Map(), protocol = `bpb-custom-${Math.random().toString(36).slice(2)}`;
-    const client = createCustomClient({ fetchImpl: win.fetch.bind(win), parse, pool, bitmap: win.createImageBitmap?.bind(win) });
+    // The BigMap owner runs in its parent realm while drawing in MasterMap.
+    // postMessage must use the executing owner window, not the canvas window:
+    // invoking child.postMessage from the parent sets event.source=parent.
+    const transport = terrain ? null : createPagePrivateFetch(requestWindow, win.fetch.bind(win));
+    const fetchImpl = terrain ? createPrivateLayerFetch({ send: message => (globalThis.browser || globalThis.chrome).runtime.sendMessage(message), fallback: win.fetch.bind(win) }) : transport.fetch;
+    const client = createCustomClient({ fetchImpl, parse, pool, bitmap: win.createImageBitmap?.bind(win) });
     let disposed = false, canvasBytes = 0, lastUpdate = null;
     const before = () => map.getStyle().layers.find(layer => layer.type === 'symbol' || /^(bpb-(?:route|peaks|highlight|fire|snotel))/.test(layer.id))?.id;
     const order = () => {
@@ -220,6 +226,6 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             for (const key of entry.outcomes.keys()) if (key !== 'data' && !visible.has(key)) entry.outcomes.delete(key);
             tally(entry); status(entry);
         }
-    }, dispose() { disposed = true; lastUpdate = null; win.document.removeEventListener('visibilitychange', visibility); client.clear(); for (const id of [...entries.keys()]) remove(id); if (terrain) maplibre.removeProtocol(protocol); } };
+    }, dispose() { disposed = true; lastUpdate = null; win.document.removeEventListener('visibilitychange', visibility); client.clear();transport?.dispose(); for (const id of [...entries.keys()]) remove(id); if (terrain) maplibre.removeProtocol(protocol); } };
     return renderer;
 }

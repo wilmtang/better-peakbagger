@@ -1073,3 +1073,12 @@ The archive verifier derives required runtime files from
 `scripts/build-config.mjs`; it rejects stale raw-source layouts and missing
 bundles/vendor licenses. See [Browser store releases](releasing.md) for version,
 tag, credential, and live-verification requirements.
+
+Private custom-source verification: `npm run verify -- private-layers` runs both
+hidden browsers. `node scripts/verify-private-layers.mjs chrome --screenshots=PATH`
+(or `firefox`) checks the actual Settings editor, masked editing, no private
+values in public storage/backups, no requests before approval, forged
+destination rejection, worker GETs to an HTTPS provider without CORS, and
+BigMap parent/child plus hardware 3D paths. Credentials are synthetic. Disposable
+test manifests pregrant the fixture host; native permission prompts and every
+provider’s access/billing/referrer policies remain separate proof boundaries.

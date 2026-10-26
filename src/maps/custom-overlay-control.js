@@ -41,14 +41,15 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
                 element.className = 'bpb-custom-source'; checkbox.type = 'checkbox'; label.append(checkbox, name); heading.append(label, summary); element.append(heading);
                 const slider = node('input'); slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.dataset.bpbCustomOpacity = source.id;
                 const opacity = node('label', 'Opacity'); opacity.append(slider);
-                const attribution = node('p'), message = node('p'), retry = node('button', 'Retry'), edit = node('a', 'Edit in Settings');
+                const attribution = node('p'), message = node('p'), retry = node('button', 'Retry'), edit = node('a', 'Edit in Settings'), approve = node('button', 'Approve private access…');
+                approve.type = 'button';approve.dataset.bpbPrivateLayer = source.id;
                 retry.type = 'button'; settingsLink(edit); if (add.href) edit.href = add.href;
                 message.className = 'bpb-custom-feedback';
                 const help = node('details'), helpTitle = node('summary', 'How to fix URL / CORS errors');
-                help.append(helpTitle, node('p', 'Check the URL and source format. Public metadata and tile endpoints must allow browser access (CORS), usually Access-Control-Allow-Origin: *. Use a compatible endpoint or contact the provider. BPB has no proxy.'));
-                const actions = node('div'); actions.className = 'bpb-custom-actions'; actions.append(retry, edit);
+                help.append(helpTitle, node('p', 'Public sources need browser access (CORS). Private request parameters use BPB’s limited background relay and require approval in BPB. Check the provider URL, source format and access settings.'));
+                const actions = node('div'); actions.className = 'bpb-custom-actions'; actions.append(approve, retry, edit);
                 element.append(opacity, attribution, message, help, actions); list.append(element);
-                row = { element, checkbox, name, summary, slider, attribution, message, retry }; rows.set(source.id, row);
+                row = { element, checkbox, name, summary, slider, attribution, message, retry, approve }; rows.set(source.id, row);
                 checkbox.addEventListener('click', event => event.stopPropagation());
                 checkbox.addEventListener('change', () => {
                     const latest = sources.find(item => item.id === source.id);
@@ -67,9 +68,11 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
             const view = readView(), zoom = view?.zoom;
             const zoomedOut = source.kind !== 'geojson' && Number.isFinite(zoom) && zoom < source.source.minNativeZoom + (source.kind === 'mvt' || source.source.tileSize === 512 ? 1 : 0);
             if (enabled && zoomedOut) row.summary.textContent = 'Zoom in';
-            row.attribution.textContent = [source.kind.toUpperCase(), source.attribution.text, ...source.approvedOrigins].filter(Boolean).join(' · ');
+            row.attribution.textContent = [source.kind.toUpperCase(), source.attribution.text, ...(source.privateRequests ? ['Private requests'] : source.approvedOrigins)].filter(Boolean).join(' · ');
             row.message.textContent = enabled ? zoomedOut ? 'Zoom in to this source’s available range.' : status.error && status.code === 'access' ? 'Source unavailable. Check the URL or provider CORS settings.' : status.message ? status.error ? customFailure(status) : status.message : 'Loading status appears here.' : 'Enable to load this source.';
             row.retry.setAttribute('aria-disabled', String(!enabled || status.pending || status.retryAt > Date.now()));
+            row.approve.hidden = !source.privateRequests;row.approve.dataset.revision = source.revision;
+            if (source.privateRequests && enabled && status.code === 'approval') row.message.textContent = 'Approve access in BPB, then Retry. Each approval allows up to 256 requests for 10 minutes.';
         }
         const focused = list.contains(win.document.activeElement) ? win.document.activeElement : null;
         sources.forEach((source, index) => { const row = rows.get(source.id); if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null); });
@@ -147,7 +150,7 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
     return { section, mapId, snapshot: () => ({ custom: [...selected].slice(0, 3).map(([id, sourceRevision]) => ({ id, sourceRevision, enabled: true })), customSession: mapId, customRevision: registryVersion,
         customOpacity: { ...preferences }, customReloads: { ...reloads } }),
     adopt(value) { pendingAdoption = readCustomSelection(value); for (const item of pendingAdoption) if (sources.some(source => source.id === item.id && source.revision === item.sourceRevision)) selected.set(item.id, item.sourceRevision); publish(); paint(); },
-    bind(owner, map) { engine?.dispose(); native = { win: owner, map }; engine = createCustomRenderer({ win: owner, map, parse, pool, onStatus }); publish(); paint(); },
+    bind(owner, map) { engine?.dispose(); native = { win: owner, map }; engine = createCustomRenderer({ win: owner, map, parse, pool, onStatus, requestWindow: win }); publish(); paint(); },
     suspend() { engine?.dispose(); engine = null; cancelParsers(); cancelTasks(); },
     mode(value) { if (terrain !== value) { cancelTasks(); for (const id of selected.keys()) statuses[id] = { pending: true }; } terrain = value; if (value) { engine?.dispose(); engine = null; } paint(); },
     cancelTasks,

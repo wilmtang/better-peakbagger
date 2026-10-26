@@ -54,6 +54,8 @@ export const ENTRIES = [
     { out: 'content/map-discovery.js', sources: ['maps/map-discovery.js'] },
     { out: 'custom-overlay/worker.js', sources: ['maps/custom-overlay-worker.js'] },
     { out: 'custom-overlay/editor.js', sources: ['maps/custom-overlay-editor.js'] },
+    { out: 'custom-overlay/access.js', sources: ['maps/custom-layer-access.js'] },
+    { out: 'custom-overlay/access-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'] },
     { out: 'content/custom-overlays-bridge.js', sources: ['maps/custom-overlay-bridge.js'] },
     { out: 'options/garmin.js', sources: ['garmin-settings-page.js'], page: true },
     { out: 'options/inbox.js', sources: ['garmin-inbox-page.js'], page: true },
@@ -146,6 +148,8 @@ export const AUTHORED_SOURCE_ROOTS = Object.freeze([...new Set(
 export const COPY_FILES = [
     ['src/maps/custom-overlay-editor.html', 'custom-overlay/editor.html'],
     ['src/maps/custom-overlay-editor.css', 'custom-overlay/editor.css'],
+    ['src/maps/custom-layer-access.html', 'custom-overlay/access.html'],
+    ['src/maps/custom-layer-access.css', 'custom-overlay/access.css'],
     ['options/inbox.html', 'options/inbox.html'],
     ['options/garmin.css', 'css/garmin.css'],
     ['third_party/fit-file-parser-LICENSE.txt', 'vendor/fit-file-parser-LICENSE.txt'],

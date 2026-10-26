@@ -62,6 +62,9 @@ export function readCustomSource(value) {
             || origins.some(origin => !customUrl(origin) || new URL(origin).origin !== origin)) return null;
         const endpoints = value.kind === 'geojson' ? [source.dataUrl] : [...source.tiles, ...source.metadataUrl ? [source.metadataUrl] : []];
         if (endpoints.some(endpoint => !origins.includes(new URL(endpoint).origin))) return null;
+        if (value.privateRequests === true && (origins.length !== 1 || origins[0] !== 'https://relay.bpb.example'
+            || endpoints.some(endpoint => { const prefix = `https://relay.bpb.example/${value.id}/`;
+                return !endpoint.startsWith(prefix) || !/^[1-9]\d*\/(?:metadata|data|tile\/\{z\}\/\{x\}\/\{y\})$/.test(endpoint.slice(prefix.length)); }))) return null;
         const attribution = value.attribution || {};
         if (!text(attribution.text || '', 600) || attribution.url && !customUrl(attribution.url)) return null;
         const appearance = value.appearance;
@@ -76,6 +79,7 @@ export function readCustomSource(value) {
         }
         if (value.kind !== 'raster' && !rules.length || value.kind === 'raster' && rules.length) return null;
         return { id: value.id, revision: value.revision, name: value.name.trim(), kind: value.kind, source,
+            ...(value.privateRequests === true && { privateRequests: true }),
             approvedOrigins: [...origins], attribution: { text: attribution.text || '', ...(attribution.url ? { url: attribution.url } : {}) },
             appearance: { opacity: appearance.opacity, rules } };
     } catch { return null; }

@@ -166,7 +166,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices saved in portable settings, bounded combined requests and tab-memory results |
 | Nearby snow | `src/snow/peak-snow.js`, `src/snow/snotel-client.js`, `src/snow/snotel-data.js`, `src/snow/snotel-map-source.js`, `src/maps/map-layer-bridge.js` | Independent isolated western-US/Alaska peak card, local station matching within 50 km, bounded credential-free NRCS requests with fixed station time offsets, seven-day public catalog cache and page-memory observations. Opt-in 2D/3D station overlay receives at most 50 public station records through a read-only bridge, revalidated in each renderer; the independent `showSnotel` gate controls all SNOTEL surfaces and requests, retaining legacy weather opt-outs |
 | Map Layers menu | `src/maps/map-layers.js`, `src/maps/map-layer-control.js`, `src/maps/map-overlay-leaflet.js`, `src/terrain/terrain-overlays.js`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Portable opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
-| Custom map overlays | `src/maps/custom-overlay-schema.js`, `src/maps/custom-overlay-control.js`, `src/maps/custom-overlay-bridge.js`, `src/maps/custom-overlay-editor.js`, `src/maps/custom-overlay-client.js`, `src/maps/custom-overlay-render.js`, `src/background/custom-overlay-store.js` | Separate local registry with serialized revision checks; only the packaged editor changes definitions. Public validated configuration crosses the isolated bridge; direct anonymous CORS requests stay with the active renderer. Packaged, disposable workers decode bounded GeoJSON/MVT; the worker never relays provider requests. Early Leaflet discovery attaches one owner per map, including unnamed/late instances. Typed IDs/revisions and opacity extend the existing terrain/Full Screen contract without widening trusted basemap styles or settings writes. |
+| Custom map overlays | `src/maps/custom-overlay-schema.js`, `src/maps/custom-overlay-control.js`, `src/maps/custom-overlay-bridge.js`, `src/maps/custom-overlay-editor.js`, `src/maps/custom-overlay-client.js`, `src/maps/custom-overlay-render.js`, `src/background/custom-overlay-store.js` | Separate local registry with serialized revision checks; only the packaged editor changes definitions. Public validated configuration crosses the isolated bridge; direct anonymous CORS requests stay with the active renderer. Packaged, disposable workers decode bounded GeoJSON/MVT; private sources instead use the constrained worker relay described below. Early Leaflet discovery attaches one owner per map, including unnamed/late instances. Typed IDs/revisions and opacity extend the existing terrain/Full Screen contract without widening trusted basemap styles or settings writes. |
 | Wildfire data and rendering | `src/maps/wildfire-core.js`, `src/maps/wildfire-client.js`, `src/maps/wildfire-session.js`, `src/maps/wildfire-leaflet.js`, `src/terrain/terrain-wildfires.js` | Fixed WF-only NIFC queries, validated public identities/geometry and independent component freshness; bounded page-memory viewport transactions owned by the visible renderer. Typed metadata alone crosses the frame bridge, with retry-only actions and no privileged API exposure. Native vectors retain priority. |
 | Map location menu | `src/maps/map-location-menu.js`, `src/maps/map-elevation.js`, `src/maps/peak-weather-map.js` | Shared MAIN-world coordinates and approximate terrain elevation on native and 3D maps; explicit right-click, bounded credential-free Mapterhorn reads and tab-memory tiles. Independent of weather/3D opt-outs; forecast requests stay with the isolated peak weather card. |
 | Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.js` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
@@ -1880,3 +1880,34 @@ requirements live in
 
 The completed cross-browser verification rollout is retained in
 [archive/cross-browser-verification.md](archive/cross-browser-verification.md).
+
+## Private custom-layer requests
+
+`custom-private-store.js` owns extension-origin IndexedDB private definitions,
+query values and durable provider budgets. `custom-overlay-private.js` projects
+opaque public descriptors. The registry and all backup snapshots remain public;
+only the exact Settings editor inside a verified options tab receives an
+`editSource` and private values. Versioned private writes precede public CAS
+writes so a failed configuration commit preserves the previous private source.
+
+`custom-layer-relay.js` accepts saved layer/revision, resource kind and bounded
+integer tile coordinates. It constructs GET URLs, validates approved origins,
+attaches values only to the original input origin and rejects redirects. It
+never accepts a page URL, header list or query override. Metadata endpoints and
+signed tile URLs stay private. Page responses include only bounded bytes or
+redacted errors and explicitly selected status codes. Public sources retain
+the direct CORS renderer. `custom-private-client.js` handles the private byte
+transport in 2D and extension 3D; parent-owned BigMap requests use the executing
+owner window, separately from the child window owning the canvas and Leaflet.
+
+The isolated bridge requires a trusted activation to open a full extension
+approval page. One-use pending approval is bound to the actual approval tab;
+it is not web-accessible. Approval grants one source revision in the original
+active map tab 256 network attempts for 10 minutes. Top navigation/closure,
+permission removal and source changes cancel authority/transports; worker
+restart loses grants, while durable hourly/day budgets remain. Native MasterMap
+child frames and authenticated terrain frames in the same tab are supported.
+Cross-tab concurrency and provider budgets, 429 cooldowns, response limits,
+bounded caching and shared-flight cancellation constrain an approved hostile
+page; they do not make an authorized map incapable of spending its allowance.
+No page-world settings bridge allowlist is expanded.

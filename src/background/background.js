@@ -41,6 +41,8 @@ import { terrainActivation as TerrainActivation } from './terrain-activation.js'
 import { createMapLayerHandoff } from './map-layer-handoff.js';
 import { createBCLandRoutes } from './bc-land-routes.js';
 import { createCustomOverlayStore } from './custom-overlay-store.js';
+import { createCustomPrivateStore } from './custom-private-store.js';
+import { createCustomLayerRelay } from './custom-layer-relay.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
@@ -3469,8 +3471,15 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
     const customEditor = sender => customPage(sender, ['custom-overlay/editor.html', 'options/options.html']);
     const customReader = sender => customPage(sender, ['custom-overlay/editor.html', 'terrain/terrain.html', 'options/options.html']);
+    const privateEditor = async sender => {
+        if (!customEditor(sender)) return false;
+        if (!sender.tab) return isCustomOptionsParent(sender.url);
+        try { return isCustomOptionsParent((await ext.tabs.get(sender.tab.id)).url); } catch { return false; }
+    };
+    const customPrivate = createCustomPrivateStore();
     const customOverlays = createCustomOverlayStore({ storage: ext.storage.local,
-        canRead: sender => isPeakbaggerSender(sender) || customReader(sender), canEdit: customEditor });
+        canRead: sender => isPeakbaggerSender(sender) || customReader(sender), canEdit: customEditor,
+        privateStore: customPrivate, canReadPrivate: privateEditor });
     const bcLandRoutes = createBCLandRoutes({ ext, isPeakbaggerSender,
         isTerrainSender: sender => {
             if (sender.id !== ext.runtime.id || !Number.isInteger(sender.frameId) || sender.frameId < 1 || !isPeakbaggerSenderUrl(sender.tab?.url)) return false;
@@ -3519,6 +3528,13 @@ import { GarminError } from '../garmin/garmin-api.js';
         isPeakbaggerSender,
         now,
     });
+
+    const customRelay = createCustomLayerRelay({ ext, privateStore: customPrivate, catalog: customOverlays,
+        isPage: isPeakbaggerSender, isTerrain: sender => customPage(sender, ['terrain/terrain.html']),
+        isEditor: privateEditor, isAccess: createPackagedPageMatcher(ext, ['custom-overlay/access.html']),
+        trustedActions, action: TrustedActions.ACTIONS.CUSTOM_LAYER_ACCESS });
+    ext.permissions?.onRemoved?.addListener(() => customRelay.revoke());
+    ext.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.bpbCustomMapOverlaysV1) customRelay.revoke(); });
 
     const instagramFrames = createInstagramFrames({ext,settings:Settings,trustedActions,isPeakbaggerSender,mutateMap,now});
     const instagramDisplay = createInstagramDisplayRegistration(ext, { onChanged: async () => {
@@ -3886,6 +3902,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                     || actual.username || actual.password || actual.search) return { ok: false };
                 return { ok: true, allowed: await instagramDisplay.sync() };
             }
+            if (typeof type === 'string' && type.startsWith('CUSTOM_PRIVATE_')) return customRelay.handle(message, sender);
             if (typeof type === 'string' && type.startsWith('CUSTOM_OVERLAYS_')) return customOverlays.handle(message, sender);
             if (typeof type === 'string' && type.startsWith('GARMIN_')) return garminImports.handle(message, sender);
             const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? bcLandRoutes.handlers[type] : null;
@@ -4049,6 +4066,7 @@ import { GarminError } from '../garmin/garmin-api.js';
 
     ext.tabs.onRemoved.addListener(tabId => {
         runDetachedCleanup('Instagram tab cleanup', () => instagramFrames.forgetTab(tabId));
+        customRelay.forgetTab(tabId);
         bcLandRoutes.cancelTab(tabId);
         recentHelperActivations.delete(tabId);
         recentHelperNavigations.delete(tabId);
@@ -4084,6 +4102,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     ext.tabs.onUpdated?.addListener((tabId, changeInfo) => {
         if (changeInfo?.status === 'complete') runDetachedCleanup('Garmin queue on Peakbagger load', () => resumeGarminOnVisit(tabId));
         if (changeInfo?.status === 'loading') {
+            customRelay.forgetTab(tabId, false);
             runDetachedCleanup('Instagram navigation cleanup', () => instagramFrames.forgetTab(tabId));
             runDetachedCleanup('photo source navigation cleanup', () =>
                 photoRoutes.forgetSourceTab(tabId));

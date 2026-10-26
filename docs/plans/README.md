@@ -1,5 +1,10 @@
 # Active plans
 
+- [Private custom-layer relay — October 26](custom-layer-private-relay-2026-10-26.md)
+  — implemented private query parameters, constrained worker requests and bounded
+  user grants; full tests/lint and Chrome/Firefox private 2D/3D passed. Native
+  permission prompts and provider-specific policies remain explicit proof gaps.
+
 - [Instagram embed display audit — October 26](instagram-embed-audit-2026-10-26.md)
   — reproduced the initialization race: BPB widened the player by 2px after
   loading, and overlapping Instagram resize updates could retain visible width

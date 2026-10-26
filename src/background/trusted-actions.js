@@ -19,6 +19,7 @@ const ACTIONS = Object.freeze({
     PROFILE_BACKUP: 'profile-backup',
     BETA_SETTINGS: 'beta-settings',
     CUSTOM_LAYER_SETTINGS: 'custom-layer-settings',
+    CUSTOM_LAYER_ACCESS: 'custom-layer-access',
     DRAFT_MANAGER: 'draft-manager',
     CALTOPO_IMPORT: 'caltopo-import',
     ALLTRAILS_IMPORT: 'alltrails-import',

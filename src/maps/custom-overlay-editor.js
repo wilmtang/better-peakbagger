@@ -4,45 +4,41 @@ import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { readCustomSource, customUrl, readCustomRegistry } from './custom-overlay-schema.js';
 import { createCustomParser } from './custom-overlay-parser.js';
 import { createCustomClient, customFailure } from './custom-overlay-client.js';
+import { readPrivateParameters, RELAY_HOST } from './custom-overlay-private.js';
 
 const ext = globalThis.browser || globalThis.chrome, tag = '__bpbCustomOverlays';
-const helpLabel = (id, label, explanation) => `<div class="field-label" id="${id}-label"><label for="${id}">${label}</label><button type="button" class="info" aria-label="About ${label.toLowerCase()}" aria-describedby="${id}-help" aria-controls="${id}-help" aria-expanded="false"><span aria-hidden="true">ⓘ</span></button><span id="${id}-help" class="tooltip" role="tooltip" hidden>${explanation}</span></div>`;
 if (parent === window) {
     location.replace(ext.runtime.getURL('options/options.html#custom-map-layers'));
 } else {
     const token = location.hash.slice(1), parser = createCustomParser(ext.runtime.getURL('custom-overlay/worker.js'));
     const client = createCustomClient({ parse: parser.parse });
     let parentOrigin = null, mapId = '', expectedRevision = 0, sourceId = '', pending = false, dirty = false, resolved = null, controller = null;
-    let openRevision = 0;
+    let openRevision = 0, privateMode = false;
     let savedAttribution = { text: '' };
     const jobs = new Map(), tasks = new Map();
     const send = detail => { if (parentOrigin) parent.postMessage({ [tag]: true, token, ...detail }, parentOrigin); };
     const root = document.getElementById('editor');
     root.setAttribute('role', 'dialog'); root.setAttribute('aria-label', 'Custom map overlays');
-    root.innerHTML = `<h1>Custom map overlays</h1><section id="library"></section>
-<form id="form"><fieldset><legend id="form-title">Add custom overlay</legend>
-<label for="name">Name</label><input id="name" maxlength="80" required>
-${helpLabel('kind', 'Source type', 'Raster tiles are map images. MVT tiles and GeoJSON contain shapes you style. Choose the provider’s source type; BPB does not infer it from the URL.')}<select id="kind"><option value="raster">Raster tiles</option><option value="mvt">Vector tiles (MVT)</option><option value="geojson">GeoJSON</option></select>
-<label for="url">URL</label><input id="url" type="text" spellcheck="false" required aria-describedby="url-hint feedback">
-<p id="url-hint" class="hint">Use a public HTTPS source. URL keys are visible to the Peakbagger page; do not use confidential tokens.</p>
-${helpLabel('format', 'URL format', 'Use Tile template for {z}/{x}/{y} URLs, or TileJSON for metadata. Choose manually. Check source reads TileJSON tile URLs and zoom limits; it does not test tile coverage.')}<select id="format"><option value="template">Tile template: {z}, {x}, {y}</option><option value="tilejson">TileJSON metadata</option></select>
-<details id="advanced"><summary>Advanced</summary><section id="tile-fields">${helpLabel('minimum', 'Available tile zoom range', '0 shows the world; higher levels add detail. Templates start at unchecked 0–18. Check source reads TileJSON limits (up to 22). Manual edits override metadata; Use source values restores it.')}
-<p class="hint">Zooming in further enlarges the last available tile.</p><div class="fields">
-<div><label for="minimum">Minimum</label><input id="minimum" aria-describedby="minimum-help" type="number" min="0" max="22" value="0"></div>
-<div><label for="maximum">Maximum</label><input id="maximum" aria-describedby="minimum-help" type="number" min="0" max="22" value="18"></div></div>
-<p id="zoom-origin" class="hint">Default — not checked</p><button type="button" id="source-values">Use source values</button>
-${helpLabel('scheme', 'Tile coordinates', 'Use XYZ unless the provider specifies TMS (reversed north–south numbering). Check source reads the TileJSON scheme.')}<select id="scheme"><option value="xyz">XYZ (normal Y)</option><option value="tms">TMS (reversed Y)</option></select>
-${helpLabel('tile-size', 'Tile size', 'Usually 256 pixels. Choose 512 only when specified by the provider. This is the logical tile size; a sharper @2x image may still use 256.')}<select id="tile-size"><option value="256">256 pixels</option><option value="512">512 pixels</option></select></section>
-${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west longitude, south latitude, east longitude, north latitude. West and south can be negative. Leave blank if unknown.')}<input id="bounds" placeholder="west, south, east, north">
-</details><fieldset id="appearance"><legend>Appearance</legend><p class="hint">Simple points, lines and polygons. Full map styles, labels and icons are not supported.</p><datalist id="source-layers"></datalist><div id="rules"></div><button type="button" id="add-rule">Add style rule</button></fieldset>
-<details class="help"><summary>How to fix URL / CORS errors</summary><p>Check the URL, format and zoom range. Public metadata and tile servers must allow browser access, usually with <code>Access-Control-Allow-Origin: *</code>. A normal image link working does not prove CORS support. Use a browser-compatible endpoint or contact the provider. BPB has no proxy.</p><a target="_blank" rel="noopener noreferrer" href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS/Errors">Browser troubleshooting guide</a></details>
-<footer class="actions"><div id="notice" class="feedback" hidden><p id="feedback" role="status" aria-live="polite"></p><button type="button" id="dismiss-feedback" aria-label="Dismiss status">×</button></div><button type="button" id="preview">Preview</button><button type="button" id="test">Test source</button><button type="submit" class="primary" id="save">Save</button><button type="button" id="cancel">Close</button><button type="button" id="remove">Remove</button></footer>
-</fieldset></form>`;
     const field = id => document.getElementById(id), feedback = message => {
         field('notice').hidden = !message; field('feedback').textContent = message;
         if (message && field('feedback').scrollHeight > field('feedback').clientHeight) field('feedback').tabIndex = 0;
         else field('feedback').removeAttribute('tabindex');
     };
+    const parameterRows = [];
+    const addParameter = (parameter = { key: '', value: '' }) => {
+        if (parameterRows.length >= 12) return;
+        const row = document.createElement('div');row.className = 'parameter-row';
+        const key = document.createElement('input'), value = document.createElement('input'), remove = document.createElement('button');
+        const id = crypto.randomUUID();key.id = `parameter-key-${id}`;value.id = `parameter-value-${id}`;
+        key.maxLength = 80;value.maxLength = 2048;value.type = 'password';value.autocomplete = 'off';key.spellcheck = value.spellcheck = false;
+        key.value = parameter.key;value.value = parameter.value;
+        for (const [input, text] of [[key, 'Parameter name'], [value, 'Private value']]) { const label = document.createElement('label');label.htmlFor = input.id;label.textContent = text;const wrap = document.createElement('div');wrap.append(label, input);row.append(wrap); }
+        remove.type = 'button';remove.textContent = 'Remove';remove.setAttribute('aria-label', 'Remove request parameter');row.append(remove);
+        const entry = { key, value, row };parameterRows.push(entry);field('parameter-list').append(row);
+        remove.onclick = () => { row.remove();parameterRows.splice(parameterRows.indexOf(entry), 1);field('add-parameter').focus({ preventScroll: true }); };
+    };
+    field('add-parameter').onclick = () => { addParameter();parameterRows.at(-1)?.key.focus(); };
+    const parameters = () => readPrivateParameters(parameterRows.map(({ key, value }) => ({ key: key.value.trim(), value: value.value })));
     let feedbackControl = 'test';
     field('dismiss-feedback').onclick = () => { feedback(''); field(feedbackControl).focus({ preventScroll: true }); };
     let activeHelp = null, pinnedHelp = false, helpTimer, pointerHelp = null;
@@ -143,6 +139,16 @@ ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west 
         return source;
     };
     const task = async (action, source) => {
+        if (parameters().length || privateMode) {
+            if (action !== 'resolve') throw new Error('Save this private source, then approve and enable it on a map.');
+            const signal = controller.signal, abort = () => { void ext.runtime.sendMessage({ type: 'CUSTOM_PRIVATE_CHECK_CANCEL' }).catch(() => {}); };
+            signal.addEventListener('abort', abort, { once: true });
+            try {
+                const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_PRIVATE_CHECK', source, requestParameters: parameters() });
+                if (signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
+                if (!reply?.ok) throw new Error(reply?.error || 'Private source could not be checked.');return reply.value;
+            } finally { signal.removeEventListener('abort', abort); }
+        }
         if (!mapId) return action === 'resolve' ? client.resolve(source, controller.signal, false) : Promise.reject(new Error('Choose a map to test tiles.'));
         const grant = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_PREVIEW', mapId, source });
         if (!grant?.ok) throw new Error(grant?.error || 'Source test unavailable.');
@@ -160,6 +166,13 @@ ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west 
         try {
             if (!field('form').reportValidity()) { feedback('Check the highlighted fields.'); return; }
             let source = sourceFromForm(action !== 'save');
+            const requestParameters = parameters();
+            if (requestParameters.length || privateMode) {
+                // Called directly from Save/Check before any asynchronous work.
+                const origins = source.approvedOrigins.map(origin => `https://${new URL(origin).hostname}/*`);
+                if (!await ext.permissions.request({ origins })) throw new Error('Provider access wasn’t granted. Your entries are still here.');
+                if (controller.signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
+            }
             if (action !== 'save') {
                 const result = await task('resolve', source);
                 if (dirty) return;
@@ -187,7 +200,7 @@ ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west 
                 send({ type: 'preview', detail: { type: 'preview', mapId, sourceId: source.id, sourceRevision: source.revision } });
                 feedback('Preview enabled on the map. Check its loading status; saving keeps this selection.');
             } else {
-                const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_SAVE', id: sourceId, source, expectedRevision });
+                const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_SAVE', id: sourceId, source, expectedRevision, requestParameters });
                 if (!reply?.ok) throw new Error(reply?.error || 'Couldn’t save.');
                 expectedRevision++; feedback('Saved on this device.'); await library();
             }
@@ -196,6 +209,7 @@ ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west 
     };
     const reset = source => {
         closeHelp();
+        privateMode = source?.privateRequests === true;
         sourceId = source?.id || 'custom:' + crypto.randomUUID(); expectedRevision = source?.revision || 0; resolved = source || null; dirty = false;
         // These credits are no longer editable here. Keep existing/imported
         // provider attribution through ordinary edits, checks and previews.
@@ -203,6 +217,9 @@ ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west 
         field('form-title').textContent = source ? 'Edit overlay' : 'Add custom overlay';
         field('name').value = source?.name || ''; field('kind').value = source?.kind || 'raster';
         field('url').value = source?.source.metadataUrl || source?.source.dataUrl || source?.source.tiles[0] || '';
+        if (source?.reconnect || field('url').value.includes(RELAY_HOST)) field('url').value = '';
+        parameterRows.length = 0;field('parameter-list').replaceChildren();for (const parameter of source?.requestParameters || []) addParameter(parameter);
+        field('private-parameters').open = parameterRows.length > 0;
         field('format').value = source?.source.metadataUrl ? 'tilejson' : 'template';
         field('minimum').value = source?.source.minNativeZoom ?? 0; field('maximum').value = source?.source.maxNativeZoom ?? 18;
         field('minimum').dataset.origin = source?.source.zoomOrigin?.min || 'default'; field('maximum').dataset.origin = source?.source.zoomOrigin?.max || 'default';
@@ -216,6 +233,11 @@ ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west 
     async function library() {
         const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_GET' }), registry = reply?.ok && readCustomRegistry(reply.registry);
         if (!registry) throw new Error('Saved overlays are unavailable.');
+        // The schema intentionally drops secrets. Reattach only this trusted
+        // Settings-only reply's private editor fields; never post them out.
+        for (const source of registry.sources) { const raw = reply.registry.sources.find(item => item.id === source.id);
+            if (source.privateRequests) { source.editSource = raw.editSource;source.requestParameters = raw.requestParameters || [];source.reconnect = raw.reconnect === true; }
+        }
         const list = field('library'); list.replaceChildren();
         if (!mapId && parent === window) {
             for (const source of registry.sources) { const button = document.createElement('button'); button.type = 'button'; button.textContent = source.name; button.onclick = () => reset(source); list.append(button); }
@@ -258,7 +280,8 @@ ${helpLabel('bounds', 'Bounds (optional)', 'Coverage rectangle in degrees: west 
             if (optionsParent) root.setAttribute('role', 'form');
             void stopPreview().then(async () => { mapId = typeof data.mapId === 'string' ? data.mapId : ''; document.documentElement.dataset.theme = data.theme === 'dark' ? 'dark' : 'light';
                 const registry = await library(); if (revision !== openRevision) return;
-                reset(registry.sources.find(source => source.id === data.sourceId)); send({ type: 'opened' }); field('name').focus();
+                const source = registry.sources.find(item => item.id === data.sourceId);
+                reset(source?.editSource ? { ...source.editSource, privateRequests: true, requestParameters: source.requestParameters } : source); send({ type: 'opened' }); field('name').focus();
             }).catch(error => { feedback(error.message); send({ type: 'opened' }); });
         }
         if (data.type === 'theme' && optionsParent) document.documentElement.dataset.theme = data.theme === 'dark' ? 'dark' : 'light';

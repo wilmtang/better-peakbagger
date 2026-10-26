@@ -46,7 +46,7 @@ source layer; TileJSON layer IDs are offered as suggestions. Both renderers use
 the same color, CSS-pixel line width/radius and fill opacity. Provider feature
 properties are discarded, overlays are noninteractive, and native routes,
 markers and interactions stay above them. Full MapLibre styles, labels, icons,
-authenticated services, offline archives and custom basemaps are not supported.
+cookie-based authentication, offline archives and custom basemaps are not supported.
 
 **Check source** reads metadata in Settings; it does not claim that tiles exist
 at a particular location. Save a source, then explicitly enable it on a map to
@@ -54,16 +54,16 @@ see its loading/CORS status. Closing an unsaved edit makes no map changes.
 A valid empty tile stays empty. HTTP 404/410 may fall back to at most two parent
 levels during rendering, with **Lower detail** feedback.
 
-All provider requests use direct HTTPS with CORS, omit cookies/referrers and
+Public provider requests use direct HTTPS with CORS, omit cookies/referrers and
 reject redirects. Additional hosts discovered in metadata require review.
 **Check URL / CORS** guidance explains configuration failures without claiming
 every failed fetch proves CORS. A working image link alone does not establish
-canvas/WebGL access. Use a public CORS-compatible endpoint; BPB supplies no proxy
-or provider permission bypass. HTTP access errors and rate limits keep their
+canvas/WebGL access. Use a public CORS-compatible endpoint, or the private
+parameter path below with explicit provider access. HTTP access errors and rate limits keep their
 own feedback. Retry retains painted tiles or last good GeoJSON; opacity changes
 do not fetch the source again. Hidden/removed renderers cancel their work.
 
-Keep URL keys public: Peakbagger page scripts can see source configuration.
+Keep keys in public source URLs public: Peakbagger page scripts can see that configuration.
 These fields are map settings, not a secret store. A key in a source URL can be
 copied by scripts on Peakbagger or anyone who receives a backup containing it.
 Use only provider-issued public/browser map keys with the permissions needed
@@ -470,3 +470,61 @@ layout at 1440/375 × 1100 in light/dark native and hardware 3D views. Unknown
 case selections and zero executed cases fail. The
 [SNOTEL camera audit ledger](archive/snotel-map-camera-audit-2026-10-22.md)
 records the findings and the broader popup-theme verification limitation.
+
+## Private request parameters
+
+In the source editor, expand **Private request parameters**, choose **Add
+parameter**, and enter its name (for example `api_key`) and private value.
+Values are masked but editable. Save or Check source requests optional browser
+access only to the configured provider hosts. BPB supports up to 12 query
+parameters; arbitrary headers, cookies, POST bodies and server/admin keys are
+not supported. Use a read-only map key with provider-side spending restrictions.
+
+A source with private parameters uses BPB's background worker for its HTTPS
+GETs. Its real URL, any metadata-supplied signed tile URLs and parameter values
+stay in extension-origin IndexedDB. The page receives only opaque local resource
+descriptors and returned map bytes. BPB does not put those secrets in page
+messages, `storage.local`, browser sync, settings files or GitHub backups—even
+credential-inclusive backups. Restoring such a descriptor requires reconnecting
+with the original URL and parameters on that device. Removing parameter rows does not make a saved private layer public: provider
+metadata may still contain signed URLs. To create a public version, delete the
+private layer and add a new public URL without credentials.
+
+On a map, select the protected layer, choose **Approve private access…**, review
+the provider in the separate BPB page and click **Allow map requests**. Return to
+the map and choose **Retry**. The browser permission allows provider access; this
+separate approval limits what the map may spend. It permits at most **256 network
+attempts for 10 minutes**, for that layer revision and current tab. Reloading,
+leaving/closing the tab, changing sources, removing provider permission or a
+background-worker restart requires another approval. Native MasterMap child
+frames and the authenticated 3D renderer in the same tab can share the approval;
+an unrelated tab cannot. Only the active tab can request new data.
+
+The worker builds every request from saved configuration and validated resource
+kind/tile coordinates. Pages cannot provide destinations, headers, query values
+or methods. Redirects, cookies and referrers are rejected/omitted. Parameters go
+only to the original input origin; TileJSON hosts on another origin require
+review and permission and do not inherit the input parameters. Signed URLs
+returned by the provider remain private. Metadata/GeoJSON/MVT/raster responses
+retain the existing bounded parsing and rendering paths.
+
+Shared limits apply across tabs and source edits: **four concurrent jobs**,
+**1,024 network attempts per hour** and **4,096 per day** for the configured
+provider hostname. Failures count too. Durable counters survive worker/browser
+restarts; clock rollback cannot reset them. Completed bytes use a bounded
+16 MiB in-memory cache; concurrent duplicate tiles share one GET, and cancelling
+one consumer does not cancel another. Cancelling all consumers or revoking
+access aborts the underlying fetch. HTTP 429 imposes a shared cooldown. No new
+requests are automatically retried by the relay.
+
+This bounds abuse; an authorized hostile page can still use its approved
+allowance and read the displayed map data. BPB's local protection is not an OS
+keychain and cannot hide a key from someone controlling the browser/device.
+The provider receives the key and viewed tile coordinates, and its response
+content and access policy must be trusted. No localhost server is installed.
+
+The private request path is checked with `npm run verify -- private-layers` in
+hidden Chrome and Firefox, using synthetic keys and HTTPS fixture providers
+without CORS headers. Disposable test manifests pregrant the fixture host;
+these runs do not establish native permission-prompt behavior or compatibility
+with every provider's billing/referrer policies.

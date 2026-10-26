@@ -35,8 +35,9 @@ Data leaves the browser only when a feature requires it:
 - **Custom overlay providers** receive direct metadata, tile or GeoJSON requests
   only after the user enables a source or explicitly checks its metadata. Tile coordinates reveal
   the viewed area. Requests omit cookies and referrers and use ordinary
-  browser CORS; there is no proxy or extra provider permission. Public URL keys
-  remain visible to the Peakbagger page and provider.
+  browser CORS for public sources. Private request parameters use BPB’s
+  constrained background relay after optional provider access and bounded map
+  approval. Public URL keys remain visible to the page; private values do not.
 
 The Sun and Moon calculator is not a data-transfer feature. Its coordinate,
 date, time, map bearing, and astronomical results remain in the Peakbagger tab.
@@ -53,6 +54,7 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and climber-list management on Peakbagger. |
 | Optional GitHub host access | Access to `github.com` and `api.github.com` is requested only when the user connects GitHub. It supports device-flow sign-in and the one repository the user grants. |
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
+| Optional custom-map provider access | `https://*/*` is declared optional to support user-selected providers. BPB requests only configured HTTPS hostnames when saving/checking a private source or approving its map access. It does not automatically gain access to all sites. The worker uses saved endpoints only and does not inject scripts or inspect provider tabs. |
 | Optional Instagram host access | Requested only by **Match BPB theme** in Settings → Report editor. The browser grants `www.instagram.com`; BPB registers packaged code only for captioned post/Reel embeds, and activates it only inside BPB's own authenticated wrapper. It styles player chrome; it does not extract captions, media URLs, cookies or browsing history. Ordinary post loading does not require this permission. |
 | Optional Gaia GPS host access | Access to `www.gaiagps.com` is requested only when the user clicks **Send to Gaia**. It lets the extension open Gaia's map and supply the saved GPX to Gaia's visible import preview; the extension does not click Gaia's **Save** control. |
 | Optional onX host access | Access to `backcountry.onxmaps.com` is requested only when the user clicks **Send to onX**. It lets the extension open onX Backcountry's import page and supply the saved GPX to its visible preview; the extension does not click onX's **Import** control and has no access to `identity.onxmaps.com`. |
@@ -87,6 +89,7 @@ permission to read device location. It covers:
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
+| IndexedDB `bpb-private-map-sources-v1` | Private map definitions/query parameters, shared request counters and 429 cooldowns | Extension-origin, device-local; never in content-script-accessible storage, sync or backups. Successfully deleting a layer deletes its private definition; budget records remain to prevent resetting quotas by deletion. Uninstalling clears the store. |
 | Peakbagger `localStorage` | Page-specific filter state and the early theme mirror | Remains with the Peakbagger site data. |
 
 ## Garmin API activity inbox
@@ -547,7 +550,7 @@ credits Open-Meteo; underlying datasets retain their provider licences.
 
 ## Optional map overlays and 3D terrain
 
-Custom raster, MVT and GeoJSON overlays use the user's public HTTPS endpoints
+Public custom raster, MVT and GeoJSON overlays use the user's public HTTPS endpoints
 directly from the active 2D page or packaged 3D frame. Metadata can discover tile
 hosts, but an additional host requires explicit review in the editor. The source
 must allow the actual renderer's origin through CORS. **Check source** in Settings
@@ -845,3 +848,44 @@ configuration and a readiness signal cross that boundary; provider content is
 not sent to the worker or report. Removing access unregisters the helper and
 restores native presentation in open BPB embeds. Permission state is owned by
 the browser and is not copied into settings backups or browser sync.
+
+## Private map request boundary
+
+Adding private query parameters moves that source’s GET requests into BPB’s
+background worker. The full definition and values stay in extension-origin
+IndexedDB. Public records and MAIN-world messages contain only opaque
+layer/revision/resource descriptors; they contain no actual provider URL or key.
+Settings-only editor replies can edit private values; an editor embedded by
+Peakbagger cannot. Values are masked in the form, not encrypted against someone
+controlling the browser/device. Even credential-inclusive exports exclude these
+values and private URLs. Restored descriptors require reconnecting locally.
+
+Map requests need explicit approval in a full BPB page, bound to a tab, layer
+revision and navigation lifetime: 256 attempts for 10 minutes. Native MasterMap
+children and the authenticated 3D frame in that tab share it. Navigation/reload,
+tab closure, definition changes, permission removal and worker restart end
+approval. Only the active tab can request new data. Shared durable limits are
+four jobs, 1,024 attempts per hour and 4,096 per day per configured provider
+hostname. Failures count; clock rollback cannot reset counters. An authorized
+hostile page can consume its approved allowance: this bounds spending, not
+all quota risk. No generic URL/header/method fetch endpoint exists.
+
+The worker constructs URLs from saved definitions and validated resource kinds
+and integer tile coordinates. It rejects redirects, omits cookies/referrers,
+and attaches query values only to the original input origin. Other TileJSON
+hosts require review/permission and never inherit those parameters. Metadata
+responses expose validated source fields only; signed tile URLs stay private.
+Per-format byte limits remain; a 16 MiB worker cache and shared duplicate GETs
+reduce spending. Cancelling all consumers or revoking access aborts transports.
+HTTP 429 applies a shared cooldown. No automatic network retry is added.
+
+The configured provider receives the key, network metadata and viewed tile
+coordinates. Its returned map content and access policy must be trusted. No
+localhost server or remote proxy service is installed. Browser permission
+warnings cover a hostname; BPB further confines each GET to saved HTTPS origins
+and resource paths. See [map layers](docs/map-layers.md#private-request-parameters).
+
+Removing parameter rows does not declassify an existing private layer or its
+signed metadata URLs. A public version must be added as a separate public
+definition after reviewing the URL; deleted private definitions are removed
+from the private store on successful deletion.

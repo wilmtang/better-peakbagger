@@ -95,7 +95,7 @@ export function initCustomLayers({ extensionApi, flash }) {
             row.up.setAttribute('aria-disabled', String(orderPending || index === 0)); row.down.setAttribute('aria-disabled', String(orderPending || index === sources.length - 1));
             if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null);
             const url = source.source.dataUrl || source.source.metadataUrl || source.source.tiles[0];
-            row.detail.textContent = `${{ raster: 'Raster tiles', mvt: 'Vector tiles', geojson: 'GeoJSON' }[source.kind]} · ${new URL(url).hostname}`;
+            row.detail.textContent = `${{ raster: 'Raster tiles', mvt: 'Vector tiles', geojson: 'GeoJSON' }[source.kind]} · ${source.privateRequests ? 'Private requests' : new URL(url).hostname}`;
             row.opacity.setAttribute('aria-label', `${source.name} opacity`); row.opacity.value = pending.get(source.id) ?? preferences[source.id] ?? source.appearance.opacity; row.value.value = `${row.opacity.value}%`;
         }
         status.textContent = sources.length ? `${sources.length} saved ${sources.length === 1 ? 'layer' : 'layers'}. Enable them from Overlays on any map.` : 'No custom layers yet. Add a public map source to get started.';

@@ -30,6 +30,7 @@ const targets = {
     'map-controls': [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']],
     'map-layers': [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']],
     'custom-overlays': [['verify-custom-overlays.mjs'], ['verify-custom-overlays.mjs', '--firefox']],
+    'private-layers': [['verify-private-layers.mjs', 'chrome'], ['verify-private-layers.mjs', 'firefox']],
     'settings-navigation': [['verify-settings-fragments.mjs', 'chrome'], ['verify-settings-fragments.mjs', 'firefox']],
     'map-location': [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']],
     'api-rate-limits': [['verify-api-rate-limits.mjs']],

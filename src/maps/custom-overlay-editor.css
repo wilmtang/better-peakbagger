@@ -16,3 +16,4 @@ html{min-height:100%;background:var(--paper);overscroll-behavior-y:none}body{min
 .feedback p{flex:1;min-width:0;max-height:35vh;overflow:auto;overflow-wrap:anywhere;margin:0}
 .feedback p:focus-visible{outline:2px solid #397cc5;outline-offset:2px}
 .actions #dismiss-feedback{flex:none;min-width:28px;min-height:28px;width:28px;padding:0;margin:-4px -4px 0 0;font-size:20px;line-height:1}
+.parameter-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}.parameter-row button{margin-bottom:1px}.parameter-row input{min-width:0}.parameter-row label{font-size:12px}@media(max-width:420px){.parameter-row{grid-template-columns:minmax(0,1fr)}.parameter-row button{justify-self:start}}

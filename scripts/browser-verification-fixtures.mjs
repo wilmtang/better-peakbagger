@@ -663,6 +663,7 @@ export async function createBrowserFixtureServer({
     inlineBuddies = false,
     peakMapDocument = peakMasterMapHtml,
     masterMapDocument = masterMapHtml,
+    bigMapDocument = bigMapHtml,
 } = {}) {
     const resources = createResourceStack();
     const certificate = await resources.guard(() =>
@@ -917,7 +918,7 @@ export async function createBrowserFixtureServer({
         }
         if (/bigmap\.aspx/i.test(url.pathname)) {
             return send('text/html; charset=utf-8',
-                (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakBigMapHtml : bigMapHtml);
+                (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakBigMapHtml : bigMapDocument);
         }
         if (url.pathname === '/fixture-ascent-image.svg') return send('image/svg+xml', ascentImageSvg);
         if (/mastermap\.aspx/i.test(url.pathname)) {

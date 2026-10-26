@@ -566,6 +566,13 @@ test('peak weather ships only on peak pages in the isolated world with its scope
 // The MV3 service worker resolves its dependencies through the bundle, not
 // importScripts. Boot the bundled worker and require that it comes up with its
 // coordinator wired and its message listener registered.
+test('private layers use optional runtime provider access and keep their approval page outside web-accessible resources', () => {
+    assert(manifest.optional_host_permissions.includes('https://*/*'));
+    assert(!manifest.host_permissions.includes('https://*/*'));
+    assert(!manifest.web_accessible_resources.some(rule => rule.resources.includes('custom-overlay/access.html')));
+    assert.deepEqual(bundleSources('custom-overlay/access.js'), ['maps/custom-layer-access.js']);
+});
+
 test('the bundled service worker boots and registers its listener', async () => {
     const workerBundle = new URL('../../dist/background.js', import.meta.url);
     let bundleSource;

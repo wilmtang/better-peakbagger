@@ -1,0 +1,114 @@
+# Private custom-layer relay — October 26, 2026
+
+Implementation authorized: add editable HTTP query parameters, keep credentials
+out of Peakbagger and relay protected map requests through BPB. Public layers
+without private parameters retain their existing direct/CORS path.
+
+## Boundaries
+
+- Private source definitions and parameter values live in extension-origin
+  IndexedDB, outside public layer records, page messages, sync and backups.
+  Public descriptors contain only opaque layer IDs, revisions and local relay
+  resource descriptors. Editing is restricted to the real Settings page/editor.
+- Requests name a saved layer/revision, resource kind and integer z/x/y. The
+  worker builds GET URLs from saved configuration, validates HTTPS destinations,
+  rejects redirects, omits cookies/referrers and never accepts caller URLs or
+  headers. Metadata-discovered hosts require explicit review/permission; no
+  credential forwarding across origins. Responses/errors must not echo secrets.
+- No protected requests before approval in a full BPB extension page. Approval
+  is bound to the requesting tab/document, layer revision, a fixed request budget
+  and expiry. Page events only open that review surface; they cannot approve it.
+  Shared persistent request budgets survive service-worker restarts; cancelling,
+  closing, revoking permission and source changes invalidate ongoing authority.
+- An authorized map necessarily can consume its approved allowance. Do not claim
+  zero quota risk. Bound total requests, concurrency, response bytes, retries and
+  cooldowns; duplicate suppression/cache reduces repeated spending.
+- Restored protected-layer descriptors require reconnecting on this device.
+  Credentials are omitted from all backups, including credential-inclusive files.
+
+## Acceptance
+
+Test hostile messages, synthetic activation, destination/path substitutions,
+wrong tabs/documents/revisions, navigation, duplicate/replayed authority,
+worker restart and clock changes, cross-tab budgets, retries/429, cancellation,
+oversized responses, metadata URL leakage and revocation. Verify saved params
+can be edited/removed without page/storage/export leakage. Exercise actual
+Chrome/Firefox packaged 2D/3D request paths and Settings at narrow/desktop sizes,
+themes, keyboard and pending/error/retry states. Keep native permission-prompt,
+live-provider and any broader suite failures explicit.
+
+## Closure ledger
+
+### Fixed and verified
+
+- Masked editable query rows in the source editor. Saving/checking requests only
+  configured optional HTTPS hostnames. The fixed editor markup is packaged HTML;
+  private values are assigned through DOM input properties. Packaging lint no
+  longer reports the former runtime-template warning.
+- Private definitions and values live in extension-origin IndexedDB. Public
+  records/backups contain only validated opaque relay descriptors, appearance
+  and identity. Settings-only `editSource` replies are confined to a real options
+  tab/editor. Failed public commits retain the prior private revision; source
+  removal deletes the private definition. Removing parameter rows retains private mode
+  so signed metadata URLs cannot be silently declassified. Restore increments
+  revisions, invalidating private records and requiring reconnection.
+- The relay constructs bounded GETs from saved IDs/revisions and resource/tile
+  coordinates. It rejects arbitrary destinations/resources, foreign origins,
+  redirects, cookies and referrers. Parameters stay on the original input
+  origin. Raw metadata and signed tile URLs never cross to MAIN. Responses and
+  errors are reduced to bounded bytes/safe status fields.
+- One-use, real-extension-page approval grants 256 attempts for 10 minutes in
+  the original active tab, with source/navigation/permission revocation and
+  abortable transport. Four jobs, 1,024 attempts/hour and 4,096/day per configured
+  provider hostname are enforced across layers/tabs using durable atomic
+  counters. Failed attempts count, clock rollback fails closed and HTTP 429
+  applies shared cooldown. Cache and duplicate sharing avoid additional GETs;
+  one cancelled consumer cannot cancel a sibling, but cancelling all aborts.
+- Parent-owned BigMap requests use the executing owner window for the isolated
+  message bridge while drawing in MasterMap. Its native child and authenticated
+  terrain renderer can use the same tab approval. Browser fixtures caught the
+  initially incorrect child-window message source before shipping.
+- `npm test`: 3,662 tests passed after the runtime/static-editor changes.
+  Focused tests cover corrupt-ledger rejection, typed client transport/cancellation and two
+  separately approved tabs/layers sharing a provider budget. Full-source ESLint
+  and `npm run lint` passed (eight previously owned vendor/cross-browser warnings).
+- Hidden Chrome 156.0.8078.4 and Firefox 158.0.1 packaged fixtures passed with a
+  synthetic key and an HTTPS tile server supplying no CORS headers. Both checked
+  no request before approval; masked saved editing; no key in page DOM/messages,
+  public storage or credential-inclusive export; forged resource rejection;
+  actual 2D/3D rendering/worker reads; and no network requests after reload until
+  reapproval. 3D used hardware Metal/Apple M3 Pro, rejecting software renderers.
+- Settings inspected at 1000/375×900 in Chrome and 1000/500×900 in Firefox (its
+  privileged-window minimum). Light/dark rows fit. Actual Save controls retained
+  position/dimensions, focus and scroll through pending, duplicate activation,
+  recoverable error, retry and success within one pixel. The disposable fixture
+  held local writes; production write code and permission pregrant were retained.
+- The real unpacked Chrome startup/bridge verifier passed. The public custom
+  overlay verifier also passed: 15 map surfaces, actual CORS recovery, 2D/3D
+  raster/vector rendering, 14 editor states, keyboard retry and anchored feedback.
+  No live Peakbagger report, user profile or installed permissions were changed.
+- Owned process command lines and disposable profile paths were inspected after
+  teardown; no verification browsers/profiles remained.
+
+### Intentionally not changed
+
+- Existing public layers and native map owners. No generic fetch proxy, remote
+  relay server, arbitrary headers, cookies or server/admin credential support.
+- An approved hostile page can spend its allowance and read map data. Provider
+  credentials/data are not protected from the configured provider or someone
+  controlling the local device. Permission warnings cover hostnames, whereas
+  runtime requests are more narrowly pinned to saved HTTPS origins/resources.
+- Worker suspension/restart loses in-memory approvals and requires another
+  explicit approval; durable counters cannot be reset that way. No silent
+  renewal, background scraping, unlimited grants or synced credentials.
+
+### Changed but not fully proven
+
+- Native permission prompts and provider-specific access policies require
+  independent evidence; fixture grants cannot establish them.
+- Native grant/revocation prompt appearance, visible-window focus/placement,
+  physical touch, browser zoom and assistive-technology behavior were not proved.
+  No provider-specific API key was used. Generic raster integration is proven in
+  both browsers; MVT/GeoJSON and TileJSON privacy/limits have focused unit coverage
+  plus the existing public renderer checks, rather than a live authenticated
+  provider survey for each format.

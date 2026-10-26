@@ -48,6 +48,14 @@ export function installCustomOverlayBridge(win = window) {
             return;
         }
         if (event.source !== win || event.origin !== win.location.origin || data.dir !== 'toCS') return;
+        if (data.type === 'privateGet' || data.type === 'privateCancel') {
+            const message = data.message;
+            if (!message || typeof message.requestId !== 'string' || message.requestId.length > 80) return;
+            const type = data.type === 'privateGet' ? 'CUSTOM_PRIVATE_GET' : 'CUSTOM_PRIVATE_CANCEL';
+            void ext.runtime.sendMessage({ type, id: message.id, revision: message.revision, resource: message.resource, coordinates: message.coordinates, requestId: message.requestId })
+                .then(reply => { if (type === 'CUSTOM_PRIVATE_GET') post({ type: 'privateReply', requestId: message.requestId, reply }); }).catch(() => post({ type: 'privateReply', requestId: message.requestId, reply: { ok: false } }));
+            return;
+        }
         if (data.type === 'get' && typeof data.mapId === 'string' && /^[a-z0-9-]{1,80}$/i.test(data.mapId) && (maps.has(data.mapId) || maps.size < 32)) { maps.add(data.mapId); void announce(data.mapId); }
         if (data.type === 'parse' && typeof data.requestId === 'string' && data.requestId.length < 100
             && data.job?.bytes instanceof ArrayBuffer && data.job.bytes.byteLength <= CUSTOM_LIMITS.geojson && jobs.size < 64) {
@@ -57,6 +65,14 @@ export function installCustomOverlayBridge(win = window) {
         if (data.type === 'taskReply') send({ type: 'taskReply', requestId: data.requestId, reply: data.reply });
     };
     const announceAll = () => { for (const mapId of maps) void announce(mapId); };
+    const approve = async event => {
+        const control = event.target?.closest?.('[data-bpb-private-layer]');if (!control || !active || !event.isTrusted) return;
+        event.preventDefault();
+        const generation = crypto.randomUUID(), action = TrustedActions.ACTIONS.CUSTOM_LAYER_ACCESS;
+        const activation = await trustedAction.issue(ext, event, action, generation);if (!activation) return;
+        await ext.runtime.sendMessage({ type: 'CUSTOM_PRIVATE_OPEN', id: control.dataset.bpbPrivateLayer, revision: Number(control.dataset.revision), generation, activationToken: activation.token }).catch(() => {});
+    };
+    win.document.addEventListener('click', approve, true);
     const change = (changes, area) => { if (area === 'local' && (changes[CUSTOM_REGISTRY_KEY] || changes[CUSTOM_PREFERENCES_KEY])) announceAll(); };
     win.addEventListener('message', receive); win.document.addEventListener('click', openSettings, true); win.document.addEventListener('auxclick', openSettings, true); ext.storage.onChanged.addListener(change);
     const opacity = event => {
@@ -66,7 +82,7 @@ export function installCustomOverlayBridge(win = window) {
     };
     win.document.addEventListener('change', opacity, true);
     const lifecycle = createPageLifecycle({ ownerWindow: win, onSuspend() { active = false; for (const id of jobs.keys()) send({ type: 'cancelParse', requestId: id }); jobs.clear(); },
-        onResume() { active = true; announceAll(); }, onDispose() { active = false; frame?.remove(); win.removeEventListener('message', receive); win.document.removeEventListener('click', openSettings, true); win.document.removeEventListener('auxclick', openSettings, true); win.document.removeEventListener('change', opacity, true); ext.storage.onChanged.removeListener(change); } });
+        onResume() { active = true; announceAll(); }, onDispose() { active = false; frame?.remove(); win.removeEventListener('message', receive);win.document.removeEventListener('click', approve, true); win.document.removeEventListener('click', openSettings, true); win.document.removeEventListener('auxclick', openSettings, true); win.document.removeEventListener('change', opacity, true); ext.storage.onChanged.removeListener(change); } });
     return { dispose: lifecycle.dispose };
 }
 if (typeof window !== 'undefined') installCustomOverlayBridge();

@@ -5,11 +5,15 @@ import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
 import { validateCustomRaster } from './custom-overlay-raster.js';
 
-export const customFailure = error => error?.code === 'access' ? 'Check the URL and the provider’s CORS settings. The source must allow browser access from this map.'
-    : error?.code === 'origins' ? 'Review the tile provider hosts in Edit source before loading.'
-        : error?.status === 401 || error?.status === 403 ? 'This source requires access. Use a public endpoint.'
-            : error?.status === 404 || error?.status === 410 ? 'Some tiles are unavailable at this location or zoom.'
-                : error?.code === 'rate-limit' ? 'The provider is busy. Retry after its cooldown.' : error?.message || 'Couldn’t load this source.';
+export const customFailure = error => error?.code === 'approval' ? 'Approve private map access in BPB, then choose Retry.'
+    : error?.code === 'budget' ? 'Private map request allowance reached. Wait before approving more.'
+        : error?.code === 'permission' ? 'Allow this provider in BPB Settings.'
+            : error?.code === 'busy' ? 'Other private map requests are running. Choose Retry when they finish.'
+                : error?.code === 'access' ? 'Check the URL and the provider’s CORS settings. The source must allow browser access from this map.'
+                    : error?.code === 'origins' ? 'Review the tile provider hosts in Edit source before loading.'
+                        : error?.status === 401 || error?.status === 403 ? 'This source requires access. Use a public endpoint.'
+                            : error?.status === 404 || error?.status === 410 ? 'Some tiles are unavailable at this location or zoom.'
+                                : error?.code === 'rate-limit' ? 'The provider is busy. Retry after its cooldown.' : error?.message || 'Couldn’t load this source.';
 export function createCustomPool() {
     let running = 0; const queue = [], cooldowns = new Map();
     const pump = () => { while (running < 4 && queue.length) { const task = queue.shift(); task.start(); } };
@@ -41,7 +45,7 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
             try {
                 if (signal?.aborted) throw new DOMException('Cancelled.', 'AbortError');
                 try { response = await deadline.run(fetchImpl(url, { mode: 'cors', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', signal: deadline.signal })); }
-                catch (error) { if (signal?.aborted || error.name === 'AbortError') throw error; throw Object.assign(new Error('Couldn’t access this source.'), { code: 'access' }); }
+                catch (error) { if (signal?.aborted || error.name === 'AbortError' || ['approval', 'budget', 'permission', 'busy', 'private-source', 'origins'].includes(error.code)) throw error; throw Object.assign(new Error('Couldn’t access this source.'), { code: 'access' }); }
                 if (response.status === 429) {
                     const error = rateLimitError('Custom map provider', response); error.retryAt ??= Date.now() + 300000;
                     pool.cooldowns.set(origin, Math.max(pool.cooldowns.get(origin) || 0, error.retryAt)); throw error;
