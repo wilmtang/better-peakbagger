@@ -9,6 +9,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
 import { JSDOM } from 'jsdom';
+import { layoutVerificationPlan } from './layout-verification-plan.mjs';
 import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
@@ -22,7 +23,6 @@ import { verifyReportCaptionStability } from './verify-report-caption-stability.
 import { verifyAscentColumnWidths, verifyPeakColumnWidths } from './verify-ascent-column-widths.mjs';
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
 
-const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
 const output = process.env.BPB_JITTER_ARTIFACTS;
 if (output) await mkdir(output, { recursive: true });
 const assets = new Map();
@@ -1398,11 +1398,7 @@ const cases = { 'report-filter': reportFilterCase, sun: sunCase, 'photo-report-e
     'peak-columns': (page, origin, variant) => verifyPeakColumnWidths(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
     captions: (page, origin, variant) => verifyReportCaptionStability(page, origin, variant, { asset, capture }) };
-for (const argument of process.argv.slice(2)) {
-    assert.ok(argument === '--chrome-only' || argument === '--firefox-only' || /^--surface=.+$/.test(argument), `Unknown layout argument: ${argument}`);
-}
-assert.ok(!(process.argv.includes('--chrome-only') && process.argv.includes('--firefox-only')), 'Choose only one layout browser');
-assert.ok(!selected || Object.hasOwn(cases, selected), `Unknown layout surface: ${selected}`);
+const plan = layoutVerificationPlan(process.argv.slice(2), Object.keys(cases));
 const resources = createResourceStack();
 let failure = null, executedCases = 0;
 try {
@@ -1413,37 +1409,35 @@ try {
     resources.defer('jitter fixture server', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     for (const [name, engine] of [['chrome', chromium], ['firefox', firefox]]) {
-        if (process.argv.includes('--chrome-only') && name !== 'chrome') continue;
-        if (process.argv.includes('--firefox-only') && name !== 'firefox') continue;
+        const selectedCases = plan.cases.filter(value => value.browser === name);
+        if (!selectedCases.length) continue;
         if (engine === chromium) assertChromeLaunchAllowed();
         const browser = await engine.launch({ headless: true, ...(engine === chromium
             ? { channel: 'chromium', args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] }
             : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }) });
         try {
-            for (const theme of ['light', 'dark']) for (const width of [390, 1280])
-                for (const zoom of ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter'].includes(selected) ? [1, 1.5] : [1]) {
-                    for (const [surface, check] of Object.entries(cases)) {
-                        if (selected && selected !== surface) continue;
-                        const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: Math.floor(width / zoom), height: Math.floor(900 / zoom) }, deviceScaleFactor: zoom, colorScheme: theme });
-                        try {
-                            await context.route(`${origin}/dist/**`, async route => {
-                                const file = new URL(route.request().url()).pathname.slice('/dist/'.length);
-                                if (file.includes('..')) return route.abort();
-                                try { await route.fulfill({ body: await asset(file), contentType: fixtureContentType(file) }); }
-                                catch { await route.fulfill({ status: 404, body: 'Missing shipped fixture asset' }); }
-                            });
-                            const page = await context.newPage();
-                            page.setDefaultTimeout(10000);
-                            page.on('pageerror', error => console.error(`${surface}: ${error.message}`));
-                            const variant = { theme, width, zoom, name: `${name}-${theme}-${width}${zoom === 1 ? '' : '-zoom150'}` };
-                            await check(page, origin, variant); executedCases++;
-                            console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,
-                                surface, theme, viewport: `${Math.floor(width / zoom)}x${Math.floor(900 / zoom)}`, deviceScaleFactor: zoom, layoutZoom: zoom, result: 'passed' }));
-                        } finally { await context.close(); }
-                    }
-                }
+            for (const variant of selectedCases) {
+                const { surface, theme, width, zoom } = variant, check = cases[surface];
+                const startedAt = performance.now();
+                const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: Math.floor(width / zoom), height: Math.floor(900 / zoom) }, deviceScaleFactor: zoom, colorScheme: theme });
+                try {
+                    await context.route(`${origin}/dist/**`, async route => {
+                        const file = new URL(route.request().url()).pathname.slice('/dist/'.length);
+                        if (file.includes('..')) return route.abort();
+                        try { await route.fulfill({ body: await asset(file), contentType: fixtureContentType(file) }); }
+                        catch { await route.fulfill({ status: 404, body: 'Missing shipped fixture asset' }); }
+                    });
+                    const page = await context.newPage();
+                    page.setDefaultTimeout(10000);
+                    page.on('pageerror', error => console.error(`${surface}: ${error.message}`));
+                    await check(page, origin, variant); executedCases++;
+                    console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,
+                        surface, theme, viewport: `${Math.floor(width / zoom)}x${Math.floor(900 / zoom)}`, deviceScaleFactor: zoom, layoutZoom: zoom, durationMs: Math.round(performance.now() - startedAt), result: 'passed' }));
+                } finally { await context.close(); }
+            }
         } finally { await browser.close(); }
     }
-    assert.ok(executedCases > 0, 'layout verification must execute at least one case');
+    assert.equal(executedCases, plan.cases.length, 'every selected layout case must execute');
+    console.log(JSON.stringify({ verification: 'layout-stability', shard: plan.shard, executedCases }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);
