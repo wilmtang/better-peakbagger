@@ -1,5 +1,5 @@
 html, body { margin: 0; width: 100%; height: 100%; background: transparent; }
 body { font: 14px/1.4 system-ui, sans-serif; }
-#status { padding: 12px; }
+#status { position: absolute; inset: 0 auto auto 0; padding: 12px; }
 #post { width: 100%; height: 100%; display: block; border: 0; }
 [hidden] { display: none !important; }

@@ -788,6 +788,15 @@ only its scripts-only, opaque child frame runs provider code. It has no
 Peakbagger-origin access or extension APIs. No API token, oEmbed lookup, remote
 extension code, proxy or new provider host access is involved.
 
+The captioned provider endpoint keeps author text inside the sandbox. The wrapper
+accepts only a numeric `MEASURE` message from its actual opaque child WindowProxy,
+not merely a sender with origin `null`. `src/reports/instagram-sizing.js` bounds
+that height to 320–1,600 pixels at both frame boundaries. Completion waits for the
+first valid measurement, with a one-second post-load fallback to a scrolling
+viewport; the report expands once and ignores later resizing. Pending content is
+unpainted and inert, rather than visibility-hidden, so the provider can measure
+without pausing its rendering callbacks or becoming keyboard accessible.
+
 `src/reports/report-protection.json` installs Chrome's saved-ascent response CSP
 before parsing. Firefox uses the synchronous `report-protection-firefox.js`
 header listener with the shared policy because its DNR implementation lacks the

@@ -18,13 +18,24 @@ function setup({issue,automatic=false,timeoutMs=1000}={}){
     const ui=createInstagramPresentation({doc,ext,timeoutMs,preferences:{requireCurrent:async()=>({loadInstagramAutomatically:automatic}),subscribe:fn=>{changed=fn;return ()=>{};}}});
     const root=doc.getElementById('root'),card=ui.create(URL);root.append(card.element);
     return {dom,doc,ui,root,card,sent,changed:value=>changed({loadInstagramAutomatically:value}),listeners,
-        loaded:()=>{const frame=card.element.querySelector('iframe');dom.window.dispatchEvent(new dom.window.MessageEvent('message',{origin:'chrome-extension://fixture',source:frame.contentWindow,data:{__bpbInstagram:'loaded'}}));},
+        loaded:height=>{const frame=card.element.querySelector('iframe');dom.window.dispatchEvent(new dom.window.MessageEvent('message',{origin:'chrome-extension://fixture',source:frame.contentWindow,data:{__bpbInstagram:'loaded',height}}));},
         close:()=>{ui.destroy();dom.window.close();}};
 }
 test('blocked posts make no runtime or frame request; synthetic clicks cannot start loading',async()=>{
     const s=setup();try{await new Promise(resolve=>setTimeout(resolve,0));s.card.element.querySelector('button').click();
         assert.equal(s.sent.length,0);assert.equal(s.card.element.querySelector('iframe'),null);
         assert.equal(s.card.element.querySelector('a').href,URL);
+    }finally{s.close();}
+});
+test('a completed player adopts one bounded height and hide clears its media footprint',async()=>{
+    const s=setup();try{
+        const button=s.card.element.querySelector('button'),media=s.card.element.querySelector('.bpb-instagram-media');
+        fireTrustedEvent(button,'click');await waitFor(s.dom,()=>s.card.element.querySelector('iframe'));
+        s.loaded(1000000);assert.equal(media.style.height,'1600px');
+        s.loaded(400);assert.equal(media.style.height,'1600px','later messages must not resize a loaded post');
+        fireTrustedEvent(button,'click');assert.equal(media.style.height,'');assert(media.hidden);
+        fireTrustedEvent(button,'click');await waitFor(s.dom,()=>s.card.element.querySelector('iframe'));
+        s.loaded('900px');assert.equal(media.style.height,'','CSS strings cannot influence layout');
     }finally{s.close();}
 });
 test('trusted loading, ready, hide and current preference changes retain the action node',async()=>{

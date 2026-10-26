@@ -281,11 +281,12 @@ from a disposable copy and must fail on observed execution.
 
 `instagram` uses real packaged extension frames with a local HTTPS provider
 behind a deny-by-default test proxy. It checks no contact before activation,
-opaque sandbox isolation, per-post loading, consent, cancellation/error/retry,
+opaque sandbox isolation, native captions, bounded one-time sizing, per-post loading, consent, cancellation/error/retry,
 keyboard focus and geometry at 1000/375×900 in both themes and enlarged text;
 editor paste and Markdown retention use 1280/375×900. The provider and native
 form are fixtures. `--live` instead loads a public photo and author-linked Reel,
-including muted playback; provider availability can change. It does not submit a
+including captions and muted playback; `BPB_INSTAGRAM_LIVE_POST` optionally adds
+one validated public sample. Provider availability can change. It does not submit a
 live ascent or modify the user's clipboard. All runs are hidden and own their
 temporary profiles, certificate, proxy and teardown.
 

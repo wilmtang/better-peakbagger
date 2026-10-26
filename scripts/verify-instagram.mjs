@@ -16,6 +16,7 @@ import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
 import { readSettingsFragmentLanding, settingsFragmentLanded } from './settings-fragment-verification.mjs';
+import { canonicalInstagramUrl } from '../src/reports/instagram-url.js';
 
 const POST='https://www.instagram.com/p/fA9uwTtkSN/';
 // Public sample linked by its author: https://www.nps.gov/media/video/view.htm?id=0C5D889A-6097-4041-B8A2-E9CFE6C0E554
@@ -33,6 +34,8 @@ function stable(before,after,{expanded=false}={}) {
 
 export async function verifyInstagram(kind,{live=false,screenshots}={}) {
     assert(['chrome','firefox'].includes(kind),'Choose chrome or firefox');
+    const livePosts=[POST,REEL];
+    if(live&&process.env.BPB_INSTAGRAM_LIVE_POST){const url=canonicalInstagramUrl(process.env.BPB_INSTAGRAM_LIVE_POST);assert(url,'Invalid live post URL');livePosts.push(url);}
     const resources=createResourceStack();
     try {
         const root=await mkdtemp(path.join(tmpdir(),'bpb-instagram-'));
@@ -49,15 +52,21 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
         let held=true,requests=0,connects=0;const waiting=new Set(),sockets=new Set();
         const provider=(response)=>{
             response.writeHead(200,{'content-type':'text/html','cache-control':'no-store'});
-            response.end('<html><head><meta name="viewport" content="width=device-width"></head><body style="font:16px system-ui;margin:16px"><h2>Fixture Instagram post</h2><p>Provider content</p><script>try{parent.document.body;document.body.dataset.parentBlocked="no"}catch{document.body.dataset.parentBlocked="yes"}document.body.dataset.extensionApi=typeof chrome!=="undefined"&&!!chrome.runtime?"yes":"no"</script></body></html>');
+            response.end('<html><head><meta name="viewport" content="width=device-width"></head><body style="font:16px system-ui;margin:16px"><h2>Fixture Instagram post</h2><p>Provider content</p>'
+                +(response.bpbCaptioned?'<p class="Caption">An author caption, included by the provider after loading.</p>':'')
+                +'<script>try{parent.document.body;document.body.dataset.parentBlocked="no"}catch{document.body.dataset.parentBlocked="yes"}document.body.dataset.extensionApi=typeof chrome!=="undefined"&&!!chrome.runtime?"yes":"no";parent.postMessage(JSON.stringify({type:"MEASURE",details:{height:620}}),"*")</script></body></html>');
         };
         const server=httpsServer(certificate,(request,response)=>{
             const send=body=>{response.writeHead(200,{'content-type':'text/html','cache-control':'no-store'});response.end(body);};
             if(request.headers.host?.startsWith('www.instagram.com')){
+                response.bpbCaptioned=request.url.split('?')[0].endsWith('/embed/captioned/');
                 requests++;if(held){waiting.add(response);response.on('close',()=>waiting.delete(response));}else provider(response);return;
             }
             if(request.url.startsWith('/climber/ascentedit.aspx'))return send(edit);
-            if(request.url.startsWith('/climber/ascent.aspx'))return send(request.url.includes('reel=1')?saved.replaceAll(POST,REEL):saved);
+            if(request.url.startsWith('/climber/ascent.aspx')){
+                const index=Number(new URL(request.url,'https://www.peakbagger.com').searchParams.get('sample')||0);
+                return send(saved.replaceAll(POST,livePosts[index]||POST));
+            }
             if(request.url.startsWith('/other'))return send('<html><body>Other page</body></html>');
             response.writeHead(404);response.end();
         });
@@ -99,7 +108,7 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 await options.evaluate(()=>document.getElementById('load-instagram-automatically').closest('.row').scrollIntoView({block:'center'}));
                 if(file)await options.screenshot({path:file});return {width,height:900};};
             player=async()=>{const outer=page.frames().find(f=>f.url().includes('/reports/instagram.html'));const inner=outer?.childFrames()[0];
-                return inner?.evaluate(()=>({title:document.title,text:document.body.innerText.slice(0,200),parentBlocked:document.body.dataset.parentBlocked,extensionApi:document.body.dataset.extensionApi,images:[...document.images].filter(i=>i.naturalWidth>0).length,videos:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,width:v.videoWidth,time:v.currentTime}))}));};
+                return inner?.evaluate(()=>({title:document.title,text:document.body.innerText.slice(0,200),captionLength:document.querySelector('.Caption')?.textContent.trim().length||0,captionBottom:document.querySelector('.Caption')?.getBoundingClientRect().bottom,viewportHeight:window.innerHeight,parentBlocked:document.body.dataset.parentBlocked,extensionApi:document.body.dataset.extensionApi,images:[...document.images].filter(i=>i.naturalWidth>0).length,videos:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,width:v.videoWidth,time:v.currentTime}))}));};
             play=async()=>{const inner=page.frames().find(f=>f.url().includes('/reports/instagram.html'))?.childFrames()[0];
                 await inner.locator('video').evaluate(video=>{video.muted=true;});
                 await inner.locator('[aria-label="Control"]').click();};
@@ -134,7 +143,7 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 if(file)await screenshot(file.replace(`-${width}.png`,`-${actual.width}.png`));return actual;
             }finally{await driver.switchTo().window(readerHandle);}};
             player=async()=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));
-                return await evaluate(()=>({title:document.title,text:document.body.innerText.slice(0,200),parentBlocked:document.body.dataset.parentBlocked,extensionApi:document.body.dataset.extensionApi,images:[...document.images].filter(i=>i.naturalWidth>0).length,videos:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,width:v.videoWidth,time:v.currentTime}))}));
+                return await evaluate(()=>({title:document.title,text:document.body.innerText.slice(0,200),captionLength:document.querySelector('.Caption')?.textContent.trim().length||0,captionBottom:document.querySelector('.Caption')?.getBoundingClientRect().bottom,viewportHeight:window.innerHeight,parentBlocked:document.body.dataset.parentBlocked,extensionApi:document.body.dataset.extensionApi,images:[...document.images].filter(i=>i.naturalWidth>0).length,videos:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,width:v.videoWidth,time:v.currentTime}))}));
             }finally{await driver.switchTo().defaultContent();}};
             play=async()=>{try{await driver.switchTo().frame(await driver.findElement(By.css('.bpb-instagram-frame')));await driver.switchTo().frame(await driver.findElement(By.id('post')));
                 await evaluate(()=>{document.querySelector('video').muted=true;});await driver.findElement(By.css('[aria-label="Control"]')).click();
@@ -148,14 +157,15 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
         const geometry=()=>evaluate(Function(`return (()=>{const rect=${rect};return {button:rect(document.querySelector('${ACTION}')),card:rect(document.querySelector('${CARD}')),others:[...document.querySelectorAll('${CARD},#Gmap,#bpb-ascent-summary-column,#bpb-ascent-report-column')].map(rect),heading:rect(document.querySelector('main>h1')),following:rect(document.getElementById('following')),scroll:window.scrollY}})()`));
         await patch({loadInstagramAutomatically:false,enableReportEditor:true,addReportCredit:false,reportEditorMode:'rich',showWeather:false,showSunMoon:false,showSummitCloud:false,showSnotel:false});
         if(live) {
-            for(const [index,url]of [POST,REEL].entries()){
-                const count=connects;await navigate(`${origin}/climber/ascent.aspx?aid=7654321${index?'&reel=1':''}`);await waitState('idle');assert.equal(connects,count,'provider contacted before activation');
+            for(const [index,url]of livePosts.entries()){
+                const count=connects;await navigate(`${origin}/climber/ascent.aspx?aid=7654321&sample=${index}`);await waitState('idle');assert.equal(connects,count,'provider contacted before activation');
                 await click(ACTION);await waitState('loaded');
-                const content=await waitForCondition(player,{description:'live public Instagram image',timeoutMs:30_000,isReady:s=>s?.images>0});
+                const content=await waitForCondition(player,{description:'live public Instagram image and caption',timeoutMs:30_000,isReady:s=>s?.images>0&&s.captionLength>0});
                 assert(content.text.length>0);console.log(JSON.stringify({kind,version,hidden:true,viewport:'1000x900',live:true,post:url,content}));
-                if(index){await play();const playback=await waitForCondition(player,{description:'public Reel playback',timeoutMs:25_000,isReady:s=>s?.videos.some(v=>v.width>0&&v.ready>=2&&v.time>0)});
+                if(index===1){await play();const playback=await waitForCondition(player,{description:'public Reel playback',timeoutMs:25_000,isReady:s=>s?.videos.some(v=>v.width>0&&v.ready>=2&&v.time>0)});
                     console.log(JSON.stringify({kind,playback:playback.videos}));}
-                if(screenshots)await screenshot(path.join(screenshots,`instagram-${kind}-live-${index?'reel':'post'}.png`));
+                if(index!==1)assert(content.captionBottom<=content.viewportHeight+1,'the caption should fit the completed post viewport');
+                if(screenshots)await screenshot(path.join(screenshots,`instagram-${kind}-live-${index===0?'post':index===1?'reel':'extra'}.png`));
             }
         } else {
             let cases=0;
@@ -169,12 +179,14 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 assert.equal(requests,startRequests);assert.equal(connects,startConnects);
                 await evaluate(()=>document.querySelector('.bpb-instagram-action').click());assert.equal((await state()).state,'idle','synthetic activation accepted');
                 const before=await geometry();
+                if(!enlarged)assert(before.card.height<=80,`blocked post should be a compact inline row, got ${before.card.height}px`);
                 const shot=state=>screenshots&&screenshot(path.join(screenshots,`instagram-${kind}-${width}-${theme}-${enlarged?'large':'normal'}-${state}.png`));
                 await shot('idle');
                 const available=await evaluate(()=>document.querySelector('.bpb-instagram').clientWidth>=320);
                 if(!available){await click(ACTION);assert.match(await evaluate(()=>document.querySelector('.bpb-instagram-status').textContent),/widen/);stable(before,await geometry());assert.equal(requests,startRequests);cases++;continue;}
                 await key('Enter');await waitState('pending');await waitForCondition(()=>requests>startRequests,{description:'one provider request'});
                 stable(before,await geometry());assert((await state()).focus,'focus lost during pending');assert.equal(requests,startRequests+1);
+                assert.equal(await evaluate(()=>{const f=document.querySelector('.bpb-instagram-frame');f.focus();return document.activeElement===f;}),false,'an unpainted pending player must not take focus');
                 await shot('pending');
                 // A same-origin packaged renderer with an invalid grant reports an
                 // authenticated error; this does not trust a page-origin message.
@@ -186,6 +198,8 @@ export async function verifyInstagram(kind,{live=false,screenshots}={}) {
                 held=false;for(const response of waiting)provider(response);waiting.clear();await waitState('loaded');
                 stable(before,await geometry(),{expanded:true});assert.equal((await state()).frames,1,'one click enabled a second post');assert((await state()).focus);
                 const remote=await player();assert.equal(remote.parentBlocked,'yes');assert.equal(remote.extensionApi,'no');
+                assert(remote.captionLength>0,'the provider must include its native caption');
+                assert.equal(await evaluate(()=>document.querySelector('.bpb-instagram-media').getBoundingClientRect().height),620,'one provider measurement should size the completed post');
                 if(screenshots)await screenshot(path.join(screenshots,`instagram-${kind}-${width}-${theme}-${enlarged?'large':'normal'}.png`));
                 await key('Enter');await waitState('idle');stable(before,await geometry());
                 held=true;await key('Enter');await waitState('pending');await key('Enter');await waitState('idle');stable(before,await geometry());

@@ -1,16 +1,17 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { canonicalInstagramUrl, instagramParagraphUrl } from './instagram-url.js';
+import { instagramEmbedHeight } from './instagram-sizing.js';
 import { createStableText } from '../ui/stable-text.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { trustedAction } from '../ui/trusted-action.js';
 import { settings } from '../settings/settings.js';
 
-const IDLE='Load this post to view it here. Connects to Instagram.';
-const PENDING='Loading Instagram…';
-const FAILED='Could not load this post. Try again or open it on Instagram.';
-const NARROW='Open this post on Instagram, or widen this view to load it here.';
-const LOADED='Loaded from Instagram.';
+const IDLE='Connects to Instagram';
+const PENDING='Loading…';
+const FAILED='Couldn’t load this post';
+const NARROW='Open link or widen view';
+const LOADED='Loaded';
 export function createInstagramPresentation({doc=document,ext=globalThis.browser||globalThis.chrome,preferences=settings,timeoutMs=20_000}={}) {
     const owner=doc.defaultView;
     const cards=new Set(), cardFor=new WeakMap(), activeLoads=new Set();
@@ -56,26 +57,28 @@ export function createInstagramPresentation({doc=document,ext=globalThis.browser
     function create(raw,{useLink}={}) {
         const url=canonicalInstagramUrl(raw);if(!url)throw new Error('Invalid Instagram post');
         const box=element('div','bpb-instagram');box.contentEditable='false';
-        const title=element('p','bpb-instagram-title','Instagram post');
+        const toolbar=element('div','bpb-instagram-toolbar');
+        const link=element('a','bpb-instagram-link bpb-instagram-title','Instagram');link.href=url;link.target='_blank';link.rel='noopener noreferrer';
+        link.setAttribute('aria-label','Open post on Instagram');
+        const arrow=element('span','bpb-instagram-external','↗');arrow.setAttribute('aria-hidden','true');link.append(arrow);
         const status=element('span','bpb-instagram-status',IDLE);status.setAttribute('role','status');
         const text=createStableText(status);text.reserve([IDLE,PENDING,FAILED,NARROW,LOADED]);
         const actions=element('div','bpb-instagram-actions');
-        const button=element('button','bpb-instagram-action','Load Instagram post');button.type='button';button.dataset.bpbReportMediaUi='';
-        const label=createStableText(button);label.reserve(['Load Instagram post','Cancel','Hide post','Retry']);
-        const link=element('a','bpb-instagram-link','Open on Instagram');link.href=url;link.target='_blank';link.rel='noopener noreferrer';
-        actions.append(button,link);
+        const button=element('button','bpb-instagram-action','Load post');button.type='button';button.dataset.bpbReportMediaUi='';
+        const label=createStableText(button);label.reserve(['Load post','Cancel','Hide post','Retry']);
+        actions.append(button);
         if(useLink){const convert=element('button','bpb-instagram-as-link','Use link');convert.type='button';convert.dataset.bpbReportMediaUi='';convert.addEventListener('click',useLink);actions.append(convert);}
-        const media=element('div','bpb-instagram-media');media.hidden=true;
-        box.append(title,status,actions,media);
+        const media=element('div','bpb-instagram-media');media.hidden=true;media.setAttribute('inert','');media.setAttribute('aria-hidden','true');
+        toolbar.append(link,actions,status);box.append(toolbar,media);
         let state='idle',generation=0,frame=null,timer=null,nonce=null,suppressed=false,dead=false;
         const clearTimer=()=>{if(timer!==null){owner.clearTimeout(timer);timer=null;}};
         const paint=()=>{
-            label.set(state==='pending'?'Cancel':state==='loaded'?'Hide post':state==='error'?'Retry':'Load Instagram post');
+            label.set(state==='pending'?'Cancel':state==='loaded'?'Hide post':state==='error'?'Retry':'Load post');
             button.setAttribute('aria-label',state==='pending'?'Cancel loading Instagram post':state==='loaded'?'Hide Instagram post':state==='error'?'Retry loading Instagram post':'Load Instagram post');
             box.dataset.state=state;
         };
         const stop=(suppress=true)=>{
-            generation++;activeLoads.delete(nonce);nonce=null;clearTimer();frame?.remove();frame=null;media.hidden=true;delete media.dataset.pending;
+            generation++;activeLoads.delete(nonce);nonce=null;clearTimer();frame?.remove();frame=null;media.hidden=true;media.style.height='';media.setAttribute('inert','');media.setAttribute('aria-hidden','true');delete media.dataset.pending;
             state='idle';suppressed=suppress;text.set(IDLE);paint();
         };
         const fail=()=>{stop(true);state='error';text.set(FAILED);paint();};
@@ -103,7 +106,9 @@ export function createInstagramPresentation({doc=document,ext=globalThis.browser
             if(!frame||event.source!==frame.contentWindow||event.origin!==extensionOrigin||state!=='pending')return;
             if(event.data?.__bpbInstagram==='error'){fail();return;}
             if(event.data?.__bpbInstagram!=='loaded')return;
-            clearTimer();state='loaded';delete media.dataset.pending;frame.tabIndex=0;text.set(LOADED);paint();
+            const height=instagramEmbedHeight(event.data.height);
+            if(height!==null)media.style.height=height+'px';
+            clearTimer();state='loaded';delete media.dataset.pending;media.removeAttribute('inert');media.removeAttribute('aria-hidden');frame.tabIndex=0;text.set(LOADED);paint();
         };
         owner.addEventListener('message',receive);
         const card={element:box,url,onScreen:!intersections,stop,

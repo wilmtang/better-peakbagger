@@ -773,7 +773,7 @@ backup or sync may later transfer the imported change.
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | AllTrails, CalTopo, Gaia GPS, and onX Backcountry | The saved Peakbagger GPX after the matching **Send** click, including CalTopo's server-side parsing; review and final Upload, Import, and Save actions remain manual. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
-| Instagram | One post after **Load Instagram post**, or visible posts after this device opts into automatic loading. No metadata, thumbnail or player request before activation. The isolated provider page may use Instagram cookies subject to browser restrictions; its privacy policy applies. |
+| Instagram | One post after **Load post**, or visible posts after this device opts into automatic loading. No metadata, thumbnail, caption or player request before activation. The isolated provider page may use Instagram cookies subject to browser restrictions; its privacy policy applies. |
 | GitHub | User-triggered backups, automatic ascent backups when enabled, and device-opted-in settings/favorites/photo metadata backups and ignored-list sync, all to the selected repository; validation reads for an imported connection; explicit restores. |
 | Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |
 | Avalanche forecast and backcountry conditions sites | Only when the user opens a planning link. Canada links include the summit coordinates; EAWS map links include a small area around the summit. Other configured destinations are gateways without coordinates. |
@@ -823,3 +823,9 @@ lookup, proxying or provider-content scraping. The persistent network rule block
 Instagram resources initiated by Peakbagger; loading a post never unlocks the
 whole tab. Protection does not cover readers without BPB or a pre-existing
 hostile service worker synthesizing documents outside the network stack.
+
+After loading, Instagram's captioned player displays the author's caption inside
+the sandbox. BPB does not read, extract or store that text. Only a bounded numeric
+height measurement may cross from the actual provider frame to the packaged
+wrapper, then to the report surface; it determines one initial layout expansion.
+Provider markup, styles and later resize messages are not applied to the report.

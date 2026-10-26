@@ -1156,7 +1156,7 @@ select the entire existing paragraph/line to replace it).
 
 These checks recognize a post; they do not prove it is public or embeddable.
 They make no Instagram request. Recognition creates the placeholder; provider
-loading still requires **Load Instagram post** or this device's automatic-load
+loading still requires **Load post** or this device's automatic-load
 consent. No link/image toolbar tool or Instagram API key is required.
 
 The shared URL/label/standalone-line rules live in
@@ -1166,8 +1166,8 @@ reader case in [report-security.test.mjs](../test/reports/report-security.test.m
 
 ### Loading and privacy
 
-Rich text, Markdown preview and saved-ascent readers show a compact placeholder
-with **Load Instagram post** and **Open on Instagram**. No Instagram metadata,
+Rich text, Markdown preview and saved-ascent readers show a compact inline row
+with **Load post** and an **Instagram ↗** link. No Instagram metadata,
 thumbnail or player is requested until loading is authorized. In Rich text,
 **Use link** converts the block to a labelled ordinary link. The saved source
 is always an ordinary canonical bracket link, useful to readers without BPB;
@@ -1177,7 +1177,13 @@ placeholder controls and scripts are never submitted to Peakbagger.
 and stays on this device. Turning it on loads visible posts; turning it off
 unloads players. Manual loading grants only that post for this visit. **Cancel**,
 **Hide post** and **Retry** keep the same action in place. Pending/error states
-remain compact; success expands once into a scrolling player viewport. Views
+remain compact; success expands once into the provider's captioned player. The
+author's caption appears inside that isolated player after loading, not in the
+blocked placeholder. BPB does not fetch, extract or save caption text separately.
+When available, the provider's numeric content-height measurement determines
+the initial player height, bounded to 320–1,600 pixels. Later resize messages
+are ignored to prevent the report from bouncing; unusually long content or a
+missing measurement uses the player's own scrolling area. Views
 narrower than 320 pixels retain the external-link fallback. Changing editor
 modes, hiding an ignored report, or leaving the page unloads its player.
 
@@ -1187,8 +1193,10 @@ does not gain popups, forms, top-level navigation, Peakbagger access or extensio
 APIs; opening Instagram itself is the separate link beside the load control.
 
 Run `npm run verify -- instagram` for the real packaged Chrome/Firefox fixture
-matrix. `npm run verify -- instagram --live` checks public photo/Reel rendering
-and muted Reel playback. The fixture substitutes provider content and normal
+matrix. `npm run verify -- instagram --live` checks public photo/Reel rendering,
+native captions and muted Reel playback. The optional `BPB_INSTAGRAM_LIVE_POST`
+environment variable adds one validated public permalink to that live check.
+The fixture substitutes provider content and normal
 native form data; no live ascent is submitted and the OS clipboard is untouched.
 
 ## Saved-report protection

@@ -166,7 +166,7 @@ independent of the existing targets.
 - [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
 - [verify-report-caption-stability.mjs](verify-report-caption-stability.mjs)
 - [verify-report-security.mjs](verify-report-security.mjs) — real response protection, hostile reports, native map scripts, Quick Search and Cloudflare exceptions in hidden Chrome/Firefox.
-- [verify-instagram.mjs](verify-instagram.mjs) — packaged per-post grants, an opaque provider fixture, consent, error/retry/cancel geometry and Rich paste at desktop/narrow sizes in hidden Chrome/Firefox. `npm run verify -- instagram`; add `--live` for two public provider samples instead of the synthetic matrix.
+- [verify-instagram.mjs](verify-instagram.mjs) — packaged per-post grants, native captions, bounded player sizing, compact placeholders, consent, error/retry/cancel geometry and Rich paste in hidden Chrome/Firefox. `npm run verify -- instagram`; `--live` checks public photo/Reel samples and muted playback. `BPB_INSTAGRAM_LIVE_POST` adds one validated public sample.
 - [verify-report-draft-ownership.mjs](verify-report-draft-ownership.mjs)
 - [verify-report-photos.mjs](verify-report-photos.mjs)
 - [verify-climber-files.mjs](verify-climber-files.mjs) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
