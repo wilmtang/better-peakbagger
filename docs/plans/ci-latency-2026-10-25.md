@@ -45,6 +45,16 @@ prevented premature cancellation and did not reduce this critical path.
   overlaps installations instead of serializing two setup waves; retain an
   eight-minute bounded preflight budget for OS package and cleanup headroom.
 
+- The independent Chrome card job reported a pending-refresh timeout at 375px
+  in the reduced-screenshot path. Its retained failed page showed the focused
+  Refresh control and rendered forecast. The fixture lacked an explicit settled,
+  expanded forecast precondition after disclosure. Require expanded, idle,
+  populated, enabled and focused state before activation; report live status,
+  action and focus on pending timeout. Both complete hidden Chrome 156 and
+  Firefox 158 card matrices passed after this change without screenshot delays.
+  The original CI failure is retained; deterministic local reproduction of that
+  timing race remains unproven, so the next complete run is still required.
+
 ## Intentionally not changed
 
 - Required status names, strict advisory/provenance gates, monthly manual Actions
