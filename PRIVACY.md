@@ -773,6 +773,7 @@ backup or sync may later transfer the imported change.
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | AllTrails, CalTopo, Gaia GPS, and onX Backcountry | The saved Peakbagger GPX after the matching **Send** click, including CalTopo's server-side parsing; review and final Upload, Import, and Save actions remain manual. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
+| Instagram | One post after **Load Instagram post**, or visible posts after this device opts into automatic loading. No metadata, thumbnail or player request before activation. The isolated provider page may use Instagram cookies subject to browser restrictions; its privacy policy applies. |
 | GitHub | User-triggered backups, automatic ascent backups when enabled, and device-opted-in settings/favorites/photo metadata backups and ignored-list sync, all to the selected repository; validation reads for an imported connection; explicit restores. |
 | Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |
 | Avalanche forecast and backcountry conditions sites | Only when the user opens a planning link. Canada links include the summit coordinates; EAWS map links include a small area around the summit. Other configured destinations are gateways without coordinates. |
@@ -786,14 +787,14 @@ own data handling applies to subsequent browsing. Country routing helps find
 regional bulletins and does not establish forecast coverage or avalanche danger
 at the summit or on a route.
 
-All extension code and libraries are packaged locally. A YouTube player is
-remote page content isolated in YouTube's cross-origin iframe; it is never
-loaded as extension code or given extension privileges.
+All extension code and libraries are packaged locally. YouTube and Instagram
+players are remote page content in separate frames; neither is loaded as
+extension code or given extension privileges.
 
 
 ## Trip-report reader protection
 
-On saved-ascent and report-reading pages, BPB adds a restrictive response policy
+On saved-ascent pages, BPB adds a restrictive response policy
 and rebuilds recognized report cells from safe markup. Chrome uses static network
 rules; Firefox uses a response-header listener scoped to Peakbagger documents.
 The listener inspects URL/type and response headers only, never response bodies
@@ -802,3 +803,23 @@ excluded so ordinary site validation can run. Known native map frames remain
 available. This client-side protection does not change stored reports or protect
 people who do not run BPB. Instagram resources initiated by Peakbagger are blocked
 by default, without inspecting their contents.
+
+Instagram authoring stores a canonical ordinary post link. Pasting Instagram's
+embed code extracts only that link; supplied HTML and scripts are discarded.
+**Load Instagram posts automatically** defaults off and stays in this device's
+local settings, outside browser sync and settings backups. Turning it off
+unloads existing players. A manual load applies to one post instance for the
+current visit; leaving or hiding the surface unloads it.
+
+A one-use loading grant contains the canonical post URL and source tab/document
+identity in extension session storage. It expires after 60 seconds; unused,
+expired records are removed on the next grant/claim or tab cleanup, and all
+session records disappear when the browser session ends. It is consumed by the
+packaged wrapper, invalidated on navigation/tab closure, and never sent to
+Instagram. The provider receives its post URL through a no-referrer, scripts-only
+sandbox with an opaque origin, without access to the Peakbagger document,
+extension APIs, popups, forms or top-level navigation. BPB performs no oEmbed API
+lookup, proxying or provider-content scraping. The persistent network rule blocks
+Instagram resources initiated by Peakbagger; loading a post never unlocks the
+whole tab. Protection does not cover readers without BPB or a pre-existing
+hostile service worker synthesizing documents outside the network stack.

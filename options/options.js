@@ -40,6 +40,7 @@ import { initCustomLayers } from './custom-layers.js';
     const enableGarminInboxEl = document.getElementById('enable-garmin-inbox');
     const enableReportEditorEl = document.getElementById('enable-report-editor');
     const reportEditorDependentEls = document.querySelectorAll('[data-report-editor-dependent]');
+    const loadInstagramEl = document.getElementById('load-instagram-automatically');
     const addReportCreditEl = document.getElementById('add-report-credit');
     const removeGpxTimestampsEl = document.getElementById('remove-gpx-timestamps');
     const retainWaypointsEl = document.getElementById('retain-waypoints');
@@ -138,6 +139,7 @@ import { initCustomLayers } from './custom-layers.js';
         enableGarminInboxEl.checked = settings.enableGarminInbox;
         enableReportEditorEl.checked = settings.enableReportEditor;
         syncReportEditorDependentVisibility(settings.enableReportEditor);
+        loadInstagramEl.checked = settings.loadInstagramAutomatically;
         addReportCreditEl.checked = settings.addReportCredit;
         removeGpxTimestampsEl.checked = settings.removeGpxTimestamps;
         retainWaypointsEl.checked = settings.retainWaypoints;
@@ -304,6 +306,7 @@ import { initCustomLayers } from './custom-layers.js';
         save({ betaTrMinWords: value });
     });
     // Independent of the "has beta" signals (it has no at-least-one invariant).
+    loadInstagramEl.addEventListener('change', () => save({ loadInstagramAutomatically: loadInstagramEl.checked }));
     betaSortDateDescEl.addEventListener('change', () => save({ betaSortDateDesc: betaSortDateDescEl.checked }));
 
     // Keep in sync if changed elsewhere (another tab / an inline control).

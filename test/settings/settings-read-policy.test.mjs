@@ -58,6 +58,8 @@ const AUTHORITATIVE = Object.freeze({
     'src/background/settings-file-routes.js': [
         { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },
     ],
+    'src/background/instagram-frames.js': [{ count: 2, kind: 'privacy', reason: 'automatic post grants require current device consent at both issue and claim' }],
+    'src/reports/instagram-ui.js': [{ count: 1, kind: 'privacy', reason: 'automatic post presentation starts only after current device consent is available' }],
     'src/terrain/terrain-frame.js': [{ count: 1, kind: 'privacy', reason: 'gate provider-backed renderer startup inside the frame' }],
     'src/theme/theme.js': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
     'src/theme/panel-theme.js': [{ count: 1, kind: 'preservation', reason: 'preserve the panel mirror on failed reconciliation' }],
@@ -76,7 +78,7 @@ const sourceFiles = async directory => {
 
 const occurrences = async method => {
     const found = {};
-    const expression = new RegExp(`\\b(?:Settings|S|settings|photoBackupSettings)\\.${method}\\(`, 'g');
+    const expression = new RegExp(`\\b(?:Settings|S|settings|photoBackupSettings|preferences)\\.${method}\\(`, 'g');
     for (const file of await Promise.all(['src', 'options', 'popup'].map(sourceFiles)).then(groups => groups.flat())) {
         const source = await readFile(path.join(root, file), 'utf8');
         const count = (source.match(expression) || []).length;

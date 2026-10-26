@@ -1081,10 +1081,43 @@ Break here[br]after break
 ```
 
 
+## Instagram posts
+
+Paste an HTTPS Instagram `/p/…/` or `/reel/…/` link on its own line in Rich text
+or Markdown. Pasting Instagram's copied embed code into an empty paragraph/line
+also works: BPB extracts one validated permalink and discards the supplied HTML
+and scripts. Links inside prose and code stay ordinary text/links. Tracking
+parameters are removed; share/redirect URLs are not followed automatically.
+
+Rich text, Markdown preview and saved-ascent readers show a compact placeholder
+with **Load Instagram post** and **Open on Instagram**. No Instagram metadata,
+thumbnail or player is requested until loading is authorized. In Rich text,
+**Use link** converts the block to a labelled ordinary link. The saved source
+is always an ordinary canonical bracket link, useful to readers without BPB;
+placeholder controls and scripts are never submitted to Peakbagger.
+
+**Load Instagram posts automatically** in Settings → Report editor defaults off
+and stays on this device. Turning it on loads visible posts; turning it off
+unloads players. Manual loading grants only that post for this visit. **Cancel**,
+**Hide post** and **Retry** keep the same action in place. Pending/error states
+remain compact; success expands once into a scrolling player viewport. Views
+narrower than 320 pixels retain the external-link fallback. Changing editor
+modes, hiding an ignored report, or leaving the page unloads its player.
+
+Instagram controls availability and may require login or reject private,
+deleted or non-embeddable posts. The external link remains available. The player
+does not gain popups, forms, top-level navigation, Peakbagger access or extension
+APIs; opening Instagram itself is the separate link beside the load control.
+
+Run `npm run verify -- instagram` for the real packaged Chrome/Firefox fixture
+matrix. `npm run verify -- instagram --live` checks public photo/Reel rendering
+and muted Reel playback. The fixture substitutes provider content and normal
+native form data; no live ascent is submitted and the OS clipboard is untouched.
+
 ## Saved-report protection
 
 BPB adds an always-on response Content Security Policy to saved-ascent and
-report-reading documents. It blocks page scripts (including event handlers),
+documents. It blocks page scripts (including event handlers),
 objects and base tags before parsing. The reader then rebuilds recognized report
 cells through the existing allowlisted AST, removing active DOM, unknown frames,
 forms and clobbering attributes. Native Quick Search has a packaged replacement;
@@ -1115,7 +1148,7 @@ The extension-owned `reports/instagram.html` wrapper is public only to Peakbagge
 It cannot choose or fetch an arbitrary URL. An isolated report surface obtains a
 one-use, 60-second capability for one canonical post after a trusted activation
 (or current automatic-loading consent). The worker binds it to the tab, source
-document and a private document nonce. The wrapper must claim it from a child
+document and a private nonce for that load. Cancellation revokes the nonce. The wrapper must claim it from a child
 frame, and the worker rechecks the live source document before returning the URL.
 Navigation, expiry and tab closure invalidate pending capabilities. The provider
 runs inside a separate scripts-only, opaque sandbox without extension APIs or

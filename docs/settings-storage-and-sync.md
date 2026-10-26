@@ -12,8 +12,8 @@ records the centralized manager and version 6 backup/restore audit.
 
 - **67 portable preferences** live in `storage.sync.bpbSettings`, travel in
   settings JSON files, and can be backed up to GitHub's `settings.json`.
-- **Nine device settings** live in `storage.local.bpbDeviceSettings`. Map size,
-  terrain cache budget and GitHub transfer choices stay on this installation;
+- **Ten device settings** live in `storage.local.bpbDeviceSettings`. Map size,
+  terrain cache budget, GitHub transfer choices and automatic Instagram loading stay on this installation;
   settings files and GitHub restores cannot enable them on another device.
 - **Weather, overlay and photo-tool preferences now travel with settings.**
   Their legacy local values migrate only when no synced choice exists.
@@ -49,7 +49,7 @@ computer. “Settings file” means **Export settings**, not a complete profile 
 | Data | Storage | Browser sync | Settings file | GitHub / separate file |
 | --- | --- | --- | --- | --- |
 | 67 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
-| Nine device settings | `storage.local.bpbDeviceSettings` | No | No | No |
+| Ten device settings | `storage.local.bpbDeviceSettings` | No | No | No |
 | Custom map sources and opacity | `storage.local.bpbCustomMapOverlaysV1`, `bpbCustomMapOverlayPreferencesV1` | No | Yes, `customLayers` | `settings.json`: push and explicit restore |
 | ImgBB API key | `storage.local.bpbImgbbAuth` | No | Credential opt-in only | Never in GitHub settings backup |
 | GitHub token and repository | `storage.local.bpbGithubAuth` | No | Credential opt-in and complete connection only | Never in GitHub settings backup |
@@ -108,7 +108,7 @@ that project's separate transfer.
 
 ## Device settings and other local preferences
 
-The versioned device record contains these nine schema-owned values:
+The versioned device record contains these ten schema-owned values:
 
 | Group | Exact keys | Policy |
 | --- | --- | --- |
@@ -116,6 +116,7 @@ The versioned device record contains these nine schema-owned values:
 | Terrain cache budget (1) | `terrainCacheLimitMb` | Retain per-device capacity; actual tiles stay local |
 | Ascent/report GitHub backup (3) | `enableGithubBackup`, `autoGithubBackup`, `removeGithubBackupOnDelete` | Default off; `autoGithubBackup` follows `enableGithubBackup`; disabling backup clears deletion mirroring |
 | Companion automatic backups (3) | `autoSettingsBackup`, `autoFavoritesBackup`, `autoPhotoLibraryBackup` | Independent, default off on new devices |
+| Instagram loading (1) | `loadInstagramAutomatically` | Default off; only this device may opt into provider contact without a per-post click |
 
 Other local state has separate owners and does not belong in a settings file:
 

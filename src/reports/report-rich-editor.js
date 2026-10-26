@@ -15,6 +15,7 @@
 // editor exclusively through richCommands/richState so the TipTap API surface
 // stays contained in one file.
 
+import { canonicalInstagramUrl, instagramParagraphUrl, instagramPasteUrl } from './instagram-url.js';
 import { Editor, Extension, Mark, Node, getStyleProperty, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
@@ -869,7 +870,27 @@ const shortcutExtension = handlers => Extension.create({
 // but make the editing boundary explicit and predictable.
 const ReportLink = Link.extend({ inclusive: false });
 
-export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, onStateChange, shortcuts, resolveLocalImage, editLocalImage }) => {
+const instagramNode = presentation => Node.create({
+    name: 'reportInstagram', group: 'block', atom: true,
+    addAttributes: () => ({ url: { default: null, parseHTML: instagramParagraphUrl } }),
+    parseHTML: () => [{tag:'p', priority:1100, getAttrs: element => {
+        if (element.closest('blockquote,li,td,th,pre')) return false;
+        const url=instagramParagraphUrl(element); return url?{url}:false;
+    }}],
+    renderHTML: ({node}) => ['p', {}, ['a', {href:node.attrs.url}, node.attrs.url]],
+    addNodeView: () => ({node,getPos,editor}) => {
+        const card=presentation.create(node.attrs.url,{useLink:()=>{
+            const pos=getPos();if(!Number.isInteger(pos))return;
+            editor.chain().setNodeSelection(pos).insertContent({type:'paragraph',content:[{
+                type:'text',text:'Instagram post',marks:[{type:'link',attrs:{href:node.attrs.url}}],
+            }]}).focus().run();
+        }});
+        return {dom:card.element,update:next=>next.type===node.type&&next.attrs.url===node.attrs.url,
+            stopEvent:event=>card.element.contains(event.target),ignoreMutation:()=>true,destroy:card.destroy};
+    },
+});
+
+export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, onStateChange, shortcuts, resolveLocalImage, editLocalImage, instagramPresentation }) => {
     const editor = new Editor({
         element,
         extensions: [
@@ -885,6 +906,7 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
             ReportImage.configure({ inline: true, resolveLocalImage, editLocalImage }),
             ReportFigure, ReportFigureMedia, ReportCaption,
             ReportVideo,
+            ...(instagramPresentation ? [instagramNode(instagramPresentation)] : []),
             Subscript, Superscript, Highlight,
             TextStyle, ReportColor,
             Small, InlineQuote,
@@ -892,6 +914,16 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
             shortcutExtension(shortcuts)
         ],
         editorProps: {
+            handlePaste: (view,event) => {
+                if (!instagramPresentation) return false;
+                const url=instagramPasteUrl(event.clipboardData?.getData('text/plain'));
+                const { $from,$to }=view.state.selection;
+                if (!url || $from.parent.type.name!=='paragraph' || $from.parent!==$to.parent
+                    || ($from.parent.textContent.trim() && !($from.parentOffset===0 && $to.parentOffset===$to.parent.content.size))) return false;
+                const valid=canonicalInstagramUrl(url);if(!valid)return false;
+                view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.nodes.reportInstagram.create({url:valid})).scrollIntoView());
+                return true;
+            },
             attributes: {
                 class: 'bpb-re-surface',
                 role: 'textbox',

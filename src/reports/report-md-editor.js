@@ -13,11 +13,12 @@
 // source pane follows the extension's light/dark theme like every other
 // surface.
 
+import { instagramPasteUrl } from './instagram-url.js';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdownLanguage, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown';
-import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
+import { syntaxHighlighting, HighlightStyle, syntaxTree } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 
 const mdHighlight = HighlightStyle.define([
@@ -34,12 +35,22 @@ const mdHighlight = HighlightStyle.define([
     { tag: tags.contentSeparator, class: 'bpb-md-marker' }
 ]);
 
-export const createMarkdownEditor = ({ parent, placeholder: placeholderText, ariaLabel, onDocChanged }) => {
+export const createMarkdownEditor = ({ parent, placeholder: placeholderText, ariaLabel, onDocChanged, instagram = false }) => {
     const makeState = doc => EditorState.create({
         doc,
         extensions: [
             history(),
             EditorView.lineWrapping,
+            EditorView.domEventHandlers({paste: (event,view) => {
+                if (!instagram) return false;
+                const source=event.clipboardData?.getData('text/plain');
+                if (!/^\s*<blockquote\b/i.test(source||'')) return false;
+                const url=instagramPasteUrl(source);if(!url)return false;
+                const selection=view.state.selection.main, line=view.state.doc.lineAt(selection.from);
+                if(line.text.trim() && !(selection.from===line.from&&selection.to===line.to))return false;
+                for(let node=syntaxTree(view.state).resolveInner(selection.from,-1);node;node=node.parent)if(/Code/.test(node.name))return false;
+                event.preventDefault();view.dispatch(view.state.replaceSelection(url));return true;
+            }}),
             placeholder(placeholderText),
             // Full HTML authoring also pulls in JavaScript/CSS parsers. This
             // source pane needs GFM; report-markup owns supported HTML conversion.

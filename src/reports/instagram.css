@@ -1,0 +1,27 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+.bpb-instagram {
+    --ig-bg: #f5f6f3; --ig-border: #c8cec4; --ig-text: #232b23; --ig-sub: #546154; --ig-link: #285e40;
+    position: relative; box-sizing: border-box; max-width: 540px; min-width: 0;
+    margin: 12px 0; padding: 12px; border: 1px solid var(--ig-border); border-radius: 8px;
+    background: var(--ig-bg); color: var(--ig-text); text-align: left; font: 14px/1.4 system-ui, sans-serif;
+    overflow-wrap: anywhere;
+}
+.bpb-instagram *, .bpb-instagram *::before, .bpb-instagram *::after { box-sizing: border-box; }
+.bpb-instagram .bpb-instagram-title { margin: 0 0 5px; font: 600 14px/1.4 system-ui, sans-serif; color: var(--ig-text); }
+.bpb-instagram-status { color: var(--ig-sub); font-size: 13px; }
+.bpb-instagram-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.bpb-instagram .bpb-instagram-action { flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 5px 9px; border: 1px solid var(--ig-border); border-radius: 5px;
+    background: var(--ig-bg); color: var(--ig-text); font: 500 13px/1.4 system-ui, sans-serif; cursor: pointer; }
+.bpb-instagram .bpb-instagram-link, .bpb-instagram .bpb-instagram-as-link { color: var(--ig-link); font: 13px/1.4 system-ui, sans-serif; text-decoration: underline; }
+.bpb-instagram .bpb-instagram-as-link { border: 0; padding: 0; background: transparent; cursor: pointer; }
+.bpb-instagram button:focus-visible, .bpb-instagram a:focus-visible { outline: 2px solid var(--ig-link); outline-offset: 3px; }
+.bpb-instagram-media { height: clamp(360px, 75vh, 760px); margin: 12px -12px -12px; }
+/* Load without moving the action or the following content. Successful loading
+   expands once into the requested player; errors/cancellation never reserve a
+   large empty viewport. The provider has its own accessible scrolling area. */
+.bpb-instagram-media[data-pending] { position: absolute; top: 100%; left: 0; right: 0; margin: 0; visibility: hidden; pointer-events: none; }
+.bpb-instagram-frame { width: 100%; height: 100%; border: 0; display: block; }
+.bpb-instagram [hidden] { display: none !important; }
+:root[data-bpb-theme="dark"] .bpb-instagram { --ig-bg: #222824; --ig-border: #4b554d; --ig-text: #eeeade; --ig-sub: #b5beb5; --ig-link: #a2d8b5; }
+@media (prefers-color-scheme: dark) { :root:not([data-bpb-theme="light"]) .bpb-instagram { --ig-bg: #222824; --ig-border: #4b554d; --ig-text: #eeeade; --ig-sub: #b5beb5; --ig-link: #a2d8b5; } }

@@ -339,3 +339,11 @@ test('Garmin scope and schedule use the shared schema with explicit manual mode'
         assert.equal(Schema.clean({ garminRecentDays: max }).garminRecentDays, max);
     }
 });
+
+test('automatic Instagram loading is explicit device-local consent and defaults off',()=>{
+    assert.equal(Schema.DEFAULTS.loadInstagramAutomatically,false);
+    assert.equal(Schema.clean({loadInstagramAutomatically:'true'}).loadInstagramAutomatically,false);
+    assert.equal(Schema.clean({loadInstagramAutomatically:true}).loadInstagramAutomatically,true);
+    assert(Schema.DEVICE_KEYS.includes('loadInstagramAutomatically'));
+    assert(!Schema.PORTABLE_KEYS.includes('loadInstagramAutomatically'));
+});

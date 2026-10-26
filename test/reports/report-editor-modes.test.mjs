@@ -377,3 +377,39 @@ test('an unrelated Markdown edit preserves hex color in source, form, and previe
     assert.equal(doc.getElementById('JournalText').value, `${bracket} Clear weather.`);
     assert.equal(ui.querySelector('.bpb-re-preview span')?.getAttribute('style'), 'color:#2471a3');
 });
+
+test('Instagram blocks remain ordinary saved links and can become labelled Rich links',async()=>{
+    const url='https://www.instagram.com/p/fA9uwTtkSN/';
+    const dom=await loadEditor({report:`[a href="${url}"]${url}[/a]`,settings:{addReportCredit:false}});
+    try{
+        await editorReady(dom);await waitFor(dom,()=>editors(dom).rich);
+        assert.equal(editors(dom).rich.state.doc.firstChild.type.name,'reportInstagram');
+        assert.equal(dom.window.document.querySelectorAll('.bpb-instagram').length,1);
+        assert.equal(dom.window.document.querySelector('.bpb-instagram iframe'),null);
+        [...dom.window.document.querySelectorAll('.bpb-instagram button')].find(button=>button.textContent==='Use link').click();
+        assert.equal(dom.window.document.querySelector('.bpb-instagram'),null);
+        modeButton(dom.window.document,'Plain').click();
+        assert.equal(dom.window.document.getElementById('JournalText').value,`[a href="${url}" target="_blank"]Instagram post[/a]`);
+    }finally{dom.window.close();}
+});
+
+test('Instagram paste extracts a post identity, and Markdown preview retains it through unrelated edits',async()=>{
+    const url='https://www.instagram.com/p/fA9uwTtkSN/';
+    const snippet=`<blockquote class="instagram-media" data-instgrm-permalink="${url}"><a href="${url}">Post</a></blockquote><script src="https://evil.test/code.js"></script>`;
+    const dom=await loadEditor({settings:{addReportCredit:false}});
+    try{
+        await editorReady(dom);await waitFor(dom,()=>editors(dom).rich);
+        const rich=editors(dom).rich;
+        assert(rich.view.someProp('handlePaste',handler=>handler(rich.view,{clipboardData:{getData:()=>snippet}})));
+        assert.equal(rich.state.doc.firstChild.type.name,'reportInstagram');
+        modeButton(dom.window.document,'Markdown').click();
+        assert.equal(editors(dom).markdown.getValue(),url);
+        const card=dom.window.document.querySelector('.bpb-re-preview .bpb-instagram');assert(card);
+        typeMarkdown(dom,'Before\n\n'+url+'\n\nAfter');
+        await waitFor(dom,()=>dom.window.document.querySelector('.bpb-re-preview').textContent.includes('After'));
+        assert.equal(dom.window.document.querySelector('.bpb-re-preview .bpb-instagram'),card);
+        modeButton(dom.window.document,'Plain').click();
+        const text=dom.window.document.getElementById('JournalText').value;
+        assert.match(text,/Before/);assert.match(text,/After/);assert.doesNotMatch(text,/script|iframe|evil\.test|instagram-media/);
+    }finally{dom.window.close();}
+});

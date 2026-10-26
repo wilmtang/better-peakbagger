@@ -155,6 +155,7 @@ export const COPY_FILES = [
     ['README.md', 'README.md'],
     ['third_party/betacreator-LICENSE.txt', 'vendor/betacreator-LICENSE.txt'],
     ['manifest.json', 'manifest.json'],
+    ['src/reports/instagram.css', 'css/instagram.css'],
     ['src/reports/instagram.html', 'reports/instagram.html'],
     ['src/reports/instagram-frame.css', 'reports/instagram-frame.css'],
     ['src/reports/report-protection.json', 'rules/report-protection.json'],

@@ -248,6 +248,9 @@ selected verifier; there is no second npm `--` separator. For example:
 
 ```sh
 npm run verify -- browsers
+npm run verify -- report-security
+npm run verify -- instagram
+npm run verify -- instagram --live
 npm run verify -- layout-stability --surface=maps --firefox-only
 npm run verify -- fixture-preflight --chrome-only
 npm run verify -- layout-stability --chrome-only --shard=1/4
@@ -269,6 +272,22 @@ It checks the real worker sender policy and locale/evidence contracts, then exer
 shipped popup, timestamp, Settings and map fixtures, including lifecycle cleanup.
 It supplements the complete suites. A fixture exception fails while the page is
 still available for evidence.
+
+`report-security` checks hostile saved-ascent documents against the real Chrome
+response rules and Firefox header listener, including native map and Quick Search
+compatibility, ordinary list pages and Cloudflare exceptions. After building,
+`node scripts/verify-report-security.mjs chrome --baseline` removes protection
+from a disposable copy and must fail on observed execution.
+
+`instagram` uses real packaged extension frames with a local HTTPS provider
+behind a deny-by-default test proxy. It checks no contact before activation,
+opaque sandbox isolation, per-post loading, consent, cancellation/error/retry,
+keyboard focus and geometry at 1000/375×900 in both themes and enlarged text;
+editor paste and Markdown retention use 1280/375×900. The provider and native
+form are fixtures. `--live` instead loads a public photo and author-linked Reel,
+including muted playback; provider availability can change. It does not submit a
+live ascent or modify the user's clipboard. All runs are hidden and own their
+temporary profiles, certificate, proxy and teardown.
 
 Layout CI runs four deterministic shards per browser on Linux. Each shard owns
 one theme/viewport combination and 22 surfaces (`--suite=portable`). The two

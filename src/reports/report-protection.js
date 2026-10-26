@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { protectedReportDocument } from './report-security-policy.js';
+import { createInstagramPresentation } from './instagram-ui.js';
 import { reportMarkup } from './report-markup.js';
 
 export function sanitizeReportCells(doc) {
@@ -25,6 +26,10 @@ export function sanitizeReportCells(doc) {
 if (typeof document !== 'undefined' && protectedReportDocument(location.href)) {
     const mount = () => {
         const cells = sanitizeReportCells(document);
+        if ((globalThis.browser || globalThis.chrome)?.runtime?.onMessage) {
+            const instagram = createInstagramPresentation();
+            for (const cell of cells) instagram.enhance(cell);
+        }
         // The native header's only required inline behavior has a fixed packaged
         // replacement. Never evaluate or copy a handler supplied by the page.
         const input = document.getElementById('QuickSearchTB');

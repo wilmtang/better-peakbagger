@@ -23,6 +23,7 @@
 // therefore keep the local recovery copy.
 
 import { installReportLocalPhotos } from './report-local-photos.js';
+import { createInstagramPresentation } from './instagram-ui.js';
 import { createStableText } from '../ui/stable-text.js';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import { settings as Settings } from '../settings/settings.js';
@@ -134,7 +135,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
     let nextSaveAttempt = 0;
 
-    let richEditor = null;   // created in initialize(), only when enabled
+    let richEditor = null;
+    let instagramPresentation = null;   // created in initialize(), only when enabled
     let mdEditor = null;
 
     // ---- DOM ----------------------------------------------------------------
@@ -674,7 +676,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             image.alt ||= 'Not uploaded';
             void localPhotos?.resolvePreview(src).then(value => { image.src = value; }).catch(() => {});
         }
-        preview.replaceChildren(...parsed.body.childNodes);
+        if (instagramPresentation) instagramPresentation.render(preview, parsed.body.childNodes);
+        else preview.replaceChildren(...parsed.body.childNodes);
     };
 
     const diagnosticLabel = diagnostic => {
@@ -713,6 +716,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const renderPreview = () => {
         const html = Markup.markdownToPreviewHtml(mdEditor.getValue());
         if (html) renderSanitizedPreviewHtml(html);
+        else if (instagramPresentation) instagramPresentation.render(preview, [el('p', 'bpb-re-preview-empty', 'Nothing to preview yet.')]);
         else preview.replaceChildren(el('p', 'bpb-re-preview-empty', 'Nothing to preview yet.'));
     };
 
@@ -1382,6 +1386,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         if (richEditor) richEditor.destroy();
         richEditor = createRichEditor({
             element: richWrap,
+            instagramPresentation,
             placeholder: isProfile ? 'Write your biography…' : 'Write your trip report…',
             ariaLabel: editorLabel,
             onUpdate: () => { state.richDirty = true; state.creditScaffold = false; scheduleSync(); },
@@ -1464,6 +1469,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             state.mdDirty = false;
             renderPreview();
         }
+
+        instagramPresentation?.refresh();
 
         if (persist) {
             void Settings.set({ reportEditorMode: mode }).catch(() => {
@@ -1667,8 +1674,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             return;
         }
 
+        if (!isProfile) instagramPresentation = createInstagramPresentation({doc:document,ext});
         mdEditor = createMarkdownEditor({
             parent: mdPane,
+            instagram: !isProfile,
             placeholder: isProfile ? 'Write your biography in Markdown…' : 'Write your trip report in Markdown…',
             ariaLabel: `${editorLabel} in Markdown`,
             onDocChanged: () => { state.mdDirty = true; state.creditScaffold = false; scheduleSync(); }
@@ -1715,6 +1724,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 localPhotos?.handoffToNative();
                 if (richEditor) richEditor.destroy();
                 mdEditor.destroy();
+                instagramPresentation?.destroy();
                 ext.runtime.onMessage.removeListener(handlePhotoInsertion);
                 document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
                 ui.remove();

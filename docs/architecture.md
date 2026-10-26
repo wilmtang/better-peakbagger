@@ -777,6 +777,30 @@ until `src/ascent/ascent-saved.js` confirms a matching pending Save intent.
 See [trip-report-editor.md](trip-report-editor.md) for conversion paths,
 sanitization, lossy-import protection, media restrictions, and draft lifecycle.
 
+`src/reports/instagram-url.js` validates post identity without a network or DOM
+parser. The AST stores ordinary links; `instagram-ui.js` enhances only standalone
+post links in Rich/Markdown previews and saved-ascent readers. Its device-local,
+default-off preference never crosses the page-world settings bridge. Loading
+uses the trusted-action boundary and `src/background/instagram-frames.js` to
+issue a one-use capability tied to one tab, source document and private active
+load nonce. The packaged `reports/instagram.html` wrapper consumes that grant;
+only its scripts-only, opaque child frame runs provider code. It has no
+Peakbagger-origin access or extension APIs. No API token, oEmbed lookup, remote
+extension code, proxy or new provider host access is involved.
+
+`src/reports/report-protection.json` installs Chrome's saved-ascent response CSP
+before parsing. Firefox uses the synchronous `report-protection-firefox.js`
+header listener with the shared policy because its DNR implementation lacks the
+Cloudflare response-header exclusion. Existing site CSP is preserved. A separate
+static rule blocks Instagram resources initiated by Peakbagger; user activation
+does not unlock the tab. The first document-start content entry rebuilds native
+report cells through the allowlisted AST at DOM readiness, before visibility
+controls mount, and supplies a fixed native Quick Search replacement. Native
+MasterMap frames retain their scripts; unrelated top-level lists retain their
+native behavior. The boundary does not protect readers without BPB or documents
+synthesized by a pre-existing hostile site service worker outside the network
+stack. See [PRIVACY](../PRIVACY.md#trip-report-reader-protection).
+
 ## Deep dive: photo topo editor and local library
 
 The report image popover opens the extension-owned photo tab. The worker binds

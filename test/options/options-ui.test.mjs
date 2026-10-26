@@ -1445,3 +1445,11 @@ test('a trailing scroll event at a clamped fragment landing preserves its active
     content.dispatchEvent(new dom.window.Event('scroll'));
     assert.equal(activeLinks(dom)[0].hash, '#about', 'actual pane movement resumes the scroll spy');
 });
+
+test('Instagram loading stays opt-in independently of the report editor',async()=>{
+    const dom=await loadOptions({enableReportEditor:false});
+    const toggle=dom.window.document.getElementById('load-instagram-automatically');
+    assert.equal(toggle.checked,false);assert.equal(toggle.closest('.row').hidden,false);
+    toggle.click();await waitFor(dom,()=>dom.chrome._localStore.bpbDeviceSettings?.settings.loadInstagramAutomatically===true);
+    assert.equal(dom.chrome._store.bpbSettings?.loadInstagramAutomatically,undefined,'device consent never enters sync');
+});

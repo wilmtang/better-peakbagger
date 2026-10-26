@@ -114,6 +114,7 @@ const DEFAULTS = {
     // the user wrote in ('plain' is the untouched native textarea).
     enableReportEditor: true,
     addReportCredit: false,
+    loadInstagramAutomatically: false,
     reportEditorMode: 'rich',
     // Maximum display width attached to photos inserted from Photo Topos.
     // `null` is the user's explicit Original choice; uploaded pixels remain
@@ -165,7 +166,7 @@ const DEFAULTS = {
 // These values describe this installation, never another device.
 const DEVICE_KEYS = Object.freeze(['mapViewportWidth', 'mapViewportHeight', 'terrainCacheLimitMb',
     'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete',
-    'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup']);
+    'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'loadInstagramAutomatically']);
 const TRANSFER_KEYS = Object.freeze(DEVICE_KEYS.filter(key => !['mapViewportWidth', 'mapViewportHeight', 'terrainCacheLimitMb'].includes(key)));
 const PERSONAL_KEYS = Object.freeze(Object.keys(DEFAULTS).filter(key => key.startsWith('bpb')));
 const PORTABLE_KEYS = Object.freeze(Object.keys(DEFAULTS).filter(key => !DEVICE_KEYS.includes(key)));
@@ -274,7 +275,7 @@ const clean = raw => {
     if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
     for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-    for (const key of ['showSunMoon', 'showWeather', 'showSummitCloud', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakCloudCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'enableGarminInbox', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSummitCloud', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakCloudCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'loadInstagramAutomatically', 'enableGarminInbox', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
     }
     // SNOTEL previously shared the weather gate. Preserve legacy opt-outs
