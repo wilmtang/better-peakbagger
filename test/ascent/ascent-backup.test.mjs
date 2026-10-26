@@ -104,6 +104,24 @@ test('the affordance mounts as a compact control beside the native ascent action
     assert.equal(dom.window.document.body.firstElementChild, dom.window.document.getElementById('page'));
 });
 
+test('a passive GitHub comparison exposes neutral status instead of a disabled action', async t => {
+    let finish;
+    const { dom } = await loadSurface({ status: { enabled: true, connected: true },
+        onCheck: () => new Promise(resolve => { finish = resolve; }) });
+    t.after(() => dom.window.close());
+    await waitFor(dom, () => finish);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn').hidden, true);
+    const status = control(dom).querySelector('[role="status"]');
+    assert.equal(status.hidden, false);
+    assert.equal(status.textContent, 'Checking GitHub…');
+    assert.equal(status.classList.contains('bpb-gh-ok'), false);
+    assert.equal(status.hasAttribute('tabindex'), false);
+    finish({ ok: true, current: false });
+    await waitFor(dom, () => !control(dom).querySelector('.bpb-gh-btn').disabled);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn').hidden, false);
+    assert.equal(status.hidden, true);
+});
+
 test('a current GitHub payload renders an affirmative state without writing', async () => {
     let checked = null;
     const { dom, sent } = await loadSurface({

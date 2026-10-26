@@ -323,7 +323,9 @@ same complete edit form and optional stored GPX used by manual backup, then send
 folder and compares only the extension-owned files. Matching content renders
 **Backed up ✓**; a missing or changed backup renders the ordinary action. A
 passive Peakbagger or GitHub read failure also falls back to the action so a
-background status check never strands the user. There is no fixed or sticky
+background status check never strands the user. While comparing, **Checking
+GitHub…** is neutral, noninteractive status text in the reserved action slot;
+only the available manual action has button styling. There is no fixed or sticky
 banner, and none of these reads run while the feature is disabled or GitHub is
 disconnected.
 

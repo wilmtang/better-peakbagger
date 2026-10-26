@@ -325,11 +325,32 @@ async function ascentBackupCase(page, origin, variant) {
     for (const scale of [1, 2]) {
         await mount(scale);
         const checking = await geometry(page, slot);
+        const checkingControl = await geometry(page, '.bpb-gh-control');
+        const checkingNeighbors = await Promise.all(neighbors.map(selector => geometry(page, selector)));
+        const checkingScroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
+        assert.equal(await page.locator('.bpb-gh-control').getByRole('button').count(), 0,
+            'a passive GitHub check must expose plain status instead of an inert button');
+        const checkingStatus = page.getByRole('status').filter({ hasText: 'Checking GitHub…' });
+        await checkingStatus.waitFor();
+        const readStatusStyle = element => {
+            const style = getComputedStyle(element);
+            return { tag: element.tagName, cursor: style.cursor, background: style.backgroundColor, border: style.borderTopWidth };
+        };
+        const checkingStyle = await checkingStatus.evaluate(readStatusStyle);
+        assert.deepEqual(checkingStyle, { tag: 'SPAN', cursor: 'default', background: 'rgba(0, 0, 0, 0)', border: '0px' });
+        await checkingStatus.hover();
+        assert.deepEqual(await checkingStatus.evaluate(readStatusStyle), checkingStyle);
+        await capture(page, `${variant.name}-ascent-checking-${scale}`, true);
         await page.evaluate(() => globalThis.__finishBackupCheck(false));
         await page.getByRole('button', { name: 'Back up ascent and TR' }).waitFor();
         const before = await geometry(page, slot);
         const controlBefore = await geometry(page, '.bpb-gh-control');
         stable(checking, before, `ascent passive check text ${scale}`);
+        stable(checkingControl, controlBefore, `ascent passive check group text ${scale}`);
+        for (const [index, selector] of neighbors.entries()) {
+            stable(checkingNeighbors[index], await geometry(page, selector), `ascent check neighboring link ${index}`);
+        }
+        assert.deepEqual(await page.evaluate(() => [window.scrollX, window.scrollY]), checkingScroll);
         const neighborBefore = await Promise.all(neighbors.map(selector => geometry(page, selector)));
         for (const success of [false, true]) {
             await page.locator(action).press('Enter');

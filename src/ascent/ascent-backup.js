@@ -46,15 +46,17 @@ import { createPageLifecycle } from '../ui/page-lifecycle.js';
         const action = control.querySelector('.bpb-gh-btn');
         const nextAction = nodes.find(node => node?.tagName === 'BUTTON');
         const complete = nodes[0]?.classList.contains('bpb-gh-ok');
+        const checking = !nextAction && nodes[0]?.textContent === 'Checking GitHub…';
         action.disabled = !nextAction;
-        action.hidden = !!complete;
+        action.hidden = !!complete || checking;
         action.onclick = nextAction ? event => runBackup(backupInfo, { event }) : null;
         action.querySelector('span').textContent = complete ? '' : nextAction?.textContent
             || (nodes[0]?.textContent.includes('Checking') ? 'Checking GitHub…'
                 : 'Backing up to GitHub…');
         const status = control.querySelector('.bpb-gh-status');
-        status.hidden = !complete;
-        status.textContent = complete ? nodes[0].textContent : '';
+        status.hidden = !complete && !checking;
+        status.classList.toggle('bpb-gh-ok', !!complete);
+        status.textContent = complete || checking ? nodes[0].textContent : '';
         const feedback = control.querySelector('.bpb-gh-feedback');
         feedback.replaceChildren(...nodes.filter(node => node && node !== nextAction
             && (!node.classList.contains('bpb-gh-label') || node.classList.contains('bpb-gh-err')
