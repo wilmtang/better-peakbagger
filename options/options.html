@@ -537,22 +537,6 @@
 
         <section id="beta" class="settings-section" aria-labelledby="beta-settings-heading">
             <h2 class="section-title" id="beta-settings-heading">Ascent beta filter</h2>
-            <!-- Keep the established #favorites deep link to the standalone
-                 manager while grouping climber lists with the beta filters. -->
-            <div id="favorites" class="subsection" role="group" aria-labelledby="favorites-heading">
-                <h3 class="subsection-title" id="favorites-heading">Climber lists</h3>
-                <div class="card">
-                    <div class="row">
-                        <div class="label">
-                            <span class="title">Climber lists</span>
-                            <span class="desc">Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.</span>
-                        </div>
-                        <div class="control">
-                            <a class="panel-button secondary" id="open-favorites" href="favorites.html">Manage climber lists</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
             <div class="card">
                 <div class="row">
                     <div class="label">
@@ -580,6 +564,19 @@
                     </div>
                 </div>
 
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Newest ascents first</span>
+                        <span class="desc">Open ascent lists sorted by date, newest first, when the page arrives in its default oldest-first order. A sort you choose by clicking a column always wins.</span>
+                    </div>
+                    <div class="control">
+                        <label class="check" for="beta-sort-date-desc">
+                            <input type="checkbox" id="beta-sort-date-desc">
+                            <span>Sort newest first</span>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="row order-setting-row">
                     <div class="label">
                         <span class="title">Peak ascent filter order</span>
@@ -594,16 +591,20 @@
                     </div>
                     <ol id="beta-personal-order" class="order-settings" aria-label="Personal ascent filter order"></ol>
                 </div>
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Newest ascents first</span>
-                        <span class="desc">Open ascent lists sorted by date, newest first, when the page arrives in its default oldest-first order. A sort you choose by clicking a column always wins.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="beta-sort-date-desc">
-                            <input type="checkbox" id="beta-sort-date-desc">
-                            <span>Sort newest first</span>
-                        </label>
+            </div>
+            <!-- Keep the established #favorites deep link to the standalone
+                 manager while grouping climber lists with the beta filters. -->
+            <div id="favorites" class="subsection" role="group" aria-labelledby="favorites-heading">
+                <h3 class="subsection-title" id="favorites-heading">Climber lists</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Climber lists</span>
+                            <span class="desc">Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.</span>
+                        </div>
+                        <div class="control">
+                            <a class="panel-button secondary" id="open-favorites" href="favorites.html">Manage climber lists</a>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -329,7 +329,9 @@ test('settings are grouped by the surface they affect', async () => {
     const mapLayers = mapChart.querySelector('#custom-map-layers');
     assert.ok(mapLayers.querySelector('#custom-layer-add')); assert.ok(mapLayers.querySelector('#custom-layer-list'));
     const favorites = beta.querySelector('#favorites');
-    assert.equal(beta.children[1], favorites, 'climber lists comes before the other beta settings');
+    assert.equal(beta.children[2], favorites, 'ascent filters come before climber lists');
+    assert.deepEqual([...beta.children[1].querySelectorAll('.row .title')].map(node => node.textContent),
+        ['“Has beta” means', 'Newest ascents first', 'Peak ascent filter order', 'Personal ascent filter order']);
     assert.equal(favorites.querySelector('.desc').textContent,
         'Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.');
     assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
