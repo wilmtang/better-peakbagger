@@ -45,6 +45,23 @@ live-provider and any broader suite failures explicit.
 
 ### Fixed and verified
 
+- Editor disclosure follow-up: removed the separate filled Advanced card and
+  its redundant subtitle. All editor disclosures now share a flat row, aligned
+  chevron, 44 px minimum target, hover/focus treatment and natural text wrapping;
+  peer setup sections use subtle separators. Manual fields and saved-layer
+  auto-expansion remain available. The new real-browser regression failed on
+  the previous unequal header backgrounds, then passed eight cases per browser
+  in hidden Chrome 156.0.8078.4 and Firefox 158.0.1 at 1100/375 and 1100/500 by
+  900 respectively, both themes and normal/1.5x text. Space/Enter expansion and
+  collapse preserve the header, focus and scroll within one pixel. Rendered
+  open/closed desktop/narrow screenshots were inspected. The 70 focused editor,
+  Options and documentation tests passed, along with full lint (eight owned
+  warnings). Packaged private-layer flows passed again in both browsers with
+  hardware Metal/Apple M3 Pro rendering: revised private/help disclosures fit
+  desktop/narrow themes, Save pending/error/retry stayed anchored, and settings
+  file restore, approval and 2D/3D rendering still worked. Permission prompts
+  remain covered only by fixture pregrants, not native-prompt proof.
+
 - Manual-file follow-up: settings schema 7 includes private provider definitions
   and query parameters by default, independently of account-credential opt-in.
   The parser matches definitions to public descriptors and rejects duplicates,

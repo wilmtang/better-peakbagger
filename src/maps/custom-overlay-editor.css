@@ -20,8 +20,12 @@ html{min-height:100%;background:var(--paper);overscroll-behavior-y:none}body{min
 
 #source-summary{min-height:2.9em;margin-bottom:0}
 
-/* Keep manual overrides recognizable as an action, even on the compact form. */
-#advanced>summary{display:list-item;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input);list-style-position:inside}
-#advanced>summary>span{display:inline-block;vertical-align:middle;max-width:calc(100% - 20px)}
-#advanced>summary small{display:block;font-size:12px;font-weight:400;opacity:.85;line-height:1.45;margin-top:2px}
-#advanced[open]>summary{margin-bottom:12px}
+/* Peer sections share one quiet disclosure row. Keep the chevron aligned to
+   the first line when enlarged text wraps, without a separate input-like card. */
+details>summary{display:grid;grid-template-columns:12px minmax(0,1fr);align-items:start;gap:8px;min-height:44px;padding:10px 0;list-style:none;border:0;background:transparent;line-height:1.45}
+details>summary::-webkit-details-marker{display:none}
+details>summary::marker{content:''}
+details>summary::before{content:'';width:7px;height:7px;margin:calc(.725em - 3.5px) 0 0 2px;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:rotate(-45deg)}
+details[open]>summary::before{transform:rotate(45deg)}
+details>summary:hover{color:var(--accent)}
+.editor-section{margin-top:12px;border-top:1px solid var(--border)}

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, chrome, innerWidth, Event */
+/* global document, window, chrome, innerWidth, Event, getComputedStyle, scrollY */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -15,7 +15,7 @@ assert(['chrome', 'firefox'].includes(kind) && args.every(arg => arg.startsWith(
 const shots = args[0]?.slice(14), resources = createResourceStack();
 try {
     const root = await mkdtemp(path.join(os.tmpdir(), 'bpb-layer-settings-'));resources.defer('Settings files', () => rm(root, { recursive: true, force: true }));
-    let evaluate, inside, editorSave, click, press, viewport, shot, version;
+    let evaluate, inside, editorSave, editorKey, click, press, viewport, shot, version;
     if (kind === 'chrome') {
         const { chromium } = await import('playwright');assertChromeLaunchAllowed();
         const source = path.resolve('dist');
@@ -28,6 +28,7 @@ try {
         evaluate = (fn, arg) => page.evaluate(fn, arg);click = selector => page.locator(selector).click();press = selector => page.locator(selector).press('Space');
         inside = (fn, arg) => page.frames().find(frame => frame.url().includes('/custom-overlay/editor.html'))?.evaluate(fn, arg);
         editorSave = () => page.frameLocator('#custom-layer-dialog iframe').locator('#save').press('Space');
+        editorKey = (selector, key) => page.frameLocator('#custom-layer-dialog iframe').locator(selector).press(key);
         viewport = width => page.setViewportSize({ width, height: 900 });shot = file => page.screenshot({ path: file });version = context.browser().version();
     } else {
         const { Builder, By, Key } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
@@ -40,6 +41,7 @@ try {
         evaluate = (fn, arg) => driver.executeScript(`return (${fn})(arguments[0]);`, arg ?? null);click = selector => driver.findElement(By.css(selector)).click();press = selector => driver.findElement(By.css(selector)).sendKeys(Key.SPACE);
         inside = async (fn, arg) => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));return await driver.executeScript(`return (${fn})(arguments[0]);`, arg ?? null); } finally { await driver.switchTo().defaultContent(); } };
         editorSave = async () => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));await driver.findElement(By.id('save')).sendKeys(Key.SPACE); } finally { await driver.switchTo().defaultContent(); } };
+        editorKey = async (selector, key) => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));await driver.findElement(By.css(selector)).sendKeys(key === 'Space' ? Key.SPACE : Key.ENTER); } finally { await driver.switchTo().defaultContent(); } };
         viewport = width => driver.manage().window().setRect({ width: Math.max(500, width), height: 985 });shot = async file => writeFile(file, await driver.takeScreenshot(), 'base64');version = (await driver.getCapabilities()).getBrowserVersion();
     }
     const wait = (fn, description) => waitForCondition(fn, { description });
@@ -94,6 +96,44 @@ try {
     await click('.custom-layer-row:first-child .custom-layer-remove button:last-child');assert.equal(await evaluate(() => document.activeElement.textContent), 'Delete');
     await click('.custom-layer-row:first-child .custom-layer-actions > button:first-of-type');
     await wait(() => inside(() => document.getElementById('advanced').open), 'Edit opens manual settings');
+    let disclosureCases = 0;
+    const disclosureGeometry = () => inside(() => {
+        const summary = document.querySelector('#advanced>summary'), rect = summary.getBoundingClientRect();
+        return [rect.x,rect.y,rect.width,rect.height,scrollY];
+    });
+    for (const width of [1100, kind === 'firefox' ? 500 : 375]) for (const theme of ['light','dark']) for (const scale of [1,1.5]) {
+        await viewport(width);await inside(({ theme,scale }) => {
+            document.documentElement.dataset.theme = theme;document.body.style.fontSize = `${14*scale}px`;
+            document.getElementById('private-parameters').open = false;document.getElementById('advanced').open = false;
+        }, { theme,scale });
+        const headers = await inside(() => ['private-parameters','advanced'].map(id => {
+            const summary = document.querySelector(`#${id}>summary`), css = getComputedStyle(summary), rect = summary.getBoundingClientRect();
+            const label = summary.querySelector('span') || summary, text = [...label.childNodes].find(node => node.nodeType === 3 && node.textContent.trim());
+            const range = document.createRange();range.selectNode(text);
+            return { background:css.backgroundColor,border:css.borderTopWidth,font:css.font,height:rect.height,lineHeight:parseFloat(css.lineHeight),textX:range.getBoundingClientRect().x };
+        }));
+        assert.equal(headers[0].background,headers[1].background,'peer disclosures must share the same background');
+        assert.equal(headers[0].font,headers[1].font,'peer disclosures must share typography');
+        assert.equal(headers[1].border,'0px','Advanced must not appear as a separate input card');
+        assert(headers[1].height <= Math.max(44,headers[1].lineHeight+20)+1,'Advanced stays a compact single-line disclosure');
+        assert(Math.abs(headers[0].textX-headers[1].textX)<=1,'disclosure labels share their leading alignment');
+        assert(headers.every(header=>header.height>=44),'disclosures retain usable hit targets');
+        assert(await inside(() => document.documentElement.scrollWidth<=innerWidth),'enlarged text fits the editor');
+        await inside(() => document.querySelector('#advanced>summary').scrollIntoView({block:'center',behavior:'instant'}));
+        if(shots&&scale===1)await shot(path.join(shots,`disclosures-${kind}-${width}-${theme}-closed.png`));
+        for(const key of ['Space','Enter']) {
+            await inside(() => document.querySelector('#advanced>summary').focus({preventScroll:true}));const before=await disclosureGeometry();
+            await editorKey('#advanced>summary',key);assert(await inside(()=>document.getElementById('advanced').open));
+            const after=await disclosureGeometry();assert(after.every((value,index)=>Math.abs(value-before[index])<=1),'opening Advanced keeps its header and reading position anchored');
+            assert(await inside(()=>document.activeElement===document.querySelector('#advanced>summary')),'disclosure retains keyboard focus');
+            if(shots&&scale===1&&key==='Space')await shot(path.join(shots,`disclosures-${kind}-${width}-${theme}-open.png`));
+            await editorKey('#advanced>summary',key);assert(!await inside(()=>document.getElementById('advanced').open));
+            assert((await disclosureGeometry()).every((value,index)=>Math.abs(value-before[index])<=1),'closing Advanced restores the same reading position');
+        }
+        disclosureCases++;
+    }
+    assert.equal(disclosureCases,8);
+    await inside(()=>{document.body.style.fontSize='';document.getElementById('advanced').open=true;});
     for (const width of [1100, kind === 'firefox' ? 500 : 375]) {
         await viewport(width);
         const controls = await inside(() => ['kind','format','minimum','maximum','scheme','tile-size','bounds'].map(id => {
@@ -115,6 +155,6 @@ try {
     await click('.custom-layer-row:first-child .custom-layer-actions > button:first-of-type');
     await wait(() => inside(() => document.getElementById('advanced').open && document.getElementById('scheme').value === 'tms'), 'manual settings are visible after reopening');
     assert.equal(await inside(() => document.getElementById('maximum').value),'15');
-    console.log(JSON.stringify({ verification: 'custom-layer-settings', kind, version, hidden: true, height: 900, widths: [1100, kind === 'firefox' ? 500 : 375], cases, themes: ['light','dark'], scales: [1,1.5], actionsAligned: true, reorderPendingErrorRetry: true, opacityAbsent: true, manualOverridesVisibleSavedReopened: true }));
+    console.log(JSON.stringify({ verification: 'custom-layer-settings', kind, version, hidden: true, height: 900, widths: [1100, kind === 'firefox' ? 500 : 375], cases, disclosureCases, themes: ['light','dark'], scales: [1,1.5], matchingCompactDisclosures:true, keyboardDisclosureAnchored:true, actionsAligned: true, reorderPendingErrorRetry: true, opacityAbsent: true, manualOverridesVisibleSavedReopened: true }));
     await resources.dispose();
 } catch (error) { await resources.dispose(error); }
