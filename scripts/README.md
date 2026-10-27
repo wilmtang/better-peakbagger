@@ -131,8 +131,8 @@ independent of the existing targets.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
 - [verify-custom-overlays.mjs](verify-custom-overlays.mjs) — real unpacked overlay editor, direct HTTPS/CORS tiles, packaged vector workers, map ownership and 2D/3D rendering.
-- [verify-private-layers.mjs](verify-private-layers.mjs) — protected query parameters in real Settings, private worker GETs without provider CORS, per-map approval, forged destination rejection and hardware 2D/3D in hidden Chrome/Firefox; test-only host pregrant does not prove native permission prompts.
-- [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — shared Chrome/Firefox editor cases for compact spacing, field help, metadata zoom values and stable pending/error/retry status; invoked by the custom-overlay verifier.
+- [verify-private-layers.mjs](verify-private-layers.mjs) — protected query parameters and automatic TileJSON detection in real Settings, private worker GETs without provider CORS, per-map approval, forged destination rejection and hardware 2D/3D in hidden Chrome/Firefox; test-only host pregrant does not prove native permission prompts.
+- [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — 18 shared Chrome/Firefox editor cases for compact spacing, field help, name/URL-only source setup, metadata/manual overrides and stable Save/detection pending/error/retry status; invoked by the custom-overlay verifier. The broader Firefox terrain GeoJSON proof gap is tracked in the private-relay closure ledger.
 - [verify-peak-cards.mjs](verify-peak-cards.mjs)
 - [verify-summit-cloud.mjs](verify-summit-cloud.mjs) — hidden Chrome/Firefox
   forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.

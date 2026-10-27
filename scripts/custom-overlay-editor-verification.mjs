@@ -29,6 +29,7 @@ function holdEditorSave() {
     api.runtime.sendMessage = message => {
         if (message.type !== 'CUSTOM_OVERLAYS_SAVE') return original(message);
         window.editorSaveCount++;
+        window.editorSavedSource = message.source;
         return new Promise(resolve => { window.releaseEditorSave = error => { api.runtime.sendMessage = original; resolve(error ? { ok: false, error } : { ok: true }); }; });
     };
     document.getElementById('save').focus();
@@ -36,7 +37,7 @@ function holdEditorSave() {
 
 // Drives the packaged editor in its real Options iframe. Only the delayed Save
 // reply is stubbed; TileJSON is read from the verifier's HTTPS/CORS provider.
-export async function verifyCustomEditor({ evaluate, click, press, hover, fill, select, wait, viewport, screenshot, providerOrigin }) {
+export async function verifyCustomEditor({ evaluate, click, press, hover, fill, wait, viewport, screenshot, providerOrigin, holdSource, pendingSource }) {
     assert.ok(providerOrigin, 'editor verification needs its explicit fixture provider');
     let cases = 0; const frames = [];
     assert.equal(await evaluate(() => document.querySelectorAll('#attribution, #attribution-url, #attribution-label, #attribution-url-label').length), 0,
@@ -50,12 +51,12 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
         const gap = await evaluate(() => document.querySelector('.help').getBoundingClientRect().top - document.getElementById('advanced').getBoundingClientRect().bottom);
         assert.ok(gap <= 24, `Collapsed Advanced leaves ${gap}px of blank space before troubleshooting`);
         assert.equal(await evaluate(() => document.getElementById('notice').hidden), true);
+        await click('#advanced summary');
         await hover('#format-label .info');
         await wait(() => evaluate(() => !document.getElementById('format-help').hidden), 'help opens on hover');
         await hover('#format-help');
         assert.equal(await evaluate(() => document.getElementById('format-help').hidden), false, 'pointer can enter the tooltip');
         await press('#format-label .info', 'Escape');
-        await click('#advanced summary');
         for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds']) {
             const selector = `#${id}-label .info`;
             await evaluate(selector => document.querySelector(selector).focus(), selector);
@@ -77,7 +78,7 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
             cases++;
         }
         await click('#advanced summary');
-        await fill('#name', 'Editor verification'); await fill('#url', `${providerOrigin}/metadata.json`); await select('#format', 'tilejson');
+        await fill('#name', 'Editor verification'); await fill('#url', `${providerOrigin}/metadata.json`);
         assert.equal(await evaluate(() => document.getElementById('source-values').hidden), false, 'TileJSON can restore metadata values');
         await click('#test');
         await wait(() => evaluate(() => document.getElementById('feedback').textContent.startsWith('Source values loaded.')), 'TileJSON resolution completes');
@@ -136,7 +137,37 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
         await evaluate(() => { document.getElementById('maximum').dataset.origin = 'default'; });
         cases++;
     }
+    await fill('#url', `${providerOrigin}/detect-slow.json`);
+    for (const fail of [true, false]) {
+        holdSource(true);await evaluate(() => document.getElementById('test').focus({ preventScroll: true }));const before = await evaluate(readEditorGeometry);
+        await press('#test', 'Space');
+        await wait(() => evaluate(() => document.getElementById('test').getAttribute('aria-disabled') === 'true'), 'source detection is pending');
+        await wait(pendingSource, 'provider response is held during source detection');
+        stable(before, await evaluate(readEditorGeometry), 'pending source detection');
+        await press('#test', 'Space');
+        holdSource(false, fail);
+        await wait(() => evaluate(() => document.getElementById('test').getAttribute('aria-disabled') === 'false'), 'source detection settles');
+        assert.equal(await evaluate(() => document.activeElement.id), 'test');
+        assert.equal(await evaluate(() => document.getElementById('advanced').open), false);
+        assert.equal(await evaluate(() => document.getElementById('feedback').textContent.startsWith('Source values loaded.')), !fail);
+        stable(before, await evaluate(readEditorGeometry), fail ? 'source detection error' : 'source detection retry success');
+        await screenshot?.(fail ? 'detect-error' : 'detect-success');await click('#dismiss-feedback');
+    }
+    cases++;
+    for (const [endpoint, kind] of [['metadata', 'raster'], ['detect-vector', 'mvt'], ['detect-geo', 'geojson']]) {
+        await fill('#url', `${providerOrigin}/${endpoint}.json`);
+        assert.equal(await evaluate(() => document.getElementById('advanced').open), false);
+        await evaluate(holdEditorSave);const before = await evaluate(readEditorGeometry);
+        await press('#save', 'Space');
+        await wait(() => evaluate(() => window.editorSaveCount === 1), `${kind} detected from only name and URL`);
+        assert.equal(await evaluate(() => window.editorSavedSource.kind), kind);
+        stable(before, await evaluate(readEditorGeometry), `${kind} auto-fill pending Save`);
+        await evaluate(() => window.releaseEditorSave(''));
+        await wait(() => evaluate(() => document.getElementById('save').getAttribute('aria-disabled') === 'false'), `${kind} save completes`);
+        stable(before, await evaluate(readEditorGeometry), `${kind} auto-fill success`);
+        await click('#dismiss-feedback');await screenshot?.(`auto-${kind}`);cases++;
+    }
     await viewport(1000);
-    assert.equal(cases, 14, 'editor verifier must execute all six tooltip and one status case at both sizes');
-    return { cases, requestedViewports: [1000, 375], frames, themes: ['light', 'dark'], compact: true, tooltips: true, statusAnchored: true, metadataZoom: true };
+    assert.equal(cases, 18, 'editor verifier must execute the tooltip/status matrix, detection retry and three auto-detected formats');
+    return { cases, requestedViewports: [1000, 375], frames, themes: ['light', 'dark'], compact: true, tooltips: true, statusAnchored: true, metadataZoom: true, automaticSourceTypes: true };
 }

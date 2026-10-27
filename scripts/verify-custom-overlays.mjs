@@ -27,16 +27,20 @@ try {
     const fixture = await createBrowserFixtureServer({ temporaryRoot, masterMapDocument: nativeHtml, peakMapDocument: nativeHtml }); resources.defer('custom HTTPS fixture', () => fixture.close());
     const providerDirectory = path.join(temporaryRoot, 'provider'); await mkdir(providerDirectory);
     const certificate = await createFixtureCertificate({ directory: providerDirectory }); resources.defer('provider certificate', () => certificate.remove());
-    const requests = [], origins = new Set(), releases = [], networkErrors = []; let denied = false, held = false, png;
+    const requests = [], origins = new Set(), releases = [], networkErrors = []; let denied = false, held = false, failDetection = false, png;
+    const holdSource = (value, fail = false) => { held = value;failDetection = fail;if (!value) releases.splice(0).forEach(resolve => resolve()); };
     const mvt = Buffer.from(fromGeojsonVt({ trails: { features: [{ type: 3, geometry: [[[0, 0], [4096, 0], [4096, 4096], [0, 4096], [0, 0]]], tags: {} }] } }, { version: 2, extent: 4096 }));
     const provider = createServer({ key: certificate.key, cert: certificate.cert }, async (request, response) => {
         requests.push(request.url); origins.add(request.headers.origin);
         assert.equal(request.headers.cookie, undefined); assert.equal(request.headers.referer, undefined);
         if (held) await new Promise(resolve => releases.push(resolve));
         const geo = request.url.endsWith('.geojson'), vector = request.url.endsWith('.pbf');
-        if (request.url === '/metadata.json') {
+        if (request.url === '/detect-slow.json' && failDetection) { response.writeHead(503, { 'access-control-allow-origin': '*' });response.end();return; }
+        if (['/metadata.json', '/detect-vector.json', '/detect-geo.json', '/detect-slow.json'].includes(request.url)) {
             response.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
-            response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 2, maxzoom: 14, scheme: 'tms', tiles: [`https://${request.headers.host}/{z}/{x}/{y}.png`] })); return;
+            response.end(JSON.stringify(request.url === '/detect-geo.json' ? { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-122, 47] } }] }
+                : { tilejson: '3.0.0', minzoom: 2, maxzoom: 14, scheme: 'tms', tiles: [`https://${request.headers.host}/{z}/{x}/{y}.${request.url === '/detect-vector.json' ? 'pbf' : 'png'}`],
+                    ...(request.url === '/detect-vector.json' && { vector_layers: [{ id: 'trails' }] }) })); return;
         }
         response.writeHead(200, { 'content-type': geo ? 'application/geo+json' : vector ? 'application/vnd.mapbox-vector-tile' : 'image/png', 'cache-control': 'no-store', ...denied ? {} : { 'access-control-allow-origin': '*' } });
         response.end(geo ? JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 48], [-122, 48], [-122, 46]]] } }] }) : vector ? mvt : png);
@@ -47,7 +51,7 @@ try {
     const dist = path.resolve('dist'), origin = `https://www.peakbagger.com:${fixture.port}`;
     resources.defer('custom held replies', () => releases.splice(0).forEach(resolve => resolve()));
     if (firefoxMode) {
-        await verifyFirefox({ resources, temporaryRoot, origin, providerOrigin, setPng: value => { png = value; }, deny: value => { denied = value; }, requests, origins });
+        await verifyFirefox({ resources, temporaryRoot, origin, providerOrigin, setPng: value => { png = value; }, deny: value => { denied = value; }, requests, origins, holdSource, pendingSource: () => releases.length > 0 });
     } else {
         const trust = '--ignore-certificate-errors-spki-list=' + [fixture, certificate].flatMap(item => item.chromeTrustArgs.map(argument => argument.split('=').slice(1).join('='))).join(',');
         assertChromeLaunchAllowed();
@@ -86,7 +90,7 @@ try {
             press: (selector, key) => editor.locator(selector).press(key), fill: (selector, value) => editor.locator(selector).fill(value),
             select: (selector, value) => editor.locator(selector).selectOption(value),
             wait: (condition, message) => waitForCondition(condition, { description: message, timeoutMs: 10000 }),
-            viewport: width => admin.setViewportSize({ width, height: 800 }), providerOrigin,
+            viewport: width => admin.setViewportSize({ width, height: 800 }), providerOrigin, holdSource, pendingSource: () => releases.length > 0,
             screenshot: async name => { if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await admin.screenshot({ path: path.join(process.env.BPB_CUSTOM_SCREENSHOTS, `editor-${name}.png`) }); } } });
         await editor.locator('#cancel').click(); await admin.locator('#custom-layer-add').click();
         await editorFrame.waitForFunction(() => document.getElementById('name').value === '');
@@ -102,6 +106,7 @@ try {
         await raster.uncheck(); const stopped = requests.length;
         for (const [name, kind, url] of [['Custom polygons', 'geojson', `${providerOrigin}/data.geojson`], ['Custom MVT', 'mvt', `${providerOrigin}/{z}/{x}/{y}.pbf`]]) {
             await admin.locator('#custom-layer-add').click();
+            await editor.locator('#advanced summary').click();
             await editor.locator('#name').fill(name); await editor.locator('#kind').selectOption(kind); await editor.locator('#url').fill(url);
             if (kind === 'mvt') await editor.locator('[id$="-sourceLayer"]').fill('trails');
             await editor.locator('[id$="-geometry"]').selectOption('polygon');
@@ -348,7 +353,7 @@ try {
 await resources.dispose(failure);
 if (failure) throw failure;
 
-async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin, setPng, deny, requests, origins }) {
+async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin, setPng, deny, requests, origins, holdSource, pendingSource }) {
     const { Builder, By, Key } = await import('selenium-webdriver');
     const firefox = (await import('selenium-webdriver/firefox.js')).default;
     const prepared = await prepareFirefoxSource({ temporaryRoot }); resources.defer('custom Firefox source', () => prepared.cleanup());
@@ -406,7 +411,7 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await click('#custom-layer-add');
     await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
     await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Options editor initialized');
-    const editorProof = await verifyCustomEditor({ evaluate, click, wait, providerOrigin,
+    const editorProof = await verifyCustomEditor({ evaluate, click, wait, providerOrigin, holdSource, pendingSource,
         hover: async selector => driver.actions({ async: true }).move({ origin: await driver.findElement(By.css(selector)) }).perform(),
         press: async (selector, key) => { const keys = { Space: Key.SPACE, Escape: Key.ESCAPE, ArrowDown: Key.ARROW_DOWN }; assert.ok(keys[key], `Unknown editor key: ${key}`); await (await driver.findElement(By.css(selector))).sendKeys(keys[key]); },
         fill: async (selector, value) => { const input = await driver.findElement(By.css(selector)); await input.clear(); await input.sendKeys(value); },
@@ -453,11 +458,11 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     assert.ok(await evaluate(() => [...document.querySelectorAll('.leaflet-bpb-custom-overlays-pane canvas')].some(canvas => [...canvas.getContext('2d').getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data].at(-1) > 0)), 'native overlay pixels');
     const row = '.bpb-custom-source:has(input[aria-label="Custom mvt"])';
     await evaluate(selector => { document.querySelector(selector).open = true; }, row);
-    deny(true); await click(`${row} .bpb-custom-actions button:first-child`);
+    deny(true); await click(`${row} .bpb-custom-actions button:not([data-bpb-private-layer])`);
     await wait(() => evaluate(selector => document.querySelector(`${selector} .bpb-custom-feedback`).textContent.includes('CORS'), row), 'actual missing CORS header is reported');
     const geometry = () => evaluate(selector => { const rect = document.querySelector(`${selector} .bpb-custom-actions`).getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scroll: scrollY }; }, row);
     const before = await geometry(); deny(false);
-    await (await driver.findElement(By.css(`${row} .bpb-custom-actions button:first-child`))).sendKeys(Key.SPACE);
+    await (await driver.findElement(By.css(`${row} .bpb-custom-actions button:not([data-bpb-private-layer])`))).sendKeys(Key.SPACE);
     await wait(ready, 'Firefox keyboard retry recovers'); const after = await geometry();
     for (const key of Object.keys(before)) assert.ok(Math.abs(before[key] - after[key]) <= 1, `Firefox retry ${key} remains stable`);
     await evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });

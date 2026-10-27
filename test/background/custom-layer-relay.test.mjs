@@ -122,6 +122,26 @@ test('TileJSON endpoint tokens stay private and newly discovered hosts cannot re
     foreign.fetch(async () => new Response(JSON.stringify({ tilejson: '3.0.0', tiles: ['https://other.example.com/{z}/{x}/{y}.png?key=OTHER_SECRET'] }), { headers: { 'content-type': 'application/json' } }));
     assert.equal((await foreign.get({ resource: 'metadata' })).ok, false);assert.equal(foreign.calls(), 1);
 });
+test('only Settings can auto-detect private metadata and receives bounded vector suggestions', async () => {
+    const h = harness(), input = { ...source, source: { ...source.source, tiles: [], metadataUrl: 'https://tiles.example.com/source.json' } };
+    h.fetch(async () => new Response(JSON.stringify({ tilejson: '3.0.0', minzoom: 3, maxzoom: 16, scheme: 'tms',
+        tiles: ['https://tiles.example.com/{z}/{x}/{y}.pbf?signed=PRIVATE'], vector_layers: [{ id: 'trails' }] }), { headers: { 'content-type': 'application/json' } }));
+    const message = { type: 'CUSTOM_PRIVATE_CHECK', source: input, requestParameters: secret, detection: { detectKind: true, styleAuto: true } };
+    assert.equal((await h.relay().handle(message, page)).ok, false);assert.equal(h.calls(), 0);
+    const result = await h.relay().handle(message, h.editor);assert(result.ok);
+    assert.equal(result.value.source.kind, 'mvt');assert.deepEqual(result.value.layers, ['trails']);assert.equal(result.value.source.source.minNativeZoom, 3);
+    assert(result.value.source.appearance.rules.every(rule => rule.sourceLayer === 'trails'));
+    assert(h.urls[0][0].includes('api_key='));assert.equal(h.calls(), 1);
+});
+test('private GeoJSON inspection does not enable metadata requests for a data-only layer', async () => {
+    const h = harness(), input = { ...source, kind: 'geojson', source: { dataUrl: 'https://tiles.example.com/data.geojson' },
+        appearance: { opacity: 60, rules: [{ geometry: 'point', color: '#26734d', width: 2, radius: 5, fillOpacity: .3 }] } };
+    h.fetch(async () => new Response(JSON.stringify({ type: 'FeatureCollection', features: [] }), { headers: { 'content-type': 'application/geo+json' } }));
+    const checked = await h.relay().handle({ type: 'CUSTOM_PRIVATE_CHECK', source: input, requestParameters: secret, detection: { detectKind: true } }, h.editor);
+    assert(checked.ok);assert.equal(checked.value.source.kind, 'geojson');assert.equal(h.calls(), 1);
+    await h.save(secret, input);await h.grant();assert.equal((await h.get({ resource: 'metadata' })).ok, false);assert.equal(h.calls(), 1);
+    assert((await h.get({ resource: 'data' })).ok);assert.equal(h.calls(), 2);
+});
 
 test('failed configuration writes preserve the previous private revision and restored descriptors cannot resurrect credentials', async () => {
     const h = harness();await h.save();const original = await h.catalog.snapshot();

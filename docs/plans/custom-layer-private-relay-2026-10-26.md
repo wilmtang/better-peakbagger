@@ -41,6 +41,36 @@ live-provider and any broader suite failures explicit.
 
 ### Fixed and verified
 
+- Source setup follow-up: new overlays need name and URL; source type, URL
+  format and appearance are inside collapsed Advanced. Local URL hints require
+  no network request. Check/automatic Save read only the supplied document and
+  fill validated type, zoom, scheme, bounds, declared tile size and a unique
+  vector source layer. Manual fields/styles and saved credits are preserved;
+  ambiguous vectors require an explicit layer choice. URL edits abort pending
+  detection and stale results cannot fill or save the changed draft. Explicit
+  type/format selection retains the manual-save fallback.
+- Source detection shares a pure field reader between CORS and Settings-only
+  private checks. Private GeoJSON inspection does not enable a map metadata
+  request for a data-only layer. Private metadata and signed URLs remain in
+  extension surfaces, while map requests still require separate approval.
+- Detection verification: the initial collapsed-form regression failed against
+  the old form. The full suite passed 3,678 tests; the final 78-case focused run
+  includes the additional GeoJSON resource-boundary test, metadata/editor cases,
+  manifest boot and documentation checks. Lint passed with the
+  eight owned warnings. Chrome 156.0.8078.4 passed all 15 map surfaces. Chrome
+  and Firefox 158.0.1 each passed 18 editor cases: name/URL-only raster, MVT and
+  GeoJSON setup, help, manual overrides, held detection error/retry and held Save
+  pending/error/retry. Heading/actions/document/scroll geometry remains stable
+  within one pixel. Editor frames were 618/339×718 in Chrome and 618/464×642 in
+  Firefox at requested 1000/375 browser widths, in light/dark themes; Chrome also
+  checked 200% browser zoom. Screenshots were visually inspected.
+- Private detection passed in hidden Chrome/Firefox at 1000×900 with narrow
+  375/500-width Settings layouts, masked saved editing and a no-CORS TileJSON
+  provider requiring the synthetic key. Only the explicit Settings metadata
+  check fetched before map approval; no tile requests did. Subsequent 2D and
+  hardware 3D raster rendering, secret-free public storage/export/messages and
+  reload revocation passed. Both used hardware Metal/Apple M3 Pro. Chrome's real
+  startup/bridge check also passed. Native permission prompts remain pregranted.
 - Masked editable query rows in the source editor. Saving/checking requests only
   configured optional HTTPS hostnames. The fixed editor markup is packaged HTML;
   private values are assigned through DOM input properties. Packaging lint no
@@ -114,6 +144,12 @@ live-provider and any broader suite failures explicit.
 
 ### Intentionally not changed
 
+- Detection does not search provider endpoints, sample global tile coverage or
+  infer logical raster tile size from image dimensions. Unknown raw template
+  types and vector source layers still need a user choice. Source inspection
+  retains the metadata/data byte bounds; large `.json` GeoJSON documents can use
+  explicit GeoJSON type. Full map styles remain unsupported. Actual feature and
+  vertex validation remains in the packaged data parser during rendering.
 - Existing public layers and native map owners. No generic fetch proxy, remote
   relay server, arbitrary headers, cookies or server/admin credential support.
 - An approved hostile page can spend its allowance and read map data. Provider
@@ -126,6 +162,14 @@ live-provider and any broader suite failures explicit.
 
 ### Changed but not fully proven
 
+- The broader Firefox custom-overlay verifier reaches terrain with raster and
+  MVT loaded but GeoJSON remains `Loading`; the full verifier therefore exits
+  nonzero after its 18 editor cases pass. Its Retry selector was corrected to
+  target Retry instead of the hidden private-approval action. The remaining
+  terrain GeoJSON condition is unresolved and is not claimed fixed or fully
+  verified by the source-setup work. Chrome's broader run and both private raster
+  integrations pass. The GeoJSON fetch/render functions themselves were not
+  changed in this follow-up; a full baseline browser attribution was not done.
 - Native permission prompts and provider-specific access policies require
   independent evidence; fixture grants cannot establish them.
 - Native grant/revocation prompt appearance, visible-window focus/placement,

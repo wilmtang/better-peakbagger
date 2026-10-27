@@ -1883,6 +1883,16 @@ The completed cross-browser verification rollout is retained in
 
 ## Private custom-layer requests
 
+`custom-overlay-source.js` owns pure URL hints and bounded TileJSON/GeoJSON
+source-field interpretation, shared by the CORS client and Settings-only private
+check. The editor starts with name/URL, keeps overrides and appearance in
+collapsed Advanced, and reads source documents only on Check/Save. Save resolves
+new JSON sources before committing. Edits abort detection and stale results
+cannot fill or save a different draft. Inferred vector source layers are accepted
+only when unique; multiple layers require a user choice. Existing definitions
+and manual field/style overrides remain authoritative. There is no metadata
+endpoint search or tile-coverage crawl.
+
 `custom-private-store.js` owns extension-origin IndexedDB private definitions,
 query values and durable provider budgets. `custom-overlay-private.js` projects
 opaque public descriptors. The registry and all backup snapshots remain public;

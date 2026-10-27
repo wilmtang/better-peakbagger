@@ -1,9 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { CUSTOM_LIMITS, customUrl, readCustomSource } from './custom-overlay-schema.js';
+import { CUSTOM_LIMITS, customUrl } from './custom-overlay-schema.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
 import { validateCustomRaster } from './custom-overlay-raster.js';
+import { resolveCustomSourceDocument } from './custom-overlay-source.js';
 
 export const customFailure = error => error?.code === 'approval' ? 'Approve private map access in BPB, then choose Retry.'
     : error?.code === 'budget' ? 'Private map request allowance reached. Wait before approving more.'
@@ -89,32 +90,11 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
         try { const result = await Promise.race([flight.promise, aborted]); if (result.bytes.byteLength > limit) throw new Error('Source too large.'); return { ...result, bytes: result.bytes.slice(0) }; }
         finally { signal?.removeEventListener('abort', abort); if (--flight.users === 0) flight.controller.abort(); }
     };
-    const resolve = async (input, signal, retry = true) => {
-        if (!input.source.metadataUrl) return { source: input, origins: [] };
-        const { bytes } = await request(input.source.metadataUrl, CUSTOM_LIMITS.metadata, signal, retry);
-        const metadata = JSON.parse(new TextDecoder().decode(bytes));
-        if (metadata.version === 8 || !/^([23])\./.test(metadata.tilejson) || !Array.isArray(metadata.tiles) || !metadata.tiles.length || metadata.tiles.length > 4
-            || metadata.tiles.some(url => !customUrl(url, true))) throw new Error('Use TileJSON or a tile template; full map styles are unsupported.');
-        const origins = [...new Set(metadata.tiles.map(url => new URL(url).origin))];
-        const source = { ...input.source, tiles: metadata.tiles, scheme: metadata.scheme || 'xyz' };
-        const maxDefault = metadata.tilejson.startsWith('3.') ? 30 : 22;
-        source.metadataZoom = { min: metadata.minzoom ?? 0, max: metadata.maxzoom ?? maxDefault,
-            minDeclared: metadata.minzoom != null, maxDeclared: metadata.maxzoom != null };
-        for (const [field, key] of [['minNativeZoom', 'min'], ['maxNativeZoom', 'max']]) {
-            const value = metadata[`${key}zoom`] ?? (key === 'min' ? 0 : maxDefault);
-            if (!Number.isInteger(value) || value < 0 || value > 30) throw new Error('Invalid source zoom range.');
-            if (source.zoomOrigin?.[key] !== 'manual') {
-                source[field] = Math.min(CUSTOM_LIMITS.zoom, value);
-                source.zoomOrigin = { ...source.zoomOrigin, [key]: metadata[`${key}zoom`] == null ? 'default' : 'metadata' };
-            }
-        }
-        if (metadata.minzoom > CUSTOM_LIMITS.zoom || metadata.minzoom > metadata.maxzoom) throw new Error('Source zoom range is unsupported.');
-        if (metadata.bounds) source.bounds = metadata.bounds;
-        const approved = [...new Set([...input.approvedOrigins, ...origins])];
-        const normalized = readCustomSource({ ...input, source, approvedOrigins: approved });
-        if (!normalized) throw new Error('Invalid source metadata.');
-        return { source: normalized, origins: origins.filter(origin => !input.approvedOrigins.includes(origin)),
-            layers: Array.isArray(metadata.vector_layers) ? metadata.vector_layers.slice(0, 32).map(layer => String(layer.id).slice(0, 128)) : [] };
+    const resolve = async (input, signal, retry = true, options = {}) => {
+        const url = input.source.metadataUrl || (options.inspect && input.kind === 'geojson' ? input.source.dataUrl : null);
+        if (!url) return { source: input, origins: [] };
+        const { bytes } = await request(url, input.kind === 'geojson' ? CUSTOM_LIMITS.geojson : CUSTOM_LIMITS.metadata, signal, retry);
+        return resolveCustomSourceDocument(input, JSON.parse(new TextDecoder().decode(bytes)), options);
     };
     const tile = async (source, coordinates, signal, fallback = true) => {
         const original = coordinates;

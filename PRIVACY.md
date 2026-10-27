@@ -851,6 +851,14 @@ the browser and is not copied into settings backups or browser sync.
 
 ## Private map request boundary
 
+The overlay editor recognizes URL hints locally. It contacts a source document
+only after Check source or an automatic Save; typing/pasting does not send a
+request. Discovery reads the supplied URL without searching for other endpoints
+or crawling tiles. The same bounded source-field reader serves public CORS
+checks and Settings-only private checks. Private metadata, parameters and signed
+URLs remain inside extension surfaces during detection. Additional tile hosts
+still require review; detection cannot approve a map's private request allowance.
+
 Adding private query parameters moves that source’s GET requests into BPB’s
 background worker. The full definition and values stay in extension-origin
 IndexedDB. Public records and MAIN-world messages contain only opaque

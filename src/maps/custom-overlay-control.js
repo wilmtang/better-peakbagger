@@ -128,7 +128,7 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
             const client = createCustomClient({ fetchImpl: (native?.win || win).fetch.bind(native?.win || win), parse, pool });
             try {
                 let value;
-                if (data.action === 'resolve') value = await client.resolve(source, owner.signal, false);
+                if (data.action === 'resolve') value = await client.resolve(source, owner.signal, false, data.detection || {});
                 else if (data.action === 'test') value = await probeCustomSource(client, source, view, owner.signal, '2D');
                 else throw new Error('Choose a visible map to test this source.');
                 send({ type: 'taskReply', requestId: data.requestId, reply: { ok: true, value } });

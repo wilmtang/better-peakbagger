@@ -52,6 +52,10 @@ try {
     const server = createServer(cert, async (request, response) => {
         const url = new URL(request.url, 'https://tiles.example.com');requests.push({ path: url.pathname, origin: request.headers.origin });
         assert.equal(url.searchParams.get('api_key'), secret);assert.equal(request.headers.cookie, undefined);assert.equal(request.headers.referer, undefined);
+        if (url.pathname === '/source.json') {
+            response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+            response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 0, maxzoom: 18, tiles: [`https://${request.headers.host}/tiles/{z}/{x}/{y}.png`] }));return;
+        }
         response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });response.end(png);
     });resources.defer('private provider', () => closeServer(server));await listenServer(server, 0, '127.0.0.1');
     const origin = `https://www.peakbagger.com:${fixture.port}`, provider = `https://tiles.example.com:${server.address().port}`;
@@ -111,7 +115,7 @@ try {
     await admin(async () => (globalThis.browser || chrome).runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { showSnotel: false, showWeather: false, showSunMoon: false, enable3dMap: true, terrainCacheLimitMb: 0 } }));
     await evaluate(() => location.reload());await wait(() => evaluate(() => !!document.querySelector('#bpb-terrain-toggle')), '3D toggle after authoritative settings');
     await click('options', '#custom-layer-add');await wait(() => inside(() => !!document.getElementById('name')), 'Settings editor');
-    await fill('#name', 'Private tiles');await fill('#url', `${provider}/tiles/{z}/{x}/{y}.png`);await click('editor', '#private-parameters summary');await click('editor', '#add-parameter');
+    await fill('#name', 'Private tiles');await fill('#url', `${provider}/source.json`);await click('editor', '#private-parameters summary');await click('editor', '#add-parameter');
     await fill('.parameter-row input[id^=parameter-key]', 'api_key');await fill('.parameter-row input[id^=parameter-value]', secret);
     for (const width of [1000, 375]) for (const theme of ['light', 'dark']) {
         await setViewport({ width, height: 900 });await inside(value => { document.documentElement.dataset.theme = value; }, theme);
@@ -123,13 +127,16 @@ try {
     await inside(() => document.getElementById('save').focus({ preventScroll: true }));const anchored = await geometry();
     const stable = async () => { const after = await geometry();for (const key of Object.keys(anchored)) for (const [index, value] of after[key].entries()) assert(Math.abs(value - anchored[key][index]) <= 1, `private Save ${key} moved`);assert.equal(after.focus[0], 1); };
     for (const outcome of ['error', 'success']) {
-        await click('editor', '#save');await wait(() => inside(() => document.getElementById('save').getAttribute('aria-disabled') === 'true'), 'private save pending');await stable();
+        const writes = await inside(() => Number(document.documentElement.dataset.verificationSaves || 0));
+        await click('editor', '#save');await wait(() => inside(() => Number(document.documentElement.dataset.verificationSaves || 0)).then(count => count > writes), 'private source detected and save write pending');await stable();
         const attempts = await inside(() => document.documentElement.dataset.verificationSaves);await inside(() => document.getElementById('save').click());assert.equal(await inside(() => document.documentElement.dataset.verificationSaves), attempts);
         await inside(result => document.documentElement.dataset.verificationRelease = result, outcome);
         await wait(() => inside(() => document.getElementById('save').getAttribute('aria-disabled') === 'false'), 'private save settled');await stable();
         assert.equal(await inside(() => document.querySelector('.parameter-row input[type=password]').value), secret);
     }
     assert.equal(await inside(() => document.getElementById('feedback').textContent), 'Saved on this device.');
+    assert.equal(await inside(() => document.getElementById('advanced').open), false, 'private metadata detection must not require Advanced');
+    assert.equal(requests.filter(request => request.path === '/source.json').length, 1, 'Settings reads private metadata once');
     await setViewport({ width: 1000, height: 900 });
     const snapshot = await admin(async () => { const api = globalThis.browser || chrome;return { local: await api.storage.local.get(null), exported: await api.runtime.sendMessage({ type: 'SETTINGS_FILE_EXPORT', includeCredentials: true }) }; });
     assert(!JSON.stringify(snapshot).includes(secret), 'secret leaked into storage.local or backup');await click('editor', '#cancel');await wait(() => admin(() => !document.getElementById('custom-layer-dialog').open), 'editor dismissed');
@@ -140,7 +147,7 @@ try {
     await click('map', '.bpb-map-layers > button');await wait(() => evaluate(() => !!document.querySelector('.bpb-custom-source input[type=checkbox]')), 'private layer row');
     await evaluate(() => { window.privateMessages = [];window.addEventListener('message', event => { if (event.data?.__bpbCustomOverlays) window.privateMessages.push(JSON.stringify(event.data)); }); });
     await click('map', '.bpb-custom-source input[type=checkbox]');await waitForCondition(() => evaluate(() => ({ text: document.querySelector('.bpb-custom-feedback')?.textContent,summary: document.querySelector('.bpb-custom-source summary')?.textContent,
-        frames: [...document.querySelectorAll('iframe')].map(frame => { try { const w = frame.contentWindow;return { url: w.location.pathname, hidden: w.document.hidden, width: w.innerWidth, height: w.innerHeight, tiles: w.document.querySelectorAll('.bpb-custom-overlays canvas').length, pane: w.mapsPlaceholder?.getPane('bpb-custom-overlays')?.outerHTML.slice(0,800),map: w.mapsPlaceholder && {zoom:w.mapsPlaceholder.getZoom(),size:w.mapsPlaceholder.getSize(),layers:Object.values(w.mapsPlaceholder._layers).map(l=>({grid:!!l.createTile,tiles:l._tiles&&Object.keys(l._tiles).length,min:l.options?.minZoom,max:l.options?.maxZoom,loaded:l._loading}))} }; } catch { return {}; } }) })), { description: 'unapproved request rejected',isReady: value => value.text?.includes('Approve') });assert.equal(requests.length, 0);
+        frames: [...document.querySelectorAll('iframe')].map(frame => { try { const w = frame.contentWindow;return { url: w.location.pathname, hidden: w.document.hidden, width: w.innerWidth, height: w.innerHeight, tiles: w.document.querySelectorAll('.bpb-custom-overlays canvas').length, pane: w.mapsPlaceholder?.getPane('bpb-custom-overlays')?.outerHTML.slice(0,800),map: w.mapsPlaceholder && {zoom:w.mapsPlaceholder.getZoom(),size:w.mapsPlaceholder.getSize(),layers:Object.values(w.mapsPlaceholder._layers).map(l=>({grid:!!l.createTile,tiles:l._tiles&&Object.keys(l._tiles).length,min:l.options?.minZoom,max:l.options?.maxZoom,loaded:l._loading}))} }; } catch { return {}; } }) })), { description: 'unapproved request rejected',isReady: value => value.text?.includes('Approve') });assert.equal(requests.length, 1, 'only the explicit Settings metadata check may fetch before map approval');
     await evaluate(() => document.querySelector('.bpb-custom-source').open = true);
     const grantLabel = `${PRIVATE_LIMITS.grantRequests.toLocaleString('en-US')} requests for ${PRIVATE_LIMITS.grantMs / 3600000} hours`;
     assert((await evaluate(() => document.querySelector('.bpb-custom-feedback').textContent)).includes(grantLabel), 'map must explain the enforced allowance');
@@ -185,6 +192,6 @@ try {
     await wait(() => evaluate(() => !!document.querySelector('.bpb-map-layers > button')?.getClientRects().length), 'reloaded map overlay control');
     await click('map', '.bpb-map-layers > button');await click('map', '.bpb-custom-source input[type=checkbox]');
     await wait(() => evaluate(() => document.querySelector('.bpb-custom-feedback')?.textContent.includes('Approve')), 'navigation revoked private approval');assert.equal(requests.length, beforeReload);
-    console.log(JSON.stringify({ verification: 'private-layers', kind, version, hidden: true, viewport: '1000x900', editorWidths: [1000, kind === 'firefox' ? 500 : 375], requests: requests.length, renderer, noPreapprovalRequests: true, secretAbsentFromPageAndBackup: true, permissionFixture: 'pregranted', nativePermissionPrompt: 'not tested' }));
+    console.log(JSON.stringify({ verification: 'private-layers', kind, version, hidden: true, viewport: '1000x900', editorWidths: [1000, kind === 'firefox' ? 500 : 375], requests: requests.length, renderer, noPreapprovalMapRequests: true, metadataDetectedPrivately: true, secretAbsentFromPageAndBackup: true, permissionFixture: 'pregranted', nativePermissionPrompt: 'not tested' }));
     await resources.dispose();
 } catch (error) { await resources.dispose(error); }

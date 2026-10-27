@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { readCustomSource, customUrl, CUSTOM_LIMITS } from '../maps/custom-overlay-schema.js';
+import { readCustomSource, CUSTOM_LIMITS } from '../maps/custom-overlay-schema.js';
+import { resolveCustomSourceDocument } from '../maps/custom-overlay-source.js';
 import { PRIVATE_LIMITS, privateRequestUrl, publicPrivateSource, readPrivateParameters } from '../maps/custom-overlay-private.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
 import { requestDeadline } from '../net/request-deadline.js';
@@ -79,20 +80,14 @@ export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isT
             return { bytes, type };
         } finally { if (reader) { void reader.cancel().catch(() => {});reader.releaseLock(); } else void response?.body?.cancel().catch(() => {});deadline.clear();signal?.removeEventListener('abort', abort); }
     };
-    const metadata = async (saved, signal, grant, discover = false) => {
-        const result = await download(saved.source, saved.parameters, { resource: 'metadata' }, signal, grant);
+    const metadata = async (saved, signal, grant, discover = false, options = {}) => {
+        const result = await download(saved.source, saved.parameters, { resource: saved.source.kind === 'geojson' ? 'data' : 'metadata' }, signal, grant);
         const data = JSON.parse(new TextDecoder().decode(result.bytes));
-        if (!/^([23])\./.test(data.tilejson) || !Array.isArray(data.tiles) || !data.tiles.length || data.tiles.length > 4 || data.tiles.some(url => !customUrl(url, true))) throw new Error();
-        const origins = [...new Set(data.tiles.map(url => new URL(url).origin))];
-        if (!discover && origins.some(origin => !saved.source.approvedOrigins.includes(origin))) throw Object.assign(new Error(), { relayCode: 'origins' });
+        const resolved = resolveCustomSourceDocument(saved.source, data, options);
+        if (!discover && resolved.origins.length) throw Object.assign(new Error(), { relayCode: 'origins' });
         // Only validated numeric/source fields survive. Metadata tile URLs stay
         // private, even when they contain signed tokens unlike the input key.
-        const source = readCustomSource({ ...saved.source, approvedOrigins: [...new Set([...saved.source.approvedOrigins, ...origins])], source: { ...saved.source.source, tiles: data.tiles, scheme: data.scheme || 'xyz',
-            minNativeZoom: saved.source.source.zoomOrigin.min === 'manual' ? saved.source.source.minNativeZoom : data.minzoom ?? 0,
-            maxNativeZoom: saved.source.source.zoomOrigin.max === 'manual' ? saved.source.source.maxNativeZoom : Math.min(22, data.maxzoom ?? 22),
-            ...(data.bounds && { bounds: data.bounds }) } });
-        if (!source) throw new Error();
-        return { ...saved, source };
+        return { ...saved, source: resolved.source, layers: resolved.layers };
     };
     const handle = async (message, sender) => {
         const type = message.type;
@@ -104,8 +99,8 @@ export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isT
                 if (!source || jobs.size >= PRIVATE_LIMITS.concurrency) return failure('forbidden');
                 const key = `${owner(sender)}:check`, controller = new AbortController();if (jobs.has(key)) return failure('busy');jobs.set(key, controller);
                 try {
-                    const saved = source.source.metadataUrl ? await metadata({ source, parameters }, controller.signal, null, true) : { source, parameters };
-                    return { ok: true, value: { source: saved.source, origins: saved.source.approvedOrigins.filter(origin => !source.approvedOrigins.includes(origin)), layers: [] } };
+                    const saved = source.source.metadataUrl || source.kind === 'geojson' ? await metadata({ source, parameters }, controller.signal, null, true, message.detection || {}) : { source, parameters };
+                    return { ok: true, value: { source: saved.source, origins: saved.source.approvedOrigins.filter(origin => !source.approvedOrigins.includes(origin)), layers: saved.layers || [] } };
                 } finally { jobs.delete(key); }
             }
             if (type === 'CUSTOM_PRIVATE_OPEN') {
@@ -140,6 +135,7 @@ export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isT
             try {
                 const saved = await record(message.id, message.revision), grant = await bound(message, sender);
                 if (message.resource === 'metadata') {
+                    if (!saved.source.source.metadataUrl) return failure('forbidden');
                     const resolvedKey = `${message.id}:${message.revision}`;
                     const resolved = resolvedSources.get(resolvedKey) || await metadata(saved, controller.signal, grant), projected = publicPrivateSource(resolved.source);
                     // Keep the public descriptor identical to its saved revision;

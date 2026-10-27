@@ -19,6 +19,12 @@ selection. The order travels in settings-file and GitHub backups. Native routes
 and markers remain above custom layers. The map menu keeps a compact header
 link and layer controls; adding or editing sources happens in Settings.
 
+To add an overlay, enter its **Name** and **URL**, then **Save**. BPB recognizes
+common tile-template suffixes locally and reads JSON source details when you
+choose **Check source** or **Save**. Typing or pasting a URL makes no provider
+request. **Advanced** contains type/format overrides, zoom, bounds and appearance;
+it starts collapsed, including when editing a saved layer.
+
 Supported formats are raster PNG/JPEG/WebP XYZ tiles, MVT/PBF vector tiles and
 small GeoJSON FeatureCollections. Tiled sources accept a `{z}/{x}/{y}` template
 or TileJSON 2/3 metadata. **Advanced** offers reversed Y (TMS), raster tile size,
@@ -31,11 +37,27 @@ The effective maximum is 22, while declared metadata values are retained.
 Zooming beyond the maximum enlarges/clips the last available detail; below the
 minimum the layer requests no tiles and says **Zoom in**.
 
-Choose the source type and URL format explicitly; BPB does not infer them from
-the URL or search for a metadata endpoint. **Check source** reads the selected
-TileJSON document's tile templates, zoom limits and coordinate scheme. It does
-not discover the complete zoom coverage of a raw template; **Use source values**
-is available for TileJSON only. Bounds describe the
+Automatic detection recognizes PNG/JPEG/WebP and MVT/PBF templates, `.geojson`
+files and JSON endpoints containing TileJSON 2/3 or a GeoJSON FeatureCollection.
+TileJSON can fill tile URLs, zoom limits, coordinate scheme, bounds, and a declared
+256/512-pixel `tileSize`. Vector metadata supplies source-layer suggestions;
+a sole source layer is filled automatically. GeoJSON gets matching geometry
+styles, while a single vector source layer gets point, line and polygon defaults.
+For multiple vector layers, choose one under **Advanced**; the choice fills the
+remaining empty default rules. Plain vector templates need a source-layer name
+or a TileJSON URL. Unknown tile types require an explicit choice rather than a
+guess. Manual zoom, scheme, bounds, tile size and style overrides are preserved.
+If a provider cannot be checked from Settings, choose the type and URL format
+explicitly in Advanced to save manually; **Check source** remains optional for
+that path. A `.geojson` source can use the existing 5 MiB data limit; an unknown
+JSON endpoint is initially inspected under the 256 KiB metadata limit. Larger
+GeoJSON JSON files therefore need the explicit GeoJSON type.
+
+BPB reads only the supplied source document; it does not search for a metadata
+endpoint or discover the complete zoom coverage of a raw template. A 512-pixel
+image alone does not establish logical tile size because it may be a sharper
+256-pixel tile. **Use source values** restores metadata-derived fields and is
+available for TileJSON only. Bounds describe the
 coverage rectangle in west, south, east, north degrees. Circled information
 buttons explain these fields
 on hover, focus or click; Escape dismisses the explanation. Status messages are
@@ -48,7 +70,7 @@ properties are discarded, overlays are noninteractive, and native routes,
 markers and interactions stay above them. Full MapLibre styles, labels, icons,
 cookie-based authentication, offline archives and custom basemaps are not supported.
 
-**Check source** reads metadata in Settings; it does not claim that tiles exist
+**Check source** reads source details in Settings; it does not claim that tiles exist
 at a particular location. Save a source, then explicitly enable it on a map to
 see its loading/CORS status. Closing an unsaved edit makes no map changes.
 A valid empty tile stays empty. HTTP 404/410 may fall back to at most two parent
