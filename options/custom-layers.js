@@ -1,13 +1,13 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { readCustomRegistry, CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY } from '../src/maps/custom-overlay-schema.js';
+import { readCustomRegistry, CUSTOM_REGISTRY_KEY } from '../src/maps/custom-overlay-schema.js';
 
 export function initCustomLayers({ extensionApi, flash }) {
     const list = document.getElementById('custom-layer-list'), add = document.getElementById('custom-layer-add'), status = document.getElementById('custom-layer-status');
     if (!list || !add || !status) return;
-    const dialog = document.getElementById('custom-layer-dialog'), frame = dialog.querySelector('iframe'), token = crypto.randomUUID(), rows = new Map(), pending = new Map();
+    const dialog = document.getElementById('custom-layer-dialog'), frame = dialog.querySelector('iframe'), token = crypto.randomUUID(), rows = new Map();
     const origin = `${location.protocol}//${location.host}`, tag = '__bpbCustomOverlays';
-    let sources = [], preferences = {}, revision = 0, registryRevision = 0, orderPending = false, ready = false, opening = null, returnFocus = add;
+    let sources = [], revision = 0, registryRevision = 0, orderPending = false, ready = false, opening = null, returnFocus = add;
     const node = (tagName, text, className) => { const element = document.createElement(tagName); element.textContent = text || ''; if (className) element.className = className; return element; };
     const button = text => { const element = node('button', text, 'panel-button secondary'); element.type = 'button'; return element; };
     const moveButton = direction => {
@@ -45,7 +45,7 @@ export function initCustomLayers({ extensionApi, flash }) {
             const reply = await extensionApi.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_REORDER', ids, expectedRevision: registryRevision });
             if (!reply?.ok) throw new Error(reply?.error || 'Layer order could not be saved.');
             const registry = readCustomRegistry(reply.registry); if (!registry) throw new Error('Layer order could not be confirmed.');
-            if (registry.revision >= registryRevision) { sources = registry.sources; preferences = reply.preferences; registryRevision = registry.revision; }
+            if (registry.revision >= registryRevision) { sources = registry.sources; registryRevision = registry.revision; }
             const name = sources.find(source => source.id === id)?.name;
             document.getElementById('custom-layer-order-status').textContent = `${name} moved to position ${target + 1} of ${sources.length}.`;
         } catch (error) { flash(error.message, { error: true }); }
@@ -58,16 +58,14 @@ export function initCustomLayers({ extensionApi, flash }) {
             let row = rows.get(source.id);
             if (!row) {
                 const element = node('li', '', 'custom-layer-row'), text = node('div'), name = node('strong'), detail = node('span', '', 'desc'), actions = node('div', '', 'custom-layer-actions');
-                const edit = button('Edit'), remove = button('Delete'), up = moveButton(-1), down = moveButton(1), opacity = node('input'), value = node('output');
+                const edit = button('Edit'), remove = button('Delete'), up = moveButton(-1), down = moveButton(1);
                 up.onclick = () => { void move(source.id, -1); }; down.onclick = () => { void move(source.id, 1); };
                 const ordering = node('div', '', 'custom-layer-order'); ordering.append(up, down);
                 element.dataset.customLayer = source.id;
-                opacity.type = 'range'; opacity.min = '0'; opacity.max = '100'; opacity.id = `opacity-${source.id}`; opacity.setAttribute('aria-label', `${source.name} opacity`);
-                const label = node('label', 'Opacity', 'custom-layer-opacity'); label.htmlFor = opacity.id; label.append(opacity, value);
-                text.append(name, detail); actions.append(ordering, edit, remove); element.append(text, actions, label);
+                text.append(name, detail); actions.append(ordering, edit, remove); element.append(text, actions);
                 const confirmation = node('div', '', 'custom-layer-remove'); confirmation.hidden = true;
                 const question = node('p'), confirm = button('Delete layer'), cancel = button('Keep layer'); confirmation.append(question, confirm, cancel); element.append(confirmation); list.append(element);
-                row = { element, name, detail, opacity, value, source, question, up, down }; rows.set(source.id, row);
+                row = { element, name, detail, source, question, up, down }; rows.set(source.id, row);
                 edit.onclick = () => open(source.id, edit);
                 remove.onclick = () => { question.textContent = `Delete ${row.source.name} from your saved layers on this device?`; confirmation.hidden = false; confirm.focus(); };
                 cancel.onclick = () => { confirmation.hidden = true; remove.focus(); };
@@ -81,13 +79,7 @@ export function initCustomLayers({ extensionApi, flash }) {
                     } catch (error) { flash(error.message, { error: true }); }
                     finally { confirm.setAttribute('aria-disabled', 'false'); }
                 };
-                opacity.oninput = () => { pending.set(source.id, +opacity.value); value.value = `${opacity.value}%`; };
-                opacity.onchange = async () => {
-                    const amount = +opacity.value; pending.set(source.id, amount);
-                    try { const reply = await extensionApi.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_OPACITY', id: source.id, opacity: amount }); if (!reply?.ok) throw new Error('Opacity could not be saved.'); }
-                    catch (error) { flash(error.message, { error: true }); }
-                    finally { if (pending.get(source.id) === amount) pending.delete(source.id); void refresh(); }
-                };
+
             }
             row.source = source; row.name.textContent = source.name;
             row.up.setAttribute('aria-label', `Move ${source.name} up`); row.down.setAttribute('aria-label', `Move ${source.name} down`);
@@ -96,7 +88,6 @@ export function initCustomLayers({ extensionApi, flash }) {
             if (list.children[index] !== row.element) list.insertBefore(row.element, list.children[index] || null);
             const url = source.source.dataUrl || source.source.metadataUrl || source.source.tiles[0];
             row.detail.textContent = `${{ raster: 'Raster tiles', mvt: 'Vector tiles', geojson: 'GeoJSON' }[source.kind]} · ${source.privateRequests ? 'Private requests' : new URL(url).hostname}`;
-            row.opacity.setAttribute('aria-label', `${source.name} opacity`); row.opacity.value = pending.get(source.id) ?? preferences[source.id] ?? source.appearance.opacity; row.value.value = `${row.opacity.value}%`;
         }
         status.textContent = sources.length ? `${sources.length} saved ${sources.length === 1 ? 'layer' : 'layers'}. Enable them from Overlays on any map.` : 'No custom layers yet. Add a public map source to get started.';
         add.disabled = sources.length >= 20; list.hidden = sources.length === 0;
@@ -107,10 +98,10 @@ export function initCustomLayers({ extensionApi, flash }) {
         try {
             const reply = await extensionApi.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_GET' });
             const registry = reply?.ok && readCustomRegistry(reply.registry); if (!registry) throw new Error('Custom layers could not be loaded. Reopen Settings to try again.');
-            if (owner !== revision || registry.revision < registryRevision) return; sources = registry.sources; registryRevision = registry.revision; preferences = reply.preferences; paint();
+            if (owner !== revision || registry.revision < registryRevision) return; sources = registry.sources; registryRevision = registry.revision; paint();
         } catch (error) { if (owner === revision) { status.textContent = error.message; add.disabled = true; } }
     };
-    extensionApi.storage.onChanged.addListener((changes, area) => { if (area === 'local' && (changes[CUSTOM_REGISTRY_KEY] || changes[CUSTOM_PREFERENCES_KEY])) void refresh(); });
+    extensionApi.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes[CUSTOM_REGISTRY_KEY]) void refresh(); });
     const themes = new MutationObserver(() => { if (ready) send({ type: 'theme', theme: document.documentElement.dataset.bpbTheme }); });
     themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bpb-theme'] });
     window.addEventListener('pagehide', event => { if (!event.persisted) themes.disconnect(); });

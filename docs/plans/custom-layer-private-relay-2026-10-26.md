@@ -41,6 +41,14 @@ live-provider and any broader suite failures explicit.
 
 ### Fixed and verified
 
+- Settings list UX: removed the redundant opacity input and its write path;
+  map opacity and stored values are unchanged. Reorder/Edit/Delete actions use
+  one aligned height and adapt to enlarged text. The new absence assertion
+  failed before removal. The real packaged Settings verifier passed eight
+  layouts per browser in hidden Chrome 156.0.8078.4 and Firefox 158.0.1 at
+  1100/375 and 1100/500 by 900, light/dark and normal/1.5x text. Long names,
+  keyboard pending/error/retry reorder and delete cancellation passed; screenshots
+  were inspected. The focused Options test and documentation checks passed.
 - Source setup follow-up: new overlays need name and URL; source type, URL
   format and appearance are inside collapsed Advanced. Local URL hints require
   no network request. Check/automatic Save read only the supplied document and

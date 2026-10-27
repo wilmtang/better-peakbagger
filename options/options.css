@@ -25,13 +25,12 @@ body { position: fixed; inset: 0; display: flex; overflow: hidden; }
 .custom-layer-list { list-style: none; margin: 0; padding: 0; }
 .custom-layer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px 18px; border-top: 1px solid var(--border); }
 .custom-layer-row strong, .custom-layer-row .desc { display: block; overflow-wrap: anywhere; }
-.custom-layer-actions { display: flex; align-items: start; gap: 8px; }
-.custom-layer-order { display: flex; gap: 4px; }
+.custom-layer-actions { display: flex; align-items: center; align-self: center; gap: 8px; flex-wrap: wrap; }
+.custom-layer-order { display: flex; align-items: center; gap: 4px; }
 .custom-layer-move { display: grid; place-items: center; min-width: 32px; padding: 6px; }
 .custom-layer-move[aria-disabled="true"] { cursor: default; }
-.custom-layer-actions .panel-button { white-space: nowrap; }
-.custom-layer-opacity { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(50px, 1fr) 4ch; align-items: center; gap: 12px; font-size: 12.5px; }
-.custom-layer-opacity output { text-align: right; font-variant-numeric: tabular-nums; }
+.custom-layer-actions .panel-button { align-self: auto; margin: 0; min-height: max(36px, calc(1.4em + 14px)); white-space: nowrap; }
+.custom-layer-actions .custom-layer-move { width: max(36px, calc(1.4em + 14px)); padding: 0; }
 .custom-layer-remove { grid-column: 1 / -1; }
 .custom-layer-remove p { margin: 0 0 8px; overflow-wrap: anywhere; }
 .custom-layer-remove button { margin-right: 8px; }

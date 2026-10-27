@@ -25,6 +25,7 @@ test('Options reorders stable rows, guards pending/edge activation, preserves fo
         };
     } });
     const doc = dom.window.document; await waitFor(dom, () => doc.querySelectorAll('#custom-layer-list li').length === 2);
+    assert.equal(doc.querySelector('#custom-layer-list input[type="range"]'), null, 'opacity belongs on the map, not in the saved-source list');
     const row = doc.querySelectorAll('#custom-layer-list li')[1], up = row.querySelector('.custom-layer-order button');
     up.focus(); up.click(); up.click(); assert.equal(messages.length, 1); assert.equal(messages[0].expectedRevision, 7);
     assert.strictEqual(doc.querySelectorAll('#custom-layer-list li')[1], row, 'pending write leaves rows anchored');
