@@ -119,3 +119,33 @@ test('the production request helper preserves final identity for the source gate
         assert.equal(result.gpx, finalUrl === download ? gpx : undefined);
     }
 });
+
+test('saved GPX read forwards the caller deadline and cancellation', async () => {
+    const controller = new AbortController();
+    let received;
+    const result = await readSourceGpx({ pageUrl: ascent, gpxUrl: download, parseXml,
+        signal: controller.signal, timeoutMs: 100,
+        fetchResource: async (url, options) => {
+            received = options;
+            return { kind: 'ok', url, text: gpx };
+        } });
+    assert.equal(result.ok, true);
+    assert.equal(received.signal, controller.signal);
+    assert.equal(received.timeoutMs, 100);
+});
+
+test('cancelling a saved GPX read settles a transport that ignores abort', async () => {
+    const controller = new AbortController();
+    let entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const pending = readSourceGpx({ pageUrl: ascent, gpxUrl: download, parseXml,
+        signal: controller.signal, timeoutMs: 100,
+        fetchResource: (url, options) => fetchPeakbaggerResource(url, { ...options,
+            fetchFn: async () => { entered(); return new Promise(() => {}); } }) });
+    await started;
+    controller.abort();
+    const result = await pending;
+    assert.equal(result.ok, false);
+    assert.match(result.message, /cancel/i);
+    assert.equal(result.gpx, undefined);
+});

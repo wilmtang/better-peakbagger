@@ -49,13 +49,15 @@ export async function readSourceGpx({
     fetchResource = fetchPeakbaggerResource,
     maxBytes = DEFAULT_MAX_GPX_BYTES,
     parseXml,
+    signal,
+    timeoutMs,
 } = {}) {
     try {
         const identity = ascentIdentity(pageUrl);
         if (!identity) throw new Error('Open a saved Peakbagger ascent.');
         const sourceUrl = storedTrackLink(gpxUrl, identity);
         if (!sourceUrl) throw new Error('This ascent does not have one valid saved GPX download.');
-        const response = await fetchResource(sourceUrl, { kind: 'gpx' });
+        const response = await fetchResource(sourceUrl, { kind: 'gpx', signal, timeoutMs });
         if (response.kind !== 'ok') throw new Error(PeakbaggerError.message(response.error));
         if (!storedTrackLink(response.url, identity)) throw new Error('The GPX download no longer matches this ascent.');
         if (!validateGpx(response.text, { maxBytes, ...(parseXml ? { parseXml } : {}) })) {
