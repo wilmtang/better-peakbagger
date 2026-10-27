@@ -14,7 +14,9 @@ or KML, must be under 4 MB, and requires a Premium or Elite membership. See
 1. Open a saved Peakbagger ascent that has a GPX download.
 2. Click **Send to onX** beside the native GPX link.
 3. Grant one-time access to `backcountry.onxmaps.com`, if the browser asks.
-4. Sign in to onX if prompted, return to Peakbagger, and click the button again.
+4. Silent session renewal continues automatically. If onX needs attention,
+   choose **Open onX**, sign in if prompted, return to Peakbagger, and choose
+   **Continue export**. This starts a fresh bounded attempt and rereads the GPX.
 5. Review the selected file in onX and click **Import**.
 6. If onX cannot complete the import, return to Peakbagger and click
    **Send to onX again**. Better Peakbagger opens a fresh importer tab and
@@ -74,15 +76,31 @@ The importer uses `backcountry.onxmaps.com` directly. The retired
 old host cannot authorize file injection on the new one. Existing installs
 request the new optional host permission on their next explicit send.
 
+Automatic work shares one ten-second budget after permission approval, including
+source reading, navigation, readiness and preview confirmation. Progress reports
+the actual phase; after three seconds, a known target can be opened explicitly.
+An unreadable URL is treated as an unknown destination, never proof of login.
+The worker and page independently enforce the cutoff. Expiry cannot recall a
+file supplied before it, and browser suspension may delay the next UI paint.
+
+The GPX-free preflight runs immediately in the isolated main document. Delivery
+is bound to its document identity and nonce and performs no pre-supply wait.
 The current adapter validates the exact origin and
 `/backcountry/map/content/import` path, one empty
 `#add-files-input[type=file]`, no existing `[data-test="file-item"]`, and one
 enabled `[data-test="import-card-import-button"]` after selection. A present
 `[data-test="upgrade-now-button"]` returns a membership-required result before
-any file crosses the boundary.
+any file crosses the boundary. These conditions are rechecked at delivery.
+
+Only attempt metadata enters private session storage. Dispatch is recorded
+before injection; an uncertain outcome is never replayed after worker restart
+or downgraded by a late reply. Explicit continuation reuses only an owned
+untouched importer; Open and Check only focus the target and never resend.
 
 Focused coverage lives in `test/onx/`, `test/background/onx-routes.test.mjs`,
-and `test/ascent/ascent-gaia.test.mjs`. `npm run verify -- map-handoffs` loads the
+and `test/ascent/ascent-gaia.test.mjs`. `npm run verify -- onx` exercises cold startup, authentication, deadlines,
+manual Import and transition geometry in hidden Chrome and Firefox.
+`npm run verify -- map-handoffs` loads the
 real unpacked extension in hidden Chrome for Testing against masked HTTPS
 fixtures. It proves exact file transfer, manual final confirmation, placement,
 failure gates, storage exclusion, and light/dark rendering. It does not inspect

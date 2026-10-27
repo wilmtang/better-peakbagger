@@ -1082,3 +1082,9 @@ destination rejection, worker GETs to an HTTPS provider without CORS, and
 BigMap parent/child plus hardware 3D paths. Credentials are synthetic. Disposable
 test manifests pregrant the fixture host; native permission prompts and every
 provider’s access/billing/referrer policies remain separate proof boundaries.
+
+The focused onX check is `npm run verify -- onx`. It runs the real extension
+in hidden Chrome and Firefox against HTTPS Backcountry and identity fixtures,
+keeps the identity host ungranted, and checks silent/manual authentication,
+slow startup, preview timeout, exact file delivery and transition geometry.
+Native permission prompts and live signed-in onX behavior remain manual checks.

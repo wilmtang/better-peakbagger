@@ -43,13 +43,13 @@ const loadSurface = async ({
                     const name = message.type.startsWith('CALTOPO_') ? 'CalTopo' : message.type.startsWith('ALLTRAILS_')
                         ? 'AllTrails'
                         : message.type.startsWith('ONX_') ? 'onX' : 'Gaia';
-                    return results[message.type] || {
+                    return { attemptId: message.attemptId, ...await (results[message.type] || {
                         ok: true,
                         supplied: true,
                         code: 'prepared',
                         targetTabId: name === 'onX' ? 10 : 9,
                         message: `Ready in ${name}. Review and confirm.`,
-                    };
+                    }) };
                 }
                 return null;
             },
@@ -77,7 +77,7 @@ test('Gaia, onX, AllTrails, and CalTopo controls mount together directly after t
     const h = await loadSurface();
     const download = h.dom.window.document.querySelector('#gpxlinks a');
     assert.equal(control(h.dom).previousElementSibling, download);
-    assert.deepEqual([...control(h.dom).querySelectorAll('button')].map(item => item.textContent.trim()), [
+    assert.deepEqual([...control(h.dom).querySelectorAll('button[data-provider]')].map(item => item.textContent.trim()), [
         'Send to Gaia',
         'Send to onX',
         'Send to AllTrails',
@@ -202,7 +202,7 @@ test('explicit onX repeat fetches again and never reuses the possibly failed imp
 
 test('provider preferences reorder and hide buttons live, including all off', async () => {
     const h = await loadSurface({ settings: { mapProviderOrder: ['caltopo', 'gaia', 'onx', 'alltrails'], mapProvidersEnabled: ['gaia', 'caltopo'] } });
-    const visible = () => [...control(h.dom).querySelectorAll('button')].filter(b => !b.hidden).map(b => b.dataset.provider);
+    const visible = () => [...control(h.dom).querySelectorAll('button[data-provider]')].filter(b => !b.hidden).map(b => b.dataset.provider);
     await waitFor(h.dom, () => visible()[0] === 'caltopo');
     assert.deepEqual(visible(), ['caltopo', 'gaia']);
     fireTrustedEvent(button(h.dom, 'onx'), 'click');
@@ -231,4 +231,70 @@ test('disabling providers during a handoff preserves its busy indicator and resu
     assert.equal(button(h.dom, 'gaia').hidden, true);
     assert.equal(control(h.dom).hidden, false, 'the completed result remains readable');
     h.dom.window.close();
+});
+
+test('onX watchdog releases every provider when the worker never replies and ignores late success', async () => {
+    const h = await loadSurface();
+    try {
+        const nativeTimeout = h.dom.window.setTimeout.bind(h.dom.window);
+        h.dom.window.setTimeout = (fn, delay, ...args) => nativeTimeout(fn, delay === 10_000 ? 40 : delay, ...args);
+        const original = h.dom.window.chrome.runtime.sendMessage;
+        let finish;
+        h.dom.window.chrome.runtime.sendMessage = message => message.type === 'ONX_IMPORT_PREPARE'
+            ? new Promise(resolve => { finish = () => resolve({ ok: true, supplied: true, attemptId: message.attemptId, message: 'Late ready.' }); })
+            : message.type === 'ONX_IMPORT_STATUS' ? Promise.resolve({ code: 'pending', attemptId: message.attemptId, targetTabId: 11 }) : original(message);
+        fireTrustedEvent(button(h.dom, 'onx'), 'click');
+        await waitFor(h.dom, () => finish && button(h.dom, 'onx').getAttribute('aria-busy') === 'false');
+        assert.match(control(h.dom).textContent, /Check onX before sending again/);
+        assert.equal(button(h.dom, 'gaia').getAttribute('aria-disabled'), 'false');
+        finish();
+        await new Promise(resolve => nativeTimeout(resolve, 5));
+        assert.doesNotMatch(control(h.dom).textContent, /Late ready/);
+    } finally { h.dom.window.close(); }
+});
+
+test('Continue export rereads GPX and binds recovery to the previous attempt', async () => {
+    const h = await loadSurface({ results: { ONX_IMPORT_PREPARE: {
+        ok: false, supplied: false, canContinue: true, targetTabId: 11, message: 'Open onX and sign in if prompted.',
+    } } });
+    try {
+        fireTrustedEvent(button(h.dom, 'onx'), 'click');
+        await waitFor(h.dom, () => button(h.dom, 'onx').textContent.includes('Continue export'));
+        const first = h.sent.find(message => message.type === 'ONX_IMPORT_PREPARE');
+        fireTrustedEvent(button(h.dom, 'onx'), 'click');
+        await waitFor(h.dom, () => h.sent.filter(message => message.type === 'ONX_IMPORT_PREPARE').length === 2);
+        const second = h.sent.filter(message => message.type === 'ONX_IMPORT_PREPARE')[1];
+        assert.equal(second.resumeAttemptId, first.attemptId);
+        assert.notEqual(second.attemptId, first.attemptId);
+        assert.equal(h.fetches, 2);
+    } finally { h.dom.window.close(); }
+});
+
+test('Open onX only focuses the target and pagehide prevents queued UI resurrection', async () => {
+    const h = await loadSurface();
+    try {
+        fireTrustedEvent(button(h.dom, 'onx'), 'click');
+        await waitFor(h.dom, () => button(h.dom, 'onx').textContent.includes('again'));
+        const count = h.sent.filter(message => message.type === 'ONX_IMPORT_PREPARE').length;
+        fireTrustedEvent(h.dom.window.document.querySelector('.bpb-onx-open'), 'click');
+        await waitFor(h.dom, () => h.sent.some(message => message.type === 'ONX_IMPORT_OPEN'));
+        assert.equal(h.sent.filter(message => message.type === 'ONX_IMPORT_PREPARE').length, count);
+        h.dom.window.dispatchEvent(new h.dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        h.dom.window.dispatchEvent(new h.dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+        assert.equal(button(h.dom, 'onx').getAttribute('aria-busy'), 'false');
+    } finally { h.dom.window.close(); }
+});
+
+test('page suspension during onX permission approval cannot start an export later', async () => {
+    let release;
+    const h = await loadSurface({ permissions: { ONX_PERMISSION_REQUEST: new Promise(resolve => { release = resolve; }) } });
+    try {
+        fireTrustedEvent(button(h.dom, 'onx'), 'click');
+        h.dom.window.dispatchEvent(new h.dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        release({ ok: true });
+        h.dom.window.dispatchEvent(new h.dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(h.dom, () => button(h.dom, 'onx').getAttribute('aria-busy') === 'false');
+        assert.equal(h.fetches, 0);
+        assert.equal(h.sent.some(message => message.type === 'ONX_IMPORT_PREPARE'), false);
+    } finally { h.dom.window.close(); }
 });

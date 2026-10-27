@@ -27,6 +27,7 @@ const targets = {
     'provider-contracts': [['verify-provider-contracts.mjs']],
     'provider-performance': [['verify-provider-performance.mjs']],
     'map-handoffs': [['verify-map-handoffs.mjs']],
+    onx: [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']],
     'map-controls': [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']],
     'map-layers': [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']],
     'custom-overlays': [['verify-custom-overlays.mjs'], ['verify-custom-overlays.mjs', '--firefox']],

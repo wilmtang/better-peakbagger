@@ -98,6 +98,7 @@ independent of the existing targets.
 - [verify-gpx-segments.mjs](verify-gpx-segments.mjs)
 - [verify-map-controls.mjs](verify-map-controls.mjs)
 - [verify-map-handoffs.mjs](verify-map-handoffs.mjs)
+- [verify-onx.mjs](verify-onx.mjs)
 - [verify-map-layer-control.mjs](verify-map-layer-control.mjs)
 - [verify-map-layers.mjs](verify-map-layers.mjs)
 - [verify-map-location-cases.mjs](verify-map-location-cases.mjs)

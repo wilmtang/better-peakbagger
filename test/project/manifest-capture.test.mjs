@@ -518,6 +518,7 @@ test('saved map handoffs share one independent isolated-world surface', () => {
         'ui/page-lifecycle.js',
         'ui/runtime-message.js',
         'ui/trusted-action.js',
+        'ui/stable-text.js',
         'ascent/ascent-gaia.js',
     ]);
 });

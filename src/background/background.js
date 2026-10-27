@@ -4065,6 +4065,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
 
     ext.tabs.onRemoved.addListener(tabId => {
+        runDetachedCleanup('onX source cleanup', () => onxRoutes.forgetSource(tabId));
         runDetachedCleanup('Instagram tab cleanup', () => instagramFrames.forgetTab(tabId));
         customRelay.forgetTab(tabId);
         bcLandRoutes.cancelTab(tabId);
@@ -4102,6 +4103,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     ext.tabs.onUpdated?.addListener((tabId, changeInfo) => {
         if (changeInfo?.status === 'complete') runDetachedCleanup('Garmin queue on Peakbagger load', () => resumeGarminOnVisit(tabId));
         if (changeInfo?.status === 'loading') {
+            runDetachedCleanup('onX source navigation cleanup', () => onxRoutes.forgetSource(tabId));
             customRelay.forgetTab(tabId, false);
             runDetachedCleanup('Instagram navigation cleanup', () => instagramFrames.forgetTab(tabId));
             runDetachedCleanup('photo source navigation cleanup', () =>

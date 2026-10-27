@@ -31,6 +31,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['provider-contracts'], [['verify-provider-contracts.mjs']]],
         [['provider-performance'], [['verify-provider-performance.mjs']]],
         [['map-handoffs'], [['verify-map-handoffs.mjs']]],
+        [['onx'], [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']]],
         [['map-layers'], [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']]],
         [['settings-navigation'], [['verify-settings-fragments.mjs', 'chrome'], ['verify-settings-fragments.mjs', 'firefox']]],
         [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
@@ -70,7 +71,7 @@ test('package verification uses the supplied archives without rebuilding product
 });
 
 test('invalid targets and missing package arguments fail before building or launching', async () => {
-    for (const args of [[], ['chromee'], ['toString'], ['gaia'], ['onx'], ['terrain', 'firefoxx'],
+    for (const args of [[], ['chromee'], ['toString'], ['gaia'], ['onxx'], ['terrain', 'firefoxx'],
         ['packages'], ['packages', 'chrome.zip'], ['packages', 'chrome.zip', 'firefox.zip', 'extra']]) {
         let calls = 0;
         await assert.rejects(runVerification(args, {
@@ -143,5 +144,14 @@ test('peak-card placement rejects unknown and conflicting selections before open
         const result = spawnSync(process.execPath, [script('verify-ascent-weather.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Unsupported weather verification arguments/);
+    }
+});
+
+
+test('onX verification rejects unknown or empty selections before opening a browser', () => {
+    for (const args of [[], ['chromee'], ['chrome', '--unknown'], ['firefox', '--screenshots=a', '--screenshots=b']]) {
+        const result = spawnSync(process.execPath, [script('verify-onx.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /Usage: verify-onx/);
     }
 });

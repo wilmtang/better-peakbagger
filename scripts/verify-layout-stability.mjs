@@ -187,7 +187,7 @@ async function handoffCase(page, origin, variant) {
             if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'fixture' };
             if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'fixture' };
             if (message.type.endsWith('_IMPORT_PREPARE')) return new Promise(resolve => {
-                globalThis.__finishImport = success => resolve({ ok: success, supplied: success, targetTabId: 9,
+                globalThis.__finishImport = success => resolve({ ok: success, supplied: success, targetTabId: 9, attemptId: message.attemptId,
                     message: success ? 'Your track is ready in the map. Review the preview and confirm when ready.'
                         : 'The map could not prepare this track. Check your connection and try the transfer again.' });
             });

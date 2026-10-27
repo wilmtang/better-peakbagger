@@ -87,6 +87,7 @@ permission to read device location. It covers:
 | `storage.local.bpbCustomMapOverlaysV1` and `bpbCustomMapOverlayPreferencesV1` | User-entered overlay definitions, public URLs/keys, attribution, appearance, saved order and opacity | Included in manual settings files and opted-in GitHub settings backups; excluded from browser sync. Manage in Settings → Map layers. Custom enablement, parsed geometry, tile bytes and probe locations are not persisted by the extension. |
 | `storage.local` public snow catalog | Public SNOTEL station metadata only, with a fetch timestamp | Refreshed after seven days when next used; expired metadata can remain until replaced or extension data is cleared. No peak/location query or observations; excluded from settings exports, sync and backups. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
+| `storage.session` (onX) | At most 64 saved-ascent source/tab/document identities, attempt cutoffs and delivery outcomes; no GPX or credentials | Automatic authority lasts at most ten seconds after permission approval. Metadata is replaced as capacity is reached or removed when the browser session ends; missing metadata never authorizes a resend. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
 | IndexedDB `bpb-private-map-sources-v1` | Private map definitions/query parameters, shared request counters and 429 cooldowns | Extension-origin, device-local; never in content-script-accessible storage, sync or GitHub backups. Manual settings files include private definitions and query parameters in plain text, but never counters, cooldowns or approvals. Successfully deleting a layer deletes its private definition; budget records remain to prevent resetting quotas by deletion. Uninstalling clears the store. |
@@ -265,6 +266,13 @@ date. That happens entirely locally.
 - The GPX remains in memory and is never retained in extension storage.
   An uncertain transfer requires inspecting the destination; an explicit
   repeat opens a fresh tab rather than sending the file twice to one importer.
+
+onX automatic work has a single ten-second cutoff after optional permission
+approval. Silent authentication can finish within that attempt. Manual sign-in
+uses an explicit **Continue export** action that rereads the source GPX. **Open
+onX** and **Check onX** only focus the recorded destination. The extension keeps
+bounded attempt metadata in private session storage so a worker restart or lost
+acknowledgement cannot silently replay a possible delivery.
 
 ### Send to Gaia GPS
 
