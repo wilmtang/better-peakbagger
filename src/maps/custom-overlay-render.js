@@ -48,7 +48,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
     const status = entry => {
         if (!disposed && entries.get(entry.source.id) === entry) onStatus(entry.source.id, {
             pending: entry.pending > 0, error: entry.failed > 0, partial: entry.failed > 0 && entry.loaded > 0,
-            lower: entry.lower, message: entry.failure || (entry.lower ? 'Lower detail' : entry.loaded ? 'Loaded' : ''),
+            lower: entry.lower, message: entry.failure || (entry.lower ? 'Showing enlarged tiles from a lower zoom level.' : entry.loaded ? 'Loaded' : ''),
             code: entry.code, status: entry.httpStatus, retryAt: entry.retryAt || 0,
         });
     };

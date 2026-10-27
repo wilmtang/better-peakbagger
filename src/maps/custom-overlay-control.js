@@ -38,19 +38,32 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
         for (const source of sources) {
             let row = rows.get(source.id);
             if (!row) {
-                const element = node('details'), heading = node('summary'), label = node('label'), checkbox = node('input'), name = node('span'), summary = node('span');
-                element.className = 'bpb-custom-source'; checkbox.type = 'checkbox'; label.append(checkbox, name); heading.append(label, summary); element.append(heading);
+                const element = node('details'), heading = node('summary'), label = node('label'), checkbox = node('input'), name = node('span'), summary = node('span'), copy = node('span');
+                element.className = 'bpb-custom-source';heading.className = 'bpb-layers-row';label.className = 'bpb-layers-choice';name.className = 'bpb-layers-row-name';copy.className = 'bpb-layers-row-copy';summary.className = 'bpb-layers-summary';
+                const spinner = node('span'), amount = node('span'), state = node('span'), value = node('span'), valueLabel = node('span', 'Opacity');
+                spinner.className = 'bpb-layers-spinner';spinner.setAttribute('aria-hidden', 'true');spinner.hidden = true;
+                amount.className = 'bpb-layers-value-number';value.className = 'bpb-layers-value';valueLabel.className = 'bpb-layers-value-label';state.className = 'bpb-layers-row-status';
+                value.append(valueLabel, amount);summary.append(spinner, value, state);copy.append(name, summary);
+                checkbox.type = 'checkbox';checkbox.setAttribute('form', '');label.append(checkbox, copy);
+                const disclosure = node('span');disclosure.className = 'bpb-layers-disclosure';disclosure.setAttribute('aria-hidden', 'true');
+                const chevron = win.document.createElementNS('http://www.w3.org/2000/svg', 'svg'), path = win.document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                chevron.setAttribute('class','bpb-layers-chevron');chevron.setAttribute('viewBox','0 0 12 12');chevron.setAttribute('focusable','false');
+                for (const [key, attribute] of Object.entries({ d:'m2 4 4 4 4-4',fill:'none',stroke:'currentColor','stroke-width':'1.5','stroke-linecap':'round','stroke-linejoin':'round' })) path.setAttribute(key,attribute);
+                chevron.append(path);disclosure.append(chevron);heading.append(label,disclosure);element.append(heading);
                 const slider = node('input'); slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.dataset.bpbCustomOpacity = source.id;
-                const opacity = node('label', 'Opacity'); opacity.append(slider);
+                slider.setAttribute('form','');slider.id = `${mapId}-${source.id}-opacity`;
+                const opacity = node('label'), output = node('output');opacity.className = 'bpb-layers-opacity';opacity.htmlFor = slider.id;opacity.append(node('span','Opacity'),output);
+                const ends = node('div');ends.className = 'bpb-layers-opacity-ends';ends.setAttribute('aria-hidden','true');ends.append(node('span','Clear'),node('span','Solid'));
                 const attribution = node('p'), message = node('p'), retry = node('button', 'Retry'), edit = node('a', 'Edit in Settings'), approve = node('button', 'Approve private access…');
                 approve.type = 'button';approve.dataset.bpbPrivateLayer = source.id;
                 retry.type = 'button'; settingsLink(edit); if (add.href) edit.href = add.href;
                 message.className = 'bpb-custom-feedback';
-                const help = node('details'), helpTitle = node('summary', 'How to fix URL / CORS errors');
+                const help = node('details'), helpTitle = node('summary', 'Troubleshooting');
                 help.append(helpTitle, node('p', 'Public sources need browser access (CORS). Private request parameters use BPB’s limited background relay and require approval in BPB. Check the provider URL, source format and access settings.'));
                 const actions = node('div'); actions.className = 'bpb-custom-actions'; actions.append(approve, retry, edit);
-                element.append(opacity, attribution, message, help, actions); list.append(element);
-                row = { element, checkbox, name, summary, slider, attribution, message, retry, approve }; rows.set(source.id, row);
+                const detail = node('section');detail.className = 'bpb-layers-detail';detail.append(opacity,slider,ends,attribution,actions,message,help);
+                element.append(detail); list.append(element);
+                row = { element, heading, checkbox, name, summary, amount, state, value, spinner, slider, output, attribution, message, retry, approve }; rows.set(source.id, row);
                 checkbox.addEventListener('click', event => event.stopPropagation());
                 checkbox.addEventListener('change', () => {
                     const latest = sources.find(item => item.id === source.id);
@@ -65,13 +78,20 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
             const status = statuses[source.id] || {}, enabled = selected.has(source.id);
             row.name.textContent = source.name; row.checkbox.setAttribute('aria-label', source.name); row.checkbox.checked = enabled;
             row.slider.value = preferences[source.id] ?? source.appearance.opacity; row.slider.setAttribute('aria-label', `${source.name} opacity`);
-            row.summary.textContent = enabled ? status.pending ? 'Loading' : status.error ? status.partial ? 'Partly loaded' : status.code === 'access' ? 'Check URL / CORS' : 'Couldn’t load' : status.lower ? 'Lower detail' : `${row.slider.value}%` : 'Off';
+            row.output.value = row.amount.textContent = `${row.slider.value}%`;
+            row.spinner.hidden = !enabled || !status.pending;row.value.hidden = !enabled || status.pending || status.error;
+            row.state.textContent = enabled ? status.pending ? 'Loading' : status.error ? status.partial ? 'Partly loaded' : status.code === 'approval' || status.code === 'permission' ? 'Needs access' : 'Couldn’t load' : '' : 'Off';
+            row.heading.dataset.selected = String(enabled);row.heading.dataset.status = status.pending ? 'loading' : status.error ? 'error' : '';
             const view = readView(), zoom = view?.zoom;
             const zoomedOut = source.kind !== 'geojson' && Number.isFinite(zoom) && zoom < source.source.minNativeZoom + (source.kind === 'mvt' || source.source.tileSize === 512 ? 1 : 0);
-            if (enabled && zoomedOut) row.summary.textContent = 'Zoom in';
-            row.attribution.textContent = [source.kind.toUpperCase(), source.attribution.text, ...(source.privateRequests ? ['Private requests'] : source.approvedOrigins)].filter(Boolean).join(' · ');
-            row.message.textContent = enabled ? zoomedOut ? 'Zoom in to this source’s available range.' : status.error && status.code === 'access' ? 'Source unavailable. Check the URL or provider CORS settings.' : status.message ? status.error ? customFailure(status) : status.message : 'Loading status appears here.' : 'Enable to load this source.';
+            if (enabled && zoomedOut) { row.value.hidden = true;row.spinner.hidden = true;row.state.textContent = 'Zoom in'; }
+            row.state.hidden = !row.state.textContent;
+            row.attribution.textContent = [{ raster:'Raster tiles',mvt:'Vector tiles',geojson:'GeoJSON' }[source.kind], source.attribution.text].filter(Boolean).join(' · ');
+            row.message.textContent = enabled ? zoomedOut ? 'Zoom in to this source’s available range.' : status.error && status.code === 'access' ? 'Source unavailable. Check the URL or provider CORS settings.'
+                : status.error ? customFailure(status) : status.lower ? 'Showing enlarged tiles from a lower zoom level. Zoom out for the source’s original detail.'
+                    : status.pending ? 'Loading map tiles…' : status.message || 'Loading status appears here.' : 'Enable to load this source.';
             row.retry.setAttribute('aria-disabled', String(!enabled || status.pending || status.retryAt > Date.now()));
+            row.retry.textContent = status.error ? 'Retry' : 'Reload';
             row.approve.hidden = !source.privateRequests;row.approve.dataset.revision = source.revision;
             if (source.privateRequests && enabled && status.code === 'approval') row.message.textContent = `Approve access in BPB, then Retry. Each approval allows up to ${PRIVATE_LIMITS.grantRequests.toLocaleString('en-US')} requests for ${PRIVATE_LIMITS.grantMs / 3600000} hours.`;
         }

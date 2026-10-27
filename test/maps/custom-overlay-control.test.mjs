@@ -20,6 +20,13 @@ test('custom menu links to Settings and reuses ordered source rows without chang
         const link = panel.querySelector('.bpb-custom-header a'); assert.equal(link.textContent, 'Add custom layer…'); assert.match(link.href, /options\/options.html#custom-map-layers$/);
         assert.equal(panel.querySelector('[data-bpb-custom-editor]'), null, 'menu has no inline editor trigger');
         const check = panel.querySelector('input[aria-label="Topo"]'); check.click(); check.focus();
+        assert(check.closest('summary').classList.contains('bpb-layers-row'), 'custom layers must reuse built-in row styles');
+        owner.status(source.id, { lower: true, message: 'Lower detail' });
+        assert.equal(check.closest('summary').textContent.includes('Lower detail'), false, 'normal overzoom must not replace the opacity with unexplained jargon');
+        assert.match(panel.querySelector('.bpb-custom-feedback').textContent, /enlarged.*lower zoom/i);
+        assert.equal(panel.querySelector('.bpb-custom-actions button:not([data-bpb-private-layer])').textContent, 'Reload');
+        owner.status(source.id, { error: true, code: 'access' });
+        assert.equal(panel.querySelector('.bpb-custom-actions button:not([data-bpb-private-layer])').textContent, 'Retry');
         const row = check.closest('details'); announce([second, source]);
         assert.strictEqual(panel.querySelectorAll('.bpb-custom-source')[1], row); assert.equal(check.checked, true); assert.strictEqual(win.document.activeElement, check);
         assert.equal(owner.snapshot().custom[0].id, source.id);

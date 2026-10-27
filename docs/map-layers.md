@@ -74,7 +74,7 @@ cookie-based authentication, offline archives and custom basemaps are not suppor
 at a particular location. Save a source, then explicitly enable it on a map to
 see its loading/CORS status. Closing an unsaved edit makes no map changes.
 A valid empty tile stays empty. HTTP 404/410 may fall back to at most two parent
-levels during rendering, with **Lower detail** feedback.
+levels during rendering, with a plain-language explanation in the expanded layer settings. The collapsed row keeps its normal opacity value; overzoom is not shown as an error.
 
 Public provider requests use direct HTTPS with CORS, omit cookies/referrers and
 reject redirects. Additional hosts discovered in metadata require review.
@@ -82,7 +82,8 @@ reject redirects. Additional hosts discovered in metadata require review.
 every failed fetch proves CORS. A working image link alone does not establish
 canvas/WebGL access. Use a public CORS-compatible endpoint, or the private
 parameter path below with explicit provider access. HTTP access errors and rate limits keep their
-own feedback. Retry retains painted tiles or last good GeoJSON; opacity changes
+own feedback. Custom rows share built-in overlay typography, checkboxes, opacity and disclosure styling. Expanded rows place Reload/Retry and Edit above feedback so loading or error text cannot move the actions. Reload refreshes a loaded source; Retry retries a failed load.
+Retry retains painted tiles or last good GeoJSON; opacity changes
 do not fetch the source again. Hidden/removed renderers cancel their work.
 
 Keep keys in public source URLs public: Peakbagger page scripts can see that configuration.

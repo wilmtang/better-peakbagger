@@ -48,9 +48,9 @@ try {
     const html = await snowMapDocument(), fixture = await createBrowserFixtureServer({ temporaryRoot: root, masterMapDocument: html, peakMapDocument: html,
         bigMapDocument: '<!doctype html><style>html,body{margin:0;height:100%}iframe{width:100%;height:650px;border:0}</style><iframe id="if" src="/map/MasterMap.aspx?t=G&amp;d=2296&amp;gt=rc"></iframe>' });resources.defer('Peakbagger fixture', () => fixture.close());
     const providerRoot = path.join(root, 'provider');await mkdir(providerRoot);const cert = await createFixtureCertificate({ directory: providerRoot });
-    const requests = [];let png;
+    const requests = [];let png, lastProviderRequest = performance.now();
     const server = createServer(cert, async (request, response) => {
-        const url = new URL(request.url, 'https://tiles.example.com');requests.push({ path: url.pathname, origin: request.headers.origin });
+        const url = new URL(request.url, 'https://tiles.example.com');requests.push({ path: url.pathname, origin: request.headers.origin });lastProviderRequest = performance.now();
         assert.equal(url.searchParams.get('api_key'), secret);assert.equal(request.headers.cookie, undefined);assert.equal(request.headers.referer, undefined);
         if (url.pathname === '/source.json') {
             response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -146,7 +146,7 @@ try {
     await activate('map');await wait(() => evaluate(() => !!document.querySelector('.bpb-map-layers > button')?.getClientRects().length), 'active map overlay control');
     await click('map', '.bpb-map-layers > button');await wait(() => evaluate(() => !!document.querySelector('.bpb-custom-source input[type=checkbox]')), 'private layer row');
     await evaluate(() => { window.privateMessages = [];window.addEventListener('message', event => { if (event.data?.__bpbCustomOverlays) window.privateMessages.push(JSON.stringify(event.data)); }); });
-    await click('map', '.bpb-custom-source input[type=checkbox]');await waitForCondition(() => evaluate(() => ({ text: document.querySelector('.bpb-custom-feedback')?.textContent,summary: document.querySelector('.bpb-custom-source summary')?.textContent,
+    await click('map', '.bpb-custom-source input[type=checkbox]');await waitForCondition(() => evaluate(() => ({ text: document.querySelector('.bpb-custom-feedback')?.textContent,summary: document.querySelector('.bpb-custom-source summary')?.innerText,
         frames: [...document.querySelectorAll('iframe')].map(frame => { try { const w = frame.contentWindow;return { url: w.location.pathname, hidden: w.document.hidden, width: w.innerWidth, height: w.innerHeight, tiles: w.document.querySelectorAll('.bpb-custom-overlays canvas').length, pane: w.mapsPlaceholder?.getPane('bpb-custom-overlays')?.outerHTML.slice(0,800),map: w.mapsPlaceholder && {zoom:w.mapsPlaceholder.getZoom(),size:w.mapsPlaceholder.getSize(),layers:Object.values(w.mapsPlaceholder._layers).map(l=>({grid:!!l.createTile,tiles:l._tiles&&Object.keys(l._tiles).length,min:l.options?.minZoom,max:l.options?.maxZoom,loaded:l._loading}))} }; } catch { return {}; } }) })), { description: 'unapproved request rejected',isReady: value => value.text?.includes('Approve') });assert.equal(requests.length, 1, 'only the explicit Settings metadata check may fetch before map approval');
     await evaluate(() => document.querySelector('.bpb-custom-source').open = true);
     const grantLabel = `${PRIVATE_LIMITS.grantRequests.toLocaleString('en-US')} requests for ${PRIVATE_LIMITS.grantMs / 3600000} hours`;
@@ -172,7 +172,7 @@ try {
     const approvalAfter = await approvalGeometry();assert(approvalAfter.every((rect, index) => rect.every((value, axis) => Math.abs(value - approvalBefore[index][axis]) <= 1)), 'approval actions and reading position must remain anchored');
     await setReviewViewport({ width: 1000, height: 900 });
     await activate('map');await click('map', '.bpb-custom-actions button:not([data-bpb-private-layer])');
-    await waitForCondition(() => evaluate(() => ({ summary: document.querySelector('.bpb-custom-source summary')?.textContent, feedback: document.querySelector('.bpb-custom-feedback')?.textContent,
+    await waitForCondition(() => evaluate(() => ({ summary: document.querySelector('.bpb-custom-source summary')?.innerText, feedback: document.querySelector('.bpb-custom-feedback')?.textContent,
         replies: window.privateMessages.filter(text => text.includes('privateReply')).map(text => { const data = JSON.parse(text);return { ok: data.reply?.ok, code: data.reply?.code, diagnostic: data.reply?.diagnostic }; }).slice(-5) })), { description: 'private raster painted in 2D',timeoutMs: 30000,isReady: value => value.summary?.includes('60%') });assert(requests.length > 0);
     assert(!await evaluate(value => document.documentElement.outerHTML.includes(value) || window.privateMessages.some(text => text.includes(value)), secret), 'secret appeared in Peakbagger DOM or messages');
     // Malicious MAIN messages can request only stored resources, never a URL or
@@ -185,9 +185,12 @@ try {
     await click('map', '#bpb-terrain-toggle');if (await evaluate(() => !!document.querySelector('.bpb-terrain-consent-primary'))) await click('map', '.bpb-terrain-consent-primary');
     await wait(() => evaluate(() => !!document.querySelector('#bpb-terrain-frame')), '3D frame');
     const renderer = await wait(async () => { try { return await terrainEvaluate(() => { const canvas = document.querySelector('canvas.maplibregl-canvas'), gl = canvas?.getContext('webgl2');const info = gl?.getExtension('WEBGL_debug_renderer_info');return info && gl.getParameter(info.UNMASKED_RENDERER_WEBGL); }); } catch { return null; } }, 'hardware WebGL');
-    assert(!/swiftshader|software|llvmpipe/i.test(renderer));await wait(() => evaluate(() => document.querySelector('.bpb-custom-source summary')?.textContent.includes('60%')), 'private raster painted in 3D');
+    assert(!/swiftshader|software|llvmpipe/i.test(renderer));await wait(() => evaluate(() => document.querySelector('.bpb-custom-source summary')?.innerText.includes('60%')), 'private raster painted in 3D');
     assert(await terrainEvaluate(() => Number(document.documentElement.dataset.verificationPrivateReads) > 0), '3D must read tiles through the worker, including cache hits');
     if (shots) await shot('map', path.join(shots, `private-${kind}-3d.png`));
+    // A first completed paint can precede MapLibre's remaining tile queue.
+    // Establish network quiescence before attributing requests to the reload.
+    await waitForCondition(() => ({ quietMs:performance.now()-lastProviderRequest, requests:requests.length }), { description:'private provider idle after 3D tiles',isReady:value=>value.quietMs>=500 });
     const beforeReload = requests.length;await evaluate(() => location.reload());await wait(() => evaluate(() => !!document.querySelector('#bpb-terrain-toggle')), 'map reloaded');
     await wait(() => evaluate(() => !!document.querySelector('.bpb-map-layers > button')?.getClientRects().length), 'reloaded map overlay control');
     await click('map', '.bpb-map-layers > button');await click('map', '.bpb-custom-source input[type=checkbox]');

@@ -99,7 +99,7 @@ try {
         await editor.locator('#save').click(); await editor.locator('#feedback').filter({ hasText: 'Saved on this device' }).waitFor();
         await editor.locator('#cancel').click();
         const raster = page.getByRole('checkbox', { name: 'Custom raster', exact: true }); await raster.check();
-        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.textContent.includes('Custom raster') && element.textContent.includes('60%')));
+        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.innerText.includes('Custom raster') && element.innerText.includes('60%')));
         assert.ok(requests.length > 0, 'enabled raster fetches directly');
         const nativePaint = await page.evaluate(() => Object.values(window.mapsPlaceholder._layers).filter(layer => layer.options?.pane === 'bpb-custom-overlays').flatMap(layer => Object.values(layer._tiles || {}).map(tile => [...tile.el.getContext('2d').getImageData(128, 128, 1, 1).data])));
         assert.ok(nativePaint.some(pixel => pixel[0] > 200 && pixel[3] > 0), 'custom raster actually painted');
@@ -112,19 +112,19 @@ try {
             await editor.locator('[id$="-geometry"]').selectOption('polygon');
             await editor.locator('#save').click(); await editor.locator('#feedback').filter({ hasText: 'Saved on this device' }).waitFor(); await editor.locator('#cancel').click();
             await page.getByRole('checkbox', { name, exact: true }).check();
-            await page.waitForFunction(name => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.textContent.includes(name) && element.textContent.includes('60%')), name);
+            await page.waitForFunction(name => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.innerText.includes(name) && element.innerText.includes('60%')), name);
         }
         assert.ok(requests.length > stopped, 'vector requests loaded through packaged workers');
         denied = true;
-        const mvtRow = page.locator('.bpb-custom-source').filter({ hasText: 'Custom MVT' }); await mvtRow.locator('summary').first().click();
-        await mvtRow.getByRole('button', { name: 'Retry', exact: true }).click();
+        const mvtRow = page.locator('.bpb-custom-source').filter({ hasText: 'Custom MVT' }); await mvtRow.locator('summary .bpb-layers-disclosure').first().click();
+        await mvtRow.locator('.bpb-custom-actions button:not([data-bpb-private-layer])').click();
         await mvtRow.locator('.bpb-custom-feedback').filter({ hasText: /Check the URL or provider CORS/ }).waitFor();
         denied = false; held = true;
-        const retry = mvtRow.getByRole('button', { name: 'Retry', exact: true }); const before = await retry.boundingBox();
-        await retry.click(); await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.textContent.includes('Custom MVT') && element.textContent.includes('Loading')));
+        const retry = mvtRow.locator('.bpb-custom-actions button:not([data-bpb-private-layer])'); const before = await retry.boundingBox();
+        await retry.click(); await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.innerText.includes('Custom MVT') && element.innerText.includes('Loading')));
         const during = await retry.boundingBox(); assert.ok(Math.abs(before.y - during.y) <= 1, 'Retry stays anchored while pending');
         held = false; releases.splice(0).forEach(resolve => resolve());
-        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.textContent.includes('Custom MVT') && element.textContent.includes('60%')));
+        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].some(element => element.innerText.includes('Custom MVT') && element.innerText.includes('60%')));
         assert.deepEqual(errors, []);
         const screenshots = process.env.BPB_CUSTOM_SCREENSHOTS;
         await admin.goto(`chrome-extension://${extension.id}/options/options.html#custom-map-layers`);
@@ -159,9 +159,9 @@ try {
         await up.press('Space'); await admin.waitForFunction(() => document.querySelector('#custom-layer-list li strong')?.textContent === 'Custom MVT');
         assert.equal(await up.evaluate(button => document.activeElement === button), true, 'reorder retains keyboard focus on its moved control');
         assert.equal(await up.getAttribute('aria-disabled'), 'true');
-        await page.waitForFunction(() => document.querySelector('.bpb-custom-source label span')?.textContent === 'Custom MVT');
+        await page.waitForFunction(() => document.querySelector('.bpb-custom-source .bpb-layers-row-name')?.textContent === 'Custom MVT');
         await page.getByRole('checkbox', { name: 'Custom raster', exact: true }).check();
-        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.textContent.includes('60%')).length === 3);
+        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.innerText.includes('60%')).length === 3);
         await page.waitForFunction(() => [...document.querySelectorAll('.leaflet-bpb-custom-overlays-pane .leaflet-tile')].every(tile => +getComputedStyle(tile).opacity >= .999));
         const composedPixel = async () => {
             const data = (await page.screenshot({ clip: { x: 700, y: 500, width: 1, height: 1 } })).toString('base64');
@@ -304,7 +304,7 @@ try {
             assert.equal(await page.locator('.bpb-map-layers').count(), 1);
             assert.equal(await page.getByRole('checkbox', { name: 'Custom raster', exact: true }).isChecked(), false, 'unrelated maps start off');
             for (const name of ['Custom raster', 'Custom polygons', 'Custom MVT']) await page.getByRole('checkbox', { name, exact: true }).check();
-            await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.textContent.includes('60%')).length === 3);
+            await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.innerText.includes('60%')).length === 3);
         }
         await page.evaluate(() => {
             const first = window.mapsPlaceholder.getContainer(); first.style.width = '50%'; window.mapsPlaceholder.invalidateSize();
@@ -334,7 +334,7 @@ try {
         if (await page.locator('.bpb-terrain-consent-primary').count()) await page.locator('.bpb-terrain-consent-primary').click();
         const terrain = page.frameLocator('#bpb-terrain-frame');
         await terrain.locator('canvas.maplibregl-canvas').waitFor();
-        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.textContent.includes('60%')).length === 3, null, { timeout: 30000 });
+        await page.waitForFunction(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.innerText.includes('60%')).length === 3, null, { timeout: 30000 });
         const renderer = await terrain.locator('canvas.maplibregl-canvas').evaluate(canvas => { const gl = canvas.getContext('webgl2'); const extension = gl.getExtension('WEBGL_debug_renderer_info'); return extension && gl.getParameter(extension.UNMASKED_RENDERER_WEBGL); });
         assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware renderer required: ${renderer}`);
         assert.ok(origins.has(origin) && origins.has(`chrome-extension://${extension.id}`), 'provider receives both actual renderer origins');
@@ -453,7 +453,7 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await wait(() => driver.findElements(By.css('.bpb-layers-trigger')).then(elements => elements.length === 1), 'native overlay control');
     await click('.bpb-layers-trigger');
     for (const source of definitions) await click(`input[aria-label="${source.name}"]`);
-    const ready = () => evaluate(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.textContent.includes('60%')).length === 3);
+    const ready = () => evaluate(() => [...document.querySelectorAll('.bpb-custom-source summary')].filter(element => element.innerText.includes('60%')).length === 3);
     await wait(ready, 'all native custom overlays loaded');
     assert.ok(await evaluate(() => [...document.querySelectorAll('.leaflet-bpb-custom-overlays-pane canvas')].some(canvas => [...canvas.getContext('2d').getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data].at(-1) > 0)), 'native overlay pixels');
     const row = '.bpb-custom-source:has(input[aria-label="Custom mvt"])';
@@ -490,7 +490,7 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await wait(() => driver.findElements(By.id('bpb-terrain-toggle')).then(elements => elements.length > 0), '3D toggle');
     await click('#bpb-terrain-toggle');
     if ((await driver.findElements(By.css('.bpb-terrain-consent-primary'))).length) await click('.bpb-terrain-consent-primary');
-    await waitForCondition(() => evaluate(() => [...document.querySelectorAll('.bpb-custom-source summary')].map(element => element.textContent)), {
+    await waitForCondition(() => evaluate(() => [...document.querySelectorAll('.bpb-custom-source summary')].map(element => element.innerText)), {
         description: 'all custom overlays loaded in real Firefox terrain', timeoutMs: 30000,
         isReady: rows => rows.filter(text => text.includes('60%')).length === 3,
     });

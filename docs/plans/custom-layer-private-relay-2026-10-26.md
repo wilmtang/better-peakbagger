@@ -41,6 +41,34 @@ live-provider and any broader suite failures explicit.
 
 ### Fixed and verified
 
+- Map-menu UX: custom rows now reuse built-in checkbox, name, opacity, spinner,
+  chevron and selected-state styles. The unexplained collapsed `Lower detail`
+  label is removed; expanded details explain enlarged lower-zoom tiles. Loaded
+  layers offer Reload, failed layers Retry, with a stable action width. Actions
+  precede variable feedback so enlarged error/fallback text cannot move them.
+  A new pre-fix regression failed on the separate row markup. Presentation
+  fixtures caught and fixed an empty-status 4 px offset and feedback reflow.
+- The new hidden menu verifier passed eight cases in Chrome 156.0.8078.4 and
+  Firefox 157.0 at 736/320 by 800, light/dark, normal/1.5x text and reduced motion.
+  Built-in/custom computed fonts, colors, checkbox/chevron dimensions and x
+  alignment match. Keyboard opacity/disclosure, long names and focus retention
+  passed; trigger, summary, action row, following native content and page scroll
+  stay anchored within one pixel through loading/error/loaded/overzoom states.
+  Screenshots were inspected. This fixture stubs status/I/O and complements the
+  separately packaged loading checks. The final full suite passed 3,680 tests;
+  full lint passed with the eight owned warnings. Integration waits now read
+  visible summary text, so a hidden opacity value cannot masquerade as Loaded.
+  The reload-revocation check waits for provider network quiescence before
+  attributing later requests to navigation, instead of sampling at first paint.
+- Final packaged integration checks passed with the shared row markup. Hidden
+  Chrome 156.0.8078.4 covered 15 public map surfaces and 18 editor cases at
+  1000/375 px, including raster pixels, vector workers, CORS recovery and
+  anchored Retry. Private raster checks passed in Chrome 156.0.8078.4 and
+  Firefox 158.0.1 at 1000×900, with 39/40 provider requests respectively and
+  hardware Metal/Apple M3 Pro rendering. Test-only permission pregrants remain
+  distinct from native permission prompts. Owned process command lines and
+  disposable profile paths were inspected after teardown; no test browsers or
+  profile directories remained.
 - Manual-settings UX: the new-source disclosure is now explicitly labelled
   **Advanced settings** and names its contents; saved layers open it immediately.
   Manual scheme/bounds/logical tile-size flags are validated in the shared source
@@ -161,6 +189,10 @@ live-provider and any broader suite failures explicit.
 
 ### Intentionally not changed
 
+- An earlier full-suite run and one focused rerun timed out in the unchanged
+  profile-hover late-content test. The final full run passed all 3,680 cases;
+  no hover-card implementation was changed or claimed repaired by this audit.
+
 - Detection does not search provider endpoints, sample global tile coverage or
   infer logical raster tile size from image dimensions. Unknown raw template
   types and vector source layers still need a user choice. Source inspection
@@ -179,15 +211,10 @@ live-provider and any broader suite failures explicit.
 
 ### Changed but not fully proven
 
-- The follow-up full-suite run passed 3,679 cases and failed the unchanged
-  `own profile links stay undecorated in headings, lists, report rows, and late
-  content` hover-card case at its late-content wait. Its focused rerun also
-  timed out. The custom-layer checks pass; the broader suite is not claimed
-  fully green and the unrelated hover-card implementation was not changed.
 - The broader Firefox custom-overlay verifier reaches terrain with raster and
   MVT loaded but GeoJSON remains `Loading`; the full verifier therefore exits
-  nonzero after its 18 editor cases pass. Its Retry selector was corrected to
-  target Retry instead of the hidden private-approval action. The remaining
+  nonzero after its 18 editor cases pass. Its action selector was corrected to
+  target Reload/Retry instead of the hidden private-approval action. The remaining
   terrain GeoJSON condition is unresolved and is not claimed fixed or fully
   verified by the source-setup work. Chrome's broader run and both private raster
   integrations pass. The GeoJSON fetch/render functions themselves were not
