@@ -19,3 +19,9 @@ html{min-height:100%;background:var(--paper);overscroll-behavior-y:none}body{min
 .parameter-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}.parameter-row button{margin-bottom:1px}.parameter-row input{min-width:0}.parameter-row label{font-size:12px}@media(max-width:420px){.parameter-row{grid-template-columns:minmax(0,1fr)}.parameter-row button{justify-self:start}}
 
 #source-summary{min-height:2.9em;margin-bottom:0}
+
+/* Keep manual overrides recognizable as an action, even on the compact form. */
+#advanced>summary{display:list-item;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input);list-style-position:inside}
+#advanced>summary>span{display:inline-block;vertical-align:middle;max-width:calc(100% - 20px)}
+#advanced>summary small{display:block;font-size:12px;font-weight:400;opacity:.85;line-height:1.45;margin-top:2px}
+#advanced[open]>summary{margin-bottom:12px}

@@ -128,6 +128,7 @@ test('custom source edits retain saved attribution without exposing attribution 
         data: { __bpbCustomOverlays: true, token, type: 'open', sourceId: id } }));
     open(source.id);
     await waitFor(dom, () => doc.getElementById('name').value === source.name);
+    assert.equal(doc.getElementById('advanced').open, true, 'Edit must expose saved settings without a second hidden step');
     doc.getElementById('name').value = 'Renamed topo';
     doc.getElementById('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
     await waitFor(dom, () => saved.length === 1 && doc.getElementById('save').getAttribute('aria-disabled') === 'false');

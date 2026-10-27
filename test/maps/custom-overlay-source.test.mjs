@@ -30,6 +30,14 @@ test('TileJSON fills type, zoom, scheme, bounds and declared tile size while pre
     const retained = resolveCustomSourceDocument(manual, metadata(), { detectKind: true, manualFields: ['scheme', 'bounds', 'tile-size'] }).source;
     assert.equal(retained.source.maxNativeZoom, 12);assert.equal(retained.source.scheme, 'xyz');assert.equal(retained.source.tileSize, 256);assert.deepEqual(retained.source.bounds, manual.source.bounds);
 });
+test('saved manual scheme, bounds and logical tile size survive metadata resolution on the actual map', async () => {
+    const input = source();input.source.manualFields = ['scheme', 'bounds', 'tile-size'];input.source.bounds = [-123,45,-122,47];
+    const client = createCustomClient({ fetchImpl: async () => new Response(JSON.stringify(metadata())) });
+    const resolved = await client.resolve(input, new AbortController().signal);
+    assert.equal(resolved.source.source.scheme, 'xyz');assert.equal(resolved.source.source.tileSize, 256);
+    assert.deepEqual(resolved.source.source.bounds, input.source.bounds);assert.deepEqual(resolved.source.source.manualFields, input.source.manualFields);
+    client.clear();
+});
 test('vector metadata supplies the sole source layer and geometry defaults; ambiguous layers remain a user choice', () => {
     const data = { ...metadata(), tiles: ['https://tiles.example.com/{z}/{x}/{y}.pbf'], vector_layers: [{ id: 'trails' }] };
     const result = resolveCustomSourceDocument(source(), data, { detectKind: true, styleAuto: true });

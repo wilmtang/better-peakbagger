@@ -144,7 +144,8 @@ if (parent === window) {
         const raw = { id: sourceId, revision: expectedRevision + 1, name: field('name').value.trim(), kind,
             source: { ...(tiled ? { tiles, ...(tiles.length ? {} : { metadataUrl: url }), minNativeZoom: +field('minimum').value, maxNativeZoom: +field('maximum').value,
                 zoomOrigin: { min: field('minimum').dataset.origin || 'default', max: field('maximum').dataset.origin || 'default' }, scheme: field('scheme').value, tileSize: +field('tile-size').value } : { dataUrl: url }),
-            bounds: field('bounds').value.trim() ? field('bounds').value.split(',').map(Number) : null },
+            bounds: field('bounds').value.trim() ? field('bounds').value.split(',').map(Number) : null,
+            manualFields: [...manualFields].filter(key => ['scheme', 'tile-size', 'bounds'].includes(key)) },
             approvedOrigins: [...new Set([new URL(url).origin, ...(resolved?.approvedOrigins || [])])],
             attribution: { ...savedAttribution },
             appearance: { opacity: resolved?.appearance.opacity ?? 60, rules: kind === 'raster' ? [] : ruleValues.map(({ controls }) => Object.fromEntries(Object.entries(controls).map(([key, input]) => [key, ['width', 'radius', 'fillOpacity'].includes(key) ? +input.value : key === 'sourceLayer' && !input.value && discover ? '__choose_layer__' : input.value]))) } };
@@ -246,8 +247,8 @@ if (parent === window) {
         // provider attribution through ordinary edits, checks and previews.
         savedAttribution = { ...(source?.attribution || { text: '' }) };
         field('form-title').textContent = source ? 'Edit overlay' : 'Add custom overlay';
-        manualFields.clear();if (source) for (const key of ['scheme', 'tile-size', 'bounds', 'appearance']) manualFields.add(key);
-        field('advanced').open = false;
+        manualFields.clear();if (source) { for (const key of source.source.manualFields || ['scheme', 'tile-size', 'bounds']) manualFields.add(key);manualFields.add('appearance'); }
+        field('advanced').open = !!source;
         field('name').value = source?.name || ''; field('kind').value = source?.kind || 'auto';
         field('url').value = source?.source.metadataUrl || source?.source.dataUrl || source?.source.tiles[0] || '';
         if (source?.reconnect || field('url').value.includes(RELAY_HOST)) field('url').value = '';

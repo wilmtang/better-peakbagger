@@ -23,7 +23,7 @@ To add an overlay, enter its **Name** and **URL**, then **Save**. BPB recognizes
 common tile-template suffixes locally and reads JSON source details when you
 choose **Check source** or **Save**. Typing or pasting a URL makes no provider
 request. **Advanced** contains type/format overrides, zoom, bounds and appearance;
-it starts collapsed, including when editing a saved layer.
+the labelled **Advanced settings** disclosure lists these controls and starts collapsed for a new layer. Editing a saved layer opens it immediately.
 
 Supported formats are raster PNG/JPEG/WebP XYZ tiles, MVT/PBF vector tiles and
 small GeoJSON FeatureCollections. Tiled sources accept a `{z}/{x}/{y}` template
@@ -46,7 +46,7 @@ styles, while a single vector source layer gets point, line and polygon defaults
 For multiple vector layers, choose one under **Advanced**; the choice fills the
 remaining empty default rules. Plain vector templates need a source-layer name
 or a TileJSON URL. Unknown tile types require an explicit choice rather than a
-guess. Manual zoom, scheme, bounds, tile size and style overrides are preserved.
+guess. Manual zoom, scheme, bounds, tile size and style overrides are preserved, including when the map rereads metadata. Saved coordinate/bounds/tile-size overrides are validated with the source definition and included in backups.
 If a provider cannot be checked from Settings, choose the type and URL format
 explicitly in Advanced to save manually; **Check source** remains optional for
 that path. A `.geojson` source can use the existing 5 MiB data limit; an unknown

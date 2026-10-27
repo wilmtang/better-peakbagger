@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, chrome, innerWidth */
+/* global document, window, chrome, innerWidth, Event */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -15,7 +15,7 @@ assert(['chrome', 'firefox'].includes(kind) && args.every(arg => arg.startsWith(
 const shots = args[0]?.slice(14), resources = createResourceStack();
 try {
     const root = await mkdtemp(path.join(os.tmpdir(), 'bpb-layer-settings-'));resources.defer('Settings files', () => rm(root, { recursive: true, force: true }));
-    let evaluate, click, press, viewport, shot, version;
+    let evaluate, inside, editorSave, click, press, viewport, shot, version;
     if (kind === 'chrome') {
         const { chromium } = await import('playwright');assertChromeLaunchAllowed();
         const source = path.resolve('dist');
@@ -26,6 +26,8 @@ try {
         const extension = await page.waitForFunction(() => { try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); } catch { return false; } }).then(handle => handle.jsonValue());
         await page.goto(`chrome-extension://${extension.id}/options/options.html#custom-map-layers`);
         evaluate = (fn, arg) => page.evaluate(fn, arg);click = selector => page.locator(selector).click();press = selector => page.locator(selector).press('Space');
+        inside = (fn, arg) => page.frames().find(frame => frame.url().includes('/custom-overlay/editor.html'))?.evaluate(fn, arg);
+        editorSave = () => page.frameLocator('#custom-layer-dialog iframe').locator('#save').press('Space');
         viewport = width => page.setViewportSize({ width, height: 900 });shot = file => page.screenshot({ path: file });version = context.browser().version();
     } else {
         const { Builder, By, Key } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
@@ -36,6 +38,8 @@ try {
         const addon = await driver.installAddon(prepared.sourceDir, true);await driver.setContext(firefox.Context.CHROME);
         const url = await driver.executeScript('return WebExtensionPolicy.getByID(arguments[0]).getURL("options/options.html");', addon);await driver.setContext(firefox.Context.CONTENT);await driver.get(url + '#custom-map-layers');
         evaluate = (fn, arg) => driver.executeScript(`return (${fn})(arguments[0]);`, arg ?? null);click = selector => driver.findElement(By.css(selector)).click();press = selector => driver.findElement(By.css(selector)).sendKeys(Key.SPACE);
+        inside = async (fn, arg) => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));return await driver.executeScript(`return (${fn})(arguments[0]);`, arg ?? null); } finally { await driver.switchTo().defaultContent(); } };
+        editorSave = async () => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));await driver.findElement(By.id('save')).sendKeys(Key.SPACE); } finally { await driver.switchTo().defaultContent(); } };
         viewport = width => driver.manage().window().setRect({ width: Math.max(500, width), height: 985 });shot = async file => writeFile(file, await driver.takeScreenshot(), 'base64');version = (await driver.getCapabilities()).getBrowserVersion();
     }
     const wait = (fn, description) => waitForCondition(fn, { description });
@@ -88,6 +92,29 @@ try {
     assert.equal(await evaluate(() => document.activeElement.getAttribute('aria-label')), 'Move A long custom terrain layer name that must wrap without pushing actions away up');
     await click('.custom-layer-row:first-child .custom-layer-actions > button:last-child');await wait(() => evaluate(() => !document.querySelector('.custom-layer-remove').hidden), 'delete confirmation');
     await click('.custom-layer-row:first-child .custom-layer-remove button:last-child');assert.equal(await evaluate(() => document.activeElement.textContent), 'Delete');
-    console.log(JSON.stringify({ verification: 'custom-layer-settings', kind, version, hidden: true, height: 900, widths: [1100, kind === 'firefox' ? 500 : 375], cases, themes: ['light','dark'], scales: [1,1.5], actionsAligned: true, reorderPendingErrorRetry: true, opacityAbsent: true }));
+    await click('.custom-layer-row:first-child .custom-layer-actions > button:first-of-type');
+    await wait(() => inside(() => document.getElementById('advanced').open), 'Edit opens manual settings');
+    for (const width of [1100, kind === 'firefox' ? 500 : 375]) {
+        await viewport(width);
+        const controls = await inside(() => ['kind','format','minimum','maximum','scheme','tile-size','bounds'].map(id => {
+            const input = document.getElementById(id);return { id, available: !!input.getClientRects().length, label: !!document.querySelector(`label[for="${id}"]`) };
+        }));assert(controls.every(control => control.available && control.label), 'every relevant saved raster override is available');
+        await inside(() => document.getElementById('scheme').scrollIntoView({ block: 'center' }));
+        if (shots) await shot(path.join(shots, `editor-${kind}-${width}-manual.png`));
+    }
+    await inside(() => {
+        for (const [id, value] of [['minimum','3'],['maximum','15'],['scheme','tms'],['tile-size','512'],['bounds','-124,44,-120,49']]) {
+            const field = document.getElementById(id);field.value = value;field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        document.getElementById('save').focus();
+    });await editorSave();
+    await wait(() => inside(() => document.getElementById('feedback').textContent === 'Saved on this device.'), 'manual overrides saved');
+    const saved = await evaluate(async () => (await (window.browser || chrome).runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_GET' })).registry.sources[0].source);
+    assert.equal(saved.minNativeZoom, 3);assert.equal(saved.maxNativeZoom, 15);assert.equal(saved.scheme,'tms');assert.equal(saved.tileSize,512);assert.deepEqual(saved.bounds,[-124,44,-120,49]);assert.deepEqual(saved.manualFields.sort(),['bounds','scheme','tile-size']);
+    await inside(() => document.getElementById('cancel').click());
+    await click('.custom-layer-row:first-child .custom-layer-actions > button:first-of-type');
+    await wait(() => inside(() => document.getElementById('advanced').open && document.getElementById('scheme').value === 'tms'), 'manual settings are visible after reopening');
+    assert.equal(await inside(() => document.getElementById('maximum').value),'15');
+    console.log(JSON.stringify({ verification: 'custom-layer-settings', kind, version, hidden: true, height: 900, widths: [1100, kind === 'firefox' ? 500 : 375], cases, themes: ['light','dark'], scales: [1,1.5], actionsAligned: true, reorderPendingErrorRetry: true, opacityAbsent: true, manualOverridesVisibleSavedReopened: true }));
     await resources.dispose();
 } catch (error) { await resources.dispose(error); }

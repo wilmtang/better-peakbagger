@@ -20,7 +20,7 @@ export const defaultCustomRules = (sourceLayer = '', geometries = ['point', 'lin
 // Shared by the CORS client and Settings-only private check. Only bounded source
 // fields are returned; arbitrary provider properties are never forwarded.
 export function resolveCustomSourceDocument(input, data, options = {}) {
-    const manual = new Set(options.manualFields || []), automatic = options.detectKind === true;
+    const manual = new Set(options.manualFields || input.source.manualFields || []), automatic = options.detectKind === true;
     if (!data || typeof data !== 'object' || Array.isArray(data) || data.version === 8) throw new Error('Use TileJSON, GeoJSON or a tile template; full map styles are unsupported.');
     if (data.type === 'FeatureCollection' && (automatic || input.kind === 'geojson')) {
         if (data.crs || !Array.isArray(data.features) || data.features.length > CUSTOM_LIMITS.features) throw new Error('Invalid or oversized GeoJSON.');
@@ -31,6 +31,7 @@ export function resolveCustomSourceDocument(input, data, options = {}) {
         const source = readCustomSource({ ...input, kind: 'geojson', source: {
             dataUrl: input.source.dataUrl || input.source.metadataUrl,
             bounds: !manual.has('bounds') && data.bbox?.length === 4 ? data.bbox : input.source.bounds,
+            ...(input.source.manualFields && { manualFields: input.source.manualFields }),
         }, appearance: { ...input.appearance, rules: options.styleAuto || !input.appearance.rules.length
             ? defaultCustomRules('', geometries.length ? geometries : undefined) : input.appearance.rules } });
         if (!source) throw new Error('Invalid GeoJSON source settings.');

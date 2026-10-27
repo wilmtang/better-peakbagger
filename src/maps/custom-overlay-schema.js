@@ -57,6 +57,11 @@ export function readCustomSource(value) {
             if (value.kind === 'raster') { if (![256, 512].includes(raw.tileSize)) return null; source.tileSize = raw.tileSize; }
         }
         source.bounds = customBounds(raw.bounds);
+        if (raw.manualFields != null) {
+            if (!Array.isArray(raw.manualFields) || raw.manualFields.length > 3 || new Set(raw.manualFields).size !== raw.manualFields.length
+                || raw.manualFields.some(key => !['scheme', 'tile-size', 'bounds'].includes(key))) return null;
+            source.manualFields = [...raw.manualFields];
+        }
         const origins = value.approvedOrigins;
         if (!Array.isArray(origins) || origins.length > 4 || new Set(origins).size !== origins.length
             || origins.some(origin => !customUrl(origin) || new URL(origin).origin !== origin)) return null;

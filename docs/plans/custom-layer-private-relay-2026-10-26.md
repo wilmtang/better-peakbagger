@@ -41,6 +41,15 @@ live-provider and any broader suite failures explicit.
 
 ### Fixed and verified
 
+- Manual-settings UX: the new-source disclosure is now explicitly labelled
+  **Advanced settings** and names its contents; saved layers open it immediately.
+  Manual scheme/bounds/logical tile-size flags are validated in the shared source
+  schema and retained through map metadata reads and backups. The original
+  regressions reproduced both collapsed Edit and metadata replacing manual XYZ
+  with TMS. All 44 focused editor/source/schema/client/relay cases passed.
+  Hidden packaged Chrome/Firefox Settings checks saved and reopened all seven
+  raster controls at desktop/narrow sizes; screenshots were inspected. Real
+  Chrome startup/bridge verification passed.
 - Settings list UX: removed the redundant opacity input and its write path;
   map opacity and stored values are unchanged. Reorder/Edit/Delete actions use
   one aligned height and adapt to enlarged text. The new absence assertion
@@ -170,6 +179,11 @@ live-provider and any broader suite failures explicit.
 
 ### Changed but not fully proven
 
+- The follow-up full-suite run passed 3,679 cases and failed the unchanged
+  `own profile links stay undecorated in headings, lists, report rows, and late
+  content` hover-card case at its late-content wait. Its focused rerun also
+  timed out. The custom-layer checks pass; the broader suite is not claimed
+  fully green and the unrelated hover-card implementation was not changed.
 - The broader Firefox custom-overlay verifier reaches terrain with raster and
   MVT loaded but GeoJSON remains `Loading`; the full verifier therefore exits
   nonzero after its 18 editor cases pass. Its Retry selector was corrected to
