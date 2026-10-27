@@ -9,6 +9,36 @@ const INFO = '.bpb-re-image-info';
 const TIP = '.bpb-re-image-tooltip';
 const INPUT = '.bpb-re-imagebox input';
 
+function readHelpPlacement() {
+    const node = document.querySelector('.bpb-re-image-tooltip');
+    const info = document.querySelector('.bpb-re-image-info');
+    const anchor = info.getBoundingClientRect();
+    const style = getComputedStyle(info);
+    const { x, y, right, bottom } = node.getBoundingClientRect();
+    return { x, y, right, bottom, viewport: window.innerWidth, text: node.textContent,
+        anchor: { x: anchor.x, y: anchor.y, right: anchor.right, bottom: anchor.bottom },
+        arrowX: x + parseFloat(getComputedStyle(node).borderLeftWidth) + parseFloat(getComputedStyle(node, '::before').left),
+        label: info.textContent, border: style.borderTopWidth, background: style.backgroundColor,
+        height: window.innerHeight, overflow: node.scrollWidth > node.clientWidth,
+        hidden: getComputedStyle(node).display === 'none', placement: node.dataset.placement };
+}
+
+function assertHelpPlacement(tip) {
+    assert(!tip.hidden && !tip.overflow && tip.x >= 0 && tip.y >= 0
+        && tip.right <= tip.viewport && tip.bottom <= tip.height, JSON.stringify(tip));
+    const center = (tip.anchor.x + tip.anchor.right) / 2;
+    assert(tip.x <= center && tip.right >= center,
+        `the help popup must sit beside its trigger: ${JSON.stringify(tip)}`);
+    const gap = tip.bottom <= tip.anchor.y ? tip.anchor.y - tip.bottom : tip.y - tip.anchor.bottom;
+    assert(gap >= 7 && gap <= 9,
+        `the help popup must leave a small gap without covering its trigger: ${JSON.stringify(tip)}`);
+    assert(Math.abs(tip.arrowX - center) <= 2,
+        `the popup pointer must point to its trigger: ${JSON.stringify(tip)}`);
+    assert.equal(tip.label, 'Instagram posts');
+    assert.equal(tip.border, '0px', 'the inline help must not inherit native button chrome');
+    assert.equal(tip.background, 'rgba(0, 0, 0, 0)', 'the inline help must have no filled button background');
+}
+
 function startProbe() {
     const selectors = ['h1', '.bpb-re-imagebox', '.bpb-re-image-hosting:last-of-type',
         '.bpb-re-image-info', '.bpb-re-imagebox .bpb-re-linkapply',
@@ -62,19 +92,12 @@ export async function verifyReportImageHelp({ kind, version, evaluate, navigate,
         await waitShown(true);
         await hover(TIP);
         assert(await shown(), 'the tooltip must remain readable when hovered');
-        const tip = await evaluate(() => {
-            const node = document.querySelector('.bpb-re-image-tooltip');
-            const { x, y, right, bottom } = node.getBoundingClientRect();
-            return { x, y, right, bottom, viewport: window.innerWidth, text: node.textContent,
-                height: window.innerHeight, overflow: node.scrollWidth > node.clientWidth,
-                hidden: getComputedStyle(node).display === 'none' };
-        });
-        assert(!tip.hidden && !tip.overflow && tip.x >= 0 && tip.y >= 0
-            && tip.right <= tip.viewport && tip.bottom <= tip.height, JSON.stringify(tip));
+        const tip = await evaluate(readHelpPlacement);
         assert.match(tip.text, /not in the image URL field/);
         assert.match(tip.text, /only visible with Better Peakbagger installed; other readers see a link/);
         if (screenshots) await screenshot(path.join(screenshots,
             `image-help-${kind}-${width}-${theme}-${enlarged ? 'large' : 'normal'}.png`));
+        assertHelpPlacement(tip);
         // The tooltip can intentionally cover the URL row. Move onto a visible
         // control, rather than asking automation to scroll a covered field into
         // view (or hover the tooltip again at that field's coordinates).
@@ -115,6 +138,24 @@ export async function verifyReportImageHelp({ kind, version, evaluate, navigate,
             for (const [axis, value] of Object.entries(rect)) assert(Math.abs(sample[name][axis] - value) <= 1,
                 `image help moved ${name}.${axis}: ${JSON.stringify({ before, sample })}`);
         }
+        // Deliberate document movement is tested separately from the no-reflow
+        // probe. The open popup must follow wrapping and flip near the top edge.
+        await evaluate(() => document.querySelector('.bpb-re-image-info').focus());
+        await press('Enter');
+        await waitShown(true);
+        await viewport({ width: width === 1280 ? 375 : 1280, height: 900 });
+        await evaluate(() => document.querySelector('.bpb-re-image-info').scrollIntoView({ block: 'center' }));
+        await waitForCondition(() => evaluate(readHelpPlacement), { description: 'help after resize',
+            isReady: value => { try { assertHelpPlacement(value); return true; } catch { return false; } } });
+        await evaluate(() => {
+            const anchor = document.querySelector('.bpb-re-image-info').getBoundingClientRect();
+            window.scrollBy({ top: anchor.y - 16, behavior: 'instant' });
+        });
+        const edge = await waitForCondition(() => evaluate(readHelpPlacement), { description: 'help below its trigger near the top edge',
+            isReady: value => value.placement === 'below' && value.y >= value.anchor.bottom });
+        assertHelpPlacement(edge);
+        await press('Escape');
+        await waitShown(false);
         assert.equal(await evaluate(() => document.getElementById('JournalText').value), '');
         cases++;
     }

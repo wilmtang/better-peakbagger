@@ -97,6 +97,8 @@ test('Instagram image help explains the report paste flow and dismisses without 
     const info = ui.querySelector('[aria-label="About Instagram posts"]');
     assert.ok(info, 'Instagram support must be discoverable in the image popover');
     assert.equal(info.type, 'button', 'help cannot submit the ascent form');
+    assert.equal(info.textContent, 'Instagram posts', 'the inline label itself opens help');
+    assert.equal(info.querySelector('svg'), null, 'help does not need a second boxed icon');
     const tip = doc.getElementById(info.getAttribute('aria-describedby'));
     assert.equal(tip.getAttribute('role'), 'tooltip');
     assert.equal(tip.hidden, true);

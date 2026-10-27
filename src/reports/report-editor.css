@@ -331,37 +331,44 @@
 }
 
 .bpb-re-instagram-help {
+    position: relative;
     display: inline-flex;
     align-items: center;
     white-space: nowrap;
+    vertical-align: baseline;
 }
 
-.bpb-re .bpb-re-image-info {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 2px;
-    color: inherit;
-    vertical-align: middle;
+#bpb-report-editor .bpb-re-image-info {
+    appearance: none;
+    min-height: 24px;
+    padding: 0 2px;
+    /* The site-wide dark theme paints native buttons with !important rules. */
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none;
+    color: inherit !important;
+    font: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
 }
 
-.bpb-re-image-info:hover {
-    background: #e2e2df;
+#bpb-report-editor .bpb-re-image-info:is(:hover, [aria-expanded="true"]) {
+    color: #174f7c !important;
+    text-decoration-style: solid;
 }
 
 .bpb-re-image-tooltip {
+    --bpb-re-help-background: #fbfbf9;
+    --bpb-re-help-border: #b9b9b9;
     position: absolute;
-    right: 0;
-    bottom: 100%;
     z-index: 3;
     box-sizing: border-box;
-    width: min(340px, 100%);
-    padding: 8px 10px;
-    border: 1px solid #b9b9b9;
+    width: min(340px, calc(100vw - 32px));
+    padding: 10px 12px;
+    border: 1px solid var(--bpb-re-help-border);
     border-radius: 6px;
-    background: #fbfbf9;
+    background: var(--bpb-re-help-background);
     color: #333;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
     font-size: 12px;
@@ -370,10 +377,41 @@
     white-space: normal;
 }
 
+.bpb-re-image-tooltip::before {
+    content: "";
+    position: absolute;
+    left: clamp(12px, var(--bpb-re-help-arrow-x), calc(100% - 12px));
+    bottom: -5px;
+    width: 8px;
+    height: 8px;
+    background: var(--bpb-re-help-background);
+    border: solid var(--bpb-re-help-border);
+    border-width: 0 1px 1px 0;
+    transform: translateX(-50%) rotate(45deg);
+}
+
+/* A transparent bridge keeps hover help open while crossing the anchor gap. */
+.bpb-re-image-tooltip::after {
+    content: "";
+    position: absolute;
+    inset: 100% 0 auto;
+    height: 8px;
+}
+
+.bpb-re-image-tooltip[data-placement="below"]::before {
+    top: -5px;
+    bottom: auto;
+    border-width: 1px 0 0 1px;
+}
+
+.bpb-re-image-tooltip[data-placement="below"]::after {
+    top: auto;
+    bottom: 100%;
+}
+
 @media (pointer: coarse) {
-    .bpb-re .bpb-re-image-info {
-        width: 44px;
-        height: 44px;
+    #bpb-report-editor .bpb-re-image-info {
+        min-height: 44px;
     }
 }
 
@@ -1242,13 +1280,13 @@ html[data-bpb-theme="dark"] .bpb-re-image-hosting {
 }
 
 html[data-bpb-theme="dark"] .bpb-re-image-tooltip {
-    border-color: #525861;
-    background: #2c2f33;
+    --bpb-re-help-border: #525861;
+    --bpb-re-help-background: #2c2f33;
     color: #e8e4dd;
 }
 
-html[data-bpb-theme="dark"] .bpb-re-image-info:hover {
-    background: #3a3f45;
+html[data-bpb-theme="dark"] #bpb-report-editor .bpb-re-image-info:is(:hover, [aria-expanded="true"]) {
+    color: #8ab4f8 !important;
 }
 
 html[data-bpb-theme="dark"] .bpb-re-image-divider {

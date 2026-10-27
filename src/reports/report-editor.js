@@ -421,12 +421,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         externalLink('ImgBB', 'https://imgbb.com/'),
         '. Drag an image’s corner to resize. '
     );
-    const instagramHelp = el('span', 'bpb-re-instagram-help', 'Instagram posts ');
-    const instagramInfo = button('bpb-re-image-info', '', 'About Instagram posts',
-        svg(
-            svgElement('circle', { cx: '8', cy: '8', r: '6.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3' }),
-            svgElement('path', { d: 'M8 7v4M8 4.5v.1', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round' })
-        ));
+    const instagramHelp = el('span', 'bpb-re-instagram-help');
+    const instagramInfo = button('bpb-re-image-info', 'Instagram posts', 'About Instagram posts');
     // The custom tooltip supports keyboard and touch as well as hover; a native
     // title would duplicate it and would be unavailable on touch devices.
     instagramInfo.removeAttribute('title');
@@ -439,14 +435,36 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     instagramInfo.setAttribute('aria-describedby', instagramTip.id);
     instagramInfo.setAttribute('aria-controls', instagramTip.id);
     let instagramHelpPinned = false;
+    const positionInstagramHelp = () => {
+        if (instagramTip.hidden) return;
+        const anchor = instagramInfo.getBoundingClientRect();
+        const host = instagramHelp.getBoundingClientRect();
+        const tip = instagramTip.getBoundingClientRect();
+        const gap = 8;
+        const center = anchor.left + anchor.width / 2;
+        const left = Math.max(gap, Math.min(center - tip.width / 2, document.documentElement.clientWidth - tip.width - gap));
+        const above = anchor.top >= tip.height + gap * 2
+            || anchor.top > window.innerHeight - anchor.bottom;
+        instagramTip.style.left = `${left - host.left}px`;
+        instagramTip.style.top = `${(above ? anchor.top - tip.height - gap : anchor.bottom + gap) - host.top}px`;
+        instagramTip.style.setProperty('--bpb-re-help-arrow-x', `${center - left}px`);
+        instagramTip.dataset.placement = above ? 'above' : 'below';
+    };
     const showInstagramHelp = () => {
         instagramTip.hidden = false;
         instagramInfo.setAttribute('aria-expanded', 'true');
+        positionInstagramHelp();
+        // The popup follows its inline anchor in document flow; remeasure only
+        // while open so viewport edges and wrapped hint rows remain correct.
+        window.addEventListener('resize', positionInstagramHelp);
+        window.addEventListener('scroll', positionInstagramHelp, true);
     };
     const hideInstagramHelp = () => {
         instagramTip.hidden = true;
         instagramInfo.setAttribute('aria-expanded', 'false');
         instagramHelpPinned = false;
+        window.removeEventListener('resize', positionInstagramHelp);
+        window.removeEventListener('scroll', positionInstagramHelp, true);
     };
     hideInstagramHelp();
     instagramInfo.addEventListener('pointerenter', showInstagramHelp);
@@ -456,7 +474,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         if (instagramHelpPinned) hideInstagramHelp();
         else { instagramHelpPinned = true; showInstagramHelp(); }
     });
-    imageHostingHint.addEventListener('pointerleave', () => {
+    instagramHelp.addEventListener('pointerleave', () => {
         if (!instagramHelpPinned && document.activeElement !== instagramInfo) hideInstagramHelp();
     });
     // Capture Escape before the image field's existing handler can close the
@@ -806,6 +824,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         }
     });
     globalThis.addEventListener('pagehide', () => {
+        hideInstagramHelp();
         flushSync();
         if (!state.terminalSubmission) void saveDraftNow();
     });
