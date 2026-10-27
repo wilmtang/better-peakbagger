@@ -7,10 +7,10 @@ import { settingsSchema as Schema } from './settings-schema.js';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { cleanGarminKey } from '../garmin/garmin-api.js';
-import { readCustomLayerBackup } from '../maps/custom-overlay-transfer.js';
+import { readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.js';
 
 const KIND = 'better-peakbagger-settings';
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const BACKUP_PATH = 'settings.json';
 const API_KEY_NAMES = Object.freeze(['imgbb', 'garmin']);
 const IMPORT_MAX_BYTES = 1024 * 1024;
@@ -84,7 +84,7 @@ const cleanGithubConnection = value => {
 // (including explicit nulls) and a complete GitHub connection only after the
 // user selects the single sensitive-file option.
 const buildPayload = (settings, {
-    extensionVersion = '', exportedAt, apiKeys, githubConnection, customLayers,
+    extensionVersion = '', exportedAt, apiKeys, githubConnection, customLayers, privateCustomLayers,
 } = {}) => {
     const payload = {
         kind: KIND,
@@ -96,6 +96,10 @@ const buildPayload = (settings, {
     if (customLayers !== undefined) {
         payload.customLayers = readCustomLayerBackup(customLayers);
         if (!payload.customLayers) throw new TypeError('Custom layers backup is invalid.');
+    }
+    if (privateCustomLayers !== undefined) {
+        payload.privateCustomLayers = readPrivateLayerFile(privateCustomLayers, payload.customLayers);
+        if (!payload.privateCustomLayers) throw new TypeError('Private map settings file is invalid.');
     }
     if (apiKeys !== undefined) {
         const cleaned = cleanApiKeys(apiKeys);
@@ -146,6 +150,12 @@ const parse = text => {
         const customLayers = readCustomLayerBackup(parsed.customLayers);
         if (!customLayers) return { ok: false, reason: 'invalid-custom-layers' };
         result.customLayers = customLayers;
+    }
+    if (Object.hasOwn(parsed, 'privateCustomLayers')) {
+        if (parsed.schemaVersion < 7) return { ok: false, reason: 'invalid-custom-layers' };
+        const privateCustomLayers = readPrivateLayerFile(parsed.privateCustomLayers, result.customLayers);
+        if (!privateCustomLayers) return { ok: false, reason: 'invalid-custom-layers' };
+        result.privateCustomLayers = privateCustomLayers;
     }
     if (Object.hasOwn(parsed, 'apiKeys')) {
         const apiKeys = cleanApiKeys(parsed.apiKeys);

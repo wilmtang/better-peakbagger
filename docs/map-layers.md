@@ -503,20 +503,37 @@ access only to the configured provider hosts. BPB supports up to 12 query
 parameters; arbitrary headers, cookies, POST bodies and server/admin keys are
 not supported. Use a read-only map key with provider-side spending restrictions.
 
+Keys placed directly in the URL field are visible to Peakbagger page scripts
+because public layers load in the page's map. “Public” here means readable by
+that page, not published online by BPB. For example, move `api_key=your-key`
+from a URL's query into a private parameter named `api_key` to keep its value
+out of the page. The tile provider still receives the key to authorize requests.
+
 A source with private parameters uses BPB's background worker for its HTTPS
 GETs. Its real URL, any metadata-supplied signed tile URLs and parameter values
 stay in extension-origin IndexedDB. The page receives only opaque local resource
 descriptors and returned map bytes. BPB does not put those secrets in page
-messages, `storage.local`, browser sync, settings files or GitHub backups—even
-credential-inclusive backups. Restoring such a descriptor requires reconnecting
-with the original URL and parameters on that device. Removing parameter rows does not make a saved private layer public: provider
+messages, `storage.local`, browser sync or GitHub backups. **Manual settings
+exports include the private provider definitions and query parameters by
+default**, independently of the saved-account-credentials checkbox. These JSON
+files are not encrypted; anyone with the file can read its keys. Import validates
+the definitions against their public descriptors and restores them into
+extension-origin IndexedDB, with map selections off and no approvals or request
+counters copied. Provider permission and a fresh map approval are required before
+loading. Older files and GitHub backups contain only descriptors, so those
+restores still require reconnecting with the original URL and parameters.
+Removing parameter rows does not make a saved private layer public: provider
 metadata may still contain signed URLs. To create a public version, delete the
 private layer and add a new public URL without credentials.
 
 On a map, select the protected layer, choose **Approve private access…**, review
 the provider in the separate BPB page and click **Allow map requests**. Return to
 the map and choose **Retry**. The browser permission allows provider access; this
-separate approval limits what the map may spend. It permits at most **20,000 network
+separate approval limits what the map may spend. Hiding a key prevents page
+scripts from reading it, but the map still asks BPB for tiles: a compromised page
+could make extra tile requests and consume provider quota without knowing the
+key. Approving a tab explicitly grants that ability with a finite allowance.
+It permits at most **20,000 network
 attempts for 8 hours**, for that layer revision and current tab. Reloading,
 leaving/closing the tab, changing sources, removing provider permission or a
 background-worker restart requires another approval. Native MasterMap child

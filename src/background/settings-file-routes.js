@@ -79,12 +79,9 @@ export function createSettingsFileRoutes({
         github: importsGithubConnection ? 'not-written' : 'not-requested',
     });
 
-    // One credential decision covers the whole file. The ImgBB key used to ride
-    // along unconditionally while the GitHub token needed a checkbox, so two
-    // device-local secrets in the same unencrypted download had two different
-    // consent models. Both are now opt-in, and an export nobody opted in for is
-    // credential-free — which is what a settings file shared for troubleshooting
-    // should be.
+    // Manual files include complete map configurations, including parameters.
+    // Account credentials retain their separate opt-in. GitHub backup uses
+    // ordinary public-only snapshots, never this exact-Settings-page route.
     const exportFile = async (message, sender) => {
         if (!isOptionsPage(sender)) return forbidden();
         const includeCredentials = message?.includeCredentials === true;
@@ -94,13 +91,14 @@ export function createSettingsFileRoutes({
                 includeCredentials ? keyStore.read() : null,
                 includeCredentials ? authStore.read() : null,
                 includeCredentials && garmin ? garmin.readSnapshot() : null,
-                customLayers ? customLayers.snapshot() : null,
+                customLayers ? customLayers.snapshot({ includePrivate: true }) : null,
             ]);
             const connection = includeCredentials ? connectionPayload(auth) : null;
             const payload = Transfer.buildPayload(currentSettings, {
                 extensionVersion: ext.runtime.getManifest().version,
                 exportedAt: new Date().toISOString(),
                 ...(layerSnapshot ? { customLayers: customLayerBackup(layerSnapshot) } : {}),
+                ...(layerSnapshot?.privateSources?.length ? { privateCustomLayers: layerSnapshot.privateSources } : {}),
                 ...(includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null,
                     ...(garmin ? { garmin: garminSnapshot?.connection?.key || null } : {}) } } : {}),
                 ...(connection ? { githubConnection: connection } : {}),
@@ -187,7 +185,7 @@ export function createSettingsFileRoutes({
                 settings.requireCurrent({ includeLegacy: true }),
                 keyStore.read(),
                 importsGithubConnection ? authStore.readSnapshot() : null,
-                importsLayers ? customLayers?.snapshot() : null,
+                importsLayers ? customLayers?.snapshot({ includePrivate: true }) : null,
             ]);
             if (importsLayers && !previousLayers) throw new Error('Custom layers store unavailable.');
         } catch (error) {
@@ -230,7 +228,7 @@ export function createSettingsFileRoutes({
             stores.settings = 'committed';
             if (importsLayers) {
                 attempted.customLayers = true;
-                const layerReplacement = await customLayers.replaceIfCurrent(previousLayers, parsed.customLayers);
+                const layerReplacement = await customLayers.replaceIfCurrent(previousLayers, { ...parsed.customLayers, privateSources: parsed.privateCustomLayers || [] });
                 if (!layerReplacement.replaced) { attempted.customLayers = false; stores.customLayers = 'conflicted'; throw new Error('Custom layers changed during import.'); }
                 installedLayers = layerReplacement.current; stores.customLayers = 'committed';
             }

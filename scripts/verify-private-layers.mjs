@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, chrome, innerWidth, MouseEvent, location, scrollY */
+/* global document, window, chrome, innerWidth, MouseEvent, location, scrollY, File, DataTransfer, Event */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, cp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -115,12 +115,17 @@ try {
     await admin(async () => (globalThis.browser || chrome).runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { showSnotel: false, showWeather: false, showSunMoon: false, enable3dMap: true, terrainCacheLimitMb: 0 } }));
     await evaluate(() => location.reload());await wait(() => evaluate(() => !!document.querySelector('#bpb-terrain-toggle')), '3D toggle after authoritative settings');
     await click('options', '#custom-layer-add');await wait(() => inside(() => !!document.getElementById('name')), 'Settings editor');
-    await fill('#name', 'Private tiles');await fill('#url', `${provider}/source.json`);await click('editor', '#private-parameters summary');await click('editor', '#add-parameter');
+    await fill('#name', 'Private tiles');await fill('#url', `${provider}/source.json`);await click('editor', '#private-parameters > summary');await click('editor', '#add-parameter');
     await fill('.parameter-row input[id^=parameter-key]', 'api_key');await fill('.parameter-row input[id^=parameter-value]', secret);
     for (const width of [1000, 375]) for (const theme of ['light', 'dark']) {
         await setViewport({ width, height: 900 });await inside(value => { document.documentElement.dataset.theme = value; }, theme);
         const fit = await inside(() => ({ width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, hidden: document.querySelector('.parameter-row input[type=password]')?.value.length > 0 }));assert(!fit.overflow);assert(fit.hidden);
         if (shots) { await mkdir(shots, { recursive: true });await shot('options', path.join(shots, `private-${kind}-editor-${width}-${theme}.png`)); }
+        await click('editor', '#private-access-help > summary');
+        await inside(() => document.getElementById('private-access-help').scrollIntoView({ block:'center' }));
+        assert(await inside(() => document.documentElement.scrollWidth <= innerWidth), 'approval help fits the editor');
+        if (shots) await shot('options', path.join(shots, `private-${kind}-help-${width}-${theme}.png`));
+        await click('editor', '#private-access-help > summary');
     }
     await inside(() => { document.documentElement.dataset.verificationSave = 'hold';document.getElementById('save').scrollIntoView({ block: 'center', behavior: 'instant' }); });
     const geometry = () => inside(() => Object.fromEntries(['save', 'test', 'cancel', 'private-parameters'].map(id => { const r = document.getElementById(id).getBoundingClientRect();return [id, [r.x, r.y, r.width, r.height]]; }).concat([['scroll', [scrollY]], ['focus', [document.activeElement?.id === 'save' ? 1 : 0]]])));
@@ -138,8 +143,33 @@ try {
     assert.equal(await inside(() => document.getElementById('advanced').open), false, 'private metadata detection must not require Advanced');
     assert.equal(requests.filter(request => request.path === '/source.json').length, 1, 'Settings reads private metadata once');
     await setViewport({ width: 1000, height: 900 });
-    const snapshot = await admin(async () => { const api = globalThis.browser || chrome;return { local: await api.storage.local.get(null), exported: await api.runtime.sendMessage({ type: 'SETTINGS_FILE_EXPORT', includeCredentials: true }) }; });
-    assert(!JSON.stringify(snapshot).includes(secret), 'secret leaked into storage.local or backup');await click('editor', '#cancel');await wait(() => admin(() => !document.getElementById('custom-layer-dialog').open), 'editor dismissed');
+    const snapshot = await admin(async () => { const api = globalThis.browser || chrome;return { local: await api.storage.local.get(null), exported: await api.runtime.sendMessage({ type: 'SETTINGS_FILE_EXPORT' }) }; });
+    assert(!JSON.stringify(snapshot.local).includes(secret), 'secret leaked into storage.local');
+    assert(snapshot.exported.ok && snapshot.exported.content.includes(secret), 'manual settings files include private map parameters without the account credential checkbox');
+    await click('editor', '#cancel');await wait(() => admin(() => !document.getElementById('custom-layer-dialog').open), 'editor dismissed');
+    // Supply only this synthetic file at the native input boundary; retain the
+    // shipped parser, review, confirmation and worker transaction.
+    await admin(content => {
+        const transfer = new DataTransfer();transfer.items.add(new File([content], 'private-map-settings.json', { type:'application/json' }));
+        const input = document.getElementById('settings-backup-file');input.files = transfer.files;input.dispatchEvent(new Event('change', { bubbles:true }));
+    }, snapshot.exported.content);
+    await wait(() => admin(() => !document.getElementById('settings-backup-confirmation').hidden), 'private settings import review');
+    assert(await admin(() => document.getElementById('settings-backup-confirmation-detail').textContent.includes('Includes private map URLs and request parameters.')));
+    for (const width of [1000, kind === 'firefox' ? 500 : 375]) for (const theme of ['light','dark']) {
+        await setViewport({ width,height:900 });await admin(value => {
+            document.documentElement.dataset.bpbTheme = value;location.hash = '#github-settings-backup';
+            document.getElementById('settings-backup-confirmation').scrollIntoView({ block:'center',behavior:'instant' });
+        }, theme);
+        await wait(() => admin(() => {
+            const rect = document.getElementById('settings-backup-confirmation').getBoundingClientRect();
+            return rect.top >= 0 && rect.bottom <= document.documentElement.clientHeight;
+        }), 'settings import review visible in the viewport');
+        assert(await admin(() => document.documentElement.scrollWidth <= innerWidth), 'settings file review fits the viewport');
+        if (shots) await shot('options',path.join(shots,`private-${kind}-file-review-${width}-${theme}.png`));
+    }
+    await click('options','#settings-backup-confirm');
+    await wait(() => admin(() => document.getElementById('settings-backup-confirmation').hidden), 'private map file imported through Settings');
+    await setViewport({ width:1000,height:900 });
     console.log(JSON.stringify({ stage: 'saved', library: await admin(() => ({ status: document.getElementById('custom-layer-status').textContent, rows: document.getElementById('custom-layer-list').children.length, dialog: document.getElementById('custom-layer-dialog').open })) }));
     await click('options', '#custom-layer-list .custom-layer-actions > button:first-of-type');await wait(() => inside(() => document.querySelector('.parameter-row input[type=password]')?.value.length > 0), 'saved parameter restored for editing');
     assert.equal(await inside(() => document.querySelector('.parameter-row input[type=password]').value), secret);await click('editor', '#cancel');await wait(() => admin(() => !document.getElementById('custom-layer-dialog').open), 'edit dismissed');
@@ -195,6 +225,6 @@ try {
     await wait(() => evaluate(() => !!document.querySelector('.bpb-map-layers > button')?.getClientRects().length), 'reloaded map overlay control');
     await click('map', '.bpb-map-layers > button');await click('map', '.bpb-custom-source input[type=checkbox]');
     await wait(() => evaluate(() => document.querySelector('.bpb-custom-feedback')?.textContent.includes('Approve')), 'navigation revoked private approval');assert.equal(requests.length, beforeReload);
-    console.log(JSON.stringify({ verification: 'private-layers', kind, version, hidden: true, viewport: '1000x900', editorWidths: [1000, kind === 'firefox' ? 500 : 375], requests: requests.length, renderer, noPreapprovalMapRequests: true, metadataDetectedPrivately: true, secretAbsentFromPageAndBackup: true, permissionFixture: 'pregranted', nativePermissionPrompt: 'not tested' }));
+    console.log(JSON.stringify({ verification: 'private-layers', kind, version, hidden: true, viewport: '1000x900', editorWidths: [1000, kind === 'firefox' ? 500 : 375], requests: requests.length, renderer, noPreapprovalMapRequests: true, metadataDetectedPrivately: true, secretAbsentFromPageAndPublicStorage: true, privateMapFileRoundTrip: true, permissionFixture: 'pregranted', nativePermissionPrompt: 'not tested' }));
     await resources.dispose();
 } catch (error) { await resources.dispose(error); }

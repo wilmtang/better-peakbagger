@@ -96,7 +96,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         settings,
         successMessage = 'Settings imported',
         returnFocus = importEl,
-        { fileContent = null, includesApiKeys = false, includesGithubConnection = false, includesGarminKey = false, requestsGarminAccess = false, customLayerCount = null } = {}
+        { fileContent = null, includesApiKeys = false, includesGithubConnection = false, includesGarminKey = false, requestsGarminAccess = false, customLayerCount = null, includesPrivateMaps = false } = {}
     ) => {
         pendingImport = {
             settings, successMessage, returnFocus, fileContent, includesGithubConnection, requestsGarminAccess,
@@ -116,6 +116,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             ? ' Includes a Garmin key, which will be checked before replacing your connection and enabling Garmin drafts on this device.'
             : ' Removes your Garmin key while keeping your drafts.';
         if (customLayerCount !== null) confirmationDetailEl.textContent += ` Replaces custom layers with ${customLayerCount} saved ${customLayerCount === 1 ? 'layer' : 'layers'}. Existing map selections turn off.`;
+        if (includesPrivateMaps) confirmationDetailEl.textContent += ' Includes private map URLs and request parameters. Loading still requires provider access and a fresh map approval.';
         confirmationEl.hidden = false;
         if (document.activeElement === returnFocus) confirmEl.focus();
     };
@@ -181,6 +182,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 includesGarminKey: Object.hasOwn(parsed.apiKeys || {}, 'garmin'),
                 requestsGarminAccess: typeof parsed.apiKeys?.garmin === 'string',
                 customLayerCount: parsed.customLayers?.sources.length ?? null,
+                includesPrivateMaps: !!parsed.privateCustomLayers?.length,
             }
         );
     });

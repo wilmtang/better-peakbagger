@@ -183,7 +183,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.js` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
-| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure, one explicit opt-in covering both saved credentials, exact-options-page worker revalidation and reads/writes, live credential validation, confirmation and unencrypted-private-file warning; an export nobody opted in for and every GitHub settings backup stay credential-free |
+| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure; manual files include private map definitions/parameters, while saved account credentials require opt-in. Exact-options-page worker revalidation and reads/writes, live account credential validation, confirmation and unencrypted-private-file warning. GitHub snapshots exclude private definitions/credentials. |
 
 Extend the owning surface rather than publishing cross-feature globals. Two
 deliberate page-realm globals bridge worker-injected functions where an ES
@@ -1895,9 +1895,14 @@ endpoint search or tile-coverage crawl.
 
 `custom-private-store.js` owns extension-origin IndexedDB private definitions,
 query values and durable provider budgets. `custom-overlay-private.js` projects
-opaque public descriptors. The registry and all backup snapshots remain public;
-only the exact Settings editor inside a verified options tab receives an
-`editSource` and private values. Versioned private writes precede public CAS
+opaque public descriptors. The registry and ordinary/GitHub snapshots remain public;
+the exact Settings editor inside a verified options tab receives an
+`editSource` and private values. The exact-options-page manual file route requests
+a private snapshot and exports definitions and query parameters by default in
+schema version 7. Imports validate their public-descriptor correspondence,
+stage private revisions before the public registry write and preserve private
+values during rollback. No host permission, map approval or budget is imported.
+Versioned private writes precede public CAS
 writes so a failed configuration commit preserves the previous private source.
 
 `custom-layer-relay.js` accepts saved layer/revision, resource kind and bounded

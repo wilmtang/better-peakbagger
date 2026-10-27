@@ -56,6 +56,13 @@ const harness = ({
     const settingsStore = createSettingsStore({ area: sync, localArea: local, onChanged: null, sendMessage: null });
     const keyStore = ImgbbAuth.createKeyStore(local);
     const authStore = GithubAuth.createAuthStore(local);
+    const privateRecords = new Map();
+    const privateStore = {
+        get: async key => structuredClone(privateRecords.get(key)),
+        put: async (key, value) => { if (value == null) privateRecords.delete(key); else privateRecords.set(key, structuredClone(value)); },
+        mutate: async (key, change) => { const value = change(structuredClone(privateRecords.get(key))); privateRecords.set(key, value); return value; },
+    };
+    const customLayers = createCustomOverlayStore({ storage: local, privateStore, canRead: () => true, canEdit: () => true, canReadPrivate: () => true });
     const ext = {
         runtime: {
             getURL: path => `chrome-extension://test-extension/${path}`,
@@ -64,9 +71,9 @@ const harness = ({
     };
     const routes = createSettingsFileRoutes({
         ext, settings: settingsStore, keyStore, authStore, verifyGithubConnection, garmin,
-        customLayers: createCustomOverlayStore({ storage: local, canRead: () => true, canEdit: () => true }),
+        customLayers,
     });
-    return { routes, sync, local, settingsStore, keyStore, authStore };
+    return { routes, sync, local, settingsStore, keyStore, authStore, customLayers, privateRecords };
 };
 
 const optionsSender = {
@@ -79,6 +86,91 @@ const straySender = {
 const customSource = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Topo', kind: 'raster',
     source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [] } });
+const savePrivate = (h, value, revision = 0) => h.customLayers.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id: customSource().id,
+    expectedRevision: revision, source: customSource(), requestParameters: [{ key: 'api_key', value }] }, optionsSender);
+
+test('manual exports include private map configuration by default and restore it outside public storage', async () => {
+    const h = harness(); assert((await savePrivate(h, 'map-secret')).ok);
+    const exported = await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender);
+    assert(exported.ok); assert(exported.content.includes('map-secret'), 'manual settings exports must carry private map parameters');
+    const parsed = Transfer.parse(exported.content); assert(parsed.ok);
+    assert.equal(parsed.privateCustomLayers[0].source.source.tiles[0], customSource().source.tiles[0]);
+    assert(!JSON.stringify(customLayerBackup(await h.customLayers.snapshot())).includes('map-secret'), 'ordinary GitHub snapshots stay public');
+    assert(!('apiKeys' in parsed), 'account credentials keep their separate opt-in');
+    const destination = harness(); assert((await savePrivate(destination, 'old-secret')).ok);
+    const imported = await destination.routes.handlers.SETTINGS_FILE_IMPORT({ content: exported.content }, optionsSender);
+    assert(imported.ok); const edited = await destination.customLayers.handle({ type: 'CUSTOM_OVERLAYS_GET' }, optionsSender);
+    assert.deepEqual(edited.registry.sources[0].requestParameters, [{ key: 'api_key', value: 'map-secret' }]);
+    assert.equal(edited.registry.sources[0].revision, 2);
+    assert.match(edited.registry.sources[0].source.tiles[0], /\/2\/tile/);
+    assert(!JSON.stringify(destination.local.values).includes('map-secret'));
+    assert(!JSON.stringify(await destination.customLayers.snapshot()).includes('map-secret'));
+});
+
+test('failed account import rolls private map definitions and parameters back as well', async () => {
+    const h = harness(); await savePrivate(h, 'original-map-key');
+    const other = harness(); await savePrivate(other, 'replacement-map-key');
+    const exported = JSON.parse((await other.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender)).content);
+    exported.apiKeys = { imgbb: 'new-imgbb-key' };
+    h.keyStore.replace = async () => { throw new Error('simulated account write failure'); };
+    const reply = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: JSON.stringify(exported) }, optionsSender);
+    assert.equal(reply.ok, false); assert.equal(reply.stores.customLayers, 'rolled-back');
+    const edited = await h.customLayers.handle({ type: 'CUSTOM_OVERLAYS_GET' }, optionsSender);
+    assert.deepEqual(edited.registry.sources[0].requestParameters, [{ key: 'api_key', value: 'original-map-key' }]);
+    assert(!JSON.stringify(h.local.values).includes('original-map-key'));
+    assert.equal(h.sync.values.bpbSettings.theme, 'dark');
+});
+test('malformed, mismatched and falsely backported private map files reject before writing', async () => {
+    const h = harness(); await savePrivate(h, 'original-map-key');
+    const original = JSON.parse((await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender)).content);
+    for (const change of [
+        file => { file.schemaVersion = 6; },
+        file => { file.privateCustomLayers.push(structuredClone(file.privateCustomLayers[0])); },
+        file => { file.privateCustomLayers[0].source.name = 'Mismatched layer'; },
+        file => {
+            file.privateCustomLayers[0].source.source.tiles[0] = 'https://127.0.0.1/{z}/{x}/{y}.png';
+            file.privateCustomLayers[0].source.approvedOrigins = ['https://127.0.0.1'];
+        },
+        file => { file.privateCustomLayers[0].parameters[0].value = ''; },
+        file => { delete file.customLayers; },
+    ]) {
+        const file = structuredClone(original); change(file);
+        const reply = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: JSON.stringify(file) }, optionsSender);
+        assert.equal(reply.ok, false); assert.equal(reply.error.code, 'invalid-file');
+    }
+    const edited = await h.customLayers.handle({ type: 'CUSTOM_OVERLAYS_GET' }, optionsSender);
+    assert.equal(edited.registry.sources[0].requestParameters[0].value, 'original-map-key');
+    assert.equal(edited.registry.sources[0].revision, 1);
+});
+
+test('private file replacement preserves concurrent edits, failed public writes and provider counters', async () => {
+    const h = harness(); await savePrivate(h, 'original-map-key');
+    const previous = await h.customLayers.snapshot({ includePrivate: true });
+    const backup = customLayerBackup(previous); backup.privateSources = previous.privateSources;
+    await savePrivate(h, 'newer-key', 1);
+    assert.equal((await h.customLayers.replaceIfCurrent(previous, backup)).replaced, false);
+    const current = await h.customLayers.snapshot({ includePrivate: true });
+    const set = h.local.set; h.local.set = async () => { throw new Error('public commit failed'); };
+    await assert.rejects(h.customLayers.replaceIfCurrent(current, backup), /public commit failed/);
+    h.local.set = set;
+    assert.deepEqual(await h.customLayers.snapshot({ includePrivate: true }), current, 'staged secrets do not change the active revision');
+    h.privateRecords.set('budget:tiles.example.com', { count: 12 });
+    const exported = (await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender)).content;
+    assert(!exported.includes('budget:')); assert(!exported.includes('"count"'));
+    assert((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: exported }, optionsSender)).ok);
+    assert.deepEqual(h.privateRecords.get('budget:tiles.example.com'), { count: 12 });
+});
+
+test('legacy descriptor restores remove saved private values and require reconnection', async () => {
+    const h = harness(); await savePrivate(h, 'original-map-key');
+    const exported = JSON.parse((await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender)).content);
+    delete exported.privateCustomLayers; exported.schemaVersion = 6;
+    assert((await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: JSON.stringify(exported) }, optionsSender)).ok);
+    const edited = await h.customLayers.handle({ type: 'CUSTOM_OVERLAYS_GET' }, optionsSender);
+    assert.equal(edited.registry.sources[0].reconnect, true);
+    assert.equal(h.privateRecords.has(customSource().id), false);
+});
+
 test('settings files export and atomically replace layers while legacy files preserve them', async () => {
     const h = harness(), source = customSource();
     h.local.values.bpbCustomMapOverlaysV1 = { schemaVersion: 1, revision: 8, sources: [source] };

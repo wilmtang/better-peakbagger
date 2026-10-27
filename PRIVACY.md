@@ -89,7 +89,7 @@ permission to read device location. It covers:
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
-| IndexedDB `bpb-private-map-sources-v1` | Private map definitions/query parameters, shared request counters and 429 cooldowns | Extension-origin, device-local; never in content-script-accessible storage, sync or backups. Successfully deleting a layer deletes its private definition; budget records remain to prevent resetting quotas by deletion. Uninstalling clears the store. |
+| IndexedDB `bpb-private-map-sources-v1` | Private map definitions/query parameters, shared request counters and 429 cooldowns | Extension-origin, device-local; never in content-script-accessible storage, sync or GitHub backups. Manual settings files include private definitions and query parameters in plain text, but never counters, cooldowns or approvals. Successfully deleting a layer deletes its private definition; budget records remain to prevent resetting quotas by deletion. Uninstalling clears the store. |
 | Peakbagger `localStorage` | Page-specific filter state and the early theme mirror | Remains with the Peakbagger site data. |
 
 ## Garmin API activity inbox
@@ -733,7 +733,8 @@ The user can export and import settings without GitHub:
 
 - **Export settings** downloads an unencrypted JSON file only after a click. By
   default it contains validated portable settings and custom map sources, with
-  public URLs and any public keys in those URLs. Saved ImgBB/Garmin/GitHub
+  public URLs, private provider definitions and private request parameters,
+  including map API keys. Saved ImgBB/Garmin/GitHub
   credentials remain opt-in. Device
   dimensions, cache budget and automatic-transfer consent are excluded.
 - **Include saved credentials** adds the saved ImgBB and Garmin API keys and,
@@ -742,6 +743,10 @@ The user can export and import settings without GitHub:
 - Import validates the file and requires confirmation before replacing
   portable settings, included custom sources, included API keys, or an included GitHub connection.
   Device settings remain unchanged even when importing an older settings file.
+  Private map definitions are restored to extension-origin IndexedDB, not
+  content-script-accessible storage. Restored layers stay off and need provider
+  permission plus fresh map approval. Request budgets and approvals never travel
+  in a file; existing destination provider counters remain in force.
 - Before accepting imported GitHub credentials, the extension requests host
   access if needed and verifies the token, account, repository grant,
   writability, branch, and backup-path safety with GitHub.
@@ -865,8 +870,11 @@ IndexedDB. Public records and MAIN-world messages contain only opaque
 layer/revision/resource descriptors; they contain no actual provider URL or key.
 Settings-only editor replies can edit private values; an editor embedded by
 Peakbagger cannot. Values are masked in the form, not encrypted against someone
-controlling the browser/device. Even credential-inclusive exports exclude these
-values and private URLs. Restored descriptors require reconnecting locally.
+controlling the browser/device. Manual settings exports include these values
+and private URLs by default in an unencrypted JSON file. Automatic GitHub backups
+exclude them; restoring those descriptors or older files requires reconnecting
+locally. Current manual files restore validated definitions without copying any
+approval, cooldown or request budget.
 
 Map requests need explicit approval in a full BPB page, bound to a tab, layer
 revision and navigation lifetime: 20,000 attempts for 8 hours. Native MasterMap

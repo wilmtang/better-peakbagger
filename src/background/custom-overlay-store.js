@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry, readCustomSource, customId } from '../maps/custom-overlay-schema.js';
-import { customLayerBackup, readCustomLayerBackup } from '../maps/custom-overlay-transfer.js';
+import { customLayerBackup, readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
 import { readPrivateParameters, publicPrivateSource } from '../maps/custom-overlay-private.js';
 
@@ -18,6 +18,20 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
         const preferences = Object.fromEntries(registry.sources.map(source => [source.id,
             Number.isFinite(data[CUSTOM_PREFERENCES_KEY]?.[source.id]) ? Math.max(0, Math.min(100, data[CUSTOM_PREFERENCES_KEY][source.id])) : source.appearance.opacity]));
         return { registry, preferences };
+    };
+    const readFileSnapshot = async () => {
+        const current = await read();current.privateSources = [];
+        for (const source of current.registry.sources) {
+            if (!source.privateRequests) continue;
+            const saved = (await privateStore?.get(source.id))?.versions?.[source.revision];
+            // A descriptor imported from an older/remote backup may have no
+            // private definition on this device and remains reconnect-only.
+            if (!saved) continue;
+            if (!StorageValue.same(saved.public, source)) throw new Error('Private layer configuration is unavailable.');
+            current.privateSources.push({ source: saved.source, parameters: saved.parameters });
+        }
+        if (!readPrivateLayerFile(current.privateSources, customLayerBackup(current))) throw new Error('Private layer configuration is unavailable.');
+        return current;
     };
     const handle = (message, sender) => {
         const mutation = message.type !== 'CUSTOM_OVERLAYS_GET';
@@ -107,15 +121,40 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
         };
         return transact(operation);
     };
-    return { handle, snapshot: () => transact(read), replaceIfCurrent: (expected, next) => transact(async () => {
-        const current = await read();
+    return { handle, snapshot: ({ includePrivate = false } = {}) => transact(includePrivate ? readFileSnapshot : read), replaceIfCurrent: (expected, next) => transact(async () => {
+        const includePrivate = Object.hasOwn(expected, 'privateSources');
+        const current = await (includePrivate ? readFileSnapshot() : read());
         if (!StorageValue.same(current, expected)) return { replaced: false, current };
         const backup = next?.registry ? customLayerBackup(next) : readCustomLayerBackup(next);
         if (!backup) throw new Error('Invalid custom layers backup.');
+        const privateSources = readPrivateLayerFile(next.privateSources || [], backup);
+        if (!privateSources || privateSources.length && !privateStore) throw new Error('Invalid private layer settings.');
         const registry = { schemaVersion: 1, revision: current.registry.revision + 1, generation: (current.registry.generation || 0) + 1,
             sources: backup.sources.map(source => ({ ...source, revision: (current.registry.sources.find(item => item.id === source.id)?.revision || 0) + 1 })) };
+        const installedPrivate = [];
+        // Write the next private revision before publishing its descriptor.
+        // Keep the old revision until the public write commits so failures
+        // cannot disable the previously saved source or expose its key.
+        for (const entry of privateSources) {
+            const index = registry.sources.findIndex(source => source.id === entry.source.id);
+            const source = { ...entry.source, revision: registry.sources[index].revision }, projected = publicPrivateSource(source);
+            await privateStore.mutate(source.id, previous => ({ versions: { ...previous?.versions,
+                [source.revision]: { source, parameters: entry.parameters, public: projected } } }));
+            registry.sources[index] = projected;
+            installedPrivate.push({ source, parameters: entry.parameters });
+        }
         if (!readCustomRegistry(registry)) throw new Error('Invalid custom layers backup.');
         await storage.set({ [CUSTOM_REGISTRY_KEY]: registry, [CUSTOM_PREFERENCES_KEY]: backup.preferences });
-        previews.clear(); return { replaced: true, current: { registry, preferences: backup.preferences } };
+        previews.clear();
+        // Cleanup failure cannot turn a committed replacement into an unknown
+        // result. Unreachable old records cannot authorize relay requests.
+        if (privateStore) for (const id of new Set([...current.registry.sources, ...registry.sources].map(source => source.id))) {
+            try {
+                const source = registry.sources.find(item => item.id === id), entry = privateSources.find(item => item.source.id === id);
+                if (source?.privateRequests && entry) await privateStore.mutate(id, saved => ({ versions: { [source.revision]: saved.versions[source.revision] } }));
+                else await privateStore.put(id, null);
+            } catch (error) { console.error('Better Peakbagger: obsolete private layer cleanup failed', error); }
+        }
+        return { replaced: true, current: { registry, preferences: backup.preferences, ...(includePrivate && { privateSources: installedPrivate }) } };
     }) };
 }

@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Extension-origin IndexedDB. Never storage.local/sync, page globals or backups.
+// Extension-origin IndexedDB. Never storage.local/sync or page globals.
+// Exact-Settings-page manual files may explicitly transfer source definitions.
 export function createCustomPrivateStore(indexedDB = globalThis.indexedDB) {
     let opening;
     const db = () => opening ||= new Promise((resolve, reject) => {

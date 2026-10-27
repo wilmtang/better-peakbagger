@@ -23,8 +23,11 @@ without private parameters retain their existing direct/CORS path.
 - An authorized map necessarily can consume its approved allowance. Do not claim
   zero quota risk. Bound total requests, concurrency, response bytes, retries and
   cooldowns; duplicate suppression/cache reduces repeated spending.
-- Restored protected-layer descriptors require reconnecting on this device.
-  Credentials are omitted from all backups, including credential-inclusive files.
+- Restored protected-layer descriptors from older files/GitHub require reconnecting
+  on this device; current manual files restore the saved configuration.
+  Private definitions/parameters are included by default in explicit manual
+  settings files following the owner's export requirement. GitHub backups
+  exclude them; approvals, counters and cooldowns are never exported.
 
 ## Acceptance
 
@@ -32,7 +35,8 @@ Test hostile messages, synthetic activation, destination/path substitutions,
 wrong tabs/documents/revisions, navigation, duplicate/replayed authority,
 worker restart and clock changes, cross-tab budgets, retries/429, cancellation,
 oversized responses, metadata URL leakage and revocation. Verify saved params
-can be edited/removed without page/storage/export leakage. Exercise actual
+can be edited/removed without page/public-storage leakage, with explicit manual
+file round-trip and automatic-backup exclusion. Exercise actual
 Chrome/Firefox packaged 2D/3D request paths and Settings at narrow/desktop sizes,
 themes, keyboard and pending/error/retry states. Keep native permission-prompt,
 live-provider and any broader suite failures explicit.
@@ -40,6 +44,29 @@ live-provider and any broader suite failures explicit.
 ## Closure ledger
 
 ### Fixed and verified
+
+- Manual-file follow-up: settings schema 7 includes private provider definitions
+  and query parameters by default, independently of account-credential opt-in.
+  The parser matches definitions to public descriptors and rejects duplicates,
+  malformed parameters, unsafe destinations and falsely backported fields.
+  Import stages private revisions before public publication, preserves prior
+  keys during rollback and leaves restored layers off without approvals.
+  A regression reproduced both missing exported keys and lost rollback keys
+  before implementation. GitHub/public snapshots stay redacted. Destination
+  provider counters remain authoritative and are not imported or cleared.
+- Export/help verification: all 3,685 tests and full lint passed; the final
+  focused file-transfer/schema/documentation run passed 54 cases, including
+  strengthened unsafe-host and descriptor-mismatch rejection. The real hidden
+  Chrome startup/bridge check passed. Packaged private-layer checks passed in
+  Chrome 156.0.8078.4 and Firefox 158.0.1, including the actual Settings file input,
+  confirmation, worker import, reopened private values, zero map requests before
+  approval, hardware 2D/3D loading and reload revocation. Synthetic file selection
+  and provider permission pregrants are fixture-only; the parser, confirmation
+  and worker writes are shipped code. Help and file review were inspected in
+  both themes at 1000/375 px Chrome and 1000/500 px Firefox by 900 px, with no
+  horizontal overflow. Save pending/error/retry and approval completion retained
+  actions/focus/reading position within one pixel. Rendering used hardware
+  Metal/Apple M3 Pro. Native permission prompts remain unverified.
 
 - Map-menu UX: custom rows now reuse built-in checkbox, name, opacity, spinner,
   chevron and selected-state styles. The unexplained collapsed `Lower detail`
