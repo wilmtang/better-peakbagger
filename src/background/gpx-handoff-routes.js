@@ -61,6 +61,10 @@ export function createGpxHandoffRoutes({
                 ? { ok: true }
                 : { ok: false, code: 'permission-denied', message: `${provider.name} access was not granted.` };
         } catch {
+            // Firefox may reject request() without a propagated user gesture
+            // even when access already exists. Check only after the request,
+            // preserving Chromium's activation on the normal prompt path.
+            if (await ext.permissions.contains(provider.permission).catch(() => false)) return { ok: true };
             try {
                 await ext.tabs.create({
                     url: ext.runtime.getURL(provider.accessPage),

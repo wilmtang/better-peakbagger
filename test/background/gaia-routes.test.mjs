@@ -91,6 +91,7 @@ test('Gaia permission route requests directly and falls back to an extension tab
 
     const fallback = harness();
     fallback.ext.permissions.request = async () => { throw new Error('user input required'); };
+    fallback.ext.permissions.contains = async () => false;
     const result = await fallback.routes.handlers.GAIA_PERMISSION_REQUEST({}, sender);
     assert.equal(result.code, 'permission-setup-opened');
     assert.deepEqual(fallback.created, [{
@@ -143,4 +144,13 @@ test('completed login redirects return recovery without waiting for the import U
     const result = await h.routes.handlers.GAIA_IMPORT_PREPARE(message, sender);
     assert.equal(result.ok, false); assert.equal(h.injections.length, 0);
     assert.equal(result.targetTabId, 20);
+});
+
+
+test('an existing map permission survives a request gesture error without opening setup', async () => {
+    const h = harness();
+    h.ext.permissions.request = async () => { throw new Error('user input required'); };
+    h.ext.permissions.contains = async () => true;
+    assert.deepEqual(await h.routes.handlers.GAIA_PERMISSION_REQUEST({}, sender), { ok: true });
+    assert.equal(h.created.length, 0);
 });

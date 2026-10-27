@@ -40,6 +40,7 @@ test('AllTrails route opens the exact custom route builder and consumes one-use 
 test('AllTrails permission fallback uses an extension-owned setup page', async () => {
     const h = harness();
     h.ext.permissions.request = async () => { throw new Error('user input required'); };
+    h.ext.permissions.contains = async () => false;
     const result = await h.routes.handlers.ALLTRAILS_PERMISSION_REQUEST({}, sender);
     assert.equal(result.code, 'permission-setup-opened');
     assert.deepEqual(h.created, [{

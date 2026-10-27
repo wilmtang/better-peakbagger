@@ -42,6 +42,7 @@ test('onX route opens the exact Backcountry importer and consumes one-use author
 test('onX permission fallback uses an extension-owned setup page', async () => {
     const h = harness();
     h.ext.permissions.request = async () => { throw new Error('user input required'); };
+    h.ext.permissions.contains = async () => false;
     const result = await h.routes.handlers.ONX_PERMISSION_REQUEST({}, sender);
     assert.equal(result.code, 'permission-setup-opened');
     assert.deepEqual(h.created, [{
