@@ -503,6 +503,9 @@ access only to the configured provider hosts. BPB supports up to 12 query
 parameters; arbitrary headers, cookies, POST bodies and server/admin keys are
 not supported. Use a read-only map key with provider-side spending restrictions.
 
+The editor's action bar stays at the bottom of the sheet while fields scroll
+above it, so expanding sections does not move Check source, Save or Close.
+
 Keys placed directly in the URL field are visible to Peakbagger page scripts
 because public layers load in the page's map. “Public” here means readable by
 that page, not published online by BPB. For example, move `api_key=your-key`

@@ -45,6 +45,26 @@ live-provider and any broader suite failures explicit.
 
 ### Fixed and verified
 
+- Pinned-footer follow-up: the editor now has a separate scrolling field area
+  and an anchored bottom action row. Short forms, section expansion/collapse and
+  field scrolling cannot move Check source, Save, Close or Remove. The scrollbar
+  gutter remains reserved; final content stays reachable above the footer.
+  Tooltips track the field scroll owner, stay between the title/footer, and close
+  when their trigger leaves view. The pre-fix packaged Chrome check reproduced
+  the collapsed footer sitting above the sheet bottom. Updated Chrome/Firefox
+  checks cover 12 cases each at 1100/375 and 1100/500 px widths, 900/540 px heights,
+  both themes and normal/1.5x text. They assert footer/control geometry through
+  all three disclosures and scrolling, keyboard focus, final-link reachability,
+  tooltip containment and scroll dismissal. The 70 focused tests passed.
+  Full lint passed with eight owned warnings. Both packaged private-layer flows
+  also passed: action/field geometry, focus and field scroll stayed anchored
+  through Save pending/error/retry, and file restore, approval and hardware
+  Metal/Apple M3 Pro 2D/3D loading still worked. The verifier now measures the
+  actual field scroll owner and checks its horizontal overflow. Its forged-URL
+  assertion waits for legitimate 2D provider requests to settle, matching the
+  existing 3D reload check; otherwise a late valid tile could be misattributed
+  to the forged message. Native permission prompts remain outside fixture proof.
+
 - Editor disclosure follow-up: removed the separate filled Advanced card and
   its redundant subtitle. All editor disclosures now share a flat row, aligned
   chevron, 44 px minimum target, hover/focus treatment and natural text wrapping;

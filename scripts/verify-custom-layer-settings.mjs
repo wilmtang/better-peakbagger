@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, chrome, innerWidth, Event, getComputedStyle, scrollY */
+/* global document, window, chrome, innerWidth, innerHeight, Event, getComputedStyle */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -29,7 +29,7 @@ try {
         inside = (fn, arg) => page.frames().find(frame => frame.url().includes('/custom-overlay/editor.html'))?.evaluate(fn, arg);
         editorSave = () => page.frameLocator('#custom-layer-dialog iframe').locator('#save').press('Space');
         editorKey = (selector, key) => page.frameLocator('#custom-layer-dialog iframe').locator(selector).press(key);
-        viewport = width => page.setViewportSize({ width, height: 900 });shot = file => page.screenshot({ path: file });version = context.browser().version();
+        viewport = (width,height=900) => page.setViewportSize({ width, height });shot = file => page.screenshot({ path: file });version = context.browser().version();
     } else {
         const { Builder, By, Key } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
         const prepared = await prepareFirefoxSource({ temporaryRoot: root, distDir: path.resolve('dist') });resources.defer('Settings source', () => prepared.cleanup());resources.defer('Settings processes', () => stopOwnedFirefoxProcesses(root));
@@ -42,7 +42,7 @@ try {
         inside = async (fn, arg) => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));return await driver.executeScript(`return (${fn})(arguments[0]);`, arg ?? null); } finally { await driver.switchTo().defaultContent(); } };
         editorSave = async () => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));await driver.findElement(By.id('save')).sendKeys(Key.SPACE); } finally { await driver.switchTo().defaultContent(); } };
         editorKey = async (selector, key) => { try { await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));await driver.findElement(By.css(selector)).sendKeys(key === 'Space' ? Key.SPACE : Key.ENTER); } finally { await driver.switchTo().defaultContent(); } };
-        viewport = width => driver.manage().window().setRect({ width: Math.max(500, width), height: 985 });shot = async file => writeFile(file, await driver.takeScreenshot(), 'base64');version = (await driver.getCapabilities()).getBrowserVersion();
+        viewport = (width,height=900) => driver.manage().window().setRect({ width: Math.max(500, width), height: height+85 });shot = async file => writeFile(file, await driver.takeScreenshot(), 'base64');version = (await driver.getCapabilities()).getBrowserVersion();
     }
     const wait = (fn, description) => waitForCondition(fn, { description });
     await evaluate(async () => {
@@ -99,10 +99,14 @@ try {
     let disclosureCases = 0;
     const disclosureGeometry = () => inside(() => {
         const summary = document.querySelector('#advanced>summary'), rect = summary.getBoundingClientRect();
-        return [rect.x,rect.y,rect.width,rect.height,scrollY];
+        return [rect.x,rect.y,rect.width,rect.height,(document.getElementById('editor-fields')||document.scrollingElement).scrollTop];
     });
-    for (const width of [1100, kind === 'firefox' ? 500 : 375]) for (const theme of ['light','dark']) for (const scale of [1,1.5]) {
-        await viewport(width);await inside(({ theme,scale }) => {
+    const actionGeometry = () => inside(() => {
+        const rect = element => { const box=element.getBoundingClientRect();return [box.x,box.y,box.width,box.height]; };
+        return [rect(document.querySelector('.actions')),...[...document.querySelectorAll('.actions>button')].filter(element=>element.getClientRects().length).map(rect)];
+    });
+    for (const [width,height] of [[1100,900],[kind === 'firefox' ? 500 : 375,900],[kind === 'firefox' ? 500 : 375,540]]) for (const theme of ['light','dark']) for (const scale of [1,1.5]) {
+        await viewport(width,height);await inside(({ theme,scale }) => {
             document.documentElement.dataset.theme = theme;document.body.style.fontSize = `${14*scale}px`;
             document.getElementById('private-parameters').open = false;document.getElementById('advanced').open = false;
         }, { theme,scale });
@@ -119,20 +123,50 @@ try {
         assert(Math.abs(headers[0].textX-headers[1].textX)<=1,'disclosure labels share their leading alignment');
         assert(headers.every(header=>header.height>=44),'disclosures retain usable hit targets');
         assert(await inside(() => document.documentElement.scrollWidth<=innerWidth),'enlarged text fits the editor');
+        const fieldWidth=await inside(()=>{const area=document.getElementById('editor-fields');return {available:area.clientWidth,content:area.scrollWidth};});
+        assert(fieldWidth.content<=fieldWidth.available,`fields do not scroll sideways: ${JSON.stringify(fieldWidth)}`);
+        assert(await inside(() => Math.abs(innerHeight-document.querySelector('.actions').getBoundingClientRect().bottom-parseFloat(getComputedStyle(document.getElementById('editor')).paddingBottom))<=1), 'action bar stays at the sheet bottom even with all sections collapsed');
+        const anchoredActions=await actionGeometry();
+        const assertActions=async()=>assert((await actionGeometry()).every((rect,index)=>rect.every((value,axis)=>Math.abs(value-anchoredActions[index][axis])<=1)),'disclosure and scrolling must not move or resize footer actions');
         await inside(() => document.querySelector('#advanced>summary').scrollIntoView({block:'center',behavior:'instant'}));
-        if(shots&&scale===1)await shot(path.join(shots,`disclosures-${kind}-${width}-${theme}-closed.png`));
+        if(shots&&scale===1)await shot(path.join(shots,`disclosures-${kind}-${width}-${height}-${theme}-closed.png`));
         for(const key of ['Space','Enter']) {
             await inside(() => document.querySelector('#advanced>summary').focus({preventScroll:true}));const before=await disclosureGeometry();
             await editorKey('#advanced>summary',key);assert(await inside(()=>document.getElementById('advanced').open));
+            await assertActions();
             const after=await disclosureGeometry();assert(after.every((value,index)=>Math.abs(value-before[index])<=1),'opening Advanced keeps its header and reading position anchored');
             assert(await inside(()=>document.activeElement===document.querySelector('#advanced>summary')),'disclosure retains keyboard focus');
-            if(shots&&scale===1&&key==='Space')await shot(path.join(shots,`disclosures-${kind}-${width}-${theme}-open.png`));
+            if(shots&&scale===1&&key==='Space')await shot(path.join(shots,`disclosures-${kind}-${width}-${height}-${theme}-open.png`));
             await editorKey('#advanced>summary',key);assert(!await inside(()=>document.getElementById('advanced').open));
+            await assertActions();
             assert((await disclosureGeometry()).every((value,index)=>Math.abs(value-before[index])<=1),'closing Advanced restores the same reading position');
         }
+        for(const selector of ['#private-parameters>summary','#form details.help:not(#private-access-help)>summary']) {
+            await editorKey(selector,'Space');await assertActions();await editorKey(selector,'Space');await assertActions();
+        }
+        await inside(()=>{
+            document.getElementById('advanced').open=true;
+            const help=document.querySelector('#form details.help:not(#private-access-help)');help.open=true;
+            help.querySelector('a').focus();
+        });
+        await wait(()=>inside(()=>{
+            const link=document.querySelector('#form details.help:not(#private-access-help) a').getBoundingClientRect();
+            return link.bottom<=document.querySelector('.actions').getBoundingClientRect().top&&link.top>=document.getElementById('editor-fields').getBoundingClientRect().top;
+        }),'last form content reachable above action bar');await assertActions();
+        await inside(()=>document.querySelector('#bounds-label .info').focus());
+        await wait(()=>inside(()=>{
+            const tip=document.getElementById('bounds-help'), box=tip.getBoundingClientRect(), area=document.getElementById('editor-fields').getBoundingClientRect();
+            return !tip.hidden&&box.top>=area.top&&box.bottom<=area.bottom;
+        }),'keyboard tooltip fits above fixed actions');await assertActions();
+        await inside(()=>document.getElementById('editor-fields').scrollTop=0);
+        await wait(()=>inside(()=>document.getElementById('bounds-help').hidden),'scrolling fields closes an out-of-view tooltip');await assertActions();
+        await inside(()=>{
+            document.querySelector('#form details.help:not(#private-access-help)').open=false;document.getElementById('advanced').open=false;
+        });
+        await assertActions();
         disclosureCases++;
     }
-    assert.equal(disclosureCases,8);
+    assert.equal(disclosureCases,12);
     await inside(()=>{document.body.style.fontSize='';document.getElementById('advanced').open=true;});
     for (const width of [1100, kind === 'firefox' ? 500 : 375]) {
         await viewport(width);
@@ -155,6 +189,6 @@ try {
     await click('.custom-layer-row:first-child .custom-layer-actions > button:first-of-type');
     await wait(() => inside(() => document.getElementById('advanced').open && document.getElementById('scheme').value === 'tms'), 'manual settings are visible after reopening');
     assert.equal(await inside(() => document.getElementById('maximum').value),'15');
-    console.log(JSON.stringify({ verification: 'custom-layer-settings', kind, version, hidden: true, height: 900, widths: [1100, kind === 'firefox' ? 500 : 375], cases, disclosureCases, themes: ['light','dark'], scales: [1,1.5], matchingCompactDisclosures:true, keyboardDisclosureAnchored:true, actionsAligned: true, reorderPendingErrorRetry: true, opacityAbsent: true, manualOverridesVisibleSavedReopened: true }));
+    console.log(JSON.stringify({ verification: 'custom-layer-settings', kind, version, hidden: true, heights: [900,540], widths: [1100, kind === 'firefox' ? 500 : 375], cases, disclosureCases, themes: ['light','dark'], scales: [1,1.5], matchingCompactDisclosures:true, keyboardDisclosureAnchored:true, footerPinnedAcrossExpansionAndScroll:true, lastContentReachable:true, keyboardTooltipScrollAware:true, actionsAligned: true, reorderPendingErrorRetry: true, opacityAbsent: true, manualOverridesVisibleSavedReopened: true }));
     await resources.dispose();
 } catch (error) { await resources.dispose(error); }

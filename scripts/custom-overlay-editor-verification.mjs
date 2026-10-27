@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, innerWidth, innerHeight, scrollY, getComputedStyle */
+/* global document, window, innerWidth, innerHeight, getComputedStyle */
 import assert from 'node:assert/strict';
 
 export function readEditorGeometry() {
@@ -10,7 +10,7 @@ export function readEditorGeometry() {
     };
     return { heading: rect('h1'), advanced: rect('#advanced summary'), help: rect('.help summary'),
         save: rect('#save'), check: rect('#test'), close: rect('#cancel'),
-        scroll: scrollY, height: document.documentElement.scrollHeight };
+        scroll: document.getElementById('editor-fields').scrollTop, height: document.getElementById('editor-fields').scrollHeight };
 }
 
 function stable(before, after, state) {

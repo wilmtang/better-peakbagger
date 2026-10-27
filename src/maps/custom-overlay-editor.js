@@ -21,7 +21,7 @@ if (parent === window) {
     const send = detail => { if (parentOrigin) parent.postMessage({ [tag]: true, token, ...detail }, parentOrigin); };
     const root = document.getElementById('editor');
     root.setAttribute('role', 'dialog'); root.setAttribute('aria-label', 'Custom map overlays');
-    const field = id => document.getElementById(id), feedback = message => {
+    const field = id => document.getElementById(id), scrollArea = field('editor-fields'), feedback = message => {
         field('notice').hidden = !message; field('feedback').textContent = message;
         if (message && field('feedback').scrollHeight > field('feedback').clientHeight) field('feedback').tabIndex = 0;
         else field('feedback').removeAttribute('tabindex');
@@ -57,12 +57,14 @@ if (parent === window) {
         const tip = field(button.getAttribute('aria-describedby')); tip.hidden = false; tip.style.maxHeight = 'none'; button.setAttribute('aria-expanded', 'true');
         const anchor = button.getBoundingClientRect(), box = tip.getBoundingClientRect(), gap = 8;
         tip.style.left = `${Math.max(gap, Math.min(anchor.left, document.documentElement.clientWidth - box.width - gap))}px`;
-        const below = innerHeight - anchor.bottom - gap * 2, above = anchor.top - gap * 2;
+        const viewport = scrollArea.getBoundingClientRect();
+        const topEdge = Math.max(gap, viewport.top + gap), bottomEdge = Math.min(innerHeight, viewport.bottom) - gap;
+        const below = Math.max(0, bottomEdge - anchor.bottom - gap), above = Math.max(0, anchor.top - topEdge - gap);
         const useBelow = box.height <= below || box.height > above && below >= above;
         const available = Math.max(0, useBelow ? below : above);
         tip.style.maxHeight = `${available}px`;
         const top = useBelow ? anchor.bottom + gap : anchor.top - Math.min(box.height, available) - gap;
-        tip.style.top = `${Math.max(gap, top)}px`;
+        tip.style.top = `${Math.max(topEdge, top)}px`;
         return box.height;
     };
     for (const button of document.querySelectorAll('.info')) {
@@ -72,12 +74,12 @@ if (parent === window) {
             const height = showHelp(button);
             if (pointerHelp === button) return;
             const anchor = button.getBoundingClientRect();
-            const footerTop = document.querySelector('.actions').getBoundingClientRect().top;
-            let delta = Math.max(0, anchor.bottom - Math.min(innerHeight, footerTop) + 8);
-            if (anchor.top - delta < height + 16 && innerHeight - anchor.bottom + delta < height + 16) delta = Math.max(delta, anchor.bottom + height + 16 - innerHeight);
+            const viewport = scrollArea.getBoundingClientRect();
+            let delta = Math.max(0, anchor.bottom - viewport.bottom + 8);
+            if (anchor.top - delta < viewport.top + height + 16 && viewport.bottom - anchor.bottom + delta < height + 16) delta = Math.max(delta, anchor.bottom + height + 16 - viewport.bottom);
             // Browser zoom rounds scrolling to device pixels. Leave a pixel of
             // room so rounding cannot flip the tooltip back over its trigger.
-            if (delta) window.scrollBy({ top: Math.ceil(delta) + 1, behavior: 'instant' });
+            if (delta) scrollArea.scrollBy({ top: Math.ceil(delta) + 1, behavior: 'instant' });
             showHelp(button);
         };
         tip.onpointerenter = () => clearTimeout(helpTimer);
@@ -91,9 +93,10 @@ if (parent === window) {
     document.addEventListener('pointerup', endPointer); document.addEventListener('pointercancel', endPointer);
     const repositionHelp = () => {
         if (!activeHelp) return;
-        const box = activeHelp.getBoundingClientRect();
-        if (!box.width || box.bottom < 0 || box.top >= innerHeight) closeHelp(); else showHelp(activeHelp);
+        const box = activeHelp.getBoundingClientRect(), viewport = scrollArea.getBoundingClientRect();
+        if (!box.width || box.bottom <= viewport.top || box.top >= viewport.bottom) closeHelp(); else showHelp(activeHelp);
     };
+    scrollArea.addEventListener('scroll', repositionHelp);
     window.addEventListener('scroll', repositionHelp); window.addEventListener('resize', repositionHelp);
     const ruleValues = [];
     const addRule = (rule = { geometry: 'line', color: '#26734d', width: 2, radius: 5, fillOpacity: .3, sourceLayer: '' }) => {
