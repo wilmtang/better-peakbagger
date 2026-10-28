@@ -12,8 +12,11 @@ const failure = (code = 'private-source') => ({ ok: false, code, error: code ===
     : code === 'budget' ? 'Private map request allowance reached. Wait before approving more.'
         : code === 'permission' ? 'Allow access to this map provider in BPB Settings.' : 'Private map source unavailable. Check its settings.' });
 const encode = bytes => { let value = '';for (let i = 0; i < bytes.length; i += 8192) value += String.fromCharCode(...bytes.subarray(i, i + 8192));return btoa(value); };
-export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isTerrain, isEditor, isAccess, trustedActions, action, now = () => Date.now(), fetchImpl = globalThis.fetch }) {
+export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isTerrain, isEditor, isAccess, trustedActions, action, refreshAction = action, now = () => Date.now(), fetchImpl = globalThis.fetch }) {
     const pending = new Map(), grants = new Map(), jobs = new Map(), cache = new Map(), flights = new Map();let cacheBytes = 0;
+    const epochs = new Map(); let revokeEpoch = 0;
+    const sourceKey = message => `${message.id}:${message.revision}`;
+    const epoch = message => `${revokeEpoch}:${epochs.get(sourceKey(message)) || 0}`;
     const serial = operation => { const next = queue.then(operation);queue = next.catch(() => {});return next; };let queue = Promise.resolve();
     const owner = sender => `${sender.tab?.id ?? 'settings'}:${sender.frameId || 0}:${sender.documentId || sender.url}`;
     const valid = sender => sender?.id === ext.runtime.id && Number.isInteger(sender.tab?.id) && (isPage(sender) || isTerrain(sender));
@@ -92,6 +95,22 @@ export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isT
     const handle = async (message, sender) => {
         const type = message.type;
         try {
+            if (type === 'CUSTOM_PRIVATE_REFRESH') {
+                if (!valid(sender) || !isPage(sender) || !requestId(message.requestId)
+                    || !trustedActions.consumeCapability(message, sender, refreshAction)) return failure('forbidden');
+                const stamp = epoch(message), saved = await record(message.id, message.revision);
+                const grant = await bound(message, sender); await permission(saved.source);
+                const host = new URL(saved.source.source.metadataUrl || saved.source.source.dataUrl || saved.source.source.tiles[0]).hostname;
+                if (await privateStore.get(`cooldown:${host}`) > now()) return failure('budget');
+                await record(message.id, message.revision); await bound(message, sender);
+                if (stamp !== epoch(message) || grants.get(`${sender.tab.id}:${message.id}`) !== grant) return failure('approval');
+                const key = sourceKey(message); epochs.set(key, (epochs.get(key) || 0) + 1);
+                resolvedSources.delete(key);
+                for (const [cacheKey, value] of cache) if (cacheKey.startsWith(key + ':')) { cache.delete(cacheKey); cacheBytes -= value.size; }
+                for (const [flightKey, flight] of flights) if (flightKey.startsWith(key + ':')) { flight.controller.abort(); flights.delete(flightKey); }
+                for (const job of jobs.values()) if (job.sourceKey === key) job.abort();
+                return { ok: true, epoch: epoch(message) };
+            }
             if (type === 'CUSTOM_PRIVATE_CHECK_CANCEL') { if (await isEditor(sender)) jobs.get(`${owner(sender)}:check`)?.abort();return { ok: true }; }
             if (type === 'CUSTOM_PRIVATE_CHECK') {
                 if (!await isEditor(sender)) return failure('forbidden');
@@ -132,23 +151,32 @@ export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isT
             const jobKey = `${owner(sender)}:${message.requestId}`;
             if (jobs.has(jobKey) || jobs.size >= PRIVATE_LIMITS.concurrency) return failure('busy');
             const controller = new AbortController();jobs.set(jobKey, controller);
+            controller.sourceKey = sourceKey(message);
+            const stamp = epoch(message), current = () => {
+                if (controller.signal.aborted || stamp !== epoch(message)) throw new Error();
+            };
             try {
                 const saved = await record(message.id, message.revision), grant = await bound(message, sender);
+                current();
                 if (message.resource === 'metadata') {
                     if (!saved.source.source.metadataUrl) return failure('forbidden');
                     const resolvedKey = `${message.id}:${message.revision}`;
                     const resolved = resolvedSources.get(resolvedKey) || await metadata(saved, controller.signal, grant), projected = publicPrivateSource(resolved.source);
+                    await record(message.id, message.revision); await bound(message, sender, false); await permission(resolved.source); current();
                     // Keep the public descriptor identical to its saved revision;
                     // the private resolved endpoints are internal cache only.
                     const key = `${message.id}:${message.revision}`;resolvedSources.set(key, resolved);
                     const output = { tilejson: '3.0.0', tiles: projected.source.tiles, scheme: resolved.source.source.scheme,
-                        minzoom: resolved.source.source.minNativeZoom, maxzoom: resolved.source.source.maxNativeZoom };
+                        minzoom: resolved.source.source.minNativeZoom, maxzoom: resolved.source.source.maxNativeZoom,
+                        ...(resolved.source.source.bounds && { bounds: resolved.source.source.bounds }),
+                        ...(resolved.source.source.tileSize && { tileSize: resolved.source.source.tileSize }) };
                     return { ok: true, bytes: encode(new TextEncoder().encode(JSON.stringify(output))), contentType: 'application/json' };
                 }
                 const resolved = resolvedSources.get(`${message.id}:${message.revision}`) || saved;
                 if (await privateStore.get(`cooldown:${new URL(resolved.source.source.metadataUrl || resolved.source.source.dataUrl || resolved.source.source.tiles[0]).hostname}`) > now()) return failure('budget');
                 const url = privateRequestUrl(resolved.source, resolved.parameters, message), key = `${message.id}:${message.revision}:${url}`;
                 await permission(resolved.source);
+                current();
                 if (cache.has(key)) { const entry = cache.get(key);cache.delete(key);cache.set(key, entry);return entry.reply; }
                 // At most four bounded jobs. In-flight duplicate consumers share
                 // one actual GET; only completed response bytes are public.
@@ -156,6 +184,7 @@ export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isT
                 if (!flight) {
                     flight = { controller: new AbortController(), users: 0 };
                     flight.promise = download(resolved.source, resolved.parameters, message, flight.controller.signal, grant).then(result => {
+                        if (flight.controller.signal.aborted || stamp !== epoch(message)) throw new Error();
                         const reply = { ok: true, bytes: encode(result.bytes), contentType: result.type };
                         while (cacheBytes + result.bytes.length > PRIVATE_LIMITS.responseCache && cache.size) { const [oldKey, old] = cache.entries().next().value;cache.delete(oldKey);cacheBytes -= old.size; }
                         cache.set(key, { reply, size: result.bytes.length });cacheBytes += result.bytes.length;return reply;
@@ -165,20 +194,21 @@ export function createCustomLayerRelay({ ext, privateStore, catalog, isPage, isT
                 let rejectAbort;const cancelled = new Promise((_, reject) => { rejectAbort = reject; });
                 const abort = () => rejectAbort(new Error());controller.signal.addEventListener('abort', abort, { once: true });
                 try {
-                    if (controller.signal.aborted) throw new Error();
+                    current();
                     const reply = await Promise.race([flight.promise, cancelled]);
-                    if (controller.signal.aborted) throw new Error();
+                    current();
                     await record(message.id, message.revision);await bound(message, sender, false);await permission(resolved.source);
+                    current();
                     return reply;
                 } finally { controller.signal.removeEventListener('abort', abort);if (--flight.users === 0) flight.controller.abort(); }
             } finally { jobs.delete(jobKey); }
         } catch (error) { return { ...failure(error.relayCode), ...([401, 403, 404, 410].includes(error.httpStatus) && { status: error.httpStatus }) }; }
     };
     const resolvedSources = new Map();
-    return { handle: (message, sender) => ['CUSTOM_PRIVATE_OPEN', 'CUSTOM_PRIVATE_APPROVE'].includes(message.type) ? serial(() => handle(message, sender)) : handle(message, sender),
+    return { handle: (message, sender) => ['CUSTOM_PRIVATE_OPEN', 'CUSTOM_PRIVATE_APPROVE', 'CUSTOM_PRIVATE_REFRESH'].includes(message.type) ? serial(() => handle(message, sender)) : handle(message, sender),
         forgetTab(tabId, closed = true) { for (const [key, item] of pending) if (item.tabId === tabId || closed && item.accessTab === tabId) pending.delete(key);
             for (const [key, item] of grants) if (item.tabId === tabId) grants.delete(key);
             for (const [key, job] of jobs) if (key.startsWith(`${tabId}:`)) job.abort(); },
-        revoke() { grants.clear();pending.clear();resolvedSources.clear();cache.clear();cacheBytes = 0;for (const job of jobs.values()) job.abort(); },
+        revoke() { revokeEpoch++;epochs.clear();grants.clear();pending.clear();resolvedSources.clear();cache.clear();cacheBytes = 0;for (const job of jobs.values()) job.abort(); },
     };
 }

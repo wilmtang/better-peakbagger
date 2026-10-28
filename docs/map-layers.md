@@ -85,6 +85,13 @@ parameter path below with explicit provider access. HTTP access errors and rate 
 own feedback. Custom rows share built-in overlay typography, checkboxes, opacity and disclosure styling. Expanded rows place Reload/Retry and Edit above feedback so loading or error text cannot move the actions. Reload refreshes a loaded source; Retry retries a failed load.
 Retry retains painted tiles or last good GeoJSON; opacity changes
 do not fetch the source again. Hidden/removed renderers cancel their work.
+Reload also reads saved TileJSON metadata again, including changed or renewed
+signed tile URLs, while preserving manual overrides and usable old output on
+failure. Private Reload requires a real action in the map and clears only that
+saved layer revision's response/metadata caches. It preserves approval expiry,
+remaining requests, provider budgets and cooldowns; it does not grant more quota.
+Approved tabs sharing that source may have their older in-flight reads cancelled
+and can retry. Other layers keep their caches.
 
 Keep keys in public source URLs public: Peakbagger page scripts can see that configuration.
 These fields are map settings, not a secret store. A key in a source URL can be
@@ -537,7 +544,7 @@ scripts from reading it, but the map still asks BPB for tiles: a compromised pag
 could make extra tile requests and consume provider quota without knowing the
 key. Approving a tab explicitly grants that ability with a finite allowance.
 It permits at most **20,000 network
-attempts for 8 hours**, for that layer revision and current tab. Reloading,
+attempts for 8 hours**, for that layer revision and current tab. Reloading the page,
 leaving/closing the tab, changing sources, removing provider permission or a
 background-worker restart requires another approval. Native MasterMap child
 frames and the authenticated 3D renderer in the same tab can share the approval;

@@ -10,6 +10,7 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
     const tag = '__bpbCustomOverlays', mapId = crypto.randomUUID(), selected = new Map(), reloads = {}, rows = new Map(), parseJobs = new Map();
     let sources = [], preferences = {}, engine = null, native = null, terrain = false, active = true, registryVersion = 0, libraryGeneration = null, previewId = null, previewBaseline = null, pendingAdoption = null;
     const statuses = {}, pool = customPoolForWindow(win), taskJobs = new Map(), terrainTasks = new Set();
+    const refreshes = new Map();
     const send = detail => win.postMessage({ [tag]: true, dir: 'toCS', ...detail }, win.location.origin);
     const parse = (job, signal) => new Promise((resolve, reject) => {
         const requestId = crypto.randomUUID(), abort = () => {
@@ -63,19 +64,21 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
                 const actions = node('div'); actions.className = 'bpb-custom-actions'; actions.append(approve, retry, edit);
                 const detail = node('section');detail.className = 'bpb-layers-detail';detail.append(opacity,slider,ends,attribution,actions,message,help);
                 element.append(detail); list.append(element);
-                row = { element, heading, checkbox, name, summary, amount, state, value, spinner, slider, output, attribution, message, retry, approve }; rows.set(source.id, row);
+                row = { element, heading, checkbox, name, summary, amount, state, value, spinner, slider, output, attribution, message, retry, approve, intent: crypto.randomUUID() }; rows.set(source.id, row);
                 checkbox.addEventListener('click', event => event.stopPropagation());
                 checkbox.addEventListener('change', () => {
                     const latest = sources.find(item => item.id === source.id);
                     if (!latest) return;
                     if (checkbox.checked && selected.size >= CUSTOM_LIMITS.active) { checkbox.checked = false; live.textContent = 'Enable up to three custom overlays at a time.'; return; }
+                    refreshes.delete(source.id);
+                    row.intent = crypto.randomUUID();
                     if (checkbox.checked) selected.set(source.id, latest.revision); else selected.delete(source.id);
                     statuses[source.id] = {}; publish(); paint();
                 });
                 slider.oninput = () => { preferences[source.id] = +slider.value; publish(); paint(); };
-                retry.onclick = () => { if (!selected.has(source.id) || statuses[source.id]?.pending || statuses[source.id]?.retryAt > Date.now()) return; reloads[source.id] = (reloads[source.id] || 0) + 1; publish(); };
+                retry.onclick = () => { if (!selected.has(source.id) || sources.find(item => item.id === source.id)?.privateRequests || statuses[source.id]?.pending || statuses[source.id]?.retryAt > Date.now()) return; reloads[source.id] = (reloads[source.id] || 0) + 1; publish(); };
             }
-            const status = statuses[source.id] || {}, enabled = selected.has(source.id);
+            const status = refreshes.has(source.id) ? { ...statuses[source.id], pending: true } : statuses[source.id] || {}, enabled = selected.has(source.id);
             row.name.textContent = source.name; row.checkbox.setAttribute('aria-label', source.name); row.checkbox.checked = enabled;
             row.slider.value = preferences[source.id] ?? source.appearance.opacity; row.slider.setAttribute('aria-label', `${source.name} opacity`);
             row.output.value = row.amount.textContent = `${row.slider.value}%`;
@@ -91,6 +94,9 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
                 : status.error ? customFailure(status) : status.lower ? 'Showing enlarged tiles from a lower zoom level. Zoom out for the source’s original detail.'
                     : status.pending ? 'Loading map tiles…' : status.message || 'Loading status appears here.' : 'Enable to load this source.';
             row.retry.setAttribute('aria-disabled', String(!enabled || status.pending || status.retryAt > Date.now()));
+            row.retry.dataset.bpbCustomRefresh = source.privateRequests ? source.id : '';
+            row.retry.dataset.revision = source.revision; row.retry.dataset.mapId = mapId;
+            row.retry.dataset.intent = row.intent;
             row.retry.textContent = status.error ? 'Retry' : 'Reload';
             row.approve.hidden = !source.privateRequests;row.approve.dataset.revision = source.revision;
             if (source.privateRequests && enabled && status.code === 'approval') row.message.textContent = `Approve access in BPB, then Retry. Each approval allows up to ${PRIVATE_LIMITS.grantRequests.toLocaleString('en-US')} requests for ${PRIVATE_LIMITS.grantMs / 3600000} hours.`;
@@ -115,6 +121,7 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
                 for (const link of section.querySelectorAll('[data-bpb-custom-settings]')) link.href = url.href;
             } } catch { /* Wait for the isolated bridge's packaged destination. */ }
             sources = registry.sources; preferences = data.preferences || {}; registryVersion++;
+            refreshes.clear();
             for (const id of selected.keys()) { const source = sources.find(item => item.id === id); if (source) selected.set(id, source.revision); else if (id !== previewId) selected.delete(id); }
             if (pendingAdoption) { for (const item of pendingAdoption) if (sources.some(source => source.id === item.id && source.revision === item.sourceRevision)) selected.set(item.id, item.sourceRevision); pendingAdoption = null; }
             publish(); paint();
@@ -125,6 +132,16 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
             if (data.reply?.ok) entry.resolve(data.reply.value); else entry.reject(new Error('Invalid or oversized vector data.'));
         }
         if (data.mapId !== mapId) return;
+        if (data.type === 'refreshPending' && selected.get(data.id) === data.revision && rows.get(data.id)?.intent === data.intent) {
+            refreshes.set(data.id, data.requestId); paint();
+        }
+        if (data.type === 'refreshReply' && refreshes.get(data.id) === data.requestId) {
+            refreshes.delete(data.id);
+            if (selected.get(data.id) !== data.revision || rows.get(data.id)?.intent !== data.intent) return;
+            if (data.reply?.ok) { reloads[data.id] = (reloads[data.id] || 0) + 1; publish(); paint(); }
+            else onStatus(data.id, { ...statuses[data.id], pending: false, error: true,
+                code: data.reply?.code || 'private-source', message: data.reply?.error || 'Couldn’t refresh this source. Try again.' });
+        }
         if (data.type === 'preview') {
             if (!previewId) previewBaseline = { revision: selected.get(data.sourceId) };
             previewId = data.sourceId; selected.set(previewId, data.sourceRevision); send({ type: 'get', mapId });
@@ -172,8 +189,8 @@ export function createCustomOverlayControl({ win, panel, onChange = () => {}, re
         customOpacity: { ...preferences }, customReloads: { ...reloads } }),
     adopt(value) { pendingAdoption = readCustomSelection(value); for (const item of pendingAdoption) if (sources.some(source => source.id === item.id && source.revision === item.sourceRevision)) selected.set(item.id, item.sourceRevision); publish(); paint(); },
     bind(owner, map) { engine?.dispose(); native = { win: owner, map }; engine = createCustomRenderer({ win: owner, map, parse, pool, onStatus, requestWindow: win }); publish(); paint(); },
-    suspend() { engine?.dispose(); engine = null; cancelParsers(); cancelTasks(); },
-    mode(value) { if (terrain !== value) { cancelTasks(); for (const id of selected.keys()) statuses[id] = { pending: true }; } terrain = value; if (value) { engine?.dispose(); engine = null; } paint(); },
+    suspend() { refreshes.clear(); for (const row of rows.values()) row.intent = crypto.randomUUID(); engine?.dispose(); engine = null; cancelParsers(); cancelTasks(); },
+    mode(value) { if (terrain !== value) { refreshes.clear(); for (const row of rows.values()) row.intent = crypto.randomUUID(); cancelTasks(); for (const id of selected.keys()) statuses[id] = { pending: true }; } terrain = value; if (value) { engine?.dispose(); engine = null; } paint(); },
     cancelTasks,
     taskReply(data) { if (data.mapId === mapId && terrainTasks.delete(data.requestId)) send({ type: 'taskReply', requestId: data.requestId, reply: data.reply }); },
     status: onStatus, refresh: paint,

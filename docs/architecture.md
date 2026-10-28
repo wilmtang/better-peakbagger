@@ -1914,6 +1914,25 @@ the direct CORS renderer. `custom-private-client.js` handles the private byte
 transport in 2D and extension 3D; parent-owned BigMap requests use the executing
 owner window, separately from the child window owning the canvas and Leaflet.
 
+Private Reload uses a separate one-use trusted-action capability observed by
+the isolated click owner. A synchronous control lease suppresses duplicate
+pointer/keyboard activation; replies bind map, source revision, request and
+selection intent. The worker invalidates only that source revision's bytes and
+resolved metadata, aborts its older reads and advances a generation without
+resetting grants, budgets or cooldowns. Refresh is source-wide across approved
+tabs; sibling reads of unrelated layers remain cached. Cache/flight generations
+reject stale completion after refresh/revocation. No caller URL or cache-bypass
+flag is accepted through page messages.
+
+Renderers retain the saved definition separately from resolved TileJSON and
+re-read metadata on explicit refresh, preserving manual overrides. Client caches
+are source/revision-scoped even when two definitions share a URL. Paint generations
+guard decoded results and feedback; changed rendering parameters stage new
+owners while retaining usable prior output until replacement tiles arrive.
+Leaflet groups and their dedicated canvas renderers share cleanup ownership.
+Terrain replays current custom status on a newer otherwise equivalent snapshot
+so early errors cannot leave the parent menu indefinitely pending.
+
 The isolated bridge requires a trusted activation to open a full extension
 approval page. One-use pending approval is bound to the actual approval tab;
 it is not web-accessible. Approval grants one source revision in the original

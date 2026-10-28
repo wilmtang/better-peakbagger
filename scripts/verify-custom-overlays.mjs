@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createServer } from 'node:https';
 import { chromium } from 'playwright';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
-import { createBrowserFixtureServer, createFixtureCertificate, waitForCondition } from './browser-verification-fixtures.mjs';
+import { createBrowserFixtureServer, createFixtureCertificate, waitForCondition, patchVerificationSettings } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
 import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
@@ -17,8 +17,8 @@ import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier
 import { verifyCustomEditor } from './custom-overlay-editor-verification.mjs';
 import { readCustomLayerNavigation, assertCustomLayerNavigation } from './verify-settings-navigation.mjs';
 
-const firefoxMode = process.argv[2] === '--firefox';
-assert.ok(process.argv.length === 2 || process.argv.length === 3 && firefoxMode, 'Usage: node scripts/verify-custom-overlays.mjs [--firefox]');
+const selections = process.argv.slice(2), firefoxMode = selections.includes('--firefox'), loadingOnly = selections.includes('--loading-only');
+assert.ok(new Set(selections).size === selections.length && selections.every(value => ['--firefox', '--loading-only'].includes(value)), 'Usage: node scripts/verify-custom-overlays.mjs [--firefox] [--loading-only]');
 const resources = createResourceStack(); let failure, failurePage, diagnostics;
 try {
     const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-custom-verify-'));
@@ -65,8 +65,7 @@ try {
         const admin = await browser.newPage(); await admin.goto('chrome://extensions-internals/');
         const extension = await admin.waitForFunction(() => { try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); } catch { return false; } }).then(handle => handle.jsonValue());
         await admin.goto(`chrome-extension://${extension.id}/options/options.html`);
-        await admin.evaluate(async () => chrome.storage.sync.set({ bpbSettings: { showSnotel: false, showWeather: false, showSunMoon: false, enable3dMap: true, terrainCacheLimitMb: 0 } }));
-        await admin.evaluate(async () => { const saved = await chrome.storage.sync.get('bpbSettings'); await chrome.storage.sync.set({ bpbSettings: { ...saved.bpbSettings, theme: 'dark' } }); });
+        await patchVerificationSettings(admin, { showSnotel: false, showWeather: false, showSunMoon: false, enable3dMap: true, terrainCacheLimitMb: 0, theme: 'dark' });
         await admin.goto(`chrome-extension://${extension.id}/custom-overlay/editor.html`);
         await admin.waitForURL('**/options/options.html#custom-map-layers');
         await admin.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
@@ -85,7 +84,7 @@ try {
         await admin.locator('#custom-layer-add').click();
         await editor.locator('#name').waitFor();
         const editorFrame = admin.frames().find(frame => frame.url().includes('/custom-overlay/editor.html'));
-        const editorProof = await verifyCustomEditor({ evaluate: (...args) => editorFrame.evaluate(...args), click: selector => editor.locator(selector).click(),
+        const editorProof = loadingOnly ? { scope: 'loading-only', editorTransitions: 'not selected' } : await verifyCustomEditor({ evaluate: (...args) => editorFrame.evaluate(...args), click: selector => editor.locator(selector).click(),
             hover: selector => editor.locator(selector).hover(),
             press: (selector, key) => editor.locator(selector).press(key), fill: (selector, value) => editor.locator(selector).fill(value),
             select: (selector, value) => editor.locator(selector).selectOption(value),
@@ -252,50 +251,54 @@ try {
         await library.locator('li').nth(2).waitFor();
         await admin.setViewportSize({ width: 1000, height: 760 });
         if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, 'custom-map.png') }); }
-        await admin.locator('#custom-layer-add').click();
-        await admin.setViewportSize({ width: 375, height: 800 });
-        await editor.locator('#save').waitFor({ state: 'visible' });
-        if (screenshots) await admin.screenshot({ path: path.join(screenshots, 'custom-editor-narrow.png') });
-        assert.ok((await editor.locator('#save').boundingBox()).width > 50);
-        await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 2); }, admin.url());
-        assert.ok(await editor.locator('#form').evaluate(form => form.scrollWidth <= form.clientWidth), 'editor fits at 200% browser zoom');
-        await editor.locator('#advanced').evaluate(element => { element.open = true; });
-        const hoverInfo = editor.locator('#kind-label .info');
-        await hoverInfo.evaluate(button => button.scrollIntoView({ block: 'center' }));
-        const hoverBefore = await hoverInfo.boundingBox(); await hoverInfo.hover(); await hoverInfo.click();
-        const hoverAfter = await hoverInfo.boundingBox();
-        for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(hoverBefore[key] - hoverAfter[key]) <= 1, `200% pointer help keeps its trigger ${key} stable`);
-        await hoverInfo.press('Escape'); await hoverInfo.blur();
-        for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds']) {
-            const info = editor.locator(`#${id}-label .info`); await info.focus();
-            const readFit = () => editor.locator(`#${id}-help`).evaluate(tip => {
-                const box = tip.getBoundingClientRect();
-                const button = document.querySelector(`[aria-describedby="${tip.id}"]`), anchor = button.getBoundingClientRect();
-                const hit = document.elementFromPoint(anchor.x + anchor.width / 2, anchor.y + anchor.height / 2);
-                return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: innerWidth, height: window.innerHeight,
-                    triggerVisible: anchor.top >= 0 && anchor.bottom <= window.innerHeight && button.contains(hit),
-                    anchor: { top: anchor.top, bottom: anchor.bottom }, hit: hit?.outerHTML.slice(0, 150) };
+        if (!loadingOnly) {
+            await admin.locator('#custom-layer-add').click();
+            await admin.setViewportSize({ width: 375, height: 800 });
+            await editor.locator('#save').waitFor({ state: 'visible' });
+            if (screenshots) await admin.screenshot({ path: path.join(screenshots, 'custom-editor-narrow.png') });
+            assert.ok((await editor.locator('#save').boundingBox()).width > 50);
+            await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 2); }, admin.url());
+            await waitForCondition(() => editor.locator('#form').evaluate(form => ({ content: form.scrollWidth, available: form.clientWidth })), {
+                description: 'editor fits after 200% browser zoom settles', isReady: value => value.content <= value.available,
             });
-            const fit = await waitForCondition(readFit, { description: `200% ${id} tooltip and focused trigger are visible`, timeoutMs: 2000,
-                isReady: value => value.triggerVisible && value.left >= 0 && value.right <= value.width && value.top >= 0 && value.bottom <= value.height });
-            assert.ok(fit.left >= 0 && fit.right <= fit.width && fit.top >= 0 && fit.bottom <= fit.height, `200% ${id} tooltip fits: ${JSON.stringify(fit)}`);
-            assert.ok(fit.triggerVisible, `200% ${id} tooltip trigger remains visible above the actions: ${JSON.stringify(fit)}`);
-            if (screenshots && id === 'bounds') await admin.screenshot({ path: path.join(screenshots, 'custom-editor-zoom-help.png') });
-            await info.press('Escape');
+            await editor.locator('#advanced').evaluate(element => { element.open = true; });
+            const hoverInfo = editor.locator('#kind-label .info');
+            await hoverInfo.evaluate(button => button.scrollIntoView({ block: 'center' }));
+            const hoverBefore = await hoverInfo.boundingBox(); await hoverInfo.hover(); await hoverInfo.click();
+            const hoverAfter = await hoverInfo.boundingBox();
+            for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(hoverBefore[key] - hoverAfter[key]) <= 1, `200% pointer help keeps its trigger ${key} stable`);
+            await hoverInfo.press('Escape'); await hoverInfo.blur();
+            for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds']) {
+                const info = editor.locator(`#${id}-label .info`); await info.focus();
+                const readFit = () => editor.locator(`#${id}-help`).evaluate(tip => {
+                    const box = tip.getBoundingClientRect();
+                    const button = document.querySelector(`[aria-describedby="${tip.id}"]`), anchor = button.getBoundingClientRect();
+                    const hit = document.elementFromPoint(anchor.x + anchor.width / 2, anchor.y + anchor.height / 2);
+                    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: innerWidth, height: window.innerHeight,
+                        triggerVisible: anchor.top >= 0 && anchor.bottom <= window.innerHeight && button.contains(hit),
+                        anchor: { top: anchor.top, bottom: anchor.bottom }, hit: hit?.outerHTML.slice(0, 150) };
+                });
+                const fit = await waitForCondition(readFit, { description: `200% ${id} tooltip and focused trigger are visible`, timeoutMs: 2000,
+                    isReady: value => value.triggerVisible && value.left >= 0 && value.right <= value.width && value.top >= 0 && value.bottom <= value.height });
+                assert.ok(fit.left >= 0 && fit.right <= fit.width && fit.top >= 0 && fit.bottom <= fit.height, `200% ${id} tooltip fits: ${JSON.stringify(fit)}`);
+                assert.ok(fit.triggerVisible, `200% ${id} tooltip trigger remains visible above the actions: ${JSON.stringify(fit)}`);
+                if (screenshots && id === 'bounds') await admin.screenshot({ path: path.join(screenshots, 'custom-editor-zoom-help.png') });
+                await info.press('Escape');
+            }
+            await editor.locator('#advanced').evaluate(element => { element.open = false; });
+            const wordsFit = () => editor.locator('footer.actions').evaluate(footer => [...footer.querySelectorAll('button')].filter(button => button.getClientRects().length).every(button => {
+                const text = button.firstChild;
+                return [...text.textContent.matchAll(/\S+/g)].every(match => { const range = document.createRange(); range.setStart(text, match.index); range.setEnd(text, match.index + match[0].length); return range.getClientRects().length === 1; });
+            }));
+            assert.ok(await wordsFit(), 'enlarged action labels never break inside words');
+            await editor.locator('head').evaluate(head => { const style = document.createElement('style'); style.id = 'historical-footer'; style.textContent = '.actions button{padding:6px 12px;overflow-wrap:anywhere}'; head.append(style); });
+            assert.equal(await wordsFit(), false, 'the assertion detects the historical enlarged-label regression');
+            await editor.locator('#historical-footer').evaluate(style => style.remove()); assert.ok(await wordsFit());
+            if (screenshots) await admin.screenshot({ path: path.join(screenshots, 'custom-editor-zoom.png') });
+            await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 1); }, admin.url());
+            await editor.locator('#cancel').click();
+            await admin.setViewportSize({ width: 1000, height: 760 });
         }
-        await editor.locator('#advanced').evaluate(element => { element.open = false; });
-        const wordsFit = () => editor.locator('footer.actions').evaluate(footer => [...footer.querySelectorAll('button')].filter(button => button.getClientRects().length).every(button => {
-            const text = button.firstChild;
-            return [...text.textContent.matchAll(/\S+/g)].every(match => { const range = document.createRange(); range.setStart(text, match.index); range.setEnd(text, match.index + match[0].length); return range.getClientRects().length === 1; });
-        }));
-        assert.ok(await wordsFit(), 'enlarged action labels never break inside words');
-        await editor.locator('head').evaluate(head => { const style = document.createElement('style'); style.id = 'historical-footer'; style.textContent = '.actions button{padding:6px 12px;overflow-wrap:anywhere}'; head.append(style); });
-        assert.equal(await wordsFit(), false, 'the assertion detects the historical enlarged-label regression');
-        await editor.locator('#historical-footer').evaluate(style => style.remove()); assert.ok(await wordsFit());
-        if (screenshots) await admin.screenshot({ path: path.join(screenshots, 'custom-editor-zoom.png') });
-        await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 1); }, admin.url());
-        await editor.locator('#cancel').click();
-        await admin.setViewportSize({ width: 1000, height: 760 });
         const surfaces = ['A','P','G','L','C','R','W','K','I','J','S','E','U','M','F'];
         for (const type of surfaces) {
             await page.goto(`${origin}/map/MasterMap.aspx?t=${type}&gt=rt`);
@@ -347,7 +350,7 @@ try {
         await editor.locator('#cancel').click();
         if (screenshots) await page.screenshot({ path: path.join(screenshots, 'custom-terrain.png') });
         assert.deepEqual(errors, []);
-        console.log(JSON.stringify({ verification: 'custom-overlays', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true, scrollBoundaries: true, editorProof, previousCanvasProof: !!process.env.BPB_PREVIOUS_PANEL_CSS }));
+        console.log(JSON.stringify({ verification: 'custom-overlays', scope: loadingOnly ? 'loading-only' : 'full', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true, scrollBoundaries: true, editorProof, previousCanvasProof: !!process.env.BPB_PREVIOUS_PANEL_CSS }));
     }
 } catch (error) { failure = error; try { const live = await failurePage?.frameLocator('iframe[title="Custom map overlays"]').locator('#feedback').textContent({ timeout: 1000 }); console.error(JSON.stringify({ live, ...diagnostics?.() })); } catch { /* Preserve the original failure. */ } }
 await resources.dispose(failure);
@@ -411,7 +414,7 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await click('#custom-layer-add');
     await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
     await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Options editor initialized');
-    const editorProof = await verifyCustomEditor({ evaluate, click, wait, providerOrigin, holdSource, pendingSource,
+    const editorProof = loadingOnly ? { scope: 'loading-only', editorTransitions: 'not selected' } : await verifyCustomEditor({ evaluate, click, wait, providerOrigin, holdSource, pendingSource,
         hover: async selector => driver.actions({ async: true }).move({ origin: await driver.findElement(By.css(selector)) }).perform(),
         press: async (selector, key) => { const keys = { Space: Key.SPACE, Escape: Key.ESCAPE, ArrowDown: Key.ARROW_DOWN }; assert.ok(keys[key], `Unknown editor key: ${key}`); await (await driver.findElement(By.css(selector))).sendKeys(keys[key]); },
         fill: async (selector, value) => { const input = await driver.findElement(By.css(selector)); await input.clear(); await input.sendKeys(value); },
@@ -501,5 +504,5 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     if (screenshots) await writeFile(path.join(screenshots, 'custom-terrain-firefox.png'), await driver.takeScreenshot(), 'base64');
     assert.ok(origins.has(origin) && [...origins].some(value => value?.startsWith('moz-extension://')), 'both real request origins reached the provider');
     assert.deepEqual(networkErrors, []);
-    console.log(JSON.stringify({ verification: 'custom-overlays-firefox', browser: (await driver.getCapabilities()).getBrowserVersion(), hidden: true, renderer, requests: requests.length, nativePixels: true, vectorWorkers: true, corsRecovery: true, keyboardRetry: true, scrollBoundaries: true }));
+    console.log(JSON.stringify({ verification: 'custom-overlays-firefox', scope: loadingOnly ? 'loading-only' : 'full', browser: (await driver.getCapabilities()).getBrowserVersion(), hidden: true, renderer, requests: requests.length, nativePixels: true, vectorWorkers: true, corsRecovery: true, keyboardRetry: true, scrollBoundaries: true }));
 }

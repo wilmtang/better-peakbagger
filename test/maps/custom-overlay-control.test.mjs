@@ -30,5 +30,15 @@ test('custom menu links to Settings and reuses ordered source rows without chang
         const row = check.closest('details'); announce([second, source]);
         assert.strictEqual(panel.querySelectorAll('.bpb-custom-source')[1], row); assert.equal(check.checked, true); assert.strictEqual(win.document.activeElement, check);
         assert.equal(owner.snapshot().custom[0].id, source.id);
+        const action = row.querySelector('.bpb-custom-actions button:not([data-bpb-private-layer])');
+        const sendRefresh = (type, intent = action.dataset.intent, ok = true) => win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin,
+            data: { __bpbCustomOverlays: true, dir: 'toPage', type, mapId: owner.mapId, id: source.id, revision: 1, requestId: 'request', intent, reply: { ok } } }));
+        sendRefresh('refreshPending'); assert.equal(action.getAttribute('aria-disabled'), 'true');
+        const intent = action.dataset.intent; check.click(); check.click();
+        sendRefresh('refreshReply', intent); assert.equal(owner.snapshot().customReloads[source.id], undefined, 'late completion after Off/on cannot refresh the new selection');
+        sendRefresh('refreshPending'); sendRefresh('refreshReply');
+        assert.equal(owner.snapshot().customReloads[source.id], 1);
+        sendRefresh('refreshPending'); owner.mode(true); sendRefresh('refreshReply');
+        assert.equal(owner.snapshot().customReloads[source.id], 1, 'mode changes invalidate refresh ownership');
     } finally { owner.dispose(); win.close(); }
 });

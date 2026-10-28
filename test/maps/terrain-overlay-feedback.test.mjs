@@ -2,8 +2,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
 import { createTerrainOverlays } from '../../src/terrain/terrain-overlays.js';
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test('custom terrain errors replay on a newer snapshot without restarting failed reads', async t => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const previous = globalThis.chrome, posts = [];
+    let reads = 0, catalogs = 0;
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Fixture', kind: 'raster',
+        source: { tiles: [], metadataUrl: 'https://tiles.example.com/source.json', scheme: 'xyz', minNativeZoom: 0, maxNativeZoom: 18, tileSize: 256 },
+        approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [] } };
+    globalThis.chrome = { runtime: { getURL: path => path, sendMessage: async () => { catalogs++; return { ok: true, registry: { schemaVersion: 1, revision: 1, sources: [source] } }; } } };
+    t.after(() => { if (previous === undefined) delete globalThis.chrome; else globalThis.chrome = previous; dom.window.close(); });
+    dom.window.fetch = async () => { reads++; throw new TypeError('Controlled unavailable'); };
+    const map = { getStyle: () => ({ layers: [] }), getSource() {}, getLayer() {} };
+    const owner = createTerrainOverlays({ map, document: dom.window.document, maplibre: { addProtocol() {}, removeProtocol() {} }, post: (type, value) => posts.push({ type, ...value }) });
+    const snapshot = { revision: 1, state: {}, custom: [{ id: source.id, sourceRevision: 1, enabled: true }], customSession: 'fixture' };
+    try {
+        owner.update(snapshot);
+        for (let n = 0; n < 20 && !posts.some(item => item.type === 'customLayerStatus' && item.status.error); n++) await tick();
+        assert(posts.some(item => item.type === 'customLayerStatus' && item.status.error));
+        owner.update({ ...snapshot, revision: 2, menuOpen: true });
+        const latest = posts.filter(item => item.type === 'customLayerStatus').at(-1);
+        assert.equal(latest.revision, 2); assert.equal(latest.status.error, true); assert.equal(latest.status.pending, false);
+        assert.equal(reads, 1); assert.equal(catalogs, 1, 'status replay does no new I/O');
+    } finally { owner.dispose(); }
+});
 
 test('terrain scene changes reload the existing raster source and leave other layers attached', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });

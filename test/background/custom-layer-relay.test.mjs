@@ -35,6 +35,52 @@ function harness() {
     return { records, privateRecords, privateStore, editor, catalog, save, grant, get, relay: () => relay, restart: () => { relay = create(); },calls: () => calls,urls: requestUrls,
         time: next => { time = next; },permission: value => { allowed = value; },active: value => { active = value; },navigate: value => { currentUrl = value; },fetch: fn => { fetcher = fn; },token: () => issued };
 }
+test('trusted source refresh invalidates bytes and signed metadata without resetting authority or budgets', async () => {
+    const h = harness(), metadataSource = { ...source, source: { ...source.source, tiles: [], metadataUrl: 'https://tiles.example.com/meta.json' } };
+    await h.save(secret, metadataSource); await h.grant();
+    let version = 'old';
+    h.fetch(async url => url.includes('/meta.json') ? Response.json({ tilejson: '3.0.0', minzoom: 1, maxzoom: 14,
+        bounds: [-125, 40, -115, 50], tileSize: 512, tiles: [`https://tiles.example.com/${version}/{z}/{x}/{y}.png?signed=${version}`] })
+        : new Response(version, { headers: { 'content-type': 'image/png' } }));
+    assert((await h.get({ resource: 'metadata' })).ok); assert.equal(atob((await h.get()).bytes), 'old');
+    const ledger = await h.privateStore.get('budget:tiles.example.com');
+    const refresh = extra => h.relay().handle({ type: 'CUSTOM_PRIVATE_REFRESH', id, revision: 1, requestId: 'refresh', ...extra }, page);
+    assert.equal((await refresh()).ok, false, 'page messages alone cannot bypass caches');
+    version = 'new'; assert((await refresh({ activationToken: 'trusted' })).ok);
+    assert.deepEqual(await h.privateStore.get('budget:tiles.example.com'), ledger, 'refresh does not reset or charge counters');
+    const metadata = await h.get({ resource: 'metadata' }); assert(metadata.ok);
+    const publicData = JSON.parse(atob(metadata.bytes));
+    assert.deepEqual(publicData.bounds, [-125, 40, -115, 50]); assert.equal(publicData.tileSize, 512);
+    assert(!JSON.stringify(publicData).includes('signed='));
+    assert.equal(atob((await h.get()).bytes), 'new'); assert(h.urls.at(-1)[0].includes('/new/'));
+    h.permission(false); assert.equal((await refresh({ activationToken: 'trusted' })).ok, false);
+    h.permission(true); h.relay().forgetTab(7); assert.equal((await refresh({ activationToken: 'trusted' })).ok, false);
+});
+
+test('refresh prevents late old transports from publishing or repopulating their source cache', async () => {
+    const h = harness(); await h.save(); await h.grant(); let release;
+    h.fetch(async () => { await new Promise(resolve => { release = resolve; }); return new Response('old', { headers: { 'content-type': 'image/png' } }); });
+    const old = h.get(); await new Promise(resolve => setImmediate(resolve));
+    assert((await h.relay().handle({ type: 'CUSTOM_PRIVATE_REFRESH', id, revision: 1, activationToken: 'trusted', requestId: 'refresh' }, page)).ok);
+    release(); assert.equal((await old).ok, false);
+    h.fetch(async () => new Response('new', { headers: { 'content-type': 'image/png' } }));
+    assert.equal(atob((await h.get()).bytes), 'new'); assert.equal(h.calls(), 2);
+});
+
+test('refresh leaves other sources cached and cannot reset cooldowns or exhausted provider budgets', async () => {
+    const h = harness(); await h.save(); await h.grant();
+    const otherId = 'custom:1537a032-271c-4d11-9b8c-0edc566b47c1';
+    await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id: otherId, expectedRevision: 0, source: { ...source, id: otherId }, requestParameters: secret }, h.editor);
+    await h.grant(otherId); await h.get(); await h.get({ id: otherId }); assert.equal(h.calls(), 2);
+    const refresh = () => h.relay().handle({ type: 'CUSTOM_PRIVATE_REFRESH', id, revision: 1, activationToken: 'trusted', requestId: 'refresh' }, page);
+    assert((await refresh()).ok); await h.get({ id: otherId }); assert.equal(h.calls(), 2, 'unrelated same-URL source remains cached');
+    await h.privateStore.put('cooldown:tiles.example.com', 1000001); assert.equal((await refresh()).code, 'budget');
+    await h.privateStore.put('cooldown:tiles.example.com', null);
+    const ledger = await h.privateStore.get('budget:tiles.example.com'); ledger.hourly = PRIVATE_LIMITS.hourlyRequests;
+    await h.privateStore.put('budget:tiles.example.com', ledger); assert((await refresh()).ok);
+    assert.equal((await h.get()).code, 'budget'); assert.equal(h.calls(), 2, 'fresh cache cannot bypass the durable budget');
+});
+
 test('private fields are validated, projected and excluded from public reads and backups; only Settings edits can read them', async () => {
     assert.throws(() => readPrivateParameters([{ key: 'a', value: 'x' }, { key: 'A', value: 'y' }]));
     assert.throws(() => readPrivateParameters([{ key: 'a', value: '' }]));

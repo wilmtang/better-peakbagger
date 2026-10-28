@@ -1,6 +1,6 @@
 # Code, performance, engineering and UX audit — October 27, 2026
 
-Status: **implementation in progress**. Audited revision:
+Status: **implemented and locally verified; external proof gaps retained**. Audited revision:
 `471c60a82951dda3b1ce4c5dc9f50fd7463e35d2` on `main`, initially clean.
 The findings below are confirmed on that tree. This is a risk-focused review,
 not a claim that every feature or interaction is defect-free.
@@ -370,10 +370,64 @@ with **no unresolved disagreements**.
   dependent and timed out in both browsers; the fixture now holds metadata
   refusal until explicitly released for Retry and polls the live failure marker
   with visible UI state. Native permission prompts are fixture-pregranted.
+- **A04:** explicit private refresh consumes a separate trusted capability and
+  a synchronous control lease; replies bind selection intent, map, request and
+  source revision. Source-scoped cache/flight invalidation preserves permissions,
+  approval expiry, remaining allowance, durable budgets and cooldowns. Worker
+  epochs reject stale publication, and metadata responses retain validated bounds
+  and tile size without exposing signed URLs. Renderers preserve original saved
+  descriptors, re-resolve metadata, isolate shared-URL caches and stage changed
+  rendering parameters behind usable old output. GeoJSON/paint generations reject
+  late decoded results. Fifty-six focused relay, capability, client, renderer,
+  control and terrain-feedback tests passed; cache/refresh regressions failed
+  before the fix. An additional feedback-replay assertion failed against a
+  disposable copy without replay, then passed against the repair.
+  Hidden packaged Chrome 156.0.8078.4 and Firefox 158.0.1 passed private 2D/3D
+  loading on Apple M3 Pro hardware. The 1000/390×900 map matrix covers both
+  themes, 20px narrow/dark text, held metadata, failure, keyboard retry/duplicate
+  suppression, changed signed endpoints and native zoom. Actions, summary,
+  trigger, keyboard focus and document scroll stay within one pixel; enlarged
+  narrow rendering was inspected. Approval refusal/recovery, file restore,
+  redacted messages, forged requests and navigation revocation still pass.
+  Public loading-only checks passed in Chrome (15 map surfaces) and Firefox,
+  covering raster pixels, MVT workers, GeoJSON, CORS recovery, keyboard Retry
+  and hardware 3D. Unselected editor transitions are explicitly excluded.
+
+### Final local verification
+
+- Final `npm test`: **3,723 passed**. An earlier 3,721-case run passed; a later
+  3,723-case run failed only the previously recorded climber-hover timing case
+  (3,722 passed). Its isolated 19 cases passed, and final full acceptance passed.
+  The inconsistent outcome is retained as a timing concern, not declared fixed.
+- Final full lint passed with eight owned warnings; all **14 scale tests** passed.
+  Thirty-one dependency/documentation/inventory checks passed. The reviewed live
+  audit passes; production audit is zero. The full raw graph retains the
+  separately reviewed, expiring low-severity development advisory in A01.
+  Final Chrome/Firefox packages also built and passed archive validation.
+- Real unpacked Chrome/Firefox manifest, worker, bridge and BFCache gates passed
+  hidden at 1000×760, including GPX header matrices at 1600/800/390px, both
+  themes and doubled narrow text. Hidden checks do not prove onscreen focus or
+  window placement. Provider permissions in private fixtures are pregranted.
+- Broader public checks initially stopped on a stale `.help` selector measuring
+  a hidden nested panel. The first replacement incorrectly assumed a direct
+  child; the corrected adjacent-section selector measures the real visible
+  troubleshooting panel. Full editor checks subsequently hit Chrome zoom-fit
+  and Firefox hover-help failures outside the changed runtime surface; these
+  remain unproven, not counted as green. A Chrome loading run also exposed a
+  raw settings read/replace race; setup now uses the shared worker patch route.
+  The explicit loading-only selection rejects unknown/duplicate options and
+  leaves the independent full editor checks enabled by default.
+- The private 3D failure matrix exposed lost early feedback after a newer parent
+  snapshot. Custom status now replays for the accepted revision without new I/O;
+  Firefox's initially stuck Loading state and its regression both recovered.
+- Owned verifier process command lines were inspected after teardown; no task
+  browser/helper remained. Disposable profiles/certificates were removed by their
+  resource stacks. Selected diagnostic screenshots remain under the task's
+  temporary evidence directories; reusable Playwright runtimes remain cached.
 
 ### Intentionally not changed
 
-- Runtime source, dependencies, permissions, settings and user-owned state.
+- Unrelated runtime behavior, required permissions and user-owned state.
 - Manual Peakbagger Save and onX Import; no provider login or account operation.
 - Provider ownership, raw-GPX privacy, exact destination/host gates and durable
   allowance/cooldown policies. Manual private-parameter file export follows the
@@ -386,6 +440,11 @@ with **no unresolved disagreements**.
 
 ### Changed but not fully proven
 
-A04 remains open until its fix and acceptance checks are
-completed. The baseline above records the audited tree, not later remediation.
-The final full-suite and external verification status will be recorded here.
+- All A01–A07 implementation units are locally verified as recorded above.
+  Deepmerge remains an accepted development-tool risk until the unchanged
+  October 31 expiry; upstream remediation is still outstanding.
+- Native permission prompts, visible-window behavior, assistive technology,
+  live providers, hosted CI and store release remain outside local proof.
+- The unrelated full editor hover/zoom checks and intermittent climber-hover
+  timing remain explicit verification concerns. No runtime edits to those
+  independent surfaces were included merely to make this audit look clean.

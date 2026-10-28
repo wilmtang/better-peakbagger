@@ -54,18 +54,22 @@ try {
     const html = await snowMapDocument(), fixture = await createBrowserFixtureServer({ temporaryRoot: root, masterMapDocument: html, peakMapDocument: html,
         bigMapDocument: '<!doctype html><style>html,body{margin:0;height:100%}iframe{width:100%;height:650px;border:0}</style><iframe id="if" src="/map/MasterMap.aspx?t=G&amp;d=2296&amp;gt=rc"></iframe>' });resources.defer('Peakbagger fixture', () => fixture.close());
     const providerRoot = path.join(root, 'provider');await mkdir(providerRoot);const cert = await createFixtureCertificate({ directory: providerRoot });
-    const requests = [];let png, lastProviderRequest = performance.now();
+    const requests = [];let png, sourceVersion = 0, holdMetadata = false, denyMetadata = false; const metadataReleases = [];let lastProviderRequest = performance.now();
+    resources.defer('held metadata', () => { holdMetadata = false; metadataReleases.splice(0).forEach(resolve => resolve()); });
     const server = createServer(cert, async (request, response) => {
         const url = new URL(request.url, 'https://tiles.example.com');requests.push({ path: url.pathname, origin: request.headers.origin });lastProviderRequest = performance.now();
         assert.equal(url.searchParams.get('api_key'), secret);assert.equal(request.headers.cookie, undefined);assert.equal(request.headers.referer, undefined);
         if (url.pathname === '/source.json') {
+            if (holdMetadata) await new Promise(resolve => metadataReleases.push(resolve));
+            if (denyMetadata) { response.writeHead(503); response.end(); return; }
             response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-            response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 0, maxzoom: 18, tiles: [`https://${request.headers.host}/tiles/{z}/{x}/{y}.png`] }));return;
+            response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 0, maxzoom: sourceVersion % 4 === 2 ? 17 : 18,
+                tiles: [`https://${request.headers.host}/tiles-${sourceVersion}/{z}/{x}/{y}.png?signed=${sourceVersion}`] }));return;
         }
         response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });response.end(png);
     });resources.defer('private provider', () => closeServer(server));await listenServer(server, 0, '127.0.0.1');
     const origin = `https://www.peakbagger.com:${fixture.port}`, provider = `https://tiles.example.com:${server.address().port}`;
-    let evaluate, admin, click, fill, inside, options, map, access, activate, openReview, setViewport, setReviewViewport, shot, extensionUrl, version, terrainEvaluate;
+    let evaluate, admin, click, fill, inside, options, map, access, activate, openReview, setViewport, setReviewViewport, setMapViewport, press, shot, extensionUrl, version, terrainEvaluate;
     if (kind === 'chrome') {
         const { chromium } = await import('playwright');
         const trust = '--ignore-certificate-errors-spki-list=' + [fixture, cert].flatMap(item => item.chromeTrustArgs.map(arg => arg.split('=').slice(1).join('='))).join(',');
@@ -86,9 +90,10 @@ try {
         openReview = async () => { const next = context.waitForEvent('page');await click('map', '[data-bpb-private-layer]');access = await next;await access.waitForLoadState();return fn => access.evaluate(fn); };
         setViewport = size => options.setViewportSize(size);shot = (surface, file) => (surface === 'access' ? access : surface === 'options' ? options : map).screenshot({ path: file });version = context.browser().version();
         setReviewViewport = size => access.setViewportSize(size);
+        setMapViewport = size => map.setViewportSize(size); press = selector => map.locator(selector).press('Enter');
         terrainEvaluate = (fn, arg) => map.frames().find(frame => frame.url().includes('/terrain/terrain.html'))?.evaluate(fn, arg);
     } else {
-        const { Builder, By } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
+        const { Builder, By, Key } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
         const prepared = await prepareFirefoxSource({ temporaryRoot: root, distDir: source });resources.defer('private Firefox source', () => prepared.cleanup());resources.defer('private Firefox processes', () => stopOwnedFirefoxProcesses(root));
         const profile = path.join(root, 'profile');await mkdir(profile);
         const configuration = new firefox.Options().addArguments('-headless').enableBidi().setProfile(profile).setAcceptInsecureCerts(true)
@@ -114,6 +119,8 @@ try {
         setReviewViewport = async size => { await driver.switchTo().window(access);await driver.manage().window().setRect({ width: Math.max(500, size.width), height: size.height + 85 }); };
         shot = async (surface, file) => { await driver.switchTo().window(surface === 'access' ? access : surface === 'options' ? options : map);await writeFile(file, await driver.takeScreenshot(), 'base64'); };version = (await driver.getCapabilities()).getBrowserVersion();
         terrainEvaluate = async fn => { await driver.switchTo().window(map);try { await driver.switchTo().frame(await driver.findElement(By.id('bpb-terrain-frame')));return await driver.executeScript(`return (${fn})();`); } finally { await driver.switchTo().defaultContent(); } };
+        setMapViewport = async size => { await driver.switchTo().window(map); await setFirefoxContentViewport(driver, size); };
+        press = async selector => { await driver.switchTo().window(map); await driver.findElement(By.css(selector)).sendKeys(Key.ENTER); };
         await setFirefoxContentViewport(driver, { width: 1000, height: 900 });
     }
     const wait = (fn, description) => waitForCondition(fn, { description, timeoutMs: 30000 });
@@ -222,6 +229,45 @@ try {
     await waitForCondition(() => evaluate(() => ({ summary: document.querySelector('.bpb-custom-source summary')?.innerText, feedback: document.querySelector('.bpb-custom-feedback')?.textContent,
         replies: window.privateMessages.filter(text => text.includes('privateReply')).map(text => { const data = JSON.parse(text);return { ok: data.reply?.ok, code: data.reply?.code, diagnostic: data.reply?.diagnostic }; }).slice(-5) })), { description: 'private raster painted in 2D',timeoutMs: 30000,isReady: value => value.summary?.includes('60%') });assert(requests.length > 0);
     assert(!await evaluate(value => document.documentElement.outerHTML.includes(value) || window.privateMessages.some(text => text.includes(value)), secret), 'secret appeared in Peakbagger DOM or messages');
+    const refreshSelector = '.bpb-custom-actions button:not([data-bpb-private-layer])';
+    const refreshGeometry = () => evaluate(selector => ({
+        rectangles: [document.querySelector(selector), document.querySelector('.bpb-custom-source summary'), document.querySelector('.bpb-map-layers > button')].map(element => {
+            const rect = element.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }),
+        scroll: scrollY, focus: document.activeElement === document.querySelector(selector),
+    }), refreshSelector);
+    const assertRefreshGeometry = (before, after, phase) => {
+        assert.equal(after.scroll, before.scroll, phase + ' keeps reading position'); assert(after.focus, phase + ' retains keyboard focus');
+        for (const [index, rect] of after.rectangles.entries()) for (const [axis, value] of rect.entries()) assert(Math.abs(value - before.rectangles[index][axis]) <= 1, phase + ' moves a control or summary');
+    };
+    const refreshMatrix = async mode => {
+        for (const width of [1000, 390]) for (const theme of ['light', 'dark']) for (const outcome of ['error', 'success']) {
+            await setMapViewport({ width, height: 900 });
+            await evaluate(value => {
+                document.documentElement.dataset.bpbTheme = value.theme;
+                document.querySelector('.bpb-map-layers').style.fontSize = value.width === 390 && value.theme === 'dark' ? '20px' : '';
+            }, { theme, width });
+            await waitForCondition(() => ({ quiet: performance.now() - lastProviderRequest }), { description: 'tiles settle before refresh', isReady: value => value.quiet >= 500 });
+            await evaluate(selector => document.querySelector(selector).focus({ preventScroll: true }), refreshSelector);
+            await evaluate(selector => document.querySelector(selector).scrollIntoView({ block: 'nearest' }), refreshSelector);
+            const beforeRefresh = await refreshGeometry();
+            sourceVersion++; holdMetadata = true; denyMetadata = outcome === 'error';
+            await press(refreshSelector);
+            await wait(() => metadataReleases.length > 0, 'held metadata request');
+            assertRefreshGeometry(beforeRefresh, await refreshGeometry(), mode + ' pending');
+            const attempts = requests.filter(item => item.path === '/source.json').length;
+            await press(refreshSelector); assert.equal(requests.filter(item => item.path === '/source.json').length, attempts, 'busy keyboard activation is suppressed');
+            holdMetadata = false; metadataReleases.splice(0).forEach(resolve => resolve());
+            if (outcome === 'success') {
+                await wait(() => evaluate(() => document.querySelector('.bpb-custom-source summary')?.innerText.includes('60%')), 'Reload completes');
+                await wait(() => requests.some(item => item.path.startsWith(`/tiles-${sourceVersion}/`)), 'Reload uses changed metadata tile endpoints');
+            } else await wait(() => evaluate(() => document.querySelector('.bpb-custom-source summary')?.innerText.includes('Partly loaded')), 'failed refresh retains old loaded output');
+            assertRefreshGeometry(beforeRefresh, await refreshGeometry(), mode + ' ' + outcome);
+            denyMetadata = false;
+            if (shots) await shot('map', path.join(shots, `private-${kind}-${mode}-reload-${width}-${theme}-${outcome}.png`));
+        }
+        await setMapViewport({ width: 1000, height: 900 });
+    };
+    await refreshMatrix('2d');
     // Malicious MAIN messages can request only stored resources, never a URL or
     // a different document's secret. Synthetic events cannot open approval.
     await waitForCondition(() => ({ quietMs:performance.now()-lastProviderRequest }),{description:'private provider idle after 2D tiles',isReady:value=>value.quietMs>=500});
@@ -240,6 +286,7 @@ try {
     await wait(() => evaluate(() => document.querySelector('.bpb-custom-source summary')?.innerText.includes('60%')), '3D Retry paints a previously missing source');
     assert(await terrainEvaluate(() => Number(document.documentElement.dataset.verificationPrivateReads) > 0), '3D must read tiles through the worker, including cache hits');
     if (shots) await shot('map', path.join(shots, `private-${kind}-3d.png`));
+    await refreshMatrix('3d');
     // A first completed paint can precede MapLibre's remaining tile queue.
     // Establish network quiescence before attributing requests to the reload.
     await waitForCondition(() => ({ quietMs:performance.now()-lastProviderRequest, requests:requests.length }), { description:'private provider idle after 3D tiles',isReady:value=>value.quietMs>=500 });

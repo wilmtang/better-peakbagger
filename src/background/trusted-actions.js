@@ -20,6 +20,7 @@ const ACTIONS = Object.freeze({
     BETA_SETTINGS: 'beta-settings',
     CUSTOM_LAYER_SETTINGS: 'custom-layer-settings',
     CUSTOM_LAYER_ACCESS: 'custom-layer-access',
+    CUSTOM_LAYER_REFRESH: 'custom-layer-refresh',
     DRAFT_MANAGER: 'draft-manager',
     CALTOPO_IMPORT: 'caltopo-import',
     ALLTRAILS_IMPORT: 'alltrails-import',

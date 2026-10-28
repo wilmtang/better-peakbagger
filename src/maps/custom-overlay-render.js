@@ -52,9 +52,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             code: entry.code, status: entry.httpStatus, retryAt: entry.retryAt || 0,
         });
     };
-    const remove = id => {
-        const entry = entries.get(id); if (!entry) return;
-        entries.delete(id); entry.controller.abort(); for (const controller of entry.tiles.values()) controller.abort();
+    const removePaint = entry => {
         if (terrain) {
             for (const layer of entry.layers.slice().reverse()) if (map.getLayer(layer)) map.removeLayer(layer);
             if (map.getSource(entry.key)) map.removeSource(entry.key);
@@ -62,6 +60,11 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             if (entry.layer) map.removeLayer(entry.layer);
             for (const renderer of entry.renderers || []) map.removeLayer(renderer);
         }
+    };
+    const remove = id => {
+        const entry = entries.get(id); if (!entry) return;
+        entries.delete(id); entry.controller.abort(); for (const controller of entry.tiles.values()) controller.abort();
+        removePaint(entry); if (entry.retained) removePaint(entry.retained);
     };
     const tally = entry => {
         const outcomes = [...entry.outcomes.values()];
@@ -71,17 +74,38 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         const failure = outcomes.find(value => value.error)?.error || entry.blocked;
         entry.failure = failure?.message || ''; entry.code = failure?.code; entry.httpStatus = failure?.status;
     };
+    const tiledOpacity = (entry, opacity) => {
+        if (!terrain) entry.layer?.setOpacity(opacity / 100);
+        else for (const id of entry.layers) {
+            const type = map.getLayer(id)?.type;
+            if (type) map.setPaintProperty(id, `${type}-opacity`, opacity / 100 * (type === 'fill' ? entry.source.appearance.rules[Number(id.split('-').at(-1))]?.fillOpacity ?? .3 : 1));
+        }
+    };
     const perform = async (entry, work, key = 'data') => {
+        const generation = entry.generation;
+        const current = () => !disposed && entries.get(entry.source.id) === entry && entry.generation === generation && !entry.controller.signal.aborted;
         entry.pending++; status(entry);
-        try { const result = await work(); entry.outcomes.set(key, { loaded: true, lower: result?.lower }); return result; }
+        try {
+            const result = await work();
+            if (!current()) { result?.image?.close(); throw new DOMException('Cancelled.', 'AbortError'); }
+            entry.outcomes.set(key, { loaded: true, lower: result?.lower }); return result;
+        }
         catch (error) {
-            if (error.name !== 'AbortError') {
+            if (current() && error.name !== 'AbortError') {
                 entry.outcomes.set(key, { loaded: entry.outcomes.get(key)?.loaded, error });
                 entry.retryAt = Math.max(entry.retryAt || 0, error.retryAt || 0);
                 if (error.code === 'access' || error.code === 'rate-limit') { entry.blocked = error; for (const controller of entry.tiles.values()) controller.abort(); }
             }
             throw error;
-        } finally { entry.pending--; tally(entry); status(entry); }
+        } finally {
+            if (current()) {
+                entry.pending--; tally(entry);
+                if (key !== 'data' && entry.retained && !entry.pending && !entry.failed && entry.loaded) {
+                    tiledOpacity(entry, entry.opacity); removePaint(entry.retained); entry.retained = null;
+                }
+                status(entry);
+            }
+        }
     };
     const tileData = async (entry, coordinates, signal, key = `${coordinates.z}/${coordinates.x}/${coordinates.y}`) => {
         if (entry.blocked) throw entry.blocked;
@@ -102,20 +126,34 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         const blob = await new Promise(resolve => result.canvas.toBlob(resolve, 'image/png'));
         return { data: await blob.arrayBuffer() };
     });
-    const paint = async entry => {
+    const paint = async (entry, refresh = false) => {
         if (entry.painting) return;
         entry.painting = true;
-        let source = entry.source;
+        const generation = entry.generation, previousSource = entry.source;
+        let source = refresh ? entry.definition : entry.source;
         const signal = entry.controller.signal;
+        const current = () => !signal.aborted && !disposed && entry.generation === generation && entries.get(source.id) === entry;
         try {
-            if (source.kind !== 'geojson' && !source.source.tiles.length) {
+            if (source.kind !== 'geojson' && (!source.source.tiles.length || refresh && source.source.metadataUrl)) {
                 const resolved = await perform(entry, () => client.resolve(source, signal));
                 if (resolved.origins.length) throw Object.assign(new Error('Review the tile provider hosts in Edit source.'), { code: 'origins' });
-                source = entry.source = resolved.source;
+                source = resolved.source;
             }
-            if (signal.aborted || disposed) return;
+            if (!current()) return;
             const data = source.kind === 'geojson' ? await perform(entry, () => client.geojson(source, signal)) : null;
-            if (signal.aborted || disposed) return;
+            if (!current()) return;
+            entry.source = source;
+            const sameGeometry = JSON.stringify([previousSource.kind, previousSource.source.tileSize, previousSource.source.bounds, previousSource.source.minNativeZoom, previousSource.source.maxNativeZoom, previousSource.appearance.rules])
+                === JSON.stringify([source.kind, source.source.tileSize, source.source.bounds, source.source.minNativeZoom, source.source.maxNativeZoom, source.appearance.rules]);
+            if (refresh && !data && sameGeometry && (terrain ? map.getSource(entry.key) : entry.layer) && !entry.retained) {
+                if (terrain) map.getSource(entry.key).setTiles([`${protocol}://tile/${entry.key}~${entry.reload || 0}/{z}/{x}/{y}`]);
+                else for (const tile of Object.values(entry.layer._tiles || {})) entry.drawTile(tile.el, tile.coords, () => {});
+                order(); status(entry); return;
+            }
+            if (!data && entry.retained) {
+                removePaint(entry);
+                Object.assign(entry, { key: entry.retained.key, layers: entry.retained.layers, layer: entry.retained.layer, renderers: entry.retained.renderers });
+            }
             if (!terrain) {
                 const L = win.L, pane = 'bpb-custom-overlays';
                 if (!map.getPane(pane)) { map.createPane(pane); map.getPane(pane).style.cssText = 'z-index:280;pointer-events:none'; }
@@ -139,7 +177,8 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                     entry.layer = layer; entry.renderers = renderers; entry.data = data;
                 } else {
                     const size = source.kind === 'raster' ? source.source.tileSize : 512, offset = size === 512 ? 1 : 0;
-                    entry.drawTile = (canvas, coordinates, done) => {
+                    const drawTile = (canvas, coordinates, done) => {
+                        if (layer.retired) return;
                         entry.tiles.get(canvas)?.abort();
                         const controller = new AbortController(); entry.tiles.set(canvas, controller);
                         tileData(entry, { x: coordinates.x, y: coordinates.y, z: coordinates.z - offset }, controller.signal, canvas).then(result => {
@@ -154,42 +193,57 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                         const canvas = win.document.createElement('canvas');
                         if (canvasBytes + size * size * 4 > 24 * 1024 * 1024) { queueMicrotask(() => done(new Error('Overlay memory limit. Zoom in.'), canvas)); return canvas; }
                         canvas.width = canvas.height = size; canvasBytes += size * size * 4;
-                        entry.drawTile(canvas, coordinates, done);
+                        drawTile(canvas, coordinates, done);
                         return canvas;
                     } });
-                    entry.layer = new Grid({ pane, tileSize: size,
+                    const previousLayer = entry.layer;
+                    const layer = new Grid({ pane, tileSize: size,
                         minZoom: source.source.minNativeZoom + offset,
                         // Redraw vector geometry at display resolution on overzoom;
                         // scaling a parent canvas would also scale stroke/radius sizes.
                         ...(source.kind === 'raster' ? { maxNativeZoom: source.source.maxNativeZoom + offset } : {}), maxZoom: 24,
                         attribution: attribution(source),
-                        opacity: entry.opacity / 100, updateWhenIdle: true, keepBuffer: 0, bpbOverlay: true,
+                        opacity: previousLayer ? 0 : entry.opacity / 100, updateWhenIdle: true, keepBuffer: 0, bpbOverlay: true,
                         bounds: source.source.bounds ? [[source.source.bounds[1], source.source.bounds[0]], [source.source.bounds[3], source.source.bounds[2]]] : undefined,
                     });
-                    entry.layer.on('tileunload', event => { entry.tiles.get(event.tile)?.abort(); if (entry.tiles.delete(event.tile)) canvasBytes -= event.tile.width * event.tile.height * 4; entry.outcomes.delete(event.tile); tally(entry); status(entry); });
-                    entry.layer.addTo(map);
+                    layer.on('tileunload', event => { entry.tiles.get(event.tile)?.abort(); if (entry.tiles.delete(event.tile)) canvasBytes -= event.tile.width * event.tile.height * 4; entry.outcomes.delete(event.tile); tally(entry); status(entry); });
+                    try { layer.addTo(map); } catch (error) { map.removeLayer(layer); throw error; }
+                    entry.layer = layer; entry.drawTile = drawTile;
+                    if (previousLayer) { previousLayer.retired = true; entry.retained ||= { layer: previousLayer, source: previousSource }; }
                 }
             } else {
-                const key = entry.key;
-                if (map.getSource(key)) { if (data) map.getSource(key).setData(data); return; }
-                map.addSource(key, data ? { type: 'geojson', data } : { type: source.kind === 'raster' ? 'raster' : 'vector',
-                    tiles: [`${protocol}://tile/${key}~${entry.reload || 0}/{z}/{x}/{y}`], ...(source.kind === 'raster' ? { tileSize: source.source.tileSize } : {}),
-                    minzoom: source.source.minNativeZoom, maxzoom: source.source.maxNativeZoom,
-                    ...(source.source.bounds ? { bounds: source.source.bounds } : {}), attribution: attribution(source) });
-                const specs = source.kind === 'raster' ? [{ id: key + '-raster', type: 'raster', paint: { 'raster-opacity': entry.opacity / 100, 'raster-fade-duration': 0 } }]
-                    : source.appearance.rules.flatMap((rule, i) => {
-                        const base = { id: `${key}-${i}`, ...(source.kind === 'mvt' ? { 'source-layer': rule.sourceLayer } : {}),
-                            filter: ['==', ['geometry-type'], { point: 'Point', line: 'LineString', polygon: 'Polygon' }[rule.geometry]] };
-                        return rule.geometry === 'point' ? [{ ...base, type: 'circle', paint: { 'circle-color': rule.color, 'circle-radius': rule.radius, 'circle-opacity': entry.opacity / 100, 'circle-pitch-alignment': 'map' } }]
-                            : rule.geometry === 'line' ? [{ ...base, type: 'line', paint: { 'line-color': rule.color, 'line-width': rule.width, 'line-opacity': entry.opacity / 100 } }]
-                                : [{ ...base, type: 'fill', paint: { 'fill-color': rule.color, 'fill-opacity': rule.fillOpacity * entry.opacity / 100 } },
-                                    { ...base, id: base.id + '-outline', type: 'line', paint: { 'line-color': rule.color, 'line-width': rule.width, 'line-opacity': entry.opacity / 100 } }];
-                    });
-                for (const spec of specs) { map.addLayer({ ...spec, source: key }, before()); entry.layers.push(spec.id); }
+                const previousKey = entry.key, previousLayers = entry.layers;
+                const key = refresh && !data && map.getSource(previousKey) ? `${entry.baseKey}-${generation}` : previousKey;
+                if (map.getSource(key)) { if (data) map.getSource(key).setData(data); status(entry); return; }
+                entry.key = key; entry.layers = [];
+                try {
+                    map.addSource(key, data ? { type: 'geojson', data } : { type: source.kind === 'raster' ? 'raster' : 'vector',
+                        tiles: [`${protocol}://tile/${key}~${entry.reload || 0}/{z}/{x}/{y}`], ...(source.kind === 'raster' ? { tileSize: source.source.tileSize } : {}),
+                        minzoom: source.source.minNativeZoom, maxzoom: source.source.maxNativeZoom,
+                        ...(source.source.bounds ? { bounds: source.source.bounds } : {}), attribution: attribution(source) });
+                    const specs = source.kind === 'raster' ? [{ id: key + '-raster', type: 'raster', paint: { 'raster-opacity': entry.opacity / 100, 'raster-fade-duration': 0 } }]
+                        : source.appearance.rules.flatMap((rule, i) => {
+                            const base = { id: `${key}-${i}`, ...(source.kind === 'mvt' ? { 'source-layer': rule.sourceLayer } : {}),
+                                filter: ['==', ['geometry-type'], { point: 'Point', line: 'LineString', polygon: 'Polygon' }[rule.geometry]] };
+                            return rule.geometry === 'point' ? [{ ...base, type: 'circle', paint: { 'circle-color': rule.color, 'circle-radius': rule.radius, 'circle-opacity': entry.opacity / 100, 'circle-pitch-alignment': 'map' } }]
+                                : rule.geometry === 'line' ? [{ ...base, type: 'line', paint: { 'line-color': rule.color, 'line-width': rule.width, 'line-opacity': entry.opacity / 100 } }]
+                                    : [{ ...base, type: 'fill', paint: { 'fill-color': rule.color, 'fill-opacity': rule.fillOpacity * entry.opacity / 100 } },
+                                        { ...base, id: base.id + '-outline', type: 'line', paint: { 'line-color': rule.color, 'line-width': rule.width, 'line-opacity': entry.opacity / 100 } }];
+                        });
+                    for (const spec of specs) { map.addLayer({ ...spec, source: key }, before()); entry.layers.push(spec.id); }
+                } catch (error) {
+                    for (const id of entry.layers.slice().reverse()) if (map.getLayer(id)) map.removeLayer(id);
+                    if (map.getSource(key)) map.removeSource(key);
+                    entry.key = previousKey; entry.layers = previousLayers; throw error;
+                }
+                if (key !== previousKey) {
+                    entry.retained ||= { key: previousKey, layers: previousLayers, source: previousSource };
+                    tiledOpacity(entry, 0);
+                }
             }
             order(); status(entry);
-        } catch (error) { if (error.name !== 'AbortError') { entry.failed++; entry.failure = error.message; entry.code = error.code; status(entry); } }
-        finally { entry.painting = false; }
+        } catch (error) { if (current() && error.name !== 'AbortError') { entry.source = previousSource; entry.failed++; entry.failure = error.message; entry.code = error.code; status(entry); } }
+        finally { if (entry.generation === generation) entry.painting = false; }
     };
     const visibility = () => {
         if (win.document.hidden) { client.clear(); for (const id of [...entries.keys()]) remove(id); }
@@ -207,15 +261,20 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             let entry = entries.get(source.id);
             if (entry && entry.source.revision !== source.revision) { remove(source.id); entry = null; }
             if (entry && entry.reload !== reloads[source.id]) {
-                client.evict(); entry.reload = reloads[source.id]; entry.blocked = null; entry.failed = 0; entry.failure = ''; entry.code = ''; entry.httpStatus = 0; entry.lower = false;
+                entry.reload = reloads[source.id];
+                if (entry.painting) continue;
+                client.evict(`${source.id}:${source.revision}`); entry.generation++; entry.pending = 0;
+                for (const controller of entry.tiles.values()) controller.abort();
+                entry.blocked = null; entry.failed = 0; entry.failure = ''; entry.code = ''; entry.httpStatus = 0; entry.lower = false;
                 for (const [key, outcome] of entry.outcomes) entry.outcomes.set(key, { loaded: outcome.loaded });
-                if (source.kind === 'geojson' || (terrain ? !map.getSource(entry.key) : !entry.layer)) void paint(entry);
+                if (source.kind === 'geojson' || source.source.metadataUrl || (terrain ? !map.getSource(entry.key) : !entry.layer)) void paint(entry, true);
                 else if (terrain) map.getSource(entry.key)?.setTiles([`${protocol}://tile/${entry.key}~${entry.reload || 0}/{z}/{x}/{y}`]);
                 else for (const tile of Object.values(entry.layer._tiles || {})) entry.drawTile(tile.el, tile.coords, () => {});
             }
             if (entry) {
                 if (entry.opacity !== opacity) {
                     entry.opacity = opacity;
+                    if (entry.retained) { tiledOpacity(entry.retained, opacity); continue; }
                     if (!terrain) {
                         if (source.kind === 'geojson') entry.layer?.getLayers().forEach((group, i) => { const rule = source.appearance.rules[i]; group.setStyle({ opacity: opacity / 100, fillOpacity: opacity / 100 * (rule.geometry === 'point' ? 1 : rule.fillOpacity) }); });
                         else entry.layer?.setOpacity(opacity / 100);
@@ -226,11 +285,12 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                 }
                 if (entry) continue;
             }
-            entry = { source, opacity, reload: reloads[source.id], key: 'bpb-custom-' + source.id.slice(7) + '-' + source.revision + '-' + (reloads[source.id] || 0), controller: new AbortController(), tiles: new Map(), outcomes: new Map(), layers: [], pending: 0, failed: 0, loaded: 0, lower: false };
+            const baseKey = 'bpb-custom-' + source.id.slice(7) + '-' + source.revision;
+            entry = { source, definition: source, generation: 0, baseKey, opacity, reload: reloads[source.id], key: baseKey + '-0', controller: new AbortController(), tiles: new Map(), outcomes: new Map(), layers: [], pending: 0, failed: 0, loaded: 0, lower: false };
             entries.set(source.id, entry); void paint(entry);
         }
         order();
-    }, refresh() {
+    }, report() { for (const entry of entries.values()) status(entry); }, refresh() {
         if (!terrain || !map.coveringTiles) return;
         for (const entry of entries.values()) {
             if (entry.source.kind === 'geojson') continue;

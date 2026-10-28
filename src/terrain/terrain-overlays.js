@@ -24,7 +24,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     const cancelCustomTasks = () => { for (const controller of customTasks.values()) controller.abort(); customTasks.clear(); };
     const updateCustom = next => {
         const signature = JSON.stringify([next.custom, next.customSession, next.customRevision, next.customReloads, next.customOpacity]);
-        if (signature === customSignature) return;
+        if (signature === customSignature) { custom?.report(); return; }
         customSignature = signature; const generation = ++customGeneration;
         if (!next.custom?.length) { custom?.dispose(); custom = null; customParser?.dispose(); customParser = null; return; }
         const runtime = (globalThis.browser || globalThis.chrome)?.runtime;

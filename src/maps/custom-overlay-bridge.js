@@ -9,6 +9,7 @@ export function installCustomOverlayBridge(win = window) {
     const ext = globalThis.browser || globalThis.chrome, tag = '__bpbCustomOverlays', token = crypto.randomUUID();
     let frame = null, active = true, ready = false;
     const waiting = [], jobs = new Map(), maps = new Set(), revisions = new Map();
+    const refreshes = new Map();
     const url = ext.runtime.getURL(`custom-overlay/editor.html#${token}`), target = new URL(url);
     const origin = `${target.protocol}//${target.host}`;
     const post = detail => { if (active) win.postMessage({ [tag]: true, dir: 'toPage', ...detail }, win.location.origin); };
@@ -72,7 +73,32 @@ export function installCustomOverlayBridge(win = window) {
         const activation = await trustedAction.issue(ext, event, action, generation);if (!activation) return;
         await ext.runtime.sendMessage({ type: 'CUSTOM_PRIVATE_OPEN', id: control.dataset.bpbPrivateLayer, revision: Number(control.dataset.revision), generation, activationToken: activation.token }).catch(() => {});
     };
+    const refresh = async event => {
+        const control = event.target?.closest?.('[data-bpb-custom-refresh]');
+        if (!control?.dataset.bpbCustomRefresh || !active || !event.isTrusted) return;
+        event.preventDefault();
+        if (refreshes.has(control) || control.getAttribute('aria-disabled') === 'true') return;
+        const requestId = crypto.randomUUID(), id = control.dataset.bpbCustomRefresh,
+            revision = Number(control.dataset.revision), mapId = control.dataset.mapId;
+        const request = { requestId, id, revision, mapId, intent: control.dataset.intent }; refreshes.set(control, request);
+        control.setAttribute('aria-disabled', 'true');
+        post({ type: 'refreshPending', ...request });
+        let reply;
+        try {
+            const generation = requestId, action = TrustedActions.ACTIONS.CUSTOM_LAYER_REFRESH;
+            const activation = await trustedAction.issue(ext, event, action, generation);
+            if (!activation || !active || refreshes.get(control) !== request) return;
+            reply = await ext.runtime.sendMessage({ type: 'CUSTOM_PRIVATE_REFRESH', ...request, generation, activationToken: activation.token });
+        } catch { reply = { ok: false }; }
+        finally {
+            if (refreshes.get(control) === request) {
+                refreshes.delete(control);
+                if (active) post({ type: 'refreshReply', ...request, reply: reply || { ok: false } });
+            }
+        }
+    };
     win.document.addEventListener('click', approve, true);
+    win.document.addEventListener('click', refresh, true);
     const change = (changes, area) => { if (area === 'local' && (changes[CUSTOM_REGISTRY_KEY] || changes[CUSTOM_PREFERENCES_KEY])) announceAll(); };
     win.addEventListener('message', receive); win.document.addEventListener('click', openSettings, true); win.document.addEventListener('auxclick', openSettings, true); ext.storage.onChanged.addListener(change);
     const opacity = event => {
@@ -81,8 +107,8 @@ export function installCustomOverlayBridge(win = window) {
         void ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_OPACITY', id: slider.dataset.bpbCustomOpacity, opacity: Number(slider.value) });
     };
     win.document.addEventListener('change', opacity, true);
-    const lifecycle = createPageLifecycle({ ownerWindow: win, onSuspend() { active = false; for (const id of jobs.keys()) send({ type: 'cancelParse', requestId: id }); jobs.clear(); },
-        onResume() { active = true; announceAll(); }, onDispose() { active = false; frame?.remove(); win.removeEventListener('message', receive);win.document.removeEventListener('click', approve, true); win.document.removeEventListener('click', openSettings, true); win.document.removeEventListener('auxclick', openSettings, true); win.document.removeEventListener('change', opacity, true); ext.storage.onChanged.removeListener(change); } });
+    const lifecycle = createPageLifecycle({ ownerWindow: win, onSuspend() { active = false; refreshes.clear(); for (const id of jobs.keys()) send({ type: 'cancelParse', requestId: id }); jobs.clear(); },
+        onResume() { active = true; announceAll(); }, onDispose() { active = false; refreshes.clear(); frame?.remove(); win.removeEventListener('message', receive);win.document.removeEventListener('click', approve, true); win.document.removeEventListener('click', refresh, true); win.document.removeEventListener('click', openSettings, true); win.document.removeEventListener('auxclick', openSettings, true); win.document.removeEventListener('change', opacity, true); ext.storage.onChanged.removeListener(change); } });
     return { dispose: lifecycle.dispose };
 }
 if (typeof window !== 'undefined') installCustomOverlayBridge();

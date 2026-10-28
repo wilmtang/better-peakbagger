@@ -48,7 +48,7 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
         await viewport(width);
         frames.push(await evaluate(() => ({ width: innerWidth, height: innerHeight })));
         await evaluate(theme => { document.documentElement.dataset.theme = theme; document.getElementById('advanced').open = false; }, theme);
-        const gap = await evaluate(() => document.querySelector('.help').getBoundingClientRect().top - document.getElementById('advanced').getBoundingClientRect().bottom);
+        const gap = await evaluate(() => document.querySelector('#advanced + .help').getBoundingClientRect().top - document.getElementById('advanced').getBoundingClientRect().bottom);
         assert.ok(gap <= 24, `Collapsed Advanced leaves ${gap}px of blank space before troubleshooting`);
         assert.equal(await evaluate(() => document.getElementById('notice').hidden), true);
         await click('#advanced summary');

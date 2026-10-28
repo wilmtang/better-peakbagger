@@ -12,6 +12,31 @@ const definition = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', r
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d' }] } });
 const mvt = () => fromGeojsonVt({ trails: { features: [{ type: 2, geometry: [[[0, 2048], [4096, 2048]]], tags: {} }] } }, { version: 2, extent: 4096 }).buffer;
 const parse = async data => parseCustomData(data);
+test('source-scoped eviction refreshes shared URLs without evicting another layer or accepting an old flight', async () => {
+    let calls = 0, value = 'old';
+    const client = createCustomClient({ fetchImpl: async () => { calls++; return new Response(value); } });
+    const url = 'https://tiles.example.com/data.json';
+    const text = result => new TextDecoder().decode(result.bytes);
+    assert.equal(text(await client.request(url, 1024, null, true, 'one')), 'old');
+    assert.equal(text(await client.request(url, 1024, null, true, 'two')), 'old');
+    value = 'new'; client.evict('one');
+    assert.equal(text(await client.request(url, 1024, null, true, 'one')), 'new');
+    assert.equal(text(await client.request(url, 1024, null, true, 'two')), 'old'); assert.equal(calls, 3);
+    client.clear();
+});
+
+test('evicted source flights reject stale consumers while another source at the same URL finishes', async () => {
+    const release = [];
+    const client = createCustomClient({ fetchImpl: async () => { await new Promise(resolve => release.push(resolve)); return new Response('data'); } });
+    const url = 'https://tiles.example.com/data.json';
+    const first = client.request(url, 1024, null, true, 'one'), second = client.request(url, 1024, null, true, 'two');
+    const rejected = assert.rejects(first, { name: 'AbortError' });
+    for (let n = 0; n < 10 && release.length < 2; n++) await new Promise(resolve => setImmediate(resolve));
+    client.evict('one'); release.forEach(resolve => resolve()); await rejected;
+    assert.equal(new TextDecoder().decode((await second).bytes), 'data');
+    client.clear();
+});
+
 test('MVT decoding and parent re-encoding preserve child coordinates rather than moving parent geometry', () => {
     const parent = parseCustomData({ kind: 'mvt', bytes: mvt(), layers: ['trails'] });
     assert.deepEqual(parent.features[0].paths, [[[0, .5], [1, .5]]]);

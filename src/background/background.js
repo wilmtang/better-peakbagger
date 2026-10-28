@@ -3532,7 +3532,8 @@ import { GarminError } from '../garmin/garmin-api.js';
     const customRelay = createCustomLayerRelay({ ext, privateStore: customPrivate, catalog: customOverlays,
         isPage: isPeakbaggerSender, isTerrain: sender => customPage(sender, ['terrain/terrain.html']),
         isEditor: privateEditor, isAccess: createPackagedPageMatcher(ext, ['custom-overlay/access.html']),
-        trustedActions, action: TrustedActions.ACTIONS.CUSTOM_LAYER_ACCESS });
+        trustedActions, action: TrustedActions.ACTIONS.CUSTOM_LAYER_ACCESS,
+        refreshAction: TrustedActions.ACTIONS.CUSTOM_LAYER_REFRESH });
     ext.permissions?.onRemoved?.addListener(() => customRelay.revoke());
     ext.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.bpbCustomMapOverlaysV1) customRelay.revoke(); });
 

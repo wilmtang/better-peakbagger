@@ -9,6 +9,52 @@ import { installMapDiscovery } from '../../src/maps/map-discovery.js';
 import { createCustomParser } from '../../src/maps/custom-overlay-parser.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
+for (const kind of ['raster', 'mvt']) test(`${kind} Reload resolves its saved metadata even with saved tiles and retains the old map on failure`, async () => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const sources = new Map(), layers = new Map(), statuses = [];
+    let calls = 0, denied = false;
+    dom.window.fetch = async () => { calls++; if (denied) throw new Error('offline'); return Response.json({ tilejson: '3.0.0', minzoom: 1, maxzoom: 14,
+        bounds: [-125, 40, -115, 50], tileSize: 512, tiles: [`https://tiles.example.com/new/{z}/{x}/{y}.${kind === 'mvt' ? 'pbf' : 'png'}`] }); };
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getSource: id => sources.get(id), getLayer: id => layers.get(id),
+        addSource(id, value) { sources.set(id, value); }, addLayer(value) { layers.set(value.id, value); },
+        removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), moveLayer() {}, setPaintProperty() {} };
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Fixture', kind,
+        source: { tiles: ['https://tiles.example.com/old/{z}/{x}/{y}.png'], metadataUrl: 'https://tiles.example.com/meta.json', minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
+        approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: kind === 'raster' ? [] : [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d', width: 2, radius: 5, fillOpacity: .3 }] } };
+    const renderer = createCustomRenderer({ win: dom.window, map, maplibre: { addProtocol() {}, removeProtocol() {} }, parse: async () => {}, onStatus: (_id, value) => statuses.push(value) });
+    try {
+        renderer.update([source]); assert.equal(sources.size, 1); assert.equal(calls, 0);
+        renderer.update([source], {}, { [source.id]: 1 });
+        for (let n = 0; n < 20 && [...sources.values()][0]?.maxzoom !== 14; n++) await settle();
+        assert.equal(calls, 1); assert.equal(sources.size, 2, 'previous rendering remains until replacement tiles arrive');
+        const good = [...sources.values()].at(-1); assert.equal(good.maxzoom, 14); assert.deepEqual(good.bounds, [-125, 40, -115, 50]);
+        assert.equal(statuses.at(-1).error, false, 'metadata replacement setup succeeds before tiles load');
+        if (kind === 'raster') assert.equal(good.tileSize, 512);
+        denied = true; renderer.update([source], {}, { [source.id]: 2 });
+        for (let n = 0; n < 20 && !statuses.at(-1)?.error; n++) await settle();
+        assert.equal(calls, 2); assert.equal(statuses.at(-1).error, true); assert(sources.has([...sources.keys()].find(key => sources.get(key) === good)));
+    } finally { renderer.dispose(); dom.window.close(); }
+});
+
+test('a late decoded GeoJSON from a removed entry cannot publish over the newly selected generation', async () => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const sources = new Map(), layers = new Map(), decoded = [], statuses = [];
+    dom.window.fetch = async () => Response.json({ type: 'FeatureCollection', features: [] });
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getSource: id => sources.get(id), getLayer: id => layers.get(id),
+        addSource(id, value) { sources.set(id, value); }, addLayer(value) { layers.set(value.id, value); }, removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), moveLayer() {} };
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, kind: 'geojson', source: { dataUrl: 'https://tiles.example.com/data.json' },
+        attribution: { text: '' }, appearance: { opacity: 60, rules: [] } };
+    const renderer = createCustomRenderer({ win: dom.window, map, maplibre: { addProtocol() {}, removeProtocol() {} },
+        parse: () => new Promise(resolve => decoded.push(resolve)), onStatus: (_id, value) => statuses.push(value) });
+    try {
+        renderer.update([source]); for (let n = 0; n < 20 && decoded.length < 1; n++) await settle();
+        renderer.update([]); renderer.update([source]); for (let n = 0; n < 20 && decoded.length < 2; n++) await settle();
+        decoded[1]({ type: 'FeatureCollection', features: [], marker: 'new' }); await settle();
+        const count = statuses.length; decoded[0]({ type: 'FeatureCollection', features: [], marker: 'old' }); await settle();
+        assert.equal([...sources.values()][0].data.marker, 'new'); assert.equal(statuses.length, count);
+    } finally { renderer.dispose(); dom.window.close(); }
+});
+
 for (const kind of ['raster', 'mvt']) test(`3D ${kind} Retry initializes a missing source after metadata recovers`, async () => {
     const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
     const sources = new Map(), layers = new Map(), statuses = [];
