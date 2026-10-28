@@ -9,6 +9,20 @@ import { installMapDiscovery } from '../../src/maps/map-discovery.js';
 import { createCustomParser } from '../../src/maps/custom-overlay-parser.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
+for (const kind of ['geojson', 'raster', 'mvt']) test(`a fresh ${kind} layer can be ordered before its asynchronous paint creates a pane`, async () => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', pretendToBeVisual: true });
+    dom.window.fetch = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Cancelled.', 'AbortError'))));
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, kind,
+        source: kind === 'geojson' ? { dataUrl: 'https://tiles.example.com/data.geojson' } : { tiles: [], metadataUrl: 'https://tiles.example.com/meta.json' },
+        attribution: { text: '' }, appearance: { opacity: 60, rules: [] } };
+    const renderer = createCustomRenderer({ win: dom.window, map: { getPane() {} }, parse: async () => {}, onStatus() {} });
+    try {
+        assert.doesNotThrow(() => renderer.update([source]));
+        assert.doesNotThrow(() => renderer.update([source]));
+        assert.doesNotThrow(() => renderer.update([]));
+    } finally { renderer.dispose(); await settle(); dom.window.close(); }
+});
+
 test('GeoJSON refresh retains last good geometry on failure, opacity makes no request, and teardown cancels work', async () => {
     const dom = new JSDOM('', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', pretendToBeVisual: true });
     const sources = new Map(), layers = new Map(), statuses = [];

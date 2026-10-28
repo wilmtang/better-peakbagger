@@ -40,7 +40,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             else {
                 const pane = map.getPane('bpb-custom-overlays');
                 for (const container of entry.renderers?.map(renderer => renderer._container) || [entry.layer?._container]) {
-                    if (container?.parentNode === pane) { container.style.zIndex = '0'; pane.appendChild(container); }
+                    if (pane && container && container.parentNode === pane) { container.style.zIndex = '0'; pane.appendChild(container); }
                 }
             }
         }

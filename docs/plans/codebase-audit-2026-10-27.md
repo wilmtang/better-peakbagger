@@ -340,6 +340,14 @@ with **no unresolved disagreements**.
   conditional API and still cover failed rollback. Hidden real-extension Chrome
   156.0.8078.4 passed startup/worker/bridge and BFCache at 1000×760. No UI markup
   changed; the existing conflict feedback remains in use.
+- **A06:** ordering now requires both the custom pane and owned container.
+  All three fresh asynchronous-source assertions failed with the original
+  TypeError, then passed. Fifteen renderer/project/documentation checks and
+  scoped ESLint passed. The new HTTPS real-Leaflet verifier passed twelve
+  cases each in hidden Chrome 156.0.8078.4 and Firefox 157.0 at 1000/390×760,
+  with both theme flags and controlled responses; narrow Chrome rendering was
+  inspected. This proves fresh startup without precreating the custom pane,
+  not complete extension/worker or native focus behavior.
 
 ### Intentionally not changed
 
@@ -356,6 +364,6 @@ with **no unresolved disagreements**.
 
 ### Changed but not fully proven
 
-A03–A06 remain open until their individual fixes and acceptance checks are
+A03–A05 remain open until their individual fixes and acceptance checks are
 completed. The baseline above records the audited tree, not later remediation.
 The final full-suite and external verification status will be recorded here.
