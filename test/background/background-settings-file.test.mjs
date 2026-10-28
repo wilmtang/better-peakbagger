@@ -782,3 +782,49 @@ test('Garmin-only imports report that credentials changed', async () => {
     const result = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(file) }, optionsSender);
     assert.equal(result.ok, true); assert.equal(result.apiKeysImported, true);
 });
+
+for (const validation of ['github', 'garmin']) for (const edit of ['github-remove', 'github-save', 'imgbb-remove', 'imgbb-save', 'settings', 'layers']) {
+    test(`newer ${edit} survives held ${validation} import verification`, async () => {
+        let started, release;
+        const entered = new Promise(resolve => { started = resolve; });
+        const held = new Promise(resolve => { release = resolve; });
+        const pause = async () => { started(); await held; };
+        const garmin = garminTransfer(), verifyGarmin = garmin.verifyImportedKey;
+        garmin.verifyImportedKey = async (...args) => {
+            if (validation === 'garmin') await pause();
+            return verifyGarmin(...args);
+        };
+        const originalAuth = { token: 'ghu_original', repo: { owner: 'ada', name: 'original' } };
+        const h = harness({ garmin, github: originalAuth, imgbb: 'original-key',
+            verifyGithubConnection: async connection => {
+                if (validation === 'github') await pause();
+                return { ok: true, auth: { token: connection.token, repo: connection.repository } };
+            } });
+        await savePrivate(h, 'original-map-key');
+        const file = JSON.parse((await h.routes.handlers.SETTINGS_FILE_EXPORT({ includeCredentials: true }, optionsSender)).content);
+        file.settings.theme = 'light'; file.apiKeys.imgbb = 'file-key'; file.apiKeys.garmin = 'file-fictional-garmin-key';
+        file.githubConnection = { token: 'ghu_file', repository: { owner: 'ada', name: 'imported' } };
+        const importing = h.routes.handlers.SETTINGS_FILE_IMPORT({ content: JSON.stringify(file) }, optionsSender);
+        await entered;
+        if (edit === 'github-remove') await h.authStore.clear();
+        if (edit === 'github-save') { await h.authStore.clear(); await h.authStore.replace(originalAuth); }
+        if (edit === 'imgbb-remove') await h.keyStore.clear();
+        if (edit === 'imgbb-save') await h.keyStore.setKey('newer-key');
+        if (edit === 'settings') await h.settingsStore.applyPatch({ theme: 'system' });
+        if (edit === 'layers') await savePrivate(h, 'newer-map-key', 1);
+        release();
+        const result = await importing;
+        assert.equal(result.ok, false, 'an earlier import cannot replace a newer user action');
+        assert.equal(result.error.code, 'rollback-conflict');
+        // Disconnect also changes legacy-derived settings, which can reject
+        // the transaction before it reaches the credential write.
+        const store = edit.split('-')[0] === 'layers' ? 'customLayers' : edit.split('-')[0];
+        assert.equal(result.stores[store] === 'conflicted' || edit === 'github-remove' && result.stores.settings === 'conflicted', true);
+        assert.deepEqual(await h.authStore.read(), edit === 'github-remove' ? null : originalAuth);
+        assert.equal(await h.keyStore.getKey(), edit === 'imgbb-remove' ? null : edit === 'imgbb-save' ? 'newer-key' : 'original-key');
+        assert.equal((await h.settingsStore.requireCurrent()).theme, edit === 'settings' ? 'system' : 'dark');
+        assert.equal((await h.customLayers.snapshot({ includePrivate: true })).privateSources[0].parameters[0].value,
+            edit === 'layers' ? 'newer-map-key' : 'original-map-key');
+        assert.equal(garmin.current().connection.key, 'old-fictional-garmin-key');
+    });
+}

@@ -5,8 +5,9 @@
 - **Refresh custom maps safely.** Retry recovers missing 3D sources. Reload
   refreshes saved metadata and private tiles without resetting allowances,
   preserves usable maps on failure, and releases replaced Leaflet renderers.
-- **Preserve newer photo credentials.** Importing a settings file cannot
-  overwrite an ImgBB key saved or removed while the import was pending.
+- **Preserve newer settings and credentials.** Imports capture their expected
+  state before validating accounts, so slower imports preserve newer edits,
+  disconnects and photo-key removals.
 - **Recover activity imports safely.** Explicit Garmin inbox runs finish in Manual
   mode, Undo resumes preparation, account ownership survives empty responses, and
   failed draft setup can recover without duplicating uncertain handoffs. FIT

@@ -131,11 +131,36 @@ export function createSettingsFileRoutes({
         if (importsLayers) stores.customLayers = 'not-written';
         let previousLayers, installedLayers;
         let previousGarmin; let installedGarmin; let garminAttempted = false;
+        // Capture intent before provider validation yields to newer user edits.
+        // The stores still commit independently through their conditional APIs.
+        if (importsGarmin) stores.garmin = 'not-written';
+        let previousSettings;
+        let previousImgbb;
+        let previousGithubSnapshot;
+        try {
+            [previousSettings, previousImgbb, previousGithubSnapshot, previousLayers, previousGarmin] = await Promise.all([
+                settings.requireCurrent({ includeLegacy: true }),
+                keyStore.read(),
+                importsGithubConnection ? authStore.readSnapshot() : null,
+                importsLayers ? customLayers?.snapshot({ includePrivate: true }) : null,
+                importsGarmin ? garmin?.readSnapshot() : null,
+            ]);
+            if (importsLayers && !previousLayers) throw new Error('Custom layers store unavailable.');
+        } catch (error) {
+            console.error('Better Peakbagger: settings file import read failed', error);
+            return {
+                ok: false,
+                error: {
+                    code: 'settings-unavailable',
+                    message: 'Current settings could not be read, so nothing was imported.',
+                },
+                stores,
+            };
+        }
+
         if (importsGarmin) {
-            stores.garmin = 'not-written';
             try {
                 if (!garmin) throw new Error();
-                previousGarmin = await garmin.readSnapshot();
                 installedGarmin = await garmin.verifyImportedKey(parsed.apiKeys.garmin, previousGarmin);
             } catch {
                 return { ok: false, error: { source: 'garmin', code: 'garmin-validation',
@@ -175,29 +200,6 @@ export function createSettingsFileRoutes({
                     stores,
                 };
             }
-        }
-
-        let previousSettings;
-        let previousImgbb;
-        let previousGithubSnapshot;
-        try {
-            [previousSettings, previousImgbb, previousGithubSnapshot, previousLayers] = await Promise.all([
-                settings.requireCurrent({ includeLegacy: true }),
-                keyStore.read(),
-                importsGithubConnection ? authStore.readSnapshot() : null,
-                importsLayers ? customLayers?.snapshot({ includePrivate: true }) : null,
-            ]);
-            if (importsLayers && !previousLayers) throw new Error('Custom layers store unavailable.');
-        } catch (error) {
-            console.error('Better Peakbagger: settings file import read failed', error);
-            return {
-                ok: false,
-                error: {
-                    code: 'settings-unavailable',
-                    message: 'Current settings could not be read, so nothing was imported.',
-                },
-                stores,
-            };
         }
 
         const installedSettings = settings.clean({ ...previousSettings, ...parsed.settings });

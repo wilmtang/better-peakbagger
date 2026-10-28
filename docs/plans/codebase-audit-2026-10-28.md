@@ -1,7 +1,7 @@
 # Code, performance, engineering and UX re-audit — October 28, 2026
 
-Status: **audit and proposed fixes only; six open P2 findings**. Runtime source
-and tests are unchanged. This is a fresh review of `141ad723`, following the
+Status: **remediation in progress**. The user authorized implementation after
+the audit. The findings below record the review of `141ad723`, following the
 [October 27 remediation](../archive/codebase-audit-2026-10-27.md), not a claim
 that its historical checks failed or that every repository surface was audited.
 
@@ -279,12 +279,14 @@ reviewer; do not describe all six findings as Astra-approved.
 
 ### Fixed and verified
 
-None in this re-audit. The October 27 fixes and their historical evidence remain
-in their archived ledger. This report authorizes no new runtime implementation.
+- **R01:** all import expectations are captured before either remote validator.
+  Twelve held-validation regressions failed against the original implementation,
+  then passed; 84 settings-file and credential-store tests plus scoped ESLint
+  passed. Conditional commits/rollback and serialized imports remain intact.
 
 ### Intentionally not changed
 
-- Runtime/tests, permissions, provider approval limits and manual Save/Import.
+- Permissions, provider approval limits and manual Peakbagger Save/Import.
 - Private-parameter manual-file export, the documented product decision.
 - Ordinary cache reuse and existing data-retention/privacy boundaries.
 - The finite reviewed development advisory and historical audit records.
@@ -293,8 +295,7 @@ in their archived ledger. This report authorizes no new runtime implementation.
 
 ### Changed but not fully proven
 
-Only this report and its plan-index entry are changed. R01–R06 remain open.
-Implementation, hosted CI, release packages for future fixes, live providers,
+R02–R06 remain open. Final integration, hosted CI, release packages, live providers,
 native permission UI, visible-window focus/placement, screen readers and the
 exact narrow Firefox R05 state are not proven. Peer review of this audit and its
 fix plans is complete; implementation remains a separate step.
