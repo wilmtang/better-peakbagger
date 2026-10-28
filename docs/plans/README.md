@@ -1,5 +1,10 @@
 # Active plans
 
+- [Repository code, performance, engineering and UX audit — October 27](codebase-audit-2026-10-27.md)
+  — seven confirmed open findings: dependency/documentation gates, concurrent
+  credential import, custom-layer Retry/Reload and Leaflet lifetime/readiness.
+  Includes independent Astra high review, focused fix units and explicit proof gaps.
+
 - [Private custom-layer relay — October 26](custom-layer-private-relay-2026-10-26.md)
   — implemented private query parameters, constrained worker requests and bounded
   user grants; full tests/lint and Chrome/Firefox private 2D/3D passed. Native
