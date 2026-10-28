@@ -1,10 +1,5 @@
 # Active plans
 
-- [Repository code, performance, engineering and UX audit — October 27](codebase-audit-2026-10-27.md)
-  — seven confirmed open findings: dependency/documentation gates, concurrent
-  credential import, custom-layer Retry/Reload and Leaflet lifetime/readiness.
-  Includes independent Astra high review, focused fix units and explicit proof gaps.
-
 - [Private custom-layer relay — October 26](custom-layer-private-relay-2026-10-26.md)
   — implemented private query parameters, constrained worker requests and bounded
   user grants; full tests/lint and Chrome/Firefox private 2D/3D passed. Native
@@ -90,6 +85,12 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [October 27 code/performance/UX audit](../archive/codebase-audit-2026-10-27.md)
+is implemented in seven focused commits. Its closure ledger records credential
+conflicts, map refresh/recovery, renderer lifetime, restored local gates and
+Chrome/Firefox evidence. The expiring low development-tool advisory, unrelated
+editor/hover timing concerns and native/live/hosted-CI proof gaps remain explicit.
 
 The [native table-width audit](../archive/native-table-width-audit-2026-10-25.md)
 restores content-based columns on native peak metadata and ascent summaries,

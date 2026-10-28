@@ -225,7 +225,7 @@ this TypeError rather than a fixture setup failure.
 
 ## A07 — a prose line reference is treated as a nonexistent repository file
 
-**Evidence.** [The onX reliability record](onx-export-reliability-2026-10-27.md)
+**Evidence.** [The onX reliability record](../plans/onx-export-reliability-2026-10-27.md)
 (line 61) puts a colon-suffixed line number inside a backticked repository path.
 The maintained-document [path validator](../../test/project/documentation.test.mjs)
 (lines 192–205) correctly rejects the resulting nonexistent filename. The full
@@ -317,6 +317,16 @@ with **no unresolved disagreements**.
 ## Closure ledger
 
 ### Fixed and verified
+
+| Finding | Focused commit |
+| --- | --- |
+| A07 documentation reference | `4ee49315` |
+| A01 dependency gate | `ca220f85` |
+| A02 credential import | `e8db6441` |
+| A06 pending readiness | `7c796514` |
+| A05 Leaflet lifetime | `960aa9ee` |
+| A03 3D initialization Retry | `8a8e8996` |
+| A04 complete source refresh | `d68563f9` |
 
 - **A07:** corrected the onX record's backticked path while preserving its
   historical failure description. The documentation test reproduced the missing
