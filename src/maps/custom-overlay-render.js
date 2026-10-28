@@ -103,6 +103,8 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         return { data: await blob.arrayBuffer() };
     });
     const paint = async entry => {
+        if (entry.painting) return;
+        entry.painting = true;
         let source = entry.source;
         const signal = entry.controller.signal;
         try {
@@ -122,10 +124,10 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                     let layer;
                     try {
                         const groups = source.appearance.rules.map((rule, index) => L.geoJSON(data, { pane, interactive: false,
-                        renderer: renderers[index], filter: feature => feature.geometry && geometryType(feature.geometry.type) === rule.geometry,
-                        style: { color: rule.color, weight: rule.width, opacity: entry.opacity / 100, fillColor: rule.color, fillOpacity: rule.fillOpacity * entry.opacity / 100, interactive: false },
-                        pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { pane, renderer: renderers[index], radius: rule.radius, color: rule.color, fillColor: rule.color, fillOpacity: entry.opacity / 100, opacity: entry.opacity / 100, interactive: false }),
-                    }));
+                            renderer: renderers[index], filter: feature => feature.geometry && geometryType(feature.geometry.type) === rule.geometry,
+                            style: { color: rule.color, weight: rule.width, opacity: entry.opacity / 100, fillColor: rule.color, fillOpacity: rule.fillOpacity * entry.opacity / 100, interactive: false },
+                            pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { pane, renderer: renderers[index], radius: rule.radius, color: rule.color, fillColor: rule.color, fillOpacity: entry.opacity / 100, opacity: entry.opacity / 100, interactive: false }),
+                        }));
                         layer = L.layerGroup(groups); layer.getAttribution = () => attribution(source); layer.addTo(map);
                     } catch (error) {
                         if (layer) map.removeLayer(layer);
@@ -187,6 +189,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             }
             order(); status(entry);
         } catch (error) { if (error.name !== 'AbortError') { entry.failed++; entry.failure = error.message; entry.code = error.code; status(entry); } }
+        finally { entry.painting = false; }
     };
     const visibility = () => {
         if (win.document.hidden) { client.clear(); for (const id of [...entries.keys()]) remove(id); }
@@ -206,7 +209,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             if (entry && entry.reload !== reloads[source.id]) {
                 client.evict(); entry.reload = reloads[source.id]; entry.blocked = null; entry.failed = 0; entry.failure = ''; entry.code = ''; entry.httpStatus = 0; entry.lower = false;
                 for (const [key, outcome] of entry.outcomes) entry.outcomes.set(key, { loaded: outcome.loaded });
-                if (source.kind === 'geojson' || !entry.layer && !terrain) void paint(entry);
+                if (source.kind === 'geojson' || (terrain ? !map.getSource(entry.key) : !entry.layer)) void paint(entry);
                 else if (terrain) map.getSource(entry.key)?.setTiles([`${protocol}://tile/${entry.key}~${entry.reload || 0}/{z}/{x}/{y}`]);
                 else for (const tile of Object.values(entry.layer._tiles || {})) entry.drawTile(tile.el, tile.coords, () => {});
             }

@@ -9,6 +9,35 @@ import { installMapDiscovery } from '../../src/maps/map-discovery.js';
 import { createCustomParser } from '../../src/maps/custom-overlay-parser.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
+for (const kind of ['raster', 'mvt']) test(`3D ${kind} Retry initializes a missing source after metadata recovers`, async () => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const sources = new Map(), layers = new Map(), statuses = [];
+    let calls = 0, fail = true, release;
+    dom.window.fetch = async () => {
+        calls++; if (fail) throw new TypeError('Controlled offline');
+        await new Promise(resolve => { release = resolve; });
+        return Response.json({ tilejson: '3.0.0', minzoom: 0, maxzoom: 18, tiles: [`https://tiles.example.com/{z}/{x}/{y}.${kind === 'raster' ? 'png' : 'pbf'}`] });
+    };
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getSource: id => sources.get(id), getLayer: id => layers.get(id),
+        addSource(id, value) { assert(!sources.has(id), 'one source per attempt'); sources.set(id, value); }, addLayer(value) { layers.set(value.id, value); },
+        removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), moveLayer() {} };
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Fixture', kind,
+        source: { tiles: [], metadataUrl: 'https://tiles.example.com/meta.json', minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
+        approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: kind === 'raster' ? [] : [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d', width: 2, radius: 5, fillOpacity: .3 }] } };
+    const renderer = createCustomRenderer({ win: dom.window, map, maplibre: { addProtocol() {}, removeProtocol() {} }, parse: async () => {}, onStatus: (_id, value) => statuses.push(value) });
+    try {
+        renderer.update([source]); for (let n = 0; n < 20 && !statuses.at(-1)?.error; n++) await settle();
+        assert.equal(statuses.at(-1).error, true); assert.equal(sources.size, 0);
+        fail = false; renderer.update([source], {}, { [source.id]: 1 });
+        for (let n = 0; n < 20 && calls < 2; n++) await settle();
+        assert.equal(calls, 2, 'Retry must perform a new metadata request');
+        renderer.update([source], {}, { [source.id]: 2 });
+        await settle(); assert.equal(calls, 2, 'repeated pending Retry must not duplicate initialization');
+        release(); for (let n = 0; n < 20 && !sources.size; n++) await settle();
+        assert.equal(sources.size, 1); assert.equal(statuses.at(-1).error, false);
+    } finally { renderer.dispose(); dom.window.close(); }
+});
+
 for (const kind of ['geojson', 'raster', 'mvt']) test(`a fresh ${kind} layer can be ordered before its asynchronous paint creates a pane`, async () => {
     const dom = new JSDOM('', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', pretendToBeVisual: true });
     dom.window.fetch = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Cancelled.', 'AbortError'))));

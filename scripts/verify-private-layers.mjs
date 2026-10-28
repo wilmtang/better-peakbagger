@@ -43,7 +43,13 @@ try {
     const terrainFile = path.join(source, 'terrain/terrain-frame.js');
     await writeFile(terrainFile, (await readFile(terrainFile, 'utf8')) + `;
         {const api=globalThis.browser||globalThis.chrome,original=api.runtime.sendMessage.bind(api.runtime);
-        api.runtime.sendMessage=message=>{if(message.type==='CUSTOM_PRIVATE_GET')document.documentElement.dataset.verificationPrivateReads=String(Number(document.documentElement.dataset.verificationPrivateReads||0)+1);return original(message);};}
+        api.runtime.sendMessage=message=>{
+            if(message.type==='CUSTOM_PRIVATE_GET')document.documentElement.dataset.verificationPrivateReads=String(Number(document.documentElement.dataset.verificationPrivateReads||0)+1);
+            if(message.type==='CUSTOM_PRIVATE_GET'&&message.resource==='metadata'&&document.documentElement.dataset.verificationMetadataReady!=='true'){
+                document.documentElement.dataset.verificationMetadataFailure='done';return Promise.resolve({ok:false,code:'private-source'});
+            }
+            return original(message);
+        };}
     `);
     const html = await snowMapDocument(), fixture = await createBrowserFixtureServer({ temporaryRoot: root, masterMapDocument: html, peakMapDocument: html,
         bigMapDocument: '<!doctype html><style>html,body{margin:0;height:100%}iframe{width:100%;height:650px;border:0}</style><iframe id="if" src="/map/MasterMap.aspx?t=G&amp;d=2296&amp;gt=rc"></iframe>' });resources.defer('Peakbagger fixture', () => fixture.close());
@@ -156,7 +162,14 @@ try {
     await admin(content => {
         const transfer = new DataTransfer();transfer.items.add(new File([content], 'private-map-settings.json', { type:'application/json' }));
         const input = document.getElementById('settings-backup-file');input.files = transfer.files;input.dispatchEvent(new Event('change', { bubbles:true }));
-    }, snapshot.exported.content);
+    }, JSON.stringify((() => {
+        const file = JSON.parse(snapshot.exported.content);
+        // A supported metadata-only definition forces each new renderer to
+        // initialize from metadata; pre-resolved tile arrays mask Retry bugs.
+        file.privateCustomLayers[0].source.source.tiles = [];
+        file.customLayers.sources[0].source.tiles = [];
+        return file;
+    })()));
     await wait(() => admin(() => !document.getElementById('settings-backup-confirmation').hidden), 'private settings import review');
     assert(await admin(() => document.getElementById('settings-backup-confirmation-detail').textContent.includes('Includes private map URLs and request parameters.')));
     for (const width of [1000, kind === 'firefox' ? 500 : 375]) for (const theme of ['light','dark']) {
@@ -220,7 +233,11 @@ try {
     await click('map', '#bpb-terrain-toggle');if (await evaluate(() => !!document.querySelector('.bpb-terrain-consent-primary'))) await click('map', '.bpb-terrain-consent-primary');
     await wait(() => evaluate(() => !!document.querySelector('#bpb-terrain-frame')), '3D frame');
     const renderer = await wait(async () => { try { return await terrainEvaluate(() => { const canvas = document.querySelector('canvas.maplibregl-canvas'), gl = canvas?.getContext('webgl2');const info = gl?.getExtension('WEBGL_debug_renderer_info');return info && gl.getParameter(info.UNMASKED_RENDERER_WEBGL); }); } catch { return null; } }, 'hardware WebGL');
-    assert(!/swiftshader|software|llvmpipe/i.test(renderer));await wait(() => evaluate(() => document.querySelector('.bpb-custom-source summary')?.innerText.includes('60%')), 'private raster painted in 3D');
+    assert(!/swiftshader|software|llvmpipe/i.test(renderer));
+    await waitForCondition(async () => ({ summary: await evaluate(() => document.querySelector('.bpb-custom-source summary')?.innerText), metadataFailure: await terrainEvaluate(() => document.documentElement.dataset.verificationMetadataFailure), reads: await terrainEvaluate(() => document.documentElement.dataset.verificationPrivateReads), feedback: await evaluate(() => document.querySelector('.bpb-custom-feedback')?.textContent) }), { description: 'initial 3D metadata failure', timeoutMs: 10000, isReady: value => value.metadataFailure === 'done' && value.summary?.includes('Couldn’t load') });
+    await terrainEvaluate(() => { document.documentElement.dataset.verificationMetadataReady = 'true'; });
+    await click('map', '.bpb-custom-actions button:not([data-bpb-private-layer])');
+    await wait(() => evaluate(() => document.querySelector('.bpb-custom-source summary')?.innerText.includes('60%')), '3D Retry paints a previously missing source');
     assert(await terrainEvaluate(() => Number(document.documentElement.dataset.verificationPrivateReads) > 0), '3D must read tiles through the worker, including cache hits');
     if (shots) await shot('map', path.join(shots, `private-${kind}-3d.png`));
     // A first completed paint can precede MapLibre's remaining tile queue.

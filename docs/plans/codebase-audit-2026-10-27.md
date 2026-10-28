@@ -356,7 +356,20 @@ with **no unresolved disagreements**.
   1000/390×760 with both theme flags, covering point/line/polygon, three refreshes,
   provider failure, partial setup failure, empty data, Off/on and disposal.
   Off/disposal return layer/listener/canvas counts to the native baseline.
-  Twenty focused renderer/client/project tests and scoped ESLint passed.
+  Twenty focused renderer/client/project tests passed. The asynchronous scoped
+  ESLint result was initially missed and contained four indentation errors;
+  these were corrected and the scoped lint completed successfully with A03.
+- **A03:** 3D retries paint when the source does not exist; an entry-local
+  pending guard coalesces repeated initialization. Both raster/MVT regressions
+  failed on the missing second request before the fix. Seventeen renderer/client
+  tests, build and completed scoped ESLint passed. Packaged private raster
+  flows passed in hidden Chrome 156.0.8078.4 and Firefox 158.0.1 at 1000×900,
+  using Apple M3 Pro Metal/hardware graphics. They exercise initial 3D metadata
+  failure → Retry → paint, approval refusal/recovery, secret exclusion and
+  settings file restoration. The first one-shot injected failure was timing
+  dependent and timed out in both browsers; the fixture now holds metadata
+  refusal until explicitly released for Retry and polls the live failure marker
+  with visible UI state. Native permission prompts are fixture-pregranted.
 
 ### Intentionally not changed
 
@@ -373,6 +386,6 @@ with **no unresolved disagreements**.
 
 ### Changed but not fully proven
 
-A03–A04 remain open until their individual fixes and acceptance checks are
+A04 remains open until its fix and acceptance checks are
 completed. The baseline above records the audited tree, not later remediation.
 The final full-suite and external verification status will be recorded here.
