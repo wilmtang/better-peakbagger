@@ -227,7 +227,7 @@ visible in the AMO Developer Hub.
 
    ```sh
    npm ci
-   npm run audit:ci -- --allow-reviewed-development-advisory # exact exception through Oct 23
+   npm run audit:ci -- --allow-reviewed-development-advisory # exact development exception through Oct 30
    npm test
    npm run test:scale
    npm run lint
@@ -247,18 +247,18 @@ visible in the AMO Developer Hub.
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
    `audit:ci` requires zero advisories by default, including development dependencies.
-   The owner approved the same exact-path, development-only `node-forge`
-   exception for main CI and store releases through October 30, 2026, rechecked
-   on October 24 during audit remediation. Compatible fast-uri and undici
-   resolutions are patched; node-forge 1.4.0 remains the latest upstream release. Pass `--allow-reviewed-development-advisory`
-   for the local check; the release workflow opts into the same evaluator.
-   The exception expires
-   at 00:00 October 31, 2026 in Los Angeles (07:00 UTC), and rejects new advisories,
-   changed dependency versions or paths, and production resolutions. Raw npm
-   audit still reports the three high findings in the `web-ext` chain. This is
-   an accepted tooling risk, not a patched dependency or a clean raw audit.
-   Every other advisory remains rejected, and the flag cannot accept this
-   advisory at or after the expiry.
+   Forge now resolves patched 1.4.2. One reviewed low-severity deepmerge advisory
+   remains in development tooling only: deepmerge 4.3.1 → addons-linter 10.14.0
+   → web-ext 10.8.0. Upstream deepmerge has no patched release; neither a forced
+   old web-ext downgrade nor an unmaintained local fork is used. The audit plan's
+   approved implementation retains this exact advisory/path/version exception
+   through October 30, 2026. Pass `--allow-reviewed-development-advisory` for the
+   local check; CI and releases use the same evaluator. It expires at 00:00
+   October 31 in Los Angeles (07:00 UTC), rejects any changed package version,
+   dependency edge, advisory identity/severity, production resolution or new
+   advisory, and does not reset its expiry. Raw npm audit reports three low
+   affected packages for this one advisory; the production graph is clean.
+   This is accepted tooling risk, not a patched deepmerge or clean full audit.
    The patched `web-ext`/`addons-linter` toolchain no longer needs the former
    `image-size` exception. Rehearsals use the same policy as publication.
    `npm run lint`

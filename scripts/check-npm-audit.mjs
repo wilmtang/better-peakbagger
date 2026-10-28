@@ -6,59 +6,52 @@ import { readFile } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { satisfies } from 'semver';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// All previously accepted advisories now have patched development-tool releases.
-// A clean functional suite is not a substitute for a clean dependency graph.
-// The owner-approved node-forge exception is explicit, development-only,
-// exact-path and time-limited. The default stays strict; CI and store releases
-// explicitly opt into the same exception without changing its scope or expiry.
+// Forge is patched. One upstream deepmerge advisory remains in the development
+// linter only. Review pins every package, edge and advisory; new releases or
+// findings require a fresh review. The default and unknown graphs stay strict.
 export const DEVELOPMENT_ADVISORY = Object.freeze({
-    url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
+    url: 'https://github.com/advisories/GHSA-gcqx-w48m-w2h4',
     expiresAt: '2026-10-31T07:00:00Z',
 });
 
 function matchesDevelopmentAdvisory(audit, lockfile) {
     const expected = {
-        '@devicefarmer/adbkit': {
-            version: '3.3.9', isDirect: false, via: ['node-forge'], effects: ['web-ext'],
+        'addons-linter': {
+            version: '10.14.0', isDirect: false, via: ['deepmerge'], effects: ['web-ext'],
         },
-        'node-forge': {
-            version: '1.4.0', isDirect: false, effects: ['@devicefarmer/adbkit'],
+        'deepmerge': {
+            version: '4.3.1', isDirect: false, effects: ['addons-linter'],
         },
         'web-ext': {
-            // A compatible parent-tool release does not change the reviewed
-            // advisory. The exact vulnerable versions and dependency edges
-            // below still pin its scope; major and prerelease updates stop.
-            range: '^10.7.0', isDirect: true, via: ['@devicefarmer/adbkit'], effects: [],
+            version: '10.8.0', isDirect: true, via: ['addons-linter'], effects: [],
         },
     };
     if (!isDeepStrictEqual(Object.keys(audit.vulnerabilities).sort(), Object.keys(expected).sort())) return false;
     const counts = audit.metadata.vulnerabilities;
-    if (counts.total !== 3 || counts.high !== 3
-        || ['info', 'low', 'moderate', 'critical'].some(key => counts[key] !== 0)) return false;
+    if (counts.total !== 3 || counts.low !== 3
+        || ['info', 'moderate', 'high', 'critical'].some(key => counts[key] !== 0)) return false;
     for (const [name, policy] of Object.entries(expected)) {
         const nodePath = `node_modules/${name}`;
         const finding = audit.vulnerabilities[name];
         const resolved = lockfile?.packages?.[nodePath];
-        if (finding?.name !== name || finding.severity !== 'high'
+        if (finding?.name !== name || finding.severity !== 'low'
             || finding.isDirect !== policy.isDirect || !isDeepStrictEqual(finding.nodes, [nodePath])
             || !isDeepStrictEqual(finding.effects, policy.effects)
-            || !(policy.range ? satisfies(resolved?.version || '', policy.range)
-                : resolved?.version === policy.version) || resolved.dev !== true
+            || resolved?.version !== policy.version || resolved.dev !== true
             || Object.keys(lockfile.packages).filter(key => key.endsWith(nodePath)).length !== 1) return false;
         if (policy.via && !isDeepStrictEqual(finding.via, policy.via)) return false;
     }
-    const sources = audit.vulnerabilities['node-forge'].via;
+    const sources = audit.vulnerabilities['deepmerge'].via;
     if (!Array.isArray(sources) || sources.length !== 1) return false;
     const source = sources[0];
-    if (source?.source !== 1240912 || source.name !== 'node-forge'
-        || source.dependency !== 'node-forge' || source.url !== DEVELOPMENT_ADVISORY.url
-        || source.severity !== 'high' || source.range !== '<=1.4.0') return false;
-    return lockfile.packages['node_modules/web-ext'].dependencies?.['@devicefarmer/adbkit'] === '3.3.9'
-        && lockfile.packages['node_modules/@devicefarmer/adbkit'].dependencies?.['node-forge'] === '^1.3.1';
+    if (source?.source !== 1243505 || source.name !== 'deepmerge'
+        || source.dependency !== 'deepmerge' || source.url !== DEVELOPMENT_ADVISORY.url
+        || source.severity !== 'low' || source.range !== '>=4.2.0 <=4.3.1') return false;
+    return lockfile.packages['node_modules/web-ext'].dependencies?.['addons-linter'] === '10.14.0'
+        && lockfile.packages['node_modules/addons-linter'].dependencies?.deepmerge === '4.3.1';
 }
 
 export function evaluateAudit(audit, { allowReviewedDevelopmentAdvisory = false,
@@ -102,7 +95,7 @@ async function main() {
         ? JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8')) : undefined;
     const result = evaluateAudit(JSON.parse(auditRun.stdout), { allowReviewedDevelopmentAdvisory, lockfile });
     if (result.status === 'clean') console.log('npm audit passed with no vulnerabilities.');
-    else console.log(`Accepted development-only advisory ${result.url} until ${result.expiresAt}. Raw npm audit still reports three high findings; the default audit remains strict.`);
+    else console.log(`Accepted development-only advisory ${result.url} until ${result.expiresAt}. Raw npm audit still reports three low affected packages; the default audit remains strict.`);
 }
 
 const isCli = process.argv[1]

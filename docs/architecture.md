@@ -1841,12 +1841,11 @@ No single green command proves the extension works:
   the former time-limited exception has been removed. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
   `minimatch@^3` path on patched 1.1.21 through a scoped override.
-  Ordinary Test CI explicitly accepts one owner-reviewed node-forge advisory
-  through its exact development dependency path through October 30, 2026.
-  The owner approved the release gate's opt-in to that same exact exception
-  through the expiry without version-specific approval. The default command
-  remains strict; new findings, changed paths
-  or versions, production resolutions, and expiry fail closed. See
+  Forge now resolves patched 1.4.2. Ordinary Test CI and releases opt into one
+  reviewed development-only deepmerge advisory on the exact deepmerge 4.3.1 /
+  addons-linter 10.14.0 / web-ext 10.8.0 graph through October 30, 2026.
+  The default remains strict; changed versions, dependency edges, advisory
+  identity/severity, production resolutions and expiry fail closed. See
   [releasing](releasing.md) and the original
   [integration ledger](archive/mainline-dependency-integration-2026-10-03.md).
 - `npm run verify -- browsers` loads the real unpacked Chrome and derived Firefox

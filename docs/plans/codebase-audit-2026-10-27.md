@@ -321,6 +321,17 @@ with **no unresolved disagreements**.
 - **A07:** corrected the onX record's backticked path while preserving its
   historical failure description. The documentation test reproduced the missing
   path before the fix and passed all three cases afterward.
+- **A01 gate:** upgraded forge alone to 1.4.2. Its
+  [release changelog](https://raw.githubusercontent.com/digitalbazaar/forge/v1.4.2/CHANGELOG.md)
+  documents the signature repair and subsequent PEM compatibility fix. Astra
+  independently reviewed the remaining linter call sites and the exact low-only
+  deepmerge graph; the new exception pins every version/edge/advisory, keeps
+  the October 31 07:00 UTC expiry and rejects the retired forge advisory.
+  The new graph failed the old policy, then passed the revised policy tests.
+  Full lint passed with eight owned warnings; Chrome/Firefox archives built
+  and passed archive validation. The live reviewed gate passes and production
+  audit is zero. Raw full audit retains one advisory across three low affected
+  development packages; default strict audit still rejects it.
 
 ### Intentionally not changed
 
@@ -331,9 +342,12 @@ with **no unresolved disagreements**.
   explicit owner decision in the maintained map-layer guide.
 - Historical audit evidence and external/manual proof gaps; no cosmetic or
   abstraction rewrite without a concrete defect.
+- Unpatched deepmerge 4.3.1 remains development-only beneath the exact linter
+  chain. Its bundled-schema composition was reviewed; this is accepted local
+  tooling risk through the unchanged expiry, not a universally safe dependency.
 
 ### Changed but not fully proven
 
-A01–A06 remain open until their individual fixes and acceptance checks are
+A02–A06 remain open until their individual fixes and acceptance checks are
 completed. The baseline above records the audited tree, not later remediation.
 The final full-suite and external verification status will be recorded here.

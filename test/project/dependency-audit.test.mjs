@@ -73,7 +73,7 @@ test('the vulnerable dev-only brace-expansion path stays pinned to a patched rel
 const patchedTools = {
     'web-ext': '^10.7.0', 'addons-linter': '^10.13.0', 'image-size': '^2.0.4',
     'adm-zip': '^0.6.1', 'js-yaml': '^4.3.2', 'fast-uri': '^3.1.9', 'undici': '^7.30.1 || ^8.12.3',
-    'shell-quote': '^1.12.0',
+    'shell-quote': '^1.12.0', 'node-forge': '^1.4.2',
 };
 const checkPatchedTools = lockfile => {
     for (const [name, range] of Object.entries(patchedTools)) {

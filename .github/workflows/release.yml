@@ -93,10 +93,9 @@ jobs:
       # The test workflow runs this too, but nothing makes a release wait for
       # that workflow, and test/project/dependency-audit.test.mjs only exercises
       # evaluateAudit() against synthetic reports — it never calls npm audit. The
-      # The default requires zero advisories. The owner accepts the exact
-      # dev-only node-forge advisory for releases
-      # through October 23. The audit evaluator enforces its dependency graph
-      # and expiry; every other finding still fails.
+      # default requires zero advisories. The reviewed exact dev-only
+      # deepmerge chain is accepted through October 30. The audit evaluator
+      # enforces its dependency graph and expiry; every other finding still fails.
       - name: Check dependency advisories
         run: npm run audit:ci -- --allow-reviewed-development-advisory
 
