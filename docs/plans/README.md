@@ -1,5 +1,10 @@
 # Active plans
 
+- [Code, performance, engineering and UX re-audit — October 28](codebase-audit-2026-10-28.md)
+  — six open findings covering import intent, HTTP-cache refresh, replacement
+  readiness, committed-write feedback, enlarged keyboard help and verifier
+  accuracy. Audit only; runtime source is unchanged.
+
 - [Private custom-layer relay — October 26](custom-layer-private-relay-2026-10-26.md)
   — implemented private query parameters, constrained worker requests and bounded
   user grants; full tests/lint and Chrome/Firefox private 2D/3D passed. Native
