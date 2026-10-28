@@ -332,6 +332,14 @@ with **no unresolved disagreements**.
   and passed archive validation. The live reviewed gate passes and production
   audit is zero. Raw full audit retains one advisory across three low affected
   development packages; default strict audit still rejects it.
+- **A02:** forward ImgBB import now compares the original credential snapshot
+  inside its storage queue. Concurrent Save/Remove wins, including explicit-null
+  files; import reports conflict and conditionally rolls prior stores back.
+  All four new regressions failed against the old forward write; 40 import/key
+  tests, build and scoped ESLint passed. Ambiguous-write mocks now exercise the
+  conditional API and still cover failed rollback. Hidden real-extension Chrome
+  156.0.8078.4 passed startup/worker/bridge and BFCache at 1000×760. No UI markup
+  changed; the existing conflict feedback remains in use.
 
 ### Intentionally not changed
 
@@ -348,6 +356,6 @@ with **no unresolved disagreements**.
 
 ### Changed but not fully proven
 
-A02–A06 remain open until their individual fixes and acceptance checks are
+A03–A06 remain open until their individual fixes and acceptance checks are
 completed. The baseline above records the audited tree, not later remediation.
 The final full-suite and external verification status will be recorded here.

@@ -89,6 +89,35 @@ const customSource = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1',
 const savePrivate = (h, value, revision = 0) => h.customLayers.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id: customSource().id,
     expectedRevision: revision, source: customSource(), requestParameters: [{ key: 'api_key', value }] }, optionsSender);
 
+for (const concurrent of ['save', 'remove']) for (const imported of ['file-key', null]) {
+    test(`ImgBB import preserves concurrent ${concurrent} when the file key is ${imported === null ? 'null' : 'present'}`, async () => {
+        const h = harness({ imgbb: 'original-key' });
+        await savePrivate(h, 'original-map-key');
+        const file = JSON.parse((await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender)).content);
+        file.settings.theme = 'light'; file.apiKeys = { imgbb: imported };
+        const replace = h.customLayers.replaceIfCurrent;
+        let first = true;
+        h.customLayers.replaceIfCurrent = async (...args) => {
+            const result = await replace(...args);
+            if (first) {
+                first = false;
+                if (concurrent === 'save') await h.keyStore.setKey('newer-user-key');
+                else await h.keyStore.clear();
+            }
+            return result;
+        };
+        const reply = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: JSON.stringify(file) }, optionsSender);
+        assert.equal(await h.keyStore.getKey(), concurrent === 'save' ? 'newer-user-key' : null,
+            'import must not overwrite a newer Save or restore a removed key');
+        assert.equal(reply.ok, false); assert.equal(reply.error.code, 'rollback-conflict');
+        assert.equal(reply.stores.imgbb, 'conflicted');
+        assert.equal(reply.stores.settings, 'rolled-back'); assert.equal(reply.stores.customLayers, 'rolled-back');
+        assert.equal(h.sync.values.bpbSettings.theme, 'dark');
+        const restored = await h.customLayers.snapshot({ includePrivate: true });
+        assert.equal(restored.privateSources[0].parameters[0].value, 'original-map-key');
+    });
+}
+
 test('manual exports include private map configuration by default and restore it outside public storage', async () => {
     const h = harness(); assert((await savePrivate(h, 'map-secret')).ok);
     const exported = await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender);
@@ -112,7 +141,7 @@ test('failed account import rolls private map definitions and parameters back as
     const other = harness(); await savePrivate(other, 'replacement-map-key');
     const exported = JSON.parse((await other.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender)).content);
     exported.apiKeys = { imgbb: 'new-imgbb-key' };
-    h.keyStore.replace = async () => { throw new Error('simulated account write failure'); };
+    h.keyStore.replaceIfCurrent = async () => { throw new Error('simulated account write failure'); };
     const reply = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: JSON.stringify(exported) }, optionsSender);
     assert.equal(reply.ok, false); assert.equal(reply.stores.customLayers, 'rolled-back');
     const edited = await h.customLayers.handle({ type: 'CUSTOM_OVERLAYS_GET' }, optionsSender);
@@ -194,7 +223,7 @@ test('later credential failure rolls imported custom layers back without losing 
     h.local.values.bpbCustomMapOverlaysV1 = { schemaVersion: 1, revision: 8, sources: [source] };
     h.local.values.bpbCustomMapOverlayPreferencesV1 = { [source.id]: 27 };
     const before = customLayerBackup({ registry: h.local.values.bpbCustomMapOverlaysV1, preferences: h.local.values.bpbCustomMapOverlayPreferencesV1 });
-    h.keyStore.replace = async () => { throw new Error('simulated credential write failure'); };
+    h.keyStore.replaceIfCurrent = async () => { throw new Error('simulated credential write failure'); };
     const payload = Transfer.buildPayload({ theme: 'light' }, { customLayers: { schemaVersion: 1, sources: [], preferences: {} }, apiKeys: { imgbb: 'new-key' } });
     const reply = await h.routes.handlers.SETTINGS_FILE_IMPORT({ content: Transfer.serialize(payload) }, optionsSender);
     assert.equal(reply.ok, false); assert.equal(reply.stores.customLayers, 'rolled-back');
@@ -439,14 +468,14 @@ test('a failed GitHub credential write rolls settings and API keys back', async 
 
 test('a failed API-key write rolls settings back to their previous values', async () => {
     const h = harness({ imgbb: 'old-imgbb-key' });
-    const nativeReplace = h.keyStore.replace;
+    const nativeReplace = h.keyStore.replaceIfCurrent;
     let failOnce = true;
-    h.keyStore.replace = async value => {
+    h.keyStore.replaceIfCurrent = async (expected, value) => {
         if (failOnce) {
             failOnce = false;
             throw new Error('local write failed');
         }
-        return nativeReplace(value);
+        return nativeReplace(expected, value);
     };
     const payload = Transfer.buildPayload({ theme: 'light', units: 'metric' }, {
         extensionVersion: '3.3.0',
@@ -469,9 +498,15 @@ test('a failed API-key write rolls settings back to their previous values', asyn
 
 test('a newer settings patch survives rollback and is reported as a conflict', async () => {
     const h = harness({ imgbb: 'old-imgbb-key' });
-    h.keyStore.replace = async () => {
-        await h.settingsStore.applyPatch({ units: 'metric' });
-        throw new Error('API key write failed');
+    const replace = h.keyStore.replaceIfCurrent;
+    let first = true;
+    h.keyStore.replaceIfCurrent = async (...args) => {
+        if (first) {
+            first = false;
+            await h.settingsStore.applyPatch({ units: 'metric' });
+            throw new Error('API key write failed');
+        }
+        return replace(...args);
     };
     const payload = Transfer.buildPayload({ theme: 'light', units: 'imperial' }, {
         extensionVersion: '3.3.0',
@@ -619,12 +654,14 @@ for (const failedStore of ['settings', 'imgbb', 'github']) {
                 throw new Error('settings rollback failed');
             };
         } else if (failedStore === 'imgbb') {
-            const nativeReplace = h.keyStore.replace;
-            h.keyStore.replace = async value => {
-                await nativeReplace(value);
-                throw new Error('ambiguous ImgBB write failure');
-            };
-            h.keyStore.replaceIfCurrent = async () => {
+            const nativeReplace = h.keyStore.replaceIfCurrent;
+            let first = true;
+            h.keyStore.replaceIfCurrent = async (expected, value) => {
+                if (first) {
+                    first = false;
+                    await nativeReplace(expected, value);
+                    throw new Error('ambiguous ImgBB write failure');
+                }
                 throw new Error('ImgBB rollback failed');
             };
         } else {

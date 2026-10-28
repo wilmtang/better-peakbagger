@@ -234,7 +234,12 @@ export function createSettingsFileRoutes({
             }
             if (importsApiKeys) {
                 attempted.imgbb = true;
-                await keyStore.replace(installedImgbb);
+                const keyReplacement = await keyStore.replaceIfCurrent(previousImgbb, installedImgbb);
+                if (!keyReplacement.replaced) {
+                    attempted.imgbb = false;
+                    stores.imgbb = 'conflicted';
+                    throw new Error('ImgBB credentials changed during import.');
+                }
                 stores.imgbb = 'committed';
             }
             if (importsGithubConnection) {
