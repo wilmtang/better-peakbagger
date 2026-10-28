@@ -1,6 +1,6 @@
 # Code, performance, engineering and UX audit — October 27, 2026
 
-Status: **plan only; no runtime fixes implemented**. Audited revision:
+Status: **implementation in progress**. Audited revision:
 `471c60a82951dda3b1ce4c5dc9f50fd7463e35d2` on `main`, initially clean.
 The findings below are confirmed on that tree. This is a risk-focused review,
 not a claim that every feature or interaction is defect-free.
@@ -318,7 +318,9 @@ with **no unresolved disagreements**.
 
 ### Fixed and verified
 
-None. This change writes an audit and implementation plan only.
+- **A07:** corrected the onX record's backticked path while preserving its
+  historical failure description. The documentation test reproduced the missing
+  path before the fix and passed all three cases afterward.
 
 ### Intentionally not changed
 
@@ -332,6 +334,6 @@ None. This change writes an audit and implementation plan only.
 
 ### Changed but not fully proven
 
-Only this report and its plans-index entry. A01–A07 remain open until their
-individual fixes and acceptance checks are completed. Baseline failures and
-the unexecuted checks above remain explicit; this audit is not remediation.
+A01–A06 remain open until their individual fixes and acceptance checks are
+completed. The baseline above records the audited tree, not later remediation.
+The final full-suite and external verification status will be recorded here.
