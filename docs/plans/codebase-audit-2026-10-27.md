@@ -348,6 +348,15 @@ with **no unresolved disagreements**.
   with both theme flags and controlled responses; narrow Chrome rendering was
   inspected. This proves fresh startup without precreating the custom pane,
   not complete extension/worker or native focus behavior.
+- **A05:** each GeoJSON feature group now owns its canvas renderers through
+  replacement, failure and removal. New owners are published only after setup
+  succeeds; partial setup is cleaned without disturbing old geometry. The new
+  real-Leaflet assertion failed on the original extra canvas/listener. Four
+  lifetime cases each passed in hidden Chrome 156 and Firefox 157 at
+  1000/390×760 with both theme flags, covering point/line/polygon, three refreshes,
+  provider failure, partial setup failure, empty data, Off/on and disposal.
+  Off/disposal return layer/listener/canvas counts to the native baseline.
+  Twenty focused renderer/client/project tests and scoped ESLint passed.
 
 ### Intentionally not changed
 
@@ -364,6 +373,6 @@ with **no unresolved disagreements**.
 
 ### Changed but not fully proven
 
-A03–A05 remain open until their individual fixes and acceptance checks are
+A03–A04 remain open until their individual fixes and acceptance checks are
 completed. The baseline above records the audited tree, not later remediation.
 The final full-suite and external verification status will be recorded here.

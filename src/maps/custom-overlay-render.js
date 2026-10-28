@@ -58,7 +58,10 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         if (terrain) {
             for (const layer of entry.layers.slice().reverse()) if (map.getLayer(layer)) map.removeLayer(layer);
             if (map.getSource(entry.key)) map.removeSource(entry.key);
-        } else if (entry.layer) map.removeLayer(entry.layer);
+        } else {
+            if (entry.layer) map.removeLayer(entry.layer);
+            for (const renderer of entry.renderers || []) map.removeLayer(renderer);
+        }
     };
     const tally = entry => {
         const outcomes = [...entry.outcomes.values()];
@@ -115,15 +118,23 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                 const L = win.L, pane = 'bpb-custom-overlays';
                 if (!map.getPane(pane)) { map.createPane(pane); map.getPane(pane).style.cssText = 'z-index:280;pointer-events:none'; }
                 if (data) {
-                    entry.renderers = source.appearance.rules.map(() => L.canvas({ pane }));
-                    const groups = source.appearance.rules.map((rule, index) => L.geoJSON(data, { pane, interactive: false,
-                        renderer: entry.renderers[index], filter: feature => feature.geometry && geometryType(feature.geometry.type) === rule.geometry,
+                    const renderers = source.appearance.rules.map(() => L.canvas({ pane }));
+                    let layer;
+                    try {
+                        const groups = source.appearance.rules.map((rule, index) => L.geoJSON(data, { pane, interactive: false,
+                        renderer: renderers[index], filter: feature => feature.geometry && geometryType(feature.geometry.type) === rule.geometry,
                         style: { color: rule.color, weight: rule.width, opacity: entry.opacity / 100, fillColor: rule.color, fillOpacity: rule.fillOpacity * entry.opacity / 100, interactive: false },
-                        pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { pane, renderer: entry.renderers[index], radius: rule.radius, color: rule.color, fillColor: rule.color, fillOpacity: entry.opacity / 100, opacity: entry.opacity / 100, interactive: false }),
+                        pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { pane, renderer: renderers[index], radius: rule.radius, color: rule.color, fillColor: rule.color, fillOpacity: entry.opacity / 100, opacity: entry.opacity / 100, interactive: false }),
                     }));
-                    const previous = entry.layer;
-                    entry.layer = L.layerGroup(groups); entry.layer.getAttribution = () => attribution(source); entry.layer.addTo(map); entry.data = data;
-                    if (previous) map.removeLayer(previous);
+                        layer = L.layerGroup(groups); layer.getAttribution = () => attribution(source); layer.addTo(map);
+                    } catch (error) {
+                        if (layer) map.removeLayer(layer);
+                        for (const renderer of renderers) map.removeLayer(renderer);
+                        throw error;
+                    }
+                    if (entry.layer) map.removeLayer(entry.layer);
+                    for (const renderer of entry.renderers || []) map.removeLayer(renderer);
+                    entry.layer = layer; entry.renderers = renderers; entry.data = data;
                 } else {
                     const size = source.kind === 'raster' ? source.source.tileSize : 512, offset = size === 512 ? 1 : 0;
                     entry.drawTile = (canvas, coordinates, done) => {
