@@ -171,3 +171,81 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
     assert.equal(cases, 18, 'editor verifier must execute the tooltip/status matrix, detection retry and three auto-detected formats');
     return { cases, requestedViewports: [1000, 375], frames, themes: ['light', 'dark'], compact: true, tooltips: true, statusAnchored: true, metadataZoom: true, automaticSourceTypes: true };
 }
+
+// Kept separate so focus/zoom acceptance is reachable even when an independent
+// provider or editor-write check fails earlier in the larger matrix.
+export async function verifyCustomHelp({ evaluate, press, wait, viewport, zoom, screenshot }) {
+    const frames = []; let cases = 0;
+    const chromeGeometry = () => {
+        const rect = element => { const box = element.getBoundingClientRect(); return [box.x, box.y, box.width, box.height]; };
+        return [rect(document.querySelector('h1')), rect(document.querySelector('footer')), window.scrollX, window.scrollY];
+    };
+    for (const width of [1000, 375]) for (const factor of [1, 2]) {
+        await zoom(1); await viewport(width); const actual = await zoom(factor);
+        assert.ok(Math.abs(actual.width - width / factor) <= 1, `actual content viewport matches ${width}px at ${factor * 100}%: ${JSON.stringify(actual)}`);
+        await evaluate(theme => { document.documentElement.dataset.theme = theme; document.getElementById('advanced').open = true; }, width === 375 ? 'dark' : 'light');
+        frames.push(await evaluate(() => ({ width: innerWidth, height: innerHeight })));
+        for (const id of ['kind', 'format', 'minimum', 'scheme', 'tile-size', 'bounds']) {
+            await evaluate(() => { const summary = document.querySelector('#advanced summary'); summary.scrollIntoView({ block: 'center' }); summary.focus(); });
+            const before = await evaluate(chromeGeometry);
+            let found = false;
+            for (let n = 0; n < 40; n++) {
+                await press(n === 0 ? '#advanced summary' : ':focus', 'Tab');
+                if (await evaluate(id => document.activeElement === document.querySelector(`#${id}-label .info`), id)) { found = true; break; }
+            }
+            assert.ok(found, `${id} is reachable through real Tab order; active=${await evaluate(() => document.activeElement?.outerHTML.slice(0, 200))}`);
+            const inspect = () => evaluate(id => {
+                const button = document.activeElement, tip = document.getElementById(`${id}-help`), clip = document.getElementById('editor-fields').getBoundingClientRect();
+                const box = button.getBoundingClientRect(), text = tip.getBoundingClientRect(), style = getComputedStyle(tip);
+                const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+                return { visible: box.top >= clip.top && box.bottom <= clip.bottom && button.contains(hit), hidden: tip.hidden,
+                    readable: tip.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) >= parseFloat(style.lineHeight) - 1,
+                    fits: text.left >= 0 && text.right <= innerWidth && text.top >= 0 && text.bottom <= innerHeight,
+                    overflow: tip.scrollHeight > tip.clientHeight, scroll: tip.scrollTop, maximum: tip.scrollHeight - tip.clientHeight,
+                    fieldScroll: document.getElementById('editor-fields').scrollTop,
+                    trigger: { top: box.top, bottom: box.bottom }, clip: { top: clip.top, bottom: clip.bottom },
+                    help: { top: text.top, bottom: text.bottom, height: text.height, content: tip.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom), line: style.lineHeight } };
+            }, id);
+            const visible = await wait(async () => {
+                const value = await inspect(); return value.visible && !value.hidden && value.readable && value.fits ? value : false;
+            }, `${id} focused trigger and readable help at ${width}/${factor}`).catch(async error => {
+                await screenshot?.(`failure-${id}-${width}-${factor}`);
+                throw new Error(`${id} help state: ${JSON.stringify(await inspect())}`, { cause: error });
+            });
+            if (visible.overflow) {
+                await press(':focus', 'End');
+                const end = await wait(async () => { const value = await inspect(); return Math.abs(value.maximum - value.scroll) <= 1 ? value : false; }, `${id} final help lines are keyboard readable at ${width}/${factor}`).catch(async error => {
+                    await screenshot?.(`failure-end-${id}-${width}-${factor}`);
+                    throw new Error(`${id} help scroll state: ${JSON.stringify(await inspect())}`, { cause: error });
+                });
+                assert.equal(end.fieldScroll, visible.fieldScroll, 'help scrolling keeps its trigger anchored');
+                await press(':focus', 'Home'); await wait(async () => (await inspect()).scroll === 0, `${id} help returns to its first line`);
+                assert.equal(await evaluate(id => {
+                    const button = document.querySelector(`#${id}-label .info`), tip = document.getElementById(`${id}-help`), before = tip.scrollTop;
+                    return ['ctrlKey', 'altKey', 'metaKey'].every(modifier => {
+                        const event = new window.KeyboardEvent('keydown', { key: 'End', [modifier]: true, bubbles: true, cancelable: true });
+                        button.dispatchEvent(event); return !event.defaultPrevented && tip.scrollTop === before;
+                    });
+                }, id), true, 'help preserves modified browser/platform shortcuts');
+                await press(':focus', 'ArrowDown'); await wait(async () => (await inspect()).scroll > 0, `${id} help advances by keyboard`);
+            }
+            const after = await evaluate(chromeGeometry);
+            for (let i = 0; i < 2; i++) for (let j = 0; j < 4; j++) assert.ok(Math.abs(before[i][j] - after[i][j]) <= 1, 'help keeps title/actions anchored');
+            assert.deepEqual(after.slice(2), before.slice(2), 'help keeps document position anchored');
+            if (id === 'kind') await screenshot?.(`help-${width}-${factor}`);
+            await press(':focus', 'Escape'); assert.equal(await evaluate(id => document.getElementById(`${id}-help`).hidden, id), true);
+            await press(':focus', 'Shift+Tab');
+            assert.equal(await evaluate(id => document.activeElement === document.querySelector(`#${id}-label .info`), id), false, 'reverse Tab remains available');
+            cases++;
+        }
+        assert.equal(await evaluate(async () => {
+            document.getElementById('name').focus(); document.querySelector('#kind-label .info').focus();
+            document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+            await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+            return document.getElementById('kind-help').hidden;
+        }), true, 'Escape cancels a pending focus correction without reopening help');
+    }
+    await zoom(1);
+    assert.equal(cases, 24);
+    return { cases, frames, realTab: true, keyboardHelpScrolling: true, titleAndActionsAnchored: true };
+}

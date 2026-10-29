@@ -43,18 +43,21 @@ if (parent === window) {
     const parameters = () => readPrivateParameters(parameterRows.map(({ key, value }) => ({ key: key.value.trim(), value: value.value })));
     let feedbackControl = 'test';
     field('dismiss-feedback').onclick = () => { feedback(''); field(feedbackControl).focus({ preventScroll: true }); };
-    let activeHelp = null, pinnedHelp = false, helpTimer, pointerHelp = null;
+    let activeHelp = null, pinnedHelp = false, helpTimer, pointerHelp = null, pendingHelpFocus = null;
     const closeHelp = () => {
         clearTimeout(helpTimer);
+        pendingHelpFocus = null;
         if (!activeHelp) return;
         field(activeHelp.getAttribute('aria-describedby')).hidden = true;
         activeHelp.setAttribute('aria-expanded', 'false'); activeHelp = null; pinnedHelp = false;
     };
     const showHelp = button => {
         clearTimeout(helpTimer);
-        if (activeHelp !== button) closeHelp();
+        const changed = activeHelp !== button;
+        if (changed) closeHelp();
         activeHelp = button;
-        const tip = field(button.getAttribute('aria-describedby')); tip.hidden = false; tip.style.maxHeight = 'none'; button.setAttribute('aria-expanded', 'true');
+        const tip = field(button.getAttribute('aria-describedby')), previousScroll = changed ? 0 : tip.scrollTop;
+        tip.hidden = false; tip.style.maxHeight = 'none'; button.setAttribute('aria-expanded', 'true');
         const anchor = button.getBoundingClientRect(), box = tip.getBoundingClientRect(), gap = 8;
         tip.style.left = `${Math.max(gap, Math.min(anchor.left, document.documentElement.clientWidth - box.width - gap))}px`;
         const viewport = scrollArea.getBoundingClientRect();
@@ -65,28 +68,56 @@ if (parent === window) {
         tip.style.maxHeight = `${available}px`;
         const top = useBelow ? anchor.bottom + gap : anchor.top - Math.min(box.height, available) - gap;
         tip.style.top = `${Math.max(topEdge, top)}px`;
+        tip.scrollTop = previousScroll;
         return box.height;
     };
     for (const button of document.querySelectorAll('.info')) {
         const tip = field(button.getAttribute('aria-describedby'));
         button.onpointerenter = () => showHelp(button);
-        button.onfocus = () => {
+        const focusHelp = () => {
             const height = showHelp(button);
             if (pointerHelp === button) return;
             const anchor = button.getBoundingClientRect();
             const viewport = scrollArea.getBoundingClientRect();
-            let delta = Math.max(0, anchor.bottom - viewport.bottom + 8);
-            if (anchor.top - delta < viewport.top + height + 16 && viewport.bottom - anchor.bottom + delta < height + 16) delta = Math.max(delta, anchor.bottom + height + 16 - viewport.bottom);
+            const minimum = anchor.bottom - viewport.bottom + 8, maximum = anchor.top - viewport.top - 8;
+            let delta = Math.max(minimum, Math.min(maximum, 0));
+            if (anchor.top - delta < viewport.top + height + 16 && viewport.bottom - anchor.bottom + delta < height + 16) {
+                // Help can be taller than the entire field clip at browser
+                // zoom. Preserve the trigger; overflowing help scrolls itself.
+                delta = Math.max(minimum, Math.min(maximum, anchor.bottom + height + 16 - viewport.bottom));
+            }
             // Browser zoom rounds scrolling to device pixels. Leave a pixel of
             // room so rounding cannot flip the tooltip back over its trigger.
             if (delta) scrollArea.scrollBy({ top: Math.ceil(delta) + 1, behavior: 'instant' });
             showHelp(button);
         };
+        button.onfocus = () => {
+            focusHelp();
+            if (pointerHelp === button) return;
+            // Firefox can complete native focus scrolling after the focus
+            // handler. Recheck once before paint, owned by this focus intent.
+            pendingHelpFocus = button;
+            requestAnimationFrame(() => {
+                if (pendingHelpFocus === button && document.activeElement === button) focusHelp();
+                if (pendingHelpFocus === button) pendingHelpFocus = null;
+            });
+        };
         tip.onpointerenter = () => clearTimeout(helpTimer);
-        const leave = event => { if (!pinnedHelp && document.activeElement !== button && !button.contains(event.relatedTarget) && !tip.contains(event.relatedTarget)) helpTimer = setTimeout(closeHelp, 200); };
+        const leave = event => {
+            if (activeHelp !== button || pinnedHelp || document.activeElement === button || button.contains(event.relatedTarget) || tip.contains(event.relatedTarget)) return;
+            helpTimer = setTimeout(() => { if (activeHelp === button && !pinnedHelp && document.activeElement !== button && !button.matches(':hover') && !tip.matches(':hover')) closeHelp(); }, 200);
+        };
         button.onpointerleave = tip.onpointerleave = leave;
-        button.onblur = () => { if (!button.matches(':hover') && !tip.matches(':hover')) closeHelp(); };
+        button.onblur = () => { if (activeHelp === button && !button.matches(':hover') && !tip.matches(':hover')) closeHelp(); };
         button.onclick = () => { if (activeHelp === button && pinnedHelp) closeHelp(); else { showHelp(button); pinnedHelp = true; } };
+        button.addEventListener('keydown', event => {
+            if (event.altKey || event.ctrlKey || event.metaKey || activeHelp !== button || tip.hidden || tip.scrollHeight <= tip.clientHeight) return;
+            const line = parseFloat(getComputedStyle(tip).lineHeight) || 20;
+            const delta = { ArrowDown: line, ArrowUp: -line, PageDown: tip.clientHeight, PageUp: -tip.clientHeight,
+                Home: -tip.scrollHeight, End: tip.scrollHeight }[event.key];
+            if (delta == null) return;
+            event.preventDefault(); tip.scrollTop += delta;
+        });
     }
     document.addEventListener('pointerdown', event => { pointerHelp = event.target.closest('.info'); if (!event.target.closest('.info,.tooltip')) closeHelp(); });
     const endPointer = () => { pointerHelp = null; };
@@ -94,7 +125,9 @@ if (parent === window) {
     const repositionHelp = () => {
         if (!activeHelp) return;
         const box = activeHelp.getBoundingClientRect(), viewport = scrollArea.getBoundingClientRect();
-        if (!box.width || box.bottom <= viewport.top || box.top >= viewport.bottom) closeHelp(); else showHelp(activeHelp);
+        if (!box.width || box.bottom <= viewport.top || box.top >= viewport.bottom) {
+            if (pendingHelpFocus !== activeHelp) closeHelp();
+        } else showHelp(activeHelp);
     };
     scrollArea.addEventListener('scroll', repositionHelp);
     window.addEventListener('scroll', repositionHelp); window.addEventListener('resize', repositionHelp);
@@ -295,7 +328,7 @@ if (parent === window) {
     field('add-rule').onclick = () => { dirty = true; manualFields.add('appearance');resolved = null; controller?.abort(); addRule(); };
     field('source-values').onclick = () => { field('minimum').dataset.origin = field('maximum').dataset.origin = 'default'; for (const key of ['scheme', 'tile-size', 'bounds']) manualFields.delete(key);resolved = null; dirty = false; void run('resolve'); };
     field('remove').onclick = async () => { if (pending || !expectedRevision) return; busy(true); try { const reply = await ext.runtime.sendMessage({ type: 'CUSTOM_OVERLAYS_REMOVE', id: sourceId, expectedRevision }); if (!reply?.ok) throw new Error(reply?.error || 'Couldn’t remove.'); await stopPreview(); reset(); await library(); feedback('Overlay removed.'); } catch (error) { feedback(error.message); } finally { busy(false); } };
-    field('cancel').onclick = () => { void stopPreview().finally(() => send({ type: 'close' })); };
+    field('cancel').onclick = () => { closeHelp(); void stopPreview().finally(() => send({ type: 'close' })); };
     document.addEventListener('keydown', event => {
         if (event.key === 'Tab' && parent !== window) { const controls = [...document.querySelectorAll('button,input,select,summary,a[href],[tabindex="0"]')].filter(element => !element.disabled && element.getClientRects().length);
             const index = controls.indexOf(document.activeElement); if (event.shiftKey && index <= 0) { event.preventDefault(); controls.at(-1)?.focus(); } else if (!event.shiftKey && index === controls.length - 1) { event.preventDefault(); controls[0]?.focus(); }
@@ -337,7 +370,7 @@ if (parent === window) {
             }).catch(error => { feedback(error.message); send({ type: 'opened' }); });
         }
         if (data.type === 'theme' && optionsParent) document.documentElement.dataset.theme = data.theme === 'dark' ? 'dark' : 'light';
-        if (data.type === 'dismiss') { openRevision++; void stopPreview(); }
+        if (data.type === 'dismiss') { closeHelp(); openRevision++; void stopPreview(); }
         if (data.type === 'parse') {
             const owner = new AbortController(); jobs.set(data.requestId, owner);
             parser.parse(data.job, owner.signal).then(value => send({ type: 'parsed', requestId: data.requestId, reply: { ok: true, value } }),
@@ -349,7 +382,7 @@ if (parent === window) {
             if (data.reply?.ok) entry.resolve(data.reply.value); else entry.reject(new Error(data.reply?.error || 'Couldn’t load this source. Check the URL and CORS settings.'));
         }
     });
-    window.addEventListener('pagehide', () => { parser.dispose(); controller?.abort(); });
+    window.addEventListener('pagehide', () => { closeHelp(); parser.dispose(); controller?.abort(); });
     reset(); void library().catch(error => feedback(error.message));
 
 }

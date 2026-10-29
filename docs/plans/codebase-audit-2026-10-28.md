@@ -316,6 +316,22 @@ reviewer; do not describe all six findings as Astra-approved.
   newer revision, private/public pre-commit failure and cleanup-acknowledgement
   failure. The settings-file private-store mock now matches null-as-delete
   semantics of the real store.
+- **R05:** keyboard help keeps its focused trigger inside the field clip and
+  scrolls overflowing help through unmodified Arrow/Page/Home/End keys. A
+  focus-owned next-frame correction handles late native focus scrolling;
+  Escape, new focus and stale leave timers cannot reopen/close another help.
+  The new assertion rejected the historical editor at 375px/200% because its
+  focused kind trigger/help was unavailable. Eleven editor tests and scoped ESLint
+  passed. A separate 24-case help matrix passed hidden Chrome 156/Firefox 158
+  through real Tab/Shift+Tab, visible hit-tested focus, readable lines and help
+  scrolling at content widths 1000/375 and zooms 100/200%. The smallest frames
+  were 151/152×358; narrow dark screenshots were inspected, with anchored
+  title/actions/document position. Firefox's initial immediate scroll assertion
+  and setup readiness checks were corrected; a later below-clip focus failure
+  required the owned next-frame correction. Remeasurement also now preserves
+  the help's scroll position; two consecutive final Firefox runs passed. Parent
+  dismissal revokes pending help (its regression failed before the lifecycle
+  fix). Final full-verifier integration remains R06.
 
 ### Intentionally not changed
 
@@ -328,7 +344,7 @@ reviewer; do not describe all six findings as Astra-approved.
 
 ### Changed but not fully proven
 
-R05–R06 remain open. Final integration, hosted CI, release packages, live providers,
+R06 remains open. Final integration, hosted CI, release packages, live providers,
 native permission UI, visible-window focus/placement, screen readers and the
 exact narrow Firefox R05 state are not proven. Peer review of this audit and its
 fix plans is complete; implementation remains a separate step.

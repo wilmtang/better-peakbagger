@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Keep keyboard help visible.** Custom-map explanations preserve focused
+  controls at enlarged zoom and let the keyboard read overflowing text without
+  moving the editor actions.
 - **Refresh custom maps safely.** Retry recovers missing 3D sources. Reload
   refreshes saved metadata and private tiles without resetting allowances,
   preserves usable maps on failure, and releases replaced Leaflet renderers.

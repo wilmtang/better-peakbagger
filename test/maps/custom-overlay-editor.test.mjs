@@ -27,6 +27,17 @@ async function newEditor(t, fetcher) {
     return { dom, win, doc: win.document, saved, fill, save };
 }
 
+test('dismissing the parent editor revokes pending help focus', async t => {
+    const { win, doc } = await newEditor(t, async () => new Response('{}'));
+    doc.getElementById('editor-fields').scrollBy = () => {};
+    doc.querySelector('#kind-label .info').focus();
+    assert.equal(doc.getElementById('kind-help').hidden, false);
+    win.dispatchEvent(new win.MessageEvent('message', { source: win.parent, origin: win.location.origin,
+        data: { __bpbCustomOverlays: true, token: win.location.hash.slice(1), type: 'dismiss' } }));
+    await new Promise(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(resolve)));
+    assert.equal(doc.getElementById('kind-help').hidden, true, 'hidden editor cannot reopen help from a queued focus correction');
+});
+
 test('new overlays put source configuration and appearance inside collapsed Advanced', async t => {
     const dom = new JSDOM(await readFile('src/maps/custom-overlay-editor.html', 'utf8'));
     t.after(() => dom.window.close());
