@@ -1933,7 +1933,10 @@ Renderers retain the saved definition separately from resolved TileJSON and
 re-read metadata on explicit refresh, preserving manual overrides. Client caches
 are source/revision-scoped even when two definitions share a URL. Paint generations
 guard decoded results and feedback; changed rendering parameters stage new
-owners while retaining usable prior output until replacement tiles arrive.
+owners while retaining usable prior output until native layer load or accepted
+MapLibre source data followed by render confirms usable replacement output.
+Viewports with no eligible tiles release redundant owners; returning to coverage clears
+the empty-area feedback without requiring another Reload.
 Leaflet groups and their dedicated canvas renderers share cleanup ownership.
 Terrain replays current custom status on a newer otherwise equivalent snapshot
 so early errors cannot leave the parent menu indefinitely pending.

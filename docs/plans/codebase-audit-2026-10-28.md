@@ -307,6 +307,13 @@ reviewer; do not describe all six findings as Astra-approved.
   Native cache checks also exercise changed tile geometry and empty bounds.
   Canvas edge antialiasing differs after readback, so unchanged geometry uses
   a 1% coverage tolerance; changed geometry must differ by more than 5%.
+  Final independent review found an additional empty-to-covered transition:
+  the empty-area message remained latched after usable tiles loaded. The new
+  terrain assertion and real Leaflet Chrome check both failed on that message
+  before the fix. Status now clears the old flag when current coverage becomes
+  eligible, inside the live-entry guard. All 33 focused checks and six native
+  cache/coverage cases each passed hidden Chrome 156 and Firefox 157 at
+  1000/390×760; recovery uses ordinary pan, without Reload or new owners.
 - **R04:** public Save/Delete success remains authoritative if private cleanup
   fails. ID-only cleanup debt is committed durably with the registry and retried
   against its current revision through serialized operations, including restart.

@@ -46,11 +46,14 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         }
     };
     const status = entry => {
-        if (!disposed && entries.get(entry.source.id) === entry) onStatus(entry.source.id, {
-            pending: entry.pending > 0 || !!entry.retained && !entry.failed && !entry.stage?.error, error: entry.failed > 0 || !!entry.stage?.error, partial: (entry.failed > 0 || !!entry.stage?.error) && entry.loaded > 0,
-            lower: entry.lower, message: entry.stage?.error || entry.failure || (entry.empty ? 'No tiles in this area.' : entry.retained ? 'Loading replacement…' : entry.lower ? 'Showing enlarged tiles from a lower zoom level.' : entry.loaded ? 'Loaded' : ''),
-            code: entry.code, status: entry.httpStatus, retryAt: entry.retryAt || 0,
-        });
+        if (!disposed && entries.get(entry.source.id) === entry) {
+            if (entry.empty && eligibleViewport(entry) === true) entry.empty = false;
+            onStatus(entry.source.id, {
+                pending: entry.pending > 0 || !!entry.retained && !entry.failed && !entry.stage?.error, error: entry.failed > 0 || !!entry.stage?.error, partial: (entry.failed > 0 || !!entry.stage?.error) && entry.loaded > 0,
+                lower: entry.lower, message: entry.stage?.error || entry.failure || (entry.empty ? 'No tiles in this area.' : entry.retained ? 'Loading replacement…' : entry.lower ? 'Showing enlarged tiles from a lower zoom level.' : entry.loaded ? 'Loaded' : ''),
+                code: entry.code, status: entry.httpStatus, retryAt: entry.retryAt || 0,
+            });
+        }
     };
     const removePaint = entry => {
         if (terrain) {

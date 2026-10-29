@@ -135,7 +135,7 @@ function cacheResponse(request, response, state) {
     if (metadata) response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 0, maxzoom: state.version === 1 ? 18 : 17,
         ...(state.version === 3 && { bounds: [0, 0, 1, 1] }),
         tiles: [`${origin}${request.url.slice(0, request.url.lastIndexOf('/'))}/{z}/{x}/{y}.${kind === 'raster' ? 'png' : 'pbf'}`] }));
-    else if (kind === 'raster') response.end(state.png[state.version - 1]);
+    else if (kind === 'raster') response.end(state.png[Math.min(state.version - 1, state.png.length - 1)]);
     else if (kind === 'geojson') response.end(JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: {
         type: 'Polygon', coordinates: [[[state.version === 1 ? -121.86 : -121.78, 46.82], [-121.74, 46.82], [-121.74, 46.88], [state.version === 1 ? -121.86 : -121.78, 46.82]]],
     } }] }));
@@ -229,6 +229,9 @@ async function verifyCache(context, state, origin) {
                 await page.evaluate(() => window.cacheRenderer.update([window.cacheSource], {}, { [window.cacheSource.id]: 3 }));
                 await page.waitForFunction(() => !window.cacheStatuses.at(-1)?.pending && window.cacheStatuses.at(-1)?.message === 'No tiles in this area.');
                 assert.deepEqual(await page.evaluate(() => window.cachePixels()), [], 'an explicitly empty replacement releases old native canvases');
+                await page.evaluate(() => window.mapsPlaceholder.setView([.5, .5], 8, { animate: false }));
+                await page.waitForFunction(() => !window.cacheStatuses.at(-1)?.pending && window.cachePixels().some(value => value.painted));
+                assert.equal(await page.evaluate(() => window.cacheStatuses.at(-1)?.message), 'Loaded', 'panning back into coverage clears empty feedback without Reload');
             }
             cases++;
         } finally { await page.evaluate(() => window.cacheRenderer?.dispose()).catch(() => {}); await page.close(); }

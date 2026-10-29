@@ -85,7 +85,15 @@ for (const outcome of ['cancel', 'success', 'failure', 'mixed', 'empty']) test(`
                 fire('render'); assert.ok(sources.has(original), 'a rendering error preserves the old source despite other accepted tiles');
                 assert.equal(statuses.at(-1).error, true);
             }
-        } else { empty = true; fire('render'); assert.equal(sources.has(original), false, 'a genuinely empty viewport releases redundant output'); }
+        } else {
+            empty = true; fire('render'); assert.equal(sources.has(original), false, 'a genuinely empty viewport releases redundant output');
+            assert.equal(statuses.at(-1).message, 'No tiles in this area.');
+            empty = false; renderer.refresh();
+            assert.notEqual(statuses.at(-1).message, 'No tiles in this area.', 'returning to coverage clears stale empty feedback without Reload');
+            await protocol({ url: url(sources.get(replacement).tiles[0]) }, new AbortController());
+            assert.equal(statuses.at(-1).message, 'Loaded', 'successful replacement tiles report the current viewport state');
+            assert.equal(sources.size, 1, 'ordinary viewport recovery does not recreate the retired owner');
+        }
     } finally {
         renderer.dispose(); assert.equal([...listeners.values()].reduce((sum, value) => sum + value.size, 0), 0);
         assert.equal(sources.size, 0); dom.window.close();
