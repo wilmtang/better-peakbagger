@@ -35,7 +35,7 @@ export function customPoolForWindow(win) {
 }
 export function createCustomClient({ fetchImpl = globalThis.fetch, pool = createCustomPool(), parse, bitmap = globalThis.createImageBitmap }) {
     const cache = new Map(), flights = new Map(); let cacheBytes = 0;
-    const requestOnce = (url, limit, signal, retry = true) => pool.run(async () => {
+    const requestOnce = (url, limit, signal, retry = true, refresh = null) => pool.run(async () => {
         if (!customUrl(url)) throw new Error('Invalid source URL.');
         const origin = new URL(url).origin;
         if (pool.cooldowns.get(origin) > Date.now()) throw Object.assign(new Error('Provider cooldown.'), { code: 'rate-limit', retryAt: pool.cooldowns.get(origin) });
@@ -45,7 +45,7 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
             let response, reader;
             try {
                 if (signal?.aborted) throw new DOMException('Cancelled.', 'AbortError');
-                try { response = await deadline.run(fetchImpl(url, { mode: 'cors', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', signal: deadline.signal })); }
+                try { response = await deadline.run(fetchImpl(url, { mode: 'cors', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', ...(refresh && { cache: 'no-cache' }), signal: deadline.signal })); }
                 catch (error) { if (signal?.aborted || error.name === 'AbortError' || ['approval', 'budget', 'permission', 'busy', 'private-source', 'origins'].includes(error.code)) throw error; throw Object.assign(new Error('Couldn’t access this source.'), { code: 'access' }); }
                 if (response.status === 429) {
                     const error = rateLimitError('Custom map provider', response); error.retryAt ??= Date.now() + 300000;
@@ -68,18 +68,20 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
             } finally { if (reader) { void reader.cancel().catch(() => {}); reader.releaseLock(); } else void response?.body?.cancel().catch(() => {}); signal?.removeEventListener('abort', abort); deadline.clear(); }
         }
     }, signal);
-    const request = async (url, limit, signal, retry = true, scope = '') => {
+    const request = async (url, limit, signal, retry = true, scope = '', refresh = null) => {
         const key = `${scope}|${url}`;
         if (!retry) return requestOnce(url, limit, signal, false);
         if (signal?.aborted) throw new DOMException('Cancelled.', 'AbortError');
+        if (refresh && cache.has(key) && cache.get(key).refresh !== refresh) { cacheBytes -= cache.get(key).bytes.byteLength; cache.delete(key); }
+        if (refresh && flights.has(key) && flights.get(key).refresh !== refresh) { flights.get(key).controller.abort(); flights.delete(key); }
         if (cache.has(key)) { const result = cache.get(key); cache.delete(key); cache.set(key, result); if (result.bytes.byteLength > limit) throw new Error('Source too large.'); return { ...result, bytes: result.bytes.slice(0) }; }
         let flight = flights.get(key);
         if (!flight) {
-            flight = { controller: new AbortController(), users: 0, scope };
+            flight = { controller: new AbortController(), users: 0, scope, refresh };
             const owner = flight;
-            flight.promise = requestOnce(url, limit, owner.controller.signal).then(result => {
+            flight.promise = requestOnce(url, limit, owner.controller.signal, true, refresh).then(result => {
                 if (owner.controller.signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
-                result.scope = scope;
+                result.scope = scope; result.refresh = refresh;
                 while (cacheBytes + result.bytes.byteLength > 8 * 1024 * 1024 && cache.size) { const oldest = cache.keys().next().value; cacheBytes -= cache.get(oldest).bytes.byteLength; cache.delete(oldest); }
                 cache.set(key, result); cacheBytes += result.bytes.byteLength; return result;
             }).finally(() => { if (flights.get(key) === owner) flights.delete(key); });
@@ -96,10 +98,10 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
     const resolve = async (input, signal, retry = true, options = {}) => {
         const url = input.source.metadataUrl || (options.inspect && input.kind === 'geojson' ? input.source.dataUrl : null);
         if (!url) return { source: input, origins: [] };
-        const { bytes } = await request(url, input.kind === 'geojson' ? CUSTOM_LIMITS.geojson : CUSTOM_LIMITS.metadata, signal, retry, `${input.id}:${input.revision}`);
+        const { bytes } = await request(url, input.kind === 'geojson' ? CUSTOM_LIMITS.geojson : CUSTOM_LIMITS.metadata, signal, retry, `${input.id}:${input.revision}`, options.refresh);
         return resolveCustomSourceDocument(input, JSON.parse(new TextDecoder().decode(bytes)), options);
     };
-    const tile = async (source, coordinates, signal, fallback = true) => {
+    const tile = async (source, coordinates, signal, fallback = true, refresh = null) => {
         const original = coordinates;
         const overzoom = Math.max(0, original.z - source.source.maxNativeZoom);
         for (let delta = overzoom; delta <= overzoom + (fallback ? 2 : 0) && original.z - delta >= source.source.minNativeZoom; delta++) {
@@ -109,7 +111,7 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
             const template = source.source.tiles[0]; if (!template) throw Object.assign(new Error('Review source metadata.'), { code: 'origins' });
             const url = template.replaceAll('{z}', String(canonical.z)).replaceAll('{x}', String(x)).replaceAll('{y}', String(y));
             try {
-                const result = await request(url, CUSTOM_LIMITS[source.kind], signal, fallback, `${source.id}:${source.revision}`);
+                const result = await request(url, CUSTOM_LIMITS[source.kind], signal, fallback, `${source.id}:${source.revision}`, refresh);
                 if (source.kind === 'raster') {
                     validateCustomRaster(result.bytes, result.type, source.source.tileSize);
                     const image = await bitmap(new Blob([result.bytes], { type: result.type }));
@@ -128,8 +130,8 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
     return { request, resolve, tile, evict(scope) {
         for (const [key, result] of cache) if (scope == null || result.scope === scope) { cache.delete(key); cacheBytes -= result.bytes.byteLength; }
         for (const [key, flight] of flights) if (scope == null || flight.scope === scope) { flight.controller.abort(); flights.delete(key); }
-    }, clear() { cache.clear(); cacheBytes = 0; for (const flight of flights.values()) flight.controller.abort(); flights.clear(); }, async geojson(source, signal) {
-        const result = await request(source.source.dataUrl, CUSTOM_LIMITS.geojson, signal, true, `${source.id}:${source.revision}`);
+    }, clear() { cache.clear(); cacheBytes = 0; for (const flight of flights.values()) flight.controller.abort(); flights.clear(); }, async geojson(source, signal, refresh = null) {
+        const result = await request(source.source.dataUrl, CUSTOM_LIMITS.geojson, signal, true, `${source.id}:${source.revision}`, refresh);
         return parse({ kind: 'geojson', bytes: result.bytes }, signal);
     } };
 }

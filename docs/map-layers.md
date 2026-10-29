@@ -87,7 +87,9 @@ Retry retains painted tiles or last good GeoJSON; opacity changes
 do not fetch the source again. Hidden/removed renderers cancel their work.
 Reload also reads saved TileJSON metadata again, including changed or renewed
 signed tile URLs, while preserving manual overrides and usable old output on
-failure. Private Reload requires a real action in the map and clears only that
+failure. Public Reload conditionally revalidates HTTP-cached metadata, data and
+current viewport tiles; ordinary pan/zoom and re-enabling retain cache reuse.
+Private Reload requires a real action in the map and clears only that
 saved layer revision's response/metadata caches. It preserves approval expiry,
 remaining requests, provider budgets and cooldowns; it does not grant more quota.
 Approved tabs sharing that source may have their older in-flight reads cancelled

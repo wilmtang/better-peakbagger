@@ -283,6 +283,17 @@ reviewer; do not describe all six findings as Astra-approved.
   Twelve held-validation regressions failed against the original implementation,
   then passed; 84 settings-file and credential-store tests plus scoped ESLint
   passed. Conditional commits/rollback and serialized imports remain intact.
+- **R02:** explicit refresh owns HTTP revalidation of metadata/data and current
+  viewport tiles. Token-scoped bytes/flights reject older work; ordinary requests
+  reuse the refreshed cache. Twenty-seven focused client/renderer/private-client
+  checks and scoped ESLint passed. Six cacheable HTTPS/real-Leaflet cases each
+  passed hidden Chrome 156 and Firefox 157 at 1000/390×760, checking changed
+  painted pixels, conditional 304 responses and ordinary browser-cache reuse.
+  The first Chrome check sampled before Leaflet finished painting; it now waits
+  for conditionally stable pixels. Two new client assertions failed before the
+  fix; the new browser check also rejected the historical client because Reload
+  never reached the cacheable provider. MapLibre GL integration remains part of
+  final acceptance.
 
 ### Intentionally not changed
 
@@ -295,7 +306,7 @@ reviewer; do not describe all six findings as Astra-approved.
 
 ### Changed but not fully proven
 
-R02–R06 remain open. Final integration, hosted CI, release packages, live providers,
+R03–R06 remain open. Final integration, hosted CI, release packages, live providers,
 native permission UI, visible-window focus/placement, screen readers and the
 exact narrow Firefox R05 state are not proven. Peer review of this audit and its
 fix plans is complete; implementation remains a separate step.

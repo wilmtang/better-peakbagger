@@ -12,6 +12,45 @@ const definition = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', r
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d' }] } });
 const mvt = () => fromGeojsonVt({ trails: { features: [{ type: 2, geometry: [[[0, 2048], [4096, 2048]]], tags: {} }] } }, { version: 2, extent: 4096 }).buffer;
 const parse = async data => parseCustomData(data);
+test('a refresh revalidates each owned URL, shares its fresh work and preserves ordinary caching', async () => {
+    const calls = [], url = 'https://tiles.example.com/cache.pbf';
+    const client = createCustomClient({ fetchImpl: async (_url, options) => {
+        calls.push(options.cache); return new Response(String(calls.length));
+    } });
+    const text = result => new TextDecoder().decode(result.bytes);
+    assert.equal(text(await client.request(url, 1024, null, true, 'one')), '1');
+    const refresh = {};
+    assert.equal(text(await client.request(url, 1024, null, true, 'one', refresh)), '2');
+    assert.deepEqual(calls, [undefined, 'no-cache']);
+    assert.equal(text(await client.request(url, 1024, null, true, 'one', refresh)), '2');
+    assert.equal(text(await client.request(url, 1024, null, true, 'one')), '2');
+    assert.equal(calls.length, 2, 'ordinary pan and duplicate refreshed consumers reuse fresh bytes');
+    await client.request(url + '?new-visible-tile', 1024, null, true, 'one');
+    assert.equal(calls.at(-1), undefined, 'new pan requests do not inherit refresh policy');
+    client.clear();
+});
+
+test('refresh cannot join an older ordinary flight or let its late bytes replace the refreshed cache', async () => {
+    const replies = [];
+    const client = createCustomClient({ fetchImpl: async (_url, options) => {
+        await new Promise(resolve => replies.push({ resolve, cache: options.cache }));
+        return new Response(options.cache === 'no-cache' ? 'fresh' : 'old');
+    } });
+    const url = 'https://tiles.example.com/data.json', refresh = {};
+    const old = client.request(url, 1024, null, true, 'one');
+    const rejected = assert.rejects(old, { name: 'AbortError' });
+    await new Promise(resolve => setImmediate(resolve));
+    const fresh = client.request(url, 1024, null, true, 'one', refresh);
+    const shared = client.request(url, 1024, null, true, 'one', refresh);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(replies.map(item => item.cache), [undefined, 'no-cache']);
+    replies[1].resolve();
+    assert.equal(new TextDecoder().decode((await fresh).bytes), 'fresh'); await shared;
+    replies[0].resolve(); await rejected;
+    assert.equal(new TextDecoder().decode((await client.request(url, 1024, null, true, 'one')).bytes), 'fresh');
+    client.clear();
+});
+
 test('source-scoped eviction refreshes shared URLs without evicting another layer or accepting an old flight', async () => {
     let calls = 0, value = 'old';
     const client = createCustomClient({ fetchImpl: async () => { calls++; return new Response(value); } });

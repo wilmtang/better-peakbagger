@@ -107,10 +107,15 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             }
         }
     };
-    const tileData = async (entry, coordinates, signal, key = `${coordinates.z}/${coordinates.x}/${coordinates.y}`) => {
+    const refreshViewport = entry => {
+        const size = entry.source.kind === 'raster' ? entry.source.source.tileSize : 512;
+        entry.refreshTiles = new Set(map.coveringTiles?.({ tileSize: size, minzoom: entry.source.source.minNativeZoom, maxzoom: entry.source.source.maxNativeZoom })
+            .map(tile => `${tile.canonical.z}/${tile.canonical.x}/${tile.canonical.y}`) || []);
+    };
+    const tileData = async (entry, coordinates, signal, key = `${coordinates.z}/${coordinates.x}/${coordinates.y}`, refresh = null) => {
         if (entry.blocked) throw entry.blocked;
         const combined = AbortSignal.any([signal, entry.controller.signal]);
-        const result = await perform(entry, () => client.tile(entry.source, coordinates, combined), key);
+        const result = await perform(entry, () => client.tile(entry.source, coordinates, combined, true, refresh), key);
         if (entry.source.kind === 'mvt') return result;
         const canvas = win.document.createElement('canvas'); canvas.width = canvas.height = entry.source.source.tileSize;
         const image = result.image, size = image.width / result.scale;
@@ -121,7 +126,9 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         const match = /\/([^/]+)\/(\d+)\/(\d+)\/(\d+)$/.exec(request.url);
         const entry = match && [...entries.values()].find(item => `${item.key}~${item.reload || 0}` === match[1]);
         if (!entry) throw new DOMException('Cancelled.', 'AbortError');
-        const result = await tileData(entry, { z: +match[2], x: +match[3], y: +match[4] }, abort.signal);
+        const key = `${match[2]}/${match[3]}/${match[4]}`, refresh = entry.refreshTiles?.has(key) ? entry.refresh : null;
+        const result = await tileData(entry, { z: +match[2], x: +match[3], y: +match[4] }, abort.signal, key, refresh);
+        if (refresh && entry.refresh === refresh) entry.refreshTiles.delete(key);
         if (result.data) return { data: result.data };
         const blob = await new Promise(resolve => result.canvas.toBlob(resolve, 'image/png'));
         return { data: await blob.arrayBuffer() };
@@ -135,19 +142,20 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         const current = () => !signal.aborted && !disposed && entry.generation === generation && entries.get(source.id) === entry;
         try {
             if (source.kind !== 'geojson' && (!source.source.tiles.length || refresh && source.source.metadataUrl)) {
-                const resolved = await perform(entry, () => client.resolve(source, signal));
+                const resolved = await perform(entry, () => client.resolve(source, signal, true, { refresh: refresh ? entry.refresh : null }));
                 if (resolved.origins.length) throw Object.assign(new Error('Review the tile provider hosts in Edit source.'), { code: 'origins' });
                 source = resolved.source;
             }
             if (!current()) return;
-            const data = source.kind === 'geojson' ? await perform(entry, () => client.geojson(source, signal)) : null;
+            const data = source.kind === 'geojson' ? await perform(entry, () => client.geojson(source, signal, refresh ? entry.refresh : null)) : null;
             if (!current()) return;
             entry.source = source;
+            if (terrain && refresh && !data) refreshViewport(entry);
             const sameGeometry = JSON.stringify([previousSource.kind, previousSource.source.tileSize, previousSource.source.bounds, previousSource.source.minNativeZoom, previousSource.source.maxNativeZoom, previousSource.appearance.rules])
                 === JSON.stringify([source.kind, source.source.tileSize, source.source.bounds, source.source.minNativeZoom, source.source.maxNativeZoom, source.appearance.rules]);
             if (refresh && !data && sameGeometry && (terrain ? map.getSource(entry.key) : entry.layer) && !entry.retained) {
                 if (terrain) map.getSource(entry.key).setTiles([`${protocol}://tile/${entry.key}~${entry.reload || 0}/{z}/{x}/{y}`]);
-                else for (const tile of Object.values(entry.layer._tiles || {})) entry.drawTile(tile.el, tile.coords, () => {});
+                else for (const tile of Object.values(entry.layer._tiles || {})) entry.drawTile(tile.el, tile.coords, () => {}, entry.refresh);
                 order(); status(entry); return;
             }
             if (!data && entry.retained) {
@@ -177,11 +185,12 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                     entry.layer = layer; entry.renderers = renderers; entry.data = data;
                 } else {
                     const size = source.kind === 'raster' ? source.source.tileSize : 512, offset = size === 512 ? 1 : 0;
-                    const drawTile = (canvas, coordinates, done) => {
+                    let initialRefresh = refresh ? entry.refresh : null;
+                    const drawTile = (canvas, coordinates, done, tileRefresh = null) => {
                         if (layer.retired) return;
                         entry.tiles.get(canvas)?.abort();
                         const controller = new AbortController(); entry.tiles.set(canvas, controller);
-                        tileData(entry, { x: coordinates.x, y: coordinates.y, z: coordinates.z - offset }, controller.signal, canvas).then(result => {
+                        tileData(entry, { x: coordinates.x, y: coordinates.y, z: coordinates.z - offset }, controller.signal, canvas, tileRefresh).then(result => {
                             if (controller.signal.aborted || signal.aborted) return;
                             const context = canvas.getContext('2d'); context.clearRect(0, 0, size, size);
                             if (result.canvas) context.drawImage(result.canvas, 0, 0);
@@ -193,7 +202,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                         const canvas = win.document.createElement('canvas');
                         if (canvasBytes + size * size * 4 > 24 * 1024 * 1024) { queueMicrotask(() => done(new Error('Overlay memory limit. Zoom in.'), canvas)); return canvas; }
                         canvas.width = canvas.height = size; canvasBytes += size * size * 4;
-                        drawTile(canvas, coordinates, done);
+                        drawTile(canvas, coordinates, done, initialRefresh);
                         return canvas;
                     } });
                     const previousLayer = entry.layer;
@@ -207,7 +216,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                         bounds: source.source.bounds ? [[source.source.bounds[1], source.source.bounds[0]], [source.source.bounds[3], source.source.bounds[2]]] : undefined,
                     });
                     layer.on('tileunload', event => { entry.tiles.get(event.tile)?.abort(); if (entry.tiles.delete(event.tile)) canvasBytes -= event.tile.width * event.tile.height * 4; entry.outcomes.delete(event.tile); tally(entry); status(entry); });
-                    try { layer.addTo(map); } catch (error) { map.removeLayer(layer); throw error; }
+                    try { layer.addTo(map); initialRefresh = null; } catch (error) { map.removeLayer(layer); throw error; }
                     entry.layer = layer; entry.drawTile = drawTile;
                     if (previousLayer) { previousLayer.retired = true; entry.retained ||= { layer: previousLayer, source: previousSource }; }
                 }
@@ -263,13 +272,14 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             if (entry && entry.reload !== reloads[source.id]) {
                 entry.reload = reloads[source.id];
                 if (entry.painting) continue;
-                client.evict(`${source.id}:${source.revision}`); entry.generation++; entry.pending = 0;
+                client.evict(`${source.id}:${source.revision}`); entry.generation++; entry.pending = 0; entry.refresh = {};
+                if (terrain && source.kind !== 'geojson') refreshViewport(entry);
                 for (const controller of entry.tiles.values()) controller.abort();
                 entry.blocked = null; entry.failed = 0; entry.failure = ''; entry.code = ''; entry.httpStatus = 0; entry.lower = false;
                 for (const [key, outcome] of entry.outcomes) entry.outcomes.set(key, { loaded: outcome.loaded });
                 if (source.kind === 'geojson' || source.source.metadataUrl || (terrain ? !map.getSource(entry.key) : !entry.layer)) void paint(entry, true);
                 else if (terrain) map.getSource(entry.key)?.setTiles([`${protocol}://tile/${entry.key}~${entry.reload || 0}/{z}/{x}/{y}`]);
-                else for (const tile of Object.values(entry.layer._tiles || {})) entry.drawTile(tile.el, tile.coords, () => {});
+                else for (const tile of Object.values(entry.layer._tiles || {})) entry.drawTile(tile.el, tile.coords, () => {}, entry.refresh);
             }
             if (entry) {
                 if (entry.opacity !== opacity) {

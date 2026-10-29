@@ -8,6 +8,31 @@ import { parseCustomData } from '../../src/maps/custom-overlay-data.js';
 import { installMapDiscovery } from '../../src/maps/map-discovery.js';
 import { createCustomParser } from '../../src/maps/custom-overlay-parser.js';
 
+test('terrain refresh revalidates resolved viewport tiles without changing future pan policy', async () => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const sources = new Map(), layers = new Map(), protocols = new Map(), calls = [], coverage = [];
+    dom.window.fetch = async (url, options) => {
+        calls.push({ url, cache: options.cache });
+        return url.endsWith('meta.json') ? Response.json({ tilejson: '3.0.0', minzoom: 2, maxzoom: 14, tiles: ['https://tiles.example.com/new/{z}/{x}/{y}.pbf'] }) : new Response('vector');
+    };
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getSource: id => sources.get(id), getLayer: id => layers.get(id),
+        addSource: (id, value) => sources.set(id, value), addLayer: value => layers.set(value.id, value), removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), moveLayer() {}, setPaintProperty() {},
+        coveringTiles(options) { coverage.push(options); return [{ canonical: { z: 8, x: 1, y: 2 } }]; } };
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Fixture', kind: 'mvt',
+        source: { tiles: ['https://tiles.example.com/old/{z}/{x}/{y}.pbf'], metadataUrl: 'https://tiles.example.com/meta.json', minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz' },
+        approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d', width: 2, radius: 5, fillOpacity: .3 }] } };
+    const renderer = createCustomRenderer({ win: dom.window, map, maplibre: { addProtocol: (key, handler) => protocols.set(key, handler), removeProtocol: key => protocols.delete(key) },
+        parse: async () => ({ features: [], data: new ArrayBuffer(0) }), onStatus() {} });
+    try {
+        renderer.update([source]); renderer.update([source], {}, { [source.id]: 1 });
+        for (let n = 0; n < 20 && sources.size !== 2; n++) await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(coverage.at(-1), { tileSize: 512, minzoom: 2, maxzoom: 14 }, 'refresh uses newly resolved geometry');
+        const template = [...sources.values()].at(-1).tiles[0], protocol = [...protocols.values()][0];
+        for (const x of [1, 2]) await protocol({ url: template.replace('{z}', '8').replace('{x}', x).replace('{y}', '2') }, new AbortController());
+        assert.deepEqual(calls.map(call => call.cache), ['no-cache', 'no-cache', undefined]);
+    } finally { renderer.dispose(); dom.window.close(); }
+});
+
 const settle = () => new Promise(resolve => setImmediate(resolve));
 for (const kind of ['raster', 'mvt']) test(`${kind} Reload resolves its saved metadata even with saved tiles and retains the old map on failure`, async () => {
     const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
