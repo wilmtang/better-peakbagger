@@ -307,6 +307,15 @@ reviewer; do not describe all six findings as Astra-approved.
   Native cache checks also exercise changed tile geometry and empty bounds.
   Canvas edge antialiasing differs after readback, so unchanged geometry uses
   a 1% coverage tolerance; changed geometry must differ by more than 5%.
+- **R04:** public Save/Delete success remains authoritative if private cleanup
+  fails. ID-only cleanup debt is committed durably with the registry and retried
+  against its current revision through serialized operations, including restart.
+  Recovery never replays the public write, removes a newer key or touches budgets.
+  Three initial cleanup assertions failed before the fix. All 78 store/import/
+  relay/schema tests and scoped ESLint passed, including real IndexedDB restart,
+  newer revision, private/public pre-commit failure and cleanup-acknowledgement
+  failure. The settings-file private-store mock now matches null-as-delete
+  semantics of the real store.
 
 ### Intentionally not changed
 
@@ -319,7 +328,7 @@ reviewer; do not describe all six findings as Astra-approved.
 
 ### Changed but not fully proven
 
-R04–R06 remain open. Final integration, hosted CI, release packages, live providers,
+R05–R06 remain open. Final integration, hosted CI, release packages, live providers,
 native permission UI, visible-window focus/placement, screen readers and the
 exact narrow Firefox R05 state are not proven. Peer review of this audit and its
 fix plans is complete; implementation remains a separate step.

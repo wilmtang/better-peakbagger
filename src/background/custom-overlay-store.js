@@ -5,6 +5,8 @@ import { customLayerBackup, readCustomLayerBackup, readPrivateLayerFile } from '
 import { storageValue as StorageValue } from '../storage/storage-value.js';
 import { readPrivateParameters, publicPrivateSource } from '../maps/custom-overlay-private.js';
 
+const CLEANUP_KEY = 'bpbCustomOverlayCleanup';
+
 // Public registry ownership. Private credentials and constrained fetches live
 // separately in custom-private-store.js and custom-layer-relay.js.
 export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPrivate = () => false, privateStore }) {
@@ -18,6 +20,35 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
         const preferences = Object.fromEntries(registry.sources.map(source => [source.id,
             Number.isFinite(data[CUSTOM_PREFERENCES_KEY]?.[source.id]) ? Math.max(0, Math.min(100, data[CUSTOM_PREFERENCES_KEY][source.id])) : source.appearance.opacity]));
         return { registry, preferences };
+    };
+    const cleanupDebt = async (ids = []) => {
+        if (!privateStore) return [];
+        const saved = (await storage.get([CLEANUP_KEY]))[CLEANUP_KEY] || [];
+        if (!Array.isArray(saved) || saved.some(id => !customId(id))) throw new Error('Private layer cleanup is unavailable.');
+        const next = [...new Set([...saved, ...ids])];
+        if (next.length > 128) throw new Error('Private layer cleanup is unavailable. Try again after reopening Settings.');
+        return next;
+    };
+    // Cleanup is bookkeeping after an authoritative public commit. Persist
+    // its bounded ID-only debt with that commit so worker suspension cannot
+    // lose it. Retries follow the current registry, never an old saved revision.
+    const reconcileCleanup = async current => {
+        if (!privateStore) return false;
+        try {
+            const pending = await cleanupDebt(), remaining = [];
+            for (const id of pending) {
+                try {
+                    const source = current.registry.sources.find(item => item.id === id);
+                    if (source?.privateRequests) await privateStore.mutate(id, saved => {
+                        const keep = saved?.versions?.[source.revision];
+                        return keep ? { versions: { [source.revision]: keep } } : null;
+                    });
+                    else await privateStore.put(id, null);
+                } catch { remaining.push(id); }
+            }
+            if (pending.length !== remaining.length) await storage.set({ [CLEANUP_KEY]: remaining });
+            return remaining.length > 0;
+        } catch { return true; }
     };
     const readFileSnapshot = async () => {
         const current = await read();current.privateSources = [];
@@ -39,6 +70,7 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
         const operation = async () => {
             try {
                 const current = await read();
+                const cleanupPending = await reconcileCleanup(current);
                 const mapKey = `${sender.tab?.id}:${message.mapId}`;
                 if (!mutation) {
                     const preview = previews.get(mapKey);
@@ -50,7 +82,7 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
                         return saved && StorageValue.same(saved.public, source) ? { ...source, editSource: saved.source, requestParameters: saved.parameters }
                             : { ...source, reconnect: true, requestParameters: [] };
                     }));
-                    return { ok: true, ...current };
+                    return { ok: true, ...current, ...(cleanupPending && { cleanupPending: true }) };
                 }
                 if (message.type === 'CUSTOM_OVERLAYS_PREVIEW') {
                     if (typeof message.mapId !== 'string' || !/^[a-z0-9-]{1,80}$/i.test(message.mapId)) throw new Error('Invalid map.');
@@ -80,6 +112,7 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
                     await storage.set({ [CUSTOM_REGISTRY_KEY]: current.registry });
                     return { ok: true, ...current };
                 }
+                const cleanup = await cleanupDebt([message.id]);
                 const index = current.registry.sources.findIndex(source => source.id === message.id);
                 if (index >= 0 ? current.registry.sources[index].revision !== message.expectedRevision : message.expectedRevision !== 0) throw new Error('This overlay changed. Reload its settings.');
                 if (message.type === 'CUSTOM_OVERLAYS_REMOVE') {
@@ -109,21 +142,21 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
                 } else throw new Error('Unknown overlay operation.');
                 current.registry.revision++;
                 if (!readCustomRegistry(current.registry)) throw new Error('Overlay library is full.');
-                await storage.set({ [CUSTOM_REGISTRY_KEY]: current.registry, [CUSTOM_PREFERENCES_KEY]: current.preferences });
-                if (privateStore && message.type === 'CUSTOM_OVERLAYS_SAVE' && current.registry.sources.find(source => source.id === message.id)?.privateRequests) {
-                    // Once the public CAS commits, discard previous credentials.
-                    // Before that point the prior revision remains recoverable.
-                    await privateStore.mutate(message.id, saved => ({ versions: { [message.expectedRevision + 1]: saved.versions[message.expectedRevision + 1] } }));
-                }
-                if (privateStore && (message.type === 'CUSTOM_OVERLAYS_REMOVE' || message.type === 'CUSTOM_OVERLAYS_SAVE' && !current.registry.sources.find(source => source.id === message.id)?.privateRequests)) await privateStore.put(message.id, null);
-                return { ok: true, ...current };
+                await storage.set({ [CUSTOM_REGISTRY_KEY]: current.registry, [CUSTOM_PREFERENCES_KEY]: current.preferences,
+                    ...(privateStore && { [CLEANUP_KEY]: cleanup }) });
+                const pending = await reconcileCleanup(current);
+                return { ok: true, ...current, ...(pending && { cleanupPending: true }) };
             } catch (error) { return { ok: false, error: error.message }; }
         };
         return transact(operation);
     };
-    return { handle, snapshot: ({ includePrivate = false } = {}) => transact(includePrivate ? readFileSnapshot : read), replaceIfCurrent: (expected, next) => transact(async () => {
+    return { handle, snapshot: ({ includePrivate = false } = {}) => transact(async () => {
+        const current = await read(); await reconcileCleanup(current);
+        return includePrivate ? readFileSnapshot() : current;
+    }), replaceIfCurrent: (expected, next) => transact(async () => {
         const includePrivate = Object.hasOwn(expected, 'privateSources');
         const current = await (includePrivate ? readFileSnapshot() : read());
+        await reconcileCleanup(current);
         if (!StorageValue.same(current, expected)) return { replaced: false, current };
         const backup = next?.registry ? customLayerBackup(next) : readCustomLayerBackup(next);
         if (!backup) throw new Error('Invalid custom layers backup.');
@@ -144,17 +177,11 @@ export function createCustomOverlayStore({ storage, canRead, canEdit, canReadPri
             installedPrivate.push({ source, parameters: entry.parameters });
         }
         if (!readCustomRegistry(registry)) throw new Error('Invalid custom layers backup.');
-        await storage.set({ [CUSTOM_REGISTRY_KEY]: registry, [CUSTOM_PREFERENCES_KEY]: backup.preferences });
+        const cleanup = await cleanupDebt([...current.registry.sources, ...registry.sources].map(source => source.id));
+        await storage.set({ [CUSTOM_REGISTRY_KEY]: registry, [CUSTOM_PREFERENCES_KEY]: backup.preferences,
+            ...(privateStore && { [CLEANUP_KEY]: cleanup }) });
         previews.clear();
-        // Cleanup failure cannot turn a committed replacement into an unknown
-        // result. Unreachable old records cannot authorize relay requests.
-        if (privateStore) for (const id of new Set([...current.registry.sources, ...registry.sources].map(source => source.id))) {
-            try {
-                const source = registry.sources.find(item => item.id === id), entry = privateSources.find(item => item.source.id === id);
-                if (source?.privateRequests && entry) await privateStore.mutate(id, saved => ({ versions: { [source.revision]: saved.versions[source.revision] } }));
-                else await privateStore.put(id, null);
-            } catch (error) { console.error('Better Peakbagger: obsolete private layer cleanup failed', error); }
-        }
-        return { replaced: true, current: { registry, preferences: backup.preferences, ...(includePrivate && { privateSources: installedPrivate }) } };
+        const cleanupPending = await reconcileCleanup({ registry });
+        return { replaced: true, current: { registry, preferences: backup.preferences, ...(includePrivate && { privateSources: installedPrivate }) }, ...(cleanupPending && { cleanupPending: true }) };
     }) };
 }

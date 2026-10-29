@@ -1903,6 +1903,11 @@ stage private revisions before the public registry write and preserve private
 values during rollback. No host permission, map approval or budget is imported.
 Versioned private writes precede public CAS
 writes so a failed configuration commit preserves the previous private source.
+Save/Delete acknowledgement follows the public commit. A bounded local
+`bpbCustomOverlayCleanup` list stores only source IDs alongside that commit;
+failed private-record cleanup is retried by the serialized store against the
+current registry, including after worker restart. Retries preserve the current
+private revision and never replay the public mutation or touch provider budgets.
 
 `custom-layer-relay.js` accepts saved layer/revision, resource kind and bounded
 integer tile coordinates. It constructs GET URLs, validates approved origins,

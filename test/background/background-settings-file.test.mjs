@@ -60,7 +60,7 @@ const harness = ({
     const privateStore = {
         get: async key => structuredClone(privateRecords.get(key)),
         put: async (key, value) => { if (value == null) privateRecords.delete(key); else privateRecords.set(key, structuredClone(value)); },
-        mutate: async (key, change) => { const value = change(structuredClone(privateRecords.get(key))); privateRecords.set(key, value); return value; },
+        mutate: async (key, change) => { const value = change(structuredClone(privateRecords.get(key))); if (value == null) privateRecords.delete(key); else privateRecords.set(key, value); return value; },
     };
     const customLayers = createCustomOverlayStore({ storage: local, privateStore, canRead: () => true, canEdit: () => true, canReadPrivate: () => true });
     const ext = {
