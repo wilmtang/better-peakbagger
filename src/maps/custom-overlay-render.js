@@ -47,8 +47,8 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
     };
     const status = entry => {
         if (!disposed && entries.get(entry.source.id) === entry) onStatus(entry.source.id, {
-            pending: entry.pending > 0, error: entry.failed > 0, partial: entry.failed > 0 && entry.loaded > 0,
-            lower: entry.lower, message: entry.failure || (entry.lower ? 'Showing enlarged tiles from a lower zoom level.' : entry.loaded ? 'Loaded' : ''),
+            pending: entry.pending > 0 || !!entry.retained && !entry.failed && !entry.stage?.error, error: entry.failed > 0 || !!entry.stage?.error, partial: (entry.failed > 0 || !!entry.stage?.error) && entry.loaded > 0,
+            lower: entry.lower, message: entry.stage?.error || entry.failure || (entry.empty ? 'No tiles in this area.' : entry.retained ? 'Loading replacement…' : entry.lower ? 'Showing enlarged tiles from a lower zoom level.' : entry.loaded ? 'Loaded' : ''),
             code: entry.code, status: entry.httpStatus, retryAt: entry.retryAt || 0,
         });
     };
@@ -61,9 +61,10 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             for (const renderer of entry.renderers || []) map.removeLayer(renderer);
         }
     };
+    const clearStage = entry => { entry.stage?.dispose(); entry.stage = null; };
     const remove = id => {
         const entry = entries.get(id); if (!entry) return;
-        entries.delete(id); entry.controller.abort(); for (const controller of entry.tiles.values()) controller.abort();
+        entries.delete(id); clearStage(entry); entry.controller.abort(); for (const controller of entry.tiles.values()) controller.abort();
         removePaint(entry); if (entry.retained) removePaint(entry.retained);
     };
     const tally = entry => {
@@ -80,6 +81,52 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             const type = map.getLayer(id)?.type;
             if (type) map.setPaintProperty(id, `${type}-opacity`, opacity / 100 * (type === 'fill' ? entry.source.appearance.rules[Number(id.split('-').at(-1))]?.fillOpacity ?? .3 : 1));
         }
+    };
+    const eligibleViewport = entry => {
+        const bounds = entry.source.source.bounds, view = map.getBounds?.();
+        if (bounds && view) {
+            if (view.getNorth() < bounds[1] || view.getSouth() > bounds[3]) return false;
+            const width = view.getEast() - view.getWest();
+            if (width < 360) {
+                const west = ((view.getWest() + 180) % 360 + 360) % 360 - 180, east = west + width;
+                if (east <= 180 ? east < bounds[0] || west > bounds[2] : west > bounds[2] && east - 360 < bounds[0]) return false;
+            }
+        }
+        if (terrain) {
+            if (!map.coveringTiles) return null;
+            const size = entry.source.kind === 'raster' ? entry.source.source.tileSize : 512;
+            return map.coveringTiles({ tileSize: size, minzoom: entry.source.source.minNativeZoom, maxzoom: entry.source.source.maxNativeZoom }).length > 0;
+        }
+        return map.getZoom() >= entry.layer.options.minZoom;
+    };
+    const finishStage = entry => {
+        if (entries.get(entry.source.id) !== entry || !entry.retained) return;
+        entry.empty = eligibleViewport(entry) === false;
+        clearStage(entry); tiledOpacity(entry, entry.opacity); removePaint(entry.retained); entry.retained = null; status(entry);
+    };
+    const watchTerrainStage = entry => {
+        const generation = entry.generation, key = entry.key, accepted = new Map();
+        const current = () => entries.get(entry.source.id) === entry && entry.generation === generation && entry.key === key && !!entry.retained;
+        const loaded = event => {
+            if (!current() || event.sourceId !== key || event.tile?.state !== 'loaded' || event.tile.aborted || !event.coord?.canonical) return;
+            const { z, x, y } = event.coord.canonical; accepted.set(`${z}/${x}/${y}`, event.tile);
+        };
+        const failed = event => {
+            if (!current() || event.sourceId !== key || event.error?.name === 'AbortError') return;
+            entry.stage.error = 'Couldn’t render the replacement. Your previous map is still shown. Choose Retry.'; status(entry);
+        };
+        const rendered = () => {
+            if (!current()) return;
+            if (eligibleViewport(entry) === false) { finishStage(entry); return; }
+            if (entry.failed || entry.stage?.error || entry.pending || !map.isSourceLoaded?.(key)) return;
+            const size = entry.source.kind === 'raster' ? entry.source.source.tileSize : 512;
+            const visible = map.coveringTiles?.({ tileSize: size, minzoom: entry.source.source.minNativeZoom, maxzoom: entry.source.source.maxNativeZoom }) || [];
+            const keys = new Set(visible.map(tile => `${tile.canonical.z}/${tile.canonical.x}/${tile.canonical.y}`));
+            for (const id of accepted.keys()) if (!keys.has(id)) accepted.delete(id);
+            if (visible.some(tile => { const { z, x, y } = tile.canonical; const value = accepted.get(`${z}/${x}/${y}`); return value && !value.aborted && value.state === 'loaded'; })) finishStage(entry);
+        };
+        map.on?.('sourcedata', loaded); map.on?.('render', rendered); map.on?.('error', failed);
+        entry.stage = { dispose() { map.off?.('sourcedata', loaded); map.off?.('render', rendered); map.off?.('error', failed); } };
     };
     const perform = async (entry, work, key = 'data') => {
         const generation = entry.generation;
@@ -100,9 +147,6 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
         } finally {
             if (current()) {
                 entry.pending--; tally(entry);
-                if (key !== 'data' && entry.retained && !entry.pending && !entry.failed && entry.loaded) {
-                    tiledOpacity(entry, entry.opacity); removePaint(entry.retained); entry.retained = null;
-                }
                 status(entry);
             }
         }
@@ -115,7 +159,11 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
     const tileData = async (entry, coordinates, signal, key = `${coordinates.z}/${coordinates.x}/${coordinates.y}`, refresh = null) => {
         if (entry.blocked) throw entry.blocked;
         const combined = AbortSignal.any([signal, entry.controller.signal]);
-        const result = await perform(entry, () => client.tile(entry.source, coordinates, combined, true, refresh), key);
+        const result = await perform(entry, async () => {
+            const value = await client.tile(entry.source, coordinates, combined, true, refresh);
+            if (combined.aborted) { value.image?.close(); throw new DOMException('Cancelled.', 'AbortError'); }
+            return value;
+        }, key);
         if (entry.source.kind === 'mvt') return result;
         const canvas = win.document.createElement('canvas'); canvas.width = canvas.height = entry.source.source.tileSize;
         const image = result.image, size = image.width / result.scale;
@@ -186,6 +234,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                 } else {
                     const size = source.kind === 'raster' ? source.source.tileSize : 512, offset = size === 512 ? 1 : 0;
                     let initialRefresh = refresh ? entry.refresh : null;
+                    const accepted = new Set();
                     const drawTile = (canvas, coordinates, done, tileRefresh = null) => {
                         if (layer.retired) return;
                         entry.tiles.get(canvas)?.abort();
@@ -195,7 +244,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                             const context = canvas.getContext('2d'); context.clearRect(0, 0, size, size);
                             if (result.canvas) context.drawImage(result.canvas, 0, 0);
                             else drawCustomVector(context, result.features, entry.source.appearance.rules, size);
-                            done(null, canvas);
+                            accepted.add(canvas); done(null, canvas);
                         }, error => { if (!controller.signal.aborted && !signal.aborted) done(error, canvas); });
                     };
                     const Grid = L.GridLayer.extend({ createTile(coordinates, done) {
@@ -215,10 +264,20 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                         opacity: previousLayer ? 0 : entry.opacity / 100, updateWhenIdle: true, keepBuffer: 0, bpbOverlay: true,
                         bounds: source.source.bounds ? [[source.source.bounds[1], source.source.bounds[0]], [source.source.bounds[3], source.source.bounds[2]]] : undefined,
                     });
-                    layer.on('tileunload', event => { entry.tiles.get(event.tile)?.abort(); if (entry.tiles.delete(event.tile)) canvasBytes -= event.tile.width * event.tile.height * 4; entry.outcomes.delete(event.tile); tally(entry); status(entry); });
-                    try { layer.addTo(map); initialRefresh = null; } catch (error) { map.removeLayer(layer); throw error; }
+                    layer.on('tileunload', event => { accepted.delete(event.tile); entry.tiles.get(event.tile)?.abort(); if (entry.tiles.delete(event.tile)) canvasBytes -= event.tile.width * event.tile.height * 4; entry.outcomes.delete(event.tile); tally(entry); status(entry); });
+                    if (previousLayer) {
+                        const loaded = () => {
+                            if (entry.layer !== layer || entry.generation !== generation || !entry.retained) return;
+                            const visible = Object.values(layer._tiles || {}).some(tile => tile.loaded && accepted.has(tile.el));
+                            if (eligibleViewport(entry) === false || !layer.isLoading() && !entry.failed && visible) finishStage(entry);
+                        };
+                        layer.on('load', loaded);
+                        map.on('moveend zoomend', loaded);
+                        entry.stage = { dispose() { layer.off('load', loaded); map.off('moveend zoomend', loaded); }, loaded };
+                    }
+                    try { layer.addTo(map); initialRefresh = null; } catch (error) { map.removeLayer(layer); clearStage(entry); throw error; }
                     entry.layer = layer; entry.drawTile = drawTile;
-                    if (previousLayer) { previousLayer.retired = true; entry.retained ||= { layer: previousLayer, source: previousSource }; }
+                    if (previousLayer) { previousLayer.retired = true; entry.retained ||= { layer: previousLayer, source: previousSource }; entry.stage.loaded(); }
                 }
             } else {
                 const previousKey = entry.key, previousLayers = entry.layers;
@@ -247,7 +306,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
                 }
                 if (key !== previousKey) {
                     entry.retained ||= { key: previousKey, layers: previousLayers, source: previousSource };
-                    tiledOpacity(entry, 0);
+                    tiledOpacity(entry, 0); watchTerrainStage(entry);
                 }
             }
             order(); status(entry);
@@ -272,7 +331,7 @@ export function createCustomRenderer({ win, map, maplibre, parse, pool, onStatus
             if (entry && entry.reload !== reloads[source.id]) {
                 entry.reload = reloads[source.id];
                 if (entry.painting) continue;
-                client.evict(`${source.id}:${source.revision}`); entry.generation++; entry.pending = 0; entry.refresh = {};
+                clearStage(entry); entry.empty = false; client.evict(`${source.id}:${source.revision}`); entry.generation++; entry.pending = 0; entry.refresh = {};
                 if (terrain && source.kind !== 'geojson') refreshViewport(entry);
                 for (const controller of entry.tiles.values()) controller.abort();
                 entry.blocked = null; entry.failed = 0; entry.failure = ''; entry.code = ''; entry.httpStatus = 0; entry.lower = false;

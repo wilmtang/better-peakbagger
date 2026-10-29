@@ -122,6 +122,7 @@ export function createCustomClient({ fetchImpl = globalThis.fetch, pool = create
                 }
                 const value = await parse({ kind: 'mvt', bytes: result.bytes, layers: [...new Set(source.appearance.rules.map(rule => rule.sourceLayer))],
                     transform: { scale, x: original.x - canonical.x * scale, y: original.y - canonical.y * scale } }, signal);
+                signal?.throwIfAborted();
                 return { ...value, lower: delta > 0 };
             } catch (error) { if (![404, 410].includes(error.status) || delta === overzoom + (fallback ? 2 : 0) || canonical.z === source.source.minNativeZoom) throw error; }
         }

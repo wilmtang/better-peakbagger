@@ -34,6 +34,63 @@ test('terrain refresh revalidates resolved viewport tiles without changing futur
 });
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
+for (const outcome of ['cancel', 'success', 'failure', 'mixed', 'empty']) test(`staged terrain replacement retains output until renderer acceptance: ${outcome}`, async () => {
+    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const sources = new Map(), layers = new Map(), protocols = new Map(), listeners = new Map(), statuses = [];
+    let empty = false;
+    dom.window.fetch = async (url, { signal }) => {
+        if (url.endsWith('meta.json')) return Response.json({ tilejson: '3.0.0', minzoom: 1, maxzoom: 14, tiles: ['https://tiles.example.com/new/{z}/{x}/{y}.pbf'] });
+        if (outcome === 'failure' && url.includes('/new/')) return new Response(null, { status: 401 });
+        if (outcome === 'cancel' && url.includes('/new/')) return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Cancelled.', 'AbortError')), { once: true }));
+        return new Response('vector');
+    };
+    const map = { getStyle: () => ({ layers: [...layers.values()] }), getSource: id => sources.get(id), getLayer: id => layers.get(id),
+        addSource: (id, value) => sources.set(id, value), addLayer: value => layers.set(value.id, value), removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), moveLayer() {}, setPaintProperty() {},
+        on(type, listener) { const entries = listeners.get(type) || new Set(); entries.add(listener); listeners.set(type, entries); },
+        off(type, listener) { listeners.get(type)?.delete(listener); }, isSourceLoaded: () => true,
+        coveringTiles: () => empty ? [] : [{ canonical: { z: 8, x: 1, y: 2 } }] };
+    const fire = (type, event = {}) => { for (const listener of [...listeners.get(type) || []]) listener(event); };
+    const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Fixture', kind: 'mvt',
+        source: { tiles: ['https://tiles.example.com/old/{z}/{x}/{y}.pbf'], metadataUrl: 'https://tiles.example.com/meta.json', minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz' },
+        approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d', width: 2, radius: 5, fillOpacity: .3 }] } };
+    const renderer = createCustomRenderer({ win: dom.window, map, maplibre: { addProtocol: (key, handler) => protocols.set(key, handler), removeProtocol: key => protocols.delete(key) },
+        parse: async () => ({ features: [], data: new ArrayBuffer(0) }), onStatus: (_id, value) => statuses.push(value) });
+    try {
+        renderer.update([source]); const original = [...sources.keys()][0], protocol = [...protocols.values()][0];
+        const url = template => template.replace('{z}', '8').replace('{x}', '1').replace('{y}', '2');
+        await protocol({ url: url(sources.get(original).tiles[0]) }, new AbortController());
+        renderer.update([source], {}, { [source.id]: 1 });
+        for (let n = 0; n < 20 && sources.size !== 2; n++) await settle();
+        const replacement = [...sources.keys()].at(-1), abort = new AbortController();
+        if (outcome !== 'empty') {
+            const pending = protocol({ url: url(sources.get(replacement).tiles[0]) }, abort);
+            if (outcome === 'cancel') { await settle(); abort.abort(); await assert.rejects(pending, { name: 'AbortError' }); }
+            else if (outcome === 'failure') await assert.rejects(pending, { status: 401 });
+            else await pending;
+            assert.ok(sources.has(original), 'transport completion/cancellation is not rendered replacement readiness');
+            fire('sourcedata', { sourceId: original, tile: { state: 'loaded' }, coord: { canonical: { z: 8, x: 1, y: 2 } } });
+            fire('render'); assert.ok(sources.has(original), 'old source events cannot acknowledge the replacement');
+            if (outcome === 'success') {
+                fire('sourcedata', { sourceId: replacement, tile: { state: 'loaded', aborted: true }, coord: { canonical: { z: 8, x: 1, y: 2 } } });
+                fire('render'); assert.ok(sources.has(original), 'an aborted accepted event cannot finish replacement');
+                fire('sourcedata', { sourceId: replacement, tile: { state: 'loaded' }, coord: { canonical: { z: 8, x: 9, y: 2 } } });
+                fire('render'); assert.ok(sources.has(original), 'nonvisible acceptance cannot finish replacement');
+                fire('sourcedata', { sourceId: replacement, tile: { state: 'loaded', aborted: false }, coord: { canonical: { z: 8, x: 1, y: 2 } } });
+                assert.ok(sources.has(original), 'source acceptance still precedes paint');
+                fire('render'); assert.equal(sources.has(original), false);
+            }
+            if (outcome === 'mixed') {
+                fire('sourcedata', { sourceId: replacement, tile: { state: 'loaded' }, coord: { canonical: { z: 8, x: 1, y: 2 } } });
+                fire('error', { sourceId: replacement, error: new Error('Controlled map decode failure') });
+                fire('render'); assert.ok(sources.has(original), 'a rendering error preserves the old source despite other accepted tiles');
+                assert.equal(statuses.at(-1).error, true);
+            }
+        } else { empty = true; fire('render'); assert.equal(sources.has(original), false, 'a genuinely empty viewport releases redundant output'); }
+    } finally {
+        renderer.dispose(); assert.equal([...listeners.values()].reduce((sum, value) => sum + value.size, 0), 0);
+        assert.equal(sources.size, 0); dom.window.close();
+    }
+});
 for (const kind of ['raster', 'mvt']) test(`${kind} Reload resolves its saved metadata even with saved tiles and retains the old map on failure`, async () => {
     const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
     const sources = new Map(), layers = new Map(), statuses = [];

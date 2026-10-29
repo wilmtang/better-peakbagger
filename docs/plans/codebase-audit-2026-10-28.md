@@ -294,6 +294,19 @@ reviewer; do not describe all six findings as Astra-approved.
   fix; the new browser check also rejected the historical client because Reload
   never reached the cacheable provider. MapLibre GL integration remains part of
   final acceptance.
+- **R03:** staged output now retires through native layer load or MapLibre
+  accepted source data followed by render, with generation/viewport ownership.
+  Cancelled vector decoding is rejected; errors retain output, empty eligible
+  viewports release redundant owners, and lifecycle listeners are removed.
+  Four new cancellation/readiness assertions failed against the old code;
+  33 focused checks and scoped ESLint passed. Hidden real-extension private
+  refresh matrices passed Chrome 156/Firefox 158 on Apple M3 Pro hardware.
+  A maintained Chrome hardware probe at 1000×760/pitch 35 cancelled four held
+  edge requests: old red pixels remained until replacement acceptance, then
+  blue pixels appeared and sources/listeners returned to baseline on disposal.
+  Native cache checks also exercise changed tile geometry and empty bounds.
+  Canvas edge antialiasing differs after readback, so unchanged geometry uses
+  a 1% coverage tolerance; changed geometry must differ by more than 5%.
 
 ### Intentionally not changed
 
@@ -306,7 +319,7 @@ reviewer; do not describe all six findings as Astra-approved.
 
 ### Changed but not fully proven
 
-R03–R06 remain open. Final integration, hosted CI, release packages, live providers,
+R04–R06 remain open. Final integration, hosted CI, release packages, live providers,
 native permission UI, visible-window focus/placement, screen readers and the
 exact narrow Firefox R05 state are not proven. Peer review of this audit and its
 fix plans is complete; implementation remains a separate step.

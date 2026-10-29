@@ -132,7 +132,9 @@ function cacheResponse(request, response, state) {
     if (unchanged) { response.writeHead(304); response.end(); return; }
     response.setHeader('content-type', metadata || kind === 'geojson' ? 'application/json' : kind === 'raster' ? 'image/png' : 'application/vnd.mapbox-vector-tile');
     const origin = `https://${request.headers.host}`;
-    if (metadata) response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 0, maxzoom: 18, tiles: [`${origin}${request.url.slice(0, request.url.lastIndexOf('/'))}/{z}/{x}/{y}.${kind === 'raster' ? 'png' : 'pbf'}`] }));
+    if (metadata) response.end(JSON.stringify({ tilejson: '3.0.0', minzoom: 0, maxzoom: state.version === 1 ? 18 : 17,
+        ...(state.version === 3 && { bounds: [0, 0, 1, 1] }),
+        tiles: [`${origin}${request.url.slice(0, request.url.lastIndexOf('/'))}/{z}/{x}/{y}.${kind === 'raster' ? 'png' : 'pbf'}`] }));
     else if (kind === 'raster') response.end(state.png[state.version - 1]);
     else if (kind === 'geojson') response.end(JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: {
         type: 'Polygon', coordinates: [[[state.version === 1 ? -121.86 : -121.78, 46.82], [-121.74, 46.82], [-121.74, 46.88], [state.version === 1 ? -121.86 : -121.78, 46.82]]],
@@ -167,9 +169,12 @@ async function verifyCache(context, state, origin) {
                     onStatus: (_id, status) => window.cacheStatuses.push(status) });
                 window.cachePixels = () => [...document.querySelectorAll('.leaflet-bpb-custom-overlays-pane canvas')].map(canvas => {
                     const bytes = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-                    let hash = 2166136261, painted = 0;
-                    for (let i = 0; i < bytes.length; i++) { hash = Math.imul(hash ^ bytes[i], 16777619); if (i % 4 === 3 && bytes[i]) painted++; }
-                    return { hash, painted };
+                    let hash = 2166136261, painted = 0, red = 0, blue = 0;
+                    for (let i = 0; i < bytes.length; i++) {
+                        hash = Math.imul(hash ^ bytes[i], 16777619);
+                        if (i % 4 === 3 && bytes[i]) { painted++; red += bytes[i - 3]; blue += bytes[i - 1]; }
+                    }
+                    return { hash, painted, red, blue };
                 });
                 window.cacheRenderer.update([window.cacheSource]);
             }, kind);
@@ -194,11 +199,20 @@ async function verifyCache(context, state, origin) {
                 && JSON.stringify(window.cachePixels()) !== JSON.stringify(before), before);
             assert.ok(state.requests.length > start, `${kind} Reload reaches the real cacheable provider`);
             const after = await settledPixels(), unchangedStart = state.requests.length;
-            assert.notDeepEqual(after, before, `${kind}/${width} Reload changes settled painted pixels`);
+            const count = pixels => pixels.reduce((sum, value) => sum + value.painted, 0);
+            if (kind === 'raster') assert.ok(before.every(value => value.red > value.blue) && after.every(value => value.blue > value.red), 'Reload paints the new blue raster');
+            else assert.ok(Math.abs(count(after) - count(before)) > count(before) * .05, `${kind}/${width} Reload changes the fixture geometry`);
+            if (kind !== 'geojson') assert.equal(await page.evaluate(() => Object.values(window.mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay).length), 1,
+                `${kind}/${width} changed metadata releases the old native rendering owner after paint`);
             await page.evaluate(() => window.cacheRenderer.update([window.cacheSource], {}, { [window.cacheSource.id]: 2 }));
             await page.waitForFunction(() => !window.cacheStatuses.at(-1)?.pending && window.cacheStatuses.at(-1)?.message === 'Loaded');
             assert.ok(state.requests.slice(unchangedStart).some(request => request.unchanged), `${kind} unchanged data is conditionally revalidated`);
-            assert.deepEqual(await settledPixels(), after, `${kind}/${width} conditional responses preserve painted pixels`);
+            const unchanged = await settledPixels();
+            // Canvas may switch between hardware and software rasterization
+            // after readback. Compare geometry coverage with a 1% edge-AA
+            // tolerance, rather than requiring identical antialiasing bytes.
+            assert.ok(Math.abs(count(unchanged) - count(after)) <= count(after) * .01, `${kind}/${width} conditional responses preserve painted coverage`);
+            if (kind === 'raster') assert.ok(unchanged.every(value => value.blue > value.red));
             if (process.env.BPB_CUSTOM_LIFECYCLE_SCREENSHOTS) {
                 await mkdir(process.env.BPB_CUSTOM_LIFECYCLE_SCREENSHOTS, { recursive: true });
                 await page.screenshot({ path: path.join(process.env.BPB_CUSTOM_LIFECYCLE_SCREENSHOTS, `${context.browser().browserType().name()}-cache-${kind}-${width}.png`) });
@@ -210,6 +224,12 @@ async function verifyCache(context, state, origin) {
             });
             await page.waitForFunction(() => !window.cacheStatuses.at(-1)?.pending && window.cachePixels().some(value => value.painted));
             assert.equal(state.requests.length, cachedStart, `${kind} ordinary re-enable keeps browser-cache reuse`);
+            if (kind !== 'geojson') {
+                state.version = 3;
+                await page.evaluate(() => window.cacheRenderer.update([window.cacheSource], {}, { [window.cacheSource.id]: 3 }));
+                await page.waitForFunction(() => !window.cacheStatuses.at(-1)?.pending && window.cacheStatuses.at(-1)?.message === 'No tiles in this area.');
+                assert.deepEqual(await page.evaluate(() => window.cachePixels()), [], 'an explicitly empty replacement releases old native canvases');
+            }
             cases++;
         } finally { await page.evaluate(() => window.cacheRenderer?.dispose()).catch(() => {}); await page.close(); }
     }

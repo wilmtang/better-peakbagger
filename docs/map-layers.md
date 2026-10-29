@@ -89,6 +89,10 @@ Reload also reads saved TileJSON metadata again, including changed or renewed
 signed tile URLs, while preserving manual overrides and usable old output on
 failure. Public Reload conditionally revalidates HTTP-cached metadata, data and
 current viewport tiles; ordinary pan/zoom and re-enabling retain cache reuse.
+Changed tile geometry keeps the previous output until the replacement is
+accepted by the map and rendered. Cancellation alone cannot complete it;
+out-of-coverage replacements deliberately clear the old output. Off/disposal
+releases both owners and their listeners.
 Private Reload requires a real action in the map and clears only that
 saved layer revision's response/metadata caches. It preserves approval expiry,
 remaining requests, provider budgets and cooldowns; it does not grant more quota.

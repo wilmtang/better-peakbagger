@@ -12,6 +12,16 @@ const definition = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', r
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d' }] } });
 const mvt = () => fromGeojsonVt({ trails: { features: [{ type: 2, geometry: [[[0, 2048], [4096, 2048]]], tags: {} }] } }, { version: 2, extent: 4096 }).buffer;
 const parse = async data => parseCustomData(data);
+test('a canceled vector decode cannot return a usable tile', async () => {
+    let release, started;
+    const entered = new Promise(resolve => { started = resolve; });
+    const client = createCustomClient({ fetchImpl: async () => new Response(mvt()), parse: async () => {
+        started(); await new Promise(resolve => { release = resolve; }); return { features: [], data: new ArrayBuffer(0) };
+    } });
+    const abort = new AbortController(), pending = client.tile(definition(), { z: 8, x: 1, y: 2 }, abort.signal);
+    await entered; abort.abort(); release();
+    await assert.rejects(pending, { name: 'AbortError' }); client.clear();
+});
 test('a refresh revalidates each owned URL, shares its fresh work and preserves ordinary caching', async () => {
     const calls = [], url = 'https://tiles.example.com/cache.pbf';
     const client = createCustomClient({ fetchImpl: async (_url, options) => {
