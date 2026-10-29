@@ -332,6 +332,16 @@ reviewer; do not describe all six findings as Astra-approved.
   the help's scroll position; two consecutive final Firefox runs passed. Parent
   dismissal revokes pending help (its regression failed before the lifecycle
   fix). Final full-verifier integration remains R06.
+- **R06:** the full verifier uses visible nonzero targets, hit-tested hover,
+  real keyboard events, actual content viewport assertions and clipping/word
+  checks. Negative hidden-target/3000px-input fixtures prove the assertions
+  reject regressions. Firefox sets viewport overrides on a blank page before
+  opening the privileged editor; its library remains durable across fixture
+  navigation. Both default full runs passed 18 editor and 24 help cases plus
+  public loading/retry/workers/hardware rendering, with actual narrow frames
+  339px at 100% and 151/152px at 200%. Unknown/duplicate options reject before
+  launch. Full-run screenshots and independent review found no remaining
+  verifier or UI blocker.
 
 ### Intentionally not changed
 
@@ -344,7 +354,8 @@ reviewer; do not describe all six findings as Astra-approved.
 
 ### Changed but not fully proven
 
-R06 remains open. Final integration, hosted CI, release packages, live providers,
-native permission UI, visible-window focus/placement, screen readers and the
-exact narrow Firefox R05 state are not proven. Peer review of this audit and its
-fix plans is complete; implementation remains a separate step.
+All six implementation units are locally verified; final integration remains
+pending. Hosted CI, release packages, live providers, native permission UI,
+visible-window focus/placement and screen readers are not proven. The full
+Firefox help matrix now covers the narrow R05 geometry. Peer review of the
+implementation and final acceptance evidence is underway.

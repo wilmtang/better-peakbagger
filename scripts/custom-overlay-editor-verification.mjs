@@ -5,12 +5,23 @@ import assert from 'node:assert/strict';
 
 export function readEditorGeometry() {
     const rect = selector => {
-        const box = document.querySelector(selector).getBoundingClientRect();
+        const element = document.querySelector(selector), box = element?.getBoundingClientRect();
+        if (!box?.width || !box.height) throw new Error(`Expected visible geometry for ${selector}`);
         return Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, box[key]]));
     };
-    return { heading: rect('h1'), advanced: rect('#advanced summary'), help: rect('.help summary'),
+    return { heading: rect('h1'), advanced: rect('#advanced summary'), help: rect('#advanced + .help summary'),
         save: rect('#save'), check: rect('#test'), close: rect('#cancel'),
         scroll: document.getElementById('editor-fields').scrollTop, height: document.getElementById('editor-fields').scrollHeight };
+}
+
+export function readEditorFit() {
+    const fields = document.getElementById('editor-fields').getBoundingClientRect();
+    const overflow = [...document.querySelectorAll('input,select,button,p,summary,legend,label')].filter(element => {
+        const box = element.getBoundingClientRect();
+        return box.width && box.height && (box.left < -1 || box.right > innerWidth + 1);
+    }).map(element => element.id || element.tagName);
+    return { fits: fields.left >= 0 && fields.right <= innerWidth && overflow.length === 0,
+        viewport: { width: innerWidth, height: innerHeight }, fields: { left: fields.left, right: fields.right }, overflow };
 }
 
 function stable(before, after, state) {
@@ -51,6 +62,15 @@ export async function verifyCustomEditor({ evaluate, click, press, hover, fill, 
         const gap = await evaluate(() => document.querySelector('#advanced + .help').getBoundingClientRect().top - document.getElementById('advanced').getBoundingClientRect().bottom);
         assert.ok(gap <= 24, `Collapsed Advanced leaves ${gap}px of blank space before troubleshooting`);
         assert.equal(await evaluate(() => document.getElementById('notice').hidden), true);
+        if (width === 1000) {
+            await evaluate(() => { document.querySelector('#advanced + .help').hidden = true; });
+            try { await assert.rejects(evaluate(readEditorGeometry), /Expected visible geometry/, 'hidden geometry must fail'); }
+            finally { await evaluate(() => { document.querySelector('#advanced + .help').hidden = false; }); }
+            await evaluate(() => { document.getElementById('name').style.width = '3000px'; });
+            try { assert.equal((await evaluate(readEditorFit)).fits, false, 'real overflowing controls must fail'); }
+            finally { await evaluate(() => { document.getElementById('name').style.width = ''; }); }
+            assert.equal((await evaluate(readEditorFit)).fits, true, 'intentional in-bounds field margins are supported');
+        }
         await click('#advanced summary');
         await hover('#format-label .info');
         await wait(() => evaluate(() => !document.getElementById('format-help').hidden), 'help opens on hover');

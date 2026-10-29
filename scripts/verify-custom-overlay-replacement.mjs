@@ -10,7 +10,7 @@ import os from 'node:os';
 import {build} from 'esbuild';
 import {chromium} from 'playwright';
 import {createFixtureCertificate,waitForCondition} from './browser-verification-fixtures.mjs';
-import {assertChromeLaunchAllowed} from './chrome-launch-guard.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import {createResourceStack,listenServer,closeServer} from './resource-stack.mjs';
 assert.equal(process.argv.length,2,'Usage: node scripts/verify-custom-overlay-replacement.mjs');
 const root=process.cwd(),resources=createResourceStack(); let cases=0;

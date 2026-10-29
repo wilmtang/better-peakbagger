@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, chrome, scrollY, innerWidth, getComputedStyle */
+/* global document, window, chrome, scrollY, innerWidth, getComputedStyle, location, requestAnimationFrame */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,8 @@ import { createResourceStack, listenServer, closeServer } from './resource-stack
 import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { verifyCustomEditor } from './custom-overlay-editor-verification.mjs';
+import { verifyCustomEditor, verifyCustomHelp, readEditorFit } from './custom-overlay-editor-verification.mjs';
+import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
 import { readCustomLayerNavigation, assertCustomLayerNavigation } from './verify-settings-navigation.mjs';
 
 const selections = process.argv.slice(2), firefoxMode = selections.includes('--firefox'), loadingOnly = selections.includes('--loading-only');
@@ -84,6 +85,18 @@ try {
         await admin.locator('#custom-layer-add').click();
         await editor.locator('#name').waitFor();
         const editorFrame = admin.frames().find(frame => frame.url().includes('/custom-overlay/editor.html'));
+        const helpProof = loadingOnly ? { scope: 'not selected' } : await verifyCustomHelp({
+            evaluate: (...args) => editorFrame.evaluate(...args),
+            press: async (selector, key) => { if (selector !== ':focus') await editor.locator(selector).focus(); await admin.keyboard.press(key); },
+            wait: (condition, description) => waitForCondition(condition, { description, timeoutMs: 15000 }),
+            viewport: width => admin.setViewportSize({ width, height: 800 }),
+            zoom: async factor => {
+                await admin.evaluate(async factor => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === location.href); await chrome.tabs.setZoom(tab.id, factor); }, factor);
+                await admin.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                return admin.evaluate(() => ({ width: innerWidth, height: window.innerHeight }));
+            },
+            screenshot: async name => { if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await admin.screenshot({ path: path.join(process.env.BPB_CUSTOM_SCREENSHOTS, `editor-${name}.png`) }); } },
+        });
         const editorProof = loadingOnly ? { scope: 'loading-only', editorTransitions: 'not selected' } : await verifyCustomEditor({ evaluate: (...args) => editorFrame.evaluate(...args), click: selector => editor.locator(selector).click(),
             hover: selector => editor.locator(selector).hover(),
             press: (selector, key) => editor.locator(selector).press(key), fill: (selector, value) => editor.locator(selector).fill(value),
@@ -258,8 +271,8 @@ try {
             if (screenshots) await admin.screenshot({ path: path.join(screenshots, 'custom-editor-narrow.png') });
             assert.ok((await editor.locator('#save').boundingBox()).width > 50);
             await admin.evaluate(async target => { const tabs = await chrome.tabs.query({}); const tab = tabs.find(item => item.url === target); await chrome.tabs.setZoom(tab.id, 2); }, admin.url());
-            await waitForCondition(() => editor.locator('#form').evaluate(form => ({ content: form.scrollWidth, available: form.clientWidth })), {
-                description: 'editor fits after 200% browser zoom settles', isReady: value => value.content <= value.available,
+            await waitForCondition(() => editorFrame.evaluate(readEditorFit), {
+                description: 'editor fits after 200% browser zoom settles', isReady: value => value.fits,
             });
             await editor.locator('#advanced').evaluate(element => { element.open = true; });
             const hoverInfo = editor.locator('#kind-label .info');
@@ -350,7 +363,7 @@ try {
         await editor.locator('#cancel').click();
         if (screenshots) await page.screenshot({ path: path.join(screenshots, 'custom-terrain.png') });
         assert.deepEqual(errors, []);
-        console.log(JSON.stringify({ verification: 'custom-overlays', scope: loadingOnly ? 'loading-only' : 'full', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true, scrollBoundaries: true, editorProof, previousCanvasProof: !!process.env.BPB_PREVIOUS_PANEL_CSS }));
+        console.log(JSON.stringify({ verification: 'custom-overlays', scope: loadingOnly ? 'loading-only' : 'full', browser: browser.browser().version(), hidden: true, requests: requests.length, surfaces: surfaces.length, renderer, rasterPixels: true, vectorWorkers: true, corsRecovery: true, retryAnchored: true, scrollBoundaries: true, editorProof, helpProof, previousCanvasProof: !!process.env.BPB_PREVIOUS_PANEL_CSS }));
     }
 } catch (error) { failure = error; try { const live = await failurePage?.frameLocator('iframe[title="Custom map overlays"]').locator('#feedback').textContent({ timeout: 1000 }); console.error(JSON.stringify({ live, ...diagnostics?.() })); } catch { /* Preserve the original failure. */ } }
 await resources.dispose(failure);
@@ -414,14 +427,48 @@ async function verifyFirefox({ resources, temporaryRoot, origin, providerOrigin,
     await click('#custom-layer-add');
     await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
     await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'Options editor initialized');
+    const viewportEditor = async width => {
+        await driver.switchTo().defaultContent(); await driver.get('about:blank');
+        await setFirefoxContentViewport(driver, { width, height: 800 });
+        await driver.get(optionsUrl + '#custom-map-layers');
+        await waitForCondition(() => evaluate(() => ({ width: innerWidth, height: window.innerHeight })), {
+            description: `Firefox editor content viewport ${width}x800`, isReady: value => value.width === width && value.height === 800,
+        });
+        await wait(() => evaluate(() => !document.getElementById('custom-layer-add').disabled), 'editor manager is ready');
+        await click('#custom-layer-add');
+        await wait(() => evaluate(() => !document.querySelector('#custom-layer-dialog iframe').hidden), 'editor frame is visible');
+        await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
+        await wait(() => evaluate(() => document.getElementById('form-title')?.textContent === 'Add custom overlay'), 'editor open transaction completes');
+    };
+    const helpProof = loadingOnly ? { scope: 'not selected' } : await verifyCustomHelp({ evaluate, wait,
+        viewport: viewportEditor,
+        press: async (selector, key) => {
+            const keys = { Tab: Key.TAB, 'Shift+Tab': Key.chord(Key.SHIFT, Key.TAB), Escape: Key.ESCAPE, ArrowDown: Key.ARROW_DOWN, Home: Key.HOME, End: Key.END };
+            assert.ok(keys[key], `Unknown help key ${key}`);
+            if (selector !== ':focus') await evaluate(selector => document.querySelector(selector).focus(), selector);
+            await driver.actions().sendKeys(keys[key]).perform();
+        },
+        zoom: async factor => {
+            await driver.switchTo().defaultContent();
+            const size = await evaluate(async factor => { const api = window.browser || window.chrome; const tabs = await api.tabs.query({}); const tab = tabs.find(item => item.url === location.href); await api.tabs.setZoom(tab.id, factor);
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return { width: innerWidth, height: window.innerHeight }; }, factor);
+            await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe'))); return size;
+        },
+        screenshot: async name => { if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await writeFile(path.join(process.env.BPB_CUSTOM_SCREENSHOTS, `editor-firefox-${name}.png`), await driver.takeScreenshot(), 'base64'); } },
+    });
     const editorProof = loadingOnly ? { scope: 'loading-only', editorTransitions: 'not selected' } : await verifyCustomEditor({ evaluate, click, wait, providerOrigin, holdSource, pendingSource,
-        hover: async selector => driver.actions({ async: true }).move({ origin: await driver.findElement(By.css(selector)) }).perform(),
-        press: async (selector, key) => { const keys = { Space: Key.SPACE, Escape: Key.ESCAPE, ArrowDown: Key.ARROW_DOWN }; assert.ok(keys[key], `Unknown editor key: ${key}`); await (await driver.findElement(By.css(selector))).sendKeys(keys[key]); },
+        hover: async selector => {
+            const element = await driver.findElement(By.css(selector));
+            await evaluate(selector => document.querySelector(selector).scrollIntoView({ block: 'center' }), selector);
+            assert.equal(await evaluate(selector => { const element = document.querySelector(selector), box = element.getBoundingClientRect(); return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)); }, selector), true, 'hover target is hit-testable');
+            await driver.actions({ async: true }).move({ origin: element }).perform();
+        },
+        press: async (selector, key) => { const keys = { Space: Key.SPACE, Escape: Key.ESCAPE, ArrowDown: Key.ARROW_DOWN }; assert.ok(keys[key], `Unknown editor key: ${key}`); await evaluate(selector => document.querySelector(selector).focus(), selector); await driver.actions().sendKeys(keys[key]).perform(); },
         fill: async (selector, value) => { const input = await driver.findElement(By.css(selector)); await input.clear(); await input.sendKeys(value); },
         select: async (selector, value) => { await evaluate((selector, value) => { const input = document.querySelector(selector); input.value = value; input.dispatchEvent(new window.Event('input', { bubbles: true })); input.dispatchEvent(new window.Event('change', { bubbles: true })); }, selector, value); },
-        viewport: async width => { await driver.switchTo().defaultContent(); await driver.manage().window().setRect({ width, height: 800 }); await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe'))); },
+        viewport: viewportEditor,
         screenshot: async name => { if (process.env.BPB_CUSTOM_SCREENSHOTS) { await mkdir(process.env.BPB_CUSTOM_SCREENSHOTS, { recursive: true }); await writeFile(path.join(process.env.BPB_CUSTOM_SCREENSHOTS, `editor-firefox-${name}.png`), await driver.takeScreenshot(), 'base64'); } } });
-    console.log(JSON.stringify({ verification: 'custom-overlay-editor', browser: 'Firefox', hidden: true, ...editorProof }));
+    console.log(JSON.stringify({ verification: 'custom-overlay-editor', browser: 'Firefox', hidden: true, ...editorProof, helpProof }));
     await click('#cancel'); await driver.switchTo().defaultContent(); await click('#custom-layer-add');
     await driver.switchTo().frame(await driver.findElement(By.css('#custom-layer-dialog iframe')));
     await wait(() => evaluate(() => document.getElementById('name').value === ''), 'fresh editor after verification');
