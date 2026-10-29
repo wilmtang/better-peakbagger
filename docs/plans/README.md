@@ -1,10 +1,5 @@
 # Active plans
 
-- [Code, performance, engineering and UX re-audit — October 28](codebase-audit-2026-10-28.md)
-  — six open findings covering import intent, HTTP-cache refresh, replacement
-  readiness, committed-write feedback, enlarged keyboard help and verifier
-  accuracy. Audit only; runtime source is unchanged.
-
 - [Private custom-layer relay — October 26](custom-layer-private-relay-2026-10-26.md)
   — implemented private query parameters, constrained worker requests and bounded
   user grants; full tests/lint and Chrome/Firefox private 2D/3D passed. Native
@@ -90,6 +85,13 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [October 28 code/performance/UX re-audit](../archive/codebase-audit-2026-10-28.md)
+is implemented in seven focused fix commits covering six findings and a
+transition defect caught during final independent review. Its ledger records
+import conflicts, HTTP revalidation, rendered replacement readiness, committed
+Save/Delete feedback, enlarged keyboard help and restored full verification.
+The reviewed dependency exception and native/live/hosted-CI proof gaps remain.
 
 The [October 27 code/performance/UX audit](../archive/codebase-audit-2026-10-27.md)
 is implemented in seven focused commits. Its closure ledger records credential

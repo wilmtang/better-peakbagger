@@ -1,16 +1,21 @@
 # Code, performance, engineering and UX re-audit — October 28, 2026
 
-Status: **remediation in progress**. The user authorized implementation after
+Status: **implemented and locally verified; external proof gaps retained**.
+The user authorized implementation after
 the audit. The findings below record the review of `141ad723`, following the
-[October 27 remediation](../archive/codebase-audit-2026-10-27.md), not a claim
+[October 27 remediation](codebase-audit-2026-10-27.md), not a claim
 that its historical checks failed or that every repository surface was audited.
 
-The highest-value work is protecting credential intent during slow imports,
-making Reload reach the provider, and preserving usable map output through
-cancellation. The editor also has a reproduced keyboard-focus defect that the
-current full verifier cannot reach because of incorrect earlier assertions.
+The fixes protect credential intent during slow imports, make Reload reach the
+provider, preserve usable map output through cancellation, acknowledge committed
+map changes accurately and keep enlarged keyboard help usable. The repaired
+verifiers now exercise the complete editor matrix at measured viewport sizes.
 
 ## Findings
+
+The source line ranges, reproductions and acceptance plans in this section
+describe audited revision `141ad723`; implementation outcomes and current proof
+limits follow in the implementation verification and closure ledger.
 
 | ID | Priority | Finding | Evidence | Proposed independent unit |
 | --- | --- | --- | --- | --- |
@@ -275,6 +280,70 @@ not rerun the browser matrices. Final wording review is complete and no
 disagreements remain. This is agreement with the authorized replacement
 reviewer; do not describe all six findings as Astra-approved.
 
+During implementation, an available independent reviewer challenged each fix
+and the combined result. Its final source review found an additional R03
+empty-to-covered feedback defect; both the unit and real native-map regression
+rejected that code before the correction. The reviewer independently reproduced
+the corrected transition and agrees with all six implementation boundaries and
+the recorded proof limits. No source-review disagreement remains.
+
+## Implementation commits
+
+| Finding | Focused commit |
+| --- | --- |
+| R01 | `0b926638` — capture import expectations before account validation |
+| R02 | `46fae398` — revalidate public map data on explicit refresh |
+| R03 | `a0becc00` — retain map output until replacement rendering completes |
+| R04 | `a10a4a07` — acknowledge committed layers despite cleanup failures |
+| R05 | `3bba15f7` — preserve visible keyboard focus in enlarged map help |
+| R06 | `5a160338` — verify visible editor geometry at actual viewport sizes |
+| R03 follow-up | `68f40556` — clear empty map feedback when coverage returns |
+
+## Implementation verification
+
+- `npm test`: **3,751 passed**, zero failures/skips. The first integration run
+  passed 3,750/3,751: the new hardware probe used a semantically equivalent
+  import spelling that the repository's structural launch-guard test rejected.
+  The canonical import was restored and the full rerun passed.
+- `npm run test:scale`: **14 passed**. `npm run lint`: passed with the existing
+  **eight owned web-ext warnings**. Documentation, script inventory and launch
+  guard checks passed; `git diff --check` passed.
+- The live `npm run audit:ci -- --allow-reviewed-development-advisory` command
+  passed. Raw full audit retains the reviewed deepmerge advisory across three
+  low development packages, expiring **October 31 at 00:00 PDT / 07:00 UTC**.
+  The default audit remains strict; this is not a clean raw dependency graph.
+- Default full custom-overlay runs passed hidden Chrome **156.0.8078.4** and
+  Firefox **158.0.1** on Apple M3 Pro hardware. Each ran **18 editor + 24 help
+  cases**, including light/dark, pending/error/success/retry, real keyboard
+  focus, content widths 1000/375×800 and zoom 100/200%. Measured narrow editor
+  frames were 339×718 at 100% and 151/152×358 at 200%; screenshots were inspected.
+  Those runs also checked public loading, retry, native/3D pixels and workers.
+- Private-layer matrices passed hidden Chrome 156/Firefox 158 with
+  hardware rendering, Save recovery, refreshed metadata/tiles, secret isolation
+  and private-file round trip. Map checks use 1000/390×900. Private-editor widths
+  are 1000/375 in Chrome and 1000/500 in Firefox; these do not stand in for the
+  separate measured narrow-help proof. Native permissions are pregranted. The
+  later R03 status follow-up passed the strengthened unit/native coverage
+  checks and regenerated packaged-browser checks.
+- `npm run verify -- browsers` passed the real manifest/worker/bridge checks in
+  hidden Chrome 156/Firefox 158 at 1000×760, with light/dark layout checks at
+  widths 1600/800/390 and enlarged text. Both reported BFCache restoration and
+  successful teardown. The dedicated hardware replacement probe and six-case
+  native HTTP-cache/coverage matrices are recorded under R02/R03 below.
+- Minified Chrome and Firefox **4.0.2** packages built and passed archive
+  validation (**136 entries each**). After the R03 follow-up, regenerated exact
+  archive bytes passed `verify-packaged-extensions.mjs` in hidden isolated
+  Chrome 156/Firefox 158 without rebuilding. Startup/bridge, layout, BFCache
+  and teardown checks passed; archive fingerprints remained unchanged.
+
+Browser fixtures use disposable HTTPS certificates/profiles and controlled
+providers. These checks do not exercise live accounts or native permission
+dialogs. Final command-line inspection found **zero task-profile browser/helper
+processes and zero disposable verifier directories**, including the separate
+keyboard-help probes. Disposable packages, profiles and certificates were
+removed; existing user browsers were untouched. No push, signing, release or
+store publication was performed.
+
 ## Closure ledger
 
 ### Fixed and verified
@@ -292,8 +361,8 @@ reviewer; do not describe all six findings as Astra-approved.
   The first Chrome check sampled before Leaflet finished painting; it now waits
   for conditionally stable pixels. Two new client assertions failed before the
   fix; the new browser check also rejected the historical client because Reload
-  never reached the cacheable provider. MapLibre GL integration remains part of
-  final acceptance.
+  never reached the cacheable provider. Final public/private hardware matrices
+  and the replacement probe cover MapLibre integration.
 - **R03:** staged output now retires through native layer load or MapLibre
   accepted source data followed by render, with generation/viewport ownership.
   Cancelled vector decoding is rejected; errors retain output, empty eligible
@@ -338,7 +407,7 @@ reviewer; do not describe all six findings as Astra-approved.
   required the owned next-frame correction. Remeasurement also now preserves
   the help's scroll position; two consecutive final Firefox runs passed. Parent
   dismissal revokes pending help (its regression failed before the lifecycle
-  fix). Final full-verifier integration remains R06.
+  fix). The default full verifier now runs this matrix with R06.
 - **R06:** the full verifier uses visible nonzero targets, hit-tested hover,
   real keyboard events, actual content viewport assertions and clipping/word
   checks. Negative hidden-target/3000px-input fixtures prove the assertions
@@ -361,8 +430,14 @@ reviewer; do not describe all six findings as Astra-approved.
 
 ### Changed but not fully proven
 
-All six implementation units are locally verified; final integration remains
-pending. Hosted CI, release packages, live providers, native permission UI,
-visible-window focus/placement and screen readers are not proven. The full
-Firefox help matrix now covers the narrow R05 geometry. Peer review of the
-implementation and final acceptance evidence is underway.
+All six reported findings and the R03 transition follow-up are locally verified.
+Hosted CI, live providers/accounts, store signing/installation/update behavior,
+native permission UI, visible-window focus/placement and screen readers remain
+unproven. Hidden protocol screenshots establish rendered content and geometry,
+not those native or onscreen behaviors. The full Firefox help matrix now covers
+the narrow R05 geometry. Fixture pregrants, transport/storage failure injection
+and controlled provider responses remain explicit limits of the evidence.
+
+The finite reviewed dependency exception is intentionally retained; it has not
+been repaired or extended by this work. This ledger closes the reported local
+defects within the tested scope, not every possible repository bug.

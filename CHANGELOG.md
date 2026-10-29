@@ -6,8 +6,11 @@
   controls at enlarged zoom and let the keyboard read overflowing text without
   moving the editor actions.
 - **Refresh custom maps safely.** Retry recovers missing 3D sources. Reload
-  refreshes saved metadata and private tiles without resetting allowances,
-  preserves usable maps on failure, and releases replaced Leaflet renderers.
+  revalidates public data and refreshes saved metadata and private tiles without
+  resetting allowances. Refresh preserves usable maps during loading and failure;
+  panning back into coverage restores accurate feedback.
+- **Confirm saved map changes accurately.** Completed map-layer saves and
+  deletions stay successful when obsolete private-record cleanup needs retry.
 - **Preserve newer settings and credentials.** Imports capture their expected
   state before validating accounts, so slower imports preserve newer edits,
   disconnects and photo-key removals.
