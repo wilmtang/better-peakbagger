@@ -72,6 +72,35 @@ The upstream revision, license, and local adaptations are recorded in
 copy and preserve its Claude Code symlink rather than maintaining separate
 versions for each agent.
 
+### Automatic skill updates
+
+`.github/workflows/update-ui-ux-skill.yml` checks upstream monthly and can be
+started from **Actions → Update UI/UX skill → Run workflow**. It maintains
+`codex/update-ui-ux-skill` and queues a merge commit once the existing required
+checks pass. A push to `main` refreshes an open update against the new base.
+
+One-time setup: add the repository secret `SKILL_UPDATE_TOKEN`, using a
+fine-grained GitHub token restricted to this repository with **Contents: Read
+and write** and **Pull requests: Read and write**. Keep its expiration current.
+The built-in `GITHUB_TOKEN` cannot provide unattended PR checks: GitHub requires
+manual workflow approval for PRs it creates. The updater uses the dedicated
+token only for checking its presence, publishing the automation branch/PR, and
+queueing the merge. It never executes downloaded helpers in that job.
+
+`scripts/update-ui-ux-skill.mjs` pins the upstream commit, verifies downloaded
+blob hashes, and three-way merges `SKILL.md` with the installed upstream version
+to retain project guidance. Changed local helpers, merge conflicts, license
+changes, unsupported layouts, and divergent upstream history stop the run.
+Only the canonical skill directory changes; the license and Claude symlink
+remain intact. The automation owns its update branch; make local customizations
+on `main` rather than editing that branch. Skill data validation, Python CLI
+smoke checks, and updater regressions run with `npm test` in the required Node
+check, while the publishing job keeps its built-in token read-only.
+
+For a local preview, run `node scripts/update-ui-ux-skill.mjs --check`; omit
+`--check` to apply the proposed update in a clean skill working tree. Neither
+command commits, pushes, or merges anything locally.
+
 ## Source and test layout
 
 Runtime modules are grouped by the behavior they own. The directory is an
