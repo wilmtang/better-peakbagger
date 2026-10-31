@@ -183,8 +183,8 @@ export async function verifyInstagram(kind,{live=false,screenshots,display=false
             type=async(selector,text)=>{await page.locator(selector).click();await page.keyboard.press('End');await page.keyboard.type(text);};back=()=>page.goBack();
             viewport=size=>page.setViewportSize(size);screenshot=file=>page.screenshot({path:file,fullPage:false});version=context.browser().version();
             optionsShot=async(width,file)=>{
-                await options.setViewportSize({width,height:900});await options.goto(options.url().split('#')[0]+'#capture-report');await options.reload();
-                await waitForCondition(()=>options.evaluate(readSettingsFragmentLanding),{description:'Report editor settings landing',isReady:value=>settingsFragmentLanded(value,'#capture-report')});
+                await options.setViewportSize({width,height:900});await options.goto(options.url().split('#')[0]+'#capture-view');await options.reload();
+                await waitForCondition(()=>options.evaluate(readSettingsFragmentLanding),{description:'Trip report viewing settings landing',isReady:value=>settingsFragmentLanded(value,'#capture-view')});
                 await options.evaluate(()=>document.getElementById('load-instagram-automatically').closest('.row').scrollIntoView({block:'center',behavior:'instant'}));
                 if(file)await options.screenshot({path:file});return {width,height:900};};
             optionKey=async()=>{await options.locator('#instagram-display-fixes').focus();await options.keyboard.press('Space');};
@@ -223,8 +223,8 @@ export async function verifyInstagram(kind,{live=false,screenshots,display=false
                 // Firefox BiDi cannot override privileged extension viewports.
                 // Resize the hidden window and report its actual content size.
                 await driver.manage().window().setRect({width,height:985});
-                await driver.get(optionsUrl+'#capture-report');await driver.navigate().refresh();
-                await waitForCondition(()=>driver.executeScript(`return (${readSettingsFragmentLanding})();`),{description:'Report editor settings landing',isReady:value=>settingsFragmentLanded(value,'#capture-report')});
+                await driver.get(optionsUrl+'#capture-view');await driver.navigate().refresh();
+                await waitForCondition(()=>driver.executeScript(`return (${readSettingsFragmentLanding})();`),{description:'Trip report viewing settings landing',isReady:value=>settingsFragmentLanded(value,'#capture-view')});
                 const actual=await driver.executeScript('return {width:innerWidth,height:innerHeight}');
                 await driver.executeScript('document.getElementById("load-instagram-automatically").closest(".row").scrollIntoView({block:"center",behavior:"instant"})');
                 if(file)await screenshot(file.replace(`-${width}.png`,`-${actual.width}.png`));return actual;
@@ -430,9 +430,10 @@ export async function verifyInstagram(kind,{live=false,screenshots,display=false
                     await permissionCommand({type:'setup'});
                     await waitForCondition(()=>control(()=>JSON.parse(document.documentElement.getAttribute('data-bpb-permission-state')||'{}').ready),{description:'permission result fixture ready'});
                     const optionState=()=>control(()=>{const input=document.getElementById('instagram-display-fixes');return {checked:input.checked,busy:input.getAttribute('aria-busy')==='true',
-                        focus:document.activeElement===input,requests:JSON.parse(document.documentElement.getAttribute('data-bpb-permission-state')).requests,boxes:[input,document.getElementById('instagram-display-row'),document.getElementById('capture-photos-heading')].map(node=>{const r=node.getBoundingClientRect();return [r.x,r.y,r.width,r.height];})};});
+                        focus:document.activeElement===input,requests:JSON.parse(document.documentElement.getAttribute('data-bpb-permission-state')).requests,scroll:document.querySelector('.content').scrollTop,boxes:[input,document.getElementById('capture-view-heading'),document.getElementById('capture-view'),document.getElementById('instagram-display-row'),document.getElementById('capture-report-heading')].map(node=>{const r=node.getBoundingClientRect();return [r.x,r.y,r.width,r.height];})};});
                     const anchor=await optionState();
                     const anchored=async()=>{const current=await optionState();assert(current.focus,'permission feedback lost keyboard focus');
+                        assert(Math.abs(current.scroll-anchor.scroll)<=1,'permission feedback moved the reading position');
                         for(const [i,box]of current.boxes.entries())for(const [axis,value]of box.entries())assert(Math.abs(value-anchor.boxes[i][axis])<=1,`permission feedback moved the option or following content: ${JSON.stringify({anchor,current})}`);return current;};
                     try{
                         for(const result of [false,true,true]){

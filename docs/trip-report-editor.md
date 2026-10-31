@@ -1180,10 +1180,11 @@ thumbnail or player is requested until loading is authorized. In Rich text,
 is always an ordinary canonical bracket link, useful to readers without BPB;
 placeholder controls and scripts are never submitted to Peakbagger.
 
-**Load Instagram posts automatically** in Settings → Report editor defaults off
-and stays on this device. Turning it on loads visible posts; turning it off
-unloads players. Manual loading grants only that post for this visit. **Cancel**,
-**Hide post** and **Retry** keep the same action in place. Pending/error states
+**Load Instagram posts automatically** in Settings → Capture & reports →
+Trip report viewing defaults off and stays on this device. Turning it on loads
+visible posts; turning it off unloads players. Manual loading grants only that
+post for this visit. **Cancel**, **Hide post** and **Retry** keep the same action
+in place. Pending/error states
 remain compact; success expands once into the provider's captioned player. The
 author's caption appears inside that isolated player after loading, not in the
 blocked placeholder. BPB does not fetch, extract or save caption text separately.
@@ -1201,10 +1202,10 @@ APIs; opening Instagram itself is the separate link beside the load control.
 
 ### Dark mode
 
-In **Settings → Report editor → Instagram theme**, turn on **Match BPB theme**
-and accept the browser's optional Instagram permission. Reload an already-open
-post afterward. This is separate from loading consent: posts still wait for
-**Load post** unless automatic loading is enabled.
+In **Settings → Capture & reports → Trip report viewing → Instagram theme**,
+turn on **Match BPB theme** and accept the browser's optional Instagram permission.
+Reload an already-open post afterward. This is separate from loading consent:
+posts still wait for **Load post** unless automatic loading is enabled.
 
 The helper follows BPB's light/dark theme, including changes while a post is
 open. Headers, captions, links and icon controls are themed; photos and video

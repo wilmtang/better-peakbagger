@@ -376,15 +376,15 @@ test('settings are grouped by the surface they affect', async () => {
     assert.equal(general.querySelector('#enable-report-editor'), null);
     assert.equal(general.querySelector('#add-report-credit'), null);
 
-    // Capture & reports → GPX capture / Report editor
+    // Capture & reports keeps viewing settings separate from the editor.
     assert.deepEqual(
         [...capture.querySelectorAll('.subsection-title')].map(heading => heading.textContent),
-        ['Garmin connection', 'GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
+        ['Garmin connection', 'GPX capture', 'Trip report viewing', 'Report editor', 'Report photos', 'Report drafts'],
     );
     assert.deepEqual(
         [...dom.window.document.querySelectorAll('.side-nav a.nav-subitem[href^="#capture-"],'
             + ' .side-nav a.nav-subitem[href="#drafts"]')].map(link => link.textContent),
-        ['Garmin connection', 'GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
+        ['Garmin connection', 'GPX capture', 'Trip report viewing', 'Report editor', 'Report photos', 'Report drafts'],
     );
     assert.equal(capture.querySelector('#capture-report .title').textContent, 'Report editor');
     for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights', 'fill-external-url']) {
@@ -1046,7 +1046,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const doc = dom.window.document;
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
-        ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
+        ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-view', '#capture-report', '#capture-photos', '#drafts',
             '#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);

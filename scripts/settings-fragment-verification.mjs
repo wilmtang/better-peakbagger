@@ -113,12 +113,13 @@ export async function verifySettingsFragments({ evaluate, navigate, reload, back
         const label = `${width}-${theme}-${expanded ? 'expanded' : 'compact'}`;
         await resize(width, 760);
         await configure({ theme, enableReportEditor: expanded, enableGarminInbox: expanded });
-        for (const hash of ['#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#ignored-github', '#about']) {
+        for (const hash of ['#capture-view', '#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#ignored-github', '#about']) {
             await navigate(hash); await land(hash, `${label}/${hash}/open`);
             await reload(); await land(hash, `${label}/${hash}/refresh`);
             await evaluate(() => document.querySelector('.content').scrollTo({ top: 0, behavior: 'instant' }));
             await reload();
             const state = await land(hash, `${label}/${hash}/refresh-after-manual-scroll`);
+            if (hash === '#capture-view') await screenshot?.(`${label}-trip-report-viewing`);
             if (hash === '#map-chart-chart') { viewports.push(state.viewport); await screenshot?.(`${label}-chart`); }
         }
         await navigate('#map-chart-chart'); await land('#map-chart-chart', `${label}/history-start`);
@@ -142,6 +143,6 @@ export async function verifySettingsFragments({ evaluate, navigate, reload, back
         });
         cases++;
     }
-    assert.ok(cases >= 80, 'fragment verification must execute its load, refresh and history cases');
-    return { cases, viewports, anchors: 5, refresh: true, backForward: true, manualReading: true };
+    assert.equal(cases, 96, 'fragment verification must execute its load, refresh and history cases');
+    return { cases, viewports, anchors: 6, refresh: true, backForward: true, manualReading: true };
 }

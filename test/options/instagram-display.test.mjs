@@ -5,6 +5,28 @@ import assert from 'node:assert/strict';
 import { loadOptions, registerCleanup, waitFor } from '../helpers/options-helpers.mjs';
 registerCleanup();
 
+test('Instagram viewing controls stay discoverable with the report editor disabled',async()=>{
+    const dom=await loadOptions({enableReportEditor:false},{hash:'#capture-view'});
+    const doc=dom.window.document,view=doc.getElementById('capture-view');
+    assert.ok(view,'trip report viewing needs its own settings destination');
+    assert.equal(view.querySelector('h3').textContent,'Trip report viewing');
+    const link=doc.querySelector('.side-nav a[href="#capture-view"]');
+    assert.equal(link.textContent,'Trip report viewing');
+    assert.equal(link.getAttribute('aria-current'),'true');
+    for(const id of ['load-instagram-automatically','instagram-display-fixes']){
+        const control=doc.getElementById(id);
+        assert.equal(control.closest('.subsection'),view,`${id} belongs to viewing settings`);
+        assert.equal(control.closest('[data-report-editor-dependent]'),null);
+        assert.equal(doc.getElementById('capture-report').contains(control),false);
+    }
+    assert.equal(view.hidden,false);
+    doc.getElementById('enable-report-editor').click();
+    await waitFor(dom,()=>dom.chrome._store.bpbSettings?.enableReportEditor===true);
+    doc.getElementById('enable-report-editor').click();
+    await waitFor(dom,()=>dom.chrome._store.bpbSettings?.enableReportEditor===false);
+    assert.equal(view.hidden,false,'turning the editor off must leave viewing settings available');
+});
+
 test('Instagram display access is explicitly requested, denial recovers, busy actions do not repeat, and removal is reflected',async()=>{
     let allowed=false,release,requests=0,removals=0,syncs=0;
     const dom=await loadOptions({}, {prepareChrome(api){

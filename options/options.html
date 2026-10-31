@@ -33,6 +33,7 @@
                 <ul class="nav-sublist">
                     <li data-garmin-inbox hidden><a class="nav-subitem" href="#capture-garmin">Garmin connection</a></li>
                     <li><a class="nav-subitem" href="#capture-gpx">GPX capture</a></li>
+                    <li><a class="nav-subitem" href="#capture-view">Trip report viewing</a></li>
                     <li><a class="nav-subitem" href="#capture-report">Report editor</a></li>
                     <li data-report-editor-dependent><a class="nav-subitem" href="#capture-photos">Report photos</a></li>
                     <li data-report-editor-dependent><a class="nav-subitem" href="#drafts">Report drafts</a></li>
@@ -320,6 +321,20 @@
                 </div>
             </div>
 
+            <div class="subsection" id="capture-view" role="group" aria-labelledby="capture-view-heading">
+                <h3 class="subsection-title" id="capture-view-heading">Trip report viewing</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label"><span class="title">Instagram posts</span><span class="desc">Posts in trip reports and editor previews wait for you to load them unless you allow automatic loading on this device.</span></div>
+                        <div class="control"><label class="check" for="load-instagram-automatically"><input type="checkbox" id="load-instagram-automatically"><span>Load Instagram posts automatically</span></label></div>
+                    </div>
+                    <div class="row" id="instagram-display-row">
+                        <div class="label"><span class="title">Instagram theme</span><span class="desc" id="instagram-display-desc">Match embedded posts to BPB’s theme. Requires optional Instagram access. The browser permission covers Instagram; BPB uses it only in its own embedded posts.</span></div>
+                        <div class="control"><label class="check" for="instagram-display-fixes"><input type="checkbox" id="instagram-display-fixes" aria-describedby="instagram-display-desc"><span>Match BPB theme</span></label></div>
+                    </div>
+                </div>
+            </div>
+
             <div class="subsection" id="capture-report" role="group" aria-labelledby="capture-report-heading">
                 <h3 class="subsection-title" id="capture-report-heading">Report editor</h3>
                 <div class="card">
@@ -347,14 +362,6 @@
                                 <span>Add credit</span>
                             </label>
                         </div>
-                    </div>
-                    <div class="row">
-                        <div class="label"><span class="title">Instagram posts</span><span class="desc">Paste a post link on its own line. Posts wait for you to load them unless you allow automatic loading on this device.</span></div>
-                        <div class="control"><label class="check" for="load-instagram-automatically"><input type="checkbox" id="load-instagram-automatically"><span>Load Instagram posts automatically</span></label></div>
-                    </div>
-                    <div class="row" id="instagram-display-row">
-                        <div class="label"><span class="title">Instagram theme</span><span class="desc" id="instagram-display-desc">Match embedded posts to BPB’s theme. Requires optional Instagram access. The browser permission covers Instagram; BPB uses it only in its own embedded posts.</span></div>
-                        <div class="control"><label class="check" for="instagram-display-fixes"><input type="checkbox" id="instagram-display-fixes" aria-describedby="instagram-display-desc"><span>Match BPB theme</span></label></div>
                     </div>
                 </div>
             </div>
