@@ -123,6 +123,7 @@ independent of the existing targets.
 - [verify-inline-buddies.mjs](verify-inline-buddies.mjs)
 - [verify-profile-editor.mjs](verify-profile-editor.mjs)
 - [verify-profile-preparation.mjs](verify-profile-preparation.mjs)
+- [verify-profile-units.mjs](verify-profile-units.mjs)
 
 ## Weather and snow
 

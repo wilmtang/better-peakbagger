@@ -328,7 +328,8 @@
         "https://peakbagger.com/climber/Climber.aspx*"
       ],
       "js": [
-        "content/climber-favorite.js"
+        "content/climber-favorite.js",
+        "content/profile-units.js"
       ],
       "run_at": "document_end",
       "all_frames": false

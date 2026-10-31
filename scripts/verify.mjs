@@ -18,6 +18,7 @@ const targets = {
     'multi-summit': [['verify-multi-summit.mjs']],
     'draft-recovery': [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']],
     'profile-editor': [['verify-profile-editor.mjs', 'chrome'], ['verify-profile-editor.mjs', 'firefox']],
+    'profile-units': [['verify-profile-units.mjs', 'chrome'], ['verify-profile-units.mjs', 'firefox']],
     instagram: [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']],
     'report-security': [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox']],
     'inline-buddies': [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']],

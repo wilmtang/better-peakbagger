@@ -199,6 +199,9 @@ units—for example, miles and feet with Celsius. Reorder filters and planning
 links, hide cards you don't use, and export your settings to take your setup
 to another browser.
 
+Climber profile elevation and prominence tables also follow your elevation
+unit preference. “Follow Peakbagger” keeps the profile's original units.
+
 Exports omit credentials by default. **Include saved credentials** adds your
 ImgBB key and GitHub connection to an unencrypted file; keep it private.
 
