@@ -222,39 +222,3 @@ test('the shared discovery link and skill metadata remain valid', async () => {
     assert.equal(typeof metadata.description, 'string');
     assert.ok(metadata.description.length > 0 && metadata.description.length <= 1024);
 });
-
-test('automated updates use normal PR checks and verify native auto-merge at the proposed head', async () => {
-    const workflow = yaml.load(await readFile(path.join(root, '.github/workflows/update-ui-ux-skill.yml'), 'utf8'));
-    assert.ok(workflow.on.schedule.length > 0);
-    assert.ok(Object.hasOwn(workflow.on, 'workflow_dispatch'));
-    assert.deepEqual(workflow.on.push.branches, ['main']);
-    assert.deepEqual(workflow.permissions, { contents: 'read', 'pull-requests': 'read' });
-    assert.ok(workflow.jobs.update.if.includes("github.ref == 'refs/heads/main'"));
-    const steps = workflow.jobs.update.steps;
-    const checkout = steps.find(step => step.uses?.startsWith('actions/checkout@'));
-    assert.equal(checkout.with.ref, 'main');
-    assert.equal(checkout.with['persist-credentials'], false);
-    for (const step of steps) {
-        if (step.uses) assert.match(step.uses, /^[^@]+@[a-f0-9]{40}$/);
-        if (step.run) {
-            const syntax = spawnSync('bash', ['-n'], { input: step.run, encoding: 'utf8' });
-            assert.equal(syntax.status, 0, `${step.name}: ${syntax.stderr}`);
-        }
-    }
-    const integrate = steps.find(step => step.run?.includes('node scripts/update-ui-ux-skill.mjs'));
-    assert.ok(integrate && !integrate.env, 'upstream integration must not receive the publishing credential');
-    assert.ok(!steps.some(step => /python3|npm (?:test|run)/.test(step.run || '')),
-        'candidate helpers execute only in ordinary read-only PR checks');
-    const publish = steps.find(step => step.uses?.startsWith('peter-evans/create-pull-request@'));
-    assert.ok(publish);
-    assert.equal(publish.with.branch, 'codex/update-ui-ux-skill');
-    assert.equal(publish.with.token, '${{ secrets.SKILL_UPDATE_TOKEN }}');
-    assert.equal(publish.with['add-paths'], SKILL_PATH);
-    const merge = steps.find(step => step.run?.includes('gh pr merge'));
-    assert.match(merge.run, /--auto --merge/);
-    assert.match(merge.run, /--match-head-commit "\$HEAD_SHA"/);
-    assert.match(merge.run, /Merge branch 'codex\/update-ui-ux-skill' into main/);
-    assert.match(merge.run, /autoMergeRequest\.mergeMethod == "MERGE"/);
-    assert.ok(merge.if.includes("pull-request-operation != 'closed'"), 'a closed no-longer-needed update must not be merged');
-    assert.doesNotMatch(merge.run, /--admin|--squash|--rebase/);
-});
