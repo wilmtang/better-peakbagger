@@ -293,6 +293,19 @@ obstruction nearby. It does not estimate snowpack, blowing-snow whiteout,
 visibility in metres or a guaranteed unobstructed view in every direction.
 Its thresholds are uncalibrated heuristics, not measured probabilities.
 
+The hourly timeline follows the forecast card's horizontal hour columns. Its
+day heading and selected reading both name **Today**, **Tomorrow**, or the full
+calendar date in the summit's timezone. A **Now** marker identifies the current
+hour; earlier hours are muted and labelled **Past**. The selected reading says
+**Past forecast**, **Current hour**, or **Future forecast**; these are model
+predictions, including for the current and earlier hours, not observations.
+Scroll sideways or use the earlier/later arrows to browse. Arrow keys, Home and
+End select hours without moving the page or fetching data. The timeline preserves
+all 23/24/25 hourly instants on daylight-saving transitions, with per-hour timezone
+labels to distinguish repeated clocks. Refresh retains the selected hour, scroll
+position and the displayed result's actual date while loading or after failure.
+The local-time context updates once a minute while the card is active.
+
 ### Cloud models and horizons
 
 The dropdown is a pressure-profile capability allowlist, separate from surface

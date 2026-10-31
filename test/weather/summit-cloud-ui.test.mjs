@@ -14,11 +14,20 @@ const wait = async predicate => {
     const end = Date.now() + 2500;
     while (!predicate()) { if (Date.now() > end) throw new Error('Summit cloud UI did not settle'); await new Promise(resolve => setTimeout(resolve, 0)); }
 };
-function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false } = {}) {
+function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false, manualClock = false } = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], writes = [], listeners = new Set(), observers = [], held = [];
     let stored = settingsSchema.clean(preferences), mode = 'complete';
     win.Date.now = () => Date.parse(now); win.AbortController = AbortController; win.TextDecoder = TextDecoder;
+    const minuteJobs = new Map(), setTimer = win.setTimeout.bind(win), clearTimer = win.clearTimeout.bind(win);
+    if (manualClock) {
+        win.setTimeout = (callback, delay, ...args) => {
+            const id = setTimer(callback, delay, ...args);
+            if (delay === 60000 - win.Date.now() % 60000) minuteJobs.set(id, callback);
+            return id;
+        };
+        win.clearTimeout = id => { minuteJobs.delete(id); clearTimer(id); };
+    }
     win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: stored }) }, local: { get: async () => ({}) }, onChanged: {
         addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn),
     } }, runtime: { sendMessage: async message => { writes.push(message.patch); update(message.patch); return { ok: true, settings: stored }; } } };
@@ -35,11 +44,77 @@ function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false } = {
     win.eval(bundle); win.eval(layout);
     const doc = win.document, card = () => doc.querySelector('#bpb-summit-cloud');
     return { win, doc, requests, writes, observers, update, card, get stored() { return stored; },
+        minuteJobs, tick(value) { const [id, callback] = minuteJobs.entries().next().value; win.clearTimeout(id); win.Date.now = () => Date.parse(value); callback(); },
         mode: value => { mode = value; }, release: () => held.splice(0).forEach(resolve => resolve()),
         choose: (id, value) => { const node = doc.getElementById(`bpb-summit-cloud-${id}`); node.value = value; node.dispatchEvent(new win.Event('change')); },
         close: () => { held.splice(0).forEach(resolve => resolve()); win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
 const settled = env => wait(() => env.requests.length > 0 && env.card()?.getAttribute('aria-busy') === 'false' && env.doc.querySelector('.bpb-cloud-status')?.textContent === 'Cloud profiles updated.');
+test('selected cloud hours identify the summit-local date and their relation to now', async () => {
+    // UTC is already Sunday; the summit is still on Saturday evening.
+    const env = setup({ now: '2026-10-25T06:30Z', preferences: { bpbSummitCloudModel: 'gfs_global' } });
+    try {
+        await settled(env);
+        assert.match(env.doc.querySelector('.bpb-cloud-selected-clock').textContent, /Today.*Sat, Oct 24.*11:00 PM PDT.*Current hour/);
+        assert.match(env.doc.querySelector('#bpb-summit-cloud-date option:nth-child(2)').textContent, /Tomorrow.*Sun, Oct 25/);
+        const count = env.requests.length;
+        env.doc.querySelector('.bpb-cloud-hour').click();
+        assert.match(env.doc.querySelector('.bpb-cloud-selected-clock').textContent, /Today.*Sat, Oct 24.*12:00 AM PDT.*Past forecast/);
+        assert.equal(env.requests.length, count, 'exploring the timeline does not fetch more data');
+        env.choose('date', '2026-10-25'); await settled(env);
+        assert.match(env.doc.querySelector('.bpb-cloud-selected-clock').textContent, /Tomorrow.*Sun, Oct 25.*12:00 AM PDT.*Future forecast/);
+    } finally { env.close(); }
+});
+test('keyboard exploration keeps UTC selection and focus through refresh without fetching on navigation', async () => {
+    const env = setup({ preferences: { bpbSummitCloudModel: 'gfs_global' } });
+    try {
+        await settled(env);
+        const count = env.requests.length, nodes = [...env.doc.querySelectorAll('.bpb-cloud-hour')];
+        const selected = () => env.doc.querySelector('.bpb-cloud-hour[aria-pressed="true"]');
+        selected().focus();
+        for (const [key, index] of [['End', 23], ['Home', 0], ['ArrowRight', 1], ['ArrowLeft', 0]]) {
+            selected().dispatchEvent(new env.win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+            assert.equal(selected(), nodes[index]); assert.equal(env.doc.activeElement, selected());
+            assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour[tabindex="0"]').length, 1);
+        }
+        assert.equal(env.requests.length, count);
+        env.mode('hold'); env.doc.querySelector('.bpb-cloud-refresh').click();
+        await wait(() => env.card().getAttribute('aria-busy') === 'true');
+        assert.equal(env.doc.activeElement, nodes[0]);
+        env.release(); await settled(env);
+        assert.equal(selected(), nodes[0]); assert.equal(env.doc.activeElement, nodes[0]);
+        assert.equal(env.doc.querySelector('.bpb-cloud-selected-clock').getAttribute('datetime'), new Date(Number(nodes[0].dataset.time)).toISOString());
+    } finally { env.close(); }
+});
+test('a failed date switch keeps the retained forecast date explicit', async () => {
+    const env = setup({ preferences: { bpbSummitCloudModel: 'gfs_global' } });
+    try {
+        await settled(env); env.mode('error'); env.choose('date', '2026-10-25');
+        await wait(() => env.doc.querySelector('.bpb-cloud-status').textContent.includes('Refresh failed'));
+        assert.equal(env.doc.querySelector('#bpb-summit-cloud-date').value, '2026-10-25');
+        assert.match(env.doc.querySelector('.bpb-cloud-day').textContent, /Today.*Oct 24/);
+        assert.match(env.doc.querySelector('.bpb-cloud-selected-clock').textContent, /Today.*Oct 24/);
+        env.mode('complete'); env.doc.querySelector('.bpb-cloud-refresh').click(); await settled(env);
+        assert.match(env.doc.querySelector('.bpb-cloud-day').textContent, /Tomorrow.*Oct 25/);
+    } finally { env.close(); }
+});
+test('the local clock advances across midnight without fetching and stops when the card is disabled', async () => {
+    const env = setup({ now: '2026-10-25T06:59Z', manualClock: true, preferences: { bpbSummitCloudModel: 'gfs_global' } });
+    try {
+        await settled(env);
+        assert.equal(env.minuteJobs.size, 1);
+        assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour[data-temporal="now"]').length, 1);
+        const count = env.requests.length;
+        env.tick('2026-10-25T07:00Z');
+        assert.match(env.doc.querySelector('.bpb-cloud-day').textContent, /Yesterday.*Sat, Oct 24/);
+        assert.match(env.doc.querySelector('.bpb-cloud-selected-clock').textContent, /Yesterday.*Past forecast/);
+        assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour[data-temporal="now"]').length, 0);
+        assert.equal(env.requests.length, count);
+        env.update({ showSummitCloud: false });
+        await wait(() => env.card().hidden);
+        assert.equal(env.minuteJobs.size, 0);
+    } finally { env.close(); }
+});
 test('card shares layout ownership, uses saved model, exposes all hours and remembers changes', async () => {
     const env = setup({ preferences: { bpbSummitCloudModel: 'gfs_global' } });
     try {
@@ -47,17 +122,11 @@ test('card shares layout ownership, uses saved model, exposes all hours and reme
         assert.equal(env.card().dataset.bpbPeakCard, 'cloud');
         assert.equal(env.doc.querySelectorAll('#bpb-summit-cloud .bpb-peak-card-toggle').length, 1);
         assert.equal(env.card().closest('tr').id, 'bpb-summit-cloud-row');
-        assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour').length, 8);
+        assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour').length, 24);
         assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'gfs_global');
         assert.equal(env.doc.querySelectorAll('#bpb-summit-cloud-date option').length, 16);
         assert.equal(env.doc.querySelector('#bpb-summit-cloud-model').getAttribute('form'), '');
-        const seen = new Set();
-        while (env.doc.querySelector('[aria-label="Show earlier hours"]').getAttribute('aria-disabled') !== 'true') env.doc.querySelector('[aria-label="Show earlier hours"]').click();
-        for (;;) {
-            env.doc.querySelectorAll('.bpb-cloud-hour').forEach(button => seen.add(button.dataset.index));
-            const later = env.doc.querySelector('[aria-label="Show later hours"]'); if (later.getAttribute('aria-disabled') === 'true') break; later.click();
-        }
-        assert.equal(seen.size, 24);
+        assert.equal(new Set([...env.doc.querySelectorAll('.bpb-cloud-hour')].map(button => button.dataset.time)).size, 24);
         env.choose('model', 'icon_global'); await settled(env);
         await wait(() => env.stored.bpbSummitCloudModel === 'icon_global');
         assert.ok(env.writes.some(patch => patch.bpbSummitCloudModel === 'icon_global'));
@@ -97,7 +166,15 @@ test('DST days keep distinct hourly identities and BFCache suspension aborts wit
     for (const [now, expected] of [['2026-11-01T15:00Z', 25], ['2026-03-08T15:00Z', 23]]) {
         const env = setup({ now, preferences: { bpbSummitCloudModel: 'gfs_global' } });
         try {
-            await settled(env); assert.match(env.doc.querySelector('.bpb-cloud-range').textContent, new RegExp(`${expected} hours`));
+            await settled(env); assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour').length, expected);
+            assert.match(env.doc.querySelector('.bpb-cloud-hours').getAttribute('aria-label'), new RegExp(`${expected} hours`));
+            const nodes = [...env.doc.querySelectorAll('.bpb-cloud-hour')];
+            assert.equal(new Set(nodes.map(node => node.dataset.time)).size, expected);
+            if (expected === 25) {
+                const repeated = nodes.filter(node => node.querySelector('.bpb-cloud-clock').textContent === '1 AM');
+                assert.equal(repeated.length, 2);
+                assert.deepEqual(repeated.map(node => node.querySelector('.bpb-cloud-hour-zone').textContent), ['PDT', 'PST']);
+            }
             env.mode('hold'); env.doc.querySelector('.bpb-cloud-refresh').click(); await wait(() => env.card().getAttribute('aria-busy') === 'true');
             env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
             assert.equal(env.requests.at(-1).options.signal.aborted, true); env.release();

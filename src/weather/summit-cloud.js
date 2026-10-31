@@ -38,18 +38,15 @@ export function mountSummitCloud() {
     const status = element('p', { class: 'bpb-cloud-status', role: 'status', 'aria-live': 'polite' });
     const statusText = createStableText(status); statusText.reserve(messages); statusText.set('Loading cloud profiles…');
     const source = element('p', { class: 'bpb-cloud-source' }), sourceText = createStableText(source);
-    const earlier = element('button', { type: 'button', text: 'Earlier', 'aria-label': 'Show earlier hours' });
-    const later = element('button', { type: 'button', text: 'Later', 'aria-label': 'Show later hours' });
-    const range = element('span', { class: 'bpb-cloud-range' }), rangeText = createStableText(range);
-    const hours = element('div', { class: 'bpb-cloud-hours', role: 'group', 'aria-label': 'Hourly summit cloud predictions' });
-    const hourNodes = Array.from({ length: 8 }, () => {
-        const clock = element('span', { class: 'bpb-cloud-clock' }), label = element('span', { class: 'bpb-cloud-hour-state' });
-        const clockText = createStableText(clock);
-        const text = createStableText(label); text.reserve(Object.values(CLOUD_STATES).map(value => value.short));
-        const button = element('button', { type: 'button', class: 'bpb-cloud-hour', 'aria-pressed': 'false' }, [clock, label]);
-        hours.append(button); return { button, clockText, text };
-    });
-    const selectedClock = element('span', { class: 'bpb-cloud-selected-clock' });
+    const earlier = element('button', { type: 'button', class: 'bpb-cloud-page', text: '‹', 'aria-label': 'Show earlier hours' });
+    const later = element('button', { type: 'button', class: 'bpb-cloud-page', text: '›', 'aria-label': 'Show later hours' });
+    const range = element('div', { class: 'bpb-cloud-range' });
+    const dayLabel = element('strong', { class: 'bpb-cloud-day' }), dayText = createStableText(dayLabel);
+    const timeContext = element('span', { class: 'bpb-cloud-time-context' }), contextText = createStableText(timeContext);
+    range.append(dayLabel, timeContext);
+    const hours = element('div', { class: 'bpb-cloud-hours', role: 'group', 'aria-label': 'Hourly summit cloud predictions. Use left and right arrows to select an hour.' });
+    const hourNodes = [];
+    const selectedClock = element('time', { class: 'bpb-cloud-selected-clock' }), selectedClockText = createStableText(selectedClock);
     const title = element('strong', { class: 'bpb-cloud-prediction' }), titleText = createStableText(title);
     titleText.reserve(Object.values(CLOUD_STATES).map(value => value.title));
     const confidence = element('span', { class: 'bpb-cloud-confidence' });
@@ -75,7 +72,7 @@ export function mountSummitCloud() {
     const reads = createLatestRead();
     let preference = settings.DEFAULTS, ready = false, selection = 'auto', requestedDate = '', current = null;
     let pending = false, lifecycle, writeGeneration = 0;
-    let selectedIndex = 0, offset = 0, failed = false, savingChoice = false;
+    let selectedIndex = 0, revealSelection = true, failed = false, savingChoice = false, clockTimer;
     const enabled = () => ready && preference.showSummitCloud;
     const readGate = createCardReadGate({ card, enabled, active: () => lifecycle?.state === 'active',
         collapsed: () => preference.peakCloudCollapsed, onChange: () => visibility() });
@@ -86,6 +83,12 @@ export function mountSummitCloud() {
     });
     const elevation = value => units.formatElevation(value, units.resolveUnits(preference, () => readPeakUnitSystem(document), 'elevation'));
     const clock = time => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
+    const relativeDate = (date, now = Date.now()) => {
+        const today = mountainTime.localDate(zone, now);
+        const relative = date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : date === addDays(today, -1) ? 'Yesterday' : '';
+        return `${relative ? `${relative} · ` : ''}${dateLabel(date)}`;
+    };
+    const temporalLabel = (time, now) => time + HOUR <= now ? 'Past forecast' : time <= now ? 'Current hour' : 'Future forecast';
     const horizon = () => selection === 'auto' ? 10 : Math.ceil(summitCloudModel(selection)?.days || 1);
     function populateControls() {
         const models = eligibleSummitCloudModels(subject);
@@ -97,10 +100,9 @@ export function mountSummitCloud() {
         const today = mountainTime.localDate(zone, Date.now());
         const dates = Array.from({ length: horizon() }, (_, index) => addDays(today, index));
         if (!dates.includes(requestedDate)) requestedDate = today;
-        dateSelect.replaceChildren(...dates.map(date => element('option', { value: date, text: `${dateLabel(date)}${date === today ? ' · Today' : ''}` })));
+        dateSelect.replaceChildren(...dates.map(date => element('option', { value: date, text: relativeDate(date) })));
         dateSelect.value = requestedDate;
-        sourceText.reserve(['Showing: HRRR + GEM HRDPS · Wed, Sep 30 · Summit 29,029 ft', ...models.map(model => `Showing: ${model.label} · Wed, Sep 30 · Summit 29,029 ft`)]);
-        rangeText.reserve(['11:00 PM GMT+12 – 11:00 PM GMT+12 · 25 hours']);
+        sourceText.reserve(['Showing: HRRR + GEM HRDPS · Summit 29,029 ft', ...models.map(model => `Showing: ${model.label} · Summit 29,029 ft`)]);
     }
     function placeholder() {
         const day = weatherDayWindow(requestedDate, zone, Date.now(), { forecast: true });
@@ -113,26 +115,69 @@ export function mountSummitCloud() {
     const displayed = () => current || placeholder();
     function selectNearNow(data) {
         selectedIndex = Math.max(0, Math.min(data.times.length - 1, Math.floor((Date.now() - data.times[0]) / HOUR)));
-        offset = Math.min(selectedIndex, Math.max(0, data.times.length - 8));
+        revealSelection = true;
+    }
+    function updateNavigation() {
+        earlier.setAttribute('aria-disabled', String(hours.scrollLeft <= 1));
+        later.setAttribute('aria-disabled', String(hours.scrollLeft + hours.clientWidth >= hours.scrollWidth - 1));
+    }
+    function revealHour() {
+        if (!hours.clientWidth) return;
+        const button = hourNodes[selectedIndex]?.button;
+        if (!button) return;
+        const viewport = hours.getBoundingClientRect(), cell = button.getBoundingClientRect();
+        if (cell.left < viewport.left || cell.right > viewport.right) {
+            // Scroll only the timeline. scrollIntoView can move the host page.
+            const scale = viewport.width / hours.offsetWidth || 1;
+            hours.scrollLeft += (cell.left - viewport.left) / scale - (hours.clientWidth - cell.width / scale) / 2;
+        }
+        revealSelection = false;
+    }
+    function populateHours(count) {
+        while (hourNodes.length > count) hourNodes.pop().button.remove();
+        while (hourNodes.length < count) {
+            const marker = element('span', { class: 'bpb-cloud-hour-context', 'aria-hidden': 'true' });
+            const clockNode = element('time', { class: 'bpb-cloud-clock' }), clockText = createStableText(clockNode);
+            const timezone = element('span', { class: 'bpb-cloud-hour-zone', 'aria-hidden': 'true' });
+            const label = element('span', { class: 'bpb-cloud-hour-state' }), text = createStableText(label);
+            text.reserve(Object.values(CLOUD_STATES).map(value => value.short));
+            const button = element('button', { type: 'button', class: 'bpb-cloud-hour', 'aria-pressed': 'false' }, [marker, clockNode, timezone, label]);
+            button.addEventListener('click', () => { selectedIndex = Number(button.dataset.index); paint(); });
+            hours.append(button); hourNodes.push({ button, marker, clock: clockNode, clockText, timezone, text });
+        }
     }
     function paint() {
         if (!requestedDate) return;
-        const data = displayed(), times = data.times;
-        selectedIndex = Math.min(selectedIndex, times.length - 1); offset = Math.min(offset, Math.max(0, times.length - 8));
-        const predictions = times.map(time => predictSummitCloud(data.datasets, subject, time, Date.now(), data.expected));
-        sourceText.set(`${current ? 'Showing' : 'Requested'}: ${data.label} · ${dateLabel(data.day.date)} · Summit ${Number.isFinite(subject.elevation) ? elevation(subject.elevation) : 'height unknown'}`);
-        source.title = data.loadedAt ? `Retrieved ${clock(data.loadedAt)}. Provider metadata does not identify each hour's model run.` : '';
-        rangeText.set(`${clock(times[offset])} – ${clock(times[Math.min(offset + 7, times.length - 1)])} · ${times.length} hours${zone.estimated ? ' · estimated zone' : ''}`);
-        earlier.setAttribute('aria-disabled', String(offset === 0)); later.setAttribute('aria-disabled', String(offset + 8 >= times.length));
-        const compactClocks = times.map(time => mountainTime.formatClock(zone, time).replace(/^0(?=\d)/, '').replace(/\s+/g, ' '));
-        hourNodes.forEach(({ button, clockText, text }, slot) => {
-            const index = offset + slot, prediction = predictions[index];
+        const now = Date.now(), data = displayed(), times = data.times;
+        selectedIndex = Math.min(selectedIndex, times.length - 1);
+        const predictions = times.map(time => predictSummitCloud(data.datasets, subject, time, now, data.expected));
+        sourceText.set(`${current ? 'Showing' : 'Requested'}: ${data.label} · Summit ${Number.isFinite(subject.elevation) ? elevation(subject.elevation) : 'height unknown'}`);
+        source.title = data.loadedAt ? `Retrieved ${relativeDate(mountainTime.localDate(zone, data.loadedAt), now)} · ${clock(data.loadedAt)}. Provider metadata does not identify each hour's model run.` : '';
+        dayText.reserve([relativeDate(data.day.date, now), `Tomorrow · ${dateLabel(data.day.date)}`]);
+        dayText.set(relativeDate(data.day.date, now));
+        const context = time => `Summit time · Now ${clock(time)}${zone.estimated ? ' · estimated zone' : ''}`;
+        contextText.reserve(times.map(context)); contextText.set(context(now));
+        hours.setAttribute('aria-label', `${relativeDate(data.day.date, now)} · ${times.length} hours of summit cloud predictions. Use left and right arrows to select an hour.`);
+        for (const option of dateSelect.options) option.textContent = relativeDate(option.value, now);
+        populateHours(times.length);
+        const compactClocks = times.map(time => mountainTime.formatClock(zone, time).replace(/^0(?=\d)/, '').replace(':00', '').replace(/\s+/g, ' '));
+        const selectionLabel = (time, temporal = temporalLabel(time, now)) => `${relativeDate(mountainTime.localDate(zone, time), now)} · ${clock(time).replace(/^0(?=\d)/, '')} · ${temporal}`;
+        hourNodes.forEach(({ button, marker, clock: clockNode, clockText, timezone, text }, index) => {
+            const time = times[index], prediction = predictions[index], temporal = temporalLabel(time, now);
             button.dataset.index = String(index); button.dataset.state = prediction.key;
+            button.dataset.time = String(time); button.dataset.temporal = temporal === 'Current hour' ? 'now' : temporal === 'Past forecast' ? 'past' : 'future';
             button.setAttribute('aria-pressed', String(index === selectedIndex));
-            button.setAttribute('aria-label', `${dateLabel(data.day.date)}, ${clock(times[index])}: ${prediction.title}`);
+            button.tabIndex = index === selectedIndex ? 0 : -1;
+            button.setAttribute('aria-label', `${selectionLabel(time)}: ${prediction.title}`);
+            marker.textContent = temporal === 'Current hour' ? 'Now' : temporal === 'Past forecast' ? 'Past' : '';
+            clockNode.dateTime = new Date(time).toISOString(); timezone.textContent = mountainTime.zoneLabel(zone, time);
             clockText.reserve(compactClocks); clockText.set(compactClocks[index]); text.set(prediction.short);
         });
-        const prediction = predictions[selectedIndex]; selectedClock.textContent = clock(times[selectedIndex]);
+        if (revealSelection) revealHour();
+        updateNavigation();
+        const prediction = predictions[selectedIndex];
+        selectedClock.dateTime = new Date(times[selectedIndex]).toISOString();
+        selectedClockText.reserve(times.flatMap(time => ['Past forecast', 'Current hour', 'Future forecast'].map(temporal => selectionLabel(time, temporal)))); selectedClockText.set(selectionLabel(times[selectedIndex]));
         titleText.set(prediction.title); title.dataset.state = prediction.key; confidence.textContent = prediction.confidence;
         reasonText.set(prediction.reason);
         evidence.replaceChildren(...data.models.map(model => {
@@ -147,10 +192,12 @@ export function mountSummitCloud() {
                 elevation(estimate.summit.lower), elevation(estimate.summit.upper)) : 'No complete atmospheric profile is available for this model and hour.');
             return element('li', {}, [heading, measurements]);
         }));
+        clearTimeout(clockTimer);
+        if (active()) clockTimer = setTimeout(() => { if (active()) paint(); }, 60000 - now % 60000);
     }
     function cancel() {
         if (pending) statusText.set('Forecast paused. Expand to continue.');
-        reads.cancel(); pending = false;
+        reads.cancel(); pending = false; clearTimeout(clockTimer);
         card.setAttribute('aria-busy', 'false'); cooldown.refresh(); readGate.cancelWait();
     }
     async function load({ refresh: force = false } = {}) {
@@ -187,9 +234,21 @@ export function mountSummitCloud() {
         if (!active() || pending || failed) return;
         readGate.waitForViewport(() => { void load(); });
     }
-    for (const { button } of hourNodes) button.addEventListener('click', () => { selectedIndex = Number(button.dataset.index); paint(); });
-    earlier.addEventListener('click', () => { if (offset > 0) { offset = Math.max(0, offset - 8); selectedIndex = Math.min(selectedIndex, offset + 7); paint(); } });
-    later.addEventListener('click', () => { const total = displayed().times.length; if (offset + 8 < total) { offset = Math.min(total - 8, offset + 8); selectedIndex = Math.max(selectedIndex, offset); paint(); } });
+    hours.addEventListener('keydown', event => {
+        if (!event.target.matches('.bpb-cloud-hour') || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        selectedIndex = event.key === 'Home' ? 0 : event.key === 'End' ? hourNodes.length - 1
+            : Math.max(0, Math.min(hourNodes.length - 1, Number(event.target.dataset.index) + (event.key === 'ArrowRight' ? 1 : -1)));
+        revealSelection = true; paint(); hourNodes[selectedIndex].button.focus({ preventScroll: true });
+    });
+    hours.addEventListener('scroll', updateNavigation, { passive: true });
+    for (const [button, direction] of [[earlier, -1], [later, 1]]) button.addEventListener('click', () => {
+        if (button.getAttribute('aria-disabled') === 'true') return;
+        hours.scrollLeft += direction * Math.max(1, hours.clientWidth - (hourNodes[0]?.button.offsetWidth || 0));
+        updateNavigation();
+    });
+    const timelineObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { revealHour(); updateNavigation(); }) : null;
+    timelineObserver?.observe(hours);
     refresh.addEventListener('click', () => { if (!pending && !cooldown.active()) { failed = false; void load({ refresh: true }); } });
     modelSelect.addEventListener('change', () => {
         if (cooldown.active()) { modelSelect.value = selection; return; }
@@ -220,7 +279,7 @@ export function mountSummitCloud() {
     const unsubscribe = settings.subscribe(applyPreference);
     const stop = () => { cancel(); cooldown.suspend(); readGate.refresh(); };
     lifecycle = createPageLifecycle({ onSuspend: stop, onResume: () => { if (!readGate.refresh()) visibility(); },
-        onDispose: () => { stop(); readGate.dispose(); unsubscribe(); cooldown.dispose(); client.clear(); } });
+        onDispose: () => { stop(); timelineObserver?.disconnect(); readGate.dispose(); unsubscribe(); cooldown.dispose(); client.clear(); } });
     settings.requireCurrent().then(next => { if (!ready && lifecycle.state !== 'disposed') applyPreference(next); }).catch(() => {});
     return { card, lifecycle };
 }
