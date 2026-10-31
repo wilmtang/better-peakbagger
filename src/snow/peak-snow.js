@@ -31,6 +31,12 @@ const labels = {
     limited: 'NRCS request limit reached. Wait a few minutes, then refresh.',
 };
 const dateLabel = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const observationTime = (time, offset = 0, includeOffset = true) => {
+    const clock = new Date(time + offset * 3600_000).toLocaleString([], {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+    const zone = `UTC${offset < 0 ? '−' : '+'}${String(Math.abs(offset)).padStart(2, '0')}`;
+    return includeOffset ? `${clock} · ${zone}` : clock;
+};
 
 export function mountPeakSnow({ client: sharedClient } = {}) {
     if (document.getElementById(ID)) return;
@@ -71,13 +77,13 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
     const graph = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     graph.setAttribute('viewBox', '0 0 320 80'); graph.setAttribute('aria-hidden', 'true'); graph.setAttribute('focusable', 'false');
     graph.setAttribute('preserveAspectRatio', 'none');
-    const emptyGraph = element('p', { text: 'Daily snow-depth trend' });
+    const emptyGraph = element('p', { text: 'Hourly snow-depth trend' });
     const graphMax = element('span', { class: 'bpb-snow-graph-max', 'aria-hidden': 'true', hidden: '' });
     const graphZero = element('span', { class: 'bpb-snow-graph-zero', 'aria-hidden': 'true', text: '0', hidden: '' });
     const graphFrame = element('div', { class: 'bpb-snow-graph' }, [graph, emptyGraph, graphMax, graphZero]);
-    const dateTicks = [0, 4, 7].map(index => element('span', { 'data-day': String(index) }));
-    const graphDates = element('div', { class: 'bpb-snow-dates', 'aria-label': 'Daily observation dates' }, dateTicks);
-    const range = element('p', { class: 'bpb-snow-range', text: 'Past 7 days · Snow depth' });
+    const dateTicks = [0, 48].map(index => element('span', { 'data-hour': String(index) }));
+    const graphDates = element('div', { class: 'bpb-snow-dates', 'aria-label': 'Hourly observation times' }, dateTicks);
+    const range = element('p', { class: 'bpb-snow-range', text: 'Past 48 hours · Hourly snow depth' });
     const stableRange = createStableText(range);
     const tbody = element('tbody');
     const dailyRows = Array.from({ length: 8 }, () => {
@@ -140,7 +146,7 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
     const depthText = mm => mm === null ? '—' : system('precipitation') === 'metric' ? `${(mm / 10).toFixed(1)} cm` : `${(mm / 25.4).toFixed(1)} in`;
     const waterText = mm => units.formatWeather(mm, 'precipitation', system('precipitation'));
     const chart = createSnotelChart({ frame: graphFrame, graph, empty: emptyGraph, maximum: graphMax, zero: graphZero,
-        ticks: dateTicks, caption: stableRange, dateLabel, depthText });
+        ticks: dateTicks, caption: stableRange, timeLabel: observationTime, depthText });
     const availability = () => {
         refresh.setAttribute('aria-disabled', String(pending || cooldown.active() || noStations));
         select.setAttribute('aria-disabled', String(cooldown.active()));
@@ -160,10 +166,7 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
     };
     const readingTime = (reading, station) => {
         if (!reading) return 'No reading in past 48 hours';
-        const clock = new Date(reading.time + station.offset * 3600_000).toLocaleString([], {
-            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
-        const offset = `UTC${station.offset < 0 ? '−' : '+'}${String(Math.abs(station.offset)).padStart(2, '0')}`;
-        return `${Date.now() - reading.time > 6 * 3600_000 ? 'Older reading · ' : ''}${clock} · ${offset}`;
+        return `${Date.now() - reading.time > 6 * 3600_000 ? 'Older reading · ' : ''}${observationTime(reading.time, station.offset)}`;
     };
     const render = (view = current) => {
         fillStations();
@@ -189,8 +192,14 @@ export function mountPeakSnow({ client: sharedClient } = {}) {
                 dailyRow.readings[index].stableFlags.set(reading?.value != null ? `QC ${reading.qc || '—'} · QA ${reading.qa || '—'}` : 'Unavailable');
             });
         });
-        chart.update({ station: shownStation?.id ?? null, dates,
-            values: dates.map(date => snow.get(date)?.value ?? null), loaded: Boolean(view) });
+        // Use the fetched window for retained results, so unit changes and a
+        // pending refresh cannot shift the time axis or the selected hour.
+        const offset = shownStation?.offset || 0, hour = 3600_000;
+        const end = Math.floor(((view?.data.loadedAt ?? Date.now()) + offset * hour) / hour) * hour - offset * hour;
+        const times = Array.from({ length: 49 }, (_, index) => end - (48 - index) * hour);
+        const hourlySnow = new Map((view?.data.hourly.SNWD || []).map(reading => [reading.time, reading.value]));
+        chart.update({ station: shownStation?.id ?? null, times, offset,
+            values: times.map(time => hourlySnow.get(time) ?? null), loaded: Boolean(view) });
     };
     const cancel = () => {
         generation++; controller?.abort(); controller = null; pending = false;

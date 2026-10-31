@@ -31,16 +31,19 @@ unavailable and zero stays zero. Metric depth uses centimeters, imperial depth
 uses inches, and water equivalent follows the existing precipitation units
 (millimeters or inches). Unit changes make no request.
 
-The compact graph spans seven days of daily snow depth, including both endpoint
-dates. Hover previews a day; clicking or tapping pins its date and depth in the
-existing caption. With the chart focused, Left/Right moves one day, Home/End
+The compact graph shows hourly snow-depth observations over the past 48 hours.
+Each point is the depth measured at that time, not snowfall during the hour.
+The axis labels the window's starting and ending date and time. Hover previews
+an hour; clicking or tapping pins its date, time, station UTC offset and depth
+in the existing caption. With the chart focused, Left/Right moves one hour, Home/End
 selects an endpoint, and Escape clears the selection. Leaving a hover restores
-the pinned reading. Refresh and unit changes preserve the selected date for the
-same station; changing stations clears it. Missing days remain selectable as
+the pinned reading. Refresh and unit changes preserve the selected timestamp for the
+same station while it remains in the window; changing stations clears it.
+Missing hours, including timestamps omitted by NRCS, remain selectable as
 unavailable and break the line; a wholly unavailable chart has no dead Tab stop.
 The chart and caption reserve their space through these interactions.
 **Daily readings and source details**
-opens the accessible table for both measurements and their original QC/QA
+opens the seven-day accessible daily table for both measurements and their original QC/QA
 flags. Dates follow NRCS's end-of-day convention; they are not relabelled as
 summit-local dates. Hourly timestamps use the station metadata's fixed UTC
 offset, not the browser timezone or a daylight-saving clock. The linked NRCS

@@ -84,7 +84,7 @@ try {
                 ? mode === 'map-selection' ? Array.from({ length: 4 }, (_, index) => ({ ...snotelStations()[0],
                     stationTriplet: `${991 + index}:WA:SNTL`, name: `Station ${index + 1}`, latitude: 46.78 + index * .01 }))
                     : snotelStations().map(station => mode === 'long-station' ? { ...station, name: `${station.name} · Experimental Mountain Snow Observation Station` } : station)
-                : snotelFixture(requested.searchParams.get('stationTriplets'), requested.searchParams.get('duration'));
+                : snotelFixture(requested.searchParams.get('stationTriplets'), requested.searchParams.get('duration'), Date.now(), 49);
             if (mode === 'map-selection' && requested.pathname.endsWith('/data')) {
                 body[0].data[0].values.forEach(reading => { if (reading.value !== null) reading.value = requested.searchParams.get('stationTriplets') === '991:WA:SNTL' ? 41 : 21; });
             }

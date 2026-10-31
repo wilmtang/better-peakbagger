@@ -8,16 +8,17 @@ export const snotelStations = () => [
         elevation: 4600, dataTimeZone: -8 },
 ];
 
-export function snotelFixture(stationId = '679:WA:SNTL', duration = 'HOURLY', now = Date.now()) {
+export function snotelFixture(stationId = '679:WA:SNTL', duration = 'HOURLY', now = Date.now(), hourlyCount = 6) {
     const day = new Date(now - 8 * 3600_000).toISOString().slice(0, 10);
-    const count = duration === 'DAILY' ? 8 : 6;
+    const count = duration === 'DAILY' ? 8 : hourlyCount;
     return [{ stationTriplet: stationId, data: ['SNWD', 'WTEQ'].map((elementCode, codeIndex) => ({
         stationElement: { elementCode, ordinal: 1, durationName: duration, storedUnitCode: 'in' },
         values: Array.from({ length: count }, (_, index) => {
+            const valueIndex = duration === 'DAILY' ? index : Math.max(0, index - (count - 6));
             const ms = duration === 'DAILY' ? Date.parse(day) - (count - 1 - index) * 86400_000
                 : Math.floor(now / 3600_000) * 3600_000 - 8 * 3600_000 - (count - 1 - index) * 3600_000;
             return { date: new Date(ms).toISOString().slice(0, duration === 'DAILY' ? 10 : 16).replace('T', ' '),
-                value: duration === 'HOURLY' && index > count - 2 - codeIndex ? null : elementCode === 'SNWD' ? 32 + index : 12 + index / 10,
+                value: duration === 'HOURLY' && index > count - 2 - codeIndex ? null : elementCode === 'SNWD' ? 32 + valueIndex : 12 + valueIndex / 10,
                 qcFlag: 'V', qaFlag: 'P' };
         }),
     })) }];

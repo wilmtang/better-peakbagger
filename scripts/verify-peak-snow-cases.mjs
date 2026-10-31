@@ -109,7 +109,8 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         assert.equal(await evaluate(() => document.querySelector('.bpb-snow-graph').tabIndex), 0);
         for (const direction of ['Home', 'ArrowRight', 'End', 'ArrowLeft']) {
             await press(key(direction));
-            assert.equal(await evaluate(() => Boolean(document.querySelector('.bpb-snow-selected'))), true);
+            assert.equal(await evaluate(() => Boolean(document.querySelector('.bpb-snow-cursor'))), true);
+            assert.match(await evaluate(() => document.querySelector('.bpb-snow-range > span').textContent), /\d{1,2}:\d{2} [AP]M · UTC−08 · Snow depth/);
             stable(before, await geometry(), `${name}: chart ${direction}`);
         }
         const reading = () => evaluate(() => document.querySelector('.bpb-snow-range > span').textContent);
@@ -121,11 +122,11 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
             }));
         });
         await movePointer(points[0].x, points[0].y);
-        assert.notEqual(await reading(), pinned, 'hover previews another day');
+        assert.notEqual(await reading(), pinned, 'hover previews another hour');
         stable(before, await geometry(), `${name}: hover preview`);
-        await movePointer(1, 1); assert.equal(await reading(), pinned, 'leaving restores the pinned day');
+        await movePointer(1, 1); assert.equal(await reading(), pinned, 'leaving restores the pinned hour');
         await clickPoint(points[2].x, points[2].y); const clicked = await reading();
-        await movePointer(1, 1); assert.equal(await reading(), clicked, 'a pointer click pins a daily reading');
+        await movePointer(1, 1); assert.equal(await reading(), clicked, 'a pointer click pins an hourly reading');
         stable(before, await geometry(), `${name}: pinned pointer reading`);
         // Chromium's element screenshot scrolls the page at tab zoom. Keep
         // the compositor viewport unchanged while the geometry trace is live.
@@ -162,18 +163,19 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         assert.equal(swe.heading, 'SWE', `${name}: daily readings must identify SWE`);
         assert.equal(swe.value, theme === 'dark' ? '312.4 mm' : '12.30 in', `${name}: SWE uses its own measurement and units`);
         const axis = await evaluate(() => {
-            const dates = [...document.querySelectorAll('.bpb-snow-details tbody th')].map(node => node.textContent);
             const ticks = [...document.querySelectorAll('.bpb-snow-dates span')];
             const plot = document.querySelector('.bpb-snow-graph').getBoundingClientRect();
-            return { dates: [dates[0], dates[4], dates[7]], labels: ticks.map(node => node.textContent),
+            return { count: document.querySelectorAll('.bpb-snow-graph circle').length, labels: ticks.map(node => node.textContent),
                 readable: ticks.every((node, index) => {
                     const r = node.getBoundingClientRect(), previous = ticks[index - 1]?.getBoundingClientRect();
                     return r.width > 0 && r.left >= plot.left - 1 && r.right <= plot.right + 1 && (!previous || r.left >= previous.right + 4);
                 }), title: document.querySelector('.bpb-snow-graph circle title')?.textContent };
         });
-        assert.deepEqual(axis.labels, axis.dates, `${name}: horizontal axis identifies observation dates`);
+        assert.equal(axis.count, 48, `${name}: plot every available hourly observation, not the eight daily readings`);
+        assert.equal(axis.labels.length, 2, `${name}: label both ends of the 48-hour window`);
+        for (const label of axis.labels) assert.match(label, /\w+ \d+, \d{1,2}:\d{2} [AP]M/, `${name}: dates include the hour`);
         assert.equal(axis.readable, true, `${name}: date ticks fit without overlap`);
-        assert.match(axis.title, new RegExp(`${axis.dates[0]}.*${theme === 'dark' ? 'cm' : 'in'}`));
+        assert.match(axis.title, new RegExp(`${axis.labels[0]} · UTC−08 · Snow depth.*${theme === 'dark' ? 'cm' : 'in'}`));
         const placement = await evaluate(readSnowCardPlacement);
         assert.ok(placement.sameStack && placement.followsWeather,
             `snow must follow weather in the default card stack: ${JSON.stringify(placement)}`);

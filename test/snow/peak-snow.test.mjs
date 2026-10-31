@@ -171,15 +171,26 @@ test('snow title has a decorative SNOTEL icon and Refresh belongs beside the sta
     } finally { env.close(); }
 });
 
-test('snow-depth trend labels observation dates and each plotted reading', async () => {
+test('snow chart plots hourly observations with their station time instead of the daily series', async () => {
     const env = setup();
     try {
         await settled(env);
-        const dates = [...env.doc.querySelectorAll('.bpb-snow-details tbody th')].map(node => node.textContent);
+        const dots = [...env.doc.querySelectorAll('.bpb-snow-graph circle')];
+        assert.equal(dots.length, 5, 'plot the five available hourly readings, not the eight daily readings');
+        assert.match(dots[0].querySelector('title').textContent, /Oct 17, 7:00 AM.*UTC−08.*32\.0 in/);
+        assert.match(dots.at(-1).querySelector('title').textContent, /Oct 17, 11:00 AM.*UTC−08.*36\.0 in/);
+        assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /Hourly snow depth.*48 hours/);
+    } finally { env.close(); }
+});
+
+test('snow-depth trend labels the 48-hour window and each plotted reading', async () => {
+    const env = setup();
+    try {
+        await settled(env);
         assert.deepEqual([...env.doc.querySelectorAll('.bpb-snow-dates span')].map(node => node.textContent),
-            [dates[0], dates[4], dates[7]], 'the horizontal axis shows daily observation dates');
+            ['Oct 15, 12:00 PM', 'Oct 17, 12:00 PM'], 'the horizontal axis shows station dates and times 48 hours apart');
         const dot = env.doc.querySelector('.bpb-snow-graph circle');
-        assert.match(dot.querySelector('title').textContent, new RegExp(`${dates[0]}.*in`));
+        assert.match(dot.querySelector('title').textContent, /Oct 17, 7:00 AM.*UTC−08.*in/);
         await env.settings({ units: 'metric' });
         assert.match(env.doc.querySelector('.bpb-snow-graph circle title').textContent, /cm/);
     } finally { env.close(); }
@@ -193,13 +204,17 @@ test('snow-depth chart supports keyboard readings without requests and clears se
         const reading = () => env.doc.querySelector('.bpb-snow-range > span').textContent;
         const key = name => chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
         const requests = env.requests.length;
-        assert.equal(chart.tabIndex, 0, 'daily snow-depth readings must be reachable with the keyboard');
+        assert.equal(chart.tabIndex, 0, 'hourly snow-depth readings must be reachable with the keyboard');
         chart.focus(); key('Home');
-        assert.match(reading(), /Oct 10.*Snow depth.*32\.0 in/);
+        assert.match(reading(), /Oct 15, 12:00 PM.*UTC−08.*unavailable/);
         assert.equal(env.doc.querySelectorAll('.bpb-snow-cursor').length, 1);
-        key('ArrowRight'); assert.match(reading(), /Oct 11.*33\.0 in/);
-        key('End'); assert.match(reading(), /Oct 17.*39\.0 in/);
-        await env.settings({ units: 'metric' }); assert.match(reading(), /Oct 17.*99\.1 cm/);
+        key('ArrowRight'); assert.match(reading(), /Oct 15, 1:00 PM.*unavailable/);
+        key('End'); assert.match(reading(), /Oct 17, 12:00 PM.*unavailable/);
+        key('ArrowLeft'); assert.match(reading(), /Oct 17, 11:00 AM.*36\.0 in/);
+        env.win.Date.now = () => NOW + 3600_000;
+        await env.settings({ units: 'metric' }); assert.match(reading(), /Oct 17, 11:00 AM.*91\.4 cm/);
+        assert.equal(env.doc.querySelector('.bpb-snow-dates span:last-child').textContent, 'Oct 17, 12:00 PM',
+            'a unit update must keep the retained observation window even after the clock advances');
         assert.equal(env.requests.length, requests);
         key('Escape'); assert.match(reading(), /Hover, tap or use ← →/);
         assert.equal(env.doc.querySelectorAll('.bpb-snow-cursor').length, 0);
@@ -209,7 +224,7 @@ test('snow-depth chart supports keyboard readings without requests and clears se
     } finally { env.close(); }
 });
 
-test('snow chart hover previews restore the pinned date through refresh and lifecycle suspension', async () => {
+test('snow chart hover previews restore the pinned hour through refresh and lifecycle suspension', async () => {
     let hold = false; const held = [];
     const env = setup({ fetchFn: url => hold ? new Promise(resolve => held.push({ url, resolve })) : reply(url) });
     try {
@@ -217,30 +232,30 @@ test('snow chart hover previews restore the pinned date through refresh and life
         const chart = env.doc.querySelector('.bpb-snow-graph'), graph = chart.querySelector('svg');
         const reading = () => env.doc.querySelector('.bpb-snow-range > span').textContent;
         graph.getBoundingClientRect = () => ({ left: 0, width: 320, height: 80 });
-        const pointer = (type, index) => chart.dispatchEvent(new env.win.MouseEvent(type, { clientX: 8 + index * 304 / 7, bubbles: true }));
-        pointer('click', 2); assert.match(reading(), /Oct 12.*34\.0 in/);
-        pointer('pointermove', 7); assert.match(reading(), /Oct 17.*39\.0 in/);
-        pointer('pointerleave', 7); assert.match(reading(), /Oct 12.*34\.0 in/);
+        const pointer = (type, index) => chart.dispatchEvent(new env.win.MouseEvent(type, { clientX: 8 + index * 304 / 48, bubbles: true }));
+        pointer('click', 45); assert.match(reading(), /Oct 17, 9:00 AM.*34\.0 in/);
+        pointer('pointermove', 47); assert.match(reading(), /Oct 17, 11:00 AM.*36\.0 in/);
+        pointer('pointerleave', 47); assert.match(reading(), /Oct 17, 9:00 AM.*34\.0 in/);
         hold = true; env.doc.querySelector('.bpb-snow-refresh').click(); await waitFor(() => held.length === 1);
-        assert.match(reading(), /Oct 12.*34\.0 in/);
+        assert.match(reading(), /Oct 17, 9:00 AM.*34\.0 in/);
         assert.equal(chart.tabIndex, 0, 'previous readings stay interactive during refresh');
         hold = false; held.splice(0).forEach(item => item.resolve(reply(item.url))); await settled(env);
-        assert.match(reading(), /Oct 12.*34\.0 in/);
+        assert.match(reading(), /Oct 17, 9:00 AM.*34\.0 in/);
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
-        assert.equal(chart.tabIndex, -1); pointer('click', 7);
+        assert.equal(chart.tabIndex, -1); pointer('click', 47);
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
-        await settled(env); assert.match(reading(), /Oct 12.*34\.0 in/);
+        await settled(env); assert.match(reading(), /Oct 17, 9:00 AM.*34\.0 in/);
     } finally { env.close(); }
 });
 
-test('snow chart exposes unavailable days without bridging gaps or hiding zero depth', async () => {
+test('snow chart exposes omitted hours without bridging gaps or hiding zero depth', async () => {
     const env = setup({ fetchFn: url => {
         const query = new URL(url).searchParams;
         if (new URL(url).pathname.endsWith('/stations')) return reply(url);
         const body = snotelFixture(query.get('stationTriplets'), query.get('duration'), NOW);
-        if (query.get('duration') === 'DAILY') {
+        if (query.get('duration') === 'HOURLY') {
             body[0].data[0].values[0].value = 0;
-            body[0].data[0].values[1].value = null;
+            body[0].data[0].values.splice(1, 1);
         }
         return new Response(JSON.stringify(body));
     } });
@@ -250,11 +265,31 @@ test('snow chart exposes unavailable days without bridging gaps or hiding zero d
         const key = name => chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: name, bubbles: true }));
         const path = chart.querySelector('path:not(.bpb-snow-baseline)').getAttribute('d');
         assert.equal(path.split('M').length, 3, 'missing readings break the trend');
-        key('Home'); assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /0\.0 in/);
+        key('End'); for (let i = 0; i < 5; i++) key('ArrowLeft');
+        assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /Oct 17, 7:00 AM.*0\.0 in/);
         assert.ok(chart.querySelector('.bpb-snow-selected'));
-        key('ArrowRight'); assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /Oct 11.*unavailable/);
+        key('ArrowRight'); assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /Oct 17, 8:00 AM.*unavailable/);
         assert.ok(chart.querySelector('.bpb-snow-cursor'));
         assert.equal(chart.querySelector('.bpb-snow-selected'), null, 'a missing reading has no invented dot');
+    } finally { env.close(); }
+});
+
+test('missing hourly snow depth stays unavailable even when daily readings exist', async () => {
+    const env = setup({ fetchFn: url => {
+        const query = new URL(url).searchParams;
+        if (new URL(url).pathname.endsWith('/stations')) return reply(url);
+        const body = snotelFixture(query.get('stationTriplets'), query.get('duration'), NOW);
+        if (query.get('duration') === 'HOURLY') body[0].data[0].values = [];
+        return new Response(JSON.stringify(body));
+    } });
+    try {
+        await settled(env);
+        const chart = env.doc.querySelector('.bpb-snow-graph');
+        assert.equal(chart.tabIndex, -1);
+        assert.equal(chart.querySelectorAll('circle').length, 0);
+        assert.equal(chart.querySelector('p').textContent, 'No hourly snow-depth readings');
+        assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /Hourly snow depth unavailable/);
+        assert.match(env.doc.querySelector('.bpb-snow-details tbody td span').textContent, /32\.0 in/);
     } finally { env.close(); }
 });
 
