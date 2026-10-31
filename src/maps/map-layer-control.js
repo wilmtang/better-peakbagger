@@ -7,7 +7,7 @@ import { createWildfireList } from './wildfire-details.js';
 import { WILDFIRE_MIN_ZOOM, WILDFIRE_SOURCE } from './wildfire-core.js';
 import { SENTINEL_MIN_ZOOM } from './sentinel-core.js';
 
-const LABELS = { sentinel: 'Sentinel-2 β', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations', wildfire: 'Wildfires' };
+const LABELS = { sentinel: 'Sentinel-2', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations', wildfire: 'Wildfires' };
 const NAMES = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
 const LAND_GUIDANCE = {
     blm: ['BLM camping rules', 'https://www.blm.gov/programs/recreation/camping'],
