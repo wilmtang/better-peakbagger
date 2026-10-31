@@ -72,6 +72,28 @@ The upstream revision, license, and local adaptations are recorded in
 copy and preserve its Claude Code symlink rather than maintaining separate
 versions for each agent.
 
+### Updating the shared skill
+
+Use a disposable worktree based on `origin/main` when publishing a skill update,
+so unrelated local commits and edits stay separate. The existing GitHub CLI
+login can publish the update without an additional repository secret.
+
+`scripts/update-ui-ux-skill.mjs` pins the upstream commit, verifies downloaded
+blob hashes, and three-way merges `SKILL.md` with the installed upstream version
+to retain project guidance. Changed local helpers, merge conflicts, license
+changes, unsupported layouts, and divergent upstream history stop the run.
+Only the canonical skill directory changes; the license and Claude symlink
+remain intact. Before merging, the task validates the skill's data and runs an
+example Python search. It verifies that every changed file belongs to the
+canonical skill directory. Create a skill-only PR and use a real merge commit.
+Recurring publication and any exception to required repository checks need
+explicit maintainer authorization. Conflicts and failed skill checks need
+maintainer attention. Updater regressions also run with `npm test`.
+
+For a local preview, run `node scripts/update-ui-ux-skill.mjs --check`; omit
+`--check` to apply the proposed update in a clean skill working tree. Neither
+command commits, pushes, or merges anything locally.
+
 ## Source and test layout
 
 Runtime modules are grouped by the behavior they own. The directory is an

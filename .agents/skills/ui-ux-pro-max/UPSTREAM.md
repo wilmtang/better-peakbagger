@@ -1,9 +1,10 @@
 # Upstream source
 
 - Repository: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
-- Revision: `623a9a9037d006ea727f8213f084d02a6b6f11b5`
+- Revision: `9a3f14f7423037ccb8feeb4fee7482291b9c820e`
 - Source directory: `.claude/skills/ui-ux-pro-max`
 - Installed: 2026-10-22
+- Updated: 2026-10-31
 - License: MIT; the upstream notice is retained in `LICENSE`.
 
 Local adaptations are limited to `SKILL.md`: agent-neutral script paths, Python 3 invocation, and a Better Peakbagger integration section deferring to `AGENTS.md`. Runtime Python helpers, reference documents, and data are copied unchanged. Upstream development tests are omitted because they depend on the upstream repository's tooling and layout.
