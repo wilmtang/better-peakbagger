@@ -90,7 +90,31 @@ export const initSectionNav = () => {
         } else setTimeout(restore, 0);
     };
 
-    const setActive = active => {
+    const navList = nav.querySelector('.nav-list');
+    const revealActive = active => {
+        const parent = entries.find(entry => entry.link === active)?.parentLink;
+        // Narrow layouts hide subsections; reveal their visible parent chip.
+        const link = active?.getClientRects().length ? active : parent;
+        if (!link?.getClientRects().length) return;
+        const scroller = navList && getComputedStyle(navList).overflowX === 'auto' ? navList : nav;
+        const row = link.getBoundingClientRect(), frame = scroller.getBoundingClientRect();
+        const nearest = (start, end, min, max) => start < min ? start - min : end > max ? end - max : 0;
+        const inset = 8;
+        // Scroll only the menu, never an ancestor or the reading pane. Keep
+        // visible rows still and leave a little room around newly revealed rows.
+        if (scroller.scrollHeight > scroller.clientHeight) {
+            const top = frame.top + scroller.clientTop;
+            scroller.scrollTop += nearest(row.top, row.bottom, top + inset, top + scroller.clientHeight - inset);
+        }
+        if (scroller.scrollWidth > scroller.clientWidth) {
+            const left = frame.left + scroller.clientLeft;
+            scroller.scrollLeft += nearest(row.left, row.right, left + inset, left + scroller.clientWidth - inset);
+        }
+    };
+    let currentLink = null;
+    const setActive = (active, reveal = false) => {
+        if (active === currentLink && !reveal) return;
+        currentLink = active;
         const activeParent = (entries.find(entry => entry.link === active) || {}).parentLink || null;
         for (const { link } of entries) {
             if (link === active) link.setAttribute('aria-current', 'true');
@@ -99,7 +123,9 @@ export const initSectionNav = () => {
             // treatment; every other link clears it.
             link.classList.toggle('nav-parent-active', link === activeParent);
         }
+        revealActive(active);
     };
+    window.addEventListener('resize', () => revealActive(currentLink));
 
     // Which link matches the current scroll position: the last section whose
     // top has scrolled up past a marker just below the content's top edge
@@ -137,10 +163,9 @@ export const initSectionNav = () => {
         navLockTimer = setTimeout(() => { navLocked = false; }, 250);
     };
     const lockTo = link => {
-        setActive(link);
+        setActive(link, true);
         navLocked = true;
         armIdleRelease();
-        link.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     };
 
     content.addEventListener('scroll', () => {

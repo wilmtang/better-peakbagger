@@ -10,7 +10,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { verifySettingsFragments, readSettingsFragmentLanding, settingsFragmentLanded } from './settings-fragment-verification.mjs';
+import { verifySettingsFragments, verifySettingsScrollTracking, readSettingsFragmentLanding, settingsFragmentLanded } from './settings-fragment-verification.mjs';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 const kind = process.argv[2] || 'chrome';
@@ -90,9 +90,10 @@ try {
             await api.storage.sync.set({ bpbSettings: prefs });
         }, prefs);
     };
+    const scrollTracking = await verifySettingsScrollTracking({ evaluate, navigate, resize, configure, screenshot });
     const result = await verifySettingsFragments({ evaluate, navigate, reload, back, forward, resize, keyboardLink, configure, screenshot });
     if (delayedSettings) await delayedSettings();
-    console.log(JSON.stringify({ verification: 'settings-fragments', browser: kind, version, hidden: true, ...result,
+    console.log(JSON.stringify({ verification: 'settings-fragments', browser: kind, version, hidden: true, ...result, scrollTracking,
         ...delayedSettings ? { cases: result.cases + 1, delayedInitialSettings: true } : {} }));
 } catch (error) { failure = error; try { await screenshot?.('failure'); } catch { /* Keep the original assertion. */ } }
 await resources.dispose(failure);

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, location, scrollY, innerWidth, innerHeight, getComputedStyle */
+/* global document, location, scrollY, innerWidth, innerHeight, getComputedStyle, requestAnimationFrame */
 import assert from 'node:assert/strict';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
@@ -23,6 +23,83 @@ export function readSettingsFragmentLanding() {
 
 export const settingsFragmentLanded = (value, hash) => value.hash === hash && !value.missing && Math.abs(value.scroll - value.expected) <= 1
     && value.current === value.owner && value.rootScroll === 0 && value.bodyScroll === 0 && value.behavior === '';
+
+const readScrollTracking = () => {
+    const nav = document.querySelector('.side-nav'), list = nav.querySelector('.nav-list');
+    const content = document.querySelector('.content'), active = nav.querySelector('[aria-current]');
+    const link = active.getClientRects().length ? active
+        : active.closest('li').parentElement.closest('li').querySelector('.nav-item');
+    const scroller = getComputedStyle(list).overflowX === 'auto' ? list : nav;
+    const rect = node => {
+        const { x, y, width, height } = node.getBoundingClientRect(); return { x, y, width, height };
+    };
+    const row = link.getBoundingClientRect(), frame = scroller.getBoundingClientRect();
+    return { current: active.hash, visible: row.width > 0 && row.height > 0
+        && row.top >= frame.top - 1 && row.bottom <= frame.bottom + 1
+        && row.left >= frame.left - 1 && row.right <= frame.right + 1,
+    row: rect(link), frame: rect(scroller), nav: rect(nav), content: rect(content),
+    rootScroll: scrollY, bodyScroll: document.body.scrollTop, contentScroll: content.scrollTop,
+    navScroll: { top: scroller.scrollTop, left: scroller.scrollLeft },
+    focus: document.activeElement.id, viewport: { width: innerWidth, height: innerHeight } };
+};
+
+// Exercise passive scrolling independently of fragment/click navigation. The
+// real extension supplies settings and layout; no navigation or geometry stubs.
+export async function verifySettingsScrollTracking({ evaluate, navigate, resize, configure, screenshot }) {
+    let cases = 0; const viewports = [];
+    for (const [width, height, theme, enlarged] of [[1000, 760, 'light', false], [1000, 420, 'dark', false],
+        [375, 760, 'light', false], [1000, 760, 'dark', true], [375, 760, 'dark', true]]) {
+        const label = `scroll-${width}-${height}-${theme}${enlarged ? '-large-text' : ''}`;
+        await resize(width, height);
+        await configure({ theme, enableReportEditor: true, enableGarminInbox: true });
+        await navigate('');
+        await waitForCondition(() => evaluate(() => document.getElementById('enable-garmin-inbox').checked
+            && !document.getElementById('capture-garmin').hidden), { description: `${label}/settings ready` });
+        await evaluate(enlarged => {
+            if (enlarged) for (const node of document.querySelectorAll('.side-nav a, .side-nav h1, .side-nav p')) {
+                node.style.fontSize = `${parseFloat(getComputedStyle(node).fontSize) * 2}px`;
+            }
+            document.getElementById('theme').focus({ preventScroll: true });
+        }, enlarged);
+        for (const id of ['general-units', 'map-chart-map', 'github-settings-backup', 'about',
+            'github-connection', 'map-chart-chart', 'general-features', 'general']) {
+            await evaluate(id => {
+                const content = document.querySelector('.content'), target = document.getElementById(id);
+                content.scrollTo({ top: content.scrollTop + target.getBoundingClientRect().top
+                    - content.getBoundingClientRect().top - 24, behavior: 'instant' });
+            }, id);
+            const before = await evaluate(readScrollTracking);
+            await waitForCondition(() => evaluate(readScrollTracking), {
+                description: `${label}/${id}/active section`, isReady: state => state.current === `#${id}`,
+            });
+            const state = await evaluate(readScrollTracking), detail = `${label}/${id}: ${JSON.stringify(state)}`;
+            assert.equal(state.visible, true, `active navigation row left its scroll viewport; ${detail}`);
+            assert.equal(state.focus, 'theme', `passive navigation stole keyboard focus; ${detail}`);
+            assert.equal(state.rootScroll, 0, detail); assert.equal(state.bodyScroll, 0, detail);
+            assert.ok(Math.abs(state.contentScroll - before.contentScroll) <= 1, `revealing navigation moved the reading position; ${detail}`);
+            for (const pane of ['nav', 'content']) for (const dimension of ['x', 'y', 'width', 'height']) {
+                assert.ok(Math.abs(state[pane][dimension] - before[pane][dimension]) <= 1, `revealing navigation moved ${pane}.${dimension}; ${detail}`);
+            }
+            cases++;
+            if (['github-settings-backup', 'map-chart-chart'].includes(id)) await screenshot?.(`${label}-${id}`);
+        }
+        // Readers may inspect another part of the menu. Small content scrolls
+        // within the same section must not keep pulling the sidebar back.
+        await evaluate(() => {
+            const nav = document.querySelector('.side-nav'), list = nav.querySelector('.nav-list');
+            nav.scrollTop = nav.scrollHeight; list.scrollLeft = list.scrollWidth;
+            document.querySelector('.content').scrollTo({ top: 4, behavior: 'instant' });
+        });
+        const manual = await evaluate(readScrollTracking);
+        await evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const settled = await evaluate(readScrollTracking);
+        assert.equal(settled.current, '#general', label);
+        assert.deepEqual(settled.navScroll, manual.navScroll, `${label}: repeated scrolls must preserve manual menu browsing`);
+        cases++; viewports.push(settled.viewport);
+    }
+    assert.equal(cases, 45, 'scroll tracking must execute every direction, viewport and text-size case');
+    return { cases, viewports, passiveScroll: true, focusPreserved: true, enlargedNavigationText: true };
+}
 
 export async function verifySettingsFragments({ evaluate, navigate, reload, back, forward, resize, keyboardLink, configure, screenshot }) {
     let cases = 0; const viewports = [];
