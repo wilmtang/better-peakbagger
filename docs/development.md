@@ -72,13 +72,11 @@ The upstream revision, license, and local adaptations are recorded in
 copy and preserve its Claude Code symlink rather than maintaining separate
 versions for each agent.
 
-### Automatic skill updates
+### Updating the shared skill
 
-The maintainer's monthly Codex task updates the skill using the existing local
-GitHub CLI login. It starts from `origin/main` in a disposable worktree, checks
-the proposed skill, and merges a skill-only PR with a real merge commit. It
-does not need an additional GitHub secret. This schedule runs on the maintainer's
-computer; Codex must be open and the computer available when it runs.
+Use a disposable worktree based on `origin/main` when publishing a skill update,
+so unrelated local commits and edits stay separate. The existing GitHub CLI
+login can publish the update without an additional repository secret.
 
 `scripts/update-ui-ux-skill.mjs` pins the upstream commit, verifies downloaded
 blob hashes, and three-way merges `SKILL.md` with the installed upstream version
@@ -87,10 +85,9 @@ changes, unsupported layouts, and divergent upstream history stop the run.
 Only the canonical skill directory changes; the license and Claude symlink
 remain intact. Before merging, the task validates the skill's data and runs an
 example Python search. It verifies that every changed file belongs to the
-canonical skill directory. The maintainer has authorized those verified
-skill-only updates to merge without waiting for unrelated extension CI; this
-exception does not cover application code, workflows, or dependencies and does
-not change repository protection rules. Conflicts and failed skill checks need
+canonical skill directory. Create a skill-only PR and use a real merge commit.
+Recurring publication and any exception to required repository checks need
+explicit maintainer authorization. Conflicts and failed skill checks need
 maintainer attention. Updater regressions also run with `npm test`.
 
 For a local preview, run `node scripts/update-ui-ux-skill.mjs --check`; omit
