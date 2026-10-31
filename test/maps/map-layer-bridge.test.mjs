@@ -37,7 +37,7 @@ test('opacity announcements wait for saved preferences as well as settings', asy
         finish({ bpbMapOverlayOpacityV1: { sentinel: 31, slope: 42, land: 73 } }); await tick();
         const announcements = env.messages.filter(message => message.type === 'preferences');
         assert.equal(announcements.length, 1);
-        assert.deepEqual(JSON.parse(JSON.stringify(announcements[0].preferences)), { sentinel: 31, slope: 42, land: 73, snotel: 100, wildfire: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
+        assert.deepEqual(JSON.parse(JSON.stringify(announcements[0].preferences)), { sentinel: 31, snow: 60, slope: 42, land: 73, snotel: 100, wildfire: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
         assert.equal(announcements[0].snotel, true);
     } finally { env.close(); }
 });
@@ -93,7 +93,7 @@ test('the isolated map service persists bounded preferences only and rejects for
     try {
         await tick(); env.send({ type: 'preferences' }); await tick(); assert.equal(env.requests.length, 0);
         env.send({ type: 'save', preferences: { sentinel: 150, slope: -5, land: 33.8, snotel: 5, enabled: true, url: 'https://example.com' } }); await tick();
-        assert.deepEqual(JSON.parse(JSON.stringify(env.local.bpbMapOverlayOpacityV1)), { sentinel: 100, slope: 0, land: 34, snotel: 100, wildfire: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
+        assert.deepEqual(JSON.parse(JSON.stringify(env.local.bpbMapOverlayOpacityV1)), { sentinel: 100, snow: 60, slope: 0, land: 34, snotel: 100, wildfire: 100, landTypes: [...Schema.MAP_LAND_TYPE_IDS] });
         const request = { type: 'stations', requestId: 1, bounds: [-122, 46, -121, 47] };
         env.send(request, 'https://example.com'); env.send(request, env.win.location.origin, null); env.send({ ...request, bounds: [-122, -200, -121, 47] });
         await tick(); assert.equal(env.requests.length, 0);

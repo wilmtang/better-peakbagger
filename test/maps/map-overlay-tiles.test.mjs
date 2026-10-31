@@ -17,7 +17,7 @@ test('buffered tiles outside overlay coverage stay clear without contacting a pr
     tiles.setScenes([{ id: 'polar_scene', bounds: [-180, -90, 180, 90] }]);
     const tile = (lon, lat) => ({ z: 12, x: Math.floor((lon + 180) / 360 * 4096), y: Math.floor((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * 4096) });
     try {
-        for (const id of ['slope', 'land']) await tiles.draw(id, tile(7.65, 45.98), tiles.canvas());
+        for (const id of ['slope', 'land', 'snow']) await tiles.draw(id, tile(7.65, 45.98), tiles.canvas());
         await tiles.draw('sentinel', tile(-86, -78), tiles.canvas());
         assert.equal(requests, 0);
     } finally { tiles.dispose(); }
@@ -47,6 +47,15 @@ test('a provider cooldown blocks new tile work until an explicit allowed retry',
     assert.equal(tiles.retry('land'), false, 'a renderer command cannot bypass the provider deadline');
     await assert.rejects(draw(), error => error.code === 'rate-limit'); assert.equal(requests, 1);
     tiles.dispose();
+});
+test('a snow catalogue rate limit cancels image work and blocks new tiles through the same owner', async () => {
+    let requests = 0;
+    const tiles = createOverlayTiles({ document, fetchImpl: async () => { requests++; throw new Error('Must remain idle'); } });
+    try {
+        tiles.cooldown('snow', Date.now() + 600000);
+        await assert.rejects(tiles.draw('snow', { z: 9, x: 82, y: 180 }, tiles.canvas()), error => error.code === 'rate-limit');
+        assert.equal(tiles.retry('snow'), false); assert.equal(requests, 0);
+    } finally { tiles.dispose(); }
 });
 for (const retryAfter of ['5', null]) test(`concurrent public-land limits retain the longest provider deadline (${retryAfter ?? 'missing'} Retry-After)`, async t => {
     const now = Date.now(); t.mock.method(Date, 'now', () => now);
@@ -107,7 +116,7 @@ test('cancelled tile completions cannot clear a newer loading batch', async t =>
     held[1](image()); await current; assert.equal(states.at(-1).complete, true); tiles.dispose();
 });
 
-for (const id of ['slope', 'land', 'sentinel']) test(`a temporary ${id} failure recovers once without showing a terminal layer error`, async t => {
+for (const id of ['slope', 'land', 'snow', 'sentinel']) test(`a temporary ${id} failure recovers once without showing a terminal layer error`, async t => {
     mockBitmap(t);
     let calls = 0; const errors = [], states = [];
     const tiles = createOverlayTiles({ document, retryDelayMs: 0, onError: (_id, error) => errors.push(error), onActivity: (_id, state) => states.push(state),

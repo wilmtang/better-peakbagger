@@ -42,6 +42,7 @@ const targets = {
     'peak-weather': [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']],
     'summit-cloud': [['verify-summit-cloud.mjs'], ['verify-summit-cloud.mjs', '--firefox']],
     snow: [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']],
+    'snow-depth': [['verify-snow-depth.mjs', 'chrome'], ['verify-snow-depth.mjs', 'firefox']],
     'snow-map': [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']],
     'peak-cards': [['verify-ascent-weather.mjs', '--cards'], ['verify-ascent-weather.mjs', '--cards', '--firefox']],
     'peak-card-placement': [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']],

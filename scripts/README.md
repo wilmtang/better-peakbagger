@@ -148,6 +148,7 @@ independent of the existing targets.
 - [verify-peak-weather-refresh.mjs](verify-peak-weather-refresh.mjs)
 - [verify-snotel-options.mjs](verify-snotel-options.mjs)
 - [verify-snow-map-cases.mjs](verify-snow-map-cases.mjs)
+- [verify-snow-depth.mjs](verify-snow-depth.mjs) — Real-extension snow depth, opacity, keyboard recovery and enlarged layout.
 - [verify-snow-map-fixture.mjs](verify-snow-map-fixture.mjs)
 - [verify-weather-card-drag.mjs](verify-weather-card-drag.mjs)
 - [verify-weather-clouds.mjs](verify-weather-clouds.mjs)

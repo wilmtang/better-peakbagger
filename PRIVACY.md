@@ -18,6 +18,8 @@ Data leaves the browser only when a feature requires it:
 - **USDA NRCS** receives public station IDs and relative date ranges when an
   enabled nearby-snow card approaches the viewport. Station matching is local;
   no summit coordinates or GPX are sent to NRCS.
+- **NOAA NOHRSC** receives viewed-area tile bounds for an enabled Snow depth
+  overlay, plus credential-free reads of its public analysis time and legend.
 - **USGS** receives viewed-area tile bounds when slope or public-land overlays
   are enabled, without GPX, account credentials or referrers.
 - **3D map providers** receive tile requests for the viewed area only after the
@@ -604,6 +606,17 @@ settings files and GitHub settings backups; they contain no map location.
 Enabled selections remain in page memory, except an explicit native Full Screen
 action: a one-use, destination- and tab-bound session handoff lasts 30 seconds
 and contains only validated layer state and a Sentinel pass identity.
+
+The **Snow depth** overlay sends the viewed tile bounds to NOAA's public
+`mapservices.weather.noaa.gov` snow-analysis service only when enabled and
+zoomed into its coverage. It also reads the public analysis valid time and
+legend without sending a viewport for those metadata requests. Requests use
+HTTPS, omit credentials and referrers, and reject redirects. No GPX, route,
+Peakbagger identity or account credentials are sent. Metadata and decoded
+images remain in page memory; browser-managed HTTP caching may retain public
+images. Turning it off cancels pending requests. Opacity follows the existing
+synced overlay preferences; enablement is temporary map state. See
+[Snow depth](docs/map-layers.md#snow-depth) for coverage and freshness limits.
 
 The SNOTEL layer filters the public national catalog locally for the active
 viewport. NRCS receives no viewport bounds. More than 50 visible stations asks

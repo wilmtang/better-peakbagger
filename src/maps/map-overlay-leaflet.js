@@ -5,6 +5,7 @@ import { createLeafletWildfires } from './wildfire-leaflet.js';
 import { createOverlayTiles } from './map-overlay-tiles.js';
 import { createPageBCTileFetch } from './bc-land-client.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
+import { SNOW_DEPTH_MAX_ZOOM } from './snow-depth.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup, updateSnotelPopupAction } from '../snow/snotel-map-marker.js';
 
@@ -12,7 +13,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
     const L = win.L, layers = new Map(), controllers = new Map(), records = new Map(), states = new Map();
     const fetchBCTile = createPageBCTileFetch(bridgeWindow);
     const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError, onActivity });
-    const z = { sentinel: 250, land: 260, slope: 270 };
+    const z = { sentinel: 250, land: 260, snow: 265, slope: 270 };
     let wildfire = null;
     let stations = null, stationPopups = [], stationKey = '', hasScenes = false;
     const draw = record => {
@@ -46,7 +47,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
                 return canvas;
             },
         });
-        const layer = new Grid({ pane, tileSize: 256, minZoom: OVERLAY_MIN_ZOOM, maxNativeZoom: id === 'sentinel' ? 14 : 15,
+        const layer = new Grid({ pane, tileSize: 256, minZoom: OVERLAY_MIN_ZOOM, maxNativeZoom: id === 'sentinel' ? 14 : id === 'snow' ? SNOW_DEPTH_MAX_ZOOM : 15,
             maxZoom: 24, keepBuffer: 1, updateWhenIdle: true, bpbOverlay: true,
             attribution: id === 'sentinel' ? SENTINEL_ATTRIBUTION : OVERLAY_ATTRIBUTION[id] });
         layer.on('tileunload', event => {
@@ -64,6 +65,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
             }
             if (id === 'snotel') return;
             states.set(id, { ...state });
+            if (id === 'snow') tiles.cooldown(id, state.retryAt);
             if (id === 'land') {
                 tiles.landCooldowns(state.providerCooldowns);
                 // An explicit filter change must remove deselected pixels,

@@ -554,7 +554,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                     postToFrame('layerAction', { action: 'basemap', selection: data.selection });
                 } else if (data.id === 'wildfire' && data.action === 'retry') {
                     postToFrame('layerAction', { id: 'wildfire', action: 'retry' });
-                } else if (['sentinel', 'slope', 'land'].includes(data.id) && ['retry', 'capture'].includes(data.action)) {
+                } else if (['sentinel', 'snow', 'slope', 'land'].includes(data.id) && ['retry', 'capture'].includes(data.action)) {
                     postToFrame('layerAction', { id: data.id, action: data.action, capture: typeof data.capture === 'string' ? data.capture.slice(0, 120) : '' });
                 }
             } else if (data.type === 'snowStations') {

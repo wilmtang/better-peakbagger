@@ -45,7 +45,7 @@ const trackUnitsPatch = value => ['default', 'auto', 'metric', 'imperial'].inclu
 // draws or validates a route resolves through ROUTE_STYLE and BOUNDS.
 const ROUTE_STYLE = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
 const VIEWPORT = { width: 450, height: 450 };
-const MAP_OVERLAY_OPACITY = Object.freeze({ sentinel: 100, slope: 60, land: 25, snotel: 100, wildfire: 100 });
+const MAP_OVERLAY_OPACITY = Object.freeze({ sentinel: 100, snow: 60, slope: 60, land: 25, snotel: 100, wildfire: 100 });
 const MAP_OVERLAY_IDS = Object.freeze(Object.keys(MAP_OVERLAY_OPACITY));
 const MAP_LAND_TYPE_IDS = Object.freeze(['BLM', 'USFS', 'FED', 'STAT', 'LOC', 'TRIB', 'CROWN', 'AGENCY', 'FIRST_NATIONS']);
 const mapLandTypes = value => value === undefined ? [...MAP_LAND_TYPE_IDS]

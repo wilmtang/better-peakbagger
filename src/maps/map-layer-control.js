@@ -7,7 +7,7 @@ import { createWildfireList } from './wildfire-details.js';
 import { WILDFIRE_MIN_ZOOM, WILDFIRE_SOURCE } from './wildfire-core.js';
 import { SENTINEL_MIN_ZOOM } from './sentinel-core.js';
 
-const LABELS = { sentinel: 'Sentinel-2', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations', wildfire: 'Wildfires' };
+const LABELS = { sentinel: 'Sentinel-2', snow: 'Snow depth', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations', wildfire: 'Wildfires' };
 const NAMES = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
 const LAND_GUIDANCE = {
     blm: ['BLM camping rules', 'https://www.blm.gov/programs/recreation/camping'],
@@ -108,6 +108,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         }
         const fireList = key === 'wildfire' ? createWildfireList(doc) : null;
         if (fireList) detail.append(fireList.element);
+        const analysis = key === 'snow' ? node('p', 'bpb-snow-depth-time') : null;
+        if (analysis) detail.append(analysis);
         const legend = node('div', 'bpb-layers-legend');
         const guidance = key === 'land' ? node('div', 'bpb-layers-guidance-links') : null;
         if (guidance) {
@@ -130,7 +132,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         });
         retry.addEventListener('blur', () => { const recovery = details.get(key); recovery.recovering = false; recovery.reloading = false; recovery.feedback.style.minHeight = ''; paint(); });
         action.append(retry); feedback.append(status, action);
-        if (fireList) detail.insertBefore(feedback, fireList.element); else detail.append(feedback);
+        if (fireList) detail.insertBefore(feedback, fireList.element);
+        else if (analysis) detail.insertBefore(feedback, analysis);
+        else detail.append(feedback);
         well.append(detail);
         checkbox.addEventListener('change', () => {
             if (model.coverage?.[key] === false) { paint(); return; }
@@ -143,7 +147,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             paint();
         });
         rows.set(key, { row, checkbox, disclosure, value, amount, spinner, rowStatus });
-        details.set(key, { fireList, detail, slider, output, capture, legend, guidance, types, allTypes, typeCount, typeRows, feedback, status, retry, captureKey: '', guidanceKey: '', legendKey: '', typesKey: '' });
+        details.set(key, { fireList, analysis, detail, slider, output, capture, legend, guidance, types, allTypes, typeCount, typeRows, feedback, status, retry, captureKey: '', guidanceKey: '', legendKey: '', typesKey: '' });
     }
     panel.append(well); element.append(trigger, panel, live);
     const position = () => {
@@ -181,7 +185,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const landEntries = model.statuses?.land?.legendEntries;
         const hasLandTypes = landTypes.length > 0 && (!Array.isArray(landEntries) || landEntries.some(entry => landTypes.includes(entry.value)));
         const needsZoom = key => Number.isFinite(model.zoom) && (key === 'sentinel' ? model.zoom < SENTINEL_MIN_ZOOM
-            : key === 'wildfire' ? Math.round(model.zoom) < WILDFIRE_MIN_ZOOM : (key === 'slope' || key === 'land') && Math.round(model.zoom) < OVERLAY_MIN_ZOOM);
+            : key === 'snow' ? model.zoom < OVERLAY_MIN_ZOOM : key === 'wildfire' ? Math.round(model.zoom) < WILDFIRE_MIN_ZOOM : (key === 'slope' || key === 'land') && Math.round(model.zoom) < OVERLAY_MIN_ZOOM);
         const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled && model.coverage?.[key] !== false);
         const failed = active.some(key => (key !== 'land' || hasLandTypes) && !needsZoom(key) && (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
@@ -215,12 +219,19 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 detail.slider.value = String(current.opacity); detail.slider.disabled = unavailable || !current.enabled;
                 detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent opacity`); detail.output.value = `${current.opacity}%`;
             }
+            if (detail.analysis) {
+                const time = Number.isSafeInteger(status.analysisTime) && status.analysisTime > 0 && status.analysisTime <= Date.now() + 300000
+                    ? new Date(status.analysisTime).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) + ' UTC' : '';
+                detail.analysis.textContent = time ? `${status.metadataError ? 'Last known' : 'Latest NOAA'} analysis: ${time}`
+                    : status.metadataPending ? 'Checking analysis time…' : 'Analysis time unavailable.';
+                detail.analysis.title = time ? new Date(status.analysisTime).toISOString() : '';
+            }
             if (detail.fireList) {
                 const focused = doc.activeElement, ownedFocus = detail.fireList.element.contains(focused);
                 detail.fireList.update(shown ? status.fires || [] : []);
                 if (ownedFocus && !focused.isConnected) row.disclosure.focus({ preventScroll: true });
             }
-            const legendKey = JSON.stringify([status.legendEntries || [], status.legend || '']);
+            const legendKey = JSON.stringify([status.legendEntries || [], status.legend || '', key === 'snow' && status.metadataError === true]);
             if (detail.types) {
                 const entries = (status.legendEntries || []).filter(entry => Schema.MAP_LAND_TYPE_IDS.includes(entry.value));
                 const typesKey = JSON.stringify(entries);
@@ -259,13 +270,14 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 detail.legend.replaceChildren(...(key === 'land' ? [] : status.legendEntries || []).map(entry => {
                     const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');
                     swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
+                    if (key === 'snow' && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(entry.image || '')) swatch.style.backgroundImage = `url("${entry.image}")`;
                     item.append(swatch, doc.createTextNode(entry.label)); return item;
-                }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
+                }), node('div', 'bpb-layers-legend-caption', (key === 'snow' && status.metadataError ? 'Depth legend could not be refreshed. ' : '') + (status.legend || '')));
                 if (key === 'wildfire') { const link = node('a', '', 'Official NIFC source'); link.href = WILDFIRE_SOURCE; link.target = '_blank'; link.rel = 'noopener noreferrer'; detail.legend.append(link); }
             }
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
             detail.status.textContent = unavailable ? 'No coverage here.' : !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
-                : noTypes ? 'Select a land type.' : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in for ${key === 'wildfire' ? 'reported fires' : key === 'sentinel' ? 'imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
+                : noTypes ? 'Select a land type.' : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in for ${key === 'wildfire' ? 'reported fires' : key === 'sentinel' ? 'imagery' : key === 'land' ? 'public lands' : key === 'snow' ? 'snow depth' : 'slope shading'}.`
                     : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
@@ -292,7 +304,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             const showRetry = shown && !zoomedOut && (status.retry === true || heldRecovery);
             if (!showRetry && doc.activeElement === detail.retry) row.disclosure.focus({ preventScroll: true });
             detail.retry.hidden = !showRetry;
-            detail.retry.textContent = key === 'wildfire' ? status.error ? 'Retry' : 'Refresh' : status.permission ? 'Allow' : status.error ? 'Retry' : (heldRecovery && !status.pending || detail.reloading) ? 'Reload' : 'Retry';
+            detail.retry.textContent = ['wildfire', 'snow'].includes(key) ? status.error ? 'Retry' : 'Refresh' : status.permission ? 'Allow' : status.error ? 'Retry' : (heldRecovery && !status.pending || detail.reloading) ? 'Reload' : 'Retry';
             detail.retry.dataset.bpbBcPermission = String(key === 'land' && status.permission === true);
             detail.retry.setAttribute('aria-label', status.permission ? 'Allow BC land maps' : detail.retry.textContent);
             detail.retry.setAttribute('aria-disabled', String(status.pending === true || status.retryAt > Date.now()));

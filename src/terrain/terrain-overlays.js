@@ -3,6 +3,7 @@
 import { createTerrainWildfires } from './terrain-wildfires.js';
 import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
 import { createSentinelSession } from '../maps/sentinel-session.js';
+import { SNOW_DEPTH_MAX_ZOOM } from '../maps/snow-depth.js';
 import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM, rasterTileStatus } from '../maps/map-overlay-providers.js';
 import { readLayerSnapshot, mergeLandCooldowns } from '../maps/map-layer-protocol.js';
@@ -43,7 +44,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             custom.update(selected, { ...reply.preferences, ...next.customOpacity }, next.customReloads);
         }).catch(() => {});
     };
-    const loadingMessage = id => id === 'land' ? 'Loading public lands' : 'Loading slope shading';
+    const loadingMessage = id => id === 'land' ? 'Loading public lands' : id === 'snow' ? 'Loading snow depth' : 'Loading slope shading';
     const reportRaster = (id, patch) => {
         rasterStatus[id] = { ...rasterStatus[id], ...patch };
         post('layerStatus', { id, revision: snapshot?.revision, ...rasterStatus[id] });
@@ -66,14 +67,14 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         if (disposed || !snapshot?.state[id]?.enabled || snapshot.state[id].opacity === 0) return;
         if (id === 'sentinel') sentinel.tileActivity(activity);
         else {
-            if (id === 'slope' && snapshot.cooldowns.slope > Date.now()) return;
+            if (['slope', 'snow'].includes(id) && snapshot.cooldowns[id] > Date.now()) return;
             if (id === 'land') { snapshot.landCooldowns = activity.providerCooldowns || {}; snapshot.cooldowns.land = activity.retryAt || 0; }
             reportRaster(id, { ...rasterTileStatus(id, activity),
                 retry: activity.error || activity.pending && rasterStatus[id]?.retry === true });
         }
     } });
     const tileProtocol = async (request, controller) => {
-        const match = /^bpb-overlay:\/\/(sentinel|slope|land)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(request.url);
+        const match = /^bpb-overlay:\/\/(sentinel|snow|slope|land)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(request.url);
         if (!match || disposed) throw new Error('Invalid overlay tile.');
         const [, id, revision, z, x, y] = match;
         if (id === 'sentinel' && Number(revision) !== sceneRevision || id === 'land' && Number(revision) !== landRevision) throw new DOMException('Cancelled.', 'AbortError');
@@ -93,7 +94,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         || ['bpb-route', 'bpb-peaks', 'bpb-highlight'].some(prefix => layer.id.startsWith(prefix)))?.id;
     const paint = () => {
         if (!snapshot || disposed) return;
-        for (const id of ['sentinel', 'land', 'slope']) {
+        for (const id of ['sentinel', 'land', 'snow', 'slope']) {
             const state = snapshot.state[id];
             if (!state.enabled || state.opacity === 0 || id === 'land' && !snapshot.landTypes.length || id === 'sentinel' && !scenes.length) { remove(id); continue; }
             let source = layers.get(id);
@@ -102,17 +103,17 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
                 if (!registered) { maplibre.addProtocol(protocol, tileProtocol); registered = true; }
                 source = `bpb-overlay-${id}-${++sourceRevision}`;
                 map.addSource(source, { type: 'raster', tiles: [`${protocol}://${id}/${id === 'sentinel' ? sceneRevision : id === 'land' ? landRevision : 0}/{z}/{x}/{y}`],
-                    tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : 15,
+                    tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : id === 'snow' ? SNOW_DEPTH_MAX_ZOOM : 15,
                     attribution: id === 'sentinel' ? SENTINEL_ATTRIBUTION : OVERLAY_ATTRIBUTION[id] });
                 const before = beforeVectors();
-                map.addLayer({ id: source, source, type: 'raster', paint: { 'raster-opacity': state.opacity / 100, 'raster-fade-duration': 0 } }, before);
+                map.addLayer({ id: source, source, type: 'raster', paint: { 'raster-opacity': state.opacity / 100, 'raster-fade-duration': 0, ...(id === 'snow' ? { 'raster-resampling': 'nearest' } : {}) } }, before);
                 layers.set(id, source);
                 if (id !== 'sentinel') reportRaster(id, { pending: true, error: false, permission: false, retryAt: 0, retry: rasterStatus[id]?.retry === true, message: loadingMessage(id) });
             }
             map.setPaintProperty(source, 'raster-opacity', state.opacity / 100);
         }
         // Adding a previously disabled lower overlay must retain fixed order.
-        for (const id of ['sentinel', 'land', 'slope']) {
+        for (const id of ['sentinel', 'land', 'snow', 'slope']) {
             const source = layers.get(id), before = beforeVectors();
             if (source && before) map.moveLayer(source, before);
         }
@@ -132,8 +133,8 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         onCapture: target => { if (snapshot) snapshot.capture = target; post('layerCapture', { target }); },
     });
     const retainOverlays = () => {
-        for (const id of ['slope', 'land', 'sentinel']) if (snapshot?.state[id].enabled && map.coveringTiles) tiles.retain(id,
-            map.coveringTiles({ tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : 15 }).map(tile => tile.canonical));
+        for (const id of ['slope', 'land', 'snow', 'sentinel']) if (snapshot?.state[id].enabled && map.coveringTiles) tiles.retain(id,
+            map.coveringTiles({ tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : id === 'snow' ? SNOW_DEPTH_MAX_ZOOM : 15 }).map(tile => tile.canonical));
     };
     return {
         async customTask(data) {
@@ -163,7 +164,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             const next = readLayerSnapshot(value); if (!next || snapshot && next.revision < snapshot.revision) return;
             const first = snapshot === null;
             if (snapshot) {
-                for (const id of ['slope', 'sentinel']) next.cooldowns[id] = Math.max(snapshot.cooldowns[id], next.cooldowns[id]);
+                for (const id of ['slope', 'snow', 'sentinel']) next.cooldowns[id] = Math.max(snapshot.cooldowns[id], next.cooldowns[id]);
                 next.landCooldowns = mergeLandCooldowns(snapshot.landCooldowns, next.landCooldowns);
             }
             snapshot = next;
@@ -174,8 +175,9 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             wildfire?.update({ ...next.state.wildfire, retryAt: next.cooldowns.wildfire });
             if (next.state.wildfire.enabled && Object.keys(wildfireStatus).length) post('layerStatus', { id: 'wildfire', revision: next.revision, ...wildfireStatus });
             tiles.landCooldowns(next.landCooldowns);
+            tiles.cooldown('snow', next.cooldowns.snow);
             if (tiles.setLandTypes(next.landTypes)) { landRevision++; remove('land'); rasterStatus.land = {}; }
-            for (const id of ['land', 'slope']) if (!next.state[id].enabled || next.state[id].opacity === 0) rasterStatus[id] = {};
+            for (const id of ['land', 'snow', 'slope']) if (!next.state[id].enabled || next.state[id].opacity === 0) rasterStatus[id] = {};
             sentinel.cooldown(next.cooldowns.sentinel);
             if (next.state.sentinel.enabled && next.state.sentinel.opacity > 0) sentinel.activate(next.capture);
             else sentinel.deactivate();
@@ -185,7 +187,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             // transit. Reattach the current provider model to the accepted
             // revision so the outer menu cannot remain stuck in pending.
             post('layerStatus', { id: 'sentinel', revision: next.revision, ...sentinelStatus });
-            for (const id of ['land', 'slope']) if (next.state[id].enabled) {
+            for (const id of ['land', 'snow', 'slope']) if (next.state[id].enabled) {
                 if (next.cooldowns[id] > Date.now()) reportRaster(id, { pending: false, error: true, permission: false, retry: true,
                     retryAt: next.cooldowns[id], message: 'Map service is busy. Try again later.' });
                 else if (Object.keys(rasterStatus[id] || {}).length) reportRaster(id, {});

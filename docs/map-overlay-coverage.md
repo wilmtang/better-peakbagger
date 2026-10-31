@@ -40,6 +40,16 @@ locally after activation. Nearby discovery still requires a station within
 [South Dakota station](https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=354),
 [active SNOTEL catalog](https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?stationTriplets=*:*:SNTL&elements=SNWD,WTEQ&durations=DAILY&activeOnly=true).
 
+## Snow depth availability
+
+**Snow depth** uses NOAA NOHRSC's conservative raster envelope, approximately
+130.52° W–62.25° W and 24.10° N–58.23° N. It primarily covers the contiguous
+US, with partial neighboring Canadian/Mexican coverage; the envelope does not
+promise snow data in each pixel. Alaska, Hawaii, overseas territories and
+other world regions are disabled unless a supported area is also in view.
+Views below zoom 8 say **Zoom in**. Clear pixels may have no snow or no data;
+model resolution is about 1 km. [Controls, image and limits](map-layers.md#snow-depth).
+
 ## Wildfire availability
 
 The **Wildfires** overlay is eligible inside US state and Washington, DC outlines

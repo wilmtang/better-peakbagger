@@ -6,10 +6,34 @@ import { JSDOM } from 'jsdom';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { publicLandInfo } from '../../src/maps/map-overlay-providers.js';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.js';
+import { readSnowDepthLegend } from '../../src/maps/snow-depth.js';
+import { snowDepthLegend } from '../helpers/snow-depth-fixture.mjs';
+
+test('snow controls identify analysis time, preserve refresh focus and hide unavailable work', () => {
+    const dom = new JSDOM('<body></body>', { pretendToBeVisual: true }), doc = dom.window.document, retries = [];
+    const state = Schema.mapOverlayState({ snow: { enabled: true } }), statuses = { snow: { retry: true, metadataPending: true } };
+    const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);
+    const render = extra => control.render({ state, statuses, ...extra });
+    try {
+        render(); control.trigger.click(); doc.querySelector('[data-layer="snow"] button').click();
+        const detail = doc.querySelector('[data-overlay="snow"]'), time = detail.querySelector('.bpb-snow-depth-time'), retry = detail.querySelector('.bpb-layers-retry');
+        assert.equal(time.textContent, 'Checking analysis time…'); assert.equal(retry.textContent, 'Refresh');
+        statuses.snow = { retry: true, analysisTime: Date.UTC(2026, 9, 30), legendEntries: readSnowDepthLegend(snowDepthLegend()) }; render();
+        assert.match(time.textContent, /Latest NOAA analysis.*2026.*UTC/); assert.equal(time.title, '2026-10-30T00:00:00.000Z');
+        assert.match(detail.textContent, /0–0.39 in/); assert.match(detail.querySelector('.bpb-layers-legend-item i').style.backgroundImage, /^url\("?data:image\/png;base64,/);
+        retry.focus(); statuses.snow.pending = true; render(); retry.click(); assert.deepEqual(retries, []); assert.equal(doc.activeElement, retry);
+        statuses.snow.pending = false; statuses.snow.metadataError = true; render();
+        assert.match(time.textContent, /^Last known analysis:/); assert.match(detail.textContent, /Depth legend could not be refreshed/);
+        assert.equal(doc.activeElement, retry); retry.click(); assert.deepEqual(retries, ['snow']);
+        statuses.snow.error = true; statuses.snow.message = 'Snow depth unavailable'; render({ zoom: 7.75 });
+        assert.equal(retry.hidden, true); assert.match(detail.textContent, /Zoom in for snow depth/);
+        render({ coverage: { snow: false } }); assert.equal(doc.querySelector('[data-layer="snow"] input').disabled, true);
+    } finally { control.dispose(); dom.window.close(); }
+});
 
 test('overlay schema bounds device-local alpha and fails closed on enablement', () => {
     const state = Schema.mapOverlayState({ sentinel: { enabled: 'true', opacity: NaN }, slope: { enabled: true, opacity: 112 }, land: { opacity: -3 }, snotel: { enabled: true, opacity: 0 } });
-    assert.deepEqual(state, { sentinel: { enabled: false, opacity: 100 }, slope: { enabled: true, opacity: 100 }, land: { enabled: false, opacity: 0 }, snotel: { enabled: true, opacity: 100 }, wildfire: { enabled: false, opacity: 100 } });
+    assert.deepEqual(state, { sentinel: { enabled: false, opacity: 100 }, snow: { enabled: false, opacity: 60 }, slope: { enabled: true, opacity: 100 }, land: { enabled: false, opacity: 0 }, snotel: { enabled: true, opacity: 100 }, wildfire: { enabled: false, opacity: 100 } });
     assert.deepEqual(Schema.mapOverlayState(state), state);
     assert.equal(Object.hasOwn(Schema.DEFAULTS, 'mapOverlays'), false, 'overlay enablement is not a synced preference');
 });

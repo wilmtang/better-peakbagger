@@ -6,9 +6,10 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
+import { createSnowDepthMetadata, SNOW_DEPTH_LEGEND } from './snow-depth.js';
 import { WILDFIRE_LEGEND } from './wildfire-core.js';
 import { sentinelTarget } from './sentinel-core.js';
-import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
+import { OVERLAY_MIN_ZOOM, SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -54,7 +55,9 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
         cancelReveal(); requestId++; post({ type: 'cancel' });
     };
     const selectable = new Set();
+    let snowInfo = {};
     const statuses = {
+        snow: { legend: SNOW_DEPTH_LEGEND },
         wildfire: { legend: WILDFIRE_LEGEND },
         sentinel: { legend: 'Copernicus Sentinel-2 · Microsoft Planetary Computer. Scene clouds can obscure coverage.' },
         slope: { legend: 'USGS 3DEP · Below 20° and no data are clear. Ground slope; resolution varies. Not an avalanche forecast.',
@@ -65,6 +68,15 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
     const post = detail => { if (detail.type !== 'handoffState' || handoffActive) win.postMessage({ __bpbMapLayers: true, dir: 'toCS', ...detail }, win.location.origin); };
     const terrain = (type, detail = {}) => win.postMessage({ __bpbTerrain: true, dir: 'toCS', type, ...detail }, win.location.origin);
     const snowCard = detail => win.postMessage({ __bpbPeakSnow: true, dir: 'toCS', ...detail }, win.location.origin);
+    const snowMetadata = createSnowDepthMetadata({ fetchImpl: win.fetch.bind(win), onStatus: info => {
+        snowInfo = info;
+        if (info.metadataRetryAt > Date.now()) {
+            statuses.snow.retryAt = Math.max(statuses.snow.retryAt || 0, info.metadataRetryAt);
+            if (!frameMode) binding?.engine.set('snow', { ...state.snow, retryAt: statuses.snow.retryAt });
+            relay();
+        }
+        paint();
+    } });
     const frameLifecycle = createMapFrameLifecycle({ document: doc, MutationObserver: win.MutationObserver, selector: FRAME_SELECTOR });
     const theme = () => doc.documentElement.dataset.bpbTheme === 'dark' || doc.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     const paint = () => {
@@ -76,7 +88,7 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
             if (statuses.land.permission && !info.guidanceKeys.includes('bc')) statuses.land = { ...statuses.land, permission: false, pending: false, error: false, retry: false, message: '' };
             statuses.land = { ...statuses.land, ...info };
         }
-        control.render({ state, landTypes, statuses, coverage, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
+        control.render({ state, landTypes, statuses: { ...statuses, snow: { ...statuses.snow, ...snowInfo, pending: statuses.snow.pending === true || snowInfo.metadataPending === true, retry: true } }, coverage, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
         custom?.refresh(); position();
     };
     const snapshot = () => ({ revision, state, landTypes, capture, menuOpen: control.isOpen(), landCooldowns: statuses.land.providerCooldowns,
@@ -140,8 +152,10 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
         // Keep it synchronous without revisiting unrelated providers/popups.
         if (!opacityId) reconcileCoverage();
         relay();
+        if (!opacityId || opacityId === 'snow') snowMetadata.update(active && state.snow.enabled && state.snow.opacity > 0 && coverage?.snow !== false
+            && (frameMode ? terrainView?.zoom : binding?.map.getZoom()) >= OVERLAY_MIN_ZOOM);
         if (!frameMode && !booting && active && binding) {
-            for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'slope', 'wildfire']) binding.engine.set(id, { ...state[id], landTypes, retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
+            for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'snow', 'slope', 'wildfire']) binding.engine.set(id, { ...state[id], landTypes, retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
             if (!opacityId || opacityId === 'sentinel') {
                 binding.sentinel.cooldown(statuses.sentinel.retryAt);
                 if (state.sentinel.enabled && state.sentinel.opacity > 0) binding.sentinel.activate(capture);
@@ -180,15 +194,16 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
         },
         onRetry(id) {
             if (coverage?.[id] === false || !state[id].enabled) return;
+            if (id === 'snow') snowMetadata.retry();
             if (id === 'snotel') loadStations();
             else if (frameMode) {
                 statuses[id] = { ...statuses[id], pending: true, error: false, retry: true,
-                    message: id === 'wildfire' ? 'Loading fire reports…' : id === 'sentinel' ? 'Finding captures…' : id === 'land' ? 'Loading public lands' : 'Loading slope shading' };
+                    message: id === 'wildfire' ? 'Loading fire reports…' : id === 'sentinel' ? 'Finding captures…' : id === 'land' ? 'Loading public lands' : id === 'snow' ? 'Loading snow depth' : 'Loading slope shading' };
                 paint(); terrain('layerAction', { action: 'retry', id });
             }
             else if (id === 'sentinel') binding?.sentinel.retry();
             else { statuses[id] = { ...statuses[id], pending: true, error: false, permission: false, retry: true,
-                message: id === 'wildfire' ? 'Loading fire reports…' : id === 'land' ? 'Loading public lands' : 'Loading slope shading' }; binding?.engine.retry(id); paint(); }
+                message: id === 'wildfire' ? 'Loading fire reports…' : id === 'land' ? 'Loading public lands' : id === 'snow' ? 'Loading snow depth' : 'Loading slope shading' }; binding?.engine.retry(id); paint(); }
         },
         onOpen() { relay(); },
     });
@@ -256,7 +271,7 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
                     if (!active || frameMode || booting || !state[id].enabled || state[id].opacity === 0) return;
                     if (id === 'sentinel') binding?.sentinel.tileActivity(activity);
                     else {
-                        if (id === 'slope' && statuses[id].retryAt > Date.now()) return;
+                        if (['slope', 'snow'].includes(id) && statuses[id].retryAt > Date.now()) return;
                         const previous = JSON.stringify(statuses.land.providerCooldowns);
                         statuses[id] = { ...statuses[id], ...rasterTileStatus(id, activity),
                             retry: activity.error || activity.pending && statuses[id].retry === true };
@@ -414,9 +429,9 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
     const themeObserver = new win.MutationObserver(paint); themeObserver.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-bpb-theme', 'data-theme'] });
     frameLifecycle.subscribe(start); frameLifecycle.start(); start(); post({ type: 'preferences' }); snowCard({ type: 'availability' });
     const lifecycle = createPageLifecycle({ ownerWindow: win,
-        onSuspend() { active = false; locationMenu.close(); cancelReveal(); stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
+        onSuspend() { active = false; snowMetadata.update(false); locationMenu.close(); cancelReveal(); stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
         onResume() { active = true; start(); post({ type: 'preferences' }); },
-        onDispose() { disposed = true; active = false; stopPolling(); clearTimeout(stationTimer); if (relayFrame !== null) win.cancelAnimationFrame(relayFrame);
+        onDispose() { disposed = true; active = false; snowMetadata.dispose(); stopPolling(); clearTimeout(stationTimer); if (relayFrame !== null) win.cancelAnimationFrame(relayFrame);
             post({ type: 'cancel' }); unbind(); frameLifecycle.dispose(); themeObserver.disconnect(); custom?.dispose(); control.dispose(); locationMenu.dispose();
             win.removeEventListener('message', handle); win.removeEventListener('scroll', position, true); win.removeEventListener('resize', position); win.removeEventListener('bpb-overlay-yield', yieldMap); win.removeEventListener('bpb-map-owner', activeMap); },
     });

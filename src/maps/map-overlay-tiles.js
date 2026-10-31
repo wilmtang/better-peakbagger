@@ -56,14 +56,14 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
         }
         abortFlights(id);
     };
-    const bitmap = async (url, signal, bcCoordinates, selected) => {
+    const bitmap = async (url, signal, bcCoordinates, selected, id) => {
         const deadline = requestDeadline.createRequestDeadline();
         const abort = () => deadline.abort(); signal.addEventListener('abort', abort, { once: true });
         let response;
         try {
             if (signal.aborted) throw abortError();
             response = await deadline.run(bcCoordinates && fetchBCTile ? fetchBCTile(bcCoordinates, { signal: deadline.signal, landTypes: selected })
-                : fetchImpl(url, { signal: deadline.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }));
+                : fetchImpl(url, { signal: deadline.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', ...(id === 'snow' ? { cache: 'no-cache' } : {}) }));
             if (response.status === 429) throw rateLimitError('Map service', response);
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw Object.assign(new Error('Map tiles unavailable.'),
                 { status: response.status, transient: temporaryHttpStatus(response.status) });
@@ -96,6 +96,12 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
             landTypes = next; cancel('land'); return true;
         },
         cancel,
+        cooldown(id, retryAt) {
+            if (Number.isFinite(retryAt) && retryAt > Date.now()) {
+                retainLimit(id, Object.assign(new Error('Map service is busy.'), { code: 'rate-limit', retryAt }));
+                abortFlights(id);
+            }
+        },
         retry(id) {
             if (blocked.get(id)?.retryAt > Date.now()) return false;
             const previous = [...(activity.get(id)?.outcomes.values() || [])];
@@ -160,7 +166,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                             }, { signal: controller.signal, delayMs: retryDelayMs });
                             context.drawImage(parcelCanvas, 0, 0);
                         } else {
-                            const image = await retryTransient(() => bitmap(source.url, controller.signal, source.provider === 'bc' ? coordinates : undefined, selected),
+                            const image = await retryTransient(() => bitmap(source.url, controller.signal, source.provider === 'bc' ? coordinates : undefined, selected, id),
                                 { signal: controller.signal, delayMs: retryDelayMs });
                             try {
                                 if (disposed || controller.signal.aborted || id === 'sentinel' && revision !== generation) throw abortError();

@@ -55,7 +55,7 @@ test('scene refresh retains native canvases and stale or failed replacements can
     } finally { owner.dispose(); }
 });
 
-for (const id of ['slope', 'land']) for (const toggled of [false, true]) test(`${id} retry mounts a cooldown-blocked layer${toggled ? ' after off/on' : ' from a handoff'} at its saved opacity`, async t => {
+for (const id of ['slope', 'land', 'snow']) for (const toggled of [false, true]) test(`${id} retry mounts a cooldown-blocked layer${toggled ? ' after off/on' : ' from a handoff'} at its saved opacity`, async t => {
     let now = Date.now(), requests = 0;
     t.mock.method(Date, 'now', () => now);
     const oldBitmap = globalThis.createImageBitmap;
@@ -112,7 +112,7 @@ test('native station membership updates preserve the open popup, marker and focu
     } finally { owner.dispose(); win.close(); }
 });
 
-for (const id of ['slope', 'land', 'sentinel']) test(`${id} retry fills missing tiles while leaving successful native canvases in place`, async t => {
+for (const id of ['slope', 'land', 'snow', 'sentinel']) test(`${id} retry fills missing tiles while leaving successful native canvases in place`, async t => {
     const oldBitmap = globalThis.createImageBitmap;
     globalThis.createImageBitmap = async () => ({ width: 256, height: 256, close() {} });
     t.after(() => { if (oldBitmap === undefined) delete globalThis.createImageBitmap; else globalThis.createImageBitmap = oldBitmap; });

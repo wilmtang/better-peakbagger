@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, intersectsLandBounds, regionCoverage, US_REGIONS, US_TERRITORY_BOUNDS } from './canadian-land.js';
+import { SNOW_DEPTH_SERVICE, SNOW_DEPTH_BOUNDS } from './snow-depth.js';
 import { SENTINEL_LATITUDES } from './sentinel-core.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
@@ -20,6 +21,7 @@ export function mapOverlayCoverage(value) {
     return {
         wildfire: regionCoverage(bounds, US_REGIONS),
         sentinel: bounds[3] >= SENTINEL_LATITUDES[0] && bounds[1] <= SENTINEL_LATITUDES[1],
+        snow: intersectsWrapped(bounds, [SNOW_DEPTH_BOUNDS]),
         slope: intersectsWrapped(bounds, SLOPE_BOUNDS),
         land: landCoverage(bounds).length > 0,
         // Preserve nearby discovery across state/country borders within 50 km.
@@ -62,18 +64,19 @@ export const LAND_RENDERER = { type: 'uniqueValue', field1: 'Own_Type',
     uniqueValueInfos: LAND_CLASSES.filter(category => !landAgencies.includes(category)).map(category => ({ value: category.value, label: category.label, symbol: symbol(category.color) })) };
 
 export const OVERLAY_ATTRIBUTION = {
+    snow: '<a href="https://www.nohrsc.noaa.gov/nsa/">NOAA NOHRSC</a>',
     slope: '<a href="https://www.usgs.gov/3d-elevation-program">USGS 3DEP</a>',
     land: '<a href="https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-overview">USGS PAD-US 4.1</a> · <a href="https://catalogue.data.gov.bc.ca/dataset/parcelmap-bc-parcel-fabric">ParcelMap BC</a> · <a href="https://geospatial.alberta.ca/arcgis/rest/services/Hosted/Land_use_owndership_NN_project/FeatureServer/10">Alberta Crown parcels</a>',
 };
 export function rasterTileStatus(id, activity) {
-    const land = id === 'land';
+    const land = id === 'land', snow = id === 'snow';
     return { pending: activity.pending, error: activity.error, partial: activity.partial === true,
         permission: land && activity.permission === true, retryAt: land ? activity.retryAt || 0 : 0,
         ...(land ? { providerCooldowns: activity.providerCooldowns || {} } : {}),
         message: activity.permission ? activity.partial ? 'BC maps need access. Other land coverage is shown.' : 'Allow BC parcel maps.'
-            : activity.error ? activity.partial ? land ? 'Some land coverage couldn’t load. Available coverage is shown.' : 'Some slope tiles couldn’t load. Available shading is still shown.'
-                : land ? 'Land coverage couldn’t load. Try again.' : 'Slope shading couldn’t load. Try again.'
-                : activity.pending ? land ? 'Loading public lands' : 'Loading slope shading' : '' };
+            : activity.error ? activity.partial ? land ? 'Some land coverage couldn’t load. Available coverage is shown.' : snow ? 'Some snow tiles couldn’t load. Available depth is still shown.' : 'Some slope tiles couldn’t load. Available shading is still shown.'
+                : land ? 'Land coverage couldn’t load. Try again.' : snow ? 'Snow depth couldn’t load. Try again.' : 'Slope shading couldn’t load. Try again.'
+                : activity.pending ? land ? 'Loading public lands' : snow ? 'Loading snow depth' : 'Loading slope shading' : '' };
 }
 export function tileBounds({ z, x, y }) {
     if (![z, x, y].every(Number.isInteger) || z < 0 || z > 24 || y < 0 || y >= 2 ** z) throw new Error('Invalid overlay tile.');
@@ -85,7 +88,11 @@ export function overlayTileUrl(id, coordinates, landTypes) {
     const bbox = tileBounds(coordinates).join(',');
     let url;
     const params = { bbox, bboxSR: '3857', imageSR: '3857', size: '256,256', format: 'png32', f: 'image' };
-    if (id === 'slope') {
+    if (id === 'snow') {
+        url = new URL(`${SNOW_DEPTH_SERVICE}/export`);
+        params.transparent = 'true';
+        params.layers = 'show:3'; // REST layer 3 is depth; layer 7 is SWE.
+    } else if (id === 'slope') {
         url = new URL('https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage');
         params.renderingRule = JSON.stringify(SLOPE_RULE);
         params.interpolation = 'RSP_NearestNeighbor';

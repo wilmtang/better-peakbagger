@@ -58,7 +58,7 @@ test('terrain scene changes reload the existing raster source and leave other la
     } finally { owner.dispose(); }
 });
 
-for (const id of ['slope', 'land']) test(`terrain ${id} retry publishes loading and keeps its painted source`, async t => {
+for (const id of ['slope', 'land', 'snow']) test(`terrain ${id} retry publishes loading and keeps its painted source`, async t => {
     const held = [], posts = [], sources = new Map(), layers = new Map(); let protocol;
     const previous = globalThis.createImageBitmap;
     globalThis.createImageBitmap = async () => ({ width: 256, height: 256, close() {} });

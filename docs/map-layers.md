@@ -116,6 +116,59 @@ unpacked extension, HTTPS fixtures, actual CORS enforcement, packaged parser
 workers and hardware-rendered 3D. Fixture map types exercise the shared adapter;
 they are not a fresh survey of every live Peakbagger host layout.
 
+## Snow depth
+
+Choose **Overlays → Snow depth** to put NOAA's modeled snow depth over your
+current topographic or satellite basemap in native 2D and supported 3D maps.
+It starts off, with 60% opacity when enabled. Its opacity slider leaves the
+basemap, native routes and markers in place. **Refresh** revalidates current
+viewport images and checks the analysis details; **Retry** recovers failed tiles
+without removing successful tiles. Turning it off cancels its pending work.
+
+![Live NOAA snow-depth shading over a topographic basemap in 2D and draped over Mount Rainier in 3D](images/snow-depth-2d-3d.png)
+
+*Live Mount Rainier feasibility capture, October 30, 2026: Leaflet on the left,
+MapLibre terrain on the right, at 60% opacity. The picture uses a temporary
+comparison layout; the extension uses its existing Overlays menu. Basemap:
+Esri; terrain: Mapterhorn; snow: NOAA NOHRSC. The red demonstration route is
+synthetic.*
+
+The expanded settings show the provider's depth legend in **inches**, plus
+**Latest NOAA analysis** in labelled UTC. This uses the raster catalogue's
+valid time, never the download or ingestion time. A failed details refresh
+retains a labelled **Last known** analysis and its legend; unavailable details
+are stated explicitly. The timestamp describes NOAA's latest catalogue entry,
+not a pinned historical raster. Images are revalidated through HTTP caching;
+NOAA can publish a new analysis while a view is loading. Details are checked
+on activation and eligible map updates at most once per five minutes, or on an
+explicit Refresh. Opening Overlays alone makes no NOAA request.
+
+NOAA describes this analysis primarily for the contiguous United States. Its
+service envelope also includes neighboring parts of Canada and Mexico; this
+is not country-wide coverage. Alaska, Hawaii and areas outside the envelope
+show **No coverage**. Blank pixels can mean no snow or no data. At roughly
+1 km resolution, the shading cannot resolve a trail, cornice or individual
+slope, and it is not an avalanche forecast. Zoom levels below 8 say **Zoom in**;
+tiles stop gaining detail at level 11 and enlarge beyond that. The overlay is
+independent of the SNOTEL station observations and the native snow basemap.
+
+Sources: [NOAA service](https://mapservices.weather.noaa.gov/raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer),
+[NOHRSC model and coverage](https://www.nohrsc.noaa.gov/help/),
+[NOAA depth units](https://www.weather.gov/media/owp/operations/nwps_user_guide.pdf).
+
+`npm run verify -- snow-depth` loads the real extension in hidden Chrome and
+Firefox with HTTPS Peakbagger fixtures. Only the NOAA origin is redirected in
+a disposable build to controlled HTTPS image/catalogue replies; terrain uses
+a synthetic non-flat DEM. The check exercises pending/error/keyboard Retry,
+focus and geometry, themes, 1440/375-pixel layouts, 200% text, 2D/3D switching and painted
+on/off/opacity changes on hardware WebGL. Set
+`BPB_VERIFY_SNOW_DEPTH_SCREENSHOT_DIR` to keep screenshots. These fixture
+checks do not establish current live provider availability, native browser
+prompts, physical focus/window placement or the accuracy of modeled depth.
+The separate live feasibility capture above established transparent NOAA
+images, actual Mapterhorn terrain draping and CORS in hidden Chrome 156 and
+Firefox 157 on Apple M3 Pro Metal at 1440×900 and 375×900.
+
 ## Built-in overlays
 
 The **Overlays** button at the upper-left of ascent, peak, Full Screen and
@@ -145,7 +198,7 @@ offered in each region. Unsupported rows stay in place with disabled toggles and
 its work. Moving back makes it available without automatically enabling it.
 Opacity preferences remain intact; partial coverage, zoom requirements,
 permissions and temporary service failures keep their distinct feedback.
-Below their zoom limits, Sentinel, slope and public lands say **Zoom in** instead
+Below their zoom limits, Sentinel, snow depth, slope and public lands say **Zoom in** instead
 of showing stale loading/errors or an ineffective Retry. Sentinel uses its
 existing capture-search limit; slope and land use the raster tile limit. Zooming
 back in restores provider feedback. Both renderers use equivalent tile zoom.
@@ -361,7 +414,7 @@ a SHA-256 destination fingerprint, source/opener tab, window, expiry and
 one-use removal. Raw Full Screen URLs and their view/identity parameters are
 not retained in session storage.
 
-Native panes paint Sentinel, land, then slope below native vectors. MapLibre
+Native panes paint Sentinel, land, snow depth, then slope below native vectors. MapLibre
 owns equivalent raster sources without resetting its terrain style. Imagery
 scenes are composited at full alpha into one transparent 256-pixel tile; opacity
 is applied once by the renderer, so overlaps do not become darker. A tile is
