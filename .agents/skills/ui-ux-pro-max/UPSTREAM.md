@@ -1,7 +1,7 @@
 # Upstream source
 
 - Repository: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
-- Revision: `bf41cbc3ce63e30c922e58ef48741ba6133f9aa9`
+- Revision: `3a13158ff1f32156cbe144108de48eda2ecaed9a`
 - Source directory: `.claude/skills/ui-ux-pro-max`
 - Installed: 2026-10-22
 - Updated: 2026-11-01
