@@ -1,28 +1,67 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { VECTOR_MESSAGE, readVectorView, vectorBasemap } from './vector-basemap.js';
+import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, vectorBasemap } from './vector-basemap.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
 export function installVectorMapBridge(win = window, ext = globalThis.browser || globalThis.chrome) {
-    const entries = new Map();
+    const entries = new Map(), parked = new Map();
     const url = ext.runtime.getURL('terrain/vector.html'), parsed = new URL(url);
     const origin = parsed.origin === 'null' ? `${parsed.protocol}//${parsed.host}` : parsed.origin;
-    let active = true;
+    let active = true, sequence = 0;
     const cooldowns = new Map();
     const retryAt = basemap => readRetryAt(cooldowns.get(basemap.id));
     const post = (id, type, detail = {}) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toPage', id, type, ...detail }, win.location.origin);
-    const remove = entry => { clearTimeout(entry.timer); entry.frame?.remove(); entry.frame = null; };
+    const key = entry => `${entry.id}:${entry.basemap.id}`;
+    const remove = entry => {
+        win.clearTimeout(entry.timer); win.clearTimeout(entry.expiry); entry.revision++; entry.initializing = false;
+        entry.frame?.remove(); entry.frame = null; entry.loaded = false; entry.released = false;
+        if (parked.get(key(entry)) === entry) parked.delete(key(entry));
+    };
     const stop = id => { const entry = entries.get(id); if (entry) remove(entry); entries.delete(id); };
-    const fail = entry => { if (entries.get(entry.id) !== entry) return; stop(entry.id); post(entry.id, 'error', { retryAt: retryAt(entry.basemap), basemap: entry.basemap.id }); };
+    const fail = entry => { if (entries.get(entry.id) !== entry) { remove(entry); return; } stop(entry.id); post(entry.id, 'error', { retryAt: retryAt(entry.basemap), basemap: entry.basemap.id }); };
     const send = (entry, type, detail = {}) => entry.frame?.contentWindow?.postMessage({
         [VECTOR_MESSAGE]: true, dir: 'toFrame', type, ...detail,
     }, origin);
+    const release = entry => {
+        win.clearTimeout(entry.timer); entry.revision++; entry.generation = null; entry.initializing = false; entry.paused = true;
+        if (!entry.loaded) { remove(entry); return; }
+        // The frame clears its style and aborts every provider request. Keep
+        // only its GL/worker setup and accepted style for a bounded warm start.
+        send(entry, 'release'); entry.released = true; entry.frame.dataset.bpbVectorParked = 'true';
+        win.clearTimeout(entry.expiry);
+        entry.expiry = win.setTimeout(() => remove(entry), VECTOR_KEEPALIVE_MS);
+    };
+    const park = id => {
+        const entry = entries.get(id); if (!entry) return;
+        release(entry); entries.delete(id);
+        if (entry.frame) parked.set(key(entry), entry);
+    };
+    const activate = async (entry, type) => {
+        if (entry.initializing) return;
+        entry.initializing = true;
+        entry.generation = ++sequence;
+        const frame = entry.frame, revision = ++entry.revision;
+        const isCurrent = () => active && entries.get(entry.id) === entry && !entry.paused && entry.frame === frame && revision === entry.revision;
+        try {
+            const activation = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_ISSUE', action: 'init' });
+            if (!isCurrent()) return;
+            if (retryAt(entry.basemap) || activation?.ok !== true) { fail(entry); return; }
+            send(entry, type, { activation: activation.token, view: entry.view, basemap: entry.basemap.id, generation: entry.generation });
+        } catch { if (isCurrent()) fail(entry); }
+    };
     const ensure = entry => {
-        if (!active || entry.frame || !entry.view || entry.paused) return;
+        if (!active || !entry.view || entry.paused) return;
         if (retryAt(entry.basemap)) { fail(entry); return; }
-        const slot = win.document.getElementById(`bpb-vector-slot-${entry.id}`);
+        if (entry.frame) {
+            if (entry.released) {
+                entry.released = false; delete entry.frame.dataset.bpbVectorParked; win.clearTimeout(entry.expiry);
+                entry.timer = win.setTimeout(() => fail(entry), 20000); void activate(entry, 'resume');
+            }
+            return;
+        }
+        const slot = win.document.getElementById(`bpb-vector-slot-${entry.id}-${entry.basemap.id}`);
         if (!slot?.isConnected) return;
         const frame = win.document.createElement('iframe');
         frame.title = `${entry.basemap.provider} vector basemap`; frame.tabIndex = -1; frame.setAttribute('aria-hidden', 'true');
@@ -41,47 +80,44 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         if (!basemap) return;
         const id = control.dataset.bpbVectorMap;
         if (!/^[a-z0-9-]{1,80}$/i.test(id || '')) return;
-        stop(id);
+        park(id);
         if (retryAt(basemap)) { post(id, 'error', { retryAt: retryAt(basemap), basemap: basemap.id }); return; }
         // Authority stays in this isolated-world entry for the selected layer's
         // lifetime. Page messages can update/pause it, never create authority.
-        entries.set(id, { id, basemap, frame: null, view: null, paused: false });
+        const cached = parked.get(`${id}:${basemap.id}`);
+        if (cached) { parked.delete(key(cached)); win.clearTimeout(cached.expiry); cached.view = null; cached.paused = false; }
+        entries.set(id, cached || { id, basemap, frame: null, view: null, paused: false, revision: 0 });
     };
     const receive = async event => {
         const data = event.data;
         if (!active || !data || data[VECTOR_MESSAGE] !== true) return;
         if (data.dir === 'fromFrame' && event.origin === origin) {
-            const entry = [...entries.values()].find(item => item.frame?.contentWindow === event.source);
+            const entry = [...entries.values(), ...parked.values()].find(item => item.frame?.contentWindow === event.source);
             if (!entry) return;
+            const current = entries.get(entry.id) === entry && !entry.paused;
             if (data.type === 'ready') {
-                if (entry.initializing) return;
-                entry.initializing = true;
-                const frame = entry.frame;
-                const isCurrent = () => active && entries.get(entry.id) === entry && entry.frame === frame;
-                try {
-                    const activation = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_ISSUE', action: 'init' });
-                    if (!isCurrent()) return;
-                    if (retryAt(entry.basemap)) { fail(entry); return; }
-                    if (activation?.ok !== true) { fail(entry); return; }
-                    send(entry, 'init', { activation: activation.token, view: entry.view, basemap: entry.basemap.id });
-                } catch { if (isCurrent()) fail(entry); }
-            } else if (data.type === 'loaded') { clearTimeout(entry.timer); post(entry.id, 'loaded'); }
+                if (current && entry.view && !entry.loaded) await activate(entry, 'init');
+            } else if (data.type === 'loaded' && current && data.generation === entry.generation) {
+                if (JSON.stringify(readVectorView(data.view)) !== JSON.stringify(entry.view)) return;
+                entry.loaded = true; win.clearTimeout(entry.timer); post(entry.id, 'loaded');
+            }
             else if (data.type === 'error') {
                 const until = readRetryAt(data.retryAt);
                 if (until) {
                     // Isolated-document lifetime: renderer disposal, another map,
                     // re-selection and 2D/3D suspension cannot reset this limit.
                     cooldowns.set(entry.basemap.id, Math.max(cooldowns.get(entry.basemap.id) || 0, until));
-                    for (const current of entries.values()) if (current.basemap === entry.basemap) fail(current);
-                } else fail(entry);
+                    for (const affected of [...entries.values(), ...parked.values()]) if (affected.basemap === entry.basemap) fail(affected);
+                } else if (data.generation === entry.generation) fail(entry);
             }
             return;
         }
         if (event.source !== win || event.origin !== win.location.origin || data.dir !== 'toCS') return;
+        if (data.type === 'dispose') { stop(data.id); for (const entry of [...parked.values()]) if (entry.id === data.id) remove(entry); return; }
         const entry = entries.get(data.id);
         if (!entry) return;
-        if (data.type === 'stop') { stop(data.id); return; }
-        if (data.type === 'pause') { entry.paused = true; entry.initializing = false; remove(entry); return; }
+        if (data.type === 'stop') { park(data.id); return; }
+        if (data.type === 'pause') { release(entry); return; }
         if (data.type === 'resume') entry.paused = false;
         const view = readVectorView(data.view);
         if (!view) return;
@@ -92,10 +128,10 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
     win.document.addEventListener('click', trusted, true);
     win.addEventListener('message', receive);
     return createPageLifecycle({ ownerWindow: win,
-        onSuspend() { active = false; for (const id of entries.keys()) stop(id); },
+        onSuspend() { active = false; for (const id of entries.keys()) stop(id); for (const entry of [...parked.values()]) remove(entry); },
         onResume() { active = true; },
         onDispose() {
-            active = false; for (const id of entries.keys()) stop(id);
+            active = false; for (const id of entries.keys()) stop(id); for (const entry of [...parked.values()]) remove(entry);
             win.document.removeEventListener('change', trusted, true); win.document.removeEventListener('click', trusted, true);
             win.removeEventListener('message', receive);
         },

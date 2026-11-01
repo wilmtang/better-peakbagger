@@ -646,9 +646,14 @@ selection starts direct OpenFreeMap style, tile, glyph and sprite requests,
 without cookies or referrers. OpenFreeMap receives the viewed area and request
 metadata, including the user's IP address. The renderer receives only the map
 center and zoom, not routes, GPX or Peakbagger identity. Selecting another layer,
-unloading the map or navigating away removes it and stops requests. This choice
+unloading the map or navigating away stops requests. This choice
 does not require 3D enablement or contact Mapterhorn; only normal browser HTTP
 caching applies, with no extension-managed vector tile persistence.
+After deselection or entry into 3D, provider sources are removed and in-flight
+requests are aborted. Initialized renderer/worker setup and its validated style
+may stay in memory for up to 60 seconds per provider for faster reselection;
+reactivation requires a fresh one-use capability. Unloading or navigating away
+discards that setup. Parked renderers cannot initiate provider requests.
 
 **Maptoolkit Hiking** is another optional basemap in both 2D and 3D. Selection sends
 direct style, vector/raster tile, glyph and sprite requests to

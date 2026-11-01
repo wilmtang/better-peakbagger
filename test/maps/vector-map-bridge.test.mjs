@@ -10,7 +10,7 @@ import { terrainBasemap } from '../../src/terrain/terrain-basemap.js';
 const view = { center: [46.85, -121.76], zoom: 9 };
 const settle = () => new Promise(resolve => setImmediate(resolve));
 function setup({ sendMessage } = {}) {
-    const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_VECTOR">Vector</option><option value="BPB_MAPTOOLKIT">Maptoolkit</option></select><div id="bpb-vector-slot-test"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
+    const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_VECTOR">Vector</option><option value="BPB_MAPTOOLKIT">Maptoolkit</option></select><div id="bpb-vector-slot-test-vector"></div><div id="bpb-vector-slot-test-maptoolkit"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
     const win = dom.window, captures = new Map(), calls = [], messages = [];
     const add = win.document.addEventListener.bind(win.document);
     win.document.addEventListener = (type, callback, options) => { if (options === true) captures.set(type, callback); add(type, callback, options); };
@@ -23,8 +23,8 @@ function setup({ sendMessage } = {}) {
         source, origin, data: { [VECTOR_MESSAGE]: true, dir: 'toCS', id: 'test', type, view, ...extra },
     }));
     const choose = (trusted = true, control = win.document.querySelector('select')) => captures.get('change')({ type: 'change', isTrusted: trusted, target: control });
-    const frame = () => win.document.querySelector('iframe');
-    const fromFrame = (type, origin = 'chrome-extension://test', source = frame()?.contentWindow, detail = {}) => send(type, { dir: 'fromFrame', ...detail }, source, origin);
+    const frame = () => win.document.querySelector('iframe:not([data-bpb-vector-parked])');
+    const fromFrame = (type, origin = 'chrome-extension://test', source = frame()?.contentWindow, detail = {}) => send(type, { dir: 'fromFrame', generation: calls.length, ...detail }, source, origin);
     const retry = disabled => {
         const button = win.document.createElement('button'); button.dataset.bpbVectorMap = 'test'; button.dataset.bpbVectorBasemap = 'vector'; button.setAttribute('aria-disabled', String(disabled));
         captures.get('click')({ type: 'click', isTrusted: true, target: button });
@@ -130,7 +130,7 @@ test('a provider cooldown stops every renderer in the isolated document', () => 
     try {
         const second = env.win.document.createElement('select'); second.dataset.bpbVectorMap = 'second';
         second.innerHTML = '<option value="BPB_VECTOR">Vector</option>';
-        const slot = env.win.document.createElement('div'); slot.id = 'bpb-vector-slot-second'; env.win.document.body.append(second, slot);
+        const slot = env.win.document.createElement('div'); slot.id = 'bpb-vector-slot-second-vector'; env.win.document.body.append(second, slot);
         env.choose(); env.send('view'); const first = env.frame().contentWindow;
         env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.win.document.querySelectorAll('iframe').length, 2);
         env.fromFrame('error', undefined, first, { retryAt });
@@ -158,4 +158,70 @@ test('untrusted and unbounded cooldown messages cannot disable future vector sel
             env.fromFrame('error', undefined, undefined, { retryAt }); env.choose(); env.send('view'); assert.ok(env.frame());
         } finally { env.close(); }
     }
+});
+
+test('a completed renderer can warm-start only after a fresh trusted choice and capability', async () => {
+    const env = setup();
+    try {
+        env.choose(); env.send('view'); const original = env.frame();
+        env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
+        env.send('stop'); assert.equal(env.frame(), null); assert.equal(original.isConnected, true, 'The initialized frame stays bounded in memory');
+        const count = env.calls.length;
+        env.send('resume'); env.send('view'); env.choose(false);
+        assert.equal(env.calls.length, count, 'A parked frame has no page-owned activation authority');
+        const sent = []; original.contentWindow.postMessage = data => sent.push(data);
+        env.choose(); env.send('view'); await settle();
+        assert.equal(env.frame(), original, 'The trusted choice reuses its own provider frame');
+        assert.equal(env.calls.length, count + 1); assert.equal(sent.find(data => data.type === 'resume')?.generation, 2);
+        const loaded = env.messages.filter(data => data.type === 'loaded').length;
+        env.fromFrame('loaded', undefined, undefined, { generation: 1 });
+        assert.equal(env.messages.filter(data => data.type === 'loaded').length, loaded, 'The previous activation cannot complete the new selection');
+        env.fromFrame('error', undefined, undefined, { generation: 1 }); assert.equal(env.frame(), original, 'A stale failure cannot destroy the new activation');
+        env.fromFrame('loaded'); assert.equal(env.messages.filter(data => data.type === 'loaded').length, loaded + 1);
+        env.send('dispose'); assert.equal(original.isConnected, false);
+    } finally { env.close(); }
+});
+
+test('parked renderer expiry frees its resources without restoring activation authority', async () => {
+    const env = setup(), timers = [];
+    env.win.setTimeout = (callback, ms) => { timers.push({ callback, ms }); return timers.length; };
+    env.win.clearTimeout = () => {};
+    try {
+        env.choose(); env.send('view'); const original = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
+        env.send('stop'); const expiry = timers.find(item => item.ms === 60000); assert.ok(expiry);
+        expiry.callback(); assert.equal(original.isConnected, false);
+        env.send('resume'); env.send('view'); assert.equal(env.frame(), null);
+        env.choose(); env.send('view'); assert.ok(env.frame()); assert.notEqual(env.frame(), original);
+    } finally { env.close(); }
+});
+
+test('an outgoing warm authorization cannot tear down a newer activation of the same frame', async () => {
+    const pending = [], env = setup({ sendMessage: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) });
+    try {
+        env.choose(); env.send('view'); const original = env.frame(); env.fromFrame('ready');
+        pending[0].resolve({ ok: true, token: 'initial' }); await settle(); env.fromFrame('loaded');
+        env.send('stop'); env.choose(); env.send('view'); assert.equal(pending.length, 2);
+        env.send('stop'); env.choose(); env.send('view'); assert.equal(pending.length, 3);
+        pending[1].reject(new Error('Outgoing warm channel closed')); await settle();
+        assert.equal(env.frame(), original); assert.equal(env.messages.some(data => data.type === 'error'), false);
+        pending[2].resolve({ ok: true, token: 'current' }); await settle(); env.fromFrame('loaded');
+        assert.equal(env.frame(), original); env.send('pause');
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        assert.equal(original.isConnected, false, 'BFCache releases parked frames and their authorization');
+    } finally { env.close(); }
+});
+
+test('each provider keeps its own bounded warm renderer and a parked limit cannot disable the other', async () => {
+    const env = setup();
+    try {
+        env.choose(); env.send('view'); const vector = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
+        env.win.document.querySelector('select').value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view');
+        const toolkit = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
+        assert.notEqual(vector, toolkit); assert.equal(env.win.document.querySelectorAll('iframe').length, 2);
+        env.win.document.querySelector('select').value = 'BPB_VECTOR'; env.choose(); env.send('view'); await settle();
+        assert.equal(env.frame(), vector); assert.equal(env.calls.length, 3);
+        env.fromFrame('error', undefined, toolkit.contentWindow, { retryAt: Date.now() + 120000 });
+        assert.equal(toolkit.isConnected, false); assert.equal(env.frame(), vector);
+        env.send('dispose'); assert.equal(env.win.document.querySelectorAll('iframe').length, 0);
+    } finally { env.close(); }
 });

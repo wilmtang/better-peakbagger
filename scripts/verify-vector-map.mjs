@@ -112,7 +112,10 @@ try {
         const isStyle = url === basemap.styleUrl;
         if (isStyle && mode === 'hold') await new Promise(resolve => held.add(resolve));
         if (mode === 'tile-hold' && url.endsWith('.pbf')) {
-            partialUrl ??= url;
+            const [, z, x, y] = /\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(url).map(Number), scale = 2 ** z;
+            const centerX = Math.floor((-121.760395 + 180) / 360 * scale);
+            const centerY = Math.floor((1 - Math.asinh(Math.tan(46.851731 * Math.PI / 180)) / Math.PI) / 2 * scale);
+            if (x !== centerX || y !== centerY) partialUrl ??= url;
             if (url === partialUrl) await new Promise(resolve => held.add(resolve));
         }
         if (url.startsWith('https://icons.maptoolkit.org/')) return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: url.endsWith('.png') ? 'image/png' : 'application/json', body: url.endsWith('.png') ? png : '{}' });
@@ -166,6 +169,10 @@ try {
         // disposable headless browser. Native picker defaults need page focus.
         await page.bringToFront();
         await page.evaluate(() => {
+            window.vectorEvents = [];
+            for (const type of ['keydown', 'change', 'input']) document.addEventListener(type, event => {
+                if (event.target.id === 'selmap') window.vectorEvents.push({ type, key: event.key, trusted: event.isTrusted, value: event.target.value });
+            });
             // Optional hover/focus warming is covered by its own suite. Keep
             // this fixture's elevation requests in the visible frame so all
             // synthetic DEM replies are intercepted deterministically.
@@ -229,7 +236,24 @@ try {
         assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), false, 'Visible progressive map replaces the fallback');
         const firstPaintMs = Math.round(performance.now() - started);
         mode = 'ready'; release(); await verifyPicker();
-        return { cases: 1, firstPaintMs };
+        const frame = page.frames().find(item => /\/terrain\/vector.html/.test(item.url())); assert.ok(frame);
+        const styles = requests.filter(url => url === basemap.styleUrl).length;
+        await page.locator('#selmap').selectOption('L_FIX');
+        await page.waitForFunction(() => !document.querySelector('.bpb-vector-slot'));
+        await page.evaluate(() => { mapsPlaceholder.panBy([60, 20], { animate: false }); });
+        assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true);
+        const resumed = performance.now();
+        if (firefoxMode) {
+            await page.locator('#selmap').focus();
+            if (basemap === MAPTOOLKIT_BASEMAP) await page.keyboard.press('End');
+            else { await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); }
+        } else { await page.locator('#selmap').click(); await page.keyboard.type(chooseKeys); await page.keyboard.press('Enter'); }
+        await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
+        const warmPaintMs = Math.round(performance.now() - resumed);
+        assert.equal(page.frames().find(item => /\/terrain\/vector.html/.test(item.url())), frame, 'Layer reselection reuses its initialized renderer');
+        assert.equal(requests.filter(url => url === basemap.styleUrl).length, styles, 'Warm selection reuses its validated style');
+        await verifyPicker(); await verifyCredits();
+        return { cases: 2, firstPaintMs, warmPaintMs };
     };
     const verifyCredits = async () => {
         if (basemap !== MAPTOOLKIT_BASEMAP) return;

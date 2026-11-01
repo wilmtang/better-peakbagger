@@ -7,7 +7,7 @@ import { readRetryAt } from '../net/rate-limit.js';
 
 export function bindVectorMap(win, map, select) {
     const L = win.L, doc = win.document, container = map.getContainer();
-    const id = win.crypto.randomUUID(), native = [], previousId = select.dataset.bpbVectorMap;
+    const id = win.crypto.randomUUID(), native = [], elements = new Map(), previousId = select.dataset.bpbVectorMap;
     const options = VECTOR_BASEMAPS.map(basemap => { const option = doc.createElement('option'); option.value = basemap.code; option.textContent = basemap.name; return option; });
     select.append(...options); select.dataset.bpbVectorMap = id;
     const previousWidth = select.style.width, pickerStyle = win.getComputedStyle(select);
@@ -101,11 +101,18 @@ export function bindVectorMap(win, map, select) {
         onAdd() {
             const pane = map.getPane('bpb-vector') || map.createPane('bpb-vector');
             pane.style.zIndex = '201'; pane.style.pointerEvents = 'none';
-            this.element = doc.createElement('div'); this.element.className = 'leaflet-zoom-animated bpb-vector-slot';
-            this.element.id = `bpb-vector-slot-${id}`; this.element.style.opacity = '0'; pane.append(this.element);
+            this.element = elements.get(basemap.id);
+            if (!this.element) {
+                this.element = doc.createElement('div'); this.element.id = `bpb-vector-slot-${id}-${basemap.id}`;
+                elements.set(basemap.id, this.element); pane.append(this.element);
+            }
+            this.element.className = 'leaflet-zoom-animated bpb-vector-slot'; this.element.hidden = false; this.element.style.opacity = '0';
             this.update();
         },
-        onRemove() { win.cancelAnimationFrame(this.motion); this.element.remove(); if (!replacing) post('stop'); },
+        onRemove() {
+            win.cancelAnimationFrame(this.motion); this.element.hidden = true; this.element.className = 'bpb-vector-parked';
+            if (!replacing) post('stop');
+        },
         getEvents() { return { move: this.moving, moveend: this.update, resize: this.update, zoomanim: this.animateZoom }; },
         moving() {
             if (paused || map._animatingZoom || this.motion != null) return;
@@ -182,7 +189,8 @@ export function bindVectorMap(win, map, select) {
     const dispose = () => {
         if (disposed) return; disposed = true;
         win.clearTimeout(retryTimer);
-        stop(); if (vectorBasemap(select.value)) select.value = previous;
+        stop(); post('dispose'); for (const element of elements.values()) element.remove(); elements.clear();
+        if (vectorBasemap(select.value)) select.value = previous;
         for (const option of options) option.remove(); status.remove(); credits.remove(); logo.remove(); creditResize.disconnect();
         container.style.removeProperty('--bpb-vector-credit-height');
         if (select.style.width === reservedPickerWidth) select.style.width = previousWidth;

@@ -10,22 +10,29 @@ import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vec
 import { readRetryAt } from '../net/rate-limit.js';
 
 let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, settledView = null, lastSize = '', lastCamera = '';
+let active = false, style = null, revision = 0, generation = null;
+const requests = new Set();
 const post = (type, detail = {}) => {
-    if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, ...detail }, parentOrigin);
+    if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, generation, ...detail }, parentOrigin);
 };
-const dispose = () => { disposed = true; clearTimeout(timer); map?.remove(); map = null; };
+const release = () => {
+    active = false; revision++; clearTimeout(timer);
+    for (const controller of requests) controller.abort(); requests.clear();
+    map?.stop?.(); map?.setStyle({ version: 8, sources: {}, layers: [] }, { diff: false });
+};
+const dispose = () => { disposed = true; active = false; revision++; clearTimeout(timer); for (const controller of requests) controller.abort(); requests.clear(); map?.remove(); map = null; };
 const fail = error => { if (!disposed) { post('error', { retryAt: readRetryAt(error?.retryAt) }); dispose(); } };
 const update = () => {
-    if (!map || !view) return;
+    if (!active || !map || !view) return;
     const container = document.getElementById('map'), size = `${container.clientWidth}/${container.clientHeight}`, camera = JSON.stringify(view);
     if (size !== lastSize) { lastSize = size; map.resize(); }
     if (camera !== lastCamera) { lastCamera = camera; map.jumpTo({ center: [view.center[1], view.center[0]], zoom: view.zoom, bearing: 0, pitch: 0 }); }
 };
 const settled = (progressive = false) => {
-    if (disposed || !map || !progressive && !map.areTilesLoaded()) return;
+    if (disposed || !active || !map || !progressive && !map.areTilesLoaded()) return;
     try {
         const availability = vectorMapAvailability(map);
-        if (progressive && !availability.usable) return;
+        if (progressive && !vectorMapAvailability(map, { center: view.center }).usable) return;
         if (availability.requested && !availability.usable) {
             console.warn('Better Peakbagger vector map: No usable viewport tiles.'); fail(); return;
         }
@@ -39,10 +46,25 @@ window.addEventListener('message', async event => {
     if (disposed || event.source !== parent || !isPeakbaggerPageOrigin(event.origin)
         || !data || data[VECTOR_MESSAGE] !== true || data.dir !== 'toFrame'
         || parentOrigin && event.origin !== parentOrigin) return;
+    if (data.type === 'release' && attempted) { release(); return; }
     if (data.type === 'view' && attempted) { view = readVectorView(data.view) || view; update(); return; }
+    const validGeneration = Number.isSafeInteger(data.generation) && data.generation > 0;
+    if (data.type === 'resume' && map && !active && validGeneration && readVectorView(data.view)) {
+        const owner = ++revision;
+        generation = data.generation; view = readVectorView(data.view);
+        try {
+            const ext = globalThis.browser || globalThis.chrome;
+            const reply = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_CONSUME', token: data.activation, action: 'init' });
+            if (disposed || owner !== revision) return;
+            if (reply?.ok !== true) { fail(); return; }
+            active = true; settledView = null; lastSize = ''; lastCamera = '';
+            timer = setTimeout(fail, 15000); map.setStyle(style, { diff: false }); update();
+        } catch (error) { if (owner === revision) fail(error); }
+        return;
+    }
     const basemap = vectorBasemap(data.basemap);
-    if (data.type !== 'init' || attempted || !readVectorView(data.view) || !basemap) return;
-    attempted = true; parentOrigin = event.origin; view = readVectorView(data.view);
+    if (data.type !== 'init' || attempted || !validGeneration || !readVectorView(data.view) || !basemap) return;
+    attempted = true; parentOrigin = event.origin; generation = data.generation; view = readVectorView(data.view);
     timer = setTimeout(() => { console.warn('Better Peakbagger vector map: Initialization timed out.'); fail(); }, 15000);
     try {
         const ext = globalThis.browser || globalThis.chrome;
@@ -50,10 +72,16 @@ window.addEventListener('message', async event => {
         if (disposed) return;
         if (reply?.ok !== true) { fail(); return; }
         const raw = await terrainStyle.createVectorStyleLoader({ styleUrl: basemap.styleUrl, basemap }).load();
-        const style = terrainStyle.renderingStyle(raw, { basemap });
+        style = terrainStyle.renderingStyle(raw, { basemap });
         if (disposed) return;
+        active = true;
         maplibre.setWorkerUrl(ext.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
-        maplibre.addProtocol(VECTOR_PROTOCOL, createVectorMapRequest({ basemap, onRateLimit: fail }));
+        const request = createVectorMapRequest({ basemap, onRateLimit: fail });
+        maplibre.addProtocol(VECTOR_PROTOCOL, (parameters, controller) => {
+            if (!active) return Promise.reject(Object.assign(new Error('Vector map inactive.'), { name: 'AbortError' }));
+            requests.add(controller);
+            return request(parameters, controller).finally(() => requests.delete(controller));
+        });
         map = new maplibre.Map({ container: document.getElementById('map'), style,
             center: [view.center[1], view.center[0]], zoom: view.zoom, minZoom: -1, maxZoom: 23,
             // Leaflet owns the camera, including world views and polar edges.

@@ -35,8 +35,12 @@ usable cartography is painted, its raster layers are removed while remaining
 vector tiles continue loading; switching back restores them. Failure restores
 the previous native selection and offers
 **Retry**. Selecting another basemap cancels a pending load. Selection is local
-to the current map and is cleared on back/forward-cache suspension. The renderer
-is removed on deselection, map unload and navigation. A 3D switch pauses the 2D
+to the current map and is cleared on back/forward-cache suspension. Deselection
+clears provider sources and aborts requests. Up to one initialized renderer per
+provider may remain parked for 60 seconds, retaining only renderer/worker setup
+and the accepted style for faster reselection. A fresh capability is required
+to reactivate it; page messages cannot revive a deselected provider. Unload,
+navigation and back/forward-cache suspension discard it. A 3D switch pauses the 2D
 renderer and carries the vector choice into 3D; returning resumes the 2D layer.
 An entirely failed viewport restores the native map even after a successful
 load. Valid empty tiles and usable partial/cached output remain visible. The

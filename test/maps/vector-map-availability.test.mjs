@@ -27,3 +27,13 @@ test('any usable source preserves partial output and unsupported adapters fail e
     assert.equal(vectorMapAvailability(map({ vector: manager(['failed'], []), raster: manager(['good'], ['good']) })).usable, true);
     for (const bad of [{}, map({ oldApi: {} }), map({ bad: manager(null, []) })]) assert.throws(() => vectorMapAvailability(bad), /availability/i);
 });
+
+test('progressive output requires vector data at the center, rather than only overscan or elevation tiles', () => {
+    const tile = (z, x, y, type = 'vector') => ({ ...manager(['tile'], ['tile']), getSource: () => ({ type }),
+        getTileByID: () => ({ tileID: { canonical: { z, x, y } } }) });
+    const center = [5, 5];
+    assert.equal(vectorMapAvailability(map({ outer: tile(3, 5, 3), dem: tile(0, 0, 0, 'raster-dem') }), { center }).usable, false);
+    assert.equal(vectorMapAvailability(map({ emptyOrParent: tile(1, 1, 0) }), { center }).usable, true);
+    assert.equal(vectorMapAvailability(map({ wrapped: tile(1, 0, 1) }), { center: [0, 180] }).usable, true);
+    assert.equal(vectorMapAvailability(map({ southEdge: tile(1, 1, 1) }), { center: [-85.0511287, 5] }).usable, true);
+});

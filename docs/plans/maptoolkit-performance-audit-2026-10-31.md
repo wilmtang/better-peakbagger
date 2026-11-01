@@ -51,6 +51,22 @@ provider attribution, trusted activation, cancellation and rate-limit policy.
   3D matrices passed. Fifty-five focused tests, build and targeted ESLint passed.
   Duplicate camera/size messages now skip resize/jumpTo; selecting the current
   3D vector base preserves the existing graph.
+- M3: retain at most one initialized 2D renderer per fixed provider for 60
+  seconds, without reparenting its live iframe. Parking clears the style,
+  aborts actual protocol sockets and blocks new requests. Reactivation consumes
+  a fresh one-use worker capability; per-activation generations reject stale
+  completion and failure messages. Pending boots are discarded; expiration,
+  unload and BFCache discard all parked resources. A regression probe using the
+  prior bridge (only its fixture-slot name adapted) failed because deselection
+  destroyed the initialized frame. Current tests pass for bounded retention,
+  both providers, TTL, request aborts, missing authority, stale authorization
+  rejection, stale messages and cooldown isolation. Eighty-one focused tests
+  passed. The full Chrome 20-case 2D and 10-case 3D matrices and Firefox's 20-case
+  2D and eight-case 3D matrices passed during this work. Warm-path browser tests
+  confirm iframe identity and no second style request, with fresh activation.
+  The first-paint guard additionally requires vector coverage at the actual
+  camera center: overscan or DEM tiles alone cannot prematurely hide the native
+  map. Loaded empty/parent tiles remain valid.
 
 ## Intentionally not changed
 

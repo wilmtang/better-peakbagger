@@ -32,6 +32,7 @@ export function vectorProviderUrl(value, basemap = VECTOR_BASEMAP, { templates =
     return value;
 }
 export const VECTOR_MESSAGE = '__bpbVectorMap';
+export const VECTOR_KEEPALIVE_MS = 60000;
 
 // The Leaflet adapter sends the camera in MapLibre's 512-pixel zoom convention.
 // Unlike terrain, a planar map can show the whole world at Leaflet zoom zero.
