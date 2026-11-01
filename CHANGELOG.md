@@ -7,6 +7,9 @@
   markers remain interactive, provider limits retain their own cooldowns, and
   the required logo and copyright links remain visible. The 3D view retains
   its terrain, route and overlays while displaying the Hiking cartography.
+  Vector maps show usable tiles sooner and reuse initialized renderers on
+  reselection. The native picker stays inside its surround, and outgoing 3D
+  requests cannot discard a newly selected layer.
 
 - **Keep 2D vector maps aligned.** World zooms and polar views preserve the
   native map's camera so basemap features stay under the correct routes and peaks.

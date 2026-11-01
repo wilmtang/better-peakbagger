@@ -4,6 +4,10 @@ Requested scope: add Maptoolkit as a selectable basemap in native 2D and 3D,
 working in the isolated `codex/maptoolkit-basemap` worktree based on `a951cf7b`.
 Retain the existing OpenFreeMap option and native map/route owners.
 
+Follow-up: [performance and picker audit](maptoolkit-performance-audit-2026-10-31.md)
+records subsequent fixes and current verification, including reduced shading,
+progressive display, bounded renderer reuse and stale-request isolation.
+
 ## Decisions
 
 - Use the official [Hiking style](https://docs.maptoolkit.org/map-styles/)

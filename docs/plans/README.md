@@ -1,7 +1,9 @@
 # Active plans
 
 - [Maptoolkit performance and picker audit — October 31](maptoolkit-performance-audit-2026-10-31.md)
-  — faithful native picker sizing, vector startup and layer-switching audit.
+  — five findings implemented: picker containment, progressive loading, reduced
+  shading, bounded renderer reuse and 3D request ownership; verified closure
+  ledger retains unrelated repository gates and native/live proof limits.
 
 - [Maptoolkit basemap integration — October 31](maptoolkit-basemap-2026-10-31.md)
   — implemented Hiking in native 2D and 3D in an isolated worktree; provider

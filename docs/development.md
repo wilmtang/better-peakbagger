@@ -424,6 +424,11 @@ Add `--maptoolkit` to `node scripts/verify-vector-map.mjs` to run the vector
 matrix against Maptoolkit Hiking, including its packaged logo, clickable
 copyrights and overlay-menu clearance. `--maptoolkit --live` renders one live
 provider viewport; ordinary matrix runs use synthetic responses.
+`--layout-only` checks the faithful fixed-width native picker surround in both
+themes at 1280/375 × 800 and 100/200% CSS zoom. `--performance-only` holds a
+secondary tile while checking progressive display, then reselects the provider
+and verifies renderer identity and a single style request. These modes accept
+`--firefox` but cannot be combined with `--terrain` or another mode selection.
 
 Add `--terrain` to exercise the actual BigMap 2D → 3D → 2D path. Its eight
 renderer cases cover desktop/narrow layouts, both themes, enlarged text,

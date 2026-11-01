@@ -81,16 +81,55 @@ provider attribution, trusted activation, cancellation and rate-limit policy.
   terrain tests, build and targeted ESLint passed. The final hidden hardware
   3D matrices passed ten Chrome cases and eight Firefox renderer cases.
 
+Final verification:
+
+- Build: 66 bundles. Repository ESLint and web-ext lint passed, retaining eight
+  existing owned vendor/manifest warnings. Full Node suite: **3,858 tests,
+  3,856 passed, two failed** (the existing unregistered
+  `maps/snow-depth-legend.json` fixture failures).
+- Maptoolkit: twenty 2D cases per browser, ten Chrome 3D cases and eight Firefox
+  renderer cases passed. Eight picker layout cases per browser and two
+  progressive/warm cases per browser passed. Chrome's final warm case retained
+  its iframe/style and painted in 121 ms; Firefox's in 69 ms. These synthetic
+  timings demonstrate removed setup work, not a guaranteed live speedup.
+- Existing OpenFreeMap: twenty 2D and ten 3D Chrome cases passed.
+- Single live Maptoolkit 2D and 3D viewports rendered in hidden hardware Chrome.
+  The live cartography, selected picker, logo and copyright, plus synthetic
+  narrow/dark and enlarged states, were visually inspected. The 2D live view
+  used 64 provider requests; no cookies/referrers were sent. These views use
+  a fixture host shell, not an authenticated live Peakbagger layout survey.
+- Before/after probes cover picker overflow, deferred first display, renderer
+  destruction, and the late 3D failure. An overscan-only availability probe
+  returned usable before the guard and unusable after it. Functional matrices
+  cover loading → success/error → retry, pending cancellation, style/tile
+  cooldowns, camera pixels, native markers and geometry within one CSS pixel.
+- Final process-command-line and temporary-profile inspection found no
+  remaining verification browsers or disposable profiles. Scratch screenshots,
+  logs and the downloaded style were removed after inspection; source and
+  the loadable worktree `dist/` remain.
+
+Focused fix commits: `9e7f7d7a` (M1), `8f9a997f` (M2/M4), `13174613`
+(M3 and progressive center coverage), `5b463590` (M5).
+
 ## Intentionally not changed
 
 - Provider defaults, first-use 3D consent, privacy and host allowlists.
 - No offline tile store, durable provider style copy, prefetch on page load,
   new dependencies or permissions.
 - Network latency and provider availability remain external factors.
+- The two pre-existing fixture-registration failures and unrelated Garmin
+  Settings visibility failure are outside this basemap remediation.
 
 ## Changed but not fully proven
 
-Verification is in progress. Existing repository-wide fixture and Garmin
-Settings gate failures from the integration record must be rechecked and
-reported separately. Hidden checks do not establish native popup menus,
-screen readers, focus/window placement or touch interactions.
+The real-manifest Chrome gate was rerun and still stops at the existing
+Garmin Settings visibility assertion in `scripts/verify-settings-navigation.mjs:308`.
+It is not a green whole-extension integration gate. Chrome's focused matrix
+loads the real extension; Firefox stubs extension API/storage/capabilities.
+All browser checks ran hidden on Apple M3 Pro hardware (Chrome 156.0.8078.4,
+ANGLE Metal; Firefox 157, Apple hardware renderer), using 1280/375 × 800
+viewports, light/dark and enlarged text/200% CSS zoom as applicable. Hidden
+checks do not establish native popup-menu appearance, screen readers,
+focus/window placement or touch interactions. Single-view live checks do not
+establish provider reliability or every live host layout. No push, merge or
+release was performed.
