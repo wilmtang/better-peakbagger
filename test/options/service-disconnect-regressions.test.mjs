@@ -9,6 +9,78 @@ import { waitFor } from '../helpers/load-page.mjs';
 registerCleanup();
 const byId = (dom, id) => dom.window.document.getElementById(id);
 
+for (const stage of ['permission', 'begin', 'poll']) test(`GitHub disconnect supersedes setup waiting for ${stage}`, async () => {
+    let release, hasToken = true, permitted = false, begins = 0, held = true;
+    const dom = await loadOptions({}, { accelerateGithubPoll: true, prepareChrome: chrome => {
+        chrome.permissions = { contains: async () => permitted,
+            request: async () => {
+                if (stage === 'permission' && held) return new Promise(resolve => { release = () => { held = false; permitted = true; resolve(true); }; });
+                permitted = true; return true;
+            }, onAdded: { addListener() {} }, onRemoved: { addListener() {} } };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: false, hasToken };
+            if (message.type === 'GITHUB_AUTH_DISCONNECT') {
+                hasToken = false; await chrome.storage.local.set({ bpbGithubAuth: null });
+                return { connected: false, hasToken: false };
+            }
+            if (message.type === 'GITHUB_AUTH_BEGIN') {
+                begins++;
+                const reply = { phase: 'polling', userCode: 'ABCD-EFGH', expiresIn: 900 };
+                if (stage === 'begin' && held) return new Promise(resolve => { release = () => { held = false; resolve(reply); }; });
+                return reply;
+            }
+            if (message.type === 'GITHUB_AUTH_STATE') {
+                if (stage === 'poll' && held) return new Promise(resolve => { release = () => { held = false; resolve({ phase: 'authorized' }); }; });
+                return { phase: 'polling' };
+            }
+            if (message.type === 'GITHUB_IGNORED_LIST') return { ok: true, count: 0, state: { enabled: false, phase: 'idle' } };
+            return { ok: true };
+        };
+    } });
+    await waitFor(dom, () => /Try again/.test(byId(dom, 'github-panel').textContent));
+    byId(dom, 'github-panel').querySelector('button').click();
+    await waitFor(dom, () => !!release);
+    byId(dom, 'github-disconnect').click();
+    await waitFor(dom, () => /^Disconnected/.test(byId(dom, 'github-disconnect-status').textContent));
+    release(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(begins, stage === 'permission' ? 0 : 1, 'Older work must not start another sign-in after disconnect');
+    assert.equal(byId(dom, 'github-panel').querySelector('.github-code'), null, 'A stale begin reply must not restore setup');
+    assert.match(byId(dom, 'github-panel').textContent, /Connect a GitHub account/);
+    byId(dom, 'github-panel').querySelector('button').click();
+    await waitFor(dom, () => !!byId(dom, 'github-panel').querySelector('.github-code'));
+    assert.equal(begins, stage === 'permission' ? 1 : 2, 'A new explicit Connect action still works');
+});
+
+test('GitHub disconnect discards a delayed repository-selection success', async () => {
+    let release, connected = true;
+    const repo = { owner: 'fixture', name: 'backup', fullName: 'fixture/backup' };
+    const status = () => ({ connected, hasToken: connected, repo, account: { login: 'fixture' } });
+    const dom = await loadOptions({}, { prepareChrome: chrome => {
+        chrome.permissions = { contains: async () => true };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return status();
+            if (message.type === 'GITHUB_AUTH_DISCOVER') return { repos: [repo] };
+            if (message.type === 'GITHUB_AUTH_SELECT_REPO') {
+                const selected = status(); return new Promise(resolve => { release = () => resolve(selected); });
+            }
+            if (message.type === 'GITHUB_AUTH_DISCONNECT') {
+                connected = false; await chrome.storage.local.set({ bpbGithubAuth: null }); return status();
+            }
+            if (message.type === 'GITHUB_IGNORED_LIST') return { ok: true, count: 0, state: { enabled: false, phase: 'idle' } };
+            return { ok: true };
+        };
+    } });
+    await waitFor(dom, () => /Change repository/.test(byId(dom, 'github-panel').textContent));
+    [...byId(dom, 'github-panel').querySelectorAll('button')].find(button => button.textContent === 'Change repository').click();
+    await waitFor(dom, () => !!byId(dom, 'github-panel').querySelector('.github-repo'));
+    byId(dom, 'github-panel').querySelector('.github-repo').click(); await waitFor(dom, () => !!release);
+    byId(dom, 'github-disconnect').click();
+    await waitFor(dom, () => /^Disconnected/.test(byId(dom, 'github-disconnect-status').textContent));
+    release(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(byId(dom, 'status').textContent, 'GitHub disconnected', 'Stale setup must not announce repository selection');
+    assert.match(byId(dom, 'github-panel').textContent, /Connect a GitHub account/);
+});
+
 test('Garmin deletion waits for a full draft count and becomes unavailable after status failure', async () => {
     const store = createGarminStore(new IDBFactory());
     await store.mutate(state => {

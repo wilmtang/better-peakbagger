@@ -49,6 +49,15 @@ disconnect removes its control.
 
 ### Fixed and verified
 
+- D6: local Disconnect, Cancel and Reconnect invalidate the setup generation.
+  Every permission, begin/poll, authorization, discovery and repository-selection
+  continuation checks ownership before sending more setup work or rendering.
+  Three regressions failed before the fix: late permission, late begin response
+  and late selection success. Tests also cover an in-flight authorized poll and
+  a subsequent explicit Connect. All 61 focused GitHub/regression tests and
+  focused ESLint passed. The hidden Chrome/Firefox matrix now covers pending
+  permission → Disconnect → late grant → fresh explicit Connect.
+
 - D5: Delete requires a known nonnegative full-status draft count. Feature
   transitions and failed status reads invalidate it; credential-only status
   still permits Disconnect. ARIA unavailability retains keyboard focus and the
@@ -114,8 +123,8 @@ disconnect removes its control.
 
 ### Changed but not fully proven
 
-- D6 and D7 remain open after self-review; the earlier happy-path and isolated
-  disconnect checks did not cover concurrent setup or a later external reconnect.
+- D7 remains open after self-review; the earlier isolated disconnect checks
+  did not cover a later external reconnect.
 
 - Full `npm test`: 3,812 passed, two fixture-privacy checks failed because the
   unchanged registry does not recognize `test/fixtures/maps/snow-depth-legend.json`.

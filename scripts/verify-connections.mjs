@@ -51,11 +51,19 @@ try {
             const listeners = [];
             const area = { get: async () => ({ bpbSettings: prefs, bpbDeviceSettings: { schemaVersion: 1, settings: prefs } }), set: async () => {}, remove: async () => {} };
             window.fixture = { calls: 0, finish: null, requests: 0, authReads: 0, garminStatusReads: 0, garminStatusError: false,
+                githubPermissionGranted: enabled, githubBegins: 0,
                 notifyGithub: () => listeners.forEach(listener => listener({ bpbGithubAuth: { newValue: null } }, 'local')),
                 setGarminEnabled: value => { prefs.enableGarminInbox = value; listeners.forEach(listener => listener({ bpbSettings: { newValue: prefs } }, 'sync')); } };
             window.chrome = {
                 storage: { sync: area, local: area, session: area, onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
-                permissions: { contains: async () => enabled, request: async () => { window.fixture.requests++; return false; }, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
+                permissions: { contains: async details => details.origins.some(origin => origin.includes('github.com')) ? window.fixture.githubPermissionGranted : enabled,
+                    request: async () => {
+                        window.fixture.requests++;
+                        if (window.fixture.holdPermission) return new Promise(resolve => { window.fixture.releasePermission = () => {
+                            window.fixture.releasePermission = null; window.fixture.githubPermissionGranted = true; resolve(true);
+                        }; });
+                        return false;
+                    }, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
                 runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.2' }), getURL: file => new URL(`/${file}`, location.origin).href,
                     sendMessage: async message => {
                         const service = { GARMIN_DISCONNECT: 'garmin', PHOTO_IMGBB_REMOVE_KEY: 'imgbb', GITHUB_AUTH_DISCONNECT: 'github' }[message.type];
@@ -78,6 +86,8 @@ try {
                         }
                         if (message.type === 'PHOTO_IMGBB_STATUS') return { ok: true, configured: connected.imgbb, permissionGranted: enabled };
                         if (message.type === 'GITHUB_AUTH_STATUS') { window.fixture.authReads++; return { connected: connected.github, hasToken: connected.github, repo, account: { login: repo.owner } }; }
+                        if (message.type === 'GITHUB_AUTH_BEGIN') { window.fixture.githubBegins++; return { phase: 'polling', userCode: 'ABCD-EFGH', expiresIn: 900 }; }
+                        if (message.type === 'GITHUB_AUTH_STATE') return { phase: 'polling' };
                         if (message.type === 'GITHUB_IGNORED_LIST') return { ok: true, count: 0, state: { enabled: false, phase: 'idle' } };
                         return { ok: true, count: 0 };
                     } },
@@ -190,11 +200,33 @@ try {
                 assert.deepEqual(errors, []);
                 cases++;
             } finally { page.off('dialog', dismiss); }
+            await page.goto(`${origin}/options/options.html?theme=${theme}&enabled=false&service=github-setup#github-connection`);
+            await page.locator('#github-disconnect').waitFor({ state: 'visible' });
+            await page.evaluate(zoom => {
+                document.documentElement.style.zoom = String(zoom); document.querySelector('.content').style.scrollBehavior = 'auto';
+                window.fixture.holdPermission = true;
+            }, zoom);
+            await page.locator('#github-panel button').filter({ hasText: 'Try again' }).click();
+            await page.waitForFunction(() => !!window.fixture.releasePermission);
+            await page.locator('#github-disconnect').click(); await page.waitForFunction(() => !!window.fixture.finish);
+            await page.evaluate(() => window.fixture.finish(true));
+            await page.locator('#github-disconnect').waitFor({ state: 'hidden' });
+            const disconnected = await geometry(services[2]);
+            const reads = await page.evaluate(() => { const reads = window.fixture.authReads; window.fixture.releasePermission(); return reads; });
+            await page.waitForFunction(reads => window.fixture.authReads > reads, reads);
+            assert.equal(await page.evaluate(() => window.fixture.githubBegins), 0, 'Old permission request must not restart sign-in');
+            assert.equal(await page.locator('.github-code').count(), 0);
+            stable(disconnected, await geometry(services[2]), `${name}/${theme}/${width}/${zoom}/superseded-setup`);
+            await page.locator('#github-panel button').filter({ hasText: 'Connect GitHub' }).click();
+            await page.locator('.github-code').waitFor({ state: 'visible' });
+            assert.equal(await page.evaluate(() => window.fixture.githubBegins), 1, 'A new explicit Connect still works');
+            assert.deepEqual(errors, []);
+            cases++;
         }
         console.log(`${name} ${browser.version()}: hidden Settings connection states passed; 1180×1000, 390×1000, 200% CSS zoom; light/dark; features on/off.`);
         await context.close();
     }
-    assert.equal(cases, 84);
+    assert.equal(cases, 96);
     console.log(`${cases} cases passed. Screenshots: ${output}. Service/storage/permission replies stubbed; native prompts and visible focus not exercised.`);
 } finally {
     const closed = await Promise.allSettled(browsers.reverse().map(browser => browser.close()));
