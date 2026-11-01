@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, VECTOR_BASEMAPS, VECTOR_MESSAGE, readVectorView, vectorBasemap } from './vector-basemap.js';
+import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, VECTOR_BASEMAPS, VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
@@ -21,7 +21,7 @@ export function bindVectorMap(win, map, select) {
     // overflows Peakbagger's fixed 170px wrapper and can hide the native arrow.
     select.style.width = `${Math.ceil(Math.max(...[...select.options].map(item => metrics.measureText(item.textContent).width)) + 40)}px`;
     const reservedPickerWidth = select.style.width;
-    let previous = select.value, layer = null, paused = false, replacing = false, disposed = false, attributionReservation = null, center, size, zoom;
+    let previous = select.value, layer = null, paused = false, replacing = false, disposed = false, attributionReservation = null;
     let basemap = VECTOR_BASEMAP, retryTimer = null;
     const cooldowns = new Map();
     const status = doc.createElement('div'); status.className = 'bpb-vector-status'; status.hidden = true;
@@ -106,17 +106,63 @@ export function bindVectorMap(win, map, select) {
                 this.element = doc.createElement('div'); this.element.id = `bpb-vector-slot-${id}-${basemap.id}`;
                 elements.set(basemap.id, this.element); pane.append(this.element);
             }
-            this.element.className = 'leaflet-zoom-animated bpb-vector-slot'; this.element.hidden = false; this.element.style.opacity = '0';
+            this.element.className = 'bpb-vector-slot'; this.element.hidden = false; this.element.style.opacity = '0';
+            this.surface = this.element.querySelector('canvas') || doc.createElement('canvas');
+            this.surface.className = 'leaflet-zoom-animated bpb-vector-surface'; this.element.prepend(this.surface);
+            this.surface.setAttribute('aria-hidden', 'true');
+            this.context = this.surface.getContext('bitmaprenderer') || this.surface.getContext('2d');
+            this.painted = null;
             this.update();
         },
         onRemove() {
             win.cancelAnimationFrame(this.motion); this.element.hidden = true; this.element.className = 'bpb-vector-parked';
+            this.clearPaint();
             if (!replacing) post('stop');
         },
         getEvents() { return { move: this.moving, moveend: this.update, resize: this.update, zoomanim: this.animateZoom }; },
         moving() {
             if (paused || map._animatingZoom || this.motion != null) return;
-            this.motion = win.requestAnimationFrame(() => { this.motion = null; this.update(); });
+            this.motion = win.requestAnimationFrame(() => { this.motion = null; if (!paused && !map._animatingZoom) this.update(); });
+        },
+        clearPaint() { this.painted = null; if (this.surface) { this.surface.width = 0; this.surface.height = 0; } },
+        paintedCenter(paint = this.painted) {
+            const center = L.latLng(paint.view.center);
+            center.lng += Math.round((map.getCenter().lng - center.lng) / 360) * 360;
+            return center;
+        },
+        geometry(paint) {
+            const scale = map.getZoomScale(map.getZoom(), paint.view.zoom + 1), size = L.point(paint.width, paint.height).multiplyBy(scale);
+            const offset = map.latLngToLayerPoint(this.paintedCenter(paint)).subtract(size.multiplyBy(.5));
+            const origin = map.layerPointToContainerPoint(offset), viewport = map.getSize();
+            const width = Math.max(0, Math.min(viewport.x, origin.x + size.x) - Math.max(0, origin.x));
+            const height = Math.max(0, Math.min(viewport.y, origin.y + size.y) - Math.max(0, origin.y));
+            return { scale, offset, coverage: width * height / (viewport.x * viewport.y), zoomError: Math.abs(map.getZoom() - paint.view.zoom - 1) };
+        },
+        position() {
+            if (!this.painted) return;
+            const { offset, scale } = this.geometry(this.painted);
+            L.DomUtil.setTransform(this.surface, offset.subtract(this.hostPosition), scale);
+        },
+        paint(data) {
+            const paint = readVectorPaint(data);
+            if (!paint || map._animatingZoom) { data.bitmap.close(); return false; }
+            const incoming = this.geometry(paint), current = this.painted && this.geometry(this.painted);
+            // A coupled older view is useful during a fast pan. Keep it unless
+            // it would replace better coverage/resolution after a reversal.
+            if (!Number.isFinite(incoming.coverage) || !current && !(incoming.coverage >= .999)
+                || current && (incoming.coverage + 1e-6 < current.coverage
+                    || Math.abs(incoming.coverage - current.coverage) < 1e-6 && incoming.zoomError > current.zoomError)) {
+                data.bitmap.close(); return false;
+            }
+            if (!this.context) throw new Error('Vector map canvas unavailable.');
+            if (this.surface.width !== data.bitmap.width) this.surface.width = data.bitmap.width;
+            if (this.surface.height !== data.bitmap.height) this.surface.height = data.bitmap.height;
+            this.surface.style.width = `${paint.width}px`; this.surface.style.height = `${paint.height}px`;
+            if (typeof this.context.transferFromImageBitmap === 'function') this.context.transferFromImageBitmap(data.bitmap);
+            else { this.context.clearRect(0, 0, this.surface.width, this.surface.height); this.context.drawImage(data.bitmap, 0, 0); data.bitmap.close(); }
+            // Image and camera change in this one task. The iframe's later
+            // repaint can never be exposed under an earlier Leaflet transform.
+            this.painted = paint; this.position(); return true;
         },
         update() {
             if (!this.element) return;
@@ -124,15 +170,22 @@ export function bindVectorMap(win, map, select) {
             // during a drag. Refresh at most once per paint so a long drag
             // cannot exhaust that buffer and expose an empty strip.
             const viewport = map.getSize(), padding = viewport.multiplyBy(.25).round();
-            size = viewport.add(padding.multiplyBy(2)); center = map.getCenter(); zoom = map.getZoom();
-            L.DomUtil.setPosition(this.element, map.containerPointToLayerPoint(padding.multiplyBy(-1)));
+            const size = viewport.add(padding.multiplyBy(2));
+            // Keep the rendering document in the viewport. Chromium throttles
+            // a cross-origin iframe moved offscreen by an older painted camera.
+            // Only the visible surface follows that camera; its hidden renderer
+            // must keep painting so a distant pan can replace the old image.
+            this.hostPosition = map.containerPointToLayerPoint(padding.multiplyBy(-1));
+            L.DomUtil.setPosition(this.element, this.hostPosition);
+            this.position();
             this.element.style.width = `${size.x}px`; this.element.style.height = `${size.y}px`;
             if (!paused) post('view', view());
         },
         animateZoom(event) {
-            const scale = map.getZoomScale(event.zoom, zoom);
-            const offset = map._latLngToNewLayerPoint(center, event.zoom, event.center).subtract(size.multiplyBy(.5 * scale));
-            L.DomUtil.setTransform(this.element, offset, scale);
+            if (!this.painted) return;
+            const scale = map.getZoomScale(event.zoom, this.painted.view.zoom + 1);
+            const offset = map._latLngToNewLayerPoint(this.paintedCenter(), event.zoom, event.center).subtract(L.point(this.painted.width, this.painted.height).multiplyBy(.5 * scale));
+            L.DomUtil.setTransform(this.surface, offset.subtract(this.hostPosition), scale);
         },
     });
     const stop = () => {
@@ -158,18 +211,22 @@ export function bindVectorMap(win, map, select) {
     const receive = event => {
         const data = event.data;
         if (event.source !== win || event.origin !== win.location.origin || data?.[VECTOR_MESSAGE] !== true
-            || data.dir !== 'toPage' || data.id !== id || !layer || paused) return;
-        if (data.type === 'loaded') {
+            || data.dir !== 'toPage' || data.id !== id) return;
+        if (data.type === 'painted' && typeof win.ImageBitmap === 'function' && data.bitmap instanceof win.ImageBitmap) {
+            if (!layer || paused || data.basemap !== basemap.id) { data.bitmap.close(); return; }
+            try { if (!layer.paint(data)) return; }
+            catch { data.bitmap.close(); post('stop'); unavailable(); return; }
             layer.element.style.opacity = '1'; holdNative(); status.hidden = true; select.removeAttribute('aria-busy');
             if (doc.activeElement === retry) select.focus({ preventScroll: true });
-        } else if (data.type === 'error') {
-            cooldowns.set(basemap.id, Math.max(cooldowns.get(basemap.id) || 0, readRetryAt(data.retryAt) || 0));
-            stop(); select.value = previous; status.hidden = false; retry.hidden = false; dismiss.hidden = false; cooldown();
-        }
+        } else if (data.type === 'error' && layer && !paused && data.basemap === basemap.id) unavailable(data.retryAt);
+    };
+    const unavailable = retryAt => {
+        cooldowns.set(basemap.id, Math.max(cooldowns.get(basemap.id) || 0, readRetryAt(retryAt) || 0));
+        stop(); select.value = previous; status.hidden = false; retry.hidden = false; dismiss.hidden = false; cooldown();
     };
     const pause = () => {
         if (!layer || paused) return;
-        paused = true; post('pause'); layer.element.style.opacity = '0'; restore(); status.hidden = true;
+        paused = true; post('pause'); layer.element.style.opacity = '0'; layer.clearPaint(); restore(); status.hidden = true;
     };
     const resume = () => {
         if (!layer || !paused) return;

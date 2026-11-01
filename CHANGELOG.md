@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Stable 2D vector zooms.** Maptoolkit and OSM Vector keep cartography aligned
+  with native peaks and routes through animated zooms and delayed rendering.
+  Late images after a camera reversal cannot replace better current coverage.
+
 - **Maptoolkit Hiking in 2D and 3D.** Both basemap pickers offer a keyless hiking
   map with contours, labels and relief alongside OSM Vector. Native routes and
   markers remain interactive, provider limits retain their own cooldowns, and

@@ -422,13 +422,23 @@ and action/map/following-content geometry within one CSS pixel.
 
 Add `--maptoolkit` to `node scripts/verify-vector-map.mjs` to run the vector
 matrix against Maptoolkit Hiking, including its packaged logo, clickable
-copyrights and overlay-menu clearance. `--maptoolkit --live` renders one live
-provider viewport; ordinary matrix runs use synthetic responses.
+copyrights and overlay-menu clearance. `--maptoolkit --live` renders live
+provider tiles before and after one zoom-in/out sequence; ordinary
+matrix runs use synthetic responses.
 `--layout-only` checks the faithful fixed-width native picker surround in both
 themes at 1280/375 × 800 and 100/200% CSS zoom. `--performance-only` holds a
 secondary tile while checking progressive display, then reselects the provider
 and verifies renderer identity and a single style request. These modes accept
 `--firefox` but cannot be combined with `--terrain` or another mode selection.
+`--zoom-only` checks 36 repeated button/wheel zooms across desktop/narrow,
+light/dark and 100/200% CSS zoom, holding renderer view messages through native
+animation and checking the delayed handoff. Composited PNG pixel checks run
+outside the page to avoid blocking animation; an independent per-frame trace
+checks geographic alignment. A final case reverses a distant camera change
+before releasing its captured image and checks that it cannot replace better
+current coverage. Chrome exposes only the renderer constructor and test-only
+message/capture delays in a disposable extension copy; Firefox uses its usual
+extension-transport stubs. Every run snapshots built assets before launch.
 
 Add `--terrain` to exercise the actual BigMap 2D → 3D → 2D path. Its eight
 renderer cases cover desktop/narrow layouts, both themes, enlarged text,

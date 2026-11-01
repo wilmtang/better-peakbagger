@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, mapsPlaceholder, nativeTiles, nativePeak, scrollY, Image */
+/* global document, window, parent, mapsPlaceholder, nativeTiles, nativePeak, scrollY, Image */
 
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, cp, readFile, writeFile } from 'node:fs/promises';
@@ -12,19 +12,36 @@ import { createBrowserFixtureServer, waitForCondition, resolveFixtureFile } from
 import { snowMapDocument } from './verify-snow-map-fixture.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { decodePng } from './browser-verification-png.mjs';
 import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.js';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only'].includes(arg))
-    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only | --layout-only | --performance-only]');
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg))
+    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg)).length <= 1,
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only | --layout-only | --performance-only | --zoom-only]');
 const terrainMode = args.includes('--terrain');
-assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
+const zoomMode = args.includes('--zoom-only');
+assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
 const instrumentMap = source => {
     assert.ok(source.includes('startTerrainFrame(maplibre);'), 'Packaged frame exposes its expected startup call');
     return source.replace('startTerrainFrame(maplibre);', `startTerrainFrame({ ...maplibre, Map: new Proxy(maplibre.Map, {
         construct(Target, args, newTarget) { const map = Reflect.construct(Target, args, newTarget); window.__bpbTerrainTestMap = map; return map; }
     }) });`);
+};
+const instrumentVectorMap = source => {
+    assert.ok(source.includes('map = new maplibre.Map({'), 'Packaged 2D frame exposes its expected constructor');
+    return `window.heldZoomViews = []; window.holdZoomView = false;
+    window.heldSnapshots = []; window.holdSnapshotCenter = null;
+    const originalSnapshot = window.createImageBitmap.bind(window);
+    window.createImageBitmap = (...args) => {
+        const snapshot = originalSnapshot(...args), center = window.__bpbVectorTestMap?.getCenter();
+        if (!window.holdSnapshotCenter || !center || Math.abs(center.lat - window.holdSnapshotCenter[0]) > .00001 || Math.abs(center.lng - window.holdSnapshotCenter[1]) > .00001) return snapshot;
+        return snapshot.then(bitmap => new Promise(resolve => window.heldSnapshots.push(() => resolve(bitmap))));
+    };
+    window.addEventListener('message', event => {
+        if (!window.holdZoomView || event.data?.__bpbVectorMap !== true || event.data.type !== 'view') return;
+        event.stopImmediatePropagation(); window.heldZoomViews.push({ data: event.data, origin: event.origin });
+    });\n` + source.replace('map = new maplibre.Map({', 'map = window.__bpbVectorTestMap = new maplibre.Map({');
 };
 const basemap = args.includes('--maptoolkit') ? MAPTOOLKIT_BASEMAP : VECTOR_BASEMAP;
 const providerOrigin = basemap === MAPTOOLKIT_BASEMAP ? 'https://tiles.maptoolkit.org' : 'https://tiles.openfreemap.org';
@@ -51,10 +68,11 @@ try {
     const fixture = await createBrowserFixtureServer({ temporaryRoot: profile, masterMapDocument: html, peakMapDocument: html, bigMapDocument: html });
     resources.defer('vector HTTPS fixture', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
-    let extensionRoot = path.join(root, 'dist');
-    if (terrainMode && !firefoxMode) {
-        extensionRoot = path.join(profile, 'extension'); await cp(path.join(root, 'dist'), extensionRoot, { recursive: true });
-        const module = path.join(extensionRoot, 'terrain/terrain-frame.js'); await writeFile(module, instrumentMap(await readFile(module, 'utf8')));
+    const extensionRoot = path.join(profile, 'extension');
+    await cp(path.join(root, 'dist'), extensionRoot, { recursive: true });
+    if ((terrainMode || zoomMode) && !firefoxMode) {
+        const module = path.join(extensionRoot, terrainMode ? 'terrain/terrain-frame.js' : 'terrain/vector-map-frame.js');
+        await writeFile(module, (terrainMode ? instrumentMap : instrumentVectorMap)(await readFile(module, 'utf8')));
     }
     if (!firefoxMode) assertChromeLaunchAllowed();
     const context = await (firefoxMode ? firefox : chromium).launchPersistentContext(profile, firefoxMode ? {
@@ -103,6 +121,7 @@ try {
         { id: 'land', type: 'fill', source: 'fixture', 'source-layer': 'land', paint: { 'fill-color': '#c4ddac' } },
         { id: 'probes', type: 'circle', source: 'fixture', 'source-layer': 'probes', paint: { 'circle-radius': 12, 'circle-color': '#1e64d2' } },
     ] };
+    if (zoomMode) style.layers.find(layer => layer.id === 'probes').paint['circle-radius'] = 20;
     if (basemap === MAPTOOLKIT_BASEMAP) style.sprite = [{ id: 'sdf', url: 'https://icons.maptoolkit.org/sprite' }, { id: 'nature', url: 'https://icons.maptoolkit.org/nature' }];
     await context.route(url => basemap.origins.some(origin => url.origin === origin) || terrainMode && url.origin === 'https://tiles.mapterhorn.com', async route => {
         const url = route.request().url(); requests.push(url);
@@ -136,9 +155,11 @@ try {
     });
     if (firefoxMode) {
         await context.route(`${origin}/dist/**`, async route => {
-            const file = await resolveFixtureFile(new URL(route.request().url()).pathname);
-            assert.ok(file, `Packaged Firefox fixture asset exists: ${route.request().url()}`);
+            const shipped = await resolveFixtureFile(new URL(route.request().url()).pathname);
+            assert.ok(shipped, `Packaged Firefox fixture asset exists: ${route.request().url()}`);
+            const file = path.join(extensionRoot, path.relative(path.join(root, 'dist'), shipped));
             if (terrainMode && file.endsWith('/terrain-frame.js')) return route.fulfill({ body: instrumentMap(await readFile(file, 'utf8')), contentType: 'text/javascript' });
+            if (zoomMode && file.endsWith('/vector-map-frame.js')) return route.fulfill({ body: instrumentVectorMap(await readFile(file, 'utf8')), contentType: 'text/javascript' });
             await route.fulfill({ path: file, contentType: file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.png') ? 'image/png' : 'text/javascript' });
         });
         // Firefox exercises real Leaflet and hardware MapLibre; only extension
@@ -155,12 +176,12 @@ try {
     const open = async () => {
         await page.goto(`${origin}/map/${terrainMode ? 'BigMap' : 'MasterMap'}.aspx?t=A`);
         if (firefoxMode) {
-            await page.addStyleTag({ path: path.join(root, 'dist/css/vector-map.css') });
-            await page.addScriptTag({ path: path.join(root, 'dist/content/vector-map-bridge.js') });
-            await page.addScriptTag({ path: path.join(root, 'dist/content/vector-map.js') });
+            await page.addStyleTag({ path: path.join(extensionRoot, 'css/vector-map.css') });
+            await page.addScriptTag({ path: path.join(extensionRoot, 'content/vector-map-bridge.js') });
+            await page.addScriptTag({ path: path.join(extensionRoot, 'content/vector-map.js') });
             if (terrainMode) {
-                await page.addStyleTag({ path: path.join(root, 'dist/css/terrain-map.css') });
-                for (const file of ['big-map-bridge', 'big-map', 'terrain-map']) await page.addScriptTag({ path: path.join(root, `dist/content/${file}.js`) });
+                await page.addStyleTag({ path: path.join(extensionRoot, 'css/terrain-map.css') });
+                for (const file of ['big-map-bridge', 'big-map', 'terrain-map']) await page.addScriptTag({ path: path.join(extensionRoot, `content/${file}.js`) });
             }
         }
         await page.waitForFunction(() => !!window.mapsPlaceholder?.getSize);
@@ -169,6 +190,16 @@ try {
         // disposable headless browser. Native picker defaults need page focus.
         await page.bringToFront();
         await page.evaluate(() => {
+            document.addEventListener('change', event => {
+                if (event.isTrusted && event.target.id === 'selmap' && event.target.value === window.vectorFixtureCode) {
+                    window.vectorChosenAt = performance.now(); window.vectorFirstPaintLatency = null;
+                }
+            }, true);
+            window.addEventListener('message', event => {
+                if (event.data?.__bpbVectorMap === true && event.data.dir === 'toPage' && event.data.type === 'painted'
+                    && window.vectorFirstPaintLatency == null && window.vectorChosenAt != null
+                    && document.querySelector('.bpb-vector-slot')?.style.opacity === '1') window.vectorFirstPaintLatency = performance.now() - window.vectorChosenAt;
+            });
             window.vectorEvents = [];
             for (const type of ['keydown', 'change', 'input']) document.addEventListener(type, event => {
                 if (event.target.id === 'selmap') window.vectorEvents.push({ type, key: event.key, trusted: event.isTrusted, value: event.target.value });
@@ -234,7 +265,9 @@ try {
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1', null, { timeout: 5000 });
         assert.ok(held.size > 0, 'Usable map appears before the delayed secondary tile finishes');
         assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), false, 'Visible progressive map replaces the fallback');
-        const firstPaintMs = Math.round(performance.now() - started);
+        const firstLatency = await page.evaluate(() => window.vectorFirstPaintLatency);
+        assert.ok(Number.isFinite(firstLatency) && firstLatency >= 0, 'Initial paint must be measured after the trusted choice');
+        const firstPaintMs = Math.round(firstLatency), firstDriverElapsedMs = Math.round(performance.now() - started);
         mode = 'ready'; release(); await verifyPicker();
         const frame = page.frames().find(item => /\/terrain\/vector.html/.test(item.url())); assert.ok(frame);
         const styles = requests.filter(url => url === basemap.styleUrl).length;
@@ -249,11 +282,14 @@ try {
             else { await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); }
         } else { await page.locator('#selmap').click(); await page.keyboard.type(chooseKeys); await page.keyboard.press('Enter'); }
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
-        const warmPaintMs = Math.round(performance.now() - resumed);
+        const warmLatency = await page.evaluate(() => window.vectorFirstPaintLatency);
+        assert.ok(Number.isFinite(warmLatency) && warmLatency >= 0, 'Warm paint must be measured after the trusted choice');
+        const warmPaintMs = Math.round(warmLatency);
+        const driverElapsedMs = Math.round(performance.now() - resumed);
         assert.equal(page.frames().find(item => /\/terrain\/vector.html/.test(item.url())), frame, 'Layer reselection reuses its initialized renderer');
         assert.equal(requests.filter(url => url === basemap.styleUrl).length, styles, 'Warm selection reuses its validated style');
         await verifyPicker(); await verifyCredits();
-        return { cases: 2, firstPaintMs, warmPaintMs };
+        return { cases: 2, firstPaintMs, warmPaintMs, driverElapsedMs, firstDriverElapsedMs };
     };
     const verifyCredits = async () => {
         if (basemap !== MAPTOOLKIT_BASEMAP) return;
@@ -313,6 +349,130 @@ try {
             }
         }
         return cameras.length;
+    };
+    const verifyZoomContinuity = async () => {
+        let cases = 0, samples = 0, animatedSamples = 0;
+        const sample = async label => {
+            const bounds = await page.locator('#map').boundingBox(), viewport = page.viewportSize();
+            const clip = { x: Math.max(0, bounds.x), y: Math.max(0, bounds.y) };
+            clip.width = Math.min(viewport.width, bounds.x + bounds.width) - clip.x;
+            clip.height = Math.min(viewport.height, bounds.y + bounds.height) - clip.y;
+            const png = decodePng(await page.screenshot({ clip }));
+            const alignment = (() => {
+                const { pixels } = png;
+                const colors = [[30, 100, 210], [208, 32, 208]].map(rgb => ({ rgb, count: 0, x: 0, y: 0, minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }));
+                for (let row = 0; row < png.height; row++) for (let col = 0; col < png.width; col++) {
+                    const i = (row * png.width + col) * png.bpp;
+                    for (const color of colors) if (color.rgb.every((value, channel) => Math.abs(pixels[i + channel] - value) < 8)) {
+                        color.count++; color.x += col; color.y += row; color.minX = Math.min(color.minX, col); color.maxX = Math.max(color.maxX, col); color.minY = Math.min(color.minY, row); color.maxY = Math.max(color.maxY, row);
+                    }
+                }
+                return { points: colors.map(color => ({ count: color.count, x: (color.minX + color.maxX) / 2 * clip.width / png.width, y: (color.minY + color.maxY) / 2 * clip.width / png.width,
+                    unclipped: color.minX > 0 && color.maxX < png.width - 1 && color.minY > 0 && color.maxY < png.height - 1 })) };
+            })();
+            Object.assign(alignment, await page.evaluate(() => ({ animated: !!mapsPlaceholder._animatingZoom, native: mapsPlaceholder.hasLayer(nativeTiles), zoom: mapsPlaceholder.getZoom() })));
+            const [vector, native] = alignment.points;
+            if (Math.hypot(vector.x - native.x, vector.y - native.y) > 4) console.log(JSON.stringify({ label, geometry: await page.evaluate(() => {
+                const slot = document.querySelector('.bpb-vector-slot'), path = nativePeak.getElement(), svg = path.ownerSVGElement;
+                let layer; mapsPlaceholder.eachLayer(item => { if (item.options?.bpbVector) layer = item; });
+                return { elements: [slot, layer.surface, svg].map(element => ({ tag: element.tagName, style: element.getAttribute('style'), class: element.getAttribute('class'), transform: window.getComputedStyle(element).transform, transition: window.getComputedStyle(element).transition })),
+                    paint: layer.painted, path: path.getAttribute('d'), trace: window.zoomTrace.filter(item => item.delta > 4).slice(-5) };
+            }) }));
+            assert.ok(vector.count > 20 && native.count > 20, `Zoom retains painted map and native marker: ${label} ${JSON.stringify(alignment)}`);
+            assert.ok(vector.unclipped && native.unclipped, `Pixel probes must remain fully visible: ${label}`);
+            assert.ok(Math.hypot(vector.x - native.x, vector.y - native.y) <= 4,
+                `Vector map jumps away from the native peak during zoom: ${label} ${JSON.stringify(alignment)}`);
+            assert.equal(alignment.native, false, 'Zoom must not flash the native raster');
+            samples++; if (alignment.animated) animatedSamples++;
+            return alignment;
+        };
+        const layouts = [[1280, 1, 'light'], [375, 1, 'dark'], [1280, 2, 'light'], [375, 2, 'dark']];
+        for (const [width, textZoom, theme] of Array.from({ length: 3 }, () => layouts).flat()) {
+            await page.setViewportSize({ width, height: 800 }); mode = 'ready'; await open();
+            await page.evaluate(({ textZoom, theme }) => {
+                document.body.style.zoom = textZoom; document.documentElement.dataset.bpbTheme = theme; mapsPlaceholder.invalidateSize();
+                nativePeak.setStyle({ color: '#d020d0', fillColor: '#d020d0' });
+                mapsPlaceholder.setView([46.851731, -121.760395 - .04 / textZoom], 10, { animate: false });
+            }, { textZoom, theme });
+            await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
+            await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
+            const frame = page.frames().find(item => /\/terrain\/vector.html/.test(item.url())); assert.ok(frame);
+            await page.evaluate(() => {
+                window.zoomTrace = [];
+                const trace = () => {
+                    let layer; mapsPlaceholder.eachLayer(item => { if (item.options?.bpbVector) layer = item; });
+                    if (layer?.painted) {
+                        const paint = layer.painted, point = nativePeak.getLatLng(), surface = layer.surface.getBoundingClientRect(), marker = nativePeak.getElement().getBoundingClientRect();
+                        const mercator = lat => (1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2;
+                        const scale = 512 * 2 ** paint.view.zoom;
+                        const x = surface.left + (paint.width / 2 + (point.lng - paint.view.center[1]) / 360 * scale) / paint.width * surface.width;
+                        const y = surface.top + (paint.height / 2 + (mercator(point.lat) - mercator(paint.view.center[0])) * scale) / paint.height * surface.height;
+                        window.zoomTrace.push({ delta: Math.hypot(x - marker.x - marker.width / 2, y - marker.y - marker.height / 2),
+                            animated: !!mapsPlaceholder._animatingZoom, transform: window.getComputedStyle(layer.element).transform,
+                            nativeTransform: window.getComputedStyle(nativePeak.getElement().ownerSVGElement).transform });
+                        if (window.zoomTrace.length > 512) window.zoomTrace.shift();
+                    }
+                    window.requestAnimationFrame(trace);
+                }; window.requestAnimationFrame(trace);
+            });
+            for (const [direction, target] of [['in', 11], ['out', 10], ['wheel', 11]]) {
+                await frame.evaluate(() => { window.holdZoomView = true; });
+                const button = page.locator(`.leaflet-control-zoom-${direction === 'wheel' ? 'in' : direction}`);
+                await button.scrollIntoViewIfNeeded();
+                await sample(`${width}/${textZoom} before ${direction}`);
+                const click = direction === 'wheel' ? (async () => {
+                    const marker = await page.locator('.leaflet-interactive').first().boundingBox();
+                    await page.mouse.move(marker.x + marker.width / 2 + 10, marker.y + marker.height / 2);
+                    await page.mouse.wheel(0, -1);
+                })() : button.click();
+                const deadline = Date.now() + 5000;
+                let state;
+                do { state = await sample(`${width}/${textZoom} ${direction}`); }
+                while ((state.zoom !== target || state.animated) && Date.now() < deadline);
+                await click;
+                assert.equal(state.zoom, target); assert.equal(state.animated, false);
+                await frame.waitForFunction(() => window.heldZoomViews.length > 0);
+                await sample(`${width}/${textZoom} delayed ${direction}`);
+                await frame.evaluate(() => {
+                    window.holdZoomView = false;
+                    for (const item of window.heldZoomViews.splice(0)) window.dispatchEvent(new MessageEvent('message', { data: item.data, origin: item.origin, source: parent }));
+                });
+                await page.waitForFunction(() => {
+                    const surface = document.querySelector('.bpb-vector-surface'); return surface && Math.abs(new window.DOMMatrix(window.getComputedStyle(surface).transform).a - 1) < .001;
+                });
+                await sample(`${width}/${textZoom} handed off ${direction}`);
+                const failures = await page.evaluate(() => window.zoomTrace.filter(item => item.delta > 4));
+                assert.deepEqual(failures, [], `Every measured paint stays aligned through zoom: ${width}/${textZoom}`);
+                cases++;
+            }
+        }
+        assert.ok(animatedSamples > 0, 'Actual intermediate animation frames must be inspected');
+        const frame = page.frames().find(item => /\/terrain\/vector.html/.test(item.url()));
+        const original = await page.evaluate(() => ({ center: [mapsPlaceholder.getCenter().lat, mapsPlaceholder.getCenter().lng], zoom: mapsPlaceholder.getZoom() }));
+        await page.evaluate(() => {
+            window.staleSceneRejected = false;
+            window.addEventListener('message', event => {
+                if (event.data?.dir !== 'toPage' || event.data.type !== 'painted' || event.data.view?.center[0] !== 5) return;
+                mapsPlaceholder.eachLayer(layer => { if (layer.options?.bpbVector) window.staleSceneRejected = layer.painted?.view.center[0] !== 5; });
+            });
+        });
+        await frame.evaluate(() => { window.holdSnapshotCenter = [5, 5]; });
+        await page.evaluate(() => { mapsPlaceholder.setView([5, 5], mapsPlaceholder.getZoom(), { animate: false }); });
+        await frame.waitForFunction(() => window.heldSnapshots.length > 0);
+        await page.evaluate(value => { mapsPlaceholder.setView(value.center, value.zoom, { animate: false }); }, original);
+        await frame.evaluate(() => { window.holdSnapshotCenter = null; for (const resolve of window.heldSnapshots.splice(0)) resolve(); });
+        await page.waitForFunction(() => window.staleSceneRejected);
+        await sample('late distant image after camera reversal'); cases++;
+        const queuedProvider = await page.evaluate(otherProvider => {
+            const select = document.getElementById('selmap'), chosen = select.value;
+            window.dispatchEvent(new MessageEvent('message', { source: window, origin: window.location.origin,
+                data: { __bpbVectorMap: true, dir: 'toPage', type: 'error', id: select.dataset.bpbVectorMap, basemap: otherProvider } }));
+            return { chosen, selected: select.value, visible: document.querySelector('.bpb-vector-slot')?.style.opacity === '1',
+                errorHidden: document.querySelector('.bpb-vector-status').hidden };
+        }, basemap === MAPTOOLKIT_BASEMAP ? 'vector' : 'maptoolkit');
+        assert.equal(queuedProvider.selected, queuedProvider.chosen, 'A queued error from a different provider cannot reset this choice');
+        assert.ok(queuedProvider.visible && queuedProvider.errorHidden, 'The current cartography survives an outgoing provider error');
+        return { cases, samples, animatedSamples };
     };
     const verifyProviderRecovery = async () => {
         const geometry = () => page.evaluate(() => ({ scroll: scrollY, boxes: ['h1', '#map', '#selmap', '#following', '.leaflet-control-zoom'].map(selector => {
@@ -534,6 +694,7 @@ try {
     if (terrainMode) summary = await verifyTerrain();
     else if (args.includes('--layout-only')) summary = { verification: 'vector-picker-layout', cases: await verifyPickerLayouts(), renderer, browser: context.browser().version(), hidden: true };
     else if (args.includes('--performance-only')) summary = { verification: 'vector-progressive', ...await verifyProgressive(), renderer, browser: context.browser().version(), hidden: true };
+    else if (args.includes('--zoom-only')) summary = { verification: 'vector-zoom', ...await verifyZoomContinuity(), renderer, browser: context.browser().version(), hidden: true };
     else if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
     else if (cameraOnly) summary = { verification: 'vector-camera', cases: await verifyCameraAlignment(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (recoveryOnly) summary = { verification: 'vector-recovery', cases: await verifyProviderRecovery(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
@@ -542,11 +703,21 @@ try {
         await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
         await verifyCredits();
-        if (process.env.BPB_VECTOR_SCREENSHOTS) {
-            await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true });
-            await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, 'vector-live.png') });
+        for (const direction of ['initial', 'in', 'out']) {
+            const targetZoom = await page.evaluate(() => mapsPlaceholder.getZoom()) + (direction === 'in' ? 1 : direction === 'out' ? -1 : 0);
+            if (direction !== 'initial') await page.locator(`.leaflet-control-zoom-${direction}`).click();
+            await page.waitForFunction(target => {
+                let current; mapsPlaceholder.eachLayer(layer => { if (layer.options?.bpbVector) current = layer; });
+                const center = mapsPlaceholder.getCenter(), painted = current?.painted;
+                return mapsPlaceholder.getZoom() === target && !mapsPlaceholder._animatingZoom && painted && Math.abs(painted.view.zoom + 1 - target) < .001
+                    && Math.abs(painted.view.center[0] - center.lat) < .00001 && Math.abs(painted.view.center[1] - center.lng) < .00001;
+            }, targetZoom);
+            if (process.env.BPB_VECTOR_SCREENSHOTS) {
+                await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true });
+                await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `vector-live-${direction}.png`) });
+            }
         }
-        summary = { verification: '2d-vector-map-live', cases: 1, renderer, hidden: true, realExtension: !firefoxMode, requests: requests.length, browser: context.browser().version() };
+        summary = { verification: '2d-vector-map-live', cases: 3, renderer, hidden: true, realExtension: !firefoxMode, requests: requests.length, browser: context.browser().version() };
     }
     else {
         const geometry = () => page.evaluate(() => ({ scroll: scrollY,

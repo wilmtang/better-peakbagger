@@ -123,7 +123,7 @@ Focused fix commits: `9e7f7d7a` (M1), `8f9a997f` (M2/M4), `13174613`
 ## Changed but not fully proven
 
 The real-manifest Chrome gate was rerun and still stops at the existing
-Garmin Settings visibility assertion in `scripts/verify-settings-navigation.mjs:308`.
+Garmin Settings visibility assertion in `scripts/verify-settings-navigation.mjs` (line 308).
 It is not a green whole-extension integration gate. Chrome's focused matrix
 loads the real extension; Firefox stubs extension API/storage/capabilities.
 All browser checks ran hidden on Apple M3 Pro hardware (Chrome 156.0.8078.4,

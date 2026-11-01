@@ -1,5 +1,9 @@
 # Active plans
 
+- [2D vector zoom audit — November 1](vector-zoom-audit-2026-11-01.md)
+  — implemented camera/image handoff and parent-clock rendering; repeated
+  animation proof and explicit unrelated repository gates in the closure ledger.
+
 - [Maptoolkit performance and picker audit — October 31](maptoolkit-performance-audit-2026-10-31.md)
   — five findings implemented: picker containment, progressive loading, reduced
   shading, bounded renderer reuse and 3D request ownership; verified closure

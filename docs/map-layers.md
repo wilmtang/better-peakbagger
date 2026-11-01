@@ -59,6 +59,14 @@ does not prevent selecting the other vector basemap.
 MapLibre and its module worker remain packaged in an extension-origin frame.
 The MAIN-world Leaflet adapter owns camera/pane placement; the isolated bridge
 requires a trusted picker choice or Retry before authorizing provider work.
+The frame transfers rendered cartography as an in-memory image paired with
+its camera. Leaflet replaces that image and its transform together, keeping
+the previous view geographically aligned during animated zooms and delayed
+renders. Native routes and markers are drawn separately and never enter these
+images. Only one image capture can be in flight; suspension and deselection
+clear the displayed pixel buffer. The rendering frame stays in the viewport,
+and its redraw requests follow the parent page's paint clock so browser
+throttling of a visually hidden frame cannot stall camera updates.
 The worker issues a separate tab-bound, short-lived, one-use vector capability,
 which the frame consumes before fetching its style. Native basemap handlers
 never receive the extension's private layer code.

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, vectorBasemap } from './vector-basemap.js';
+import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
@@ -12,9 +12,10 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
     let active = true, sequence = 0;
     const cooldowns = new Map();
     const retryAt = basemap => readRetryAt(cooldowns.get(basemap.id));
-    const post = (id, type, detail = {}) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toPage', id, type, ...detail }, win.location.origin);
+    const post = (id, type, detail = {}, transfer = []) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toPage', id, type, ...detail }, win.location.origin, transfer);
     const key = entry => `${entry.id}:${entry.basemap.id}`;
     const remove = entry => {
+        if (entry.drawFrame != null) win.cancelAnimationFrame(entry.drawFrame); entry.drawFrame = null; entry.drawQueued = false;
         win.clearTimeout(entry.timer); win.clearTimeout(entry.expiry); entry.revision++; entry.initializing = false;
         entry.frame?.remove(); entry.frame = null; entry.loaded = false; entry.released = false;
         if (parked.get(key(entry)) === entry) parked.delete(key(entry));
@@ -25,6 +26,7 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         [VECTOR_MESSAGE]: true, dir: 'toFrame', type, ...detail,
     }, origin);
     const release = entry => {
+        if (entry.drawFrame != null) win.cancelAnimationFrame(entry.drawFrame); entry.drawFrame = null; entry.drawQueued = false;
         win.clearTimeout(entry.timer); entry.revision++; entry.generation = null; entry.initializing = false; entry.paused = true;
         if (!entry.loaded) { remove(entry); return; }
         // The frame clears its style and aborts every provider request. Keep
@@ -93,13 +95,35 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         if (!active || !data || data[VECTOR_MESSAGE] !== true) return;
         if (data.dir === 'fromFrame' && event.origin === origin) {
             const entry = [...entries.values(), ...parked.values()].find(item => item.frame?.contentWindow === event.source);
+            if (data.type === 'painted') {
+                const bitmap = data.bitmap, paint = readVectorPaint(data);
+                if (!(typeof win.ImageBitmap === 'function' && bitmap instanceof win.ImageBitmap)) return;
+                if (!entry || entries.get(entry.id) !== entry || entry.paused || data.generation !== entry.generation
+                    || !paint
+                    || bitmap.width < 1 || bitmap.height < 1 || bitmap.width > 16384 || bitmap.height > 16384) { bitmap.close(); return; }
+                post(entry.id, 'painted', { ...paint, bitmap, basemap: entry.basemap.id }, [bitmap]);
+                entry.loaded = true;
+                win.clearTimeout(entry.timer);
+                return;
+            }
             if (!entry) return;
             const current = entries.get(entry.id) === entry && !entry.paused;
+            if (data.type === 'renderNeeded' && current && data.generation === entry.generation && !entry.drawQueued) {
+                const frame = entry.frame, generation = entry.generation;
+                entry.drawQueued = true;
+                entry.drawFrame = win.requestAnimationFrame(() => {
+                    entry.drawFrame = null;
+                    if (active && entries.get(entry.id) === entry && !entry.paused && entry.frame === frame && entry.generation === generation) {
+                        win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toCS', type: 'renderClock', id: entry.id, generation }, win.location.origin);
+                    }
+                });
+                return;
+            }
             if (data.type === 'ready') {
                 if (current && entry.view && !entry.loaded) await activate(entry, 'init');
             } else if (data.type === 'loaded' && current && data.generation === entry.generation) {
                 if (JSON.stringify(readVectorView(data.view)) !== JSON.stringify(entry.view)) return;
-                entry.loaded = true; win.clearTimeout(entry.timer); post(entry.id, 'loaded');
+                entry.loaded = true; post(entry.id, 'loaded');
             }
             else if (data.type === 'error') {
                 const until = readRetryAt(data.retryAt);
@@ -118,6 +142,14 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         if (!entry) return;
         if (data.type === 'stop') { park(data.id); return; }
         if (data.type === 'pause') { release(entry); return; }
+        if (data.type === 'renderClock' || data.type === 'render') {
+            if (entry.paused || !entry.drawQueued || data.generation !== entry.generation) return;
+            // Post a second task so every camera update queued by this rAF
+            // batch reaches the frame before its animation callbacks.
+            if (data.type === 'renderClock') win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toCS', type: 'render', id: entry.id, generation: entry.generation }, win.location.origin);
+            else { entry.drawQueued = false; send(entry, 'render', { generation: entry.generation }); }
+            return;
+        }
         if (data.type === 'resume') entry.paused = false;
         const view = readVectorView(data.view);
         if (!view) return;

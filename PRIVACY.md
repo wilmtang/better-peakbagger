@@ -654,6 +654,11 @@ sources and aborts in-flight requests. Initialized renderer/worker setup and its
 may stay in memory for up to 60 seconds per provider for faster reselection;
 reactivation requires a fresh one-use capability. Unloading or navigating away
 discards that setup. Parked renderers cannot initiate provider requests.
+In 2D, rendered cartography is transferred in memory from the extension frame
+to the page with its camera coordinates so zoom animations stay aligned.
+These pixel buffers contain no native routes, markers, GPX or account data;
+they are not persisted or sent elsewhere, and the displayed buffer is cleared
+on deselection or suspension. At most one image capture is in flight.
 
 **Maptoolkit Hiking** is another optional basemap in both 2D and 3D. Selection sends
 direct style, vector/raster tile, glyph and sprite requests to

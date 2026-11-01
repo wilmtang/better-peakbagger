@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { installVectorMapBridge } from '../../src/maps/vector-map-bridge.js';
-import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView } from '../../src/maps/vector-basemap.js';
+import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView, readVectorPaint } from '../../src/maps/vector-basemap.js';
 import { terrainBasemap } from '../../src/terrain/terrain-basemap.js';
 
 const view = { center: [46.85, -121.76], zoom: 9 };
@@ -12,6 +12,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 function setup({ sendMessage } = {}) {
     const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_VECTOR">Vector</option><option value="BPB_MAPTOOLKIT">Maptoolkit</option></select><div id="bpb-vector-slot-test-vector"></div><div id="bpb-vector-slot-test-maptoolkit"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
     const win = dom.window, captures = new Map(), calls = [], messages = [];
+    win.ImageBitmap = class { width = 640; height = 480; closed = false; close() { this.closed = true; } };
     const add = win.document.addEventListener.bind(win.document);
     win.document.addEventListener = (type, callback, options) => { if (options === true) captures.set(type, callback); add(type, callback, options); };
     win.postMessage = message => messages.push(message);
@@ -36,6 +37,49 @@ test('planar vector views validate coordinates and preserve world zoom zero', ()
     assert.deepEqual(readVectorView({ center: [0, 0], zoom: -1 }), { center: [0, 0], zoom: -1 });
     for (const bad of [{ ...view, center: [90, 0] }, { ...view, center: [0, 181] }, { ...view, zoom: NaN }, { ...view, zoom: 24 }, { ...view, center: [0, 0, 0] }]) assert.equal(readVectorView(bad), null);
     assert.deepEqual(terrainBasemap.active({}, {}, { value: VECTOR_BASEMAP.code, selectedIndex: 0, options: [{}] }), { kind: 'vector', name: VECTOR_BASEMAP.name });
+});
+test('paint metadata rejects invalid cameras and unbounded CSS dimensions', () => {
+    assert.deepEqual(readVectorPaint({ view, width: 640, height: 480 }), { view, width: 640, height: 480 });
+    for (const width of [0, -1, 1.5, NaN, Infinity, 16385, '640']) assert.equal(readVectorPaint({ view, width, height: 480 }), null);
+    assert.equal(readVectorPaint({ view: { ...view, zoom: NaN }, width: 640, height: 480 }), null);
+});
+test('paint relays require the current frame, activation and bounded metadata', async () => {
+    const env = setup();
+    try {
+        env.choose(); env.send('view'); env.fromFrame('ready'); await settle();
+        for (const extra of [{ generation: 0 }, { width: 0 }, { view: { center: [0, 0], zoom: NaN } }]) {
+            const bitmap = new env.win.ImageBitmap();
+            env.fromFrame('painted', undefined, undefined, { bitmap, width: 640, height: 480, ...extra });
+            assert.equal(bitmap.closed, true, 'Stale or invalid GPU images are released');
+        }
+        const bitmap = new env.win.ImageBitmap();
+        env.fromFrame('painted', undefined, undefined, { bitmap, width: 640, height: 480 });
+        assert.equal(env.messages.at(-1).type, 'painted'); assert.equal(env.messages.at(-1).bitmap, bitmap);
+        assert.equal(env.messages.at(-1).basemap, 'vector', 'A queued paint remains scoped to its selected provider');
+        assert.equal(bitmap.closed, false, 'The accepted bitmap transfers to the page owner');
+        const older = new env.win.ImageBitmap();
+        env.fromFrame('painted', undefined, undefined, { bitmap: older, width: 640, height: 480, view: { center: [0, 0], zoom: 9 } });
+        assert.equal(older.closed, false, 'Older coupled cameras can be reprojected instead of starving a fast pan');
+        env.fromFrame('loaded'); env.send('stop');
+        const late = new env.win.ImageBitmap();
+        env.fromFrame('painted', undefined, env.win.document.querySelector('iframe').contentWindow, { bitmap: late, width: 640, height: 480 });
+        assert.equal(late.closed, true, 'A parked provider cannot paint over the native map');
+    } finally { env.close(); }
+});
+test('renderer paint requests coalesce on the parent clock and cannot survive suspension', async () => {
+    const env = setup(), callbacks = [], cancelled = [], sent = [];
+    env.win.requestAnimationFrame = callback => { callbacks.push(callback); return callbacks.length; };
+    env.win.cancelAnimationFrame = id => cancelled.push(id);
+    try {
+        env.choose(); env.send('view'); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
+        env.frame().contentWindow.postMessage = data => sent.push(data);
+        env.fromFrame('renderNeeded', undefined, undefined, { generation: 0 }); assert.equal(callbacks.length, 0);
+        env.fromFrame('renderNeeded'); env.fromFrame('renderNeeded'); assert.equal(callbacks.length, 1);
+        callbacks[0](); env.send('renderClock', { generation: 1 }); env.send('render', { generation: 1 });
+        assert.equal(sent.filter(data => data.type === 'render').length, 1);
+        env.fromFrame('renderNeeded'); env.send('pause'); assert.ok(cancelled.includes(2));
+        callbacks[1](); assert.equal(sent.filter(data => data.type === 'render').length, 1, 'A cancelled clock cannot redraw a parked renderer');
+    } finally { env.close(); }
 });
 test('forged selection and page messages cannot start vector requests', () => {
     const env = setup();

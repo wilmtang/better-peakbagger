@@ -4,41 +4,84 @@
 import * as maplibre from 'maplibre-gl';
 import { terrainStyle } from '../terrain/terrain-style.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
-import { VECTOR_MESSAGE, readVectorView, vectorBasemap } from './vector-basemap.js';
+import { VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.js';
 import { vectorMapAvailability } from './vector-map-availability.js';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
 let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, settledView = null, lastSize = '', lastCamera = '';
 let active = false, style = null, revision = 0, generation = null;
+let capturing = false, captureAgain = false;
+let drawRequested = false;
+let nextFrame = 0;
+const frames = new Map();
 const requests = new Set();
-const post = (type, detail = {}) => {
-    if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, generation, ...detail }, parentOrigin);
+const post = (type, detail = {}, transfer = []) => {
+    if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, generation, ...detail }, parentOrigin, transfer);
+};
+const requestDraw = () => {
+    if (!active || disposed || !map || drawRequested) return;
+    drawRequested = true; post('renderNeeded');
+};
+// MapLibre also defers style loading with rAF. This dedicated rendering
+// document uses the visible parent's clock for all of its animation work,
+// rather than leaving style restoration on a throttled hidden-frame clock.
+window.requestAnimationFrame = callback => {
+    const id = ++nextFrame; frames.set(id, callback); requestDraw(); return id;
+};
+window.cancelAnimationFrame = id => frames.delete(id);
+const publishPaint = () => {
+    if (capturing) { captureAgain = true; return; }
+    const canvas = map.getCanvas(), width = canvas.clientWidth, height = canvas.clientHeight;
+    if (!width || !height) return;
+    if (!readVectorPaint({ view, width, height })) { fail(); return; }
+    if (timer === null) timer = setTimeout(fail, 15000);
+    const camera = structuredClone(view), owner = generation, renderer = map;
+    capturing = true;
+    let snapshot;
+    // Capture inside render, while the WebGL drawing buffer is still valid.
+    try { snapshot = createImageBitmap(canvas); } catch (error) { capturing = false; fail(error); return; }
+    void snapshot.then(bitmap => {
+        if (disposed || !active || generation !== owner || map !== renderer) {
+            bitmap.close(); captureAgain = true; return;
+        }
+        if (JSON.stringify(view) !== JSON.stringify(camera) || canvas.clientWidth !== width || canvas.clientHeight !== height) captureAgain = true;
+        try {
+            const key = JSON.stringify([camera, width, height]);
+            if (key !== settledView) { settledView = key; post('loaded', { view: camera }); }
+            post('painted', { bitmap, view: camera, width, height }, [bitmap]); clearTimeout(timer); timer = null;
+        }
+        catch (error) { bitmap.close(); fail(error); }
+    }, error => { if (!disposed && active && generation === owner) fail(error); }).finally(() => {
+        capturing = false;
+        const again = captureAgain; captureAgain = false;
+        if (again) requestDraw();
+    });
 };
 const release = () => {
-    active = false; revision++; clearTimeout(timer);
+    active = false; drawRequested = false; revision++; clearTimeout(timer); timer = null;
     for (const controller of requests) controller.abort(); requests.clear();
     map?.stop?.(); map?.setStyle({ version: 8, sources: {}, layers: [] }, { diff: false });
 };
-const dispose = () => { disposed = true; active = false; revision++; clearTimeout(timer); for (const controller of requests) controller.abort(); requests.clear(); map?.remove(); map = null; };
+const dispose = () => { disposed = true; active = false; revision++; clearTimeout(timer); for (const controller of requests) controller.abort(); requests.clear(); map?.remove(); map = null; frames.clear(); };
 const fail = error => { if (!disposed) { post('error', { retryAt: readRetryAt(error?.retryAt) }); dispose(); } };
 const update = () => {
     if (!active || !map || !view) return;
     const container = document.getElementById('map'), size = `${container.clientWidth}/${container.clientHeight}`, camera = JSON.stringify(view);
     if (size !== lastSize) { lastSize = size; map.resize(); }
     if (camera !== lastCamera) { lastCamera = camera; map.jumpTo({ center: [view.center[1], view.center[0]], zoom: view.zoom, bearing: 0, pitch: 0 }); }
+    requestDraw();
 };
 const settled = (progressive = false) => {
     if (disposed || !active || !map || !progressive && !map.areTilesLoaded()) return;
     try {
         const availability = vectorMapAvailability(map);
-        if (progressive && !vectorMapAvailability(map, { center: view.center }).usable) return;
+        if (progressive && !vectorMapAvailability(map, { center: view.center }).usable
+            && !(map.areTilesLoaded() && map.isStyleLoaded() && !availability.requested)) return;
         if (availability.requested && !availability.usable) {
             console.warn('Better Peakbagger vector map: No usable viewport tiles.'); fail(); return;
         }
-        clearTimeout(timer);
-        const key = JSON.stringify([view, map.getCanvas().clientWidth, map.getCanvas().clientHeight]);
-        if (key !== settledView) { settledView = key; post('loaded', { view }); }
+        if (progressive) publishPaint();
     } catch (error) { console.warn('Better Peakbagger vector map:', error.message); fail(); }
 };
 window.addEventListener('message', async event => {
@@ -47,6 +90,19 @@ window.addEventListener('message', async event => {
         || !data || data[VECTOR_MESSAGE] !== true || data.dir !== 'toFrame'
         || parentOrigin && event.origin !== parentOrigin) return;
     if (data.type === 'release' && attempted) { release(); return; }
+    if (data.type === 'render' && active && data.generation === generation) {
+        drawRequested = false;
+        const callbacks = [...frames];
+        const timestamp = performance.now();
+        try {
+            for (const [id, callback] of callbacks) if (frames.delete(id)) callback(timestamp);
+            // A render that completed during capture still needs a fresh
+            // snapshot, even when MapLibre has no animation callback left.
+            if (!callbacks.length) map.redraw();
+            if (frames.size) requestDraw();
+        } catch (error) { fail(error); }
+        return;
+    }
     if (data.type === 'view' && attempted) { view = readVectorView(data.view) || view; update(); return; }
     const validGeneration = Number.isSafeInteger(data.generation) && data.generation > 0;
     if (data.type === 'resume' && map && !active && validGeneration && readVectorView(data.view)) {

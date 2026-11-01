@@ -43,3 +43,12 @@ export function readVectorView(value) {
         || value.zoom < -1 || value.zoom > 23) return null;
     return { center: [...value.center], zoom: value.zoom };
 }
+
+// CSS dimensions accompany a transferred GPU bitmap; pixel dimensions can
+// differ with device scale. Neither world may trust the other side's shape.
+export function readVectorPaint(value) {
+    const view = readVectorView(value?.view), width = value?.width, height = value?.height;
+    if (!view || !Number.isInteger(width) || !Number.isInteger(height)
+        || width < 1 || height < 1 || width > 16384 || height > 16384) return null;
+    return { view, width, height };
+}
