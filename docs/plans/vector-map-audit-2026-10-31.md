@@ -23,6 +23,11 @@ trusted-selection authorization and extension-origin rendering boundary.
   transport stubbed), initial viewport 1280 × 800. The assertion failed before
   the fix on missing geographic pixels at world zoom 0. Build, targeted ESLint,
   documentation links and 21 boundary/documentation tests passed.
+- V3: the authorization success and rejection paths share the same current-frame
+  predicate. The new delayed-rejection test failed before the fix by removing
+  the replacement frame; it now preserves that frame and sends its own token.
+  A current request failure still reports an error. Build, targeted ESLint and
+  14 authorization/bridge/documentation tests passed.
 
 ### Intentionally not changed
 
@@ -35,9 +40,9 @@ trusted-selection authorization and extension-origin rendering boundary.
 
 ### Changed but not fully proven
 
-None for V1's local acceptance checks; external verification limits remain below.
+None for V1/V3's local acceptance checks; external verification limits remain below.
 
-V2–V4 remain open and unchanged.
+V2 and V4 remain open and unchanged.
 
 ## Verification limits
 

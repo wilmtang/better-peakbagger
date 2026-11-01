@@ -48,12 +48,13 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
                 if (entry.initializing) return;
                 entry.initializing = true;
                 const frame = entry.frame;
+                const isCurrent = () => active && entries.get(entry.id) === entry && entry.frame === frame;
                 try {
                     const activation = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_ISSUE', action: 'init' });
-                    if (!active || entries.get(entry.id) !== entry || entry.frame !== frame) return;
+                    if (!isCurrent()) return;
                     if (activation?.ok !== true) { fail(entry); return; }
                     send(entry, 'init', { activation: activation.token, view: entry.view });
-                } catch { fail(entry); }
+                } catch { if (isCurrent()) fail(entry); }
             } else if (data.type === 'loaded') { clearTimeout(entry.timer); post(entry.id, 'loaded'); }
             else if (data.type === 'error') fail(entry);
             return;
