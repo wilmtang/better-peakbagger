@@ -205,6 +205,7 @@ export const COPY_FILES = [
     ['terrain/terrain.html', 'terrain/terrain.html'],
     ['terrain/vector.html', 'terrain/vector.html'],
     ['src/maps/vector-map.css', 'css/vector-map.css'],
+    ['src/maps/maptoolkit-attribution.png', 'images/maptoolkit-attribution.png'],
     ['options/options.html', 'options/options.html'],
     ['options/drafts.html', 'options/drafts.html'],
     ['options/favorites.html', 'options/favorites.html'],
@@ -230,6 +231,8 @@ export const GENERATED_FILES = [
 // Reviewed overrides are reserved for shipped material that has no npm package
 // root for the metafile inventory to discover.
 export const NON_PACKAGE_NOTICES = [
+    { key: 'maptoolkit-attribution-logo', name: 'Maptoolkit attribution logo', version: '2026-10-31',
+        license: 'LicenseRef-Maptoolkit-Community-Attribution', noticeFile: 'third_party/maptoolkit-attribution-NOTICE.txt' },
     { key: 'fit-file-parser-raw', name: 'fit-file-parser raw reader (locally modified)', version: '6.2.3',
         license: 'MIT', noticeFile: 'third_party/fit-file-parser-LICENSE.txt' },
     {

@@ -1,5 +1,9 @@
 # Active plans
 
+- [Maptoolkit basemap integration — October 31](maptoolkit-basemap-2026-10-31.md)
+  — worktree implementation of Hiking in native 2D and 3D; provider boundaries,
+  attribution and explicit browser verification limits.
+
 - [2D vector map audit remediation — October 31](vector-map-audit-2026-10-31.md)
   — implemented geographic alignment, post-load failure recovery, stale
   authorization rejection and provider cooldowns in independent commits. The

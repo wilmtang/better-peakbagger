@@ -2,6 +2,20 @@
 
 ## Vector basemap in 2D
 
+**Maptoolkit Hiking** is available alongside **OSM Vector (experimental)** in
+the native basemap picker. It uses Maptoolkit's keyless Hiking style, including
+its contour lines, relief, labels and icons. Maptoolkit requests go directly to
+its style, tile, font and icon hosts; the style's elevation shading also uses
+Mapterhorn. Cookies and referrers are omitted. Selecting it does not require
+enabling 3D, and it preserves native routes, markers and interactions.
+
+The official Maptoolkit logo and clickable copyright links stay visible while
+that basemap is displayed. The logo is packaged locally; no remote branding
+script is loaded. The Community Service is proprietary and subject to its
+[eligibility, attribution and usage terms](https://www.maptoolkit.org/tos).
+It is used for interactive maps, with normal browser caching and no offline
+tile archives or extension-managed tile storage.
+
 The native basemap picker also offers **OSM Vector (experimental)**, using the
 same OpenFreeMap Liberty style as 3D. Selecting it starts direct, cookie-free
 OpenFreeMap style and tile requests; the provider receives the viewed area and
@@ -21,13 +35,14 @@ load. Valid empty tiles and usable partial/cached output remain visible. The
 availability adapter is tied to the packaged MapLibre 6 tile-manager API;
 hardware browser coverage checks that compatibility boundary.
 
-OpenFreeMap rate limits restore the native map and keep **Retry** unavailable
+Provider rate limits restore the native map and keep **Retry** unavailable
 until the provider's deadline. Missing, unreadable or invalid `Retry-After`
 uses five minutes; accepted deadlines are bounded to one day. The isolated
 document retains that cooldown across renderer replacement, re-selection and
 2D/3D suspension, and stops its other vector renderers too. Expiry enables
 Retry without fetching automatically. Separate documents/tabs do not share
-this in-memory cooldown.
+this in-memory cooldown. Each provider has its own cooldown; a limited provider
+does not prevent selecting the other vector basemap.
 
 MapLibre and its module worker remain packaged in an extension-origin frame.
 The MAIN-world Leaflet adapter owns camera/pane placement; the isolated bridge

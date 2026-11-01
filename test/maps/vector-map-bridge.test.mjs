@@ -10,7 +10,7 @@ import { terrainBasemap } from '../../src/terrain/terrain-basemap.js';
 const view = { center: [46.85, -121.76], zoom: 9 };
 const settle = () => new Promise(resolve => setImmediate(resolve));
 function setup({ sendMessage } = {}) {
-    const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_VECTOR">Vector</option></select><div id="bpb-vector-slot-test"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
+    const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_VECTOR">Vector</option><option value="BPB_MAPTOOLKIT">Maptoolkit</option></select><div id="bpb-vector-slot-test"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
     const win = dom.window, captures = new Map(), calls = [], messages = [];
     const add = win.document.addEventListener.bind(win.document);
     win.document.addEventListener = (type, callback, options) => { if (options === true) captures.set(type, callback); add(type, callback, options); };
@@ -26,7 +26,7 @@ function setup({ sendMessage } = {}) {
     const frame = () => win.document.querySelector('iframe');
     const fromFrame = (type, origin = 'chrome-extension://test', source = frame()?.contentWindow, detail = {}) => send(type, { dir: 'fromFrame', ...detail }, source, origin);
     const retry = disabled => {
-        const button = win.document.createElement('button'); button.dataset.bpbVectorMap = 'test'; button.setAttribute('aria-disabled', String(disabled));
+        const button = win.document.createElement('button'); button.dataset.bpbVectorMap = 'test'; button.dataset.bpbVectorBasemap = 'vector'; button.setAttribute('aria-disabled', String(disabled));
         captures.get('click')({ type: 'click', isTrusted: true, target: button });
     };
     return { win, calls, messages, send, choose, frame, fromFrame, retry, close() { bridge.dispose(); dom.window.close(); } };
@@ -137,6 +137,17 @@ test('a provider cooldown stops every renderer in the isolated document', () => 
         assert.equal(env.win.document.querySelectorAll('iframe').length, 0);
         assert.deepEqual(env.messages.map(message => [message.id, message.retryAt]), [['test', retryAt], ['second', retryAt]]);
         env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.frame(), null); assert.equal(env.calls.length, 0);
+    } finally { env.close(); }
+});
+test('a trusted provider choice cannot be changed by page messages or another provider cooldown', async () => {
+    const env = setup();
+    try {
+        env.choose(); env.send('view'); env.fromFrame('error', undefined, undefined, { retryAt: Date.now() + 120000 });
+        env.win.document.querySelector('select').value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view', { basemap: 'vector' });
+        const frame = env.frame(), sent = []; assert.ok(frame, 'OpenFreeMap cooldown does not disable Maptoolkit');
+        frame.contentWindow.postMessage = data => sent.push(data); env.fromFrame('ready'); await settle();
+        assert.equal(sent.find(item => item.type === 'init')?.basemap, 'maptoolkit');
+        assert.equal(frame.title, 'Maptoolkit vector basemap');
     } finally { env.close(); }
 });
 test('untrusted and unbounded cooldown messages cannot disable future vector selections', () => {

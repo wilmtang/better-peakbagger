@@ -1,38 +1,50 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView } from './vector-basemap.js';
+import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, VECTOR_BASEMAPS, VECTOR_MESSAGE, readVectorView, vectorBasemap } from './vector-basemap.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
 export function bindVectorMap(win, map, select) {
     const L = win.L, doc = win.document, container = map.getContainer();
     const id = win.crypto.randomUUID(), native = [], previousId = select.dataset.bpbVectorMap;
-    const option = doc.createElement('option'); option.value = VECTOR_BASEMAP.code; option.textContent = VECTOR_BASEMAP.name;
-    select.append(option); select.dataset.bpbVectorMap = id;
+    const options = VECTOR_BASEMAPS.map(basemap => { const option = doc.createElement('option'); option.value = basemap.code; option.textContent = basemap.name; return option; });
+    select.append(...options); select.dataset.bpbVectorMap = id;
     const previousMinWidth = select.style.minWidth, pickerStyle = win.getComputedStyle(select);
     const metrics = doc.createElement('canvas').getContext('2d');
     metrics.font = `${pickerStyle.fontStyle} ${pickerStyle.fontWeight} ${pickerStyle.fontSize} ${pickerStyle.fontFamily}`;
     // Firefox can defer the new option's intrinsic width until selection.
     // Reserve its label and native arrow before interaction, bounded to the map.
-    const pickerMinWidth = `min(${Math.ceil(metrics.measureText(VECTOR_BASEMAP.name).width + 40)}px, calc(100vw - 20px))`;
+    const pickerMinWidth = `min(${Math.ceil(Math.max(...VECTOR_BASEMAPS.map(item => metrics.measureText(item.name).width)) + 40)}px, calc(100vw - 20px))`;
     select.style.minWidth = pickerMinWidth;
     const reservedPickerWidth = select.style.minWidth;
     let previous = select.value, layer = null, paused = false, replacing = false, disposed = false, attributionReservation = null, center, size, zoom;
-    let retryAt = 0, retryTimer = null;
+    let basemap = VECTOR_BASEMAP, retryTimer = null;
+    const cooldowns = new Map();
     const status = doc.createElement('div'); status.className = 'bpb-vector-status'; status.hidden = true;
     const message = doc.createElement('span'); message.setAttribute('role', 'status');
     const retry = doc.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.dataset.bpbVectorMap = id;
+    retry.dataset.bpbVectorBasemap = basemap.id;
     const dismiss = doc.createElement('button'); dismiss.type = 'button'; dismiss.textContent = '×'; dismiss.setAttribute('aria-label', 'Dismiss vector map error');
     status.append(retry, message, dismiss); container.append(status);
     L.DomEvent.disableClickPropagation(status);
     const credits = doc.createElement('div'); credits.className = 'leaflet-control-attribution bpb-vector-credits';
     const creditLink = (href, text) => { const link = doc.createElement('a'); link.href = href; link.textContent = text; return link; };
-    credits.append(creditLink('https://openfreemap.org', 'OpenFreeMap'), ' © ',
-        creditLink('https://openmaptiles.org', 'OpenMapTiles'), ', data from ',
-        creditLink('https://www.openstreetmap.org/copyright', 'OpenStreetMap'));
+    const logo = creditLink('https://www.maptoolkit.org/', ''); logo.className = 'bpb-vector-maptoolkit-logo'; logo.id = `bpb-vector-logo-${id}`; logo.setAttribute('aria-label', 'Maptoolkit'); logo.hidden = true;
+    container.append(logo); L.DomEvent.disableClickPropagation(logo);
+    const renderCredits = () => {
+        credits.dataset.provider = basemap.id;
+        credits.replaceChildren(...(basemap === MAPTOOLKIT_BASEMAP
+            ? ['© ', creditLink('https://www.maptoolkit.com/copyright/', 'Maptoolkit'), ' © ', creditLink('https://www.openstreetmap.org/copyright', 'Openstreetmap')]
+            : [creditLink('https://openfreemap.org', 'OpenFreeMap'), ' © ', creditLink('https://openmaptiles.org', 'OpenMapTiles'), ', data from ', creditLink('https://www.openstreetmap.org/copyright', 'OpenStreetMap')]));
+    };
+    renderCredits();
     credits.hidden = true; container.append(credits);
     L.DomEvent.disableClickPropagation(credits);
+    const creditResize = new win.ResizeObserver(() => {
+        if (!credits.hidden) container.style.setProperty('--bpb-vector-credit-height', `${credits.offsetHeight}px`);
+    });
+    creditResize.observe(credits);
     const pickerKey = event => event.stopPropagation();
     // Some native shells place the picker inside Leaflet's keyboard target.
     // Arrow keys belong to that picker while it has focus, not to map panning.
@@ -48,20 +60,24 @@ export function bindVectorMap(win, map, select) {
     };
     const cooldown = () => {
         win.clearTimeout(retryTimer);
-        const until = readRetryAt(retryAt);
+        const until = readRetryAt(cooldowns.get(basemap.id));
         retry.setAttribute('aria-disabled', String(!!until));
-        message.textContent = until ? `OpenFreeMap is busy. Retry after ${new Date(until).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.` : 'Vector map unavailable.';
+        message.textContent = until ? `${basemap.provider} is busy. Retry after ${new Date(until).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.` : 'Vector map unavailable.';
         if (until) retryTimer = win.setTimeout(cooldown, until - Date.now());
     };
     const restore = () => {
         for (const item of native.splice(0)) if (!map.hasLayer(item)) map.addLayer(item);
-        if (attributionReservation) { attributionReservation.element.style.minHeight = attributionReservation.minHeight; attributionReservation = null; }
-        credits.hidden = true;
+        if (attributionReservation) {
+            attributionReservation.element.style.minHeight = attributionReservation.minHeight;
+            attributionReservation.element.style.visibility = attributionReservation.visibility;
+            attributionReservation = null;
+        }
+        credits.hidden = true; logo.hidden = true;
     };
     const holdNative = () => {
         const attribution = map.attributionControl?.getContainer();
         if (attribution && !attributionReservation) {
-            attributionReservation = { element: attribution, minHeight: attribution.style.minHeight };
+            attributionReservation = { element: attribution, minHeight: attribution.style.minHeight, visibility: attribution.style.visibility };
             attribution.style.minHeight = `${attribution.offsetHeight}px`;
         }
         map.eachLayer(item => {
@@ -72,6 +88,8 @@ export function bindVectorMap(win, map, select) {
         // Credits wrap independently of Leaflet's bottom-right control stack.
         // The zoom buttons retain their native position even on narrow maps.
         credits.hidden = false;
+        logo.hidden = basemap !== MAPTOOLKIT_BASEMAP;
+        if (attribution && basemap === MAPTOOLKIT_BASEMAP) attribution.style.visibility = 'hidden';
     };
     const VectorLayer = L.Layer.extend({
         options: { bpbVector: true },
@@ -110,17 +128,21 @@ export function bindVectorMap(win, map, select) {
         if (layer) map.removeLayer(layer);
         layer = null; restore(); status.hidden = true; select.removeAttribute('aria-busy');
     };
-    const start = (retrying = false) => { replacing = true; stop(); replacing = false; paused = false; pending(retrying); layer = new VectorLayer().addTo(map); };
+    const start = (retrying = false, selected = basemap) => {
+        replacing = true; stop(); replacing = false; basemap = selected; retry.dataset.bpbVectorBasemap = basemap.id; renderCredits();
+        paused = false; pending(retrying); layer = new VectorLayer().addTo(map);
+    };
     const change = event => {
-        if (select.value === VECTOR_BASEMAP.code) {
+        const selected = vectorBasemap(select.value);
+        if (selected) {
             // Peakbagger's switch has no such code. Do not let it remove its
             // native basemap or serialize an unsupported layer into its links.
             event.stopImmediatePropagation();
             if (!event.isTrusted) { if (!layer) select.value = previous; return; }
-            start();
+            start(false, selected);
         } else { stop(); previous = select.value; }
     };
-    const retryClick = event => { if (event.isTrusted && !readRetryAt(retryAt) && retry.getAttribute('aria-disabled') !== 'true') { select.value = VECTOR_BASEMAP.code; start(true); } };
+    const retryClick = event => { if (event.isTrusted && !readRetryAt(cooldowns.get(basemap.id)) && retry.getAttribute('aria-disabled') !== 'true') { select.value = basemap.code; start(true); } };
     const receive = event => {
         const data = event.data;
         if (event.source !== win || event.origin !== win.location.origin || data?.[VECTOR_MESSAGE] !== true
@@ -129,7 +151,7 @@ export function bindVectorMap(win, map, select) {
             layer.element.style.opacity = '1'; holdNative(); status.hidden = true; select.removeAttribute('aria-busy');
             if (doc.activeElement === retry) select.focus({ preventScroll: true });
         } else if (data.type === 'error') {
-            retryAt = Math.max(retryAt, readRetryAt(data.retryAt) || 0);
+            cooldowns.set(basemap.id, Math.max(cooldowns.get(basemap.id) || 0, readRetryAt(data.retryAt) || 0));
             stop(); select.value = previous; status.hidden = false; retry.hidden = false; dismiss.hidden = false; cooldown();
         }
     };
@@ -155,8 +177,9 @@ export function bindVectorMap(win, map, select) {
     const dispose = () => {
         if (disposed) return; disposed = true;
         win.clearTimeout(retryTimer);
-        stop(); if (select.value === VECTOR_BASEMAP.code) select.value = previous;
-        option.remove(); status.remove(); credits.remove();
+        stop(); if (vectorBasemap(select.value)) select.value = previous;
+        for (const option of options) option.remove(); status.remove(); credits.remove(); logo.remove(); creditResize.disconnect();
+        container.style.removeProperty('--bpb-vector-credit-height');
         if (select.style.minWidth === reservedPickerWidth) select.style.minWidth = previousMinWidth;
         if (previousId === undefined) delete select.dataset.bpbVectorMap; else select.dataset.bpbVectorMap = previousId;
         select.removeEventListener('change', change, true); retry.removeEventListener('click', retryClick); win.removeEventListener('message', receive);

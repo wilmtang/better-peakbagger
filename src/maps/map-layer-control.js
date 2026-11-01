@@ -17,7 +17,7 @@ const LAND_GUIDANCE = {
 
 // Presentation only. The owner supplies validated state and performs all I/O.
 export function createMapLayerControl({ document: doc, onToggle = () => {}, onOpacity = () => {},
-    onCommit = () => {}, onLandTypes = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {} }) {
+    onCommit = () => {}, onLandTypes = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {}, getFooterInset = () => 0 }) {
     const win = doc.defaultView;
     const node = (tag, className, text) => {
         const element = doc.createElement(tag);
@@ -170,7 +170,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         panel.style.width = `${Math.min(232, width - 16)}px`;
         panel.style.left = `${Math.min(0, width - 8 - left - Math.min(232, width - 16))}px`;
         const panelTop = Number.parseFloat(win.getComputedStyle(panel).top) || 38;
-        panel.style.maxHeight = `${Math.max(40, height - Math.max(8, viewportTop) - panelTop - 8)}px`;
+        const inset = getFooterInset();
+        const bottom = Number.isFinite(inset) && inset > 0 ? Math.min(height, rect.bottom - win.scrollY - inset) : height;
+        panel.style.maxHeight = `${Math.max(40, bottom - Math.max(8, viewportTop) - panelTop - 8)}px`;
     };
     const paint = () => {
         if (disposed) return;

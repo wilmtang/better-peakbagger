@@ -4,7 +4,7 @@
 import * as maplibre from 'maplibre-gl';
 import { terrainStyle } from '../terrain/terrain-style.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
-import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView } from './vector-basemap.js';
+import { VECTOR_MESSAGE, readVectorView, vectorBasemap } from './vector-basemap.js';
 import { vectorMapAvailability } from './vector-map-availability.js';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.js';
 import { readRetryAt } from '../net/rate-limit.js';
@@ -37,7 +37,8 @@ window.addEventListener('message', async event => {
         || !data || data[VECTOR_MESSAGE] !== true || data.dir !== 'toFrame'
         || parentOrigin && event.origin !== parentOrigin) return;
     if (data.type === 'view' && attempted) { view = readVectorView(data.view) || view; update(); return; }
-    if (data.type !== 'init' || attempted || !readVectorView(data.view)) return;
+    const basemap = vectorBasemap(data.basemap);
+    if (data.type !== 'init' || attempted || !readVectorView(data.view) || !basemap) return;
     attempted = true; parentOrigin = event.origin; view = readVectorView(data.view);
     timer = setTimeout(() => { console.warn('Better Peakbagger vector map: Initialization timed out.'); fail(); }, 15000);
     try {
@@ -45,10 +46,10 @@ window.addEventListener('message', async event => {
         const reply = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_CONSUME', token: data.activation, action: 'init' });
         if (disposed) return;
         if (reply?.ok !== true) { fail(); return; }
-        const style = await terrainStyle.createVectorStyleLoader({ styleUrl: VECTOR_BASEMAP.styleUrl }).load();
+        const style = await terrainStyle.createVectorStyleLoader({ styleUrl: basemap.styleUrl, basemap }).load();
         if (disposed) return;
         maplibre.setWorkerUrl(ext.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
-        maplibre.addProtocol(VECTOR_PROTOCOL, createVectorMapRequest({ onRateLimit: fail }));
+        maplibre.addProtocol(VECTOR_PROTOCOL, createVectorMapRequest({ basemap, onRateLimit: fail }));
         map = new maplibre.Map({ container: document.getElementById('map'), style,
             center: [view.center[1], view.center[0]], zoom: view.zoom, minZoom: -1, maxZoom: 23,
             // Leaflet owns the camera, including world views and polar edges.
@@ -56,7 +57,7 @@ window.addEventListener('message', async event => {
             transformConstrain: (center, zoom) => ({ center, zoom }),
             interactive: false, attributionControl: false, fadeDuration: 0, zoomLevelsToOverscale: undefined,
             transformRequest(url) {
-                return { url: vectorRequestUrl(url), credentials: 'omit', referrerPolicy: 'no-referrer' };
+                return { url: vectorRequestUrl(url, basemap), credentials: 'omit', referrerPolicy: 'no-referrer' };
             },
         });
         map.on('error', error => { console.warn('Better Peakbagger vector map:', error.error?.message || 'Map resource unavailable.'); });

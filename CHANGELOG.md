@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Maptoolkit Hiking in 2D.** The native basemap picker offers a keyless hiking
+  map with contours, labels and relief alongside OSM Vector. Native routes and
+  markers remain interactive, provider limits retain their own cooldowns, and
+  the required logo and copyright links remain visible.
+
 - **Keep 2D vector maps aligned.** World zooms and polar views preserve the
   native map's camera so basemap features stay under the correct routes and peaks.
   Returning from 3D preserves a resumed vector map when an older load fails.

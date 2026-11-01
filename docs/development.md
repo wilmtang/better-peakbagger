@@ -419,6 +419,10 @@ real hidden GPU rendering with eight credit layouts and eight held-tile → HTTP
 403 → keyboard retry → rendered-map paths: 800/320px maps, both themes and
 normal/enlarged text. It checks focus, feedback visibility, control overlap,
 and action/map/following-content geometry within one CSS pixel. The vector
+Add `--maptoolkit` to `node scripts/verify-vector-map.mjs` to run the same
+matrix against Maptoolkit Hiking, including its packaged logo, clickable
+copyrights and overlay-menu clearance. `--maptoolkit --live` renders one live
+provider viewport; ordinary matrix runs use synthetic responses.
 `--recovery-only` selection isolates post-load tile outages, keyboard recovery,
 valid empty tiles and partial/cached availability. `--cooldown-only` covers
 style/tile 429 replies, a retained 120-second limit, pointer/keyboard/programmatic

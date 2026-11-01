@@ -12,11 +12,15 @@ import { createBrowserFixtureServer, waitForCondition, resolveFixtureFile } from
 import { snowMapDocument } from './verify-snow-map-fixture.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.js';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg))
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg))
     && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mjs [--firefox] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only]');
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only]');
+const basemap = args.includes('--maptoolkit') ? MAPTOOLKIT_BASEMAP : VECTOR_BASEMAP;
+const providerOrigin = basemap === MAPTOOLKIT_BASEMAP ? 'https://tiles.maptoolkit.org' : 'https://tiles.openfreemap.org';
+const chooseKeys = basemap === MAPTOOLKIT_BASEMAP ? 'Maptoolkit' : 'OSM';
 const firefoxMode = args.includes('--firefox'), preflight = args.includes('--preflight'), liveMode = args.includes('--live'), cameraOnly = args.includes('--camera-only');
 const recoveryOnly = args.includes('--recovery-only');
 const cooldownOnly = args.includes('--cooldown-only');
@@ -47,6 +51,7 @@ try {
             `--disable-extensions-except=${path.join(root, 'dist')}`, `--load-extension=${path.join(root, 'dist')}`],
     });
     resources.defer('vector browser', () => context.close());
+    await context.addInitScript(code => { window.vectorFixtureCode = code; }, basemap.code);
     const page = await context.newPage(), errors = [], requests = [];
     failurePage = page;
     page.on('pageerror', error => errors.push(error.message));
@@ -56,7 +61,7 @@ try {
     failureContext = () => ({ mode, partialUrl, lastRequests: requests.slice(-12) });
     const release = () => { for (const done of held) done(); held.clear(); };
     resources.defer('held vector styles', release);
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWPYvHnzfwAHNwL9GPw68wAAAABJRU5ErkJggg==', 'base64');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPYcWDLfwAHjAMsIXX3PwAAAABJRU5ErkJggg==', 'base64');
     await context.route('**/vector-native/**', route => route.fulfill({ contentType: 'image/png', body: png }));
     const geographicPoints = [[5, 90], [75, 5], [-75, 5], [5, 5], [46.851731, -121.760395]];
     const tile = url => {
@@ -70,27 +75,30 @@ try {
         return Buffer.from(fromGeojsonVt({ land: { features: [{ type: 3, geometry: [[[0, 0], [4096, 0], [4096, 4096], [0, 4096], [0, 0]]], tags: {} }] }, probes: { features } }, { version: 2, extent: 4096 }));
     };
     const emptyTile = Buffer.from(fromGeojsonVt({ land: { features: [] }, probes: { features: [] } }, { version: 2, extent: 4096 }));
-    const style = { version: 8, sources: { fixture: { type: 'vector', url: 'https://tiles.openfreemap.org/vector.json' } }, layers: [
+    const style = { version: 8, sources: { fixture: { type: 'vector', url: `${providerOrigin}/vector.json` } }, layers: [
         { id: 'background', type: 'background', paint: { 'background-color': '#d5dec9' } },
         { id: 'land', type: 'fill', source: 'fixture', 'source-layer': 'land', paint: { 'fill-color': '#c4ddac' } },
         { id: 'probes', type: 'circle', source: 'fixture', 'source-layer': 'probes', paint: { 'circle-radius': 12, 'circle-color': '#1e64d2' } },
     ] };
-    await context.route('https://tiles.openfreemap.org/**', async route => {
+    if (basemap === MAPTOOLKIT_BASEMAP) style.sprite = [{ id: 'sdf', url: 'https://icons.maptoolkit.org/sprite' }, { id: 'nature', url: 'https://icons.maptoolkit.org/nature' }];
+    await context.route(url => basemap.origins.some(origin => url.origin === origin), async route => {
         const url = route.request().url(); requests.push(url);
         assert.equal(route.request().headers().cookie, undefined); assert.equal(route.request().headers().referer, undefined);
         if (liveMode) return route.continue();
-        if (url.endsWith('/styles/liberty') && mode === 'hold') await new Promise(resolve => held.add(resolve));
+        const isStyle = url === basemap.styleUrl;
+        if (isStyle && mode === 'hold') await new Promise(resolve => held.add(resolve));
+        if (url.startsWith('https://icons.maptoolkit.org/')) return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: url.endsWith('.png') ? 'image/png' : 'application/json', body: url.endsWith('.png') ? png : '{}' });
         const metadata = url.endsWith('/vector.json');
         if (mode === 'partial' && url.endsWith('.pbf')) partialUrl ??= url;
         const tileFailed = url.endsWith('.pbf') && (mode === 'tile-error' || mode === 'partial' && url === partialUrl);
-        const limited = mode === 'style-limit' && url.endsWith('/styles/liberty') || mode === 'tile-limit' && url.endsWith('.pbf');
+        const limited = mode === 'style-limit' && isStyle || mode === 'tile-limit' && url.endsWith('.pbf');
         if (tileFailed) tileFailures++;
         try {
-            await route.fulfill({ status: limited ? 429 : tileFailed || mode === 'error' && url.endsWith('/styles/liberty') || mode === 'metadata-error' && metadata ? 503 : 200,
+            await route.fulfill({ status: limited ? 429 : tileFailed || mode === 'error' && isStyle || mode === 'metadata-error' && metadata ? 503 : 200,
                 headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store', ...(limited ? { 'retry-after': retrySeconds, 'access-control-expose-headers': 'Retry-After' } : {}) },
                 contentType: url.endsWith('.pbf') ? 'application/x-protobuf' : 'application/json',
                 body: url.endsWith('.pbf') ? mode === 'empty' ? emptyTile : tile(url) : JSON.stringify(metadata
-                    ? { tilejson: '3.0.0', tiles: ['https://tiles.openfreemap.org/fixture/{z}/{x}/{y}.pbf'], minzoom: 0, maxzoom: 14 } : style),
+                    ? { tilejson: '3.0.0', tiles: [`${providerOrigin}/fixture/{z}/{x}/{y}.pbf`], minzoom: 0, maxzoom: 14 } : style),
             });
         } catch { /* A deliberately cancelled frame no longer owns its request. */ }
     });
@@ -98,7 +106,7 @@ try {
         await context.route(`${origin}/dist/**`, async route => {
             const file = await resolveFixtureFile(new URL(route.request().url()).pathname);
             assert.ok(file, `Packaged Firefox fixture asset exists: ${route.request().url()}`);
-            await route.fulfill({ path: file, contentType: file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : 'text/javascript' });
+            await route.fulfill({ path: file, contentType: file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.png') ? 'image/png' : 'text/javascript' });
         });
         // Firefox exercises real Leaflet and hardware MapLibre; only extension
         // runtime/capability transport is stubbed. Chrome loads the real addon.
@@ -114,7 +122,7 @@ try {
             await page.addScriptTag({ path: path.join(root, 'dist/content/vector-map.js') });
         }
         await page.waitForFunction(() => !!window.mapsPlaceholder?.getSize);
-        if (!preflight) await page.locator('#selmap option[value="BPB_VECTOR"]').waitFor({ state: 'attached' });
+        if (!preflight) await page.locator(`#selmap option[value="${basemap.code}"]`).waitFor({ state: 'attached' });
         // The extension's first-run tab can become the active tab in this
         // disposable headless browser. Native picker defaults need page focus.
         await page.bringToFront();
@@ -141,9 +149,35 @@ try {
         gl.getExtension('WEBGL_lose_context')?.loseContext(); return result;
     });
     assert.ok(renderer && !/swiftshader|llvmpipe|software/i.test(renderer), `Hardware renderer required; got ${renderer}`);
+    const verifyCredits = async () => {
+        if (basemap !== MAPTOOLKIT_BASEMAP) return;
+        const result = await page.evaluate(async () => {
+            const logo = document.querySelector('.bpb-vector-maptoolkit-logo'), credits = document.querySelector('.bpb-vector-credits');
+            const image = new Image(); image.src = window.getComputedStyle(logo).backgroundImage.slice(5, -2); await image.decode();
+            const box = element => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+            return { logoHeight: logo.offsetHeight, imageWidth: image.naturalWidth, links: [...credits.querySelectorAll('a')].map(a => a.href),
+                logo: box(logo), credits: box(credits), map: box(document.getElementById('map')), zoom: box(document.querySelector('.leaflet-control-zoom')),
+                nativeVisibility: window.getComputedStyle(document.querySelector('.leaflet-control-attribution:not(.bpb-vector-credits)')).visibility };
+        });
+        assert.ok(result.logoHeight >= 24 && result.imageWidth > 0, 'Official logo is loaded at its required minimum size');
+        assert.deepEqual(result.links, ['https://www.maptoolkit.com/copyright/', 'https://www.openstreetmap.org/copyright']);
+        for (const name of ['logo', 'credits']) {
+            const box = result[name]; assert.ok(box.left >= result.map.left - 1 && box.right <= result.map.right + 1 && box.top >= result.map.top - 1 && box.bottom <= result.map.bottom + 1, `${name} stays inside the map: ${JSON.stringify(result)}`);
+            assert.ok(box.right <= result.zoom.left || box.bottom <= result.zoom.top || box.left >= result.zoom.right || box.top >= result.zoom.bottom, `${name} does not cover native zoom controls: ${JSON.stringify(result)}`);
+        }
+        assert.ok(result.logo.bottom <= result.credits.top, 'Logo and copyright do not overlap');
+        assert.equal(result.nativeVisibility, 'hidden', 'Native credits reserve their layout without covering provider credits');
+        const trigger = page.locator('.bpb-layers-trigger');
+        if (await trigger.count()) {
+            await trigger.click(); const menu = page.locator('.bpb-layers-panel'); await menu.waitFor({ state: 'visible' });
+            const panel = await menu.boundingBox(), logo = await page.locator('.bpb-vector-maptoolkit-logo').boundingBox();
+            assert.ok(panel.y + panel.height <= logo.y - 4, 'Open overlays cannot cover the provider logo');
+            await trigger.click(); await page.locator('#selmap').focus();
+        }
+    };
     const verifyCameraAlignment = async () => {
         mode = 'ready'; await open();
-        await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
+        await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
         const cameras = [
             { center: [0, 0], zoom: 0, point: [5, 90] },
@@ -182,7 +216,7 @@ try {
             const actual = await geometry(); assert.equal(actual.scroll, baseline.scroll);
             actual.boxes.forEach((rect, index) => rect.forEach((value, dimension) => assert.ok(Math.abs(value - baseline.boxes[index][dimension]) <= 1, `Recovery shifted box ${index}/${dimension}`)));
         };
-        const activate = async () => { await page.locator('#selmap').focus(); await page.keyboard.type('OSM'); await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1'); };
+        const activate = async () => { await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys); await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1'); };
         const screenshot = async name => { if (process.env.BPB_VECTOR_SCREENSHOTS) { await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `${firefoxMode ? 'firefox' : 'chrome'}-recovery-${name}.png`) }); } };
         let cases = 0;
         for (const [width, theme, zoom] of [[1280, 'light', 1], [375, 'dark', 1], [1280, 'light', 2]]) {
@@ -217,7 +251,7 @@ try {
         assert.equal(await page.locator('.bpb-vector-slot').evaluate(element => element.style.opacity), '1', 'Cached empty tiles remain usable beside failures'); cases++;
         partialUrl = null; mode = 'partial'; await open(); await activate();
         assert.ok(partialUrl); assert.equal(await page.locator('.bpb-vector-status').evaluate(element => element.hidden), true, 'Partial tile loss preserves usable output'); cases++;
-        mode = 'metadata-error'; await open(); await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
+        mode = 'metadata-error'; await open(); await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
         await page.locator('.bpb-vector-status button[data-bpb-vector-map]').waitFor({ state: 'visible', timeout: 6000 });
         assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true, 'Failed TileJSON is unavailable, not a valid empty viewport'); cases++;
         return cases;
@@ -227,11 +261,11 @@ try {
         for (const [width, theme, zoom, limit] of [[1280, 'light', 1, 'style-limit'], [375, 'dark', 1, 'tile-limit'], [1280, 'light', 2, 'style-limit']]) {
             await page.setViewportSize({ width, height: 800 }); mode = limit; retrySeconds = cases === 0 ? '120' : '3'; await open();
             await page.evaluate(value => { document.documentElement.dataset.bpbTheme = value.theme; document.body.style.zoom = value.zoom; mapsPlaceholder.invalidateSize(); }, { theme, zoom });
-            await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
+            await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
             const retry = page.locator('.bpb-vector-status button[data-bpb-vector-map]'); await retry.waitFor({ state: 'visible' });
             await page.waitForFunction(() => !document.querySelector('.bpb-vector-slot iframe'));
             assert.equal(await retry.getAttribute('aria-disabled'), 'true', 'Retry-After must survive renderer disposal');
-            assert.match(await page.locator('.bpb-vector-status').innerText(), /OpenFreeMap is busy\. Retry after/);
+            assert.match(await page.locator('.bpb-vector-status').innerText(), new RegExp(`${basemap.provider} is busy\\. Retry after`));
             assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true);
             await retry.focus(); const bounds = await retry.boundingBox();
             const geometry = () => page.evaluate(() => ({ scroll: scrollY, boxes: ['h1', '#map', '#selmap', '#following', '.leaflet-control-zoom'].map(selector => {
@@ -274,8 +308,9 @@ try {
     else if (recoveryOnly) summary = { verification: 'vector-recovery', cases: await verifyProviderRecovery(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (cooldownOnly) summary = { verification: 'vector-cooldown', cases: await verifyProviderCooldown(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (liveMode) {
-        await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
+        await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
+        await verifyCredits();
         if (process.env.BPB_VECTOR_SCREENSHOTS) {
             await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true });
             await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, 'vector-live.png') });
@@ -292,11 +327,11 @@ try {
             const actual = await geometry(); assert.equal(actual.scroll, baseline.scroll);
             actual.boxes.forEach((rect, index) => rect.forEach((value, dimension) => assert.ok(Math.abs(value - baseline.boxes[index][dimension]) <= 1, `Layout changed at box ${index}, dimension ${dimension}: ${JSON.stringify({ actual, baseline })}`)));
         };
-        const chooseVector = async () => { await page.locator('#selmap').focus(); await page.keyboard.type('OSM'); };
+        const chooseVector = async () => { await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys); };
         const chooseNative = async () => { await page.locator('#selmap').selectOption('L_FIX'); };
         const ready = () => page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
         const shots = process.env.BPB_VECTOR_SCREENSHOTS;
-        const screenshot = async name => { if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, `${firefoxMode ? 'firefox' : 'chrome'}-${name}.png`) }); } };
+        const screenshot = async name => { if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, `${firefoxMode ? 'firefox' : 'chrome'}-${name}.png`), fullPage: basemap === MAPTOOLKIT_BASEMAP }); } };
         let cases = 0;
         for (const [width, theme, zoom] of [[1280, 'light', 1], [375, 'dark', 1], [1280, 'light', 2]]) {
             // Each viewport is a separate document. This also resets the native
@@ -306,17 +341,18 @@ try {
             await page.setViewportSize({ width, height: 800 });
             await page.evaluate(({ theme, zoom }) => { document.documentElement.dataset.bpbTheme = theme; document.body.style.zoom = zoom; mapsPlaceholder.invalidateSize(); }, { theme, zoom });
             const baseline = await geometry(); assert.equal(requests.length, 0, 'No vector traffic before selection');
-            await page.evaluate(() => { const select = document.getElementById('selmap'); select.value = 'BPB_VECTOR'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+            await page.evaluate(() => { const select = document.getElementById('selmap'); select.value = window.vectorFixtureCode; select.dispatchEvent(new Event('change', { bubbles: true })); });
             assert.equal(requests.length, 0, 'Forged selection cannot authorize provider requests');
             await chooseVector();
             await page.waitForFunction(() => document.getElementById('selmap').getAttribute('aria-busy') === 'true', null, { timeout: 10000 });
             await waitForCondition(() => held.size, { description: 'held vector style' });
             await stable(baseline); await screenshot(`${width}-${zoom}-pending`);
             mode = 'ready'; release(); await ready(); await stable(baseline);
+            await verifyCredits();
             assert.equal(await page.locator('#selmap').evaluate(element => document.activeElement === element), true, 'Selection retains keyboard focus');
             assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativePeak)), true, 'Native marker survives');
             assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), false, 'Hidden native raster stops requesting tiles');
-            assert.equal(await page.evaluate(() => window.nativeSelections.includes('BPB_VECTOR')), false, 'Vector choice bypasses native MapChange');
+            assert.equal(await page.evaluate(() => window.nativeSelections.includes(window.vectorFixtureCode)), false, 'Vector choice bypasses native MapChange');
             await page.locator('.leaflet-interactive').first().click(); await page.locator('.leaflet-popup').waitFor();
             await page.evaluate(() => mapsPlaceholder.closePopup());
             await screenshot(`${width}-${zoom}-ready`);
@@ -347,12 +383,13 @@ try {
             await page.evaluate(() => mapsPlaceholder.panBy([60, 20], { animate: false })); await ready();
             await chooseNative(); await page.waitForFunction(() => !document.querySelector('.bpb-vector-slot'));
             assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true, 'Native raster restored');
+            assert.equal(await page.locator('.leaflet-control-attribution:not(.bpb-vector-credits)').evaluate(element => element.style.visibility), '', 'Native attribution visibility is restored');
             requests.length = 0; mode = 'hold'; cases++;
         }
         await open();
         const baseline = await geometry(); mode = 'error'; await chooseVector();
         await page.locator('.bpb-vector-status button[data-bpb-vector-map]').waitFor({ state: 'visible' }); await stable(baseline); await screenshot('error');
-        assert.notEqual(await page.locator('#selmap').inputValue(), 'BPB_VECTOR');
+        assert.notEqual(await page.locator('#selmap').inputValue(), basemap.code);
         assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true);
         const retryBounds = await page.locator('.bpb-vector-status button[data-bpb-vector-map]').boundingBox();
         mode = 'hold'; await page.locator('.bpb-vector-status button[data-bpb-vector-map]').focus(); await page.keyboard.press('Enter');
@@ -375,7 +412,7 @@ try {
         const recoveryCases = await verifyProviderRecovery();
         const cooldownCases = await verifyProviderCooldown();
         assert.deepEqual(errors, []);
-        summary = { verification: '2d-vector-map', hidden: true, browser: context.browser().version(), renderer,
+        summary = { verification: '2d-vector-map', hidden: true, browser: context.browser().version(), renderer, provider: basemap.provider,
             cases: cases + 3 + cameraCases + recoveryCases + cooldownCases, viewports: '1280/375 × 800, light/dark, 200% CSS zoom', realExtension: !firefoxMode,
             syntheticProvider: true, loadingSuccessErrorRetryCancellation: true, stableGeometry: true, nativeMarkerInteraction: true };
     }

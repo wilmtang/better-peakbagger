@@ -31,7 +31,7 @@ test('initial partial failure waits for usable tiles after the one-time load eve
     try {
         vm.runInContext(outputFiles[0].text, dom.getInternalVMContext());
         win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data: {
-            __bpbVectorMap: true, dir: 'toFrame', type: 'init', activation: 'opaque', view: { center: [0, 0], zoom: 3 },
+            __bpbVectorMap: true, dir: 'toFrame', type: 'init', activation: 'opaque', basemap: 'vector', view: { center: [0, 0], zoom: 3 },
         } }));
         await new Promise(resolve => setImmediate(resolve)); assert.ok(win.renderer);
         // MapLibre's source-error flag can satisfy Map.loaded() while other

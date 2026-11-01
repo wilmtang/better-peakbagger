@@ -168,6 +168,14 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
     };
     const changed = opacityId => { touched = true; revision++; apply(opacityId); };
     const control = createMapLayerControl({ document: doc,
+        getFooterInset() {
+            if (frameMode) return 0;
+            const container = binding?.map.getContainer?.(), logo = container?.querySelector('.bpb-vector-maptoolkit-logo:not([hidden])');
+            if (!logo) return 0;
+            const bounds = container.getBoundingClientRect(), footer = logo.getBoundingClientRect();
+            const scale = binding.frame && bounds.height > 0 ? binding.frame.getBoundingClientRect().height / bounds.height : 1;
+            return (bounds.bottom - footer.top + 8) * scale;
+        },
         onToggle(id, enabled) {
             if (coverage?.[id] === false) { paint(); return; }
             state[id].enabled = enabled;

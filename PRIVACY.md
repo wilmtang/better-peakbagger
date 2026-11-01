@@ -650,6 +650,18 @@ unloading the map or navigating away removes it and stops requests. This choice
 does not require 3D enablement or contact Mapterhorn; only normal browser HTTP
 caching applies, with no extension-managed vector tile persistence.
 
+**Maptoolkit Hiking** is another optional 2D basemap. A trusted selection sends
+direct style, vector/raster tile, glyph and sprite requests to
+`styles.maptoolkit.org`, `tiles.maptoolkit.org`, `fonts.maptoolkit.org` and
+`icons.maptoolkit.org`. Its elevation shading also requests tiles from
+`tiles.mapterhorn.com`, even in 2D. Those services receive the viewed area, IP
+address and normal request metadata, with cookies and referrers omitted.
+Routes, GPX and Peakbagger identity are not passed to the renderer. The logo is
+packaged locally. Normal browser caching applies; the extension keeps no
+offline Maptoolkit archive or durable tile cache. See the provider's
+[privacy policy](https://www.maptoolkit.org/privacy) and
+[Community Terms](https://www.maptoolkit.org/tos).
+
 3D is off by default. The first click shows a provider and privacy confirmation;
 declining keeps it off.
 
