@@ -246,6 +246,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let vectorCooldownTimer = null;
     let vectorChoice = null, attributionControl = null, attributionProvider = null, maptoolkitLogo = null;
     let vectorSwapToken = 0;
+    const vectorRequests = new Set();
+    const cancelVectorRequests = () => { for (const controller of vectorRequests) controller.abort(); vectorRequests.clear(); };
     let vectorLayerIds = [];
     let vectorSourceIds = [];
     let vectorStyleResources = null;
@@ -372,6 +374,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const removeTerrain = () => {
+        cancelVectorRequests();
         clearTimeout(vectorCooldownTimer); vectorCooldownTimer = null;
         snowReveal.cancel();
         snowMarkers.clear(); snowStations = [];
@@ -1072,6 +1075,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         removeBasemapLayer();
         removeVectorBasemap();
         vectorSwapToken++;
+        cancelVectorRequests();
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
@@ -1968,13 +1972,25 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 }));
             terrainProtocolRegistered = true;
             maplibre.addProtocol(VECTOR_PROTOCOL, (parameters, controller) => {
-                const owner = map, basemap = vectorChoice;
+                const owner = map, basemap = vectorChoice, token = vectorSwapToken;
                 if (!basemap) return Promise.reject(Object.assign(new Error('Vector map removed.'), { name: 'AbortError' }));
+                const isCurrent = () => map === owner && vectorChoice === basemap && vectorSwapToken === token;
+                const obsolete = error => Object.assign(new Error('Vector map replaced.'), { name: 'AbortError',
+                    ...(error?.status === 429 ? { status: 429, retryAt: error.retryAt } : {}) });
+                vectorRequests.add(controller);
                 return createVectorMapRequest({ basemap, onRateLimit(error) {
                     vectorCooldowns.set(basemap.id, Math.max(vectorCooldowns.get(basemap.id) || 0, readRetryAt(error.retryAt) || Date.now() + 300000));
                     if (map !== owner || vectorChoice !== basemap) return;
                     swapBasemap(-1); showNotice(rateLimitMessage(basemap.provider, vectorCooldowns.get(basemap.id)));
-                } })(parameters, controller);
+                } })(parameters, controller).then(result => {
+                    if (!isCurrent()) throw obsolete();
+                    return result;
+                }, error => {
+                    // The limit callback already applies provider policy and
+                    // can itself replace the map. Never forward its late error
+                    // (or an old HTTP/parse outcome) into the replacement graph.
+                    throw isCurrent() ? error : obsolete(error);
+                }).finally(() => vectorRequests.delete(controller));
             });
             // Start at the live 2D camera when one was available; otherwise
             // route views frame the track and Peak pages center on their summit.
@@ -2034,7 +2050,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             // and no setup step may race ahead and leave the host on a spinner.
             terrainMap.on('error', event => {
                 if (map !== terrainMap) return;
-                if (event?.sourceId?.startsWith(VECTOR_PREFIX) && !vectorChoice) return;
+                if (event?.error?.name === 'AbortError') return;
+                if (event?.sourceId?.startsWith(VECTOR_PREFIX) && (!vectorChoice
+                    || !vectorInstalling && !vectorSourceIds.includes(event.sourceId))) return;
                 if (event?.error?.status === 429) {
                     const source = event.sourceId || '';
                     if (source.startsWith('bpb-overlay-')) {

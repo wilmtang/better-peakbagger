@@ -1706,13 +1706,13 @@ test('the extension-provided vector entry grafts the provider style under the ex
 test('Maptoolkit terrain preserves its mesh and route, restores named sprites and enforces provider cooldowns', async () => {
     const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
     const { window } = dom, maps = [], protocols = new Map(), calls = [];
-    let finishStyle, now = Date.now(); window.Date.now = () => now;
+    let finishStyle, rejectLate, now = Date.now(); window.Date.now = () => now;
     class MapStub {
-        constructor(options) { this.options = options; this.sources = new Map(Object.entries(options.style.sources)); this.layers = [...options.style.layers]; this.controls = []; this.sprites = []; maps.push(this); }
+        constructor(options) { this.options = options; this.sources = new Map(Object.entries(options.style.sources)); this.layers = [...options.style.layers]; this.controls = []; this.sprites = []; this.handlers = new Map(); maps.push(this); }
         addControl(control) { this.controls.push(control); const node = control.onAdd?.(this); if (node) this.options.container.append(node); }
         removeControl(control) { this.controls = this.controls.filter(item => item !== control); control.onRemove?.(); }
         once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
-        on() {} fitBounds() {} resize() {} remove() {} setPaintProperty() {}
+        on(type, callback) { this.handlers.set(type, callback); } fitBounds() {} resize() {} remove() {} setPaintProperty() {}
         getBounds() { return { getWest: () => -122, getSouth: () => 46, getEast: () => -121, getNorth: () => 47 }; }
         getZoom() { return 10; }
         addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
@@ -1730,6 +1730,7 @@ test('Maptoolkit terrain preserves its mesh and route, restores named sprites an
     const fetch = async url => {
         calls.push(url);
         if (url.endsWith('/hiking.json')) return new Promise(resolve => { finishStyle = () => resolve(reply(url, toolkitStyle)); });
+        if (url.endsWith('/late.pbf')) return new Promise((_resolve, reject) => { rejectLate = reject; });
         if (url.endsWith('.pbf')) return { status: 429, headers: new Headers({ 'retry-after': '120' }) };
         return reply(url, { version: 8, sources: {}, layers: [] });
     };
@@ -1746,6 +1747,16 @@ test('Maptoolkit terrain preserves its mesh and route, restores named sprites an
         assert.equal(map.getSource('bpb-vector:dem'), undefined, 'Unused provider elevation must not load beside the terrain mesh'); assert.deepEqual(map.sprites.map(item => item.id), ['sdf', 'nature']);
         assert.match(map.controls.find(item => item instanceof AttributionControl).options.customAttribution, /Maptoolkit/);
         const request = protocols.get('bpb-vector');
+        const originalSource = map.getSource('bpb-vector:mtk'); choose('maptoolkit'); await tick();
+        assert.equal(map.getSource('bpb-vector:mtk'), originalSource, 'Reselecting the active provider must not rebuild its source graph');
+        const controller = new AbortController();
+        const late = request({ url: 'bpb-vector://https://tiles.maptoolkit.org/late.pbf', type: 'arrayBuffer' }, controller);
+        const ignored = assert.rejects(late, error => error.name === 'AbortError');
+        choose('vector'); await tick(); assert.equal(controller.signal.aborted, true, 'A layer switch cancels the outgoing transport');
+        rejectLate(Object.assign(new Error('old provider failed'), { status: 503 })); await ignored;
+        map.handlers.get('error')({ sourceId: 'bpb-vector:mtk', error: Object.assign(new Error('cancelled'), { name: 'AbortError' }) });
+        assert.equal(framePicker(window).value, 'vector', 'An outgoing provider cannot roll the replacement back to terrain');
+        choose('maptoolkit'); await tick();
         await assert.rejects(request({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf', type: 'arrayBuffer' }, new AbortController()), error => error.status === 429);
         assert.equal(framePicker(window).value, 'terrain'); assert.equal(framePicker(window).querySelector('[value="maptoolkit"]').disabled, true);
         assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /Maptoolkit request limit/);

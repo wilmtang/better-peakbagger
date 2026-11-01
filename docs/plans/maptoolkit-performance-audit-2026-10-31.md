@@ -27,6 +27,11 @@ provider attribution, trusted activation, cancellation and rate-limit policy.
   `areTilesLoaded()` before showing any cartography, so a slow secondary tile
   holds the whole map behind a loading message. Show usable rendered coverage
   progressively and retain settled-viewport failure recovery.
+- **M5 — outgoing 3D errors can discard the replacement.** Provider protocol
+  results were tied to the live map but not its vector swap generation, and
+  any `bpb-vector:` source error could force terrain-only. A late HTTP failure
+  reproduced the missing ownership check. Ignore stale results/cancellation
+  and errors from removed sources while retaining provider cooldown policy.
 
 ## Fixed and verified
 
@@ -67,6 +72,14 @@ provider attribution, trusted activation, cancellation and rate-limit policy.
   The first-paint guard additionally requires vector coverage at the actual
   camera center: overscan or DEM tiles alone cannot prematurely hide the native
   map. Loaded empty/parent tiles remain valid.
+- M5: vector protocol work captures the map, provider and swap generation.
+  Switching aborts outgoing transports; stale success/failure becomes an
+  ignored cancellation, including the secondary error emitted after a handled
+  provider limit. Removed-source errors cannot discard the replacement. The
+  new late-HTTP regression failed before the fix with “old provider failed,”
+  then passed alongside socket-abort and source-identity assertions. All 38
+  terrain tests, build and targeted ESLint passed. The final hidden hardware
+  3D matrices passed ten Chrome cases and eight Firefox renderer cases.
 
 ## Intentionally not changed
 
