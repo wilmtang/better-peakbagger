@@ -1,5 +1,8 @@
 # Active plans
 
+- [Maptoolkit performance and picker audit — October 31](maptoolkit-performance-audit-2026-10-31.md)
+  — faithful native picker sizing, vector startup and layer-switching audit.
+
 - [Maptoolkit basemap integration — October 31](maptoolkit-basemap-2026-10-31.md)
   — implemented Hiking in native 2D and 3D in an isolated worktree; provider
   boundaries, attribution, live checks and explicit repository verification gaps.

@@ -10,14 +10,17 @@ export function bindVectorMap(win, map, select) {
     const id = win.crypto.randomUUID(), native = [], previousId = select.dataset.bpbVectorMap;
     const options = VECTOR_BASEMAPS.map(basemap => { const option = doc.createElement('option'); option.value = basemap.code; option.textContent = basemap.name; return option; });
     select.append(...options); select.dataset.bpbVectorMap = id;
-    const previousMinWidth = select.style.minWidth, pickerStyle = win.getComputedStyle(select);
+    const previousWidth = select.style.width, pickerStyle = win.getComputedStyle(select);
+    const surround = select.closest('#selboxdiv'), previousSurroundId = surround?.dataset.bpbVectorPicker;
+    if (surround) surround.dataset.bpbVectorPicker = id;
     const metrics = doc.createElement('canvas').getContext('2d');
     metrics.font = `${pickerStyle.fontStyle} ${pickerStyle.fontWeight} ${pickerStyle.fontSize} ${pickerStyle.fontFamily}`;
     // Firefox can defer the new option's intrinsic width until selection.
     // Reserve its label and native arrow before interaction, bounded to the map.
-    const pickerMinWidth = `min(${Math.ceil(Math.max(...VECTOR_BASEMAPS.map(item => metrics.measureText(item.name).width)) + 40)}px, calc(100vw - 20px))`;
-    select.style.minWidth = pickerMinWidth;
-    const reservedPickerWidth = select.style.minWidth;
+    // Size the native surround with its select. A min-width on the child alone
+    // overflows Peakbagger's fixed 170px wrapper and can hide the native arrow.
+    select.style.width = `${Math.ceil(Math.max(...[...select.options].map(item => metrics.measureText(item.textContent).width)) + 40)}px`;
+    const reservedPickerWidth = select.style.width;
     let previous = select.value, layer = null, paused = false, replacing = false, disposed = false, attributionReservation = null, center, size, zoom;
     let basemap = VECTOR_BASEMAP, retryTimer = null;
     const cooldowns = new Map();
@@ -182,7 +185,11 @@ export function bindVectorMap(win, map, select) {
         stop(); if (vectorBasemap(select.value)) select.value = previous;
         for (const option of options) option.remove(); status.remove(); credits.remove(); logo.remove(); creditResize.disconnect();
         container.style.removeProperty('--bpb-vector-credit-height');
-        if (select.style.minWidth === reservedPickerWidth) select.style.minWidth = previousMinWidth;
+        if (select.style.width === reservedPickerWidth) select.style.width = previousWidth;
+        if (surround?.dataset.bpbVectorPicker === id) {
+            if (previousSurroundId === undefined) delete surround.dataset.bpbVectorPicker;
+            else surround.dataset.bpbVectorPicker = previousSurroundId;
+        }
         if (previousId === undefined) delete select.dataset.bpbVectorMap; else select.dataset.bpbVectorMap = previousId;
         select.removeEventListener('change', change, true); retry.removeEventListener('click', retryClick); win.removeEventListener('message', receive);
         select.removeEventListener('keydown', pickerKey);

@@ -15,11 +15,11 @@ import { createResourceStack } from './resource-stack.mjs';
 import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.js';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg))
-    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only]');
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only'].includes(arg))
+    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only'].includes(arg)).length <= 1,
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only | --layout-only]');
 const terrainMode = args.includes('--terrain');
-assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
+assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only', '--layout-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
 const instrumentMap = source => {
     assert.ok(source.includes('startTerrainFrame(maplibre);'), 'Packaged frame exposes its expected startup call');
     return source.replace('startTerrainFrame(maplibre);', `startTerrainFrame({ ...maplibre, Map: new Proxy(maplibre.Map, {
@@ -39,8 +39,10 @@ try {
     resources.defer('vector profile', () => rm(profile, { recursive: true, force: true }));
     let html = await snowMapDocument();
     html = html.replace('html,body,#map{height:100%;margin:0}', 'html,body{margin:0}#map{height:440px}h1,p{margin:12px;font:16px Arial}')
+        .replace('#selmap{position:absolute;top:10px;right:10px;z-index:1000}', '#map{position:relative}#selboxdiv{font:11px Tahoma,Verdana,Arial Narrow;padding:5px;top:10px;right:10px;width:170px;position:absolute;z-index:1000;background:white;border:2px solid black}')
         .replace('<body><div id="map"></div>', '<body><h1>Native map heading</h1><div id="map">')
-        .replace('</select>', '<option value="L_SECOND">Other native map</option></select></div><p id="following">Following native content</p>')
+        .replace('<select id="selmap">', '<div id="selboxdiv"><select id="selmap" aria-label="Base map">')
+        .replace('</select>', '<option value="L_SECOND">Other native map</option></select></div></div><p id="following">Following native content</p>')
         .replace('</script></body>', `window.nativeChanges=0;
         window.nativeSelections=[];
         document.getElementById('selmap').onchange=event=>{window.nativeChanges++;window.nativeSelections.push(event.target.value);};
@@ -188,6 +190,31 @@ try {
         gl.getExtension('WEBGL_lose_context')?.loseContext(); return result;
     });
     assert.ok(renderer && !/swiftshader|llvmpipe|software/i.test(renderer), `Hardware renderer required; got ${renderer}`);
+    const verifyPicker = async () => {
+        const boxes = await page.evaluate(() => ['#map', '#selboxdiv', '#selmap'].map(selector => {
+            const r = document.querySelector(selector).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        }));
+        const [map, surround, picker] = boxes;
+        assert.ok(picker.left >= surround.left && picker.right <= surround.right && picker.top >= surround.top && picker.bottom <= surround.bottom,
+            `Basemap picker must fit its native surround: ${JSON.stringify(boxes)}`);
+        assert.ok(surround.left >= map.left && surround.right <= map.right, `Picker surround must fit the map: ${JSON.stringify(boxes)}`);
+    };
+    const verifyPickerLayouts = async () => {
+        let cases = 0;
+        for (const [width, zoom] of [[1280, 1], [375, 1], [1280, 2], [375, 2]]) {
+            await page.setViewportSize({ width, height: 800 }); await open();
+            await page.evaluate(zoom => { document.body.style.zoom = zoom; mapsPlaceholder.invalidateSize(); }, zoom);
+            for (const theme of ['light', 'dark']) {
+                await page.evaluate(theme => { document.documentElement.dataset.bpbTheme = theme; }, theme);
+                await verifyPicker(); cases++;
+                if (process.env.BPB_VECTOR_SCREENSHOTS) {
+                    await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true });
+                    await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `${firefoxMode ? 'firefox' : 'chrome'}-picker-${width}-${zoom}-${theme}.png`) });
+                }
+            }
+        }
+        return cases;
+    };
     const verifyCredits = async () => {
         if (basemap !== MAPTOOLKIT_BASEMAP) return;
         const result = await page.evaluate(async () => {
@@ -465,6 +492,7 @@ try {
         return { verification: liveMode ? 'terrain-vector-live' : 'terrain-vector', provider: basemap.provider, cases, renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode, instrumentedMapOnly: true };
     };
     if (terrainMode) summary = await verifyTerrain();
+    else if (args.includes('--layout-only')) summary = { verification: 'vector-picker-layout', cases: await verifyPickerLayouts(), renderer, browser: context.browser().version(), hidden: true };
     else if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
     else if (cameraOnly) summary = { verification: 'vector-camera', cases: await verifyCameraAlignment(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (recoveryOnly) summary = { verification: 'vector-recovery', cases: await verifyProviderRecovery(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
@@ -503,6 +531,7 @@ try {
             await page.setViewportSize({ width, height: 800 });
             await page.evaluate(({ theme, zoom }) => { document.documentElement.dataset.bpbTheme = theme; document.body.style.zoom = zoom; mapsPlaceholder.invalidateSize(); }, { theme, zoom });
             const baseline = await geometry(); assert.equal(requests.length, 0, 'No vector traffic before selection');
+            await verifyPicker();
             await page.evaluate(() => { const select = document.getElementById('selmap'); select.value = window.vectorFixtureCode; select.dispatchEvent(new Event('change', { bubbles: true })); });
             assert.equal(requests.length, 0, 'Forged selection cannot authorize provider requests');
             await chooseVector();
