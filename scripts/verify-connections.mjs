@@ -53,7 +53,8 @@ try {
             window.fixture = { calls: 0, finish: null, requests: 0, authReads: 0, garminStatusReads: 0, garminStatusError: false,
                 githubPermissionGranted: enabled, githubBegins: 0,
                 setGarminConnected: value => { connected.garmin = value; },
-                notifyGithub: () => listeners.forEach(listener => listener({ bpbGithubAuth: { newValue: null } }, 'local')),
+                setGithubConnected: value => { connected.github = value; },
+                notifyGithub: () => listeners.forEach(listener => listener({ bpbGithubAuth: { newValue: connected.github ? { account: { login: repo.owner } } : null } }, 'local')),
                 setGarminEnabled: value => { prefs.enableGarminInbox = value; listeners.forEach(listener => listener({ bpbSettings: { newValue: prefs } }, 'sync')); } };
             window.chrome = {
                 storage: { sync: area, local: area, session: area, onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
@@ -103,7 +104,7 @@ try {
             return { scroll: document.querySelector('.content').scrollTop, action: action.hidden ? null : rect(action),
                 boxes: [rect(action.parentElement), ...selectors.map(selector => rect(document.querySelector(selector)))] };
         }, service);
-        const stable = (before, after, label, { backupDisconnected = false } = {}) => {
+        const stable = (before, after, label, { backupStateChanged = false } = {}) => {
             assert.equal(after.scroll, before.scroll, `${label}: reading position moved`);
             if (before.action && after.action) for (const key of Object.keys(before.action)) {
                 assert(Math.abs(before.action[key] - after.action[key]) <= 1, `${label}: action ${key} shifted`);
@@ -112,7 +113,7 @@ try {
                 // Ending the shared GitHub connection deliberately replaces
                 // connected backup options with setup guidance. Its heading
                 // stays anchored; that following panel may shrink once.
-                if (backupDisconnected && index === 3 && key === 'height') return;
+                if (backupStateChanged && index === 3 && key === 'height') return;
                 assert(Math.abs(box[key] - after.boxes[index][key]) <= 1, `${label}: box ${index}.${key} shifted: ${JSON.stringify({ before, after })}`);
             }));
         };
@@ -149,7 +150,7 @@ try {
                 await page.evaluate(() => window.fixture.finish(true));
                 await action.waitFor({ state: 'hidden' });
                 assert.equal(await action.evaluate(button => getComputedStyle(button).display), 'none', label);
-                stable(before, await geometry(service), `${label}/success`, { backupDisconnected: service.name === 'github' });
+                stable(before, await geometry(service), `${label}/success`, { backupStateChanged: service.name === 'github' });
                 if (captureStates) await capture('success');
                 assert.equal(await page.evaluate(() => window.fixture.requests), 0, label);
                 assert(await page.evaluate(() => document.querySelector('.content').scrollWidth <= document.querySelector('.content').clientWidth + 1), `${label}: horizontal overflow`);
@@ -172,6 +173,13 @@ try {
                     });
                     await page.waitForFunction(reads => window.fixture.authReads > reads, reads);
                     assert(await page.evaluate(() => document.activeElement === window.fixture.focused), `${label}: credential notification lost focus`);
+                    const removed = await geometry(service);
+                    await page.evaluate(() => { window.fixture.setGithubConnected(true); window.fixture.notifyGithub(); });
+                    await action.waitFor({ state: 'visible' });
+                    assert.doesNotMatch(await page.locator(service.status).textContent(), /^Disconnected/);
+                    stable(removed, await geometry(service), `${label}/external-reconnect`, { backupStateChanged: true });
+                    assert(await action.evaluate(button => document.activeElement === button), `${label}: external reconnect lost focus`);
+                    if (name === 'chromium' && theme === 'dark' && width === 390 && !enabled) await page.screenshot({ path: path.join(output, 'github-reconnected-no-access.png') });
                 }
                 assert.deepEqual(errors, [], label);
                 cases++;
@@ -194,6 +202,7 @@ try {
                 await removeData.scrollIntoViewIfNeeded(); await removeData.focus();
                 assert.equal(await removeData.getAttribute('aria-disabled'), 'true');
                 const surface = { ...services[0], action: '#garmin-delete' }, before = await geometry(surface);
+                if (name === 'chromium' && theme === 'dark' && width === 390) await page.screenshot({ path: path.join(output, 'garmin-unknown-drafts.png') });
                 await removeData.press('Enter'); await removeData.press('Space');
                 assert.deepEqual(confirmations, []);
                 assert.equal(await page.evaluate(() => window.fixture.calls), 0);
@@ -234,11 +243,24 @@ try {
             assert.equal(await page.evaluate(() => window.fixture.githubBegins), 1, 'A new explicit Connect still works');
             assert.deepEqual(errors, []);
             cases++;
+            await page.goto(`${origin}/options/options.html?theme=${theme}&enabled=false&service=github-external-removal#github-connection`);
+            await page.locator('#github-disconnect').waitFor({ state: 'visible' });
+            await page.evaluate(() => { window.fixture.holdPermission = true; });
+            await page.locator('#github-panel button').filter({ hasText: 'Try again' }).click();
+            await page.waitForFunction(() => !!window.fixture.releasePermission);
+            await page.evaluate(() => {
+                window.fixture.setGithubConnected(false); window.fixture.notifyGithub(); window.fixture.releasePermission();
+            });
+            await page.locator('#github-panel button').filter({ hasText: 'Connect GitHub' }).waitFor({ state: 'visible' });
+            assert.equal(await page.evaluate(() => window.fixture.githubBegins), 0, 'External removal supersedes old permission setup');
+            assert.equal(await page.locator('.github-code').count(), 0);
+            assert.deepEqual(errors, []);
+            cases++;
         }
         console.log(`${name} ${browser.version()}: hidden Settings connection states passed; 1180×1000, 390×1000, 200% CSS zoom; light/dark; features on/off.`);
         await context.close();
     }
-    assert.equal(cases, 96);
+    assert.equal(cases, 108);
     console.log(`${cases} cases passed. Screenshots: ${output}. Service/storage/permission replies stubbed; native prompts and visible focus not exercised.`);
 } finally {
     const closed = await Promise.allSettled(browsers.reverse().map(browser => browser.close()));

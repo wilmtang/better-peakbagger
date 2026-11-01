@@ -35,6 +35,13 @@ and asynchronous work that could restore credentials after disconnection.
 - **D7 — Garmin's successful disconnect masks a later connection.** Reusing
   `keyError` to retain the success message prevents polling from reporting a
   new saved key, although the Disconnect button becomes available again.
+- **D8 — GitHub also retains obsolete disconnect feedback.** The second review
+  restored a connection through another window and observed a connected account
+  beside the old "Disconnected" status. Replacing the focused Connect action
+  also lost keyboard focus, including when host permission remained missing.
+- **D9 — External GitHub credential removal leaves setup live.** A pending
+  permission flow deferred all credential notifications, so removing its saved
+  credential from another window still allowed it to start sign-in afterward.
 
 UX: place Disconnect beside connection status, outside advanced disclosures.
 Use the existing secondary button style, entry-only password fields, visible
@@ -48,6 +55,17 @@ disconnect removes its control.
 ## Closure ledger
 
 ### Fixed and verified
+
+- D8/D9 (second review): authoritative GitHub reconnection resets removal
+  feedback. Connected, disconnected and permission-recovery renderers restore
+  focus when they replace the active control. External removal of a saved
+  credential invalidates pending setup and refreshes its UI immediately, while
+  owned cleanup and its delayed notifications preserve the local continuation
+  and focus. Both new state regressions failed before these fixes. All 69
+  focused GitHub/regression tests passed. The hidden Chrome/Firefox matrix passed
+  108 cases and representative new narrow dark states were visually inspected. It
+  covers external removal while permission is pending, external reconnection
+  with/without host access, and stable headings, action slots and focus.
 
 - D7: successful disconnect feedback has its own lifetime instead of becoming
   a permanent key-validation error. It survives unreadable status while no key
@@ -131,7 +149,7 @@ disconnect removes its control.
 
 ### Changed but not fully proven
 
-- D5–D7 are fixed; the final fresh review and combined verification are pending.
+- D5–D9 are fixed; the final fresh review and combined verification are pending.
 
 - Full `npm test`: 3,812 passed, two fixture-privacy checks failed because the
   unchanged registry does not recognize `test/fixtures/maps/snow-depth-legend.json`.

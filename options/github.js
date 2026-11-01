@@ -30,7 +30,9 @@ export const hasGithubPermission = async extensionApi => {
 // Observe origins too: storage alone cannot report a revoked host permission.
 export const observeGithubAccess = (extensionApi, refresh) => {
     extensionApi.storage?.onChanged?.addListener((changes, area) => {
-        if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) refresh();
+        if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) {
+            refresh({ credentialsRemoved: changes[GITHUB_AUTH_STORAGE_KEY].newValue == null });
+        }
     });
     const originsChanged = change => {
         if (change.origins?.some(origin => origin === '<all_urls>' || GITHUB_ORIGINS.includes(origin))) refresh();
@@ -91,6 +93,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     let connectionOperations = 0;
     let accessRefreshPending = false;
     let disconnectBusy = false;
+    let cleanupRequests = 0;
+    const disconnectHelp = disconnectStatusEl.textContent;
+    const resetDisconnectFeedback = () => { disconnectStatusEl.textContent = disconnectHelp; disconnectStatusEl.classList.remove('is-error'); };
     let setupGeneration = 0;
     const setupIsCurrent = generation => generation === setupGeneration && !disconnectBusy;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
@@ -162,20 +167,24 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         // Storage notifications from our own disconnect can arrive after its
         // reply. Keep the new Connect button and its restored keyboard focus.
         if (panelEl.dataset.disconnected === 'true') return;
+        const restoreFocus = panelEl.contains(document.activeElement);
         render(
             el('p', { class: 'github-line', text: 'Connect a GitHub account to choose a backup repository.' }),
             el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: ensureConnection })),
         );
         panelEl.dataset.disconnected = 'true';
+        if (restoreFocus) panelEl.querySelector('button')?.focus({ preventScroll: true });
     };
 
     const renderPermissionDenied = () => {
+        const restoreFocus = panelEl.contains(document.activeElement);
         stopTimers();
         detailEl.hidden = false;
         render(
             el('p', { class: 'github-line github-error', text: 'GitHub access wasn’t granted. Allow access to GitHub to connect.' }),
             el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: ensureConnection })),
         );
+        if (restoreFocus) (disconnectEl.hidden ? panelEl.querySelector('button') : disconnectEl)?.focus({ preventScroll: true });
     };
 
     const renderConnecting = code => {
@@ -291,6 +300,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // The repository belongs to the connection, not to any one backup, so its
     // link sits here beside the account rather than inside ascent and TR backup.
     const renderConnected = status => {
+        const restoreFocus = panelEl.contains(document.activeElement);
         choosingRepo = false;
         confirmingExistingRepo = false;
         const who = status.account && status.account.login ? `@${status.account.login}` : 'GitHub';
@@ -309,6 +319,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
             ].filter(Boolean)),
         );
+        if (restoreFocus) disconnectEl.focus({ preventScroll: true });
     };
 
     const paintAscentSummary = (summaryEl, status, summary, { updating = false } = {}) => {
@@ -492,6 +503,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const rememberStatus = status => {
+        if ((status?.hasToken || status?.connected) && !(currentStatus?.hasToken || currentStatus?.connected)) resetDisconnectFeedback();
         if (ascentRepoIdentity(currentStatus) !== ascentRepoIdentity(status)) forgetAscentSummary();
         currentStatus = status || null;
         disconnectEl.hidden = !(status?.hasToken || status?.connected);
@@ -530,13 +542,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const requestDisconnect = async (retry, generation) => {
-        const response = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
-        if (!setupIsCurrent(generation)) return false;
-        if (response && response.phase !== 'error' && response.connected === false) return true;
-        const detail = response?.error?.message
-            || 'The local GitHub connection could not be confirmed as removed. Reload Settings and try again.';
-        renderError({ code: ERROR_CODES.UNKNOWN, message: detail }, retry);
-        return false;
+        cleanupRequests++;
+        try {
+            const response = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
+            if (!setupIsCurrent(generation)) return false;
+            if (response && response.phase !== 'error' && response.connected === false) { rememberStatus(response); return true; }
+            const detail = response?.error?.message
+                || 'The local GitHub connection could not be confirmed as removed. Reload Settings and try again.';
+            renderError({ code: ERROR_CODES.UNKNOWN, message: detail }, retry);
+            return false;
+        } finally { cleanupRequests--; }
     };
 
     const cancelConnect = async () => {
@@ -720,6 +735,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     async function ensureConnection() {
         const generation = setupGeneration;
         if (!setupIsCurrent(generation)) return;
+        resetDisconnectFeedback();
         panelEl.style.minBlockSize = '';
         const permitted = await hasGithubPermission(extensionApi);
         if (!setupIsCurrent(generation)) return;
@@ -779,7 +795,15 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         else void renderFromStatus();
     });
 
-    observeGithubAccess(extensionApi, () => {
+    observeGithubAccess(extensionApi, change => {
+        // Clear older setup immediately, even while its permission/API request
+        // is pending. Our own cleanup already owns that invalidation; delayed
+        // notifications after its confirmed reply see hasToken=false.
+        if (change?.credentialsRemoved && !disconnectBusy && !cleanupRequests && currentStatus?.hasToken) {
+            invalidateSetup();
+            void renderFromStatus({ preserveSetup: true });
+            return;
+        }
         if (connectionOperations) { accessRefreshPending = true; return; }
         void renderFromStatus({ preserveSetup: true });
     });

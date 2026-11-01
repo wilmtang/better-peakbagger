@@ -9,6 +9,54 @@ import { waitFor } from '../helpers/load-page.mjs';
 registerCleanup();
 const byId = (dom, id) => dom.window.document.getElementById(id);
 
+test('GitHub reflects a connection restored in another settings window', async () => {
+    let connected = true;
+    const dom = await loadOptions({}, { prepareChrome: chrome => {
+        chrome.permissions = { contains: async () => true };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected, hasToken: connected,
+                repo: { owner: 'fixture', name: 'backup' }, account: { login: 'fixture' } };
+            if (message.type === 'GITHUB_AUTH_DISCONNECT') {
+                connected = false; await chrome.storage.local.set({ bpbGithubAuth: null }); return { connected: false, hasToken: false };
+            }
+            if (message.type === 'GITHUB_IGNORED_LIST') return { ok: true, count: 0, state: { enabled: false, phase: 'idle' } };
+            return { ok: true };
+        };
+    } });
+    await waitFor(dom, () => !byId(dom, 'github-disconnect').hidden);
+    byId(dom, 'github-disconnect').click();
+    await waitFor(dom, () => /^Disconnected/.test(byId(dom, 'github-disconnect-status').textContent));
+    byId(dom, 'github-panel').querySelector('button').focus();
+    connected = true; await dom.chrome.storage.local.set({ bpbGithubAuth: { account: { login: 'fixture' } } });
+    await waitFor(dom, () => /Connected as/.test(byId(dom, 'github-panel').textContent));
+    assert.doesNotMatch(byId(dom, 'github-disconnect-status').textContent, /^Disconnected/);
+    assert.equal(byId(dom, 'github-disconnect').hidden, false);
+    assert.equal(dom.window.document.activeElement, byId(dom, 'github-disconnect'), 'A replaced Connect control hands focus to Disconnect');
+});
+
+test('GitHub credential removal in another window supersedes pending permission setup', async () => {
+    let release, hasToken = true, permitted = false, begins = 0;
+    const dom = await loadOptions({}, { prepareChrome: chrome => {
+        chrome.permissions = { contains: async () => permitted,
+            request: () => new Promise(resolve => { release = () => { permitted = true; resolve(true); }; }) };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: false, hasToken };
+            if (message.type === 'GITHUB_AUTH_BEGIN') { begins++; return { phase: 'polling', userCode: 'ABCD-EFGH', expiresIn: 900 }; }
+            if (message.type === 'GITHUB_AUTH_STATE') return { phase: 'polling' };
+            if (message.type === 'GITHUB_IGNORED_LIST') return { ok: true, count: 0, state: { enabled: false, phase: 'idle' } };
+            return { ok: true };
+        };
+    } });
+    await waitFor(dom, () => /Try again/.test(byId(dom, 'github-panel').textContent));
+    byId(dom, 'github-panel').querySelector('button').click(); await waitFor(dom, () => !!release);
+    hasToken = false; await dom.chrome.storage.local.set({ bpbGithubAuth: null });
+    await waitFor(dom, () => /Connect a GitHub account/.test(byId(dom, 'github-panel').textContent));
+    release(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(begins, 0, 'An external credential removal must invalidate older setup');
+    assert.equal(byId(dom, 'github-panel').querySelector('.github-code'), null);
+    assert.match(byId(dom, 'github-panel').textContent, /Connect a GitHub account/);
+});
+
 for (const enabled of [true, false]) test(`Garmin polling reports an external reconnect with imports ${enabled ? 'on' : 'off'}`, async () => {
     let configured = true, failed = false, reads = 0;
     const timers = [];
