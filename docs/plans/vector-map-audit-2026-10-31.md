@@ -35,6 +35,11 @@ trusted-selection authorization and extension-origin rendering boundary.
   cases passed in each hidden hardware browser above, including 1280/375 × 800,
   dark mode and 200% CSS zoom; keyboard Retry, focus and page/action geometry
   stayed stable. Build, targeted ESLint and boundary/documentation tests passed.
+  Integration follow-up: MapLibre's source-error flag can emit its one-time load
+  event with other tiles still pending. Readiness now accepts the later settled
+  idle event during initial loading too. A deterministic frame test failed on
+  the old gate and passed after the fix; this explains the intermittent initial
+  partial-tile timeouts observed during concurrent full-suite/browser runs.
 
 ### Intentionally not changed
 

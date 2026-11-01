@@ -7,7 +7,7 @@ import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView } from './vector-basemap.js';
 import { vectorMapAvailability } from './vector-map-availability.js';
 
-let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, loaded = false, settledView = null;
+let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, settledView = null;
 const post = (type, detail = {}) => {
     if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, ...detail }, parentOrigin);
 };
@@ -22,7 +22,7 @@ const settled = () => {
     try {
         const availability = vectorMapAvailability(map);
         if (availability.requested && !availability.usable) { fail(); return; }
-        clearTimeout(timer); loaded = true;
+        clearTimeout(timer);
         const key = JSON.stringify([view, map.getCanvas().clientWidth, map.getCanvas().clientHeight]);
         if (key !== settledView) { settledView = key; post('loaded', { view }); }
     } catch (error) { console.warn('Better Peakbagger vector map:', error.message); fail(); }
@@ -57,7 +57,9 @@ window.addEventListener('message', async event => {
         });
         map.on('error', error => { console.warn('Better Peakbagger vector map:', error.error?.message || 'Map resource unavailable.'); });
         map.once('load', settled);
-        map.on('idle', () => { if (loaded) settled(); });
+        // A tile error can satisfy MapLibre's one-time load event before all
+        // other tiles settle. Idle must also finish that initial transaction.
+        map.on('idle', settled);
         map.getCanvas().addEventListener('webglcontextlost', fail);
         update();
     } catch (error) { if (!disposed) { console.warn('Better Peakbagger vector map:', error.message); fail(); } }
