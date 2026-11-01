@@ -1,8 +1,9 @@
 # Active plans
 
 - [Connected-service disconnect audit — October 31](service-disconnect-audit-2026-10-31.md)
-  — Garmin credential cancellation and feature-independent cleanup; consistent
-  Garmin, ImgBB and GitHub connection controls and verification ledger.
+  — implemented Garmin, ImgBB and GitHub cleanup; self-review fixes protect
+  deletion counts, cancel stale setup and reconcile cross-window connections.
+  The ledger records focused/browser proof and remaining repository-wide gates.
 
 - [Private custom-layer relay — October 26](custom-layer-private-relay-2026-10-26.md)
   — implemented private query parameters, constrained worker requests and bounded
