@@ -73,7 +73,7 @@ without waiting for a rewrite of the worker or shared settings schema.
 
 6. **The inventory and one verification command are stale.**
    Current [build configuration](../../scripts/build-config.mjs) has **66 bundles:
-   64 IIFEs and two ESM frames**, including `terrain/vector-map-frame.js`.
+   64 IIFEs and two ESM frames**, including `dist/terrain/vector-map-frame.js`.
    The report's 63-bundle/one-ESM inventory must not drive migration coverage.
    `npm run verify:audit` does not exist in [package.json](../../package.json).
    Dependency-metadata assertions run in
@@ -104,10 +104,10 @@ next. These are enabling changes, not permission to refactor existing features.
 
 | Unit | Concrete changes | Completion evidence |
 | --- | --- | --- |
-| 1A — TypeScript checking and lint | Add compatible locked versions of `typescript`, `typescript-eslint`, `@types/chrome`, and browser-namespace types where actually needed. Add runtime `tsconfig.json`, TS-aware ESLint scopes, a `typecheck` npm command, CI enforcement and command documentation. Update language-specific lint coverage assertions. | A valid new TS module consuming existing JS passes; deliberate undeclared-name, wrong-type and unused-binding fixtures fail the responsible check. Existing JS lint behavior remains covered. |
-| 1B — Source coverage and watching | Add a shared authored-runtime file predicate and focused fixture cases. Update the seven guards, applicable page roots and loose-file detection. Watch `src/` recursively and retain all page/asset roots. Document watcher restart requirements for dependencies, entry configuration and compiler configuration. | Guards reject forbidden values/calls in `.ts` and `.svelte`, including page-local files. A transitive component edit triggers a completed generation; a compile failure preserves the previous generation and reload token. |
-| 1C — Typed compatibility boundaries | Add narrow typed adapters or colocated declarations for settings, runtime messages and lifecycle methods needed by the first feature. Keep the existing JS implementations and wire/storage formats. Type new protocols at both caller and handler boundaries. | Wrong requests/responses fail compilation; actual success, unavailable transport, invalid payload and settings failure behavior are checked against existing implementations. No new declaration silently converts arbitrary input to trusted data. |
-| 1D — Svelte compilation | Add compatible locked `svelte`, `esbuild-svelte`, `svelte-check`, and `eslint-plugin-svelte`; add shared compiler configuration and the plugin in the existing build-options path. Extend `typecheck` to run `svelte-check`. Add a representative test-only component compiled with the production options. | `.svelte` and `.svelte.ts` compile in one-off, minified and incremental builds; wrong props fail checking; built client code mounts, updates and unmounts in a fixture. No extra chunks, runtime compiler or remote code appear. |
+| 1A — TypeScript checking and lint | Add compatible locked versions of `typescript`, `typescript-eslint`, `@types/chrome`, and browser-namespace types where actually needed. Add an explicitly selected `tsconfig.check.json`, TS-aware ESLint scopes, a `typecheck` npm command, CI enforcement and command documentation. Update language-specific lint coverage assertions. | A valid new TS module consuming existing JS passes; deliberate undeclared-name, wrong-type and unused-binding fixtures fail the responsible check. Existing JS lint behavior and legacy bundle transformation remain unchanged. |
+| 1B — Source coverage and watching | Add a shared authored-runtime file predicate and focused fixture cases. Update the seven guards, applicable page roots and loose-file detection. Watch `src/` recursively and retain all page/asset roots. Document watcher restart requirements for dependencies, entry configuration and compiler configuration. | Guards reject forbidden values/calls in `.ts` and `.svelte` source-text fixtures, including page-local files. A transitive plain `.ts` edit triggers a completed generation; a TS syntax failure preserves the previous generation and reload token. Executable Svelte watch coverage belongs to 1D. |
+| 1C — Typed compatibility boundaries | Add narrow typed adapters or colocated declarations for settings, runtime messages and lifecycle methods needed by the first feature. Define validated, allowlisted plain-data payloads at transport/storage boundaries. Keep the existing JS implementations and wire/storage formats. Type new protocols at both caller and handler boundaries. | Wrong requests/responses fail compilation; actual success, unavailable transport, invalid payload and settings failure behavior are checked against existing implementations. Nested-proxy fixtures prove the serializer produces cloneable payloads without extra fields. No new declaration silently converts arbitrary input to trusted data. |
+| 1D — Svelte compilation | Add compatible locked `svelte`, `esbuild-svelte`, `svelte-check`, and `eslint-plugin-svelte`; add shared compiler configuration and the plugin in the existing build-options path. Extend `typecheck` to run `svelte-check` against the explicit checking project. Add a representative test-only component compiled with the production options. | `.svelte` and `.svelte.ts` compile in one-off, minified and incremental builds; a transitive Svelte edit rebuilds, a syntax failure preserves the prior generation/token, and a correction recovers. Wrong props fail checking; built client code mounts, updates and unmounts in a fixture. Actual rune state passes the plain-data boundary tests. No extra chunks, runtime compiler or remote code appear. |
 | 1E — Mixed UI contract | Add a small mount/update/dispose adapter in the existing UI domain, with tests beside it, and update card/development guidance. Demonstrate a Svelte island beside an unchanged legacy feature in a faithful browser fixture. | Single mount, repeated update, teardown, BFCache suspend/resume, collapse/reparenting where relevant, keyboard activation and state-dependent geometry pass. Legacy content and listeners survive. |
 | 1F — First real new feature | Build a real, bounded feature using the new path. Register only its actual entry/assets and new schema fields/messages. Complete shipped-dependency metadata when Svelte first enters production bundles. | Full repository gates, target-specific Chrome/Firefox UI checks, packaged-file validation and measured bundle-size changes pass. This is the milestone that proves production adoption. |
 
@@ -117,6 +117,20 @@ are not a verified dependency combination.
 
 ### TypeScript configuration and interoperability
 
+- Keep strict checking separate from build transformation. Name the initial
+  project `tsconfig.check.json` and select it explicitly with
+  `tsc --project tsconfig.check.json --noEmit`; point typed ESLint configuration
+  at that same project when enabled. In 1D, also select it explicitly with
+  `svelte-check --tsconfig ./tsconfig.check.json`. Test fixtures need dedicated
+  project inputs so both positive and intentional-failure cases are checked.
+  Do not introduce an automatically discovered root `tsconfig.json` as a
+  checker-only change: esbuild reads it, and `strict: true` can introduce
+  `use strict` into existing JavaScript IIFEs. If an editor-facing root config
+  is added later, first select an explicit build configuration that preserves
+  reviewed transform behavior. Compare legacy bundle output and exercise a
+  strictness-sensitive regression fixture before accepting either arrangement.
+  [esbuild documents its tsconfig discovery](https://esbuild.github.io/api/#tsconfig)
+  and [the transform-affecting options](https://esbuild.github.io/content-types/#tsconfig-json).
 - Scope the initial compiler project to `src/`, `options/`, `popup/` and `photos/`.
   Use `allowJs: true`, `checkJs: false`, `strict: true`, `noEmit: true`,
   `isolatedModules: true`, `erasableSyntaxOnly: true`,
@@ -203,6 +217,24 @@ Use ordinary TS for controllers, data and injected services; keep runes within
 the compiled UI boundary. The wrapper exposes typed updates and idempotent
 disposal. Each separately built IIFE owns its own Svelte runtime and module
 state; continue cross-bundle coordination through existing transports.
+
+Reactive objects must not cross those transports directly. Before calling
+runtime/window messaging, extension storage or IndexedDB, construct a validated,
+allowlisted plain-data payload at the owning boundary. Use
+[`$state.snapshot`](https://svelte.dev/docs/svelte/$state#$state.snapshot) inside
+compiled UI where needed to detach reactive state, then serialize only the
+permitted fields through the existing schema/owner. A snapshot is not validation
+or permission to forward the whole UI state. A shallow spread can retain nested
+proxies, and TypeScript structural types do not distinguish them from plain
+objects. A clone failure can otherwise look like an unavailable worker through
+the existing runtime helper, or reject a settings write.
+
+In 1C, test plain-data construction with nested native proxies and a real
+structured-clone operation; assert that unapproved fields are absent. In 1D,
+repeat with compiled `$state` values. Before adoption, exercise the real
+Chrome/Firefox messaging and persistence paths that the first feature uses,
+including recoverable serialization failures and successful writes. Do not use
+a JSON-only messaging stub as proof of Firefox clone compatibility.
 
 | Surface | Coexistence rule |
 | --- | --- |
@@ -300,6 +332,8 @@ fixture can establish compiler behavior without shipping a demonstration UI.
   command alone does not enforce it. Keep it inside the existing checked job, or
   update named-check requirements if introducing a new job. Document it in
   [development.md](../development.md).
+- Run `node --test test/project/documentation.test.mjs` for plan and guide
+  edits, including backticked repository paths as well as Markdown links.
 - After changing build/load dependencies run `npm run verify -- browsers`, which
   loads real unpacked `dist/`. Keep the new UI's assertions alongside existing
   bridge, worker, early-theme and legacy-content assertions. Build-only fixtures
@@ -333,6 +367,15 @@ replacement and WXT cutover can then proceed independently when justified.
   runes; `node --test test/project/development.test.mjs` passed **17/17**.
   Local probes ran on **Node v26.13.0**, not CI's Node 24; Node 24 behavior was
   cross-checked against its official docs, not executed locally.
+- **Review corrections:** qualify the generated frame path with `dist/`;
+  separate checker configuration from esbuild transformation; require validated
+  plain-data serialization of reactive state; and defer executable Svelte watch
+  proof until 1D installs its compiler. Review probes reproduced the strictness
+  change and nested-proxy clone failures using disposable fixtures and existing
+  helpers; those probes do not establish real browser or compiled-Svelte behavior.
+  After these documentation corrections,
+  `node --test test/project/documentation.test.mjs test/project/development.test.mjs`
+  passed **20/20**, including the previously failing document-path assertion.
 - **Intentionally not changed:** runtime source, dependencies/lockfile, manifest,
   build/check configuration, storage formats and existing features. The external
   report was read without editing it. This repository-local plan is the output.
