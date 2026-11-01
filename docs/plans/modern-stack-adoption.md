@@ -1,0 +1,348 @@
+# Modern stack adoption with legacy compatibility
+
+Status: investigation and implementation plan; runtime migration has not started.
+Reviewed October 31, 2026 against commit `a951cf7b`.
+
+## Recommendation
+
+The first milestone should let a **new feature use strict TypeScript and Svelte 5
+while existing JavaScript features continue to ship through the same build**.
+It should not require converting existing features, replacing storage, or moving
+to WXT first. Treat legacy conversion and build-system replacement as separate
+later projects.
+
+The supplied report makes two different recommendations: an incremental
+TypeScript/Svelte/esbuild path for this repository, and a WXT/Vite-based stack for
+a greenfield extension. The second is a useful candidate destination, not an
+established optimum for this codebase. In particular, the report's runtime-size
+estimates and proposed chart replacement need measurements before they become
+acceptance criteria.
+
+The compatibility foundation consists of language-aware checks, Svelte compilation,
+typed access to existing owners, and an explicit DOM/lifecycle contract. Once
+those pass the gates below, new features can use the new language and UI layer
+without waiting for a rewrite of the worker or shared settings schema.
+
+## Findings that change the supplied plan
+
+1. **TypeScript transpilation already works; type checking is absent.**
+   [The build options](../../scripts/build.mjs) bundle ES-module dependencies as
+   browser code, and esbuild accepts `.ts` imports. A local probe imported the
+   existing `src/ui/units.js` from new TypeScript and produced the expected
+   browser IIFE. A second probe deliberately supplied an invalid TypeScript
+   assignment: esbuild still built it. Add an enforced type-check command and CI
+   step, not just `tsconfig.json`. [esbuild explicitly separates transpilation
+   from type checking](https://esbuild.github.io/content-types/#typescript).
+
+2. **Preserving `no-undef: error` for TypeScript is the wrong lint invariant.**
+   [The current coverage test](../../test/project/development.test.mjs) requires
+   that exact rule for every page-local entry. Keep it for JavaScript; for
+   TypeScript, require a configured TS parser, appropriate TS rules and an
+   enforced compiler check instead. Core `no-unused-vars` and `no-shadow` also
+   need their TypeScript-aware replacements in TS scopes. Configure Svelte
+   separately so template syntax and `<script lang="ts">` use the right parsers.
+   Do not spread the existing formatting rules blindly onto template markup.
+   [typescript-eslint recommends disabling core `no-undef` for TypeScript and
+   using extension rules](https://typescript-eslint.io/troubleshooting/faqs/eslint/).
+
+3. **New features do not need a `.js`-to-`.ts` fallback loader.**
+   Use exact relative extensions: new `.ts` dependencies are imported with `.ts`;
+   existing JavaScript keeps `.js`. Mixed imports work in the local Node probe.
+   When an existing file is eventually renamed, update its callers, entry aliases,
+   text readers and exception lists in that commit. The local probe confirmed
+   that Node rejects a stale `.js` path that esbuild resolves to `.ts`.
+   A global resolver hook would create another resolution policy and would not
+   fix hardcoded `readFile()` paths anyway. Node's
+   [TypeScript documentation](https://nodejs.org/docs/latest-v24.x/api/typescript.html)
+   requires explicit extensions and explains that Node ignores `tsconfig.json`.
+
+4. **Broader file matching is necessary but insufficient for boundary tests.**
+   The seven source walkers listed below match only `.js`. Several also hardcode
+   owner filenames or path-keyed policy counts. Changing only the matcher makes
+   a renamed schema fail its own forbidden-literal test. Moreover, most walkers
+   inspect only `src/`, so new page-local components can escape the same rules.
+   Preserve each test's policy, broaden relevant runtime roots, update owner
+   exceptions deliberately, and prove inclusion with failing fixture cases.
+
+5. **The watcher misses an existing domain, not just future components.**
+   Deriving the watched directories from
+   [entry roots and copied assets](../../scripts/build.mjs) leaves `src/storage/`
+   uncovered in this checkout. A new component-only domain would have the same
+   problem. Recursively watch `src/` plus page-local roots; configuration and
+   dependency changes need an explicit restart policy too.
+
+6. **The inventory and one verification command are stale.**
+   Current [build configuration](../../scripts/build-config.mjs) has **66 bundles:
+   64 IIFEs and two ESM frames**, including `terrain/vector-map-frame.js`.
+   The report's 63-bundle/one-ESM inventory must not drive migration coverage.
+   `npm run verify:audit` does not exist in [package.json](../../package.json).
+   Dependency-metadata assertions run in
+   [the release tests](../../test/project/release.test.mjs); npm dependency
+   advisories use `npm run audit:ci`.
+
+7. **A typed messaging facade does not establish end-to-end safety by itself.**
+   The worker dispatches handler maps and prefix routes before its switch, not
+   only the switch cases counted by the report. New typed clients must preserve
+   existing wire envelopes, sender checks, authorization and failure semantics.
+   [The runtime helper](../../src/ui/runtime-message.js) distinguishes an
+   unavailable transport from a response in `sendResult`; do not erase that
+   distinction or retry a possibly committed remote write.
+
+8. **Svelte compiler settings are a starting point, not AMO/CSP proof.**
+   `fragments: 'tree'` avoids the template-cloning HTML sink; it does not certify
+   every runtime path or stylesheet injection. `css: 'injected'` fits today's
+   output inventory but must be checked under the target page's CSP. Scoped CSS
+   does not isolate a component from host selectors. Start with an extension-owned
+   surface and light-DOM islands; test host-page adoption separately.
+   The [compiler options](https://svelte.dev/docs/svelte/svelte-compiler) document
+   these choices, including `discloseVersion: false`.
+
+## 1. Enable new features without converting old ones
+
+Each row is a proposed focused commit. Finish and check one before beginning the
+next. These are enabling changes, not permission to refactor existing features.
+
+| Unit | Concrete changes | Completion evidence |
+| --- | --- | --- |
+| 1A — TypeScript checking and lint | Add compatible locked versions of `typescript`, `typescript-eslint`, `@types/chrome`, and browser-namespace types where actually needed. Add runtime `tsconfig.json`, TS-aware ESLint scopes, a `typecheck` npm command, CI enforcement and command documentation. Update language-specific lint coverage assertions. | A valid new TS module consuming existing JS passes; deliberate undeclared-name, wrong-type and unused-binding fixtures fail the responsible check. Existing JS lint behavior remains covered. |
+| 1B — Source coverage and watching | Add a shared authored-runtime file predicate and focused fixture cases. Update the seven guards, applicable page roots and loose-file detection. Watch `src/` recursively and retain all page/asset roots. Document watcher restart requirements for dependencies, entry configuration and compiler configuration. | Guards reject forbidden values/calls in `.ts` and `.svelte`, including page-local files. A transitive component edit triggers a completed generation; a compile failure preserves the previous generation and reload token. |
+| 1C — Typed compatibility boundaries | Add narrow typed adapters or colocated declarations for settings, runtime messages and lifecycle methods needed by the first feature. Keep the existing JS implementations and wire/storage formats. Type new protocols at both caller and handler boundaries. | Wrong requests/responses fail compilation; actual success, unavailable transport, invalid payload and settings failure behavior are checked against existing implementations. No new declaration silently converts arbitrary input to trusted data. |
+| 1D — Svelte compilation | Add compatible locked `svelte`, `esbuild-svelte`, `svelte-check`, and `eslint-plugin-svelte`; add shared compiler configuration and the plugin in the existing build-options path. Extend `typecheck` to run `svelte-check`. Add a representative test-only component compiled with the production options. | `.svelte` and `.svelte.ts` compile in one-off, minified and incremental builds; wrong props fail checking; built client code mounts, updates and unmounts in a fixture. No extra chunks, runtime compiler or remote code appear. |
+| 1E — Mixed UI contract | Add a small mount/update/dispose adapter in the existing UI domain, with tests beside it, and update card/development guidance. Demonstrate a Svelte island beside an unchanged legacy feature in a faithful browser fixture. | Single mount, repeated update, teardown, BFCache suspend/resume, collapse/reparenting where relevant, keyboard activation and state-dependent geometry pass. Legacy content and listeners survive. |
+| 1F — First real new feature | Build a real, bounded feature using the new path. Register only its actual entry/assets and new schema fields/messages. Complete shipped-dependency metadata when Svelte first enters production bundles. | Full repository gates, target-specific Chrome/Firefox UI checks, packaged-file validation and measured bundle-size changes pass. This is the milestone that proves production adoption. |
+
+Resolve package versions as one compatible set against this checkout's ESLint 10,
+esbuild 0.28 and CI Node 24, and commit the lockfile. The report's minimum versions
+are not a verified dependency combination.
+
+### TypeScript configuration and interoperability
+
+- Scope the initial compiler project to `src/`, `options/`, `popup/` and `photos/`.
+  Use `allowJs: true`, `checkJs: false`, `strict: true`, `noEmit: true`,
+  `isolatedModules: true`, `erasableSyntaxOnly: true`,
+  `verbatimModuleSyntax: true`, explicit-extension support and bundler resolution.
+  Keep the existing browser targets in esbuild. Do not include all Node scripts
+  and tests in a browser-global project; introduce a separate Node configuration
+  only when those authored files need TypeScript.
+- `checkJs: false` leaves legacy JS outside strict checking; it does not make
+  everything imported from JS safe. Keep declarations beside their owners or
+  use a narrow adapter in that domain. Prefer inferred types and signatures
+  checked against real behavior; use `unknown` plus validation for untrusted
+  replies. Avoid blanket ambient modules or `as SomeResponse` at trust boundaries.
+- Cover both the `chrome` and `browser` names actually used. Keep MAIN-world
+  adapters free of extension APIs; compiler globals alone cannot enforce the
+  execution world. Add declarations for existing `Chart`/`marked` globals only
+  where consumed, preserving their manifest preload order.
+- Keep the current `.mjs` tests and Node runner. Plain erasable `.ts` domain
+  modules can be tested directly. Components and rune modules must be compiled
+  first and exercised through client bundles. Do not let a Node-imported
+  controller transitively import `.svelte` or `.svelte.ts`.
+- Add compiler-failure fixtures that run the actual check commands with nonzero
+  expected diagnostics. A `.d.ts` declaration is a compatibility promise, not
+  proof that the old implementation satisfies it; retain behavioral tests.
+
+### Source guards that must retain coverage
+
+Update these tests with the shared runtime predicate; exclude declaration-only
+files, include `.svelte.ts` through the `.ts` suffix, and keep fixtures separate
+from production scans. Do not weaken existing policy counts to make them pass.
+
+| Existing test | Boundary to preserve |
+| --- | --- |
+| [units](../../test/ui/units.test.mjs) | Single conversion-constant owner; replace the manually enumerated page files with appropriate discovered page sources. |
+| [settings schema](../../test/settings/settings-schema.test.mjs) | Single default/bounds owner, including its explicit owner exclusion. |
+| [settings read policy](../../test/settings/settings-read-policy.test.mjs) | Passive `get()` versus authoritative `requireCurrent()` ownership; register any new adapter alias so the scanner still sees those reads. |
+| [capture core](../../test/capture/capture-core.test.mjs) | Single upload-limit owner. |
+| [request deadlines](../../test/net/request-deadline.test.mjs) | Bounded network requests and the path-keyed reviewed exceptions. |
+| [Cloudflare classification](../../test/peakbagger/peakbagger-cloudflare.test.mjs) | Centralized challenge detection and human-check copy. |
+| [Peakbagger origin](../../test/peakbagger/peakbagger-origin.test.mjs) | Canonical origins and host checks across runtime roots. |
+
+The predicate alone does not make regex scans understand every TypeScript or
+Svelte expression. Test representative typed declarations and template handlers;
+if a syntax form evades a policy, use language-aware extraction for that rule.
+Also expand the loose-file check and page-local lint assertions in
+[development.test.mjs](../../test/project/development.test.mjs).
+
+### Build and packaging contract
+
+- Keep [manifest.json](../../manifest.json) and `ENTRIES` authoritative. New
+  authored `.ts` files still produce `.js` outputs. Add page-local aliases to
+  `PAGE_LOCAL` as necessary: unknown page source names currently resolve under
+  `src/`, not automatically under `options/`, `popup/` or `photos/`.
+- Add the Svelte plugin alongside the current browser-import and JSZip plugins,
+  using the same options for normal, minified and watch builds. Keep the staging
+  validation, whole-generation publication and reload-signal ordering intact.
+  Do not introduce a second build that writes independently to `dist/`.
+- Start with `fragments: 'tree'`, `css: 'injected'`, and
+  `discloseVersion: false`. Share compiler settings with lint/check tooling.
+  Confirm the locked adapter compiles rune modules and selects the browser
+  runtime. Align compiler/runtime development mode deliberately. The
+  [adapter documentation](https://github.com/EMH333/esbuild-svelte) describes rune
+  module support, CSS output and export conditions; local compatibility remains
+  an implementation gate.
+- Preserve synchronous early-theme and `*-head.js` execution. The deferred body
+  entry can mount Svelte; the pre-paint theme path must not wait for it. Do not
+  introduce dynamic-import loaders into classic or MAIN-world entries.
+- Keep static outer shells, reserved feedback space and shared tokens in the
+  existing copied stylesheets. No `{@html}` in new components. If runtime CSS
+  fails the target CSP or startup checks, explicitly implement external CSS
+  emission, copying, manifest/page references and package expectations as one
+  change; do not silently accept an unstyled widget.
+- When Svelte is first shipped, update
+  [reviewed dependency metadata](../../scripts/dependency-metadata.mjs),
+  [AMO notes](../../scripts/create-amo-metadata.mjs) and
+  [acknowledgements](../../ACKNOWLEDGEMENTS.md). Notices are generated into
+  `dist/THIRD_PARTY_NOTICES.txt` from bundled inputs, including shipped transitive
+  packages. Do not mark an unused compiler-only dependency as `shipped: true`:
+  the metadata test would then demand a runtime notice that the build cannot
+  discover. Verify licenses for the actual graph rather than only `svelte`.
+
+### UI ownership and lifetime
+
+Use ordinary TS for controllers, data and injected services; keep runes within
+the compiled UI boundary. The wrapper exposes typed updates and idempotent
+disposal. Each separately built IIFE owns its own Svelte runtime and module
+state; continue cross-bundle coordination through existing transports.
+
+| Surface | Coexistence rule |
+| --- | --- |
+| Extension-owned page | Mount in a dedicated empty container. Existing JS and Svelte must not both bind the same control or replace each other's subtree. |
+| Peak card | Keep the shared layout owner's shell, header, disclosure and drag behavior. Mount into a dedicated descendant of its body after owner placement is established; do not replace native/reparented nodes. |
+| Saved-ascent card | Keep the ascent columns and existing card/drag owner. It is not a peak-card-layout consumer. |
+| Embedded GPX/form/map control | Keep the current owning feature and execution world; mount only an extension-owned child. Do not take over native forms, map layers or Save controls. |
+| Standalone floating widget | Shadow DOM can be evaluated separately, with explicit theme, focus and accessibility handling. It is not a prerequisite for first adoption. |
+
+Follow [card conventions](../card-conventions.md) and
+[createPageLifecycle](../../src/ui/page-lifecycle.js). A persisted `pagehide`
+suspends external work without unmounting; `pageshow` resumes it. Final disposal,
+feature removal or disabling unmounts the island and cancels its outstanding
+work. These latter removals can occur while the document is still active.
+Component cleanup alone is insufficient for BFCache: the controller must pause
+its timers/subscriptions/requests explicitly and reject stale results.
+
+Pair mount-owned subscriptions with synchronous cleanup registration, as the
+repository UI skill recommends. Handle unmount promises and cleanup failures;
+do not discard a rejected promise. Tests must wait for rendered postconditions:
+[Svelte's mount API](https://svelte.dev/docs/svelte/imperative-component-api) does
+not synchronously run every effect. DOM assertions cannot establish first paint,
+focus, clipping or stable reading position.
+
+## 2. Adopt the remaining proposed stack selectively
+
+| Report layer | Incremental decision | Later conversion gate |
+| --- | --- | --- |
+| WXT / Vite | Defer build ownership replacement; new TS/Svelte does not depend on it. | Separate compatibility build and manifest/output parity proof described below. |
+| Valibot | Optional for a new protocol/schema in its existing owning domain. Keep `settings-schema.js` authoritative. | Replacing a validator requires parity for coercion, defaults, bounds, unknown keys and failure behavior; no second settings schema. |
+| `@webext-core/messaging` | Use typed wrappers over the current wire protocol first. | A new RPC library needs an explicit adapter or new protocol on both ends, sender validation and compatibility tests; it is not a transparent replacement for raw envelopes. |
+| WXT storage | Keep the existing settings owner, sync/device split, subscriptions, write queue and theme mirror. | Demonstrate identical keys, migrations, authorization, error behavior and update/rollback behavior before replacement. |
+| `idb` / Dexie | New features call the existing store owners; use one chosen helper only if it solves a concrete new storage need. | Preserve existing database names, versions, transactions, retention and disconnect cleanup; test real upgrade data and multiple open contexts. |
+| LayerCake / uPlot | New charts may evaluate a candidate; do not require legacy chart replacement. | Compare interaction, local-time labels, data gaps, accessibility, theme and measured size/render cost with current charts. |
+| MapLibre | Retain the packaged library and extension-frame architecture. | New controls can be TS/Svelte; camera, GPU renderer, workers, activation and network policy remain with their current owners. |
+| TipTap / CodeMirror | Already present; retain editor ownership and serialization. | Any Svelte wrapper must preserve editor instances, selection, composition, pasted-image flows and cleanup. |
+| Vitest / Playwright | Keep Node tests and existing browser verifiers initially; Playwright is already installed. | Add Vitest only for a concrete testing advantage, with compiler parity and retained manifest/worker/bridge tests. |
+| Shadow DOM | Optional for a new standalone island. Retain light DOM for existing reparented host content. | Prove inherited tokens, dark mode, keyboard/focus, sizing and host integration. Scoped component CSS alone is not isolation. |
+
+The [messaging library](https://webext-core.aklinker1.io/messaging/installation)
+offers protocol maps and separate window messaging; adopting it still needs
+application-specific validation. WXT's own
+[storage migration guidance](https://wxt.dev/guide/essentials/storage) supports
+retaining a working existing wrapper. None of these library substitutions is
+required to unlock new TS/Svelte development.
+
+## 3. If WXT/Vite becomes the chosen destination
+
+This is feasible to investigate alongside legacy sources, but it is not just a
+bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)
+changes entrypoint discovery and manifest generation. Its
+[entrypoint guide](https://wxt.dev/guide/essentials/entrypoints) also warns that
+unlisted entries are evaluated during build, which matters for existing
+top-level side effects.
+
+1. Create an experimental build into a **separate output directory**, keeping
+   esbuild the only publisher of production `dist/`. Start with one owned HTML
+   page and one classic content-script entry importing the same domain modules.
+   Do not switch package/release commands yet.
+2. Add a thin generated adapter layer from the existing manifest and `ENTRIES`
+   rather than hand-maintaining two extension definitions. Preserve ordered
+   multi-source side effects. Determine how WXT's build-time entry discovery can
+   avoid executing legacy runtime initialization; do not assume a static import
+   inside a new wrapper defers the imported module's side effects.
+3. Inventory and compare all 66 current outputs, including both ESM frames,
+   on-demand injected scripts, the overlay worker, vendor preloads, synchronous
+   head scripts, CSS and web-accessible assets. Preserve the paired Chrome worker
+   and Firefox background references. Confirm current browser targets explicitly.
+4. Prove manifest parity: permissions and optional grants, matches/exclusions,
+   execution worlds, frame targeting, `run_at`, script/CSS order, resource
+   exposure, CSP and update identity. Preserve JSZip/MapLibre patches and the
+   audit/notice/source-package pipeline. A dynamic loader is not an acceptable
+   substitute for an early synchronous script.
+5. Recreate successful-generation reloads and publication with failure rollback.
+   Integrate both Chrome and Firefox dev paths and the existing verifiers against
+   the candidate tree, without two concurrent writers or browser launchers.
+6. Switch the build in one dedicated cutover only after full parity, real
+   extension/browser checks and packaged upgrade verification. If required
+   ordering or synchronous startup cannot be preserved, keep the hybrid
+   TS/Svelte/esbuild architecture and record the blocker.
+
+## Acceptance and verification
+
+Before implementing a UI pilot, confirm the intended hidden browser/fixture
+surface can load the target. A small source file is not automatically a safe
+pilot: the permission pages in the original report depend on trusted gestures,
+native prompts and focus behavior. Prefer a bounded new owned-page feature,
+then separately prove a host-page island beside legacy content. A test-only
+fixture can establish compiler behavior without shipping a demonstration UI.
+
+- Run the new `npm run typecheck` and its intentional-failure fixtures, focused
+  tests, then `npm test`, `npm run lint` and `npm run audit:ci`. Integrate the new
+  check with [test CI](../../.github/workflows/test.yml) and the independent
+  [release verification job](../../.github/workflows/release.yml); adding a local
+  command alone does not enforce it. Keep it inside the existing checked job, or
+  update named-check requirements if introducing a new job. Document it in
+  [development.md](../development.md).
+- After changing build/load dependencies run `npm run verify -- browsers`, which
+  loads real unpacked `dist/`. Keep the new UI's assertions alongside existing
+  bridge, worker, early-theme and legacy-content assertions. Build-only fixtures
+  do not replace this check.
+- Exercise idle, slow pending, success, error and retry with repeated/keyboard
+  activation, long feedback, narrow/desktop widths, both themes and enlarged
+  text. Compare action, heading, following content and scroll geometry. Test
+  BFCache and mount/dispose/re-enable behavior without duplicate handlers.
+- Use hidden fixture browsers and follow the repository launch guard, HTTPS
+  hostname and teardown rules. Record actual browser versions and viewports;
+  assert hardware rendering if the feature touches WebGL. Retain native prompt,
+  focus/window-placement and live-provider proof limits where untested.
+- Build minified Chrome/Firefox artifacts, validate their exact inventories
+  using the documented release/archive tooling, and run packaged checks when
+  output handling changes. Check the actual Svelte-containing output for new
+  AMO warnings and audit notices, rather than increasing the warning baseline.
+- Measure which bundles include Svelte and their raw/gzip deltas. Confirm a
+  legacy-only consumer has not acquired the runtime through a shared UI import.
+  Give each new feature a dependency budget based on its measured contribution.
+
+**Milestone 1 is complete only when a new feature uses checked TS/Svelte, the
+legacy paths still pass, and the shipped mixed build passes these gates.** The
+TypeScript conversion of old modules, a new RPC/storage library, chart
+replacement and WXT cutover can then proceed independently when justified.
+
+## Evidence and outstanding work
+
+- **Verified during investigation:** inventory derived from current `ENTRIES`;
+  watcher-root coverage; six disposable Node/esbuild assertions covering mixed
+  JS/TS, browser bundling, stale specifiers, missing type checking and uncompiled
+  runes; `node --test test/project/development.test.mjs` passed **17/17**.
+  Local probes ran on **Node v26.13.0**, not CI's Node 24; Node 24 behavior was
+  cross-checked against its official docs, not executed locally.
+- **Intentionally not changed:** runtime source, dependencies/lockfile, manifest,
+  build/check configuration, storage formats and existing features. The external
+  report was read without editing it. This repository-local plan is the output.
+- **Not yet proven:** locked Svelte/plugin/ESLint compatibility, compiled Svelte
+  output under the actual AMO baseline, production CSP/style injection,
+  browser/BFCache/geometry behavior, size estimates, native permissions and a
+  WXT parity build. Svelte tooling is not installed in this checkout. No full
+  suite, full build, lint or real-browser run was performed for this docs-only
+  investigation; those are implementation gates, not claimed results.
+
+Source report: the externally supplied
+`ts_svelte_vite_migration_and_stack_report.md`. The pasted attachment was its
+review summary; the complete report was also read during this investigation.
