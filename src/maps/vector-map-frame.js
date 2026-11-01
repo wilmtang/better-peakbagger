@@ -36,6 +36,9 @@ window.addEventListener('message', async event => {
         let errors = false, vectorTile = false;
         map = new maplibre.Map({ container: document.getElementById('map'), style,
             center: [view.center[1], view.center[0]], zoom: view.zoom, minZoom: -1, maxZoom: 23,
+            // Leaflet owns the camera, including world views and polar edges.
+            // Fitting this overscanned frame to Mercator bounds shifts geometry.
+            transformConstrain: (center, zoom) => ({ center, zoom }),
             interactive: false, attributionControl: false, fadeDuration: 0, zoomLevelsToOverscale: undefined,
             transformRequest(url) {
                 if (!terrainStyle.providerUrl(url)) throw new Error('Unapproved vector map provider.');

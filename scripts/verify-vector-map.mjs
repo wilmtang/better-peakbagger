@@ -14,9 +14,10 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--preflight', '--live'].includes(arg))
-    && !(args.includes('--preflight') && args.includes('--live')), 'Usage: node scripts/verify-vector-map.mjs [--firefox] [--preflight | --live]');
-const firefoxMode = args.includes('--firefox'), preflight = args.includes('--preflight'), liveMode = args.includes('--live');
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--preflight', '--live', '--camera-only'].includes(arg))
+    && args.filter(arg => ['--preflight', '--live', '--camera-only'].includes(arg)).length <= 1,
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--preflight | --live | --camera-only]');
+const firefoxMode = args.includes('--firefox'), preflight = args.includes('--preflight'), liveMode = args.includes('--live'), cameraOnly = args.includes('--camera-only');
 const root = path.resolve(import.meta.dirname, '..'), resources = createResourceStack();
 let failure, summary, failurePage;
 try {
@@ -36,7 +37,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     if (!firefoxMode) assertChromeLaunchAllowed();
     const context = await (firefoxMode ? firefox : chromium).launchPersistentContext(profile, firefoxMode ? {
-        headless: true, ignoreHTTPSErrors: true,
+        headless: true, ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 },
         firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com', 'webgl.sanitize-unmasked-renderer': false },
     } : { channel: 'chromium', headless: true, viewport: { width: 1280, height: 800 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
@@ -53,10 +54,21 @@ try {
     resources.defer('held vector styles', release);
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWPYvHnzfwAHNwL9GPw68wAAAABJRU5ErkJggg==', 'base64');
     await context.route('**/vector-native/**', route => route.fulfill({ contentType: 'image/png', body: png }));
-    const tile = Buffer.from(fromGeojsonVt({ land: { features: [{ type: 3, geometry: [[[0, 0], [4096, 0], [4096, 4096], [0, 4096], [0, 0]]], tags: {} }] } }, { version: 2, extent: 4096 }));
+    const geographicPoints = [[5, 90], [75, 5], [-75, 5], [5, 5], [46.851731, -121.760395]];
+    const tile = url => {
+        const match = /\/fixture\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(url); assert.ok(match, `Unexpected vector tile ${url}`);
+        const [, z, x, y] = match.map(Number), scale = 2 ** z;
+        const features = geographicPoints.flatMap(([lat, lon]) => {
+            const worldX = (lon + 180) / 360 * scale, worldY = (1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * scale;
+            return Math.floor(worldX) === x && Math.floor(worldY) === y
+                ? [{ type: 1, geometry: [[Math.round((worldX - x) * 4096), Math.round((worldY - y) * 4096)]], tags: {} }] : [];
+        });
+        return Buffer.from(fromGeojsonVt({ land: { features: [{ type: 3, geometry: [[[0, 0], [4096, 0], [4096, 4096], [0, 4096], [0, 0]]], tags: {} }] }, probes: { features } }, { version: 2, extent: 4096 }));
+    };
     const style = { version: 8, sources: { fixture: { type: 'vector', url: 'https://tiles.openfreemap.org/vector.json' } }, layers: [
         { id: 'background', type: 'background', paint: { 'background-color': '#d5dec9' } },
         { id: 'land', type: 'fill', source: 'fixture', 'source-layer': 'land', paint: { 'fill-color': '#c4ddac' } },
+        { id: 'probes', type: 'circle', source: 'fixture', 'source-layer': 'probes', paint: { 'circle-radius': 12, 'circle-color': '#1e64d2' } },
     ] };
     await context.route('https://tiles.openfreemap.org/**', async route => {
         const url = route.request().url(); requests.push(url);
@@ -68,7 +80,7 @@ try {
             await route.fulfill({ status: mode === 'error' && url.endsWith('/styles/liberty') ? 503 : 200,
                 headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
                 contentType: url.endsWith('.pbf') ? 'application/x-protobuf' : 'application/json',
-                body: url.endsWith('.pbf') ? tile : JSON.stringify(metadata
+                body: url.endsWith('.pbf') ? tile(url) : JSON.stringify(metadata
                     ? { tilejson: '3.0.0', tiles: ['https://tiles.openfreemap.org/fixture/{z}/{x}/{y}.pbf'], minzoom: 0, maxzoom: 14 } : style),
             });
         } catch { /* A deliberately cancelled frame no longer owns its request. */ }
@@ -113,7 +125,41 @@ try {
         gl.getExtension('WEBGL_lose_context')?.loseContext(); return result;
     });
     assert.ok(renderer && !/swiftshader|llvmpipe|software/i.test(renderer), `Hardware renderer required; got ${renderer}`);
+    const verifyCameraAlignment = async () => {
+        mode = 'ready'; await open();
+        await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
+        await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
+        const cameras = [
+            { center: [0, 0], zoom: 0, point: [5, 90] },
+            { center: [0, 0], zoom: 1, point: [5, 90] },
+            { center: [80, 0], zoom: 3, point: [75, 5] },
+            { center: [-80, 0], zoom: 3, point: [-75, 5] },
+            { center: [0, 0], zoom: 3, point: [5, 5] },
+        ];
+        for (const camera of cameras) {
+            await page.evaluate(value => { nativePeak.setLatLng(value.point); mapsPlaceholder.setView(value.center, value.zoom, { animate: false }); }, camera);
+            await waitForCondition(async () => {
+                const pngData = (await page.locator('#map').screenshot()).toString('base64');
+                return page.evaluate(async ({ data, point }) => {
+                    const image = new Image(); image.src = 'data:image/png;base64,' + data; await image.decode();
+                    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+                    const context2d = canvas.getContext('2d'); context2d.drawImage(image, 0, 0);
+                    const target = mapsPlaceholder.latLngToContainerPoint(point), bounds = document.getElementById('map').getBoundingClientRect();
+                    const pixels = [[10, 0], [-10, 0], [0, 10], [0, -10]].map(([dx, dy]) => [...context2d.getImageData(
+                        Math.round((target.x + dx) * image.width / bounds.width), Math.round((target.y + dy) * image.height / bounds.height), 1, 1).data]);
+                    return { pixels, point: target, nativeZoom: mapsPlaceholder.getZoom() };
+                }, { data: pngData, point: camera.point });
+            }, { description: `geographic vector/native alignment ${JSON.stringify(camera)}`, timeoutMs: 5000,
+                isReady: result => result.pixels.every(pixel => [30, 100, 210].every((value, channel) => Math.abs(pixel[channel] - value) <= 8)) });
+            if (process.env.BPB_VECTOR_SCREENSHOTS) {
+                await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true });
+                await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `${firefoxMode ? 'firefox' : 'chrome'}-camera-${camera.center[0]}-${camera.zoom}.png`) });
+            }
+        }
+        return cameras.length;
+    };
     if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
+    else if (cameraOnly) summary = { verification: 'vector-camera', cases: await verifyCameraAlignment(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (liveMode) {
         await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
@@ -212,9 +258,10 @@ try {
         await page.evaluate(() => mapsPlaceholder.remove());
         await page.waitForFunction(() => !document.querySelector('.bpb-vector-slot iframe'));
         assert.equal(await page.locator('#selmap').evaluate(element => element.style.minWidth), '', 'Map teardown restores the native picker sizing');
+        const cameraCases = await verifyCameraAlignment();
         assert.deepEqual(errors, []);
         summary = { verification: '2d-vector-map', hidden: true, browser: context.browser().version(), renderer,
-            cases: cases + 3, viewports: '1280/375 × 800, light/dark, 200% CSS zoom', realExtension: !firefoxMode,
+            cases: cases + 3 + cameraCases, viewports: '1280/375 × 800, light/dark, 200% CSS zoom', realExtension: !firefoxMode,
             syntheticProvider: true, loadingSuccessErrorRetryCancellation: true, stableGeometry: true, nativeMarkerInteraction: true };
     }
 } catch (error) {
