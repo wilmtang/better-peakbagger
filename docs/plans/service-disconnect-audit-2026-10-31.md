@@ -25,6 +25,16 @@ and asynchronous work that could restore credentials after disconnection.
   Keep local cleanup available without reauthorizing GitHub or choosing a repo.
   The worker already clears pending authorization and advances its credential
   epoch (`src/background/github-routes.js`, `src/github/github-auth.js`).
+- **D5 — Unknown draft counts authorize Garmin deletion.** Re-enabling imports
+  after a credential-only status read exposes Delete with no full draft count.
+  When the full read fails, the zero fallback confirms "Delete 0" but removes
+  every draft. Self-review reproduced deletion of 25 test drafts.
+- **D6 — Older GitHub setup can resume after Disconnect.** Permission and setup
+  continuations do not share the status renderer's invalidation guard. A held
+  permission request can start a new device flow after local removal succeeds.
+- **D7 — Garmin's successful disconnect masks a later connection.** Reusing
+  `keyError` to retain the success message prevents polling from reporting a
+  new saved key, although the Disconnect button becomes available again.
 
 UX: place Disconnect beside connection status, outside advanced disclosures.
 Use the existing secondary button style, entry-only password fields, visible
@@ -38,6 +48,15 @@ disconnect removes its control.
 ## Closure ledger
 
 ### Fixed and verified
+
+- D5: Delete requires a known nonnegative full-status draft count. Feature
+  transitions and failed status reads invalidate it; credential-only status
+  still permits Disconnect. ARIA unavailability retains keyboard focus and the
+  click handler blocks both confirmation and deletion. The new real-store/UI
+  regression failed before the fix with "Delete 0" for 25 drafts. All 41 focused
+  Garmin/settings tests and focused ESLint passed. Hidden Chrome/Firefox passed
+  84 connection cases, including failure/recovery after re-enabling imports,
+  Enter/Space guards, correct native confirmation dismissal, focus and geometry.
 
 - D2: pending Garmin connect is invalidated before asynchronous validation;
   disconnect also aborts its identity request. Worker regressions cover the
@@ -94,6 +113,9 @@ disconnect removes its control.
 - Repository CI credentials are outside the extension's connected-service UI.
 
 ### Changed but not fully proven
+
+- D6 and D7 remain open after self-review; the earlier happy-path and isolated
+  disconnect checks did not cover concurrent setup or a later external reconnect.
 
 - Full `npm test`: 3,812 passed, two fixture-privacy checks failed because the
   unchanged registry does not recognize `test/fixtures/maps/snow-depth-legend.json`.

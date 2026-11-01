@@ -27,13 +27,18 @@ export async function initGarminSettings(root) {
         <p class="garmin-helper">While your browser runs, imports use routes to find peaks on Peakbagger. Drafts and reduced routes stay on this device until completed or removed. You review every ascent before Save.</p>
         <div class="garmin-feedback"><span aria-hidden="true">Open Peakbagger and sign in to prepare your drafts. Your activities stay in the inbox.</span><span id="garmin-settings-status" role="status" aria-atomic="true"></span></div>
         <button id="garmin-access" class="panel-button primary" hidden>Allow Garmin access</button>
-        <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="panel-button secondary">Check full history</button><button id="garmin-delete" class="panel-button secondary">Delete local Garmin data</button></div><p class="garmin-helper">Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
+        <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="panel-button secondary">Check full history</button><button id="garmin-delete" class="panel-button secondary" aria-disabled="true" aria-describedby="garmin-settings-status">Delete local Garmin data</button></div><p class="garmin-helper">Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
       </div>`;
     const $ = selector => root.querySelector(selector);
     root.addEventListener('submit', event => event.preventDefault());
     const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Garmin could not finish this action. Try again.'); return result; };
     let featureEnabled = false; let state; let busy = false; let keyError = false; let settingsError = false;
     let revision = 0; let preferencesRevealed = false; let settingsUnavailable = false;
+    let pendingDrafts = null;
+    const setDraftCount = count => {
+        pendingDrafts = Number.isSafeInteger(count) && count >= 0 ? count : null;
+        $('#garmin-delete').setAttribute('aria-disabled', String(pendingDrafts === null));
+    };
     const perform = async (button, status, operation, { cleanup = false } = {}) => {
         if (busy || (!featureEnabled && !cleanup)) return; busy = true; revision++;
         if (status.id === 'garmin-key-status') keyError = false; else settingsError = false;
@@ -55,9 +60,21 @@ export async function initGarminSettings(root) {
     const refresh = async ({ duringOperation = false } = {}) => {
         if (busy && !duringOperation) return;
         const expected = ++revision;
-        const next = await send({ type: featureEnabled ? 'GARMIN_STATUS' : 'GARMIN_CONNECTION_STATUS' });
+        const fullStatus = featureEnabled;
+        let next;
+        try { next = await send({ type: fullStatus ? 'GARMIN_STATUS' : 'GARMIN_CONNECTION_STATUS' }); }
+        catch (error) {
+            if (expected !== revision) return;
+            setDraftCount(null);
+            if (!settingsError) {
+                $('#garmin-settings-status').textContent = 'Local drafts could not be checked. Deleting local data is unavailable.';
+                $('#garmin-settings-status').classList.add('is-error');
+            }
+            throw error;
+        }
         if (expected !== revision || (busy && !duringOperation)) return;
         state = next;
+        setDraftCount(fullStatus ? state.pending : null);
         preferencesRevealed ||= !!(state.configured || state.pending);
         $('#garmin-preferences').hidden = !featureEnabled || !preferencesRevealed;
         $('#garmin-disconnect').hidden = !state.configured;
@@ -67,9 +84,12 @@ export async function initGarminSettings(root) {
         $('#garmin-access').hidden = state.error?.code !== 'permission';
         $('#garmin-history option[value="connection"]').textContent = `From ${state.connectedDate} to today`;
         if (!keyError) $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
-        if (!settingsError) $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
-            : state.error?.message || (state.enabled ? state.cid ? 'Garmin drafts enabled. Your activity inbox is ready.'
-                : 'Open Peakbagger and sign in to prepare your drafts. Your activities stay in the inbox.' : 'Connect Garmin to start importing activities.');
+        if (!settingsError) {
+            $('#garmin-settings-status').classList.remove('is-error');
+            $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
+                : state.error?.message || (state.enabled ? state.cid ? 'Garmin drafts enabled. Your activity inbox is ready.'
+                    : 'Open Peakbagger and sign in to prepare your drafts. Your activities stay in the inbox.' : 'Connect Garmin to start importing activities.');
+        }
     };
     const credentialsImported = () => { keyError = settingsError = false; void refresh().catch(() => {}); };
     document.addEventListener('bpb:credentials-imported', credentialsImported);
@@ -79,6 +99,7 @@ export async function initGarminSettings(root) {
     catch { prefs = { ...Schema.DEFAULTS, enableGarminInbox: false }; settingsUnavailable = true;
         $('#garmin-key-status').textContent = 'Settings could not be read. You can still disconnect Garmin.'; keyError = true; }
     const applyFeature = settings => {
+        if (featureEnabled !== settings.enableGarminInbox) { revision++; setDraftCount(null); }
         featureEnabled = settings.enableGarminInbox;
         const revealed = root.hidden;
         root.hidden = false;
@@ -152,7 +173,8 @@ export async function initGarminSettings(root) {
     for (const [selector, type, extra] of [['#garmin-access', 'GARMIN_ACCESS', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]]) {
         $(selector).addEventListener('click', () => {
             if (busy || !featureEnabled) return;
-            if (extra.deleteData && !confirm(`Delete ${state?.pending || 0} local Garmin drafts and their import history?`)) return;
+            if (extra.deleteData && (pendingDrafts === null
+                || !confirm(`Delete ${pendingDrafts} local Garmin drafts and their import history?`))) return;
             void perform($(selector), $('#garmin-settings-status'), async () => {
                 if (type === 'GARMIN_ACCESS'
                     && !await ext.permissions.request({ origins: [GARMIN_PERMISSION] })) throw new Error('Garmin access was not granted.');

@@ -50,8 +50,9 @@ try {
                 fullName: 'fixture-account-with-long-login-name/a-long-backup-repository-name-for-mountain-trip-reports' };
             const listeners = [];
             const area = { get: async () => ({ bpbSettings: prefs, bpbDeviceSettings: { schemaVersion: 1, settings: prefs } }), set: async () => {}, remove: async () => {} };
-            window.fixture = { calls: 0, finish: null, requests: 0, authReads: 0,
-                notifyGithub: () => listeners.forEach(listener => listener({ bpbGithubAuth: { newValue: null } }, 'local')) };
+            window.fixture = { calls: 0, finish: null, requests: 0, authReads: 0, garminStatusReads: 0, garminStatusError: false,
+                notifyGithub: () => listeners.forEach(listener => listener({ bpbGithubAuth: { newValue: null } }, 'local')),
+                setGarminEnabled: value => { prefs.enableGarminInbox = value; listeners.forEach(listener => listener({ bpbSettings: { newValue: prefs } }, 'sync')); } };
             window.chrome = {
                 storage: { sync: area, local: area, session: area, onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
                 permissions: { contains: async () => enabled, request: async () => { window.fixture.requests++; return false; }, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
@@ -70,7 +71,11 @@ try {
                         }
                         if (message.type === 'SETTINGS_PATCH') { Object.assign(prefs, message.patch); return { ok: true, settings: prefs }; }
                         if (message.type === 'GARMIN_CONNECTION_STATUS') return { ok: true, configured: connected.garmin };
-                        if (message.type === 'GARMIN_STATUS') return { ok: true, configured: connected.garmin, enabled: connected.garmin, connectedDate: '2026-10-31', pending: 1, items: [] };
+                        if (message.type === 'GARMIN_STATUS') {
+                            window.fixture.garminStatusReads++;
+                            if (window.fixture.garminStatusError) return { ok: false, error: { message: 'Local draft status could not be read.' } };
+                            return { ok: true, configured: connected.garmin, enabled: connected.garmin, connectedDate: '2026-10-31', pending: 25, items: [] };
+                        }
                         if (message.type === 'PHOTO_IMGBB_STATUS') return { ok: true, configured: connected.imgbb, permissionGranted: enabled };
                         if (message.type === 'GITHUB_AUTH_STATUS') { window.fixture.authReads++; return { connected: connected.github, hasToken: connected.github, repo, account: { login: repo.owner } }; }
                         if (message.type === 'GITHUB_IGNORED_LIST') return { ok: true, count: 0, state: { enabled: false, phase: 'idle' } };
@@ -149,11 +154,47 @@ try {
                 assert.deepEqual(errors, [], label);
                 cases++;
             }
+            // A credential-only status must never authorize a destructive
+            // confirmation. Exercise the actual feature transition, failure,
+            // recovery and keyboard activation rather than a fixed mock state.
+            await page.goto(`${origin}/options/options.html?theme=${theme}&enabled=false&service=garmin-drafts#capture-garmin`);
+            await page.locator('#garmin-disconnect').waitFor({ state: 'visible' });
+            await page.evaluate(zoom => {
+                document.documentElement.style.zoom = String(zoom); document.querySelector('.content').style.scrollBehavior = 'auto';
+                window.fixture.garminStatusError = true; window.fixture.setGarminEnabled(true);
+            }, zoom);
+            await page.locator('#garmin-settings-status').filter({ hasText: /Deleting local data is unavailable/ }).waitFor();
+            await page.locator('#garmin-preferences summary').click();
+            const removeData = page.locator('#garmin-delete'), confirmations = [];
+            const dismiss = async dialog => { confirmations.push(dialog.message()); await dialog.dismiss(); };
+            page.on('dialog', dismiss);
+            try {
+                await removeData.scrollIntoViewIfNeeded(); await removeData.focus();
+                assert.equal(await removeData.getAttribute('aria-disabled'), 'true');
+                const surface = { ...services[0], action: '#garmin-delete' }, before = await geometry(surface);
+                await removeData.press('Enter'); await removeData.press('Space');
+                assert.deepEqual(confirmations, []);
+                assert.equal(await page.evaluate(() => window.fixture.calls), 0);
+                await page.evaluate(() => { window.fixture.garminStatusError = false; window.fixture.setGarminEnabled(true); });
+                await page.waitForFunction(() => document.getElementById('garmin-delete').getAttribute('aria-disabled') === 'false');
+                stable(before, await geometry(surface), `${name}/${theme}/${width}/${zoom}/draft-status-recovered`);
+                assert(await removeData.evaluate(button => document.activeElement === button));
+                await removeData.press('Enter');
+                assert.deepEqual(confirmations, ['Delete 25 local Garmin drafts and their import history?']);
+                assert.equal(await page.evaluate(() => window.fixture.calls), 0, 'Cancel must preserve local data');
+                await page.evaluate(() => { window.fixture.garminStatusError = true; window.fixture.setGarminEnabled(true); });
+                await page.waitForFunction(() => document.getElementById('garmin-delete').getAttribute('aria-disabled') === 'true');
+                stable(before, await geometry(surface), `${name}/${theme}/${width}/${zoom}/draft-status-failed`);
+                await removeData.press('Enter');
+                assert.equal(confirmations.length, 1);
+                assert.deepEqual(errors, []);
+                cases++;
+            } finally { page.off('dialog', dismiss); }
         }
         console.log(`${name} ${browser.version()}: hidden Settings connection states passed; 1180×1000, 390×1000, 200% CSS zoom; light/dark; features on/off.`);
         await context.close();
     }
-    assert.equal(cases, 72);
+    assert.equal(cases, 84);
     console.log(`${cases} cases passed. Screenshots: ${output}. Service/storage/permission replies stubbed; native prompts and visible focus not exercised.`);
 } finally {
     const closed = await Promise.allSettled(browsers.reverse().map(browser => browser.close()));
