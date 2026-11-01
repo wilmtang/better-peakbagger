@@ -153,7 +153,8 @@ test('access notifications during device setup preserve the code until host acce
     assert.equal(el(dom, 'github-panel').querySelector('.github-code')?.textContent, 'ABCD-EFGHCopy');
     granted = false;
     for (const listener of removed) listener({ origins: ['https://github.com/*'] });
-    await waitFor(dom, () => /Connect GitHub/.test(el(dom, 'github-panel').textContent));
+    await waitFor(dom, () => /access wasn’t granted/.test(el(dom, 'github-panel').textContent));
+    assert.equal(el(dom, 'github-disconnect').hidden, false);
     assert.equal(el(dom, 'github-panel').querySelector('.github-code'), null);
 });
 

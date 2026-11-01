@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Disconnect saved services from Settings.** Garmin and ImgBB key removal stays
+  available with their features off, and GitHub can disconnect without restored
+  host access. Drafts, uploaded photos and remote backups stay in place. Garmin
+  cancels older key verification so it cannot undo a later disconnect.
+
 - **Keep keyboard help visible.** Custom-map explanations preserve focused
   controls at enlarged zoom and let the keyboard read overflowing text without
   moving the editor actions.

@@ -46,12 +46,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const enableEl = document.getElementById('enable-github-backup');
     const detailEl = document.getElementById('github-detail');
     const panelEl = document.getElementById('github-panel');
+    const disconnectEl = document.getElementById('github-disconnect');
+    const disconnectStatusEl = document.getElementById('github-disconnect-status');
     const ascentDetailEl = document.getElementById('github-ascent-detail');
     const ascentPanelEl = document.getElementById('github-ascent-panel');
     if (OptionsUtils.logMissingElements('GitHub settings', {
         'enable-github-backup': enableEl,
         'github-detail': detailEl,
         'github-panel': panelEl,
+        'github-disconnect': disconnectEl,
+        'github-disconnect-status': disconnectStatusEl,
         'github-ascent-detail': ascentDetailEl,
         'github-ascent-panel': ascentPanelEl,
     })) {
@@ -60,7 +64,6 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     let pollTimer = null;
     let countdownTimer = null;
-    let permissionError = false;
     let choosingRepo = false;
     let currentSettings = {
         enableGithubBackup: false,
@@ -87,6 +90,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     let githubRevision = 0;
     let connectionOperations = 0;
     let accessRefreshPending = false;
+    let disconnectBusy = false;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
     const stopTimers = () => {
         stopPollTimer();
@@ -137,7 +141,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }
     };
     const renderInto = (target, ...nodes) => { target.replaceChildren(...nodes.filter(Boolean)); };
-    const render = (...nodes) => { githubRevision++; renderInto(panelEl, ...nodes); };
+    const render = (...nodes) => { githubRevision++; delete panelEl.dataset.disconnected; renderInto(panelEl, ...nodes); };
     const renderAscent = (...nodes) => { renderInto(ascentPanelEl, ...nodes); };
     const newRepositoryUrl = status => {
         const url = new URL('https://github.com/new');
@@ -152,10 +156,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     const renderDisconnected = () => {
         choosingRepo = confirmingExistingRepo = false;
+        // Storage notifications from our own disconnect can arrive after its
+        // reply. Keep the new Connect button and its restored keyboard focus.
+        if (panelEl.dataset.disconnected === 'true') return;
         render(
-            el('p', { class: 'github-line', text: 'Connect a GitHub account, then choose one repository for Better Peakbagger backups and transfers.' }),
+            el('p', { class: 'github-line', text: 'Connect a GitHub account to choose a backup repository.' }),
             el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: ensureConnection })),
         );
+        panelEl.dataset.disconnected = 'true';
     };
 
     const renderPermissionDenied = () => {
@@ -296,7 +304,6 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                     target: '_blank', rel: 'noopener noreferrer', text: 'View repository',
                 }) : null,
                 button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
-                button('Disconnect', { onClick: disconnect }),
             ].filter(Boolean)),
         );
     };
@@ -484,12 +491,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const rememberStatus = status => {
         if (ascentRepoIdentity(currentStatus) !== ascentRepoIdentity(status)) forgetAscentSummary();
         currentStatus = status || null;
+        disconnectEl.hidden = !(status?.hasToken || status?.connected);
         renderAscentStatus();
         return currentStatus;
     };
 
     const renderError = (error, retry, actionLabel = 'Try again') => {
         stopTimers();
+        // A failed status/discovery check says nothing about local credential
+        // removal. Offer cleanup even when the connection cannot be inspected.
+        disconnectEl.hidden = false;
         const code = typeof error === 'string' ? error : error && error.code;
         if (code === 'auth' || code === 'no-token') {
             retry = reconnect;
@@ -619,17 +630,39 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const disconnect = async () => {
+        if (disconnectBusy) return;
+        disconnectBusy = true; githubRevision++;
         stopTimers();
-        if (await requestDisconnect(disconnect)) {
+        OptionsUtils.setButtonBusy(disconnectEl, true);
+        disconnectStatusEl.classList.remove('is-error');
+        disconnectStatusEl.textContent = 'Disconnecting…';
+        try {
+            const response = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
+            if (!response || response.phase === 'error' || response.connected !== false) {
+                disconnectStatusEl.classList.add('is-error');
+                disconnectStatusEl.textContent = 'The saved connection could not be removed. Try Disconnect again.';
+                return;
+            }
+            // Preserve the space the account/repository occupied until the
+            // next explicit Connect action, including long repository names.
+            const restoreFocus = document.activeElement === disconnectEl;
+            panelEl.style.minBlockSize = `${panelEl.offsetHeight}px`;
+            rememberStatus(response);
+            disconnectStatusEl.textContent = 'Disconnected. Your remote backups are unchanged.';
+            renderDisconnected();
+            if (restoreFocus) panelEl.querySelector('button')?.focus({ preventScroll: true });
             flash('GitHub disconnected');
-            await renderFromStatus();
+        } finally {
+            disconnectBusy = false;
+            OptionsUtils.setButtonBusy(disconnectEl, false);
         }
     };
+    disconnectEl.addEventListener('click', () => { void withConnectionOperation(disconnect); });
 
     // Show the connection state for the current stored status.
     const renderFromStatus = async ({ preserveSetup = false } = {}) => {
         const revision = ++githubRevision;
-        if (permissionError) return renderPermissionDenied();
+        if (disconnectBusy) return;
         detailEl.hidden = false;
         const [permissionGranted, status] = await Promise.all([
             hasGithubPermission(extensionApi), send({ type: 'GITHUB_AUTH_STATUS' }),
@@ -641,6 +674,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const next = rememberStatus({ ...(status || {}), permissionGranted });
         if (!permissionGranted) {
             stopTimers();
+            if (next.hasToken || next.connected) return renderPermissionDenied();
             return renderDisconnected();
         }
         if (preserveSetup && (pollTimer || ((choosingRepo || confirmingExistingRepo) && next.hasToken))) return;
@@ -664,14 +698,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // ---- toggle ------------------------------------------------------------
 
     async function ensureConnection() {
-        permissionError = false;
+        panelEl.style.minBlockSize = '';
         if (!(await hasGithubPermission(extensionApi))) {
             let granted = false;
             try {
                 granted = await extensionApi.permissions.request({ origins: GITHUB_ORIGINS });
             } catch { granted = false; }
             if (!granted) {
-                permissionError = true;
                 renderPermissionDenied();
                 return;
             }
@@ -721,7 +754,6 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     });
 
     observeGithubAccess(extensionApi, () => {
-        permissionError = false;
         if (connectionOperations) { accessRefreshPending = true; return; }
         void renderFromStatus({ preserveSetup: true });
     });

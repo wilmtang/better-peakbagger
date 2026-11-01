@@ -562,20 +562,20 @@ test('timestamp removal is an Options preference stored in browser sync', async 
     assert.equal(el(restored, 'remove-gpx-timestamps').checked, true);
 });
 
-test('the General Garmin switch defaults on and hides its section and sidebar until re-enabled', async () => {
+test('the General Garmin switch stops imports while keeping connection management reachable', async () => {
     const dom = await loadOptions({});
     const control = el(dom, 'enable-garmin-inbox');
     assert.equal(control.checked, true);
     assert.equal(control.closest('section').id, 'general');
     control.checked = false; control.dispatchEvent(new dom.window.Event('change'));
-    await waitFor(dom, () => el(dom, 'capture-garmin').hidden);
+    await waitFor(dom, () => el(dom, 'garmin-key').disabled);
     assert.equal(dom.chrome._store.bpbSettings.enableGarminInbox, false);
-    assert.equal(dom.window.document.querySelector('a[href="#capture-garmin"]').closest('li').hidden, true);
+    assert.equal(el(dom, 'capture-garmin').hidden, false);
+    assert.equal(dom.window.document.querySelector('a[href="#capture-garmin"]').closest('li').hidden, false);
     control.checked = true; control.dispatchEvent(new dom.window.Event('change'));
-    await waitFor(dom, () => !el(dom, 'capture-garmin').hidden);
+    await waitFor(dom, () => !el(dom, 'garmin-key').disabled);
     const disabled = await loadOptions({ enableGarminInbox: false }, { hash: '#capture-garmin' });
-    assert.equal(el(disabled, 'capture-garmin').hidden, true);
-    assert.equal(disabled.window.location.hash, '#general');
-    disabled.window.location.hash = '#capture-garmin';
-    await waitFor(disabled, () => disabled.window.location.hash === '#general');
+    assert.equal(el(disabled, 'capture-garmin').hidden, false);
+    assert.equal(el(disabled, 'garmin-key').disabled, true);
+    assert.equal(disabled.window.location.hash, '#capture-garmin');
 });

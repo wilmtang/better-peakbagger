@@ -30,6 +30,7 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
     const send = RuntimeMessage.bind(extensionApi);
     let busy = false;
     let configured = false;
+    let revision = 0;
 
     const setStatus = (message, tone = '') => {
         statusEl.textContent = message;
@@ -57,10 +58,14 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
     };
 
     const refresh = async () => {
+        if (busy) return;
+        const expected = ++revision;
         const response = await send({ type: 'PHOTO_IMGBB_STATUS' });
+        if (expected !== revision || busy) return;
         if (!response?.ok) {
-            configured = false;
-            removeEl.hidden = true;
+            // Unknown status must still offer local cleanup without requiring
+            // upload permission or a successful connection check first.
+            removeEl.hidden = false;
             setStatus('The key could not be checked. Reload Settings and try again.', 'error');
             return;
         }
@@ -87,7 +92,8 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
             keyEl.focus();
             return;
         }
-        setBusy(true);
+        revision++; setBusy(true);
+        setStatus('Saving key…');
         try {
             if (!await requestPermission()) {
                 setStatus('Allow access to api.imgbb.com, then choose Save key again.', 'error');
@@ -98,7 +104,7 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
                 setStatus(response?.error?.message || 'The key could not be saved. Try again.', 'error');
                 return;
             }
-            keyEl.value = '';
+            if (ImgbbClient.cleanKey(keyEl.value) === key) keyEl.value = '';
             configured = true;
             render({ permissionGranted: true });
             flash?.('ImgBB key saved');
@@ -109,11 +115,12 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
 
     const remove = async () => {
         if (busy) return;
-        setBusy(true);
+        revision++; setBusy(true);
+        setStatus('Disconnecting…');
         try {
             const response = await send({ type: 'PHOTO_IMGBB_REMOVE_KEY' });
             if (!response?.ok) {
-                setStatus('The key could not be removed. Try again.', 'error');
+                setStatus('The key could not be removed. Try Disconnect again.', 'error');
                 return;
             }
             keyEl.value = '';
@@ -122,7 +129,7 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
             removeEl.hidden = true;
             setStatus('No key saved on this device.');
             // Uploaded photos keep their public URLs; only new uploads stop.
-            flash?.('ImgBB key removed. Uploaded photos are unchanged.');
+            flash?.('ImgBB disconnected. Uploaded photos are unchanged.');
         } finally {
             setBusy(false);
         }

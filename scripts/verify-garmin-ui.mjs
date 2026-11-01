@@ -369,8 +369,10 @@ try {
             if (name === 'chromium') await page.screenshot({ path: path.join(output, `review-${width}-${theme}.png`) });
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
             await page.goto(`${origin}/options/options.html?disabled#general`);
-            await page.waitForFunction(() => document.getElementById('garmin-key') && document.getElementById('capture-garmin').hidden);
-            assert(await page.locator('.side-nav a[href="#capture-garmin"]').isHidden());
+            await page.waitForFunction(() => document.getElementById('garmin-key')?.disabled && !document.getElementById('capture-garmin').hidden);
+            assert.equal(await page.locator('.side-nav a[href="#capture-garmin"]').evaluate(link => link.closest('li').hidden), false);
+            if (width === 1180) assert(await page.locator('.side-nav a[href="#capture-garmin"]').isVisible());
+            await page.locator('#garmin-disconnect').waitFor({ state: 'visible' });
             assert.equal(await page.evaluate(() => window.fixture.statuses), 0);
             await page.goto(`${origin}/options/inbox.html?disabled`);
             await page.locator('#inbox-disabled').waitFor();

@@ -1210,8 +1210,7 @@ test('a connected status renders the account and repository', async () => {
     assert.match(panelText, /@ada/);
     assert.match(panelText, /ada\/peaks/);
     // The connected state offers a disconnect control.
-    const buttons = Array.from(el(dom, 'github-panel').querySelectorAll('button'), b => b.textContent);
-    assert.ok(buttons.includes('Disconnect'));
+    assert.equal(el(dom, 'github-disconnect').hidden, false);
     // The repository link belongs to the connection, not to ascent and TR backup.
     const repositoryLink = el(dom, 'github-panel').querySelector('a[href="https://github.com/ada/peaks"]');
     assert.ok(repositoryLink, 'the connected panel links to the selected repository');
@@ -1257,13 +1256,12 @@ test('a failed GitHub disconnect stays connected and does not announce success',
     });
     await waitFor(dom, () => /Repository ada\/peaks/.test(el(dom, 'github-panel').textContent));
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Disconnect').click();
-    await waitFor(dom, () => /Local credential removal failed/.test(el(dom, 'github-panel').textContent));
+    el(dom, 'github-disconnect').click();
+    await waitFor(dom, () => /could not be removed/.test(el(dom, 'github-disconnect-status').textContent));
 
     assert.doesNotMatch(el(dom, 'status').textContent, /disconnected/i);
-    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Try again'));
+    assert.equal(el(dom, 'github-disconnect').hidden, false);
+    assert.match(el(dom, 'github-panel').textContent, /Repository ada\/peaks/);
 });
 
 test('the connected ascent panel keeps a fresh repository-backed count across ordinary focus', async () => {

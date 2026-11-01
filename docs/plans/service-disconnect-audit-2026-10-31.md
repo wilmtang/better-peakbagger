@@ -50,6 +50,33 @@ disconnect removes its control.
   extension in hidden Chromium 156.0.8078.4 (1000×760 lifecycle fixture plus
   light/dark layout checks at 1600, 800 and 390 pixels; narrow doubled text).
   The verifier reported successful teardown.
+- D1/D3/D4 Settings: Garmin Disconnect is beside the key controls, outside the
+  disclosure. Garmin connection management and the ImgBB key row/sidebar remain
+  reachable with their features off. Only the photo-library row and report
+  drafts retain the editor feature gate. Failed status reads still offer local
+  cleanup. GitHub disconnect is independent of host access, repository discovery
+  and the dynamic setup/error panel.
+- Busy/error/retry feedback preserves the action and focus; repeated pointer and
+  keyboard activation sends one removal. Success removes the hidden action from
+  painting/focus and deliberately focuses the surviving key/Connect control (or
+  the Garmin heading when connecting is unavailable). Delayed status replies and
+  GitHub credential notifications cannot restore stale UI or steal that focus.
+- Final focused ESLint and 194 worker/options/project tests passed. The GitHub
+  notification focus assertion failed before its rendering guard was added.
+  `node scripts/verify-connections.mjs` passed 72 cases in hidden Chromium
+  156.0.8078.4 and Firefox 157.0: both themes, 1180×1000 and 390×1000,
+  200% CSS zoom, feature on/off, missing permission, long account/repo names,
+  held pending/error/retry/success replies, repeat activation and focus.
+  Buttons, action slots, connection headings and following section positions stayed
+  within 1px with unchanged scroll. Ending GitHub deliberately replaces its
+  following backup options with setup guidance, allowing that panel's height
+  to shrink once; the backup heading stays anchored. The connection panel keeps
+  its previous height until the next explicit Connect action.
+- Visually inspected representative idle/pending/error/success screenshots,
+  including narrow dark Firefox/Chromium and enlarged light Chromium. Existing
+  `node scripts/verify-garmin-ui.mjs` also passed all 16 settings/inbox/popup
+  cases. An old-code packaged fixture failed the new browser assertion because
+  `#garmin-disconnect` existed but was hidden in the closed disclosure.
 
 ### Intentionally not changed
 
@@ -68,8 +95,13 @@ disconnect removes its control.
 
 ### Changed but not fully proven
 
-- D1/D3/D4 UI implementation and interaction/browser verification pending.
-- Baseline: 100 focused Garmin/options tests passed. Packaged Settings loaded in
-  hidden Chromium 156.0.8078.4 and Firefox 157.0 at 1180×1000 and 390×1000,
-  both themes. Live service sessions, native permission prompts, real screen
-  reader output and visible focus/window placement are not exercised by stubs.
+- Full `npm test`: 3,812 passed, two fixture-privacy checks failed because the
+  unchanged registry does not recognize `test/fixtures/maps/snow-depth-legend.json`.
+  Neither that fixture, its privacy manifest nor its tests were changed here.
+  The full suite is not green. `npm run lint` passed with eight already-owned
+  web-ext warnings.
+- Live service sessions, native permission prompts, real screen reader output,
+  native browser zoom, and visible focus/window placement were not exercised.
+  Browser service/storage replies are synthetic; no real user key was removed
+  and no remote account, upload or backup was modified. Headless DOM focus and
+  CSS zoom establish only their explicitly tested browser behavior.

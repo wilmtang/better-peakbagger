@@ -6,6 +6,38 @@ const settingsSource = await readFile(new URL('../../dist/options/garmin.js', im
 const inboxSource = await readFile(new URL('../../dist/options/inbox.js', import.meta.url), 'utf8');
 const inboxHtml = await readFile(new URL('../../options/inbox.html', import.meta.url), 'utf8');
 const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
+test('Garmin disconnect is exposed with imports off and guards retry, focus and repeat activation', async () => {
+    const dom = new JSDOM('<div data-garmin-settings hidden></div>', { url: 'chrome-extension://test/options/options.html#capture-garmin', runScripts: 'outside-only' });
+    let finish, removals = 0;
+    const calls = [];
+    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } },
+        runtime: { sendMessage: async message => {
+            calls.push(message.type);
+            if (message.type === 'GARMIN_DISCONNECT') { removals++; return new Promise(resolve => { finish = resolve; }); }
+            return { ok: true, configured: true };
+        } } };
+    try {
+        dom.window.eval(settingsSource); await tick();
+        const d = dom.window.document, action = d.querySelector('#garmin-disconnect');
+        assert.equal(d.querySelector('[data-garmin-settings]').hidden, false);
+        assert.equal(action.hidden, false);
+        assert.equal(action.closest('details'), null);
+        assert.equal(d.querySelector('#garmin-key').disabled, true);
+        assert.equal(dom.window.location.hash, '#capture-garmin');
+        assert.equal(calls.includes('GARMIN_STATUS'), false);
+        action.focus(); action.click(); action.click(); await tick();
+        assert.equal(removals, 1);
+        assert.equal(action.getAttribute('aria-busy'), 'true');
+        finish({ ok: false, error: { message: 'Could not remove the key. Try again.' } }); await tick();
+        assert.equal(d.activeElement, action);
+        assert.equal(action.hidden, false);
+        action.click(); await tick(); finish({ ok: true, configured: false }); await tick();
+        assert.equal(removals, 2);
+        assert.equal(action.hidden, true);
+        assert.equal(d.activeElement, d.querySelector('h3'));
+        assert.match(d.querySelector('#garmin-key-status').textContent, /Disconnected/);
+    } finally { dom.window.close(); }
+});
 test('Garmin setup links directly to key creation and requests permission only on Connect', async () => {
     const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
     const messages = []; let permissions = 0;

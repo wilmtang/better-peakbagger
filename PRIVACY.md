@@ -105,8 +105,12 @@ only when **Include saved credentials** is checked; that file is not encrypted.
 Access tokens stay in worker memory and are never exported.
 
 The General **Automatically detect Garmin activities** switch defaults on.
-Turning it off hides the feature and stops imports and queued peak checks,
-preserving the key, drafts and import history. Turning it on does not grant
+Turning it off hides the activity inbox and stops imports and queued peak checks,
+preserving the key, drafts and import history. Settings keeps the Garmin
+connection visible so you can **Disconnect** even while imports are off.
+Disconnect removes the saved key and stops imports, keeping local drafts and
+history. It also attempts to remove optional Garmin host access. Deleting local
+Garmin data is a separate confirmed action. Turning imports on does not grant
 Garmin access or create a connection.
 
 Connecting or importing a validated Garmin key enables drafts on this device,
@@ -141,7 +145,7 @@ excluded from settings files and sync. Clearing extension data removes the inbox
 **Open selected drafts** creates a fresh 30-minute session handoff. Current
 privacy settings are applied again, and Peakbagger receives newly serialized
 Preview GPX. Save remains manual. An unverified previous handoff blocks automatic
-replacement forms. **Disconnect** deletes the key and optional permission while
+replacement forms. **Disconnect** deletes the key and requests removal of optional permission while
 keeping drafts and history. **Delete local Garmin data** also removes those local
 records; neither action deletes Garmin activities or Peakbagger ascents.
 
@@ -415,7 +419,7 @@ project JSON, local/report identity, API key, and delete URL.
 | --- | --- |
 | Local limits | TR pasted images and flattened local report snapshots: at most 16 MiB each. Decodable images: at most 64 megapixels and 16,384 pixels per side. Source processing/storage: at most 128 MiB. Editable bundles: at most 40 MiB. The original file is never changed. |
 | Upload | After **Upload and insert** in the standalone photo editor, or after the user saves a TR containing pasted local photos, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
-| API key | The saved key remains in device-local extension storage. The background worker uses it directly for user-initiated TR photo uploads and gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Removing it does not affect earlier uploads. |
+| API key | The saved key remains in device-local extension storage. The background worker uses it directly for user-initiated TR photo uploads and gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Settings → Report photos → Disconnect removes the saved key even with the report editor off. Earlier uploads and local projects stay; an upload already submitted may finish. |
 | Catalog | Stores public URLs, source/export metadata and hashes, upload/reachability state, lineage, report references, and local asset availability because ImgBB's v1 API has no account-gallery listing operation. |
 | Delete URL | Stored separately in device-local IndexedDB. It is never placed in a report or GitHub backup. Removing a local entry or report reference does not delete the remote ImgBB image. |
 | Recently Deleted | Removed items can be restored locally. After 30 days their image and project assets become eligible for pruning; tombstones remain to prevent older backups from resurrecting them. |

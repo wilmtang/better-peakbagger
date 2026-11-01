@@ -448,12 +448,14 @@ test('settings are grouped by the surface they affect', async () => {
 test('trip report photo and draft settings follow the editor option', async () => {
     const dom = await loadOptions({ enableReportEditor: false });
     const doc = dom.window.document;
-    const dependentSections = ['capture-photos', 'drafts'].map(id => el(dom, id));
-    const dependentNavItems = ['#capture-photos', '#drafts'].map(href =>
+    const dependentSections = [el(dom, 'open-photo-library').closest('.row'), el(dom, 'drafts')];
+    const dependentNavItems = ['#drafts'].map(href =>
         doc.querySelector(`.side-nav a[href="${href}"]`).closest('li'));
 
     assert.ok([...dependentSections, ...dependentNavItems].every(element => element.hidden),
         'editor-only settings and their navigation should start hidden');
+    assert.equal(el(dom, 'capture-photos').hidden, false, 'Saved-key management is independent of the editor');
+    assert.equal(doc.querySelector('.side-nav a[href="#capture-photos"]').closest('li').hidden, false);
 
     const editorToggle = el(dom, 'enable-report-editor');
     editorToggle.checked = true;
