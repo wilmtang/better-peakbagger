@@ -74,9 +74,11 @@ versions for each agent.
 
 ### Updating the shared skill
 
-Use a disposable worktree based on `origin/main` when publishing a skill update,
-so unrelated local commits and edits stay separate. The existing GitHub CLI
-login can publish the update without an additional repository secret.
+The **Update UI/UX skill** GitHub Actions workflow checks upstream on the first
+day of each month at 15:17 UTC and supports **Run workflow** for an immediate
+check. It runs entirely on GitHub, without Codex or the maintainer's computer.
+Verified skill updates are committed directly to `main`; no feature branch or
+pull request is created.
 
 `scripts/update-ui-ux-skill.mjs` pins the upstream commit, verifies downloaded
 blob hashes, and three-way merges `SKILL.md` with the installed upstream version
@@ -85,10 +87,17 @@ changes, unsupported layouts, and divergent upstream history stop the run.
 Only the canonical skill directory changes; the license and Claude symlink
 remain intact. Before merging, the task validates the skill's data and runs an
 example Python search. It verifies that every changed file belongs to the
-canonical skill directory. Create a skill-only PR and use a real merge commit.
-Recurring publication and any exception to required repository checks need
-explicit maintainer authorization. Conflicts and failed skill checks need
-maintainer attention. Updater regressions also run with `npm test`.
+canonical skill directory. A separate publishing job checks the patch scope,
+regular file modes, unchanged project guidance, license and checked base before
+committing. That job never executes downloaded helpers. Only its final SSH step
+receives the dedicated repository deploy key stored as `SKILL_UPDATE_SSH_KEY`
+in the `skill-updates` GitHub environment, which allows only the `main` branch.
+The key is limited to this repository, and the `main` ruleset permits deploy
+keys to bypass unrelated extension checks as authorized by the maintainer. A
+separate `main history guard` still blocks deploy-key deletions and force
+pushes. Keep future deploy keys subject to the check-bypass policy in mind. Automatic skill
+commits include `[skip ci]`; conflicts and failed skill checks stop the run.
+Updater and publisher regressions also run with `npm test`.
 
 For a local preview, run `node scripts/update-ui-ux-skill.mjs --check`; omit
 `--check` to apply the proposed update in a clean skill working tree. Neither
@@ -817,9 +826,10 @@ upstream change and the workflows it reaches before merging one.
    four stable required checks in `test.yml` have passed against that base. The
    Chrome check conditionally includes its copied-runtime GPU run; the stable
    Firefox check aggregates both matrix versions and its conditional GPU run.
-   Dependabot cannot skip
-   that: the ruleset's only bypass is the repository-admin role, which it does
-   not hold.
+   Dependabot cannot skip that: it holds neither the repository-admin role nor
+   the skill cron's deploy key. The deploy-key exception bypasses those checks
+   for the skill cron; the separate history guard still forbids its branch
+   deletion and force pushes.
 
 The ruleset does not require a pull request, so ordinary work still commits
 straight to `main`. Dependabot goes through a pull request because that is the

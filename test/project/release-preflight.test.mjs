@@ -127,6 +127,16 @@ test('preflight requires active strict main checks, immutable tags, and owner-co
     }
 });
 
+test('a separate main history guard does not hide the required-check ruleset', () => {
+    const state = safeguards();
+    const history = structuredClone(state.rulesets[0]);
+    history.id = 5;
+    history.rules = history.rules.filter(rule => rule.type !== 'required_status_checks');
+    for (const rulesets of [[history, ...state.rulesets], [...state.rulesets, history]]) {
+        assert.deepEqual(validatePublicationSafeguards({ ...state, rulesets }).rulesets, [1, 2]);
+    }
+});
+
 test('the rehearsal artifact must belong to the exact successful attempt and commit', () => {
     const artifact = { id: 42, name: 'browser-extension-v4.0.2-1', expired: false,
         workflow_run: { id: run.id, head_sha: commit } };
