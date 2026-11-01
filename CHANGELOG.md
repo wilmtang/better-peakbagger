@@ -7,6 +7,8 @@
   Returning from 3D preserves a resumed vector map when an older load fails.
   A complete tile outage restores the native map and offers Retry while valid
   empty tiles and usable partial output remain available.
+  Provider rate limits retain their cooldown when the renderer restarts, with
+  native imagery available and Retry enabled again after the deadline.
 
 - **Disconnect saved services from Settings.** Garmin and ImgBB key removal stays
   available with their features off, and GitHub can disconnect without restored

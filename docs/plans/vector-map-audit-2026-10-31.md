@@ -44,21 +44,58 @@ trusted-selection authorization and extension-origin rendering boundary.
   unused sources and old errors on loaded sources do not cause false outages.
   The new metadata assertion failed before the fix with an opaque blank map
   and hidden Retry; adapter unit coverage failed on the same classification.
+  The expanded six-case recovery matrix passed in each hardware browser.
+- V4: a provider-scoped MapLibre protocol retains tile/metadata/glyph/sprite
+  rate-limit headers. The isolated bridge retains a validated deadline outside
+  renderer entries and stops other vector frames in the document. Both worlds
+  revalidate deadlines through the shared network validator. Retry preserves
+  focus and geometry, rejects repeated pointer/keyboard/programmatic activation
+  during cooldown, and enables without automatically fetching at expiry. The
+  browser assertion failed before the fix on enabled Retry after a 429 with
+  Retry-After 120. Three cooldown cases passed per hidden hardware browser above,
+  including tile-level limits and real timer expiry. Unit coverage exercises
+  re-selection, multiple maps, suspension, stale frames, malformed deadlines,
+  cookie/referrer omission, provider URL validation, cancellation and deadlines.
 
 ### Intentionally not changed
 
 - Provider, style, persistent permissions and page-local selection policy.
 - Firefox's focused renderer fixture stubs extension capability transport;
   Chrome loads the real unpacked extension.
+- Cooldown coordination is isolated-document scoped, including its 2D renderer
+  suspension. Separate tabs, reloads and the separate 3D renderer do not share a
+  persisted provider budget; no new storage or permission is introduced.
 - Unrelated repository gates: the previous full test run had two unregistered
   JSON fixture failures; the broader Chrome gate stopped at a Garmin Settings
   visibility assertion. These are not vector-map fixes.
 
 ### Changed but not fully proven
 
-None for V1–V3's local acceptance checks; external verification limits remain below.
+None for V1–V4's local acceptance checks; external verification limits remain below.
 
-V4 remains open and unchanged.
+### Integration checks
+
+The final vector matrix covers 20 cases per browser at 1280/375 × 800, light/dark
+and 200% CSS zoom, with geographic pixels, long held dragging, native marker
+interaction, failure/retry/cancellation and geometry within one CSS pixel.
+Chrome 156.0.8078.4 uses Metal on Apple M3 Pro and the real extension; Firefox
+157 uses Apple M3 Pro hardware rendering with only capability transport stubbed.
+Target-page screenshots were visually inspected, including narrow dark errors
+and cooldowns and enlarged text. The final matrices ran alongside the full
+Node suite, including the load conditions that previously exposed the initial
+readiness race.
+
+- Build, repository ESLint and web-ext lint passed (eight existing owned
+  packaging/vendor warnings); 26 focused boundary/documentation tests passed.
+- Full Node suite: 3,845 tests, 3,843 passed, two failed. Both failures are the
+  pre-existing unregistered `test/fixtures/maps/snow-depth-legend.json` format in
+  `test/project/fixtures-privacy.test.mjs`; no vector test failed.
+- The broader real-extension Chrome gate was run and still stopped at the
+  existing Garmin Settings visibility assertion in
+  `scripts/verify-settings-navigation.mjs` (line 308). The focused vector Chrome
+  matrix loads the real manifest/extension but does not close that unrelated gate.
+- Teardown inspection found no remaining verification browser processes or
+  disposable vector/extension test profiles.
 
 ## Verification limits
 

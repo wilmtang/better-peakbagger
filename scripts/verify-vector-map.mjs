@@ -14,13 +14,14 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--preflight', '--live', '--camera-only', '--recovery-only'].includes(arg))
-    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mjs [--firefox] [--preflight | --live | --camera-only | --recovery-only]');
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg))
+    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg)).length <= 1,
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only]');
 const firefoxMode = args.includes('--firefox'), preflight = args.includes('--preflight'), liveMode = args.includes('--live'), cameraOnly = args.includes('--camera-only');
 const recoveryOnly = args.includes('--recovery-only');
+const cooldownOnly = args.includes('--cooldown-only');
 const root = path.resolve(import.meta.dirname, '..'), resources = createResourceStack();
-let failure, summary, failurePage;
+let failure, summary, failurePage, failureContext;
 try {
     const profile = await mkdtemp(path.join(tmpdir(), 'bpb-vector-map-'));
     resources.defer('vector profile', () => rm(profile, { recursive: true, force: true }));
@@ -51,6 +52,8 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.text().startsWith('Better Peakbagger vector map:')) console.error(message.text()); });
     let mode = 'hold', tileFailures = 0, partialUrl = null; const held = new Set();
+    let retrySeconds = '2';
+    failureContext = () => ({ mode, partialUrl, lastRequests: requests.slice(-12) });
     const release = () => { for (const done of held) done(); held.clear(); };
     resources.defer('held vector styles', release);
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWPYvHnzfwAHNwL9GPw68wAAAABJRU5ErkJggg==', 'base64');
@@ -80,10 +83,11 @@ try {
         const metadata = url.endsWith('/vector.json');
         if (mode === 'partial' && url.endsWith('.pbf')) partialUrl ??= url;
         const tileFailed = url.endsWith('.pbf') && (mode === 'tile-error' || mode === 'partial' && url === partialUrl);
+        const limited = mode === 'style-limit' && url.endsWith('/styles/liberty') || mode === 'tile-limit' && url.endsWith('.pbf');
         if (tileFailed) tileFailures++;
         try {
-            await route.fulfill({ status: tileFailed || mode === 'error' && url.endsWith('/styles/liberty') || mode === 'metadata-error' && metadata ? 503 : 200,
-                headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
+            await route.fulfill({ status: limited ? 429 : tileFailed || mode === 'error' && url.endsWith('/styles/liberty') || mode === 'metadata-error' && metadata ? 503 : 200,
+                headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store', ...(limited ? { 'retry-after': retrySeconds, 'access-control-expose-headers': 'Retry-After' } : {}) },
                 contentType: url.endsWith('.pbf') ? 'application/x-protobuf' : 'application/json',
                 body: url.endsWith('.pbf') ? mode === 'empty' ? emptyTile : tile(url) : JSON.stringify(metadata
                     ? { tilejson: '3.0.0', tiles: ['https://tiles.openfreemap.org/fixture/{z}/{x}/{y}.pbf'], minzoom: 0, maxzoom: 14 } : style),
@@ -218,9 +222,57 @@ try {
         assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true, 'Failed TileJSON is unavailable, not a valid empty viewport'); cases++;
         return cases;
     };
+    const verifyProviderCooldown = async () => {
+        let cases = 0;
+        for (const [width, theme, zoom, limit] of [[1280, 'light', 1, 'style-limit'], [375, 'dark', 1, 'tile-limit'], [1280, 'light', 2, 'style-limit']]) {
+            await page.setViewportSize({ width, height: 800 }); mode = limit; retrySeconds = cases === 0 ? '120' : '3'; await open();
+            await page.evaluate(value => { document.documentElement.dataset.bpbTheme = value.theme; document.body.style.zoom = value.zoom; mapsPlaceholder.invalidateSize(); }, { theme, zoom });
+            await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
+            const retry = page.locator('.bpb-vector-status button[data-bpb-vector-map]'); await retry.waitFor({ state: 'visible' });
+            await page.waitForFunction(() => !document.querySelector('.bpb-vector-slot iframe'));
+            assert.equal(await retry.getAttribute('aria-disabled'), 'true', 'Retry-After must survive renderer disposal');
+            assert.match(await page.locator('.bpb-vector-status').innerText(), /OpenFreeMap is busy\. Retry after/);
+            assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true);
+            await retry.focus(); const bounds = await retry.boundingBox();
+            const geometry = () => page.evaluate(() => ({ scroll: scrollY, boxes: ['h1', '#map', '#selmap', '#following', '.leaflet-control-zoom'].map(selector => {
+                const rect = document.querySelector(selector).getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height];
+            }) }));
+            const baseline = await geometry(), count = requests.length;
+            const stable = async () => {
+                const actual = await geometry(); assert.equal(actual.scroll, baseline.scroll);
+                actual.boxes.forEach((rect, index) => rect.forEach((value, dimension) => assert.ok(Math.abs(value - baseline.boxes[index][dimension]) <= 1, `Cooldown shifted box ${index}/${dimension}`)));
+            };
+            await page.keyboard.press('Enter'); await page.keyboard.press('Space'); await retry.click({ force: true });
+            assert.equal(await retry.evaluate(element => document.activeElement === element), true);
+            await page.evaluate(() => document.querySelector('.bpb-vector-status button[data-bpb-vector-map]').click());
+            // The deadline also guards activation if the disabled hint changes.
+            await retry.evaluate(element => element.setAttribute('aria-disabled', 'false')); await retry.click({ force: true });
+            await retry.evaluate(element => element.setAttribute('aria-disabled', 'true'));
+            assert.equal(requests.length, count, 'Retry cannot bypass the cooldown');
+            const actual = await retry.boundingBox();
+            for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(bounds[key] - actual[key]) <= 1, `Cooldown moved Retry: ${key}`);
+            await stable();
+            if (process.env.BPB_VECTOR_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `${firefoxMode ? 'firefox' : 'chrome'}-cooldown-${width}-${zoom}.png`) });
+            if (cases === 0) {
+                // Prove the full 120-second header is retained without sleeping
+                // through it. Short cases below exercise real timer expiry.
+                cases++; continue;
+            }
+            mode = 'ready';
+            await page.waitForFunction(() => document.querySelector('.bpb-vector-status button[data-bpb-vector-map]')?.getAttribute('aria-disabled') === 'false', null, { timeout: 6000 });
+            assert.equal(requests.length, count, 'Expiry does not automatically replay requests');
+            const expired = await retry.boundingBox();
+            for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(bounds[key] - expired[key]) <= 1, `Expiry moved Retry: ${key}`);
+            await page.keyboard.press('Enter');
+            await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
+            await stable(); assert.ok(requests.length > count); cases++;
+        }
+        return cases;
+    };
     if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
     else if (cameraOnly) summary = { verification: 'vector-camera', cases: await verifyCameraAlignment(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (recoveryOnly) summary = { verification: 'vector-recovery', cases: await verifyProviderRecovery(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
+    else if (cooldownOnly) summary = { verification: 'vector-cooldown', cases: await verifyProviderCooldown(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (liveMode) {
         await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
@@ -321,16 +373,19 @@ try {
         assert.equal(await page.locator('#selmap').evaluate(element => element.style.minWidth), '', 'Map teardown restores the native picker sizing');
         const cameraCases = await verifyCameraAlignment();
         const recoveryCases = await verifyProviderRecovery();
+        const cooldownCases = await verifyProviderCooldown();
         assert.deepEqual(errors, []);
         summary = { verification: '2d-vector-map', hidden: true, browser: context.browser().version(), renderer,
-            cases: cases + 3 + cameraCases + recoveryCases, viewports: '1280/375 × 800, light/dark, 200% CSS zoom', realExtension: !firefoxMode,
+            cases: cases + 3 + cameraCases + recoveryCases + cooldownCases, viewports: '1280/375 × 800, light/dark, 200% CSS zoom', realExtension: !firefoxMode,
             syntheticProvider: true, loadingSuccessErrorRetryCancellation: true, stableGeometry: true, nativeMarkerInteraction: true };
     }
 } catch (error) {
     failure = error;
+    console.error(failureContext?.());
     if (failurePage && !failurePage.isClosed()) console.error(await failurePage.evaluate(() => ({
         selected: document.getElementById('selmap')?.value, busy: document.getElementById('selmap')?.getAttribute('aria-busy'),
         events: window.vectorEvents, focused: document.activeElement?.id || document.activeElement?.tagName, hasFocus: document.hasFocus(),
+        camera: window.mapsPlaceholder && { center: window.mapsPlaceholder.getCenter(), zoom: window.mapsPlaceholder.getZoom() },
         status: document.querySelector('.bpb-vector-status')?.outerHTML, slot: document.querySelector('.bpb-vector-slot')?.outerHTML,
     })).catch(() => null));
 }

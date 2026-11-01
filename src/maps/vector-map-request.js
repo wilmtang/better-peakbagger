@@ -1,0 +1,45 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { terrainStyle } from '../terrain/terrain-style.js';
+import { requestDeadline } from '../net/request-deadline.js';
+import { cancelResponseBody, rateLimitError } from '../net/rate-limit.js';
+
+export const VECTOR_PROTOCOL = 'bpb-vector';
+const prefix = `${VECTOR_PROTOCOL}://`;
+export function vectorRequestUrl(url) {
+    const approved = terrainStyle.providerUrl(url);
+    if (!approved) throw new Error('Unapproved vector map provider.');
+    return prefix + approved;
+}
+
+// MapLibre's built-in AJAXError omits headers. Its public protocol API lets us
+// retain Retry-After before errors cross the renderer/worker boundary.
+export function createVectorMapRequest({ fetch = globalThis.fetch, onRateLimit = () => {}, timeoutMs = 15000 } = {}) {
+    return async (parameters, controller) => {
+        const url = parameters.url?.startsWith(prefix) ? terrainStyle.providerUrl(parameters.url.slice(prefix.length)) : null;
+        if (!url) throw new Error('Unapproved vector map provider.');
+        const deadline = requestDeadline.createRequestDeadline(timeoutMs), signal = controller.signal;
+        let response, rejectAbort;
+        const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+        const abort = () => { deadline.abort(); rejectAbort(Object.assign(new Error('Vector request cancelled.'), { name: 'AbortError' })); };
+        signal.addEventListener('abort', abort, { once: true });
+        const run = promise => deadline.run(Promise.race([promise, aborted]));
+        try {
+            if (signal.aborted) throw Object.assign(new Error('Vector request cancelled.'), { name: 'AbortError' });
+            response = await run(fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: deadline.signal }));
+            if (response.status === 429) {
+                const error = rateLimitError('OpenFreeMap', response);
+                error.retryAt ??= Date.now() + 300000;
+                onRateLimit(error); throw error;
+            }
+            if (!response.ok) throw Object.assign(new Error(`Vector resource unavailable (${response.status}).`), { status: response.status });
+            if (!terrainStyle.providerUrl(response.url)) throw new Error('Unapproved vector map response.');
+            const data = await run(parameters.type === 'json' ? response.json()
+                : parameters.type === 'string' ? response.text() : response.arrayBuffer());
+            return { data, cacheControl: response.headers.get('cache-control'), expires: response.headers.get('expires') };
+        } finally {
+            signal.removeEventListener('abort', abort); cancelResponseBody(response); deadline.clear();
+        }
+    };
+}

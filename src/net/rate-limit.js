@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 const MAX_WAIT = 24 * 3600_000;
+export const readRetryAt = (value, now = Date.now()) => Number.isFinite(value) && Number.isFinite(now)
+    && value > now && value <= now + MAX_WAIT ? Math.trunc(value) : null;
 export const retryAfterAt = (headers, now = Date.now()) => {
     const key = headers && typeof headers.get !== 'function'
         ? Object.keys(headers).find(candidate => candidate.toLowerCase() === 'retry-after') : null;
@@ -10,7 +12,7 @@ export const retryAfterAt = (headers, now = Date.now()) => {
     // Reject loose Date.parse inputs such as "1.5"; accept the HTTP-date form.
     const value = /^\d+$/.test(raw) ? now + Number(raw) * 1000
         : /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(raw) ? Date.parse(raw) : NaN;
-    return Number.isFinite(value) && value > now && value <= now + MAX_WAIT ? Math.trunc(value) : null;
+    return readRetryAt(value, now);
 };
 
 export const rateLimitMessage = (service, retryAt = null, now = Date.now()) => {

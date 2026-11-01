@@ -1,8 +1,9 @@
 # Active plans
 
 - [2D vector map audit remediation — October 31](vector-map-audit-2026-10-31.md)
-  — geographic alignment, post-load failure recovery, stale authorization
-  rejection and provider cooldowns; independent commits and explicit proof gaps.
+  — implemented geographic alignment, post-load failure recovery, stale
+  authorization rejection and provider cooldowns in independent commits. The
+  ledger records hidden hardware browser proof and unrelated repository gates.
 
 - [Connected-service disconnect audit — October 31](service-disconnect-audit-2026-10-31.md)
   — implemented Garmin, ImgBB and GitHub cleanup; self-review fixes protect

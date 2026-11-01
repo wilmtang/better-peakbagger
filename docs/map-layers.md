@@ -21,6 +21,14 @@ load. Valid empty tiles and usable partial/cached output remain visible. The
 availability adapter is tied to the packaged MapLibre 6 tile-manager API;
 hardware browser coverage checks that compatibility boundary.
 
+OpenFreeMap rate limits restore the native map and keep **Retry** unavailable
+until the provider's deadline. Missing, unreadable or invalid `Retry-After`
+uses five minutes; accepted deadlines are bounded to one day. The isolated
+document retains that cooldown across renderer replacement, re-selection and
+2D/3D suspension, and stops its other vector renderers too. Expiry enables
+Retry without fetching automatically. Separate documents/tabs do not share
+this in-memory cooldown.
+
 MapLibre and its module worker remain packaged in an extension-origin frame.
 The MAIN-world Leaflet adapter owns camera/pane placement; the isolated bridge
 requires a trusted picker choice or Retry before authorizing provider work.

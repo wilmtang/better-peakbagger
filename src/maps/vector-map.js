@@ -3,6 +3,7 @@
 
 import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView } from './vector-basemap.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { readRetryAt } from '../net/rate-limit.js';
 
 export function bindVectorMap(win, map, select) {
     const L = win.L, doc = win.document, container = map.getContainer();
@@ -18,6 +19,7 @@ export function bindVectorMap(win, map, select) {
     select.style.minWidth = pickerMinWidth;
     const reservedPickerWidth = select.style.minWidth;
     let previous = select.value, layer = null, paused = false, replacing = false, disposed = false, attributionReservation = null, center, size, zoom;
+    let retryAt = 0, retryTimer = null;
     const status = doc.createElement('div'); status.className = 'bpb-vector-status'; status.hidden = true;
     const message = doc.createElement('span'); message.setAttribute('role', 'status');
     const retry = doc.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.dataset.bpbVectorMap = id;
@@ -43,6 +45,13 @@ export function bindVectorMap(win, map, select) {
     const pending = (retrying = false) => {
         status.hidden = false; message.textContent = 'Loading vector map…'; retry.hidden = !retrying; dismiss.hidden = true;
         retry.setAttribute('aria-disabled', String(retrying)); select.setAttribute('aria-busy', 'true');
+    };
+    const cooldown = () => {
+        win.clearTimeout(retryTimer);
+        const until = readRetryAt(retryAt);
+        retry.setAttribute('aria-disabled', String(!!until));
+        message.textContent = until ? `OpenFreeMap is busy. Retry after ${new Date(until).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.` : 'Vector map unavailable.';
+        if (until) retryTimer = win.setTimeout(cooldown, until - Date.now());
     };
     const restore = () => {
         for (const item of native.splice(0)) if (!map.hasLayer(item)) map.addLayer(item);
@@ -97,6 +106,7 @@ export function bindVectorMap(win, map, select) {
         },
     });
     const stop = () => {
+        win.clearTimeout(retryTimer); retryTimer = null;
         if (layer) map.removeLayer(layer);
         layer = null; restore(); status.hidden = true; select.removeAttribute('aria-busy');
     };
@@ -110,7 +120,7 @@ export function bindVectorMap(win, map, select) {
             start();
         } else { stop(); previous = select.value; }
     };
-    const retryClick = event => { if (event.isTrusted && retry.getAttribute('aria-disabled') !== 'true') { select.value = VECTOR_BASEMAP.code; start(true); } };
+    const retryClick = event => { if (event.isTrusted && !readRetryAt(retryAt) && retry.getAttribute('aria-disabled') !== 'true') { select.value = VECTOR_BASEMAP.code; start(true); } };
     const receive = event => {
         const data = event.data;
         if (event.source !== win || event.origin !== win.location.origin || data?.[VECTOR_MESSAGE] !== true
@@ -119,7 +129,8 @@ export function bindVectorMap(win, map, select) {
             layer.element.style.opacity = '1'; holdNative(); status.hidden = true; select.removeAttribute('aria-busy');
             if (doc.activeElement === retry) select.focus({ preventScroll: true });
         } else if (data.type === 'error') {
-            stop(); select.value = previous; status.hidden = false; message.textContent = 'Vector map unavailable.'; retry.hidden = false; dismiss.hidden = false; retry.setAttribute('aria-disabled', 'false');
+            retryAt = Math.max(retryAt, readRetryAt(data.retryAt) || 0);
+            stop(); select.value = previous; status.hidden = false; retry.hidden = false; dismiss.hidden = false; cooldown();
         }
     };
     const pause = () => {
@@ -143,6 +154,7 @@ export function bindVectorMap(win, map, select) {
     try { win.parent.addEventListener('message', terrain); } catch { /* Standalone map. */ }
     const dispose = () => {
         if (disposed) return; disposed = true;
+        win.clearTimeout(retryTimer);
         stop(); if (select.value === VECTOR_BASEMAP.code) select.value = previous;
         option.remove(); status.remove(); credits.remove();
         if (select.style.minWidth === reservedPickerWidth) select.style.minWidth = previousMinWidth;

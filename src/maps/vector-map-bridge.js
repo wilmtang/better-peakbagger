@@ -3,21 +3,23 @@
 
 import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView } from './vector-basemap.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { readRetryAt } from '../net/rate-limit.js';
 
 export function installVectorMapBridge(win = window, ext = globalThis.browser || globalThis.chrome) {
     const entries = new Map();
     const url = ext.runtime.getURL('terrain/vector.html'), parsed = new URL(url);
     const origin = parsed.origin === 'null' ? `${parsed.protocol}//${parsed.host}` : parsed.origin;
-    let active = true;
-    const post = (id, type) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toPage', id, type }, win.location.origin);
+    let active = true, retryAt = 0;
+    const post = (id, type, detail = {}) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toPage', id, type, ...detail }, win.location.origin);
     const remove = entry => { clearTimeout(entry.timer); entry.frame?.remove(); entry.frame = null; };
     const stop = id => { const entry = entries.get(id); if (entry) remove(entry); entries.delete(id); };
-    const fail = entry => { if (entries.get(entry.id) !== entry) return; stop(entry.id); post(entry.id, 'error'); };
+    const fail = entry => { if (entries.get(entry.id) !== entry) return; stop(entry.id); post(entry.id, 'error', { retryAt: readRetryAt(retryAt) }); };
     const send = (entry, type, detail = {}) => entry.frame?.contentWindow?.postMessage({
         [VECTOR_MESSAGE]: true, dir: 'toFrame', type, ...detail,
     }, origin);
     const ensure = entry => {
         if (!active || entry.frame || !entry.view || entry.paused) return;
+        if (readRetryAt(retryAt)) { fail(entry); return; }
         const slot = win.document.getElementById(`bpb-vector-slot-${entry.id}`);
         if (!slot?.isConnected) return;
         const frame = win.document.createElement('iframe');
@@ -34,6 +36,7 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         const id = control.dataset.bpbVectorMap;
         if (!/^[a-z0-9-]{1,80}$/i.test(id || '')) return;
         stop(id);
+        if (readRetryAt(retryAt)) { post(id, 'error', { retryAt }); return; }
         // Authority stays in this isolated-world entry for the selected layer's
         // lifetime. Page messages can update/pause it, never create authority.
         entries.set(id, { id, frame: null, view: null, paused: false });
@@ -52,11 +55,20 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
                 try {
                     const activation = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_ISSUE', action: 'init' });
                     if (!isCurrent()) return;
+                    if (readRetryAt(retryAt)) { fail(entry); return; }
                     if (activation?.ok !== true) { fail(entry); return; }
                     send(entry, 'init', { activation: activation.token, view: entry.view });
                 } catch { if (isCurrent()) fail(entry); }
             } else if (data.type === 'loaded') { clearTimeout(entry.timer); post(entry.id, 'loaded'); }
-            else if (data.type === 'error') fail(entry);
+            else if (data.type === 'error') {
+                const until = readRetryAt(data.retryAt);
+                if (until) {
+                    // Isolated-document lifetime: renderer disposal, another map,
+                    // re-selection and 2D/3D suspension cannot reset this limit.
+                    retryAt = Math.max(retryAt, until);
+                    for (const current of entries.values()) fail(current);
+                } else fail(entry);
+            }
             return;
         }
         if (event.source !== win || event.origin !== win.location.origin || data.dir !== 'toCS') return;

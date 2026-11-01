@@ -22,9 +22,9 @@ function setup({ sendMessage } = {}) {
     const send = (type, extra = {}, source = win, origin = win.location.origin) => win.dispatchEvent(new win.MessageEvent('message', {
         source, origin, data: { [VECTOR_MESSAGE]: true, dir: 'toCS', id: 'test', type, view, ...extra },
     }));
-    const choose = (trusted = true) => captures.get('change')({ type: 'change', isTrusted: trusted, target: win.document.querySelector('select') });
+    const choose = (trusted = true, control = win.document.querySelector('select')) => captures.get('change')({ type: 'change', isTrusted: trusted, target: control });
     const frame = () => win.document.querySelector('iframe');
-    const fromFrame = (type, origin = 'chrome-extension://test', source = frame()?.contentWindow) => send(type, { dir: 'fromFrame' }, source, origin);
+    const fromFrame = (type, origin = 'chrome-extension://test', source = frame()?.contentWindow, detail = {}) => send(type, { dir: 'fromFrame', ...detail }, source, origin);
     const retry = disabled => {
         const button = win.document.createElement('button'); button.dataset.bpbVectorMap = 'test'; button.setAttribute('aria-disabled', String(disabled));
         captures.get('click')({ type: 'click', isTrusted: true, target: button });
@@ -102,4 +102,49 @@ test('bfcache suspension discards vector authority rather than silently restarti
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
         env.send('resume'); assert.equal(env.frame(), null);
     } finally { env.close(); }
+});
+test('a provider cooldown survives renderer removal, re-selection and suspension until expiry', () => {
+    const realNow = Date.now; let now = realNow(); Date.now = () => now;
+    const env = setup(), retryAt = now + 120000;
+    try {
+        env.choose(); env.send('view'); const outgoing = env.frame().contentWindow;
+        env.fromFrame('error', undefined, undefined, { retryAt });
+        assert.equal(env.frame(), null); assert.equal(env.messages.at(-1).retryAt, retryAt);
+        for (const authorize of [env.choose, () => env.retry(false)]) {
+            authorize(); env.send('view'); assert.equal(env.frame(), null, 'Renderer replacement cannot discard Retry-After');
+            assert.equal(env.messages.at(-1).retryAt, retryAt);
+        }
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        env.choose(); env.send('view'); assert.equal(env.frame(), null);
+        env.retry(false); now = retryAt; env.send('view');
+        assert.equal(env.frame(), null, 'A blocked click cannot leave authority for a later forged view');
+        env.choose(); env.send('view'); assert.ok(env.frame());
+        env.fromFrame('error', undefined, outgoing, { retryAt: now + 120000 });
+        assert.ok(env.frame(), 'An outgoing frame cannot extend the provider cooldown');
+        assert.equal(env.calls.length, 0, 'Blocked selections never request a worker capability');
+    } finally { Date.now = realNow; env.close(); }
+});
+test('a provider cooldown stops every renderer in the isolated document', () => {
+    const env = setup(), retryAt = Date.now() + 120000;
+    try {
+        const second = env.win.document.createElement('select'); second.dataset.bpbVectorMap = 'second';
+        second.innerHTML = '<option value="BPB_VECTOR">Vector</option>';
+        const slot = env.win.document.createElement('div'); slot.id = 'bpb-vector-slot-second'; env.win.document.body.append(second, slot);
+        env.choose(); env.send('view'); const first = env.frame().contentWindow;
+        env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.win.document.querySelectorAll('iframe').length, 2);
+        env.fromFrame('error', undefined, first, { retryAt });
+        assert.equal(env.win.document.querySelectorAll('iframe').length, 0);
+        assert.deepEqual(env.messages.map(message => [message.id, message.retryAt]), [['test', retryAt], ['second', retryAt]]);
+        env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.frame(), null); assert.equal(env.calls.length, 0);
+    } finally { env.close(); }
+});
+test('untrusted and unbounded cooldown messages cannot disable future vector selections', () => {
+    for (const retryAt of [Date.now() - 1, Date.now() + 86401000, Infinity, '120000']) {
+        const env = setup();
+        try {
+            env.choose(); env.send('view'); env.send('error', { retryAt }); assert.ok(env.frame());
+            env.fromFrame('error', undefined, undefined, { retryAt }); env.choose(); env.send('view'); assert.ok(env.frame());
+        } finally { env.close(); }
+    }
 });
