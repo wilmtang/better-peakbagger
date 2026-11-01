@@ -9,6 +9,64 @@ import { waitFor } from '../helpers/load-page.mjs';
 registerCleanup();
 const byId = (dom, id) => dom.window.document.getElementById(id);
 
+for (const enabled of [true, false]) test(`Garmin polling reports an external reconnect with imports ${enabled ? 'on' : 'off'}`, async () => {
+    let configured = true, failed = false, reads = 0;
+    const timers = [];
+    const dom = await loadOptions({ enableGarminInbox: enabled }, {
+        prepareWindow: window => { window.setInterval = callback => (timers.push(callback), timers.length); },
+        prepareChrome: chrome => { chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GARMIN_DISCONNECT') { configured = false; return { ok: true, configured: false, accessRemoved: true }; }
+            if (['GARMIN_STATUS', 'GARMIN_CONNECTION_STATUS'].includes(message.type)) {
+                reads++;
+                if (failed) return { ok: false, error: { message: 'Status temporarily unavailable.' } };
+                return { ok: true, configured, ...(message.type === 'GARMIN_STATUS' ? { enabled: configured, pending: 25, items: [] } : {}) };
+            }
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: false, hasToken: false };
+            return { ok: true };
+        }; },
+    });
+    Object.defineProperty(dom.window.document, 'hidden', { configurable: true, value: false });
+    await waitFor(dom, () => !byId(dom, 'garmin-disconnect').hidden);
+    byId(dom, 'garmin-disconnect').click();
+    await waitFor(dom, () => byId(dom, 'garmin-disconnect').hidden);
+    let before = reads; timers.forEach(callback => callback());
+    await waitFor(dom, () => reads > before);
+    assert.match(byId(dom, 'garmin-key-status').textContent, /^Disconnected/);
+    failed = true; before = reads; timers.forEach(callback => callback());
+    await waitFor(dom, () => reads > before);
+    assert.match(byId(dom, 'garmin-key-status').textContent, /^Disconnected/, 'A failed status read does not undo confirmed removal');
+    failed = false; configured = true; before = reads; timers.forEach(callback => callback());
+    await waitFor(dom, () => reads > before && !byId(dom, 'garmin-disconnect').hidden);
+    assert.equal(byId(dom, 'garmin-key-status').textContent, 'Connected on this device');
+    assert.equal(byId(dom, 'garmin-key-status').classList.contains('is-error'), false);
+});
+
+test('Garmin local deletion replaces the earlier kept-drafts confirmation', async () => {
+    const state = { configured: true, enabled: true, pending: 25, items: [] };
+    const confirmations = [];
+    const dom = await loadOptions({}, {
+        prepareWindow: window => { window.confirm = message => (confirmations.push(message), true); },
+        prepareChrome: chrome => { chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GARMIN_DISCONNECT') {
+                state.configured = state.enabled = false;
+                if (message.deleteData) state.pending = 0;
+                return { ok: true, configured: false, accessRemoved: true };
+            }
+            if (message.type === 'GARMIN_STATUS') return { ok: true, ...state };
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: false, hasToken: false };
+            return { ok: true };
+        }; },
+    });
+    await waitFor(dom, () => !byId(dom, 'garmin-disconnect').hidden);
+    byId(dom, 'garmin-disconnect').click();
+    await waitFor(dom, () => byId(dom, 'garmin-disconnect').hidden && !byId(dom, 'garmin-disconnect').hasAttribute('aria-busy'));
+    assert.match(byId(dom, 'garmin-key-status').textContent, /drafts are kept/);
+    byId(dom, 'garmin-delete').click();
+    await waitFor(dom, () => byId(dom, 'garmin-key-status').textContent === 'Not connected');
+    assert.deepEqual(confirmations, ['Delete 25 local Garmin drafts and their import history?']);
+    assert.equal(state.pending, 0);
+});
+
 for (const stage of ['permission', 'begin', 'poll']) test(`GitHub disconnect supersedes setup waiting for ${stage}`, async () => {
     let release, hasToken = true, permitted = false, begins = 0, held = true;
     const dom = await loadOptions({}, { accelerateGithubPoll: true, prepareChrome: chrome => {

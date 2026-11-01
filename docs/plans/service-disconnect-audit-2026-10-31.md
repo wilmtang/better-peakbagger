@@ -49,6 +49,14 @@ disconnect removes its control.
 
 ### Fixed and verified
 
+- D7: successful disconnect feedback has its own lifetime instead of becoming
+  a permanent key-validation error. It survives unreadable status while no key
+  is saved, yields to authoritative reconnection (imports on or off), and clears
+  after explicit local-data deletion. Both reconnection regressions failed
+  before the fix. All 23 focused Garmin/regression tests passed; hidden Chrome
+  and Firefox passed 96 connection cases with reconnection focus and geometry
+  checks. The later local-data action cannot retain "drafts are kept" feedback.
+
 - D6: local Disconnect, Cancel and Reconnect invalidate the setup generation.
   Every permission, begin/poll, authorization, discovery and repository-selection
   continuation checks ownership before sending more setup work or rendering.
@@ -123,8 +131,7 @@ disconnect removes its control.
 
 ### Changed but not fully proven
 
-- D7 remains open after self-review; the earlier isolated disconnect checks
-  did not cover a later external reconnect.
+- D5–D7 are fixed; the final fresh review and combined verification are pending.
 
 - Full `npm test`: 3,812 passed, two fixture-privacy checks failed because the
   unchanged registry does not recognize `test/fixtures/maps/snow-depth-legend.json`.

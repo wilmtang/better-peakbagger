@@ -6,6 +6,8 @@
   available with their features off, and GitHub can disconnect without restored
   host access. Drafts, uploaded photos and remote backups stay in place. Garmin
   cancels older key verification so it cannot undo a later disconnect.
+  Deletion waits for a known draft count, delayed GitHub setup cannot restart
+  after Disconnect, and connection status reflects a later reconnection.
 
 - **Keep keyboard help visible.** Custom-map explanations preserve focused
   controls at enlarged zoom and let the keyboard read overflowing text without

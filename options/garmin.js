@@ -34,6 +34,7 @@ export async function initGarminSettings(root) {
     const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Garmin could not finish this action. Try again.'); return result; };
     let featureEnabled = false; let state; let busy = false; let keyError = false; let settingsError = false;
     let revision = 0; let preferencesRevealed = false; let settingsUnavailable = false;
+    let disconnectConfirmed = false;
     let pendingDrafts = null;
     const setDraftCount = count => {
         pendingDrafts = Number.isSafeInteger(count) && count >= 0 ? count : null;
@@ -41,7 +42,7 @@ export async function initGarminSettings(root) {
     };
     const perform = async (button, status, operation, { cleanup = false } = {}) => {
         if (busy || (!featureEnabled && !cleanup)) return; busy = true; revision++;
-        if (status.id === 'garmin-key-status') keyError = false; else settingsError = false;
+        if (status.id === 'garmin-key-status') { keyError = false; disconnectConfirmed = false; } else settingsError = false;
         button.setAttribute('aria-disabled', 'true'); button.setAttribute('aria-busy', 'true'); status.classList.remove('is-error'); status.textContent = 'Working…';
         try { await operation(); } catch (error) { status.textContent = error.message;
             status.classList.add('is-error');
@@ -73,6 +74,8 @@ export async function initGarminSettings(root) {
             throw error;
         }
         if (expected !== revision || (busy && !duringOperation)) return;
+        if (state && !!state.configured !== !!next.configured) keyError = false;
+        if (next.configured) disconnectConfirmed = false;
         state = next;
         setDraftCount(fullStatus ? state.pending : null);
         preferencesRevealed ||= !!(state.configured || state.pending);
@@ -83,7 +86,10 @@ export async function initGarminSettings(root) {
         $('#garmin-connect').classList.toggle('primary', (!state.configured && !state.pending) || state.error?.code === 'key-rejected');
         $('#garmin-access').hidden = state.error?.code !== 'permission';
         $('#garmin-history option[value="connection"]').textContent = `From ${state.connectedDate} to today`;
-        if (!keyError) $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
+        if (!keyError && !disconnectConfirmed) {
+            $('#garmin-key-status').textContent = state.error?.message || (state.configured ? 'Connected on this device' : 'Not connected');
+            $('#garmin-key-status').classList.toggle('is-error', !!state.error);
+        }
         if (!settingsError) {
             $('#garmin-settings-status').classList.remove('is-error');
             $('#garmin-settings-status').textContent = state.checking ? 'Checking Garmin… Your existing drafts are ready to review.'
@@ -91,7 +97,7 @@ export async function initGarminSettings(root) {
                     : 'Open Peakbagger and sign in to prepare your drafts. Your activities stay in the inbox.' : 'Connect Garmin to start importing activities.');
         }
     };
-    const credentialsImported = () => { keyError = settingsError = false; void refresh().catch(() => {}); };
+    const credentialsImported = () => { keyError = settingsError = disconnectConfirmed = false; void refresh().catch(() => {}); };
     document.addEventListener('bpb:credentials-imported', credentialsImported);
     addEventListener('pagehide', () => document.removeEventListener('bpb:credentials-imported', credentialsImported), { once: true });
     let prefs;
@@ -132,7 +138,7 @@ export async function initGarminSettings(root) {
     for (const selector of ['#garmin-frequency', '#garmin-recent', '#garmin-history']) $(selector).addEventListener('change', updateChoices);
     updateChoices();
     $('#garmin-show-key').addEventListener('click', () => { const show = $('#garmin-key').type === 'password'; $('#garmin-key').type = show ? 'text' : 'password'; $('#garmin-show-key span').textContent = show ? 'Hide' : 'Show'; $('#garmin-show-key').setAttribute('aria-pressed', String(show)); });
-    $('#garmin-key').addEventListener('input', () => { keyError = false; });
+    $('#garmin-key').addEventListener('input', () => { keyError = disconnectConfirmed = false; });
     $('.garmin-key-form').addEventListener('submit', event => {
         event.preventDefault();
         void perform($('#garmin-connect'), $('#garmin-key-status'), async () => {
@@ -158,7 +164,7 @@ export async function initGarminSettings(root) {
     $('#garmin-disconnect').addEventListener('click', () => void perform($('#garmin-disconnect'), $('#garmin-key-status'), async () => {
         const result = await send({ type: 'GARMIN_DISCONNECT' });
         $('#garmin-key').value = '';
-        keyError = true; // Keep the confirmed outcome if a later status read fails.
+        disconnectConfirmed = true; // Hold success only while no key is saved.
         $('#garmin-key-status').textContent = result.accessRemoved === false
             ? 'Disconnected. Remove remaining browser access in extension permissions.'
             : 'Disconnected. Your existing drafts are kept.';
@@ -178,7 +184,9 @@ export async function initGarminSettings(root) {
             void perform($(selector), $('#garmin-settings-status'), async () => {
                 if (type === 'GARMIN_ACCESS'
                     && !await ext.permissions.request({ origins: [GARMIN_PERMISSION] })) throw new Error('Garmin access was not granted.');
-                await send({ type, ...extra }); await refresh({ duringOperation: true });
+                await send({ type, ...extra });
+                if (extra.deleteData) { keyError = disconnectConfirmed = false; }
+                await refresh({ duringOperation: true });
             });
         });
     }

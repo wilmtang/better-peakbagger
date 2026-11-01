@@ -52,6 +52,7 @@ try {
             const area = { get: async () => ({ bpbSettings: prefs, bpbDeviceSettings: { schemaVersion: 1, settings: prefs } }), set: async () => {}, remove: async () => {} };
             window.fixture = { calls: 0, finish: null, requests: 0, authReads: 0, garminStatusReads: 0, garminStatusError: false,
                 githubPermissionGranted: enabled, githubBegins: 0,
+                setGarminConnected: value => { connected.garmin = value; },
                 notifyGithub: () => listeners.forEach(listener => listener({ bpbGithubAuth: { newValue: null } }, 'local')),
                 setGarminEnabled: value => { prefs.enableGarminInbox = value; listeners.forEach(listener => listener({ bpbSettings: { newValue: prefs } }, 'sync')); } };
             window.chrome = {
@@ -104,7 +105,7 @@ try {
         }, service);
         const stable = (before, after, label, { backupDisconnected = false } = {}) => {
             assert.equal(after.scroll, before.scroll, `${label}: reading position moved`);
-            if (after.action) for (const key of Object.keys(before.action)) {
+            if (before.action && after.action) for (const key of Object.keys(before.action)) {
                 assert(Math.abs(before.action[key] - after.action[key]) <= 1, `${label}: action ${key} shifted`);
             }
             before.boxes.forEach((box, index) => Object.keys(box).forEach(key => {
@@ -153,6 +154,17 @@ try {
                 assert.equal(await page.evaluate(() => window.fixture.requests), 0, label);
                 assert(await page.evaluate(() => document.querySelector('.content').scrollWidth <= document.querySelector('.content').clientWidth + 1), `${label}: horizontal overflow`);
                 assert(await page.evaluate(() => document.activeElement !== document.body && !document.activeElement.hidden), `${label}: lost focus`);
+                if (service.name === 'garmin') {
+                    const removed = await geometry(service);
+                    await page.evaluate(enabled => {
+                        window.fixture.focused = document.activeElement;
+                        window.fixture.setGarminConnected(true); window.fixture.setGarminEnabled(enabled);
+                    }, enabled);
+                    await action.waitFor({ state: 'visible' });
+                    await page.locator(service.status).filter({ hasText: /^Connected on this device$/ }).waitFor();
+                    stable(removed, await geometry(service), `${label}/external-reconnect`);
+                    assert(await page.evaluate(() => document.activeElement === window.fixture.focused), `${label}: reconnect stole focus`);
+                }
                 if (service.name === 'github') {
                     const reads = await page.evaluate(() => {
                         window.fixture.focused = document.activeElement;
