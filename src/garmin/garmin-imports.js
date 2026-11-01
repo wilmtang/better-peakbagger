@@ -25,6 +25,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     const trusted = createPackagedPageMatcher(ext, ['options/options.html', 'options/inbox.html']);
     const popup = createPackagedPageMatcher(ext, ['popup/popup.html']);
     let visiting = null; let running = null; let queuedFull = null; let queuedResume = null; let controller = null; let opening = null; let client = null; let clientEpoch = -1; let publicCache = null;
+    let connectionAttempt = null;
     const mutateEpoch = (epoch, mutate) => store.mutate(state => {
         if (state.epoch !== epoch) throw new GarminError('cancelled'); return mutate(state);
     });
@@ -55,7 +56,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         const scope = JSON.stringify([prefs.garminHistoryStart, prefs.garminRecentDays, prefs.garminActivityTypes]);
         const state = await store.read();
         if (state.featureEnabled !== prefs.enableGarminInbox || state.scope !== scope || state.privacy !== JSON.stringify([prefs.removeGpxTimestamps, prefs.retainWaypoints])) {
-            controller?.abort(); clientEpoch = -1;
+            connectionAttempt?.abort(); controller?.abort(); clientEpoch = -1;
             await store.mutate(current => {
                 current.epoch++;
                 current.featureEnabled = prefs.enableGarminInbox;
@@ -71,12 +72,19 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         await reconcile();
     };
     const connect = async key => {
+        connectionAttempt?.abort();
+        const attempt = new AbortController(); connectionAttempt = attempt;
+        const assertCurrent = () => { if (attempt.signal.aborted) throw new GarminError('cancelled'); };
         if (!(await settings.requireCurrent()).enableGarminInbox) throw new GarminError('disabled');
         if (!await permission()) throw new GarminError('permission');
+        assertCurrent();
         const previous = await store.read();
-        const candidate = clientFactory({ key }); const account = verifiedAccount(previous.connection, await identity(candidate));
+        assertCurrent();
+        const candidate = clientFactory({ key, signal: attempt.signal }); const account = verifiedAccount(previous.connection, await identity(candidate));
+        assertCurrent();
         controller?.abort(); clientEpoch = -1; client = null;
         await mutateEpoch(previous.epoch, state => {
+            assertCurrent();
             state.epoch++;
             state.credentialEpoch = (state.credentialEpoch || 0) + 1;
             state.connection = { ...state.connection, key, ...account, connectedDate: state.connection?.connectedDate || date(), enabled: true };
@@ -85,6 +93,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         await reconcile();
     };
     const disconnect = async (removeData = false) => {
+        connectionAttempt?.abort();
         controller?.abort(); clientEpoch = -1; client = null;
         await store.mutate(state => {
             state.epoch++; if (state.connection) { state.connection.key = null; state.connection.enabled = false; }
@@ -92,7 +101,12 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             state.scan = null; state.error = null;
             if (removeData) { state.connection = null; state.items = {}; state.receipts = {}; state.lastCheck = 0; state.lastFull = 0; }
         });
-        await ext.alarms.clear(GARMIN_ALARM); await ext.permissions.remove({ origins: [GARMIN_PERMISSION] });
+        // The successful storage transaction establishes disconnection. Optional
+        // access cleanup must not turn that into an ambiguous credential error.
+        const cleanup = await Promise.allSettled([
+            ext.alarms.clear(GARMIN_ALARM), ext.permissions.remove({ origins: [GARMIN_PERMISSION] }),
+        ]);
+        return { configured: false, accessRemoved: cleanup[1].status === 'fulfilled' && cleanup[1].value !== false };
     };
     const pruneDismissed = state => {
         for (const [id, item] of Object.entries(state.items)) {
@@ -292,9 +306,12 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     const handlers = {
         GARMIN_STATUS: async () => ({ ok: true, ...await snapshot() }),
         GARMIN_SUMMARY: async () => ({ ok: true, ...await snapshot(false) }),
+        // Credential management remains available with imports disabled. Never
+        // expose the key, account or activity metadata through this route.
+        GARMIN_CONNECTION_STATUS: async () => ({ ok: true, configured: !!(await store.summary()).configured }),
         GARMIN_INBOX_OPEN: openInbox,
         GARMIN_CONNECT: async message => { await connect(message.key); return { ok: true, ...await snapshot() }; },
-        GARMIN_DISCONNECT: async message => { await disconnect(message.deleteData === true); return { ok: true, ...await snapshot() }; },
+        GARMIN_DISCONNECT: async message => ({ ok: true, ...await disconnect(message.deleteData === true) }),
         GARMIN_ACCESS: async () => {
             const current = await store.read(); if (!current.connection?.key) throw new GarminError('key-rejected');
             if (!await permission()) throw new GarminError('permission');
@@ -337,7 +354,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
     return { store, connect, disconnect, check, reconcile, snapshot, settingsChanged, peakbaggerVisited,
         async accessChanged() {
             if (await permission()) return reconcile();
-            controller?.abort(); client = null; clientEpoch = -1;
+            connectionAttempt?.abort(); controller?.abort(); client = null; clientEpoch = -1;
             await store.mutate(state => { state.epoch++; state.error = { code: 'permission', message: new GarminError('permission').message }; });
             await reconcile();
         },
@@ -380,7 +397,8 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
             const navigation = ['GARMIN_SUMMARY', 'GARMIN_INBOX_OPEN'].includes(message.type);
             if (!trusted(sender) && !(navigation && popup(sender))) return { ok: false, error: { message: 'Open Garmin Settings or the activity inbox to continue.' } };
             try {
-                if (!['GARMIN_STATUS', 'GARMIN_SUMMARY'].includes(message.type) && !(await settings.requireCurrent()).enableGarminInbox) throw new GarminError('disabled');
+                if (!['GARMIN_STATUS', 'GARMIN_SUMMARY', 'GARMIN_CONNECTION_STATUS', 'GARMIN_CONNECT', 'GARMIN_DISCONNECT'].includes(message.type)
+                    && !(await settings.requireCurrent()).enableGarminInbox) throw new GarminError('disabled');
                 return await handlers[message.type](message, sender);
             }
             catch (error) { return { ok: false, error: error instanceof GarminError

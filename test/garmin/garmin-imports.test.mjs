@@ -12,8 +12,8 @@ async function setup(overrides = {}) {
     const row = { id: '12', owner: '123', date: '2026-10-23', localStart: '2026-10-23 08:00:00', type: 'hiking' };
     const counts = { lists: 0, downloads: 0, preparations: 0 };
     const imports = createGarminImports({ ext: { runtime: { id: 'test', getURL: path => `chrome-extension://test/${path}` },
-        permissions: { contains: async () => overrides.permission ? overrides.permission() : true, remove: async () => true }, alarms: { clear: async key => alarms.delete(key), create: async (key, value) => alarms.set(key, value) } },
-    store, settings: { requireCurrent: async () => prefs },
+        permissions: { contains: async () => overrides.permission ? overrides.permission() : true, remove: overrides.removePermission || (async () => true) }, alarms: { clear: async key => alarms.delete(key), create: async (key, value) => alarms.set(key, value) } },
+    store, settings: { requireCurrent: async () => { if (overrides.settingsError?.()) throw new Error('storage unavailable'); return prefs; } },
     clientFactory: options => { overrides.onClient?.(options); return { owner: async () => '123', list: async () => { counts.lists++; return [row]; }, recording: async () => { counts.downloads++; return new Uint8Array(); }, ...overrides.api }; },
     clock: overrides.clock || Date.now, date: overrides.date,
     binding: overrides.binding || (async () => ({ cid: '456' })), decode: async () => ({ segments: [] }),
@@ -36,6 +36,66 @@ test('connecting a Garmin key enables imports without a separate activation or P
         assert.equal(state.items['12'].phase, 'waiting');
         assert.equal(state.peakbaggerBlocked.code, 'peakbagger');
     } finally { await h.store.close(); }
+});
+test('disconnect wins over a connection still waiting for host permission', async () => {
+    let hold = false, entered, release;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    const h = await setup({ permission: async () => { if (hold) { entered(); await gate; } return true; } });
+    try {
+        hold = true;
+        const connecting = h.imports.connect('fictional-replacement-key');
+        const rejected = assert.rejects(connecting, error => error.code === 'cancelled');
+        await waiting;
+        await h.imports.disconnect();
+        release(); await rejected;
+        assert.equal((await h.store.read()).connection.key, null);
+        assert.equal(h.alarms.size, 0);
+    } finally { release(); await h.store.close(); }
+});
+test('saved Garmin credentials can be inspected and disconnected while imports are off', async () => {
+    const h = await setup();
+    try {
+        await h.imports.check();
+        const before = await h.store.read();
+        h.prefs.enableGarminInbox = false;
+        const status = await h.imports.handle({ type: 'GARMIN_CONNECTION_STATUS' }, sender);
+        assert.deepEqual(status, { ok: true, configured: true });
+        const forbidden = await h.imports.handle({ type: 'GARMIN_CONNECTION_STATUS' }, { url: 'https://www.peakbagger.com/' });
+        assert.equal(forbidden.ok, false);
+        const result = await h.imports.handle({ type: 'GARMIN_DISCONNECT' }, sender);
+        assert.equal(result.ok, true);
+        const after = await h.store.read();
+        assert.equal(after.connection.key, null);
+        assert.deepEqual(after.items, before.items);
+        assert.deepEqual(after.receipts, before.receipts);
+        assert.equal(h.alarms.size, 0);
+        assert.equal((await h.imports.handle({ type: 'GARMIN_STATUS' }, sender)).configured, false,
+            'The disabled inbox still redacts activity data');
+    } finally { await h.store.close(); }
+});
+test('disconnect aborts key verification and remains available when settings cannot be read', async () => {
+    let hold = false, broken = false, signal, entered, release;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    const h = await setup({ settingsError: () => broken,
+        onClient: options => { signal = options.signal; },
+        api: { owner: async () => { if (hold) { entered(); await gate; } return '123'; } },
+        removePermission: async () => { throw new Error('permission removal failed'); },
+    });
+    try {
+        hold = true;
+        const connecting = h.imports.handle({ type: 'GARMIN_CONNECT', key: 'fictional-replacement' }, sender);
+        await waiting; broken = true;
+        assert.equal((await h.imports.handle({ type: 'GARMIN_CONNECTION_STATUS' }, sender)).configured, true);
+        const removed = await h.imports.handle({ type: 'GARMIN_DISCONNECT' }, sender);
+        assert.equal(removed.ok, true);
+        assert.equal(removed.accessRemoved, false);
+        assert.equal(signal.aborted, true);
+        release();
+        assert.equal((await connecting).error.code, 'cancelled');
+        assert.equal((await h.store.read()).connection.key, null);
+    } finally { release(); await h.store.close(); }
 });
 test('an already saved Garmin key imports without the former enable flag', async () => {
     const h = await setup();
