@@ -15,7 +15,7 @@ export function layoutVerificationPlan(args, surfaces) {
     assert.ok(!preflight || !args.some(arg => arg.startsWith('--surface=') || arg.startsWith('--shard=') || arg.startsWith('--suite=')), 'Preflight cannot be combined with suite, surface or shard selections');
     assert.ok(!surface || surfaces.includes(surface), `Unknown layout surface: ${surface}`);
     const shard = args.find(arg => arg.startsWith('--shard='))?.slice('--shard='.length).split('/').map(Number) || [1, 1];
-    const zooms = ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter'].includes(surface) ? [1, 1.5] : [1];
+    const zooms = ['timestamps', 'ascent-columns', 'ascent-filters', 'peak-columns', 'report-filter'].includes(surface) ? [1, 1.5] : [1];
     const variants = preflight ? [{ theme: 'light', width: 390, zoom: 1 }]
         : ['light', 'dark'].flatMap(theme => [390, 1280].flatMap(width => zooms.map(zoom => ({ theme, width, zoom }))));
     assert.ok(shard.every(Number.isSafeInteger) && shard[0] >= 1 && shard[0] <= shard[1] && shard[1] <= variants.length,

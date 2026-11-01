@@ -559,8 +559,8 @@ html[data-bpb-theme="dark"] {
 .pbaf-chip:disabled:hover { border-color: var(--pbaf-chip-border); color: var(--pbaf-chip-off-text); }
 .pbaf-chip .pbaf-count { font-size: 11px; color: var(--pbaf-count); font-variant-numeric: tabular-nums; }
 .pbaf-chip[aria-pressed="true"] .pbaf-count { color: var(--pbaf-count-on); }
-.pbaf-tick { display: none; font-weight: 700; }
-.pbaf-chip[aria-pressed="true"] .pbaf-tick { display: inline; }
+.pbaf-tick { visibility: hidden; font-weight: 700; }
+.pbaf-chip[aria-pressed="true"] .pbaf-tick { visibility: visible; }
 .pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; transition: opacity .12s; }
 .pbaf-settings-link { appearance: none; border: 0; background: none; padding: 0; color: var(--pbaf-link);
     font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
@@ -572,12 +572,20 @@ html[data-bpb-theme="dark"] {
 .pbaf-words input:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 1px; }
 .pbaf-spacer { flex: 1 1 auto; }
 .pbaf-status { color: var(--pbaf-muted); white-space: nowrap; }
-.pbaf-status b { color: var(--pbaf-strong); font-weight: 600; font-variant-numeric: tabular-nums;
+.pbaf-status b, .pbaf-status-slot b { color: var(--pbaf-strong); font-weight: 600; font-variant-numeric: tabular-nums;
     display:inline-block; inline-size:var(--pbaf-status-digits, auto); text-align:right; }
-.pbaf-results { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; align-self:flex-start;
+.pbaf-status-slot, .pbaf-reset-slot, .pbaf-ignored-detail { display:grid; align-items:center; }
+.pbaf-status-slot > *, .pbaf-reset-slot > *, .pbaf-ignored-detail > * { grid-area:1 / 1; }
+.pbaf-reservation { visibility:hidden; pointer-events:none; }
+.pbaf-reset-slot { min-block-size:32px; }
+.pbaf-ignored-detail { font-size:12px; }
+.pbaf-results { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:start; align-self:flex-start;
     gap:4px 8px; min-inline-size:0; max-inline-size:100%; }
-.pbaf-results > .pbaf-status { white-space:normal; }
+.pbaf-results .pbaf-status { white-space:normal; }
+.pbaf-results > .pbaf-status-slot { min-block-size:32px; }
 #pbaf-bar .pbaf-results > .bpb-report-tools { margin:0; }
+.pbaf-results > .pbaf-ignore-tools { display:grid; gap:0; }
+#pbaf-bar .pbaf-results > .bpb-report-tools[hidden] { display:none; }
 .pbaf-result-utilities { grid-column:1 / -1; }
 #pbaf-bar .pbaf-result-utilities[hidden] { display:none; }
 .pbaf-table-scroll { max-inline-size:calc(100vw - 24px); overflow-x:auto; }
@@ -627,6 +635,28 @@ const containAscentTable = table => {
     const scroller = document.createElement('div'); scroller.className = 'pbaf-table-scroll';
     scroller.tabIndex = 0; scroller.setAttribute('role', 'region'); scroller.setAttribute('aria-label', 'Ascent list');
     table.before(scroller); scroller.append(table);
+};
+
+// Measure the complete, still-unfiltered list once. Native auto layout should
+// keep sizing to content, but hiding its widest row must not shrink a column.
+const preserveAscentColumnWidths = header => {
+    const cells = Array.from(header.cells);
+    const widths = cells.map(cell => cell.getBoundingClientRect().width);
+    cells.forEach((cell, index) => {
+        if (!widths[index]) return; // DOM-only environments have no layout.
+        cell.style.boxSizing = 'border-box';
+        cell.style.minWidth = `${widths[index]}px`;
+    });
+};
+
+// Reserve only the caption's natural size. Hidden controls remain display:none,
+// unfocusable and absent from accessibility; the sizing copy is never announced.
+const reservedCaption = (element, caption, className) => {
+    const slot = document.createElement('span'); slot.className = className;
+    const size = document.createElement('span'); size.className = 'pbaf-reservation';
+    size.setAttribute('aria-hidden', 'true'); size.textContent = caption;
+    slot.append(size, element);
+    return slot;
 };
 
 const readRenderedBuddyList = () => {
@@ -960,6 +990,7 @@ const init = async () => {
 
         const tick = document.createElement('span');
         tick.className = 'pbaf-tick';
+        tick.setAttribute('aria-hidden', 'true');
         tick.textContent = '✓';
         const labelEl = document.createElement('span');
         labelEl.className = 'pbaf-chip-label';
@@ -1361,7 +1392,7 @@ const init = async () => {
     window.addEventListener('blur', () => finishPointerReorder(true));
 
     reportStyle(document);
-    const ignoreTools = document.createElement('span'); ignoreTools.className = 'bpb-report-tools';
+    const ignoreTools = document.createElement('span'); ignoreTools.className = 'bpb-report-tools pbaf-ignore-tools';
     const ignoredStatus = document.createElement('span'); ignoredStatus.className = 'bpb-report-status';
     const ignoreError = document.createElement('span'); ignoreError.className = 'bpb-list-error'; ignoreError.setAttribute('role', 'status');
     if (!table.id) table.id = 'bpb-ascent-list';
@@ -1380,13 +1411,19 @@ const init = async () => {
     });
     retryLists.addEventListener('blur', () => render());
     const accountLinks = accountRecovery(document, chrome);
-    ignoreTools.append(revealButton);
+    const ignoredDetail = reservedCaption(ignoredStatus, 'None match filters', 'pbaf-ignored-detail');
+    ignoreTools.append(revealButton, ignoredDetail);
     const resultUtilities = document.createElement('span'); resultUtilities.className = 'bpb-report-tools pbaf-result-utilities';
-    const auxiliaryControls = [resetButton, retryLists, accountLinks, fullButton, restoreFilters, ignoredStatus, ignoreError];
+    const auxiliaryControls = [retryLists, accountLinks, fullButton, restoreFilters, ignoreError];
+    const statusSlot = reservedCaption(statusEl, `Showing ${total} of ${total} ascents`, 'pbaf-status-slot');
+    statusSlot.style.setProperty('--pbaf-status-digits', `${String(total).length}ch`);
+    const totalSize = document.createElement('b'); totalSize.textContent = String(total);
+    statusSlot.firstElementChild.replaceChildren('Showing ', totalSize, ' of ', totalSize.cloneNode(true), ` ascent${total === 1 ? '' : 's'}`);
+    const resetSlot = reservedCaption(resetButton, resetButton.textContent, 'pbaf-reset-slot');
     const results = document.createElement('span'); results.className = 'pbaf-results';
     if (isPeakAscentsPage) {
         resultUtilities.append(...auxiliaryControls);
-        results.append(statusEl, ignoreTools, resultUtilities);
+        results.append(statusSlot, resetSlot, ignoreTools, resultUtilities);
     }
     const emptyBody = document.createElement('tbody'); emptyBody.dataset.bpbEmpty = 'true';
     const emptyRow = document.createElement('tr'); const emptyCell = document.createElement('td');
@@ -1395,7 +1432,7 @@ const init = async () => {
     if (isPeakAscentsPage) table.append(emptyBody);
     bar.append(
         ...state[orderKey].map(key => filterItems[key]).filter(Boolean),
-        spacer, ...(isPeakAscentsPage ? [results] : [statusEl, resetButton]), orderStatusEl,
+        spacer, ...(isPeakAscentsPage ? [results] : [statusSlot, resetSlot]), orderStatusEl,
     );
     refreshBeta();
     refreshFavorites();
@@ -1432,6 +1469,7 @@ const init = async () => {
         }
         if (isPeakAscentsPage) {
             paintReveal(revealButton, ignoredStatus, result, revealIgnored, 'ascents');
+            ignoreTools.hidden = revealButton.hidden;
             ignoreError.textContent = ignoredState.error || (state.fav ? favoriteSourceState?.error || '' : '');
             if (state.fav && favoriteSourceState?.loading && !retryBusy) ignoreError.textContent = 'Loading climbing buddies…';
             accountLinks.hidden = !(state.fav && favoriteSourceState?.accountRequired);
@@ -1493,6 +1531,7 @@ const init = async () => {
     updateFavoriteSource = () => { refreshFavorites(); render(); };
     table.parentNode.insertBefore(bar, table);
     containAscentTable(table);
+    preserveAscentColumnWidths(headerRow);
     render();
     if (state.fav) void refreshBuddyCache();
 

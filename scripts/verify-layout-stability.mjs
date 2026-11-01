@@ -22,6 +22,7 @@ import { verifyPhotoReportEdit } from './verify-photo-report-edit.mjs';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
 import { verifyReportCaptionStability } from './verify-report-caption-stability.mjs';
 import { verifyAscentColumnWidths, verifyPeakColumnWidths } from './verify-ascent-column-widths.mjs';
+import { verifyAscentFilters } from './verify-ascent-filters.mjs';
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
 
 const output = process.env.BPB_JITTER_ARTIFACTS;
@@ -1418,6 +1419,7 @@ const cases = { 'report-filter': reportFilterCase, sun: sunCase, 'photo-report-e
     'climber-files': (page, origin, variant) => verifyClimberFiles(page, origin, variant, { capture }),
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'ascent-columns': (page, origin, variant) => verifyAscentColumnWidths(page, origin, variant, { asset, capture }),
+    'ascent-filters': (page, origin, variant) => verifyAscentFilters(page, origin, variant, { asset, capture }),
     'peak-columns': (page, origin, variant) => verifyPeakColumnWidths(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
     captions: (page, origin, variant) => verifyReportCaptionStability(page, origin, variant, { asset, capture }) };
