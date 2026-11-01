@@ -418,11 +418,27 @@ For a focused provider-feedback check, run
 real hidden GPU rendering with eight credit layouts and eight held-tile → HTTP
 403 → keyboard retry → rendered-map paths: 800/320px maps, both themes and
 normal/enlarged text. It checks focus, feedback visibility, control overlap,
-and action/map/following-content geometry within one CSS pixel. The vector
-Add `--maptoolkit` to `node scripts/verify-vector-map.mjs` to run the same
+and action/map/following-content geometry within one CSS pixel.
+
+Add `--maptoolkit` to `node scripts/verify-vector-map.mjs` to run the vector
 matrix against Maptoolkit Hiking, including its packaged logo, clickable
 copyrights and overlay-menu clearance. `--maptoolkit --live` renders one live
 provider viewport; ordinary matrix runs use synthetic responses.
+
+Add `--terrain` to exercise the actual BigMap 2D → 3D → 2D path. Its eight
+renderer cases cover desktop/narrow layouts, both themes, enlarged text,
+non-flat elevation, rendered vector features, named sprites, attribution and
+menu clearance, pending cancellation, failure/retry and style/tile cooldowns.
+Chrome additionally checks real first-use consent at 1280/375 × 800. Chrome
+loads a disposable copy of the real extension with only its Map constructor
+instrumented for inspection; settings and worker authorization remain real.
+Firefox uses explicit extension API/storage shims. Optional hover/focus warming
+is suppressed to keep synthetic elevation requests in the visible frame;
+warming has separate coverage. `--terrain --maptoolkit --live` renders one
+live 3D viewport. No native window/focus or long-term provider reliability is
+established by these checks.
+
+The vector
 `--recovery-only` selection isolates post-load tile outages, keyboard recovery,
 valid empty tiles and partial/cached availability. `--cooldown-only` covers
 style/tile 429 replies, a retained 120-second limit, pointer/keyboard/programmatic

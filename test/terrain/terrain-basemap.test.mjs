@@ -92,6 +92,11 @@ test('active fails closed when there is no map or no selected option', () => {
     assert.equal(B.active({}, { _layers: {} }, null), null);
 });
 
+test('Maptoolkit selected in 2D retains its fixed provider identity when entering 3D', () => {
+    assert.deepEqual(terrainBasemap.active({}, {}, { value: 'BPB_MAPTOOLKIT', selectedIndex: 0, options: [{ textContent: 'page-owned label' }] }),
+        { kind: 'vector', provider: 'maptoolkit', name: 'Maptoolkit Hiking' });
+});
+
 test('the custom Leaflet Sentinel choice starts the matching 3D provider, not its native fallback tiles', () => {
     const select = makeSelect([option('BPB_SENTINEL', 'Sentinel-2 (experimental)')]);
     const native = { _url: 'https://native.example/{z}/{x}/{y}.png' };

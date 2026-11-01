@@ -10,7 +10,7 @@ import { createSnowDepthMetadata, SNOW_DEPTH_LEGEND } from './snow-depth.js';
 import { WILDFIRE_LEGEND } from './wildfire-core.js';
 import { sentinelTarget } from './sentinel-core.js';
 import { OVERLAY_MIN_ZOOM, SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
-import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns } from './map-layer-protocol.js';
+import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns, readAttributionInset } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
@@ -169,7 +169,7 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
     const changed = opacityId => { touched = true; revision++; apply(opacityId); };
     const control = createMapLayerControl({ document: doc,
         getFooterInset() {
-            if (frameMode) return 0;
+            if (frameMode) return readAttributionInset(terrainView?.footer) * (doc.getElementById('bpb-terrain-frame')?.getBoundingClientRect().height || 0);
             const container = binding?.map.getContainer?.(), logo = container?.querySelector('.bpb-vector-maptoolkit-logo:not([hidden])');
             if (!logo) return 0;
             const bounds = container.getBoundingClientRect(), footer = logo.getBoundingClientRect();
@@ -428,7 +428,7 @@ export function installMapLayers(win = window, { fixedMap = null, secondary = fa
                 if (revealPending && terrainView && bounds.some((value, i) => Math.abs(value - terrainView.bounds[i]) > 1e-7)) {
                     cancelReveal(); requestId++; post({ type: 'cancel' });
                 }
-                terrainView = { bounds, zoom: data.zoom }; apply(); clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
+                terrainView = { bounds, zoom: data.zoom, footer: readAttributionInset(data.footer) }; apply(); clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
             }
         }
     };

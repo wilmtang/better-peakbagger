@@ -7,13 +7,14 @@ import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-l
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../settings/settings-schema.js';
 import { terrainStyle as TerrainStyle } from './terrain-style.js';
-import { VECTOR_BASEMAP } from '../maps/vector-basemap.js';
+import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, vectorBasemap } from '../maps/vector-basemap.js';
+import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.js';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { createTerrainOverlays } from './terrain-overlays.js';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
-import { rateLimitMessage } from '../net/rate-limit.js';
+import { rateLimitMessage, readRetryAt } from '../net/rate-limit.js';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
 import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -115,12 +116,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // the casing at least two pixels wider), so the route still reads as cased.
     const ROUTE_HOVER_COLOR = '#000000';
     const ROUTE_HOVER_WIDTH_GAIN = 2;
-    // Extension-provided vector basemap (not mirrored from Peakbagger's 2D
-    // Leaflet menu): OpenFreeMap's keyless, CORS-clean OpenStreetMap tiles,
-    // grafted into the live style so labels billboard upright over the
-    // terrain instead of rotating with a raster drape. Selecting it contacts
-    // tiles.openfreemap.org — see the dated provider evaluation in
-    // docs/archive/3d-vector-basemap-investigation.md.
+    // Built-in vector styles are grafted into the live terrain style so the
+    // mesh and route remain owned here. Labels stay upright above the route;
+    // resource requests are scoped to the selected catalog provider.
     const VECTOR_PREFIX = 'bpb-vector:';
     const PALETTES = {
         light: {
@@ -207,7 +205,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let activeBasemap = null;
     let availableBasemaps = [];
     let activeBasemapIndex = -1;
-    let initialVectorBasemap = false;
+    let initialVectorBasemap = null;
     let basemapErrored = false;
     let basemapContentLoaded = false;
     let basemapChecked = false;
@@ -243,7 +241,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let vectorActive = false;
     let vectorLoading = false;
     let vectorInstalling = false;
-    const vectorStyleLoader = TerrainStyle.createVectorStyleLoader({ styleUrl: VECTOR_BASEMAP.styleUrl });
+    const vectorStyleLoaders = new Map(VECTOR_BASEMAPS.map(basemap => [basemap.id, TerrainStyle.createVectorStyleLoader({ basemap, styleUrl: basemap.styleUrl })]));
+    const vectorCooldowns = new Map();
+    let vectorCooldownTimer = null;
+    let vectorChoice = null, attributionControl = null, attributionProvider = null, maptoolkitLogo = null;
     let vectorSwapToken = 0;
     let vectorLayerIds = [];
     let vectorSourceIds = [];
@@ -306,9 +307,11 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         post('view', { bearing: map.getBearing(), pitch: map.getPitch() });
     };
     const postOverlayView = () => {
-        if (!map?.getBounds || !loaded) return;
+        if (!map?.getBounds || typeof map.getZoom !== 'function' || !loaded) return;
         const bounds = map.getBounds();
-        post('layerView', { bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], zoom: map.getZoom() + 1 });
+        const surface = mapElement?.getBoundingClientRect(), logo = maptoolkitLogo && !maptoolkitLogo.hidden ? maptoolkitLogo.getBoundingClientRect() : null;
+        const footer = surface?.height > 0 && logo ? Math.max(0, Math.min(1, (surface.bottom - logo.top + 8) / surface.height)) : 0;
+        post('layerView', { bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], zoom: map.getZoom() + 1, ...(footer ? { footer } : {}) });
     };
     const scheduleView = () => {
         if (viewFrame !== null) return;
@@ -369,6 +372,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const removeTerrain = () => {
+        clearTimeout(vectorCooldownTimer); vectorCooldownTimer = null;
         snowReveal.cancel();
         snowMarkers.clear(); snowStations = [];
         removeLoadTimer();
@@ -428,6 +432,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }
         if (terrainProtocolRegistered && typeof maplibre?.removeProtocol === 'function') {
             try { maplibre.removeProtocol(TerrainCache.PROTOCOL); } catch (error) { /* The frame may already be unloading. */ }
+            try { maplibre.removeProtocol(VECTOR_PROTOCOL); } catch (error) { /* The frame may already be unloading. */ }
         }
         if (terrainCache) void terrainCache.close();
         terrainCache = null;
@@ -453,6 +458,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         vectorSwapToken++;
         vectorLayerIds = [];
         vectorSourceIds = [];
+        vectorChoice = null; attributionControl = null; attributionProvider = null; maptoolkitLogo = null;
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
@@ -869,11 +875,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const renderPicker = () => {
+        clearTimeout(vectorCooldownTimer);
+        const next = Math.min(...[...vectorCooldowns.values()].map(value => readRetryAt(value)).filter(Boolean));
+        if (Number.isFinite(next)) vectorCooldownTimer = setTimeout(() => { if (map && loaded) renderPicker(); }, Math.max(1, next - Date.now() + 1));
         const choices = [
             ...availableBasemaps.map((basemap, index) => ({ id: String(index), label: basemap.name || `Map ${index + 1}`, disabled: false })),
-            { id: 'vector', label: VECTOR_BASEMAP.name }, { id: 'terrain', label: 'Terrain only' },
+            ...VECTOR_BASEMAPS.map(basemap => ({ id: basemap.id, label: basemap.name, disabled: !!readRetryAt(vectorCooldowns.get(basemap.id)) })), { id: 'terrain', label: 'Terrain only' },
         ];
-        const selection = vectorActive || vectorLoading ? 'vector' : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
+        const selection = vectorActive || vectorLoading ? vectorChoice.id : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
         if (pickerElement) {
             pickerElement.replaceChildren(...choices.map(choice => {
                 const option = document.createElement('option');
@@ -886,7 +895,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const selectBasemap = selection => {
-        const choice = selection === 'terrain' ? -1 : selection === 'vector' ? 'vector'
+        const vector = vectorBasemap(selection);
+        const choice = selection === 'terrain' ? -1 : vector ? vector.id
             : /^\d{1,3}$/.test(selection) ? Number(selection) : null;
         if (choice === null) return;
         if (!loaded) pendingBasemapSelection = choice;
@@ -928,7 +938,28 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     // Bounded fetch, shape validation, and per-lifetime memoization all live in
     // the pure loader; only the grafting below needs MapLibre.
-    const fetchVectorStyle = () => vectorStyleLoader.load();
+    const fetchVectorStyle = basemap => vectorStyleLoaders.get(basemap.id).load();
+
+    const setVectorSprite = sprite => {
+        if (!Array.isArray(sprite)) { map.setSprite?.(sprite); return; }
+        map.setSprite(null);
+        for (const item of sprite) map.addSprite(item.id, item.url);
+    };
+
+    const updateVectorAttribution = () => {
+        const toolkit = vectorChoice === MAPTOOLKIT_BASEMAP;
+        if (maptoolkitLogo) maptoolkitLogo.hidden = !toolkit;
+        if (map && attributionControl && attributionProvider !== toolkit && typeof map.removeControl === 'function') {
+            const previous = mapElement?.querySelector('.maplibregl-ctrl-attrib');
+            if (previous) resizeObserver?.unobserve(previous);
+            map.removeControl(attributionControl);
+            attributionControl = new maplibre.AttributionControl({ compact: false, ...(toolkit ? { customAttribution: MAPTOOLKIT_ATTRIBUTION } : {}) });
+            map.addControl(attributionControl, 'bottom-right'); attributionProvider = toolkit;
+            const current = mapElement?.querySelector('.maplibregl-ctrl-attrib');
+            if (current) resizeObserver?.observe(current);
+        }
+        positionCreditControls(); postOverlayView();
+    };
 
     // Graft the provider style into the live inline style instead of
     // map.setStyle, so the Mapterhorn terrain mesh, hillshade, and route
@@ -940,7 +971,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (typeof map.setGlyphs === 'function') map.setGlyphs(resources.glyphs);
         } catch (error) { /* The style may be tearing down. */ }
         try {
-            if (typeof map.setSprite === 'function') map.setSprite(resources.sprite);
+            if (typeof map.setSprite === 'function') setVectorSprite(resources.sprite);
         } catch (error) { /* The style may be tearing down. */ }
     };
 
@@ -982,7 +1013,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         vectorInstalling = true;
         try {
             if (typeof style.glyphs === 'string' && typeof map.setGlyphs === 'function') map.setGlyphs(style.glyphs);
-            if (typeof style.sprite === 'string' && typeof map.setSprite === 'function') map.setSprite(style.sprite);
+            if (style.sprite != null && typeof map.setSprite === 'function') setVectorSprite(style.sprite);
             for (const [id, source] of Object.entries(style.sources)) {
                 const prefixed = `${VECTOR_PREFIX}${id}`;
                 map.addSource(prefixed, source);
@@ -1026,6 +1057,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         vectorActive = false;
         vectorLoading = false;
         vectorInstalling = false;
+        vectorChoice = null; updateVectorAttribution();
     };
 
     // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
@@ -1042,12 +1074,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         activeBasemapIndex = -1;
         activeBasemap = null;
         showNotice('');
-        if (selection === 'vector') {
+        const selectedVector = vectorBasemap(selection);
+        if (selectedVector) {
+            const retryAt = readRetryAt(vectorCooldowns.get(selectedVector.id));
+            if (retryAt) { renderPicker(); showNotice(rateLimitMessage(selectedVector.provider, retryAt)); return true; }
+            vectorChoice = selectedVector;
             vectorLoading = true;
+            updateVectorAttribution();
             renderPicker();
             showNotice('Loading map…', 'loading');
             const token = vectorSwapToken;
-            fetchVectorStyle()
+            fetchVectorStyle(selectedVector)
                 .then(style => {
                     if (!map || !loaded || token !== vectorSwapToken) return;
                     vectorLoading = false;
@@ -1058,11 +1095,12 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 })
                 .catch(error => {
                     if (!map || !loaded || token !== vectorSwapToken) return;
+                    if (error?.code === 'rate-limit') vectorCooldowns.set(selectedVector.id, readRetryAt(error.retryAt) || Date.now() + 300000);
                     removeVectorBasemap();
                     vectorActive = false;
                     renderPicker();
                     showNotice(error?.code === 'rate-limit' ? `${error.message} Showing terrain only.`
-                        : `${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
+                        : `${selectedVector.name} is unavailable right now. Showing terrain only.`);
                 });
             return true;
         }
@@ -1089,7 +1127,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // per-drape tile-check flags so the resolved layer is judged fresh. Used by
     // the initial boot and by resume (to reflect a 2D layer change).
     const resolveBasemaps = data => {
-        initialVectorBasemap = data.basemap?.kind === 'vector';
+        initialVectorBasemap = data.basemap?.kind === 'vector' ? vectorBasemap(data.basemap.provider === undefined ? 'vector' : data.basemap.provider) : null;
         const initialBasemap = validateBasemap(data.basemap);
         const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
         availableBasemaps = [];
@@ -1179,6 +1217,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         const left = mapElement?.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
         if (credits && left) mapElement.style.setProperty('--bpb-credits-inset',
             `${credits.left < left.right ? credits.height : 0}px`);
+        if (loaded) postOverlayView();
     };
 
     const setTheme = theme => {
@@ -1924,6 +1963,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     throw error;
                 }));
             terrainProtocolRegistered = true;
+            maplibre.addProtocol(VECTOR_PROTOCOL, (parameters, controller) => {
+                const owner = map, basemap = vectorChoice;
+                if (!basemap) return Promise.reject(Object.assign(new Error('Vector map removed.'), { name: 'AbortError' }));
+                return createVectorMapRequest({ basemap, onRateLimit(error) {
+                    vectorCooldowns.set(basemap.id, Math.max(vectorCooldowns.get(basemap.id) || 0, readRetryAt(error.retryAt) || Date.now() + 300000));
+                    if (map !== owner || vectorChoice !== basemap) return;
+                    swapBasemap(-1); showNotice(rateLimitMessage(basemap.provider, vectorCooldowns.get(basemap.id)));
+                } })(parameters, controller);
+            });
             // Start at the live 2D camera when one was available; otherwise
             // route views frame the track and Peak pages center on their summit.
             // Initialising at a placeholder camera and moving only after 'load'
@@ -1964,8 +2012,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 maxTileCacheZoomLevels: TILE_CACHE_ZOOM_LEVELS,
                 transformRequest: (url, resourceType) => {
                     if (!(vectorInstalling || vectorActive)) return { url };
-                    if (TerrainStyle.providerUrl(url)) {
-                        return { url, credentials: 'omit' };
+                    if (vectorChoice && TerrainStyle.providerUrl(url, { basemap: vectorChoice })) {
+                        return { url: vectorRequestUrl(url, vectorChoice), credentials: 'omit', referrerPolicy: 'no-referrer' };
                     }
                     let parsed;
                     try { parsed = new URL(url); } catch { return { url }; }
@@ -1982,6 +2030,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             // and no setup step may race ahead and leave the host on a spinner.
             terrainMap.on('error', event => {
                 if (map !== terrainMap) return;
+                if (event?.sourceId?.startsWith(VECTOR_PREFIX) && !vectorChoice) return;
                 if (event?.error?.status === 429) {
                     const source = event.sourceId || '';
                     if (source.startsWith('bpb-overlay-')) {
@@ -1990,7 +2039,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     }
                     if (source === 'terrain' && !loaded) { fail('elevation-rate-limit'); return; }
                     const service = source === 'basemap' ? activeBasemap?.name || 'Map provider'
-                        : source.startsWith(VECTOR_PREFIX) || String(event.error.url || '').startsWith('https://tiles.openfreemap.org/') ? 'OpenFreeMap'
+                        : source.startsWith(VECTOR_PREFIX) ? vectorChoice?.provider || 'Vector provider'
                             : source === 'terrain' ? 'Mapterhorn' : 'Map service';
                     if (source === 'basemap' || source.startsWith(VECTOR_PREFIX)) swapBasemap(-1);
                     showNotice(rateLimitMessage(service, event.error.retryAt));
@@ -2012,9 +2061,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     overlays?.tileError(event.sourceId, event.error);
                     return;
                 }
-                if (event?.sourceId?.startsWith(VECTOR_PREFIX)) {
+                if (event?.sourceId?.startsWith(VECTOR_PREFIX) || vectorChoice && TerrainStyle.providerUrl(event?.error?.url, { basemap: vectorChoice })) {
+                    const name = vectorChoice?.name || 'Vector map';
                     swapBasemap(-1);
-                    showNotice(`${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
+                    showNotice(`${name} is unavailable right now. Showing terrain only.`);
                     return;
                 }
                 // Loaded source errors are ordinary network gaps and remain
@@ -2049,8 +2099,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             // own measured anchor, so wrapping credits cannot move its buttons.
             terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
-            terrainMap.addControl(new maplibre.AttributionControl({ compact: false }), 'bottom-right');
+            attributionControl = new maplibre.AttributionControl({ compact: false }); attributionProvider = false;
+            terrainMap.addControl(attributionControl, 'bottom-right');
             terrainMap.addControl({ onAdd: () => hint, onRemove: () => hint.remove() }, 'bottom-left');
+            const logo = document.createElement('a'); logo.className = 'maplibregl-ctrl bpb-terrain-maptoolkit-logo';
+            logo.href = 'https://www.maptoolkit.org/'; logo.setAttribute('aria-label', 'Maptoolkit'); logo.hidden = true;
+            logo.target = '_blank'; logo.rel = 'noopener noreferrer';
+            logo.style.backgroundImage = `url("${chrome.runtime.getURL('images/maptoolkit-attribution.png')}")`;
+            maptoolkitLogo = logo;
+            terrainMap.addControl({ onAdd: () => logo, onRemove: () => logo.remove() }, 'bottom-left');
             positionCreditControls();
             // A raster tile that loads fires a 'source' data event carrying the
             // tile. One such event proves the drape can render, so a handful of
@@ -2181,7 +2238,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                         if (swapBasemap(pendingBasemapSelection)) userPickedBasemap = true;
 
                     } else if (initialVectorBasemap) {
-                        swapBasemap('vector');
+                        swapBasemap(initialVectorBasemap.id);
                     } else if (activeBasemap) {
                         addBasemapLayer(activeBasemap);
                     }
@@ -2285,7 +2342,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // so a 2D layer change made while in 2D is reflected.
         if (!userPickedBasemap) {
             resolveBasemaps(data);
-            swapBasemap(initialVectorBasemap ? 'vector' : activeBasemapIndex);
+            swapBasemap(initialVectorBasemap ? initialVectorBasemap.id : activeBasemapIndex);
         }
 
         // Camera: the live 2D camera wins; else frame the route; else center the

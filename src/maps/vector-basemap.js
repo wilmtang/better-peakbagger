@@ -19,6 +19,9 @@ export const MAPTOOLKIT_BASEMAP = Object.freeze({
         'https://fonts.maptoolkit.org', 'https://icons.maptoolkit.org', 'https://tiles.mapterhorn.com']),
 });
 export const VECTOR_BASEMAPS = Object.freeze([VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP]);
+// Match the service's TileJSON HTML so MapLibre deduplicates the eager fallback
+// against the source attribution when its asynchronous metadata arrives.
+export const MAPTOOLKIT_ATTRIBUTION = "<a href='https://www.maptoolkit.com/copyright/' target='_blank' rel='noopener noreferrer'>&copy; Maptoolkit</a> <a href='https://www.openstreetmap.org/copyright' target='_blank' rel='noopener noreferrer'>&copy; Openstreetmap</a>";
 export const vectorBasemap = value => VECTOR_BASEMAPS.find(item => item.id === value || item.code === value) || null;
 export function vectorProviderUrl(value, basemap = VECTOR_BASEMAP, { templates = [] } = {}) {
     if (typeof value !== 'string' || !value || value.length > 4096 || !VECTOR_BASEMAPS.includes(basemap)) return null;

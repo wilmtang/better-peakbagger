@@ -5,6 +5,7 @@ import { readWildfireRecords } from './wildfire-core.js';
 import { sentinelTarget } from './sentinel-core.js';
 
 const text = (value, limit = 400) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, limit) : '';
+export const readAttributionInset = value => Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
 export const readLandCooldowns = value => Object.fromEntries(['us', 'bc', 'ab'].filter(key => Number.isFinite(value?.[key])
     && value[key] > Date.now() && value[key] <= Date.now() + 86400000).map(key => [key, value[key]]));
 export const mergeLandCooldowns = (current, incoming) => {

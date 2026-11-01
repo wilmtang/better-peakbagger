@@ -7,7 +7,7 @@ Retain the existing OpenFreeMap option and native map/route owners.
 ## Decisions
 
 - Use the official [Hiking style](https://docs.maptoolkit.org/map-styles/)
-  without a key. The same cartography will use the existing terrain mesh in 3D.
+  without a key. The same cartography uses the existing terrain mesh in 3D.
 - Keep fixed provider identities and separate resource host allowlists. Only
   validated style data is downloaded; MapLibre and its worker stay packaged.
 - Preserve trusted selection, one-use capabilities, camera alignment, native
@@ -35,21 +35,51 @@ Retain the existing OpenFreeMap option and native map/route owners.
   1280 × 800 using actual style, terrain, tiles, glyphs and sprites. The rendered
   map and narrow/dark fixture attribution were visually inspected.
 
-## Remaining implementation
+## 3D implementation and verification
 
-- Add the 3D choice and preserve the selected provider across 2D/3D switches.
-- Support named sprite resources when grafting a style into the existing
-  terrain renderer, and preserve its terrain/route/overlay ownership.
-- Verify the 3D renderer, attribution/menu clearance and failure recovery in
-  both browsers, then run repository-wide checks.
+- The 2D vector provider is honored on entering 3D; explicit in-3D choices
+  retain their existing priority. Returning to 2D restores its own selection.
+  Named sprites are installed/restored through MapLibre's public APIs. The
+  terrain mesh, route and overlays are preserved during every style graft.
+- Provider-specific style and tile limits disable the corresponding option,
+  retain their deadline across swaps, and re-enable without automatic requests.
+  Both bridge consumers validate the normalized footer clearance that keeps
+  the host overlay menu above the required attribution.
+- Eight hardware renderer cases passed in each browser: 1280/375-pixel maps,
+  light/dark, normal/enlarged text, geographic vector features on non-flat
+  elevation, mode switching, pending cancellation, failure/retry, style and
+  tile cooldowns, mesh/route identity and anchored controls. Chrome passed two
+  additional real consent cases at 1280/375 × 800. Firefox stubs extension
+  API/storage; Chrome retains real settings, manifest and worker authorization.
+  The served Map constructor alone is instrumented to inspect actual rendering.
+- OpenFreeMap's existing 2D and 3D paths passed their regression matrices.
+- One live 3D Hiking viewport rendered on actual elevation in hidden Chrome.
+  A duplicate copyright visible in that inspection was reproduced with faithful
+  TileJSON markup; the new assertion failed before the fix and passed after it.
+  Final synthetic attribution and narrow/dark consent screenshots were inspected.
+- Build and repository lint passed with eight existing owned warnings. The full
+  Node suite ran 3,852 tests: 3,850 passed and the same two snow-depth JSON
+  fixture-registration tests failed. The focused boundaries passed 112 tests.
+
+## Intentionally unchanged
+
+- Existing basemap defaults, 3D opt-in and manual confirmation.
+- No new host permissions, API key, remote executable code or provider accounts.
+- The Community Service remains an external proprietary dependency. No provider
+  style is vendored, relicensed as AGPL or retargeted to a different tile source.
+- 2D cooldowns are isolated-document scoped and 3D cooldowns frame scoped; no
+  persistent provider budget is shared across tabs or separate mode renderers.
 
 ## Verification limits
 
 All browser work is hidden on Apple M3 Pro hardware (Chrome uses Metal).
 The focused fixture stubs provider responses; the separate single-view live
-check proves availability at that time, not service reliability or licensing
+checks prove availability at that time, not service reliability or licensing
 approval. Hidden runs do not establish native window focus, browser menus,
 touch or screen-reader use.
+Teardown inspection found no remaining verification browser processes or
+disposable profiles. The requested source worktree and its loadable `dist/`
+remain available for review.
 
 The required real-manifest Chrome gate was run after adding the logo resource;
 it still stops at the existing Garmin Settings visibility assertion in

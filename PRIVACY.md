@@ -650,13 +650,13 @@ unloading the map or navigating away removes it and stops requests. This choice
 does not require 3D enablement or contact Mapterhorn; only normal browser HTTP
 caching applies, with no extension-managed vector tile persistence.
 
-**Maptoolkit Hiking** is another optional 2D basemap. A trusted selection sends
+**Maptoolkit Hiking** is another optional basemap in both 2D and 3D. Selection sends
 direct style, vector/raster tile, glyph and sprite requests to
 `styles.maptoolkit.org`, `tiles.maptoolkit.org`, `fonts.maptoolkit.org` and
 `icons.maptoolkit.org`. Its elevation shading also requests tiles from
 `tiles.mapterhorn.com`, even in 2D. Those services receive the viewed area, IP
 address and normal request metadata, with cookies and referrers omitted.
-Routes, GPX and Peakbagger identity are not passed to the renderer. The logo is
+Routes, GPX and Peakbagger identity are not sent to Maptoolkit. The logo is
 packaged locally. Normal browser caching applies; the extension keeps no
 offline Maptoolkit archive or durable tile cache. See the provider's
 [privacy policy](https://www.maptoolkit.org/privacy) and
@@ -673,6 +673,7 @@ After confirmation:
   for that view. This requires that interaction and never happens merely because
   the page loaded.
 - In 3D, OpenFreeMap receives requests only when OSM Vector is selected.
+- In 3D, Maptoolkit receives requests only when Maptoolkit Hiking is selected.
 - A compatible selected Peakbagger map layer may request raster tiles from its
   existing provider for the 3D camera's view.
 
@@ -820,8 +821,9 @@ backup or sync may later transfer the imported change.
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
 | Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or sixteen past days plus up to sixteen forecast days when an enabled card approaches the viewport; selecting a map location requests that point without summit elevation. Model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
 | USDA NRCS | Public SNOTEL station catalog, then selected public station IDs, relative date ranges, snow fields, period convention and quality-filter options when the enabled snow card approaches the viewport, changes stations, refreshes or returns with expired data. Local proximity matching sends no summit coordinates; no credentials or referrer. |
-| Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled; or a bounded elevation lookup after an explicit map right-click, independently of 3D/weather settings. No credentials or referrer. |
+| Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled; elevation shading when Maptoolkit Hiking is selected in 2D; or a bounded elevation lookup after an explicit map right-click, independently of 3D/weather settings. No credentials or referrer. |
 | OpenFreeMap or selected map provider | OpenFreeMap style and vector tiles when OSM Vector is selected in 2D or 3D; selected compatible raster-provider tiles in 3D. |
+| Maptoolkit | Style, vector/raster tile, glyph and sprite requests only when Maptoolkit Hiking is selected in 2D or 3D. No cookies, referrers, source GPX or Peakbagger identity. |
 | USGS 3DEP / PAD-US | Viewed-area tile bounds when the slope/public-land overlay is enabled, without credentials or referrers. |
 | ParcelMap BC / Alberta Environment and Protected Areas | Viewed-area tile bounds when public lands is enabled in supported Canadian areas. BC images require explicit optional host access and pass transiently through the extension worker. Alberta returns only geometry, object IDs and ownership classes. No credentials or referrers; no extension-managed persistent parcel cache. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

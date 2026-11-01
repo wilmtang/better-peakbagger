@@ -31,12 +31,14 @@ export function bindVectorMap(win, map, select) {
     const credits = doc.createElement('div'); credits.className = 'leaflet-control-attribution bpb-vector-credits';
     const creditLink = (href, text) => { const link = doc.createElement('a'); link.href = href; link.textContent = text; return link; };
     const logo = creditLink('https://www.maptoolkit.org/', ''); logo.className = 'bpb-vector-maptoolkit-logo'; logo.id = `bpb-vector-logo-${id}`; logo.setAttribute('aria-label', 'Maptoolkit'); logo.hidden = true;
+    logo.target = '_blank'; logo.rel = 'noopener noreferrer';
     container.append(logo); L.DomEvent.disableClickPropagation(logo);
     const renderCredits = () => {
         credits.dataset.provider = basemap.id;
         credits.replaceChildren(...(basemap === MAPTOOLKIT_BASEMAP
             ? ['© ', creditLink('https://www.maptoolkit.com/copyright/', 'Maptoolkit'), ' © ', creditLink('https://www.openstreetmap.org/copyright', 'Openstreetmap')]
             : [creditLink('https://openfreemap.org', 'OpenFreeMap'), ' © ', creditLink('https://openmaptiles.org', 'OpenMapTiles'), ', data from ', creditLink('https://www.openstreetmap.org/copyright', 'OpenStreetMap')]));
+        if (basemap === MAPTOOLKIT_BASEMAP) for (const link of credits.querySelectorAll('a')) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
     };
     renderCredits();
     credits.hidden = true; container.append(credits);

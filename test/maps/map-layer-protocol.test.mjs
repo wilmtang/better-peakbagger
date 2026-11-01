@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readLayerSnapshot, readLayerStatus } from '../../src/maps/map-layer-protocol.js';
+import { readLayerSnapshot, readLayerStatus, readAttributionInset } from '../../src/maps/map-layer-protocol.js';
+
+test('attribution clearance crossing worlds is a bounded viewport fraction', () => {
+    assert.equal(readAttributionInset(0.25), 0.25);
+    for (const value of [-1, 1.1, Infinity, NaN, '0.25', null]) assert.equal(readAttributionInset(value), 0);
+});
 
 test('provider cooldowns crossing the frame or handoff boundary are named, finite and short-lived', () => {
     const future = Date.now() + 120000;

@@ -411,12 +411,22 @@ The upper-right 3D basemap selector contains:
 
 - terrain relief with no imagery;
 - the extension-provided experimental OpenFreeMap vector style;
+- Maptoolkit Hiking, with its contours, labels, relief and named icon sheets;
 - compatible known choices from Peakbagger's current layer menu;
 - the active live Leaflet layer when it can be converted safely.
 
-The same OSM Vector style is available in the native 2D basemap picker. Entering
-3D with that choice carries it into the terrain view. The 2D renderer pauses
+Both vector styles are available in the native 2D basemap picker. Entering
+3D with either choice carries that provider into the terrain view unless the
+user has already made an explicit in-3D choice. Each mode retains its own choice
+when returning. The 2D renderer pauses
 while 3D owns the map; see [2D vector basemap](map-layers.md#vector-basemap-in-2d).
+
+Maptoolkit's style is grafted into the existing terrain graph; it does not
+replace the elevation mesh, route or overlays. Its official logo and copyright
+links remain visible, including narrow layouts and enlarged text. The shared
+overlay menu reserves their area. Both vector providers omit cookies/referrers
+and retain provider-specific rate-limit deadlines for the frame lifetime.
+Cooldown expiry re-enables the picker option without replaying a request.
 
 Sentinel, slope, public lands and SNOTEL remain separate overlay rows.
 
@@ -497,8 +507,9 @@ view and returns to native 2D.
 ## Consent, privacy, and network requests
 
 The first-use dialog is extension-owned and identifies the providers that may
-receive tile coordinates: Mapterhorn for elevation, OpenFreeMap when its vector
-style is selected, and the provider behind a selected compatible 2D layer.
+receive tile coordinates: Mapterhorn for elevation, OpenFreeMap or Maptoolkit
+when their vector style is selected, and the provider behind a selected
+compatible 2D layer.
 Choosing “Not now” leaves the feature disabled. Page script cannot synthesize
 the trusted acceptance click. The user may alternatively enable the same gate
 in Better Peakbagger Settings, where the provider and viewed-area disclosure is
@@ -511,6 +522,7 @@ shown beside the checkbox.
 | Mapterhorn DEM tilt warming | 3D open, non-zero cache budget, camera at rest | Same cache loader, from the frame | Optional bounded DEM cache |
 | Selected raster drape | That drape is active in an open 3D frame | Browser/MapLibre public tile behavior | Provider/browser policy only |
 | OpenFreeMap vector | User selects vector in an open frame | Public style/tile requests | Provider/browser policy only |
+| Maptoolkit Hiking | User selects Hiking in an open frame | Public style/tile/glyph/sprite requests, no cookies/referrers | Browser caching only |
 | Peakbagger PLLBB feed | 3D open and camera settles above marker zoom cutoff | Page's same-origin session | Never persisted |
 
 There is no analytics or extension-developer map service. Route coordinates

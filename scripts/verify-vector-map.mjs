@@ -3,7 +3,7 @@
 /* global document, window, mapsPlaceholder, nativeTiles, nativePeak, scrollY, Image */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, cp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium, firefox } from 'playwright';
@@ -15,9 +15,17 @@ import { createResourceStack } from './resource-stack.mjs';
 import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.js';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg))
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg))
     && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only]');
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only]');
+const terrainMode = args.includes('--terrain');
+assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
+const instrumentMap = source => {
+    assert.ok(source.includes('startTerrainFrame(maplibre);'), 'Packaged frame exposes its expected startup call');
+    return source.replace('startTerrainFrame(maplibre);', `startTerrainFrame({ ...maplibre, Map: new Proxy(maplibre.Map, {
+        construct(Target, args, newTarget) { const map = Reflect.construct(Target, args, newTarget); window.__bpbTerrainTestMap = map; return map; }
+    }) });`);
+};
 const basemap = args.includes('--maptoolkit') ? MAPTOOLKIT_BASEMAP : VECTOR_BASEMAP;
 const providerOrigin = basemap === MAPTOOLKIT_BASEMAP ? 'https://tiles.maptoolkit.org' : 'https://tiles.openfreemap.org';
 const chooseKeys = basemap === MAPTOOLKIT_BASEMAP ? 'Maptoolkit' : 'OSM';
@@ -38,9 +46,14 @@ try {
         document.getElementById('selmap').onchange=event=>{window.nativeChanges++;window.nativeSelections.push(event.target.value);};
         window.nativeTiles=L.tileLayer('/vector-native/{z}/{x}/{y}.png').addTo(mapsPlaceholder);
         </script></body>`);
-    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile, masterMapDocument: html, peakMapDocument: html });
+    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile, masterMapDocument: html, peakMapDocument: html, bigMapDocument: html });
     resources.defer('vector HTTPS fixture', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
+    let extensionRoot = path.join(root, 'dist');
+    if (terrainMode && !firefoxMode) {
+        extensionRoot = path.join(profile, 'extension'); await cp(path.join(root, 'dist'), extensionRoot, { recursive: true });
+        const module = path.join(extensionRoot, 'terrain/terrain-frame.js'); await writeFile(module, instrumentMap(await readFile(module, 'utf8')));
+    }
     if (!firefoxMode) assertChromeLaunchAllowed();
     const context = await (firefoxMode ? firefox : chromium).launchPersistentContext(profile, firefoxMode ? {
         headless: true, ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 },
@@ -48,9 +61,16 @@ try {
     } : { channel: 'chromium', headless: true, viewport: { width: 1280, height: 800 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
         args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1',
-            `--disable-extensions-except=${path.join(root, 'dist')}`, `--load-extension=${path.join(root, 'dist')}`],
+            `--disable-extensions-except=${extensionRoot}`, `--load-extension=${extensionRoot}`],
     });
     resources.defer('vector browser', () => context.close());
+    if (terrainMode && !firefoxMode) {
+        const worker = await waitForCondition(() => context.serviceWorkers()[0], { description: 'real extension worker startup' });
+        await worker.evaluate(async () => {
+            await globalThis.chrome.storage.sync.set({ bpbSettings: { enable3dMap: true } });
+            await globalThis.chrome.storage.local.set({ bpbDeviceSettings: { schemaVersion: 1, settings: { terrainCacheLimitMb: 0 } } });
+        });
+    }
     await context.addInitScript(code => { window.vectorFixtureCode = code; }, basemap.code);
     const page = await context.newPage(), errors = [], requests = [];
     failurePage = page;
@@ -61,8 +81,9 @@ try {
     failureContext = () => ({ mode, partialUrl, lastRequests: requests.slice(-12) });
     const release = () => { for (const done of held) done(); held.clear(); };
     resources.defer('held vector styles', release);
+    const dem = Buffer.from('UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef', 'base64');
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPYcWDLfwAHjAMsIXX3PwAAAABJRU5ErkJggg==', 'base64');
-    await context.route('**/vector-native/**', route => route.fulfill({ contentType: 'image/png', body: png }));
+    await context.route('**/vector-native/**', route => route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: 'image/png', body: png }));
     const geographicPoints = [[5, 90], [75, 5], [-75, 5], [5, 5], [46.851731, -121.760395]];
     const tile = url => {
         const match = /\/fixture\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(url); assert.ok(match, `Unexpected vector tile ${url}`);
@@ -81,10 +102,11 @@ try {
         { id: 'probes', type: 'circle', source: 'fixture', 'source-layer': 'probes', paint: { 'circle-radius': 12, 'circle-color': '#1e64d2' } },
     ] };
     if (basemap === MAPTOOLKIT_BASEMAP) style.sprite = [{ id: 'sdf', url: 'https://icons.maptoolkit.org/sprite' }, { id: 'nature', url: 'https://icons.maptoolkit.org/nature' }];
-    await context.route(url => basemap.origins.some(origin => url.origin === origin), async route => {
+    await context.route(url => basemap.origins.some(origin => url.origin === origin) || terrainMode && url.origin === 'https://tiles.mapterhorn.com', async route => {
         const url = route.request().url(); requests.push(url);
         assert.equal(route.request().headers().cookie, undefined); assert.equal(route.request().headers().referer, undefined);
         if (liveMode) return route.continue();
+        if (url.startsWith('https://tiles.mapterhorn.com/')) return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: 'image/webp', body: dem });
         const isStyle = url === basemap.styleUrl;
         if (isStyle && mode === 'hold') await new Promise(resolve => held.add(resolve));
         if (url.startsWith('https://icons.maptoolkit.org/')) return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: url.endsWith('.png') ? 'image/png' : 'application/json', body: url.endsWith('.png') ? png : '{}' });
@@ -98,7 +120,8 @@ try {
                 headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store', ...(limited ? { 'retry-after': retrySeconds, 'access-control-expose-headers': 'Retry-After' } : {}) },
                 contentType: url.endsWith('.pbf') ? 'application/x-protobuf' : 'application/json',
                 body: url.endsWith('.pbf') ? mode === 'empty' ? emptyTile : tile(url) : JSON.stringify(metadata
-                    ? { tilejson: '3.0.0', tiles: [`${providerOrigin}/fixture/{z}/{x}/{y}.pbf`], minzoom: 0, maxzoom: 14 } : style),
+                    ? { tilejson: '3.0.0', tiles: [`${providerOrigin}/fixture/{z}/{x}/{y}.pbf`], minzoom: 0, maxzoom: 14,
+                        ...(basemap === MAPTOOLKIT_BASEMAP ? { attribution: "<a href='https://www.maptoolkit.com/copyright/' target='_blank' rel='noopener noreferrer'>&copy; Maptoolkit</a> <a href='https://www.openstreetmap.org/copyright' target='_blank' rel='noopener noreferrer'>&copy; Openstreetmap</a>" } : {}) } : style),
             });
         } catch { /* A deliberately cancelled frame no longer owns its request. */ }
     });
@@ -106,20 +129,30 @@ try {
         await context.route(`${origin}/dist/**`, async route => {
             const file = await resolveFixtureFile(new URL(route.request().url()).pathname);
             assert.ok(file, `Packaged Firefox fixture asset exists: ${route.request().url()}`);
+            if (terrainMode && file.endsWith('/terrain-frame.js')) return route.fulfill({ body: instrumentMap(await readFile(file, 'utf8')), contentType: 'text/javascript' });
             await route.fulfill({ path: file, contentType: file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.png') ? 'image/png' : 'text/javascript' });
         });
         // Firefox exercises real Leaflet and hardware MapLibre; only extension
         // runtime/capability transport is stubbed. Chrome loads the real addon.
-        await context.addInitScript(({ origin }) => { window.chrome = { runtime: {
-            getURL: value => `${origin}/dist/${value}`, sendMessage: async () => ({ ok: true, token: 'fixture-activation' }),
-        } }; }, { origin });
+        await context.addInitScript(({ origin, terrainMode }) => { const read = (_keys, callback) => {
+            const result = { bpbSettings: { enable3dMap: terrainMode }, bpbDeviceSettings: { schemaVersion: 1, settings: { terrainCacheLimitMb: 0 } } }; callback?.(result); return Promise.resolve(result);
+        }; const event = { addListener() {}, removeListener() {} };
+        const write = (_data, callback) => { callback?.(); return Promise.resolve(); };
+        window.chrome = { storage: { sync: { get: read, set: write }, local: { get: read, set: write }, session: { get: read, set: write }, onChanged: event }, runtime: {
+            getURL: value => `${origin}/dist/${value}`, sendMessage: async () => ({ ok: true, token: 'fixture-activation', expiresAt: Date.now() + 5000 }),
+            onMessage: event,
+        } }; }, { origin, terrainMode });
     }
     const open = async () => {
-        await page.goto(`${origin}/map/MasterMap.aspx?t=A`);
+        await page.goto(`${origin}/map/${terrainMode ? 'BigMap' : 'MasterMap'}.aspx?t=A`);
         if (firefoxMode) {
             await page.addStyleTag({ path: path.join(root, 'dist/css/vector-map.css') });
             await page.addScriptTag({ path: path.join(root, 'dist/content/vector-map-bridge.js') });
             await page.addScriptTag({ path: path.join(root, 'dist/content/vector-map.js') });
+            if (terrainMode) {
+                await page.addStyleTag({ path: path.join(root, 'dist/css/terrain-map.css') });
+                for (const file of ['big-map-bridge', 'big-map', 'terrain-map']) await page.addScriptTag({ path: path.join(root, `dist/content/${file}.js`) });
+            }
         }
         await page.waitForFunction(() => !!window.mapsPlaceholder?.getSize);
         if (!preflight) await page.locator(`#selmap option[value="${basemap.code}"]`).waitFor({ state: 'attached' });
@@ -127,6 +160,12 @@ try {
         // disposable headless browser. Native picker defaults need page focus.
         await page.bringToFront();
         await page.evaluate(() => {
+            // Optional hover/focus warming is covered by its own suite. Keep
+            // this fixture's elevation requests in the visible frame so all
+            // synthetic DEM replies are intercepted deterministically.
+            for (const type of ['mouseenter', 'focus']) document.addEventListener(type, event => {
+                if (event.target?.id === 'bpb-terrain-toggle') event.stopImmediatePropagation();
+            }, true);
             window.vectorSettledViews = [];
             window.addEventListener('message', event => {
                 if (event.source === document.querySelector('.bpb-vector-slot iframe')?.contentWindow
@@ -303,7 +342,130 @@ try {
         }
         return cases;
     };
-    if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
+    const verifyTerrain = async () => {
+        const toggle = page.locator('#bpb-terrain-toggle');
+        const readyToggle = async () => { await toggle.waitFor({ state: 'visible' }); await page.waitForFunction(() => {
+            const button = document.getElementById('bpb-terrain-toggle'); return button && !button.disabled && button.getAttribute('aria-disabled') !== 'true';
+        }); };
+        const openTerrain = async (fromVector = true) => {
+            mode = 'ready'; await open(); await readyToggle();
+            if (fromVector) { await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys); await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1'); }
+            await toggle.click();
+            await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.textContent.trim() === '2D');
+            const frame = page.frames().find(item => /\/terrain\/terrain.html/.test(item.url())); assert.ok(frame);
+            await frame.waitForFunction(() => !!window.__bpbTerrainTestMap?.getLayer('bpb-route'));
+            return frame;
+        };
+        const readyVector = (frame) => frame.waitForFunction(id => document.querySelector('.bpb-terrain-picker')?.value === id
+            && window.__bpbTerrainTestMap?.getStyle().layers.some(layer => layer.id.startsWith('bpb-vector:')), basemap.id);
+        const geometry = frame => frame.evaluate(() => ['.bpb-terrain-picker', '.maplibregl-ctrl-group'].map(selector => {
+            const rect = document.querySelector(selector).getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height];
+        }));
+        const stable = async (frame, before) => {
+            const after = await geometry(frame);
+            after.forEach((box, index) => box.forEach((value, dimension) => assert.ok(Math.abs(value - before[index][dimension]) <= 1, `3D control moved ${index}/${dimension}: ${JSON.stringify({ before, after })}`)));
+        };
+        const check = async frame => {
+            await readyVector(frame);
+            const result = await waitForCondition(() => frame.evaluate(async () => {
+                const map = window.__bpbTerrainTestMap, bounds = map.getBounds(), values = [];
+                for (const x of [.25, .5, .75]) for (const y of [.25, .5, .75]) {
+                    const value = map.queryTerrainElevation([bounds.getWest() + (bounds.getEast() - bounds.getWest()) * x, bounds.getSouth() + (bounds.getNorth() - bounds.getSouth()) * y]);
+                    if (Number.isFinite(value)) values.push(value);
+                }
+                const logo = document.querySelector('.bpb-terrain-maptoolkit-logo');
+                if (logo && !logo.hidden) { const image = new Image(); image.src = window.getComputedStyle(logo).backgroundImage.slice(5, -2); await image.decode(); }
+                const vectorLayers = map.getStyle().layers.filter(layer => layer.id.startsWith('bpb-vector:') && layer.source && map.getSource(layer.source)?.type === 'vector').map(layer => layer.id);
+                return { terrain: map.getTerrain()?.source, route: !!map.getLayer('bpb-route'), sprites: map.getSprite().map(item => item.id),
+                    settled: map.areTilesLoaded(), vectorFeatures: vectorLayers.length ? map.queryRenderedFeatures({ layers: vectorLayers }).length : 0,
+                    logoHeight: logo?.offsetHeight, logoHidden: logo?.hidden, credits: [...document.querySelectorAll('.maplibregl-ctrl-attrib a')].map(a => a.href),
+                    relief: values.length > 1 ? Math.max(...values) - Math.min(...values) : 0 };
+            }), { description: '3D basemap on decoded non-flat elevation', isReady: state => state.terrain === 'terrain' && state.route && state.relief > 100 && state.settled && state.vectorFeatures > 0 });
+            if (basemap === MAPTOOLKIT_BASEMAP) {
+                assert.ok(!result.logoHidden && result.logoHeight >= 24); assert.ok(result.sprites.includes('sdf') && result.sprites.includes('nature'));
+                assert.ok(result.credits.includes('https://www.maptoolkit.com/copyright/') && result.credits.includes('https://www.openstreetmap.org/copyright'));
+                assert.equal(result.credits.filter(href => href === 'https://www.maptoolkit.com/copyright/').length, 1, 'Maptoolkit copyright is displayed once');
+                const trigger = page.locator('.bpb-layers-trigger');
+                if (await trigger.count()) {
+                    await trigger.click(); const panel = await page.locator('.bpb-layers-panel').boundingBox();
+                    const owner = await frame.frameElement(), box = await owner.boundingBox();
+                    const inner = await frame.evaluate(() => ({ width: window.innerWidth, top: document.querySelector('.bpb-terrain-maptoolkit-logo').getBoundingClientRect().top }));
+                    assert.ok(panel.y + panel.height <= box.y + inner.top * box.width / inner.width - 4, '3D overlay menu stays clear of the provider logo');
+                    await trigger.click();
+                }
+            }
+        };
+        let cases = 0;
+        for (const [width, theme, zoom] of [[1280, 'light', 1], [375, 'dark', 1], [1280, 'light', 2], [375, 'dark', 2]]) {
+            await page.setViewportSize({ width, height: 800 }); const frame = await openTerrain(!liveMode);
+            if (liveMode) await frame.locator('.bpb-terrain-picker').selectOption(basemap.id);
+            await frame.evaluate(value => { document.getElementById('bpb-terrain-map').dataset.theme = value.theme;
+                if (value.zoom === 2) { const style = document.createElement('style'); style.textContent = '#bpb-terrain-map, #bpb-terrain-map .bpb-terrain-picker {font-size:24px} #bpb-terrain-map .maplibregl-ctrl-attrib {font-size:22px}'; document.head.append(style); }
+                window.__bpbTerrainTestMap.resize(); }, { theme, zoom });
+            await check(frame); const before = await geometry(frame);
+            if (process.env.BPB_VECTOR_SCREENSHOTS) { await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true }); await frame.locator('#bpb-terrain-map').screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `${firefoxMode ? 'firefox' : 'chrome'}-terrain-${width}-${zoom}.png`) }); }
+            if (liveMode) { cases++; break; }
+            const picker = frame.locator('.bpb-terrain-picker'); await picker.selectOption('terrain');
+            await frame.waitForFunction(() => !window.__bpbTerrainTestMap.getLayer('bpb-vector:land'));
+            await stable(frame, before); await picker.selectOption(basemap.id); await check(frame); await stable(frame, before);
+            await toggle.click(); await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
+            assert.equal(await page.locator('#selmap').inputValue(), basemap.code, 'Returning to 2D retains its chosen provider'); cases++;
+            if (preflight || liveMode) break;
+        }
+        if (!preflight && !liveMode) {
+            await page.setViewportSize({ width: 1280, height: 800 });
+            let frame = await openTerrain(false), picker = frame.locator('.bpb-terrain-picker'), before = await geometry(frame);
+            mode = 'hold'; await picker.focus(); await picker.selectOption(basemap.id);
+            await waitForCondition(() => held.size, { description: '3D style pending' }); await stable(frame, before);
+            await picker.selectOption('terrain'); mode = 'ready'; release();
+            await frame.waitForFunction(() => document.querySelector('.bpb-terrain-picker').value === 'terrain');
+            await picker.selectOption(basemap.id); await check(frame); await stable(frame, before); cases++;
+
+            frame = await openTerrain(false); picker = frame.locator('.bpb-terrain-picker'); before = await geometry(frame);
+            mode = 'error'; await picker.selectOption(basemap.id);
+            await frame.waitForFunction(() => /unavailable/.test(document.querySelector('.bpb-terrain-notice').textContent));
+            await stable(frame, before); mode = 'ready'; await picker.focus(); await page.keyboard.type(chooseKeys); await check(frame); await stable(frame, before); cases++;
+
+            frame = await openTerrain(false); picker = frame.locator('.bpb-terrain-picker'); before = await geometry(frame);
+            retrySeconds = '3'; mode = 'style-limit'; await picker.selectOption(basemap.id);
+            await frame.waitForFunction(id => document.querySelector(`.bpb-terrain-picker option[value="${id}"]`).disabled, basemap.id);
+            const count = requests.filter(url => url === basemap.styleUrl).length;
+            await picker.evaluate((element, id) => { element.value = id; element.dispatchEvent(new Event('change')); }, basemap.id);
+            await frame.waitForFunction(() => /request limit/.test(document.querySelector('.bpb-terrain-notice').textContent));
+            assert.equal(requests.filter(url => url === basemap.styleUrl).length, count); await stable(frame, before);
+            mode = 'ready'; await frame.waitForFunction(id => !document.querySelector(`.bpb-terrain-picker option[value="${id}"]`).disabled, basemap.id);
+            assert.equal(requests.filter(url => url === basemap.styleUrl).length, count, '3D expiry enables selection without fetching');
+            await picker.selectOption(basemap.id); await check(frame); await stable(frame, before); cases++;
+
+            mode = 'tile-limit'; await frame.evaluate(() => window.__bpbTerrainTestMap.jumpTo({ center: [100, -30], zoom: 9 }));
+            await frame.waitForFunction(id => document.querySelector(`.bpb-terrain-picker option[value="${id}"]`).disabled
+                && document.querySelector('.bpb-terrain-picker').value === 'terrain', basemap.id);
+            assert.equal(await frame.evaluate(() => window.__bpbTerrainTestMap.getTerrain().source), 'terrain');
+            await stable(frame, before); mode = 'ready';
+            await frame.waitForFunction(id => !document.querySelector(`.bpb-terrain-picker option[value="${id}"]`).disabled, basemap.id);
+            await picker.selectOption(basemap.id); await check(frame); await stable(frame, before); cases++;
+            if (!firefoxMode) for (const [width, theme] of [[1280, 'light'], [375, 'dark']]) {
+                const worker = context.serviceWorkers()[0]; assert.ok(worker);
+                await worker.evaluate(async theme => {
+                    const { bpbSettings = {} } = await globalThis.chrome.storage.sync.get('bpbSettings');
+                    await globalThis.chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, enable3dMap: false, theme } });
+                }, theme);
+                await page.setViewportSize({ width, height: 800 }); mode = 'ready'; await open(); await readyToggle(); await toggle.click();
+                const dialog = page.locator('#bpb-terrain-consent [role="dialog"]'); await dialog.waitFor({ state: 'visible' });
+                assert.match(await dialog.innerText(), /Maptoolkit/); assert.equal(await dialog.locator('a[href="https://www.maptoolkit.org/privacy"]').count(), 1);
+                const box = await dialog.boundingBox(); assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= width + 1 && box.y + box.height <= 801, 'Consent remains readable inside the viewport');
+                if (process.env.BPB_VECTOR_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `chrome-consent-${width}.png`) });
+                await dialog.locator('.bpb-terrain-consent-primary').click();
+                await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.textContent.trim() === '2D');
+                assert.equal(await worker.evaluate(async () => (await globalThis.chrome.storage.sync.get('bpbSettings')).bpbSettings.enable3dMap), true);
+                cases++;
+            }
+        }
+        assert.deepEqual(errors, []);
+        return { verification: liveMode ? 'terrain-vector-live' : 'terrain-vector', provider: basemap.provider, cases, renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode, instrumentedMapOnly: true };
+    };
+    if (terrainMode) summary = await verifyTerrain();
+    else if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
     else if (cameraOnly) summary = { verification: 'vector-camera', cases: await verifyCameraAlignment(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (recoveryOnly) summary = { verification: 'vector-recovery', cases: await verifyProviderRecovery(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (cooldownOnly) summary = { verification: 'vector-cooldown', cases: await verifyProviderCooldown(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
@@ -424,6 +586,10 @@ try {
         events: window.vectorEvents, focused: document.activeElement?.id || document.activeElement?.tagName, hasFocus: document.hasFocus(),
         camera: window.mapsPlaceholder && { center: window.mapsPlaceholder.getCenter(), zoom: window.mapsPlaceholder.getZoom() },
         status: document.querySelector('.bpb-vector-status')?.outerHTML, slot: document.querySelector('.bpb-vector-slot')?.outerHTML,
+        terrain: document.getElementById('bpb-terrain-frame')?.outerHTML,
+        terrainToggle: document.getElementById('bpb-terrain-toggle')?.outerHTML,
+        terrainNotice: document.querySelector('.bpb-terrain-failure')?.outerHTML,
+        dialogs: [...document.querySelectorAll('[role="dialog"]')].map(node => node.textContent),
     })).catch(() => null));
 }
 await resources.dispose(failure);

@@ -8,6 +8,9 @@ its contour lines, relief, labels and icons. Maptoolkit requests go directly to
 its style, tile, font and icon hosts; the style's elevation shading also uses
 Mapterhorn. Cookies and referrers are omitted. Selecting it does not require
 enabling 3D, and it preserves native routes, markers and interactions.
+It is also offered by the 3D basemap picker. Entering 3D from this 2D choice
+honors the provider; the existing terrain mesh and route stay in place. See
+the [3D map guide](3d-map.md) for mode-specific behavior.
 
 The official Maptoolkit logo and clickable copyright links stay visible while
 that basemap is displayed. The logo is packaged locally; no remote branding

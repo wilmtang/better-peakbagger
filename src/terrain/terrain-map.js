@@ -8,7 +8,7 @@
 import { settings } from '../settings/settings.js';
 import { terrainCamera } from './terrain-camera.js';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
-import { readLayerSnapshot, readLayerStatus, readBasemapChoices } from '../maps/map-layer-protocol.js';
+import { readLayerSnapshot, readLayerStatus, readBasemapChoices, readAttributionInset } from '../maps/map-layer-protocol.js';
 import { sentinelTarget } from '../maps/sentinel-core.js';
 import { overlayBounds } from '../maps/map-overlay-providers.js';
 import { terrainFailure } from './terrain-failure.js';
@@ -287,7 +287,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         const title = createTextElement('h2', '', 'Turn on 3D maps?');
         title.id = 'bpb-terrain-consent-title';
         const summary = createTextElement('p', '',
-            'Better Peakbagger will request map tiles for the area you view. Tile coordinates and standard request metadata are sent to third-party, open-source services:');
+            'Better Peakbagger will request map tiles for the area you view. Tile coordinates and standard request metadata are sent to these third-party services:');
         summary.id = 'bpb-terrain-consent-summary';
 
         const providerList = document.createElement('ul');
@@ -308,6 +308,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         };
         addProvider('Mapterhorn', 'Elevation tiles', 'https://mapterhorn.com/privacy-policy/');
         addProvider('OpenFreeMap', 'OSM vector tiles, when selected', 'https://openfreemap.org/privacy/');
+        addProvider('Maptoolkit', 'Hiking map tiles, labels and icons, when selected', 'https://www.maptoolkit.org/privacy');
         addProvider('Microsoft Planetary Computer', 'Sentinel-2 imagery and capture search, when selected', 'https://privacy.microsoft.com/privacystatement');
 
         const selectedProvider = createTextElement('p', 'bpb-terrain-consent-detail',
@@ -550,7 +551,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                     id: typeof data.id === 'string' ? data.id.slice(0, 80) : '', sourceRevision: Number.isSafeInteger(data.sourceRevision) ? data.sourceRevision : 0 });
             } else if (data.type === 'layerAction') {
                 if (!frameLoaded || suspended) return;
-                if (data.action === 'basemap' && typeof data.selection === 'string' && /^(?:terrain|vector|\d{1,3})$/.test(data.selection)) {
+                if (data.action === 'basemap' && typeof data.selection === 'string' && /^(?:terrain|vector|maptoolkit|\d{1,3})$/.test(data.selection)) {
                     postToFrame('layerAction', { action: 'basemap', selection: data.selection });
                 } else if (data.id === 'wildfire' && data.action === 'retry') {
                     postToFrame('layerAction', { id: 'wildfire', action: 'retry' });
@@ -627,7 +628,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             if (!suspended && frameLoaded) postToPage('layerMoveStart', {});
         } else if (data.type === 'layerView') {
             const bounds = overlayBounds(data.bounds);
-            if (!suspended && frameLoaded && bounds && Number.isFinite(data.zoom) && data.zoom >= 0 && data.zoom <= 25) postToPage('layerView', { bounds, zoom: data.zoom });
+            if (!suspended && frameLoaded && bounds && Number.isFinite(data.zoom) && data.zoom >= 0 && data.zoom <= 25) postToPage('layerView', { bounds, zoom: data.zoom,
+                ...(data.footer !== undefined ? { footer: readAttributionInset(data.footer) } : {}) });
         } else if (data.type === 'camera') {
             const camera = terrainCamera.clean(data.camera);
             if (camera) postToPage('camera', {

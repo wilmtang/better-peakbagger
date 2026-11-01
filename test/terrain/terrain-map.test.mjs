@@ -753,6 +753,7 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     assert.deepEqual(Array.from(dialog.querySelectorAll('a'), link => [link.textContent, new URL(link.href).hostname]), [
         ['Privacy notice', 'mapterhorn.com'],
         ['Privacy notice', 'openfreemap.org'],
+        ['Privacy notice', 'www.maptoolkit.org'],
         ['Privacy notice', 'privacy.microsoft.com']
     ]);
     const featureEnabled = async () =>
@@ -1459,7 +1460,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     const picker = () => framePicker(window);
     const map = maps[0];
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (experimental)', 'Terrain only'],
+        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (experimental)', 'Maptoolkit Hiking', 'Terrain only'],
         'the picker offers every layer plus the vector entry and terrain-only');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'MyTopo',
         'the initially-selected native layer is preselected');
@@ -1611,7 +1612,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
     map.glyphs = frameGlyphs;
     map.sprite = frameSprite;
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['OSM Vector (experimental)', 'Terrain only'],
+        ['OSM Vector (experimental)', 'Maptoolkit Hiking', 'Terrain only'],
         'the vector entry and terrain-only are offered even without page layers');
     assert.equal(picker().value, 'terrain', 'terrain-only stays the default — vector is opt-in');
     assert.equal(fetches.length, 0, 'no provider traffic before the user selects the vector entry');
@@ -1661,8 +1662,9 @@ test('the extension-provided vector entry grafts the provider style under the ex
     assert.ok(map.getSource('bpb-vector:openmaptiles'), 'the cached style is re-grafted');
     assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest(
         'https://tiles.openfreemap.org/planet/1/2/3.pbf', 'Tile'))), {
-        url: 'https://tiles.openfreemap.org/planet/1/2/3.pbf',
+        url: 'bpb-vector://https://tiles.openfreemap.org/planet/1/2/3.pbf',
         credentials: 'omit',
+        referrerPolicy: 'no-referrer',
     });
     assert.throws(() => map.options.transformRequest('https://foreign.example/1/2/3.pbf', 'Tile'),
         /unapproved provider origin/,
@@ -1699,6 +1701,60 @@ test('the extension-provided vector entry grafts the provider style under the ex
     assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /unavailable/);
 
     dom.window.close();
+});
+
+test('Maptoolkit terrain preserves its mesh and route, restores named sprites and enforces provider cooldowns', async () => {
+    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
+    const { window } = dom, maps = [], protocols = new Map(), calls = [];
+    let finishStyle, now = Date.now(); window.Date.now = () => now;
+    class MapStub {
+        constructor(options) { this.options = options; this.sources = new Map(Object.entries(options.style.sources)); this.layers = [...options.style.layers]; this.controls = []; this.sprites = []; maps.push(this); }
+        addControl(control) { this.controls.push(control); const node = control.onAdd?.(this); if (node) this.options.container.append(node); }
+        removeControl(control) { this.controls = this.controls.filter(item => item !== control); control.onRemove?.(); }
+        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        on() {} fitBounds() {} resize() {} remove() {} setPaintProperty() {}
+        getBounds() { return { getWest: () => -122, getSouth: () => 46, getEast: () => -121, getNorth: () => 47 }; }
+        getZoom() { return 10; }
+        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
+        getSource(id) { return this.sources.get(id); } removeSource(id) { this.sources.delete(id); }
+        addLayer(layer, before) { const index = this.layers.findIndex(item => item.id === before); this.layers.splice(index < 0 ? this.layers.length : index, 0, layer); }
+        getLayer(id) { return this.layers.find(item => item.id === id); } removeLayer(id) { this.layers = this.layers.filter(item => item.id !== id); }
+        getStyle() { return { ...this.options.style, sprite: this.sprites, glyphs: this.glyphs || null }; }
+        setGlyphs(value) { this.glyphs = value; } setSprite(value) { this.sprites = typeof value === 'string' ? [{ id: 'default', url: value }] : []; }
+        addSprite(id, url) { this.sprites.push({ id, url }); }
+    }
+    class AttributionControl { constructor(options) { this.options = options; } }
+    const toolkitStyle = { version: 8, sources: { mtk: { type: 'vector', url: 'https://tiles.maptoolkit.org/mtk-contours.json' }, dem: { type: 'raster-dem', url: 'https://tiles.maptoolkit.org/terrainrgb.json', encoding: 'terrarium', tileSize: 8192 } },
+        layers: [{ id: 'land', type: 'fill', source: 'mtk', 'source-layer': 'land' }], sprite: [{ id: 'sdf', url: 'https://icons.maptoolkit.org/sprite' }, { id: 'nature', url: 'https://icons.maptoolkit.org/nature' }] };
+    const reply = (url, style) => ({ ok: true, status: 200, url, text: async () => JSON.stringify(style) });
+    const fetch = async url => {
+        calls.push(url);
+        if (url.endsWith('/hiking.json')) return new Promise(resolve => { finishStyle = () => resolve(reply(url, toolkitStyle)); });
+        if (url.endsWith('.pbf')) return { status: 429, headers: new Headers({ 'retry-after': '120' }) };
+        return reply(url, { version: 8, sources: {}, layers: [] });
+    };
+    const send = bootTerrainFrame(window, MapStub, { fetch, maplibre: { AttributionControl, addProtocol(name, handler) { protocols.set(name, handler); } } });
+    const tick = () => new Promise(resolve => setImmediate(resolve));
+    const choose = value => { const picker = framePicker(window); picker.value = value; picker.dispatchEvent(new window.Event('change')); };
+    try {
+        send({ type: 'init', routeSegments: [[[46.85, -121.76], [46.86, -121.77]]], basemap: { kind: 'vector', provider: 'maptoolkit' } }); await tick();
+        assert.equal(framePicker(window).value, 'maptoolkit', 'The 2D provider is honored on initial entry');
+        const map = maps[0], terrain = map.getSource('terrain'), route = map.getLayer('bpb-route'); assert.ok(terrain && route);
+        choose('terrain'); finishStyle(); await tick(); assert.equal(map.getSource('bpb-vector:mtk'), undefined, 'A cancelled style cannot graft into the replacement choice');
+        choose('maptoolkit'); await tick();
+        assert.equal(map.getSource('terrain'), terrain); assert.equal(map.getLayer('bpb-route'), route);
+        assert.equal(map.getSource('bpb-vector:dem').encoding, 'terrarium'); assert.deepEqual(map.sprites.map(item => item.id), ['sdf', 'nature']);
+        assert.match(map.controls.find(item => item instanceof AttributionControl).options.customAttribution, /Maptoolkit/);
+        const request = protocols.get('bpb-vector');
+        await assert.rejects(request({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf', type: 'arrayBuffer' }, new AbortController()), error => error.status === 429);
+        assert.equal(framePicker(window).value, 'terrain'); assert.equal(framePicker(window).querySelector('[value="maptoolkit"]').disabled, true);
+        assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /Maptoolkit request limit/);
+        const count = calls.length; choose('maptoolkit'); await tick(); assert.equal(calls.length, count, 'Retry cannot bypass the tile-level cooldown');
+        choose('vector'); await tick(); assert.equal(framePicker(window).value, 'vector', 'Other providers remain available');
+        now += 120001; choose('terrain'); choose('maptoolkit'); await tick();
+        assert.equal(framePicker(window).value, 'maptoolkit'); assert.equal(map.getSource('terrain'), terrain); assert.equal(map.getLayer('bpb-route'), route);
+        assert.equal(calls.filter(url => url.endsWith('/hiking.json')).length, 1, 'The accepted style is reused after expiry');
+    } finally { dom.window.close(); }
 });
 
 test('the bridge forwards peak-feed requests to the page and replies to the frame', async () => {
@@ -2641,7 +2697,7 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
         messages, fetch,
         maplibre: {
             Popup: class { setLngLat() { return this; } setDOMContent() { return this; } addTo() { return this; } remove() {} },
-            addProtocol(name, handler) { protocol = handler; },
+            addProtocol(name, handler) { if (name === 'bpb-dem') protocol = handler; },
             removeProtocol() { protocol = null; }
         }
     });
