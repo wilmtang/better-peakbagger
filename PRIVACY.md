@@ -641,6 +641,15 @@ much of the visible map falls within the satellite images. Clouds or gaps may
 still obscure covered areas. Cloud cover describes the full satellite images
 and can differ from the area shown.
 
+The native 2D basemap picker also offers **OSM Vector (experimental)**. A trusted
+selection starts direct OpenFreeMap style, tile, glyph and sprite requests,
+without cookies or referrers. OpenFreeMap receives the viewed area and request
+metadata, including the user's IP address. The renderer receives only the map
+center and zoom, not routes, GPX or Peakbagger identity. Selecting another layer,
+unloading the map or navigating away removes it and stops requests. This choice
+does not require 3D enablement or contact Mapterhorn; only normal browser HTTP
+caching applies, with no extension-managed vector tile persistence.
+
 3D is off by default. The first click shows a provider and privacy confirmation;
 declining keeps it off.
 
@@ -651,7 +660,7 @@ After confirmation:
 - Hovering or focusing the enabled 3D button may pre-request Mapterhorn tiles
   for that view. This requires that interaction and never happens merely because
   the page loaded.
-- OpenFreeMap receives requests only when OSM Vector is selected.
+- In 3D, OpenFreeMap receives requests only when OSM Vector is selected.
 - A compatible selected Peakbagger map layer may request raster tiles from its
   existing provider for the 3D camera's view.
 
@@ -800,7 +809,7 @@ backup or sync may later transfer the imported change.
 | Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or sixteen past days plus up to sixteen forecast days when an enabled card approaches the viewport; selecting a map location requests that point without summit elevation. Model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
 | USDA NRCS | Public SNOTEL station catalog, then selected public station IDs, relative date ranges, snow fields, period convention and quality-filter options when the enabled snow card approaches the viewport, changes stations, refreshes or returns with expired data. Local proximity matching sends no summit coordinates; no credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled; or a bounded elevation lookup after an explicit map right-click, independently of 3D/weather settings. No credentials or referrer. |
-| OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
+| OpenFreeMap or selected map provider | OpenFreeMap style and vector tiles when OSM Vector is selected in 2D or 3D; selected compatible raster-provider tiles in 3D. |
 | USGS 3DEP / PAD-US | Viewed-area tile bounds when the slope/public-land overlay is enabled, without credentials or referrers. |
 | ParcelMap BC / Alberta Environment and Protected Areas | Viewed-area tile bounds when public lands is enabled in supported Canadian areas. BC images require explicit optional host access and pass transiently through the extension worker. Alberta returns only geometry, object IDs and ownership classes. No credentials or referrers; no extension-managed persistent parcel cache. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

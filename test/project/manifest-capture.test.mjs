@@ -261,7 +261,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     // terrain frame is embedded, and the photo guide is opened from the trip
     // report editor's image popover.
     assert.deepEqual(manifest.web_accessible_resources, [{
-        resources: ['terrain/terrain.html', 'reports/instagram.html', 'photos/guide.html', 'custom-overlay/editor.html'],
+        resources: ['terrain/terrain.html', 'terrain/vector.html', 'reports/instagram.html', 'photos/guide.html', 'custom-overlay/editor.html'],
         matches: ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']
     }]);
     // The extension-owned frame imports the local MapLibre ESM distribution

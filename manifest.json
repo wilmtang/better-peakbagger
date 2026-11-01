@@ -93,10 +93,10 @@
         "https://peakbagger.com/*"
       ],
       "js": [
-        "content/map-layers.js"
+        "content/map-layers.js", "content/vector-map.js"
       ],
       "css": [
-        "css/map-layers.css"
+        "css/map-layers.css", "css/vector-map.css"
       ],
       "run_at": "document_end",
       "all_frames": true,
@@ -124,7 +124,7 @@
         "https://peakbagger.com/*"
       ],
       "js": [
-        "content/peak-snow.js"
+        "content/peak-snow.js", "content/vector-map-bridge.js"
       ],
       "run_at": "document_end",
       "all_frames": true
@@ -503,7 +503,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "terrain/terrain.html", "reports/instagram.html",
+        "terrain/terrain.html", "terrain/vector.html", "reports/instagram.html",
         "photos/guide.html", "custom-overlay/editor.html"
       ],
       "matches": [

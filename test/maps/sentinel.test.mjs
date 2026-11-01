@@ -24,7 +24,7 @@ test('the shipped Sentinel adapter runs in the native map MAIN world and carries
     assert.equal(entry.all_frames, true);
     assert.ok(entry.matches.every(pattern => pattern.startsWith('https:')));
     assert.ok(entry.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
-    assert.deepEqual(entry.css, ['css/map-layers.css']);
+    assert.deepEqual(entry.css, ['css/map-layers.css', 'css/vector-map.css']);
     assert.deepEqual(ENTRIES.find(bundle => bundle.out === 'content/map-layers.js').sources, ['maps/map-layers.js']);
     assert.ok(COPY_FILES.some(([source, destination]) => source === 'src/maps/map-layers.css' && destination === 'css/map-layers.css'));
     assert.equal(manifest.host_permissions.some(pattern => pattern.includes('planetarycomputer')), false, 'direct CORS needs no new persistent provider access');

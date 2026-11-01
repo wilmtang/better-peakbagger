@@ -7,6 +7,7 @@ import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-l
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../settings/settings-schema.js';
 import { terrainStyle as TerrainStyle } from './terrain-style.js';
+import { VECTOR_BASEMAP } from '../maps/vector-basemap.js';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
@@ -120,10 +121,6 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // terrain instead of rotating with a raster drape. Selecting it contacts
     // tiles.openfreemap.org — see the dated provider evaluation in
     // docs/archive/3d-vector-basemap-investigation.md.
-    const VECTOR_BASEMAP = {
-        name: 'OSM Vector (experimental)',
-        styleUrl: 'https://tiles.openfreemap.org/styles/liberty'
-    };
     const VECTOR_PREFIX = 'bpb-vector:';
     const PALETTES = {
         light: {
@@ -210,6 +207,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let activeBasemap = null;
     let availableBasemaps = [];
     let activeBasemapIndex = -1;
+    let initialVectorBasemap = false;
     let basemapErrored = false;
     let basemapContentLoaded = false;
     let basemapChecked = false;
@@ -1091,6 +1089,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // per-drape tile-check flags so the resolved layer is judged fresh. Used by
     // the initial boot and by resume (to reflect a 2D layer change).
     const resolveBasemaps = data => {
+        initialVectorBasemap = data.basemap?.kind === 'vector';
         const initialBasemap = validateBasemap(data.basemap);
         const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
         availableBasemaps = [];
@@ -2181,6 +2180,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     if (pendingBasemapSelection !== null) {
                         if (swapBasemap(pendingBasemapSelection)) userPickedBasemap = true;
 
+                    } else if (initialVectorBasemap) {
+                        swapBasemap('vector');
                     } else if (activeBasemap) {
                         addBasemapLayer(activeBasemap);
                     }
@@ -2284,7 +2285,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // so a 2D layer change made while in 2D is reflected.
         if (!userPickedBasemap) {
             resolveBasemaps(data);
-            swapBasemap(activeBasemapIndex);
+            swapBasemap(initialVectorBasemap ? 'vector' : activeBasemapIndex);
         }
 
         // Camera: the live 2D camera wins; else frame the route; else center the

@@ -414,6 +414,10 @@ The upper-right 3D basemap selector contains:
 - compatible known choices from Peakbagger's current layer menu;
 - the active live Leaflet layer when it can be converted safely.
 
+The same OSM Vector style is available in the native 2D basemap picker. Entering
+3D with that choice carries it into the terrain view. The 2D renderer pauses
+while 3D owns the map; see [2D vector basemap](map-layers.md#vector-basemap-in-2d).
+
 Sentinel, slope, public lands and SNOTEL remain separate overlay rows.
 
 The frame validates each drape again. Remote URLs must be bounded, credential-

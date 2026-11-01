@@ -104,6 +104,7 @@ independent of the existing targets.
 - [verify-onx.mjs](verify-onx.mjs)
 - [verify-map-layer-control.mjs](verify-map-layer-control.mjs)
 - [verify-map-layers.mjs](verify-map-layers.mjs)
+- [verify-vector-map.mjs](verify-vector-map.mjs)
 - [verify-map-location-cases.mjs](verify-map-location-cases.mjs)
 - [verify-peak-link-order.mjs](verify-peak-link-order.mjs)
 - [verify-peak-map-layout.mjs](verify-peak-map-layout.mjs)

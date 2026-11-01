@@ -8,6 +8,7 @@
 // the extension: it only reads the same-origin page/frame that owns Leaflet.
 
 import { SENTINEL_CODE, SENTINEL_NAME, sentinelTarget } from '../maps/sentinel-core.js';
+import { VECTOR_BASEMAP } from '../maps/vector-basemap.js';
 
 
 // Peakbagger builds each 2D basemap on demand inside its MasterMap
@@ -136,6 +137,7 @@ const active = (mapWin, map, select) => {
     try {
         const option = select && select.options && select.options[select.selectedIndex];
         if (!mapWin || !map || !option) return null;
+        if (select.value === VECTOR_BASEMAP.code) return { kind: 'vector', name: VECTOR_BASEMAP.name };
         if (select.value === SENTINEL_CODE) {
             let capture = null;
             try { capture = sentinelTarget(JSON.parse(option.dataset?.bpbSentinelCapture || 'null')); } catch { /* Page-owned metadata is optional. */ }

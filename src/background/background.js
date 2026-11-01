@@ -3523,6 +3523,12 @@ import { GarminError } from '../garmin/garmin-api.js';
         isTerrainFrameSender,
         now,
     });
+    const vectorFrameUrl = ext.runtime.getURL('terrain/vector.html');
+    const vectorActivation = TerrainActivation.create({
+        isPeakbaggerSender,
+        isTerrainFrameSender: sender => sender?.url === vectorFrameUrl && Number.isInteger(sender?.tab?.id),
+        now,
+    });
     const trustedActions = TrustedActions.create({
         storage,
         isPeakbaggerSender,
@@ -4009,6 +4015,8 @@ import { GarminError } from '../garmin/garmin-api.js';
             case 'MAP_LAYERS_HANDOFF_CONSUME': return mapLayerHandoff.consume(message, sender);
             case TerrainActivation.ISSUE_TYPE: return terrainActivation.issue(message, sender);
             case TerrainActivation.CONSUME_TYPE: return terrainActivation.consumeFrame(message, sender);
+            case 'VECTOR_MAP_ACTIVATION_ISSUE': return vectorActivation.issue(message, sender);
+            case 'VECTOR_MAP_ACTIVATION_CONSUME': return vectorActivation.consumeFrame(message, sender);
             case 'TERRAIN_PREFETCH': return terrainPrefetch.handle(message, sender);
             default: return null;
             }
@@ -4073,6 +4081,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         recentHelperActivations.delete(tabId);
         recentHelperNavigations.delete(tabId);
         terrainActivation.forgetTab(tabId);
+        vectorActivation.forgetTab(tabId);
         terrainPrefetch.forgetTab(tabId);
         runDetachedCleanup('temporary Peakbagger tab cleanup', () =>
             forgetPeakbaggerHelperLease(tabId));

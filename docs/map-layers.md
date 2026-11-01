@@ -1,5 +1,29 @@
 # Map overlays
 
+## Vector basemap in 2D
+
+The native basemap picker also offers **OSM Vector (experimental)**, using the
+same OpenFreeMap Liberty style as 3D. Selecting it starts direct, cookie-free
+OpenFreeMap style and tile requests; the provider receives the viewed area and
+request metadata. No 3D setting, terrain tiles, API key or extra host permission
+is needed. Native routes, markers, popups, zoom and overlays keep their Leaflet
+owners above the vector basemap.
+
+The current native basemap remains visible while the vector map loads. Once
+ready, its raster layers are removed to stop hidden requests; switching back
+restores them. Failure restores the previous native selection and offers
+**Retry**. Selecting another basemap cancels a pending load. Selection is local
+to the current map and is cleared on back/forward-cache suspension. The renderer
+is removed on deselection, map unload and navigation. A 3D switch pauses the 2D
+renderer and carries the vector choice into 3D; returning resumes the 2D layer.
+
+MapLibre and its module worker remain packaged in an extension-origin frame.
+The MAIN-world Leaflet adapter owns camera/pane placement; the isolated bridge
+requires a trusted picker choice or Retry before authorizing provider work.
+The worker issues a separate tab-bound, short-lived, one-use vector capability,
+which the frame consumes before fetching its style. Native basemap handlers
+never receive the extension's private layer code.
+
 ## Custom sources
 
 Choose **Overlays → Add custom layer…** on any interactive Peakbagger map to
@@ -394,7 +418,8 @@ loading, partial/empty results, refresh recovery, keyboard details and geometry.
 
 `src/maps/map-layers.js` owns the page session and outer control. Embedded
 MasterMap documents defer to a recognized parent, so one map has one menu.
-The native basemap selector and its existing handler remain untouched. The
+The native basemap selector retains its existing options and handler. The
+2D vector adapter adds one private option and intercepts only that choice. The
 terrain frame owns its separate upper-right basemap picker. The overlay control
 aligns 10 pixels inside the visible map's left edge in either renderer.
 Its document anchor scrolls with the page without waiting for JavaScript;

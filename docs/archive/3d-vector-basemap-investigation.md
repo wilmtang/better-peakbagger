@@ -194,6 +194,10 @@ carry no Peakbagger identity.
 
 ### Why it is not in the native 2D picker
 
+Historical decision: the extension now supplies the separate renderer and
+lifecycle integration described below. See the current [2D vector basemap
+contract](../map-layers.md#vector-basemap-in-2d).
+
 OpenFreeMap's supported public interface is a MapLibre style plus vector tiles,
 glyphs, and sprites. Its documentation shows a MapLibre-to-Leaflet binding for
 2D use, but publishes no supported raster tile endpoint. Peakbagger's native 2D
