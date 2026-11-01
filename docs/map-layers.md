@@ -16,6 +16,10 @@ restores them. Failure restores the previous native selection and offers
 to the current map and is cleared on back/forward-cache suspension. The renderer
 is removed on deselection, map unload and navigation. A 3D switch pauses the 2D
 renderer and carries the vector choice into 3D; returning resumes the 2D layer.
+An entirely failed viewport restores the native map even after a successful
+load. Valid empty tiles and usable partial/cached output remain visible. The
+availability adapter is tied to the packaged MapLibre 6 tile-manager API;
+hardware browser coverage checks that compatibility boundary.
 
 MapLibre and its module worker remain packaged in an extension-origin frame.
 The MAIN-world Leaflet adapter owns camera/pane placement; the isolated bridge

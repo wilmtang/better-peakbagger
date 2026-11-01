@@ -14,10 +14,11 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--preflight', '--live', '--camera-only'].includes(arg))
-    && args.filter(arg => ['--preflight', '--live', '--camera-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mjs [--firefox] [--preflight | --live | --camera-only]');
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--preflight', '--live', '--camera-only', '--recovery-only'].includes(arg))
+    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only'].includes(arg)).length <= 1,
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--preflight | --live | --camera-only | --recovery-only]');
 const firefoxMode = args.includes('--firefox'), preflight = args.includes('--preflight'), liveMode = args.includes('--live'), cameraOnly = args.includes('--camera-only');
+const recoveryOnly = args.includes('--recovery-only');
 const root = path.resolve(import.meta.dirname, '..'), resources = createResourceStack();
 let failure, summary, failurePage;
 try {
@@ -49,7 +50,7 @@ try {
     failurePage = page;
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.text().startsWith('Better Peakbagger vector map:')) console.error(message.text()); });
-    let mode = 'hold'; const held = new Set();
+    let mode = 'hold', tileFailures = 0, partialUrl = null; const held = new Set();
     const release = () => { for (const done of held) done(); held.clear(); };
     resources.defer('held vector styles', release);
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWPYvHnzfwAHNwL9GPw68wAAAABJRU5ErkJggg==', 'base64');
@@ -65,6 +66,7 @@ try {
         });
         return Buffer.from(fromGeojsonVt({ land: { features: [{ type: 3, geometry: [[[0, 0], [4096, 0], [4096, 4096], [0, 4096], [0, 0]]], tags: {} }] }, probes: { features } }, { version: 2, extent: 4096 }));
     };
+    const emptyTile = Buffer.from(fromGeojsonVt({ land: { features: [] }, probes: { features: [] } }, { version: 2, extent: 4096 }));
     const style = { version: 8, sources: { fixture: { type: 'vector', url: 'https://tiles.openfreemap.org/vector.json' } }, layers: [
         { id: 'background', type: 'background', paint: { 'background-color': '#d5dec9' } },
         { id: 'land', type: 'fill', source: 'fixture', 'source-layer': 'land', paint: { 'fill-color': '#c4ddac' } },
@@ -76,11 +78,14 @@ try {
         if (liveMode) return route.continue();
         if (url.endsWith('/styles/liberty') && mode === 'hold') await new Promise(resolve => held.add(resolve));
         const metadata = url.endsWith('/vector.json');
+        if (mode === 'partial' && url.endsWith('.pbf')) partialUrl ??= url;
+        const tileFailed = url.endsWith('.pbf') && (mode === 'tile-error' || mode === 'partial' && url === partialUrl);
+        if (tileFailed) tileFailures++;
         try {
-            await route.fulfill({ status: mode === 'error' && url.endsWith('/styles/liberty') ? 503 : 200,
+            await route.fulfill({ status: tileFailed || mode === 'error' && url.endsWith('/styles/liberty') ? 503 : 200,
                 headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
                 contentType: url.endsWith('.pbf') ? 'application/x-protobuf' : 'application/json',
-                body: url.endsWith('.pbf') ? tile(url) : JSON.stringify(metadata
+                body: url.endsWith('.pbf') ? mode === 'empty' ? emptyTile : tile(url) : JSON.stringify(metadata
                     ? { tilejson: '3.0.0', tiles: ['https://tiles.openfreemap.org/fixture/{z}/{x}/{y}.pbf'], minzoom: 0, maxzoom: 14 } : style),
             });
         } catch { /* A deliberately cancelled frame no longer owns its request. */ }
@@ -109,6 +114,13 @@ try {
         // The extension's first-run tab can become the active tab in this
         // disposable headless browser. Native picker defaults need page focus.
         await page.bringToFront();
+        await page.evaluate(() => {
+            window.vectorSettledViews = [];
+            window.addEventListener('message', event => {
+                if (event.source === document.querySelector('.bpb-vector-slot iframe')?.contentWindow
+                    && event.data?.__bpbVectorMap === true && event.data.type === 'loaded' && event.data.view) window.vectorSettledViews.push(event.data.view);
+            });
+        });
     };
     await open();
     await page.evaluate(() => {
@@ -158,8 +170,54 @@ try {
         }
         return cameras.length;
     };
+    const verifyProviderRecovery = async () => {
+        const geometry = () => page.evaluate(() => ({ scroll: scrollY, boxes: ['h1', '#map', '#selmap', '#following', '.leaflet-control-zoom'].map(selector => {
+            const rect = document.querySelector(selector).getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height];
+        }) }));
+        const stable = async baseline => {
+            const actual = await geometry(); assert.equal(actual.scroll, baseline.scroll);
+            actual.boxes.forEach((rect, index) => rect.forEach((value, dimension) => assert.ok(Math.abs(value - baseline.boxes[index][dimension]) <= 1, `Recovery shifted box ${index}/${dimension}`)));
+        };
+        const activate = async () => { await page.locator('#selmap').focus(); await page.keyboard.type('OSM'); await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1'); };
+        const screenshot = async name => { if (process.env.BPB_VECTOR_SCREENSHOTS) { await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, `${firefoxMode ? 'firefox' : 'chrome'}-recovery-${name}.png`) }); } };
+        let cases = 0;
+        for (const [width, theme, zoom] of [[1280, 'light', 1], [375, 'dark', 1], [1280, 'light', 2]]) {
+            await page.setViewportSize({ width, height: 800 }); mode = 'ready'; await open();
+            await page.evaluate(value => { document.documentElement.dataset.bpbTheme = value.theme; document.body.style.zoom = value.zoom; mapsPlaceholder.invalidateSize(); }, { theme, zoom });
+            await activate(); const baseline = await geometry(); mode = 'tile-error';
+            await page.evaluate(() => mapsPlaceholder.setView([-30, 100], 10, { animate: false }));
+            await page.locator('.bpb-vector-status button[data-bpb-vector-map]').waitFor({ state: 'visible', timeout: 6000 });
+            assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true, 'A wholly failed viewport restores native imagery');
+            assert.equal(await page.locator('.bpb-vector-slot iframe').count(), 0); await stable(baseline); await screenshot(`${width}-${zoom}-error`);
+            const retry = page.locator('.bpb-vector-status button[data-bpb-vector-map]');
+            mode = 'hold'; await retry.focus();
+            // At 200% zoom the user first scrolls/focuses the offscreen action.
+            // Its active reading position is the baseline for the async change.
+            const before = await retry.boundingBox(), retryBaseline = await geometry();
+            await page.keyboard.press('Enter');
+            await waitForCondition(() => held.size, { description: 'post-load outage retry is pending' });
+            const during = await retry.boundingBox();
+            for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(before[key] - during[key]) <= 1, `Outage Retry moved: ${key}`);
+            assert.equal(await retry.evaluate(element => document.activeElement === element), true); await stable(retryBaseline);
+            mode = 'ready'; release(); await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
+            assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), false); await stable(retryBaseline); await screenshot(`${width}-${zoom}-recovered`); cases++;
+        }
+        await page.setViewportSize({ width: 1280, height: 800 }); mode = 'empty'; await open(); await activate();
+        assert.equal(await page.locator('.bpb-vector-status').evaluate(element => element.hidden), true, 'Valid empty tiles stay healthy');
+        const failuresBefore = tileFailures; mode = 'tile-error';
+        await page.evaluate(() => mapsPlaceholder.panBy([512, 0], { animate: false }));
+        await waitForCondition(() => tileFailures > failuresBefore, { description: 'mixed cached-empty/new failed tiles' });
+        await page.waitForFunction(() => window.vectorSettledViews.some(view => {
+            const center = mapsPlaceholder.getCenter().wrap(); return Math.abs(view.center[0] - center.lat) < 1e-7 && Math.abs(view.center[1] - center.lng) < 1e-7;
+        }));
+        assert.equal(await page.locator('.bpb-vector-slot').evaluate(element => element.style.opacity), '1', 'Cached empty tiles remain usable beside failures'); cases++;
+        partialUrl = null; mode = 'partial'; await open(); await activate();
+        assert.ok(partialUrl); assert.equal(await page.locator('.bpb-vector-status').evaluate(element => element.hidden), true, 'Partial tile loss preserves usable output'); cases++;
+        return cases;
+    };
     if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
     else if (cameraOnly) summary = { verification: 'vector-camera', cases: await verifyCameraAlignment(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
+    else if (recoveryOnly) summary = { verification: 'vector-recovery', cases: await verifyProviderRecovery(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (liveMode) {
         await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
         await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1');
@@ -259,9 +317,10 @@ try {
         await page.waitForFunction(() => !document.querySelector('.bpb-vector-slot iframe'));
         assert.equal(await page.locator('#selmap').evaluate(element => element.style.minWidth), '', 'Map teardown restores the native picker sizing');
         const cameraCases = await verifyCameraAlignment();
+        const recoveryCases = await verifyProviderRecovery();
         assert.deepEqual(errors, []);
         summary = { verification: '2d-vector-map', hidden: true, browser: context.browser().version(), renderer,
-            cases: cases + 3 + cameraCases, viewports: '1280/375 × 800, light/dark, 200% CSS zoom', realExtension: !firefoxMode,
+            cases: cases + 3 + cameraCases + recoveryCases, viewports: '1280/375 × 800, light/dark, 200% CSS zoom', realExtension: !firefoxMode,
             syntheticProvider: true, loadingSuccessErrorRetryCancellation: true, stableGeometry: true, nativeMarkerInteraction: true };
     }
 } catch (error) {

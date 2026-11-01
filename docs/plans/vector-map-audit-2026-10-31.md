@@ -28,6 +28,13 @@ trusted-selection authorization and extension-origin rendering boundary.
   the replacement frame; it now preserves that frame and sends its own token.
   A current request failure still reports an error. Build, targeted ESLint and
   14 authorization/bridge/documentation tests passed.
+- V2: inspect settled viewport tile availability after every view change. A
+  wholly failed viewport restores native imagery; loaded empty tiles, partial
+  output and cached parents remain usable. The new browser assertion failed
+  before the fix on missing Retry after a post-load 503 outage. Five recovery
+  cases passed in each hidden hardware browser above, including 1280/375 × 800,
+  dark mode and 200% CSS zoom; keyboard Retry, focus and page/action geometry
+  stayed stable. Build, targeted ESLint and boundary/documentation tests passed.
 
 ### Intentionally not changed
 
@@ -40,9 +47,9 @@ trusted-selection authorization and extension-origin rendering boundary.
 
 ### Changed but not fully proven
 
-None for V1/V3's local acceptance checks; external verification limits remain below.
+None for V1–V3's local acceptance checks; external verification limits remain below.
 
-V2 and V4 remain open and unchanged.
+V4 remains open and unchanged.
 
 ## Verification limits
 

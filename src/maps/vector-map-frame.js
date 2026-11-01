@@ -5,16 +5,27 @@ import * as maplibre from 'maplibre-gl';
 import { terrainStyle } from '../terrain/terrain-style.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView } from './vector-basemap.js';
+import { vectorMapAvailability } from './vector-map-availability.js';
 
-let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null;
-const post = type => {
-    if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type }, parentOrigin);
+let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, loaded = false, settledView = null;
+const post = (type, detail = {}) => {
+    if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, ...detail }, parentOrigin);
 };
 const dispose = () => { disposed = true; clearTimeout(timer); map?.remove(); map = null; };
 const fail = () => { if (!disposed) { post('error'); dispose(); } };
 const update = () => {
     if (!map || !view) return;
     map.resize(); map.jumpTo({ center: [view.center[1], view.center[0]], zoom: view.zoom, bearing: 0, pitch: 0 });
+};
+const settled = () => {
+    if (disposed || !map?.areTilesLoaded()) return;
+    try {
+        const availability = vectorMapAvailability(map);
+        if (availability.requested && !availability.usable) { fail(); return; }
+        clearTimeout(timer); loaded = true;
+        const key = JSON.stringify([view, map.getCanvas().clientWidth, map.getCanvas().clientHeight]);
+        if (key !== settledView) { settledView = key; post('loaded', { view }); }
+    } catch (error) { console.warn('Better Peakbagger vector map:', error.message); fail(); }
 };
 window.addEventListener('message', async event => {
     const data = event.data;
@@ -33,7 +44,6 @@ window.addEventListener('message', async event => {
         const style = await terrainStyle.createVectorStyleLoader({ styleUrl: VECTOR_BASEMAP.styleUrl }).load();
         if (disposed) return;
         maplibre.setWorkerUrl(ext.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
-        let errors = false, vectorTile = false;
         map = new maplibre.Map({ container: document.getElementById('map'), style,
             center: [view.center[1], view.center[0]], zoom: view.zoom, minZoom: -1, maxZoom: 23,
             // Leaflet owns the camera, including world views and polar edges.
@@ -45,15 +55,9 @@ window.addEventListener('message', async event => {
                 return { url, credentials: 'omit', referrerPolicy: 'no-referrer' };
             },
         });
-        map.on('error', error => { errors = true; console.warn('Better Peakbagger vector map:', error.error?.message || 'Map resource unavailable.'); });
-        map.on('sourcedata', dataEvent => {
-            if (dataEvent.source?.type === 'vector' && dataEvent.tile?.state === 'loaded') vectorTile = true;
-        });
-        map.once('load', () => {
-            if (disposed) return;
-            if (errors && !vectorTile) { fail(); return; }
-            clearTimeout(timer); post('loaded');
-        });
+        map.on('error', error => { console.warn('Better Peakbagger vector map:', error.error?.message || 'Map resource unavailable.'); });
+        map.once('load', settled);
+        map.on('idle', () => { if (loaded) settled(); });
         map.getCanvas().addEventListener('webglcontextlost', fail);
         update();
     } catch (error) { if (!disposed) { console.warn('Better Peakbagger vector map:', error.message); fail(); } }

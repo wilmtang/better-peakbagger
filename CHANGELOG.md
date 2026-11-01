@@ -5,6 +5,8 @@
 - **Keep 2D vector maps aligned.** World zooms and polar views preserve the
   native map's camera so basemap features stay under the correct routes and peaks.
   Returning from 3D preserves a resumed vector map when an older load fails.
+  A complete tile outage restores the native map and offers Retry while valid
+  empty tiles and usable partial output remain available.
 
 - **Disconnect saved services from Settings.** Garmin and ImgBB key removal stays
   available with their features off, and GitHub can disconnect without restored

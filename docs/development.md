@@ -418,7 +418,9 @@ For a focused provider-feedback check, run
 real hidden GPU rendering with eight credit layouts and eight held-tile → HTTP
 403 → keyboard retry → rendered-map paths: 800/320px maps, both themes and
 normal/enlarged text. It checks focus, feedback visibility, control overlap,
-and action/map/following-content geometry within one CSS pixel. A held vector
+and action/map/following-content geometry within one CSS pixel. The vector
+`--recovery-only` selection isolates post-load tile outages, keyboard recovery,
+valid empty tiles and partial/cached availability. A held vector
 style checks pending selection and neutral loading feedback. Provider responses
 and extension activation/storage are fixtures; native windows, browser menus
 and live provider enforcement remain separate proof. Unknown selections fail.
