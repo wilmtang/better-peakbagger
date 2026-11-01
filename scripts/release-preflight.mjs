@@ -92,7 +92,8 @@ export function validatePublicationSafeguards({ rulesets, environment, policies 
     const rules = type => rulesets.filter(rule => rule.target === type && rule.enforcement === 'active');
     const covers = (rule, ref) => rule.conditions?.ref_name?.include?.includes(ref)
         && rule.conditions.ref_name.exclude?.length === 0;
-    const main = rules('branch').find(rule => covers(rule, '~DEFAULT_BRANCH') || covers(rule, 'refs/heads/main'));
+    const main = rules('branch').find(rule => (covers(rule, '~DEFAULT_BRANCH') || covers(rule, 'refs/heads/main'))
+        && rule.rules?.some(entry => entry.type === 'required_status_checks'));
     const tags = rules('tag').find(rule => covers(rule, 'refs/tags/v*') && rule.bypass_actors?.length === 0);
     const hasRule = (rule, type) => rule?.rules?.some(entry => entry.type === type);
     requireEvidence(main && tags && [main, tags].every(rule => hasRule(rule, 'deletion') && hasRule(rule, 'non_fast_forward')),
