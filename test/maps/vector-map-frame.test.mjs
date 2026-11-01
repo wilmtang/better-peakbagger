@@ -15,13 +15,13 @@ test('initial partial failure waits for usable tiles after the one-time load eve
                 export const setWorkerUrl = () => {}, addProtocol = () => {};
                 export class Map {
                     constructor() { window.renderer = this; this.events = {}; this.ready = false;
-                        this.style = { tileManagers: { base: { getIds: () => ['failed', 'pending'], getRenderableIds: () => this.ready ? ['good'] : [] } } }; }
+                        this.style = { tileManagers: { base: { getIds: () => ['failed', 'pending'], getRenderableIds: () => this.usable || this.ready ? ['good'] : [] } } }; }
                     on(type, listener) { (this.events[type] ||= []).push(listener); }
                     once(type, listener) { this.on(type, listener); }
                     emit(type) { for (const listener of this.events[type] || []) listener(); }
-                    resize() {} jumpTo() {} remove() {} areTilesLoaded() { return this.ready; }
+                    resize() { this.resizes = (this.resizes || 0) + 1; } jumpTo() { this.jumps = (this.jumps || 0) + 1; } remove() {} areTilesLoaded() { return this.ready; }
                     getCanvas() { return document.getElementById('map'); }
-                }` : 'export const terrainStyle = { createVectorStyleLoader: () => ({ load: async () => ({}) }) };' }));
+                }` : 'export const terrainStyle = { renderingStyle: style => style, createVectorStyleLoader: () => ({ load: async () => ({}) }) };' }));
         },
     }] });
     const dom = new JSDOM('<div id="map"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', runScripts: 'outside-only' });
@@ -37,7 +37,14 @@ test('initial partial failure waits for usable tiles after the one-time load eve
         // MapLibre's source-error flag can satisfy Map.loaded() while other
         // tiles are still pending; areTilesLoaded() correctly remains false.
         win.renderer.emit('load'); assert.equal(messages.some(message => message.type === 'loaded'), false);
+        win.renderer.usable = true; win.renderer.emit('render');
+        assert.equal(messages.some(message => message.type === 'loaded'), true, 'Painted usable tiles appear while secondary tiles are still pending');
         win.renderer.ready = true; win.renderer.emit('idle');
         assert.equal(messages.some(message => message.type === 'loaded'), true, 'Settled usable data must finish initial loading without waiting for a second load event');
+        const before = { resizes: win.renderer.resizes, jumps: win.renderer.jumps };
+        win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data: {
+            __bpbVectorMap: true, dir: 'toFrame', type: 'view', view: { center: [0, 0], zoom: 3 },
+        } }));
+        assert.deepEqual({ resizes: win.renderer.resizes, jumps: win.renderer.jumps }, before, 'Identical view messages do not resize or reapply the camera');
     } finally { win.dispatchEvent(new win.Event('pagehide')); win.close(); }
 });

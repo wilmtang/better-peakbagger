@@ -422,8 +422,11 @@ when returning. The 2D renderer pauses
 while 3D owns the map; see [2D vector basemap](map-layers.md#vector-basemap-in-2d).
 
 Maptoolkit's style is grafted into the existing terrain graph; it does not
-replace the elevation mesh, route or overlays. Its official logo and copyright
-links remain visible, including narrow layouts and enlarged text. The shared
+replace the elevation mesh, route or overlays.
+The provider's hillshade passes are omitted in 3D because the existing terrain
+mesh already supplies hillshade; unused provider DEM sources are not loaded.
+Its official logo and copyright links remain visible, including narrow layouts
+and enlarged text. The shared
 overlay menu reserves their area. Both vector providers omit cookies/referrers
 and retain provider-specific rate-limit deadlines for the frame lifetime.
 Cooldown expiry re-enables the picker option without replaying a request.

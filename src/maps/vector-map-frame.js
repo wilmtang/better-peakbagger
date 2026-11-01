@@ -9,7 +9,7 @@ import { vectorMapAvailability } from './vector-map-availability.js';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
-let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, settledView = null;
+let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, settledView = null, lastSize = '', lastCamera = '';
 const post = (type, detail = {}) => {
     if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, ...detail }, parentOrigin);
 };
@@ -17,12 +17,15 @@ const dispose = () => { disposed = true; clearTimeout(timer); map?.remove(); map
 const fail = error => { if (!disposed) { post('error', { retryAt: readRetryAt(error?.retryAt) }); dispose(); } };
 const update = () => {
     if (!map || !view) return;
-    map.resize(); map.jumpTo({ center: [view.center[1], view.center[0]], zoom: view.zoom, bearing: 0, pitch: 0 });
+    const container = document.getElementById('map'), size = `${container.clientWidth}/${container.clientHeight}`, camera = JSON.stringify(view);
+    if (size !== lastSize) { lastSize = size; map.resize(); }
+    if (camera !== lastCamera) { lastCamera = camera; map.jumpTo({ center: [view.center[1], view.center[0]], zoom: view.zoom, bearing: 0, pitch: 0 }); }
 };
-const settled = () => {
-    if (disposed || !map?.areTilesLoaded()) return;
+const settled = (progressive = false) => {
+    if (disposed || !map || !progressive && !map.areTilesLoaded()) return;
     try {
         const availability = vectorMapAvailability(map);
+        if (progressive && !availability.usable) return;
         if (availability.requested && !availability.usable) {
             console.warn('Better Peakbagger vector map: No usable viewport tiles.'); fail(); return;
         }
@@ -46,7 +49,8 @@ window.addEventListener('message', async event => {
         const reply = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_CONSUME', token: data.activation, action: 'init' });
         if (disposed) return;
         if (reply?.ok !== true) { fail(); return; }
-        const style = await terrainStyle.createVectorStyleLoader({ styleUrl: basemap.styleUrl, basemap }).load();
+        const raw = await terrainStyle.createVectorStyleLoader({ styleUrl: basemap.styleUrl, basemap }).load();
+        const style = terrainStyle.renderingStyle(raw, { basemap });
         if (disposed) return;
         maplibre.setWorkerUrl(ext.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
         maplibre.addProtocol(VECTOR_PROTOCOL, createVectorMapRequest({ basemap, onRateLimit: fail }));
@@ -61,10 +65,14 @@ window.addEventListener('message', async event => {
             },
         });
         map.on('error', error => { console.warn('Better Peakbagger vector map:', error.error?.message || 'Map resource unavailable.'); });
-        map.once('load', settled);
+        map.once('load', () => settled());
         // A tile error can satisfy MapLibre's one-time load event before all
         // other tiles settle. Idle must also finish that initial transaction.
-        map.on('idle', settled);
+        map.on('idle', () => settled());
+        // A slow secondary tile must not withhold already painted cartography.
+        // Only render can publish progressive output; idle still judges a
+        // settled outage and restores the native map after later failures.
+        map.on('render', () => settled(true));
         map.getCanvas().addEventListener('webglcontextlost', fail);
         update();
     } catch (error) { if (!disposed) { console.warn('Better Peakbagger vector map:', error.message); fail(error); } }

@@ -38,6 +38,19 @@ provider attribution, trusted activation, cancellation and rate-limit policy.
   1280/375 × 800, light/dark, 100/200% CSS zoom. Narrow/enlarged and desktop
   screenshots were inspected. Build and targeted ESLint passed. Chrome loads
   the real extension; Firefox stubs its API/capability transport.
+- M2/M4: Hiking adapts from eight to five sources and four to one provider
+  hillshades in 2D; 3D uses four provider sources and its existing terrain
+  hillshade. Water colors, contours, labels and sprite configuration survive.
+  The actual downloaded official style normalized/adapted successfully (130
+  layers in 2D, 129 in 3D). Usable 2D output now appears on render while secondary
+  requests remain pending. The new assertion failed against the previous frame
+  source at “Painted usable tiles appear while secondary tiles are still
+  pending,” then passed against the fix. A held-tile hardware browser test
+  passed in Chrome and Firefox (230/275 ms first paint in the synthetic fixture;
+  these are not live-service timings). Chrome's complete 20-case 2D and 10-case
+  3D matrices passed. Fifty-five focused tests, build and targeted ESLint passed.
+  Duplicate camera/size messages now skip resize/jumpTo; selecting the current
+  3D vector base preserves the existing graph.
 
 ## Intentionally not changed
 

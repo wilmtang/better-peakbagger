@@ -938,7 +938,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     // Bounded fetch, shape validation, and per-lifetime memoization all live in
     // the pure loader; only the grafting below needs MapLibre.
-    const fetchVectorStyle = basemap => vectorStyleLoaders.get(basemap.id).load();
+    const fetchVectorStyle = basemap => vectorStyleLoaders.get(basemap.id).load()
+        .then(style => TerrainStyle.renderingStyle(style, { basemap, terrain: true }));
 
     const setVectorSprite = sprite => {
         if (!Array.isArray(sprite)) { map.setSprite?.(sprite); return; }
@@ -1065,6 +1066,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // one-shot tile check so the new layer is judged on its own.
     const swapBasemap = selection => {
         if (!map || !loaded) return false;
+        // Repeated selection and mode-resume must not rebuild the same graph.
+        if ((vectorActive || vectorLoading) && vectorBasemap(selection) === vectorChoice
+            || !vectorChoice && selection === activeBasemapIndex && map.getSource('basemap')) return true;
         removeBasemapLayer();
         removeVectorBasemap();
         vectorSwapToken++;

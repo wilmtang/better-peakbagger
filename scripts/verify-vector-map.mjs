@@ -15,11 +15,11 @@ import { createResourceStack } from './resource-stack.mjs';
 import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.js';
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only'].includes(arg))
-    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only | --layout-only]');
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only'].includes(arg))
+    && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only'].includes(arg)).length <= 1,
+'Usage: node scripts/verify-vector-map.mjs [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only | --layout-only | --performance-only]');
 const terrainMode = args.includes('--terrain');
-assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only', '--layout-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
+assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
 const instrumentMap = source => {
     assert.ok(source.includes('startTerrainFrame(maplibre);'), 'Packaged frame exposes its expected startup call');
     return source.replace('startTerrainFrame(maplibre);', `startTerrainFrame({ ...maplibre, Map: new Proxy(maplibre.Map, {
@@ -111,6 +111,10 @@ try {
         if (url.startsWith('https://tiles.mapterhorn.com/')) return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: 'image/webp', body: dem });
         const isStyle = url === basemap.styleUrl;
         if (isStyle && mode === 'hold') await new Promise(resolve => held.add(resolve));
+        if (mode === 'tile-hold' && url.endsWith('.pbf')) {
+            partialUrl ??= url;
+            if (url === partialUrl) await new Promise(resolve => held.add(resolve));
+        }
         if (url.startsWith('https://icons.maptoolkit.org/')) return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: url.endsWith('.png') ? 'image/png' : 'application/json', body: url.endsWith('.png') ? png : '{}' });
         const metadata = url.endsWith('/vector.json');
         if (mode === 'partial' && url.endsWith('.pbf')) partialUrl ??= url;
@@ -214,6 +218,18 @@ try {
             }
         }
         return cases;
+    };
+    const verifyProgressive = async () => {
+        mode = 'tile-hold'; partialUrl = null; await open();
+        const started = performance.now();
+        await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
+        await waitForCondition(() => held.size, { description: 'a held secondary vector tile' });
+        await page.waitForFunction(() => document.querySelector('.bpb-vector-slot')?.style.opacity === '1', null, { timeout: 5000 });
+        assert.ok(held.size > 0, 'Usable map appears before the delayed secondary tile finishes');
+        assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), false, 'Visible progressive map replaces the fallback');
+        const firstPaintMs = Math.round(performance.now() - started);
+        mode = 'ready'; release(); await verifyPicker();
+        return { cases: 1, firstPaintMs };
     };
     const verifyCredits = async () => {
         if (basemap !== MAPTOOLKIT_BASEMAP) return;
@@ -493,6 +509,7 @@ try {
     };
     if (terrainMode) summary = await verifyTerrain();
     else if (args.includes('--layout-only')) summary = { verification: 'vector-picker-layout', cases: await verifyPickerLayouts(), renderer, browser: context.browser().version(), hidden: true };
+    else if (args.includes('--performance-only')) summary = { verification: 'vector-progressive', ...await verifyProgressive(), renderer, browser: context.browser().version(), hidden: true };
     else if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };
     else if (cameraOnly) summary = { verification: 'vector-camera', cases: await verifyCameraAlignment(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };
     else if (recoveryOnly) summary = { verification: 'vector-recovery', cases: await verifyProviderRecovery(), renderer, browser: context.browser().version(), hidden: true, realExtension: !firefoxMode };

@@ -26,9 +26,14 @@ request metadata. No 3D setting, terrain tiles, API key or extra host permission
 is needed. Native routes, markers, popups, zoom and overlays keep their Leaflet
 owners above the vector basemap.
 
+Hiking uses one detailed elevation hillshade in 2D, omitting its three soft
+shading passes to reduce downloads and rendering work. In 3D it uses the
+existing terrain hillshade. Contours, water colors, labels and icons are kept.
+
 The current native basemap remains visible while the vector map loads. Once
-ready, its raster layers are removed to stop hidden requests; switching back
-restores them. Failure restores the previous native selection and offers
+usable cartography is painted, its raster layers are removed while remaining
+vector tiles continue loading; switching back restores them. Failure restores
+the previous native selection and offers
 **Retry**. Selecting another basemap cancels a pending load. Selection is local
 to the current map and is cleared on back/forward-cache suspension. The renderer
 is removed on deselection, map unload and navigation. A 3D switch pauses the 2D

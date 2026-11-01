@@ -1743,7 +1743,7 @@ test('Maptoolkit terrain preserves its mesh and route, restores named sprites an
         choose('terrain'); finishStyle(); await tick(); assert.equal(map.getSource('bpb-vector:mtk'), undefined, 'A cancelled style cannot graft into the replacement choice');
         choose('maptoolkit'); await tick();
         assert.equal(map.getSource('terrain'), terrain); assert.equal(map.getLayer('bpb-route'), route);
-        assert.equal(map.getSource('bpb-vector:dem').encoding, 'terrarium'); assert.deepEqual(map.sprites.map(item => item.id), ['sdf', 'nature']);
+        assert.equal(map.getSource('bpb-vector:dem'), undefined, 'Unused provider elevation must not load beside the terrain mesh'); assert.deepEqual(map.sprites.map(item => item.id), ['sdf', 'nature']);
         assert.match(map.controls.find(item => item instanceof AttributionControl).options.customAttribution, /Maptoolkit/);
         const request = protocols.get('bpb-vector');
         await assert.rejects(request({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf', type: 'arrayBuffer' }, new AbortController()), error => error.status === 429);

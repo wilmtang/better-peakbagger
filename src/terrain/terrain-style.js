@@ -6,7 +6,7 @@
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
-import { VECTOR_BASEMAP, vectorProviderUrl } from '../maps/vector-basemap.js';
+import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, vectorProviderUrl } from '../maps/vector-basemap.js';
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const STYLE_MAX_BYTES = 2 * 1024 * 1024;
@@ -169,6 +169,17 @@ const normalizeStyle = (style, { basemap = VECTOR_BASEMAP } = {}) => {
     return normalized;
 };
 
+// Adapt only the fixed Hiking provider, after validation. Its three soft
+// hillshades use independent DEM zoom ladders; the detailed pass is sufficient
+// in 2D, and 3D already shades its terrain mesh. Preserve water color-relief,
+// contours, labels and icons, and avoid fetching metadata for orphan sources.
+const renderingStyle = (style, { basemap = VECTOR_BASEMAP, terrain = false } = {}) => {
+    if (basemap !== MAPTOOLKIT_BASEMAP) return style;
+    const layers = style.layers.filter(layer => layer.type !== 'hillshade'
+        || !terrain && (style.sources[layer.source]?.tileSize || 512) <= 512);
+    const used = new Set(layers.map(layer => layer.source));
+    return { ...style, layers, sources: Object.fromEntries(Object.entries(style.sources).filter(([id]) => used.has(id))) };
+};
 
 const createVectorStyleLoader = ({
     styleUrl,
@@ -244,5 +255,6 @@ export const terrainStyle = {
     MAX_ID_LENGTH,
     providerUrl,
     normalizeStyle,
+    renderingStyle,
     createVectorStyleLoader,
 };

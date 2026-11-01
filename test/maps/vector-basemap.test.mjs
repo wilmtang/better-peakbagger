@@ -42,3 +42,23 @@ test('Maptoolkit style loading omits identity, rejects redirects and preserves p
         fetch: async () => ({ status: 429, headers: new Headers({ 'retry-after': '120' }) }) });
     await assert.rejects(limited.load(), error => error.retryAt > Date.now() && /Maptoolkit request limit/.test(error.message));
 });
+
+test('Hiking uses one detailed hillshade in 2D and the existing terrain shading in 3D', () => {
+    const sources = { mtk: { type: 'vector' }, sea: { type: 'raster-dem', tileSize: 512 },
+        detail: { type: 'raster-dem' }, ...Object.fromEntries([2048, 4096, 8192].map(tileSize => [`soft${tileSize}`, { type: 'raster-dem', tileSize }])) };
+    const style = { version: 8, sources, sprite: [{ id: 'sdf', url: 'https://icons.maptoolkit.org/sprite' }],
+        layers: [{ id: 'paths', type: 'line', source: 'mtk' }, { id: 'labels', type: 'symbol', source: 'mtk' },
+            { id: 'water', type: 'color-relief', source: 'sea' }, ...['detail', 'soft2048', 'soft4096', 'soft8192'].map(source => ({ id: source, type: 'hillshade', source }))] };
+    const original = structuredClone(style);
+    const planar = terrainStyle.renderingStyle(style, { basemap: MAPTOOLKIT_BASEMAP });
+    const terrain = terrainStyle.renderingStyle(style, { basemap: MAPTOOLKIT_BASEMAP, terrain: true });
+    assert.equal(planar.layers.filter(layer => layer.type === 'hillshade').length, 1);
+    assert.deepEqual(Object.keys(planar.sources), ['mtk', 'sea', 'detail']);
+    assert.equal(terrain.layers.some(layer => layer.type === 'hillshade'), false);
+    assert.deepEqual(Object.keys(terrain.sources), ['mtk', 'sea']);
+    for (const adapted of [planar, terrain]) {
+        assert.deepEqual(adapted.layers.slice(0, 3), style.layers.slice(0, 3)); assert.equal(adapted.sprite, style.sprite);
+    }
+    assert.deepEqual(style, original, 'Adapting one surface cannot mutate the shared accepted provider style');
+    assert.equal(terrainStyle.renderingStyle(style), style, 'OpenFreeMap remains unchanged');
+});
