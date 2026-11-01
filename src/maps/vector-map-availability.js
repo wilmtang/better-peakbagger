@@ -12,7 +12,10 @@ export function vectorMapAvailability(map) {
         if (typeof manager?.getIds !== 'function' || typeof manager.getRenderableIds !== 'function') throw new Error('Vector tile availability is unsupported.');
         const ids = manager.getIds(), renderable = manager.getRenderableIds();
         if (!Array.isArray(ids) || !Array.isArray(renderable)) throw new Error('Unexpected vector tile availability.');
-        requested ||= ids.length > 0;
+        // Failed TileJSON has no tile IDs at all. Only an active source whose
+        // metadata never loaded is unavailable here; old tile errors must not
+        // turn a later out-of-coverage view into a failure.
+        requested ||= ids.length > 0 || manager.used !== false && manager._sourceErrored === true && manager._sourceLoaded !== true;
         usable ||= renderable.length > 0;
     }
     return { requested, usable };

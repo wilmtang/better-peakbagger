@@ -82,7 +82,7 @@ try {
         const tileFailed = url.endsWith('.pbf') && (mode === 'tile-error' || mode === 'partial' && url === partialUrl);
         if (tileFailed) tileFailures++;
         try {
-            await route.fulfill({ status: tileFailed || mode === 'error' && url.endsWith('/styles/liberty') ? 503 : 200,
+            await route.fulfill({ status: tileFailed || mode === 'error' && url.endsWith('/styles/liberty') || mode === 'metadata-error' && metadata ? 503 : 200,
                 headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
                 contentType: url.endsWith('.pbf') ? 'application/x-protobuf' : 'application/json',
                 body: url.endsWith('.pbf') ? mode === 'empty' ? emptyTile : tile(url) : JSON.stringify(metadata
@@ -213,6 +213,9 @@ try {
         assert.equal(await page.locator('.bpb-vector-slot').evaluate(element => element.style.opacity), '1', 'Cached empty tiles remain usable beside failures'); cases++;
         partialUrl = null; mode = 'partial'; await open(); await activate();
         assert.ok(partialUrl); assert.equal(await page.locator('.bpb-vector-status').evaluate(element => element.hidden), true, 'Partial tile loss preserves usable output'); cases++;
+        mode = 'metadata-error'; await open(); await page.locator('#selmap').focus(); await page.keyboard.type('OSM');
+        await page.locator('.bpb-vector-status button[data-bpb-vector-map]').waitFor({ state: 'visible', timeout: 6000 });
+        assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true, 'Failed TileJSON is unavailable, not a valid empty viewport'); cases++;
         return cases;
     };
     if (preflight) summary = { preflight: true, cases: 1, renderer, browser: context.browser().version() };

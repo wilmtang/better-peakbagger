@@ -40,6 +40,10 @@ trusted-selection authorization and extension-origin rendering boundary.
   idle event during initial loading too. A deterministic frame test failed on
   the old gate and passed after the fix; this explains the intermittent initial
   partial-tile timeouts observed during concurrent full-suite/browser runs.
+  Failed TileJSON is also distinguished from valid empty/out-of-coverage data;
+  unused sources and old errors on loaded sources do not cause false outages.
+  The new metadata assertion failed before the fix with an opaque blank map
+  and hidden Retry; adapter unit coverage failed on the same classification.
 
 ### Intentionally not changed
 
