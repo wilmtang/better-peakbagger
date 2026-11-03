@@ -1,7 +1,8 @@
 # Modern stack adoption with legacy compatibility
 
 Status: investigation and implementation plan; runtime migration has not started.
-Reviewed October 31, 2026 against commit `a951cf7b`.
+Reviewed October 31, 2026 against commit `a951cf7b`; re-audited November 2, 2026
+against `32cfc8ed` (findings 9–10 and the dependency-policy rows were added then).
 
 ## Recommendation
 
@@ -42,6 +43,11 @@ without waiting for a rewrite of the worker or shared settings schema.
    need their TypeScript-aware replacements in TS scopes. Configure Svelte
    separately so template syntax and `<script lang="ts">` use the right parsers.
    Do not spread the existing formatting rules blindly onto template markup.
+   Today the gap is silent, not loud: [eslint.config.mjs](../../eslint.config.mjs)
+   matches only `*.js`/`*.mjs`, so `eslint src options popup photos …` skips a
+   new `.ts` or `.svelte` file without a diagnostic (`calculateConfigForFile`
+   returns no config for either). A TS scope must exist before the first `.ts`
+   file lands, and the coverage test must assert that it applies.
    [typescript-eslint recommends disabling core `no-undef` for TypeScript and
    using extension rules](https://typescript-eslint.io/troubleshooting/faqs/eslint/).
 
@@ -97,6 +103,29 @@ without waiting for a rewrite of the worker or shared settings schema.
    The [compiler options](https://svelte.dev/docs/svelte/svelte-compiler) document
    these choices, including `discloseVersion: false`.
 
+9. **"Latest" TypeScript is not an admissible version, and updates auto-merge.**
+   On November 2, 2026 npm's `typescript@latest` is **7.0.2**, while
+   `typescript-eslint@8.72.1` peers on `typescript >=4.8.4 <6.1.0` and
+   `svelte-check@4.7.8` on `^5.0.0 || ^6.0.0`. The newest admissible line is
+   **6.0.x**. [Dependabot](../../.github/dependabot.yml) auto-merges every npm
+   group once the required checks pass, uses `versioning-strategy: increase`, and
+   sends unmatched packages to the `remaining-npm` catch-all. An unplanned
+   TypeScript 7 bump would either fail `npm ci` on the peer conflict, stalling
+   every other catch-all update, or slip through if a check stops running.
+   Group the TS/Svelte toolchain deliberately and hold the TypeScript major
+   until both peers admit it.
+
+10. **The Dependabot shipping-graph guard cannot see compiled Svelte imports.**
+    [The group test](../../test/project/dependabot-auto-merge.test.mjs) decides
+    which packages are bundled by regex-scanning authored source text from
+    `ENTRIES`, appending `.js` to extensionless relative paths. Compiled
+    components import `svelte/internal/client` even when their authored source
+    never names `svelte`, so a shipped runtime can avoid the `bundled-runtime`
+    assertion. Conversely, `import type` lines would register type-only packages
+    as shipped. Third-party notices are already derived from esbuild metafile
+    inputs ([third-party-notices.mjs](../../scripts/third-party-notices.mjs)); the
+    group check should use the same source of truth before Svelte ships.
+
 ## 1. Enable new features without converting old ones
 
 Each row is a proposed focused commit. Finish and check one before beginning the
@@ -104,16 +133,22 @@ next. These are enabling changes, not permission to refactor existing features.
 
 | Unit | Concrete changes | Completion evidence |
 | --- | --- | --- |
-| 1A — TypeScript checking and lint | Add compatible locked versions of `typescript`, `typescript-eslint`, `@types/chrome`, and browser-namespace types where actually needed. Add an explicitly selected `tsconfig.check.json`, TS-aware ESLint scopes, a `typecheck` npm command, CI enforcement and command documentation. Update language-specific lint coverage assertions. | A valid new TS module consuming existing JS passes; deliberate undeclared-name, wrong-type and unused-binding fixtures fail the responsible check. Existing JS lint behavior and legacy bundle transformation remain unchanged. |
-| 1B — Source coverage and watching | Add a shared authored-runtime file predicate and focused fixture cases. Update the seven guards, applicable page roots and loose-file detection. Watch `src/` recursively and retain all page/asset roots. Document watcher restart requirements for dependencies, entry configuration and compiler configuration. | Guards reject forbidden values/calls in `.ts` and `.svelte` source-text fixtures, including page-local files. A transitive plain `.ts` edit triggers a completed generation; a TS syntax failure preserves the previous generation and reload token. Executable Svelte watch coverage belongs to 1D. |
+| 1A — TypeScript checking and lint | Add compatible locked versions of `typescript` (6.0.x; see finding 9), `typescript-eslint`, `@types/chrome`, and browser-namespace types where actually needed. Add an explicitly selected `tsconfig.check.json`, TS-aware ESLint scopes, a `typecheck` npm command, CI enforcement and command documentation. Update language-specific lint coverage assertions. Add the new tooling to the Dependabot `tooling` group with a TypeScript major-version hold, and update the group test. | A valid new TS module consuming existing JS passes; deliberate undeclared-name, wrong-type and unused-binding fixtures fail the responsible check. `calculateConfigForFile` returns a TS config for `.ts` paths under every authored root. Existing JS lint behavior and legacy bundle transformation remain unchanged. |
+| 1B — Source coverage and watching | Add a shared authored-runtime file predicate beside [walkFiles](../../test/helpers/walk-files.mjs), rooted at `AUTHORED_SOURCE_ROOTS` from [build-config.mjs](../../scripts/build-config.mjs), with focused fixture cases. Move the three guards with private walkers (units, settings read policy, request deadlines) onto it. Update the seven guards, applicable page roots and loose-file detection. Watch `src/` recursively and retain all page/asset roots. Document watcher restart requirements for dependencies, entry configuration and compiler configuration. | Guards reject forbidden values/calls in `.ts` and `.svelte` source-text fixtures, including page-local files. A transitive plain `.ts` edit triggers a completed generation; a TS syntax failure preserves the previous generation and reload token. Executable Svelte watch coverage belongs to 1D. |
 | 1C — Typed compatibility boundaries | Add narrow typed adapters or colocated declarations for settings, runtime messages and lifecycle methods needed by the first feature. Define validated, allowlisted plain-data payloads at transport/storage boundaries. Keep the existing JS implementations and wire/storage formats. Type new protocols at both caller and handler boundaries. | Wrong requests/responses fail compilation; actual success, unavailable transport, invalid payload and settings failure behavior are checked against existing implementations. Nested-proxy fixtures prove the serializer produces cloneable payloads without extra fields. No new declaration silently converts arbitrary input to trusted data. |
 | 1D — Svelte compilation | Add compatible locked `svelte`, `esbuild-svelte`, `svelte-check`, and `eslint-plugin-svelte`; add shared compiler configuration and the plugin in the existing build-options path. Extend `typecheck` to run `svelte-check` against the explicit checking project. Add a representative test-only component compiled with the production options. | `.svelte` and `.svelte.ts` compile in one-off, minified and incremental builds; a transitive Svelte edit rebuilds, a syntax failure preserves the prior generation/token, and a correction recovers. Wrong props fail checking; built client code mounts, updates and unmounts in a fixture. Actual rune state passes the plain-data boundary tests. No extra chunks, runtime compiler or remote code appear. |
 | 1E — Mixed UI contract | Add a small mount/update/dispose adapter in the existing UI domain, with tests beside it, and update card/development guidance. Demonstrate a Svelte island beside an unchanged legacy feature in a faithful browser fixture. | Single mount, repeated update, teardown, BFCache suspend/resume, collapse/reparenting where relevant, keyboard activation and state-dependent geometry pass. Legacy content and listeners survive. |
-| 1F — First real new feature | Build a real, bounded feature using the new path. Register only its actual entry/assets and new schema fields/messages. Complete shipped-dependency metadata when Svelte first enters production bundles. | Full repository gates, target-specific Chrome/Firefox UI checks, packaged-file validation and measured bundle-size changes pass. This is the milestone that proves production adoption. |
+| 1F — First real new feature | Build a real, bounded feature using the new path. Register only its actual entry/assets and new schema fields/messages. Complete shipped-dependency metadata when Svelte first enters production bundles, add `svelte` to the `bundled-runtime` Dependabot group, and switch the group test's package discovery to esbuild metafile inputs (finding 10). | Full repository gates, target-specific Chrome/Firefox UI checks (including the Chrome 128 and Firefox 152.0 floor smokes), packaged-file validation and measured bundle-size changes pass. Removing `svelte` from `bundled-runtime` makes the group test fail. This is the milestone that proves production adoption. |
 
 Resolve package versions as one compatible set against this checkout's ESLint 10,
 esbuild 0.28 and CI Node 24, and commit the lockfile. The report's minimum versions
-are not a verified dependency combination.
+are not a verified dependency combination, and `npm install typescript` without a
+range would currently select an incompatible 7.x release. Pin the TypeScript line
+explicitly and recheck the peer ranges of `typescript-eslint` and `svelte-check`
+before lifting the major-version hold. Place the TS/Svelte compiler, checker and
+lint packages in `tooling`, never in the catch-all, so peer-coupled updates move
+together. Every addition must also pass the CI form of the zero-advisory gate,
+`npm run audit:ci -- --allow-reviewed-development-advisory`.
 
 ### TypeScript configuration and interoperability
 
@@ -131,10 +166,15 @@ are not a verified dependency combination.
   strictness-sensitive regression fixture before accepting either arrangement.
   [esbuild documents its tsconfig discovery](https://esbuild.github.io/api/#tsconfig)
   and [the transform-affecting options](https://esbuild.github.io/content-types/#tsconfig-json).
-- Scope the initial compiler project to `src/`, `options/`, `popup/` and `photos/`.
+- Scope the initial compiler project to `src/`, `options/`, `popup/` and `photos/`,
+  which is today's `AUTHORED_SOURCE_ROOTS`; add a test that fails if the two
+  diverge.
   Use `allowJs: true`, `checkJs: false`, `strict: true`, `noEmit: true`,
   `isolatedModules: true`, `erasableSyntaxOnly: true`,
   `verbatimModuleSyntax: true`, explicit-extension support and bundler resolution.
+  TypeScript 6 changed several defaults and deprecated older options, so set
+  every option this plan depends on explicitly, including `types`, rather than
+  inheriting defaults that a later major may change again.
   Keep the existing browser targets in esbuild. Do not include all Node scripts
   and tests in a browser-global project; introduce a separate Node configuration
   only when those authored files need TypeScript.
@@ -176,6 +216,10 @@ Svelte expression. Test representative typed declarations and template handlers;
 if a syntax form evades a policy, use language-aware extraction for that rule.
 Also expand the loose-file check and page-local lint assertions in
 [development.test.mjs](../../test/project/development.test.mjs).
+
+The [Dependabot group test](../../test/project/dependabot-auto-merge.test.mjs)
+is a package-graph guard, not a policy scan: broadening its file matcher does not
+fix it. Replace its source-text import walk with metafile inputs (finding 10).
 
 ### Build and packaging contract
 
@@ -330,8 +374,11 @@ fixture can establish compiler behavior without shipping a demonstration UI.
   check with [test CI](../../.github/workflows/test.yml) and the independent
   [release verification job](../../.github/workflows/release.yml); adding a local
   command alone does not enforce it. Keep it inside the existing checked job, or
-  update named-check requirements if introducing a new job. Document it in
-  [development.md](../development.md).
+  update the required-check names in
+  [release-preflight.mjs](../../scripts/release-preflight.mjs) and its test if
+  introducing a new job. Document it in
+  [development.md](../development.md); the development test requires every
+  `package.json` script to appear there exactly once.
 - Run `node --test test/project/documentation.test.mjs` for plan and guide
   edits, including backticked repository paths as well as Markdown links.
 - After changing build/load dependencies run `npm run verify -- browsers`, which
@@ -376,13 +423,27 @@ replacement and WXT cutover can then proceed independently when justified.
   After these documentation corrections,
   `node --test test/project/documentation.test.mjs test/project/development.test.mjs`
   passed **20/20**, including the previously failing document-path assertion.
+- **November 2 re-audit (verified):** against `32cfc8ed`, the 66-bundle
+  inventory (64 IIFE, ESM `dist/terrain/vector-map-frame.js` and
+  `dist/terrain/terrain-frame.js`), the `src/storage/` watcher gap, the seven `.js`-only
+  walkers, the `no-undef` lint assertion, the worker's prefix routes and the
+  `sendResult` distinction all still hold. A disposable esbuild probe reconfirmed
+  that a discovered `tsconfig.json` with `strict: true` prepends `"use strict"` to
+  a plain `.js` IIFE. New evidence: ESLint's `calculateConfigForFile` returns no
+  config for `.ts`/`.svelte` paths under authored roots; npm registry metadata
+  for `typescript`, `typescript-eslint`, `svelte-check`, `esbuild-svelte`
+  (0.9.5, peers `esbuild >=0.17.0`, `svelte >=4.2.1 <6`) and `eslint-plugin-svelte`
+  (3.23.1, peers ESLint 10); and the Dependabot group test's source-text walk.
+  No package was installed, and the TS 6 option defaults were not executed.
 - **Intentionally not changed:** runtime source, dependencies/lockfile, manifest,
   build/check configuration, storage formats and existing features. The external
   report was read without editing it. This repository-local plan is the output.
 - **Not yet proven:** locked Svelte/plugin/ESLint compatibility, compiled Svelte
   output under the actual AMO baseline, production CSP/style injection,
   browser/BFCache/geometry behavior, size estimates, native permissions and a
-  WXT parity build. Svelte tooling is not installed in this checkout. No full
+  WXT parity build. Svelte tooling is not installed in this checkout. Whether
+  Svelte 5's client runtime runs unchanged at the Chrome 128 and Firefox 152.0
+  floors is unverified. No full
   suite, full build, lint or real-browser run was performed for this docs-only
   investigation; those are implementation gates, not claimed results.
 
