@@ -4,22 +4,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { readdir } from 'node:fs/promises';
-import path from 'node:path';
 import { requestDeadline as Deadline } from '../../src/net/request-deadline.js';
 
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { deadlineFindings, directFetch, DEADLINE_EXCEPTION_FILES } from '../helpers/source-policies.mts';
+
 const { createRequestDeadline, isTimeout } = Deadline;
-const sourceRoot = new URL('../../src/', import.meta.url);
-const sourceFiles = async (dir = sourceRoot) => {
-    const out = [];
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-        const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
-        if (entry.isDirectory()) out.push(...await sourceFiles(child));
-        else if (entry.name.endsWith('.js')) out.push(child);
-    }
-    return out;
-};
-const relativeSourcePath = file => decodeURIComponent(file.pathname.split('/src/')[1]);
 
 test('a request that never answers ends on the deadline rather than pending forever', async () => {
     const deadline = createRequestDeadline(10);
@@ -31,7 +21,7 @@ test('a request that never answers ends on the deadline rather than pending fore
 test('the deadline aborts the request as well as rejecting the race', async () => {
     const deadline = createRequestDeadline(10);
     let aborted = false;
-    deadline.signal.addEventListener('abort', () => { aborted = true; });
+    deadline.signal!.addEventListener('abort', () => { aborted = true; });
     await assert.rejects(deadline.run(new Promise(() => {})), isTimeout);
     assert.equal(aborted, true, 'a stalled socket must be released, not merely abandoned');
     deadline.clear();
@@ -65,8 +55,8 @@ test('a request that finishes first is untouched and leaves no live timer', asyn
 });
 
 test('an expired deadline never surfaces as an unhandled rejection', async () => {
-    const rejections = [];
-    const record = error => rejections.push(error);
+    const rejections: unknown[] = [];
+    const record = (error: unknown) => rejections.push(error);
     process.on('unhandledRejection', record);
     try {
         // Nobody races this one: the expiry fires with no observer at all.
@@ -84,7 +74,7 @@ test('an expired deadline never surfaces as an unhandled rejection', async () =>
 test('a caller can cancel early without being reported as too slow', async () => {
     const deadline = createRequestDeadline(50_000);
     let aborted = false;
-    deadline.signal.addEventListener('abort', () => { aborted = true; });
+    deadline.signal!.addEventListener('abort', () => { aborted = true; });
     deadline.abort();
     assert.equal(aborted, true);
     assert.equal(deadline.expired, false, 'a cancellation is not a timeout');
@@ -103,7 +93,7 @@ test('cancelling leaves the deadline armed, because an ignored abort settles not
 
 test('a malformed timeout falls back to the shared default instead of firing instantly', () => {
     for (const value of [undefined, null, NaN, 0, -5, 'soon']) {
-        const deadline = createRequestDeadline(value);
+        const deadline = createRequestDeadline(value as unknown as number);
         assert.equal(deadline.expired, false);
         deadline.clear();
     }
@@ -134,33 +124,13 @@ test('every third-party transport bounds its requests through this one module', 
     // deadline-owning clients they receive the native fetch through. Any new
     // direct owner has to import the shared deadline or make a reviewed
     // exception here; it cannot disappear from a hand-kept allowlist.
-    const directExceptions = new Map([
-        ['maps/peak-markers.js', source => /setTimeout\(\(\) => controller\.abort\(\), REQUEST_TIMEOUT_MS\)/.test(source)
-            && /readBoundedResponseText\(response/.test(source)
-            && /clearTimeout\(timeout\)/.test(source)],
-    ]);
-    const discoveredExceptions = new Set();
-    for (const file of await sourceFiles()) {
-        const source = await readFile(file, 'utf8');
-        if (!/\bfetch\s*\(/.test(source)) continue;
-        const relative = relativeSourcePath(file);
-        if (/request-deadline\.js/.test(source)) continue;
-        const exception = directExceptions.get(relative);
-        assert.ok(exception, `${relative} directly calls fetch without the shared deadline`);
-        assert.ok(exception(source), `${relative} no longer satisfies its explicit deadline exception`);
-        discoveredExceptions.add(relative);
-    }
-    assert.deepEqual(discoveredExceptions, new Set(directExceptions.keys()),
-        'every exception must still describe a direct fetch owner');
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15);
+    assert.deepEqual(sources.flatMap(deadlineFindings), []);
+    assert.deepEqual(sources.filter(source => directFetch(source) && DEADLINE_EXCEPTION_FILES.includes(source.file as typeof DEADLINE_EXCEPTION_FILES[number]))
+        .map(source => source.file).sort(), [...DEADLINE_EXCEPTION_FILES].sort(), 'every reviewed exception must still be a direct fetch owner');
 });
 
 test('no source module hardcodes its own race-with-timeout', async () => {
-    for (const file of await sourceFiles()) {
-        if (path.basename(file.pathname) === 'request-deadline.js') continue;
-        const source = await readFile(file, 'utf8');
-        assert.ok(
-            !/Promise\.race\s*\(\s*\[[^\]]*\btimeout\b/i.test(source),
-            `${path.basename(file.pathname)} must use the shared deadline, not a second implementation`,
-        );
-    }
+    assert.deepEqual((await runtimeSources()).flatMap(deadlineFindings).filter(message => message.includes('race-with-timeout')), []);
 });

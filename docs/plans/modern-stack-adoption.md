@@ -37,7 +37,7 @@ without waiting for a rewrite of the worker or shared settings schema.
    from type checking](https://esbuild.github.io/content-types/#typescript).
 
 2. **Preserving `no-undef: error` for TypeScript is the wrong lint invariant.**
-   [The current coverage test](../../test/project/development.test.mjs) requires
+   [The current coverage test](../../test/project/development.test.mts) requires
    that exact rule for every page-local entry. Keep it for JavaScript; for
    TypeScript, require a configured TS parser, appropriate TS rules and an
    enforced compiler check instead. Core `no-unused-vars` and `no-shadow` also
@@ -65,7 +65,8 @@ without waiting for a rewrite of the worker or shared settings schema.
    requires explicit extensions and explains that Node ignores `tsconfig.json`.
 
 4. **Broader file matching is necessary but insufficient for boundary tests.**
-   The seven source walkers listed below match only `.js`. Several also hardcode
+   Source coverage was resolved on November 3; see the closure ledger below.
+   At investigation time, the seven source walkers listed below matched only `.js`. Several also hardcode
    owner filenames or path-keyed policy counts. Changing only the matcher makes
    a renamed schema fail its own forbidden-literal test. Moreover, most walkers
    inspect only `src/`, so new page-local components can escape the same rules.
@@ -199,25 +200,29 @@ together. Every addition must also pass the CI form of the zero-advisory gate,
 
 ### Source guards that must retain coverage
 
-Update these tests with the shared runtime predicate; exclude declaration-only
-files, include `.svelte.ts` through the `.ts` suffix, and keep fixtures separate
-from production scans. Do not weaken existing policy counts to make them pass.
+The source-discovery portion is implemented as of November 3, 2026. These
+checks use [shared runtime discovery](../../test/helpers/runtime-sources.mts)
+across the build-owned roots, exclude declarations and generated/vendor code,
+and include `.svelte.ts` through the `.ts` suffix. Fixtures stay outside the
+production scan. Existing policy counts are preserved; the newly discovered
+photo-editor display read has an explicit reviewed owner. The watcher portion
+of 1B remains open.
 
 | Existing test | Boundary to preserve |
 | --- | --- |
-| [units](../../test/ui/units.test.mjs) | Single conversion-constant owner; replace the manually enumerated page files with appropriate discovered page sources. |
-| [settings schema](../../test/settings/settings-schema.test.mjs) | Single default/bounds owner, including its explicit owner exclusion. |
-| [settings read policy](../../test/settings/settings-read-policy.test.mjs) | Passive `get()` versus authoritative `requireCurrent()` ownership; register any new adapter alias so the scanner still sees those reads. |
-| [capture core](../../test/capture/capture-core.test.mjs) | Single upload-limit owner. |
-| [request deadlines](../../test/net/request-deadline.test.mjs) | Bounded network requests and the path-keyed reviewed exceptions. |
-| [Cloudflare classification](../../test/peakbagger/peakbagger-cloudflare.test.mjs) | Centralized challenge detection and human-check copy. |
-| [Peakbagger origin](../../test/peakbagger/peakbagger-origin.test.mjs) | Canonical origins and host checks across runtime roots. |
+| [units](../../test/ui/units.test.mts) | Single conversion-constant owner across discovered shared and page-local sources. |
+| [settings schema](../../test/settings/settings-schema.test.mts) | Single default/bounds owner, including its explicit owner exclusion. |
+| [settings read policy](../../test/settings/settings-read-policy.test.mts) | Passive `get()` versus authoritative `requireCurrent()` ownership; register any new adapter alias so the scanner still sees those reads. |
+| [capture core](../../test/capture/capture-core.test.mts) | Single upload-limit owner. |
+| [request deadlines](../../test/net/request-deadline.test.mts) | Bounded network requests and the path-keyed reviewed exceptions. |
+| [Cloudflare classification](../../test/peakbagger/peakbagger-cloudflare.test.mts) | Centralized challenge detection and human-check copy. |
+| [Peakbagger origin](../../test/peakbagger/peakbagger-origin.test.mts) | Canonical origins and host checks across runtime roots. |
 
 The predicate alone does not make regex scans understand every TypeScript or
 Svelte expression. Test representative typed declarations and template handlers;
 if a syntax form evades a policy, use language-aware extraction for that rule.
-Also expand the loose-file check and page-local lint assertions in
-[development.test.mjs](../../test/project/development.test.mjs).
+Loose-file and page-local lint coverage are also migrated in
+[development.test.mts](../../test/project/development.test.mts).
 
 The [Dependabot group test](../../test/project/dependabot-auto-merge.test.mjs)
 is a package-graph guard, not a policy scan: broadening its file matcher does not
@@ -443,7 +448,7 @@ replacement and WXT cutover can then proceed independently when justified.
 - **Verified during investigation:** inventory derived from current `ENTRIES`;
   watcher-root coverage; six disposable Node/esbuild assertions covering mixed
   JS/TS, browser bundling, stale specifiers, missing type checking and uncompiled
-  runes; `node --test test/project/development.test.mjs` passed **17/17**.
+  runes; `node --test test/project/development.test.mts` passed **17/17**.
   Local probes ran on **Node v26.13.0**, not CI's Node 24; Node 24 behavior was
   cross-checked against its official docs, not executed locally.
 - **Review corrections:** qualify the generated frame path with `dist/`;
@@ -453,7 +458,7 @@ replacement and WXT cutover can then proceed independently when justified.
   change and nested-proxy clone failures using disposable fixtures and existing
   helpers; those probes do not establish real browser or compiled-Svelte behavior.
   After these documentation corrections,
-  `node --test test/project/documentation.test.mjs test/project/development.test.mjs`
+  `node --test test/project/documentation.test.mjs test/project/development.test.mts`
   passed **20/20**, including the previously failing document-path assertion.
 - **November 2 re-audit (verified):** against `32cfc8ed`, the 66-bundle
   inventory (64 IIFE, ESM `dist/terrain/vector-map-frame.js` and
@@ -491,6 +496,34 @@ new typed layer point-inspection interface and validated provider readers.
 Their legacy callers change only filename references. This establishes a
 bounded plain-DOM runtime use of TypeScript; it does not complete the general
 source-walker/watch prerequisites or enable Svelte. The affected map directory
-is already watched. The seven existing JavaScript-only policy scans still need
-the shared-runtime coverage work in 1B; focused point-reader tests cover the new
-requests, permissions, bounds and cancellation in this feature.
+is already watched. The source-walker follow-up has now migrated all seven
+policy scans to shared runtime coverage. Focused point-reader tests continue to cover the new requests,
+permissions, bounds and cancellation. The broader watcher portion of 1B remains
+open.
+
+### Source-walker migration closure ledger (November 3, 2026)
+
+- **Fixed and verified:** all seven structural guards use one typed discovery
+  helper rooted at `AUTHORED_SOURCE_ROOTS`; the three private walkers and units'
+  manually enumerated page list are removed. The guards, development checks and
+  shared test helpers are TypeScript. Loose-source and test organization checks
+  recognize TypeScript, and page-local lint coverage checks transitive sources
+  plus typed probes. The fixture suite injects forbidden values/calls into every
+  authored root as TypeScript and Svelte, exercises template handlers, verifies
+  reviewed owner boundaries, and proves the old `.js` filter would skip them.
+  Strict type checking, repository ESLint and 121 focused checks passed.
+- **Intentionally not changed:** runtime modules, wire/storage formats, build
+  entry composition, the single deadline exception and existing settings-read
+  ownership counts. The newly covered `photos/photos.js` read controls only
+  export-size warning/report-width presentation and is registered as display-only.
+  The source-walker scope does not include the build watcher or Svelte compiler.
+- **Changed but not fully proven:** the full suite passed **3,868/3,871**,
+  retaining the same two unregistered snow-legend fixture failures and missing
+  script-inventory entry documented above. No extension runtime or build inputs
+  changed, so no additional browser verification was run for this test-tooling
+  migration.
+
+Separate prerequisites: the `src/storage/` build-watcher gap and watch
+generation/recovery proof remain in 1B. Svelte compilation and executable
+component integration remain in 1D/1E. Source-policy fixtures establish text
+coverage, not Svelte compiler or browser execution behavior.

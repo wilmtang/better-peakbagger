@@ -747,8 +747,8 @@ separately by the browser and snow-depth verifiers.
   Real-extension snow checks passed eleven cases each in Chrome 156 and Firefox
   159 at 1440×1000 and 375×1000 using Apple M3 Pro Metal/ANGLE, native and 3D.
 - **Intentionally not changed:** BC parcel queries, imagery point values, and
-  the existing SNOTEL/incident detail popups. General TypeScript source-walker
-  migration remains tracked in the adoption plan.
+  the existing SNOTEL/incident detail popups. The seven TypeScript source-walker checks have since migrated to shared
+  discovery; build-watcher/Svelte work remains tracked in the adoption plan.
 - **Not fully proven:** providers are stubbed in browser fixtures; no native
   focus/window-placement behavior or minimum-supported-browser run is claimed.
   A bounded public PAD-US query confirmed the field names and ownership data;

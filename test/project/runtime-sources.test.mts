@@ -43,6 +43,7 @@ test('discovery uses all build-owned roots, recursively, with deterministic path
 });
 test('policy text retains original evidence and exposes typed declarations and calls inside TS and Svelte scripts', () => {
     for (const [file, text] of [
+        ['options/view.tsx', 'const view = <button onClick={() => Settings.get<unknown>()}/>; let pref: string = "system";'],
         ['src/maps/feature.ts', "let pref: string = 'system'; Settings.get<unknown>();"],
         ['options/card.svelte', '<script lang="ts">let pref: string = "system"; Settings.get<unknown>();</script><button onclick={() => fetch("/x")}>Go</button>'],
     ]) {

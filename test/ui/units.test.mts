@@ -3,10 +3,13 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { units as Units } from '../../src/ui/units.js';
+
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { unitConstantFindings } from '../helpers/source-policies.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -86,32 +89,9 @@ test('display strings match what each surface used to produce on its own', () =>
 });
 
 test('the conversion constants are declared in exactly one module', async () => {
-    // They were redeclared in four. Running on different pages is why a
-    // divergence could ship unnoticed, so the guard is structural, not a
-    // comparison of two implementations that cannot currently disagree.
-    const walk = async directory => {
-        const entries = await readdir(directory, { withFileTypes: true });
-        const files = await Promise.all(entries.map(async entry => {
-            const full = path.join(directory, entry.name);
-            if (entry.isDirectory()) return walk(full);
-            return entry.name.endsWith('.js') ? [full] : [];
-        }));
-        return files.flat();
-    };
-
-    const sources = await walk(path.join(root, 'src'));
-    const pageSources = ['popup/popup.js', 'options/options.js', 'options/drafts.js',
-        'options/favorites.js', 'options/github.js', 'options/settings-backup.js']
-        .map(relative => path.join(root, relative));
-
-    const offenders = [];
-    for (const file of [...sources, ...pageSources]) {
-        if (file.endsWith(path.join('src', 'ui', 'units.js'))) continue;
-        const text = await readFile(file, 'utf8');
-        if (/3\.28084|1609\.344/.test(text)) offenders.push(path.relative(root, file));
-    }
-    assert.deepEqual(offenders, [],
-        'these modules hardcode a conversion constant instead of importing src/ui/units.js');
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15, 'expected the authored runtime module set');
+    assert.deepEqual(sources.flatMap(unitConstantFindings), []);
 });
 
 test('no surface reimplements the auto-units preference logic', async () => {

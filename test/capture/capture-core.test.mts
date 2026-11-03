@@ -3,19 +3,32 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { JSDOM } from '../helpers/test-dom.mts';
 
 import { captureCore as Core } from '../../src/capture/capture-core.js';
 import { gpxParse as Parse } from '../../src/gpx/gpx-parse.js';
 import { gpxMetrics as Metrics } from '../../src/gpx/gpx-metrics.js';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
-import { walkFiles } from '../helpers/walk-files.mts';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const point = (lat, lon, ele = 100, time = null) => ({ lat, lon, ele, time });
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { uploadLimitFindings } from '../helpers/source-policies.mts';
+
+const point = (lat: number, lon: number, ele: number | null = 100, time: number | null = null) => ({ lat, lon, ele, time });
+
+function readQualityScore(quality: object): number {
+    assert.ok('score' in quality && typeof quality.score === 'number', 'sanitized quality must include its score');
+    return quality.score;
+}
+type TrackPoint = ReturnType<typeof point>;
+interface Match {
+    id: number; name: string; confidence: number; classification: string;
+    encounter: TrackPoint & {segmentIndex: number; edgeIndex: number; fraction: number};
+    evidence: {distanceM: number; elevationDeltaM: number | null; ambiguous: boolean};
+    draftFields: {suffix?: string};
+}
+// The JS implementation accepts a numeric reference time; its null default
+// alone is too narrow for the inferred signature.
+const formatEncounterDateTime = Core.formatEncounterDateTime as (time: number, metadata: Record<string, unknown>, referenceTime?: number | null) => {date: string; time: string};
 
 test('sanitization breaks, rather than bridges, invalid and impossible edges', () => {
     const start = Date.UTC(2026, 0, 1);
@@ -78,7 +91,7 @@ test('sanitization excludes impossible elevations from matching and serialized G
     const [match] = await Core.detectPeaksAsync(
         segments,
         [{ id: 99, name: 'Peak', location: '', lat: 0, lon: 0, elevationM: 1_000_000_000 }],
-        quality.score,
+        readQualityScore(quality),
     );
     assert.notEqual(match.classification, 'strong');
     assert.equal(match.evidence.elevationDeltaM, null);
@@ -90,7 +103,7 @@ test('sanitization excludes impossible elevations from matching and serialized G
         point(0, 0.0002, -1000.1),
         point(0, 0.0003, 10000.1),
     ]]);
-    assert.deepEqual(boundaries.segments[0].map(candidate => candidate.ele), [
+    assert.deepEqual(boundaries.segments[0].map((candidate: TrackPoint) => candidate.ele), [
         -1000, 10000, null, null,
     ]);
 });
@@ -119,7 +132,7 @@ test('Peakbagger XML parsing decodes metadata and ignores malformed peaks', () =
     assert.equal(peaks.length, 1);
     assert.equal(peaks[0].id, 12);
     assert.equal(peaks[0].name, 'A & B');
-    assert.equal(Math.round(peaks[0].elevationM * Core.FEET_PER_METER), 5000);
+    assert.equal(Math.round(peaks[0].elevationM! * Core.FEET_PER_METER), 5000);
 });
 
 test('Peakbagger XML parsing decodes each entity only once', () => {
@@ -145,13 +158,13 @@ test('Peakbagger peak parsing validates coordinates and enforces its structure c
     ]);
     assert.throws(
         () => Core.parsePeakbaggerPeaks(xml, { maxPeaks: 2 }),
-        error => error?.code === 'too-many-peaks',
+        error => error instanceof Error && 'code' in error && error.code === 'too-many-peaks',
     );
 });
 
 test('full-resolution segment projection detects a sparse summit crossing', async () => {
     const segments = [[point(0, -0.001, 100), point(0, 0.001, 100)]];
-    const matches = await Core.detectPeaksAsync(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    const matches: Match[] = await Core.detectPeaksAsync(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
     assert.equal(matches.length, 1);
     assert.equal(matches[0].classification, 'strong');
     assert.ok(matches[0].evidence.distanceM < 0.01);
@@ -182,7 +195,7 @@ test('nearby peaks sharing one encounter are capped unless one clearly leads', a
         point(0, 0, 100),
         point(0, 0.001, 80)
     ]];
-    const matches = await Core.detectPeaksAsync(segments, [
+    const matches: Match[] = await Core.detectPeaksAsync(segments, [
         { id: 4, name: 'Main', location: '', lat: 0, lon: 0, elevationM: 100 },
         { id: 5, name: 'Subpeak', location: '', lat: 0, lon: 0.00001, elevationM: 100 }
     ], 1);
@@ -195,14 +208,14 @@ test('nearby peaks sharing one encounter are capped unless one clearly leads', a
 // group must pull in the whole chain, or the escapee keeps an uncapped Strong
 // score and arrives at the popup pre-selected for drafting.
 test('chained ambiguity caps every peak regardless of the order Peakbagger returns them', async () => {
-    const bump = (index, centre) => Math.max(0, 60 - Math.abs(index - centre));
+    const bump = (index: number, centre: number) => Math.max(0, 60 - Math.abs(index - centre));
     const segment = Array.from({ length: 801 }, (_value, index) => point(
         47 + index * 0.000009,
         -121,
         1000 + bump(index, 140) + bump(index, 420) + bump(index, 700),
         Date.UTC(2026, 0, 1) + index * 1000
     ));
-    const peakAt = (id, name, index) => ({
+    const peakAt = (id: number, name: string, index: number) => ({
         id,
         name,
         location: '',
@@ -215,7 +228,7 @@ test('chained ambiguity caps every peak regardless of the order Peakbagger retur
     const c = peakAt(3, 'C', 700);
     // A–B and B–C share an encounter window; A–C do not.
     for (const order of [[a, b, c], [c, a, b], [b, c, a], [c, b, a]]) {
-        const matches = await Core.detectPeaksAsync([segment], order, 1);
+        const matches: Match[] = await Core.detectPeaksAsync([segment], order, 1);
         assert.equal(matches.length, 3, `order ${order.map(peak => peak.name).join('')}`);
         for (const match of matches) {
             assert.ok(
@@ -244,10 +257,10 @@ test('cooperative peak detection caps crowded summits and checks cancellation fo
         prominenceFt: 100,
     }));
     let checkpoints = 0;
-    const cooperative = await Core.detectPeaksAsync([segment], peaks, 0.91, {
+    const cooperative: Match[] = await Core.detectPeaksAsync([segment], peaks, 0.91, {
         checkpoint: async () => { checkpoints++; },
     });
-    assert.deepEqual(cooperative.map(match => match.id).sort((a, b) => a - b), peaks.map(peak => peak.id));
+    assert.deepEqual(cooperative.map((match: Match) => match.id).sort((a: number, b: number) => a - b), peaks.map(peak => peak.id));
     assert.ok(cooperative.every(match => match.classification === 'probable' && match.evidence.ambiguous));
     assert.ok(checkpoints >= peaks.length, 'every peak offers cancellation a checkpoint');
 });
@@ -279,7 +292,7 @@ test('cooperative peak detection preserves encounter-policy boundary results', a
     cases.push({
         label: 'missing and reversed times after sanitization',
         segments: sanitized.segments,
-        qualityScore: sanitized.quality.score,
+        qualityScore: readQualityScore(sanitized.quality),
         expectedMatches: 2,
         peaks: [
             { id: 3, name: 'Untimed', location: '', lat: 40, lon: -104.9999, elevationM: 2_010 },
@@ -300,14 +313,14 @@ test('cooperative peak detection preserves encounter-policy boundary results', a
         ]
     });
 
-    const bump = (index, centre) => Math.max(0, 60 - Math.abs(index - centre));
+    const bump = (index: number, centre: number) => Math.max(0, 60 - Math.abs(index - centre));
     const ambiguitySegment = Array.from({ length: 801 }, (_value, index) => point(
         47 + index * 0.000009,
         -121,
         1_000 + bump(index, 140) + bump(index, 420) + bump(index, 700),
         start + index * 1_000
     ));
-    const ambiguityPeak = (id, name, index) => ({
+    const ambiguityPeak = (id: number, name: string, index: number) => ({
         id, name, location: '',
         lat: ambiguitySegment[index].lat,
         lon: ambiguitySegment[index].lon,
@@ -335,7 +348,7 @@ test('cooperative peak detection preserves encounter-policy boundary results', a
     for (const [index, scenario] of cases.entries()) {
         const qualityScore = scenario.qualityScore ?? 1;
         let checkpoints = 0;
-        const cooperative = await Core.detectPeaksAsync(
+        const cooperative: Match[] = await Core.detectPeaksAsync(
             scenario.segments,
             scenario.peaks,
             qualityScore,
@@ -346,7 +359,7 @@ test('cooperative peak detection preserves encounter-policy boundary results', a
             && match.classification === 'probable' && match.evidence.ambiguous), scenario.label);
         assert.deepEqual(cooperative.map(match => [match.id, match.encounter.segmentIndex, match.encounter.edgeIndex,
             +match.encounter.fraction.toFixed(6), +match.evidence.distanceM.toFixed(3),
-            +match.encounter.ele.toFixed(3), match.encounter.time]), expected[index], scenario.label);
+            +match.encounter.ele!.toFixed(3), match.encounter.time]), expected[index], scenario.label);
         assert.ok(checkpoints >= scenario.peaks.length, `${scenario.label} must remain cancellable`);
     }
 });
@@ -381,7 +394,7 @@ test('priority reduction retains original objects, summit brackets, and an exact
     assert.equal(result.segments[0].length, 3000);
     assert.ok(result.segments[0].includes(segment[1999]));
     assert.ok(result.segments[0].includes(segment[2000]));
-    assert.ok(result.segments[0].every(retained => segment.includes(retained)));
+    assert.ok(result.segments[0].every((retained: TrackPoint) => segment.includes(retained)));
     assert.ok(result.maxDeviationM >= 0);
 });
 
@@ -415,7 +428,7 @@ test('tracks at the limit are unchanged and mandatory overflow fails closed', as
             { encounter: { segmentIndex: 0, edgeIndex: 0 } },
             { encounter: { segmentIndex: 0, edgeIndex: 2 } }
         ], 3),
-        error => error.code === 'mandatory-point-overflow'
+        error => error instanceof Error && 'code' in error && error.code === 'mandatory-point-overflow'
     );
 });
 
@@ -443,7 +456,7 @@ test('retained waypoints are validated, bounded, escaped, and limited to coordin
     const gpx = Core.serializeUploadGpx([[point(1, 2), point(3, 4)]], waypoints);
     assert.match(gpx, /<wpt lat="47\.1" lon="-121\.2"><name>Camp &amp; &lt;Water&gt;<\/name><\/wpt>/);
     assert.doesNotMatch(gpx, /999|private|<(?:desc|sym|extensions)(?:\s|>)/i);
-    assert.doesNotMatch(gpx.match(/<wpt[\s\S]*?<\/wpt>/i)[0], /<(?:ele|time)>/i);
+    assert.doesNotMatch(gpx.match(/<wpt[\s\S]*?<\/wpt>/i)![0], /<(?:ele|time)>/i);
 });
 
 test('draft fields use full-resolution distance, gains, durations, and activity offset', () => {
@@ -469,7 +482,7 @@ test('draft fields use full-resolution distance, gains, durations, and activity 
     assert.deepEqual(fields.upDuration, { days: 0, hours: 0, minutes: 30 });
     assert.deepEqual(fields.downDuration, { days: 0, hours: 0, minutes: 30 });
     const shared = Metrics.computeMetricsForSegments(segments);
-    assert.equal(fields.upGainM + fields.downGainM, shared.gainM);
+    assert.equal(fields.upGainM! + fields.downGainM!, shared.gainM);
     assert.equal(fields.startElevationM, 100);
     assert.equal(fields.endElevationM, 110);
 });
@@ -498,8 +511,8 @@ test('draft metrics expose gaps instead of bridging or substituting zero', () =>
     assert.equal(fields.downGainM, 0, 'the complete flat/down half may report its recorded gain');
     assert.equal(fields.upDuration, null, 'missing time must not become a zero duration');
     assert.deepEqual(fields.downDuration, { days: 0, hours: 0, minutes: 1 });
-    assert.equal(fields.quality.elevation.status, 'partial');
-    assert.equal(fields.quality.time.status, 'partial');
+    assert.equal(fields.quality!.elevation.status, 'partial');
+    assert.equal(fields.quality!.time.status, 'partial');
 });
 
 test('draft duration requires complete, progressing, ordered timestamps', () => {
@@ -531,9 +544,9 @@ test('Capitol draft totals match shared analyzer metrics without reordering seri
         [...segment.querySelectorAll(':scope > trkpt')].map(pointNode =>
             Parse.parseTrackPoint(pointNode)));
     const { segments } = Core.sanitizeTrack(rawSegments);
-    let summit = { ele: -Infinity };
-    segments.forEach((segment, segmentIndex) => segment.forEach((candidate, pointIndex) => {
-        if (candidate.ele > summit.ele) summit = { ...candidate, segmentIndex, pointIndex };
+    let summit: TrackPoint & {segmentIndex: number; pointIndex: number} = { lat: NaN, lon: NaN, ele: -Infinity, time: null, segmentIndex: 0, pointIndex: 0 };
+    segments.forEach((segment: TrackPoint[], segmentIndex: number) => segment.forEach((candidate: TrackPoint, pointIndex: number) => {
+        if (candidate.ele !== null && candidate.ele > (summit.ele ?? -Infinity)) summit = { ...candidate, segmentIndex, pointIndex };
     }));
     const encounter = {
         segmentIndex: summit.segmentIndex,
@@ -547,7 +560,7 @@ test('Capitol draft totals match shared analyzer metrics without reordering seri
     const fields = Core.calculateDraftFields(segments, { encounter }, { utcOffsetMinutes: -360 });
     const metrics = Metrics.computeMetricsForSegments(segments);
 
-    assert.ok(Math.abs(fields.upGainM + fields.downGainM - metrics.gainM) < 1e-9);
+    assert.ok(Math.abs(fields.upGainM! + fields.downGainM! - metrics.gainM) < 1e-9);
     assert.ok(Math.abs(fields.upDistanceM + fields.downDistanceM - metrics.distanceM) < 1e-9);
     assert.equal(Math.round(metrics.gainM * 100) / 100, 1747.89);
 
@@ -565,7 +578,7 @@ test('Capitol draft totals match shared analyzer metrics without reordering seri
 
 test('Strava displayed wall-clock time derives the activity timezone from GPX UTC', () => {
     const start = Date.UTC(2026, 6, 11, 23, 13);
-    const formatted = Core.formatEncounterDateTime(start + 60 * 60000, {
+    const formatted = formatEncounterDateTime(start + 60 * 60000, {
         displayedLocalStart: '2026-07-11T16:13:00'
     }, start);
     assert.equal(formatted.date, '2026-07-11');
@@ -574,7 +587,7 @@ test('Strava displayed wall-clock time derives the activity timezone from GPX UT
 
 test('an unusable displayed wall clock falls back to UTC without claiming a timezone', () => {
     const start = Date.UTC(2026, 6, 11, 23, 13);
-    const formatted = Core.formatEncounterDateTime(start, { displayedLocalStart: 'not a timestamp' }, start);
+    const formatted = formatEncounterDateTime(start, { displayedLocalStart: 'not a timestamp' }, start);
     assert.equal(formatted.date, '2026-07-11');
     assert.equal(formatted.time, '23:13');
     // The shape carries no timezone-confidence field to be wrong about.
@@ -583,7 +596,7 @@ test('an unusable displayed wall clock falls back to UTC without claiming a time
 
 test('explicit and timestamp-suffix offsets stay inside civil-time bounds', () => {
     const instant = Date.UTC(2026, 0, 2, 0, 0);
-    const format = metadata => Core.formatEncounterDateTime(instant, metadata, instant);
+    const format = (metadata: Record<string, unknown>) => formatEncounterDateTime(instant, metadata, instant);
 
     assert.deepEqual(format({ utcOffsetMinutes: 14 * 60 }), { date: '2026-01-02', time: '14:00' });
     assert.deepEqual(format({ utcOffsetMinutes: -14 * 60 }), { date: '2026-01-01', time: '10:00' });
@@ -639,7 +652,7 @@ test('day statistics use activity-local dates and preserve the cross-midnight ed
     assert.equal(stats[1].lossM, 0);
     assert.equal(stats[1].maxElevationM, 130);
     assert.equal(stats[1].campElevationM, null);
-    assert.ok(Math.abs(stats.reduce((sum, row) => sum + row.distanceM, 0)
+    assert.ok(Math.abs(stats.reduce((sum, row) => sum + row.distanceM!, 0)
         - Core.distanceM(segments[0][0], segments[0][1])
         - Core.distanceM(segments[0][1], segments[0][2])
         - Core.distanceM(segments[0][2], segments[0][3])) < 0.001);
@@ -664,7 +677,7 @@ test('day statistics leave elevation fields unknown when the track has no elevat
     assert.equal(stats.lossM, null);
     assert.equal(stats.maxElevationM, null);
     assert.equal(stats.campElevationM, null);
-    assert.ok(stats.distanceM > 0);
+    assert.ok(stats.distanceM! > 0);
 });
 
 test('day statistics reject spans beyond Peakbagger’s supported row count', () => {
@@ -692,8 +705,8 @@ test('same-day draft suffixes follow encounter order without mutating matches', 
 
     const assigned = Core.assignDraftSuffixes(matches);
 
-    assert.deepEqual(assigned.map(match => match.draftFields.suffix), ['c', '', 'a', 'b']);
-    assert.equal(matches[0].draftFields.suffix, undefined);
+    assert.deepEqual(assigned.map((match: Match) => match.draftFields.suffix), ['c', '', 'a', 'b']);
+    assert.equal(Reflect.get(matches[0].draftFields, 'suffix'), undefined);
 });
 
 test('draft selection prepares one track order, confidence order, and fallback trip name', () => {
@@ -704,12 +717,12 @@ test('draft selection prepares one track order, confidence order, and fallback t
 
     const prepared = Core.prepareDraftSelection(matches);
 
-    assert.deepEqual(prepared.trackOrdered.map(match => match.id), [8, 7]);
-    assert.deepEqual(prepared.confidenceOrdered.map(match => match.id), [8, 7]);
+    assert.deepEqual(prepared.trackOrdered.map((match: Match) => match.id), [8, 7]);
+    assert.deepEqual(prepared.confidenceOrdered.map((match: Match) => match.id), [8, 7]);
     assert.deepEqual(Array.from(prepared.sequenceById), [['8', 1], ['7', 2]]);
     assert.equal(prepared.fallbackTripName, 'Earlier / Later');
-    assert.deepEqual(prepared.matches.map(match => match.draftFields.suffix), ['b', 'a']);
-    assert.equal(matches[0].draftFields.suffix, undefined);
+    assert.deepEqual(prepared.matches.map((match: Match) => match.draftFields.suffix), ['b', 'a']);
+    assert.equal(Reflect.get(matches[0].draftFields, 'suffix'), undefined);
 });
 
 // The same regression the settings-schema guard prevents, in the other pure
@@ -717,26 +730,10 @@ test('draft selection prepares one track order, confidence order, and fallback t
 // ascent-draft re-validates it against them from a different bundle, so a
 // literal in either one is free to drift out of agreement with the other.
 test('no surface keeps its own copy of a Peakbagger upload limit', async () => {
-    const sourceRoot = path.join(root, 'src');
-    const sources = (await walkFiles(sourceRoot, file => file.endsWith('.js')))
-        .filter(file => path.basename(file) !== 'upload-limits.js');
-    assert.ok(sources.length >= 15, 'expected the src module set to be present');
-
-    const leaks = [];
-    for (const file of sources) {
-        const text = await readFile(file, 'utf8');
-        // The upload limits are only ever compared against a point or segment
-        // count, so look for the numbers in that company rather than banning
-        // 3000 and 50 outright — both are ordinary numbers elsewhere.
-        const pattern = /(?:points?|waypoints?|segments?)\w*\.length\s*[<>]=?\s*(?:3000|50)\b|[<>]=?\s*(?:3000|50)\b\s*(?:\)|;).*(?:point|segment)/i;
-        if (pattern.test(text)) {
-            leaks.push(`${path.relative(root, file)} hardcodes a Peakbagger upload limit`);
-        }
-    }
-    assert.deepEqual(leaks, [],
-        `import MAX_UPLOAD_POINTS / MAX_TRACK_SEGMENTS from src/capture/upload-limits.js:\n${leaks.join('\n')}`);
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15, 'expected the authored runtime module set');
+    assert.deepEqual(sources.flatMap(uploadLimitFindings), []);
 });
-
 
 test('priority reduction preserves midpoint ties and elevation extrema', async () => {
     for (const [elevations, indices] of [
@@ -745,7 +742,7 @@ test('priority reduction preserves midpoint ties and elevation extrema', async (
     ]) {
         const segment = elevations.map((ele, index) => point(0, index * 0.0001, ele));
         const result = await Core.reduceTrackAsync([segment], [], 5);
-        assert.deepEqual(result.segments[0].map(retained => segment.indexOf(retained)), indices);
+        assert.deepEqual(result.segments[0].map((retained: TrackPoint) => segment.indexOf(retained)), indices);
         assert.ok(result.maxDeviationM < 0.000001);
     }
 });
@@ -768,14 +765,14 @@ test('draft ordering never treats an unavailable encounter distance as zero', ()
             { id: 7, name: 'First', confidence: 80, draftFields: { date, upDistanceM: 500 } },
             { id: 8, name: 'Unknown', confidence: 90, draftFields: { date, upDistanceM: null } },
         ]);
-        assert.deepEqual(prepared.trackOrdered.map(match => match.id), [7, 8]);
+        assert.deepEqual(prepared.trackOrdered.map((match: Match) => match.id), [7, 8]);
         assert.equal(prepared.sequenceById.get('7'), 1);
         assert.equal(prepared.fallbackTripName, 'First / Unknown');
-        if (date) assert.deepEqual(prepared.matches.map(match => match.draftFields.suffix), ['a', 'b']);
+        if (date) assert.deepEqual(prepared.matches.map((match: Match) => match.draftFields.suffix), ['a', 'b']);
     }
     const measured = Core.prepareDraftSelection([
         { id: 7, name: 'Later', draftFields: { upDistanceM: 500 } },
         { id: 8, name: 'Start', draftFields: { upDistanceM: 0 } },
     ]);
-    assert.deepEqual(measured.trackOrdered.map(match => match.id), [8, 7], 'a measured zero remains valid');
+    assert.deepEqual(measured.trackOrdered.map((match: Match) => match.id), [8, 7], 'a measured zero remains valid');
 });

@@ -1733,7 +1733,7 @@ The focused automated evidence is deliberately split by boundary:
 - `test/github/github-client.test.mjs` and `test/github/github-backup-integration.test.mjs`
   cover fixed-root-file Git mechanics, conflicts, feature gates, extension-only
   messaging, missing restore files, and token confinement.
-- `test/settings/settings-schema.test.mjs`, `test/project/manifest-capture.test.mjs`, and the
+- `test/settings/settings-schema.test.mts`, `test/project/manifest-capture.test.mjs`, and the
   fixture-privacy guard pin the default/allowlist, isolated-world routes and
   bundle composition, and synthetic third-party fixture data.
 

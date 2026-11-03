@@ -7,13 +7,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { settingsReadCounts } from '../helpers/source-policies.mts';
 
 const FAIL_SOFT = Object.freeze({
+    'photos/photos.js': [{ count: 1, kind: 'display', reason: 'render the passive export-size warning and inherited report image width; no transport is gated by this value' }],
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
@@ -68,28 +67,10 @@ const AUTHORITATIVE = Object.freeze({
     'src/ui/peak-card-layout.js': [{ count: 1, kind: 'preservation', reason: 'restore the saved card layout without treating a failed read as a new preference' }],
 });
 
-const sourceFiles = async directory => {
-    const files = [];
-    for (const entry of await readdir(path.join(root, directory), { withFileTypes: true })) {
-        const relative = path.join(directory, entry.name);
-        if (entry.isDirectory()) files.push(...await sourceFiles(relative));
-        else if (entry.isFile() && entry.name.endsWith('.js')) files.push(relative);
-    }
-    return files;
-};
+const occurrences = async (method: 'get' | 'requireCurrent') => settingsReadCounts(await runtimeSources(), method);
 
-const occurrences = async method => {
-    const found = {};
-    const expression = new RegExp(`\\b(?:Settings|S|settings|photoBackupSettings|preferences)\\.${method}\\(`, 'g');
-    for (const file of await Promise.all(['src', 'options', 'popup'].map(sourceFiles)).then(groups => groups.flat())) {
-        const source = await readFile(path.join(root, file), 'utf8');
-        const count = (source.match(expression) || []).length;
-        if (count) found[file] = count;
-    }
-    return found;
-};
-
-const expectedCounts = policy => Object.fromEntries(Object.entries(policy)
+interface Owner {count: number; kind: string; reason: string}
+const expectedCounts = (policy: Record<string, Owner[]>) => Object.fromEntries(Object.entries(policy)
     .map(([file, owners]) => [file, owners.reduce((sum, owner) => sum + owner.count, 0)]));
 
 test('every fail-soft settings read has an explicit display or safe-gate owner', async () => {

@@ -487,7 +487,7 @@ does not reload, but on-disk `dist/` is a mixed generation. The log says it is
 keeping the loaded extension; it does not preserve the directory another
 verifier, packager, or later process can inspect.
 
-Current development coverage in `test/project/development.test.mjs` (lines
+Current development coverage in `test/project/development.test.mts` (lines
 115–199) pins the completed-build signal and Firefox mirroring but does not
 inject a failed bundle or asset copy and compare last-good hashes.
 

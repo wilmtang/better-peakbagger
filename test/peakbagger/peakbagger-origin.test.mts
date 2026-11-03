@@ -3,9 +3,6 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
     PEAKBAGGER_ORIGIN,
@@ -13,10 +10,9 @@ import {
     isPeakbaggerSenderUrl,
     isPeakbaggerPageOrigin,
 } from '../../src/peakbagger/peakbagger-origin.js';
-import { walkFiles } from '../helpers/walk-files.mts';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const ORIGIN_MODULE = path.join(root, 'src/peakbagger/peakbagger-origin.js');
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { originFindings } from '../helpers/source-policies.mts';
 
 test('the fetch boundary accepts only https on the two canonical hosts', () => {
     assert.equal(isPeakbaggerUrl('https://peakbagger.com/climber/ascent.aspx?aid=1'), true);
@@ -57,27 +53,9 @@ test('the postMessage origin check is https-only and rejects anything carrying a
 // three different strictnesses, is what prompted the shared module.
 test('host checks and extension-authored absolute URLs stay canonical', async () => {
     assert.equal(PEAKBAGGER_ORIGIN, 'https://www.peakbagger.com');
-    const HOST_LITERAL = /peakbagger\\?\.com/i;
-    const offenders = [];
-    const files = (await Promise.all(['src', 'options', 'popup', 'photos']
-        .map(directory => walkFiles(path.join(root, directory), file => file.endsWith('.js'))))).flat();
-    for (const file of files) {
-        const source = await readFile(file, 'utf8');
-        for (const [index, line] of source.split('\n').entries()) {
-            if (/https:\/\/peakbagger\.com/i.test(line)) {
-                offenders.push(`${path.relative(root, file)}:${index + 1} uses the non-canonical absolute origin`);
-            }
-            if (file === ORIGIN_MODULE) continue;
-            const isPattern = /\/[^/\n]*peakbagger\\?\.com[^/\n]*\/[gimsuy]*/i.test(line)
-                && !line.includes('https://') && !line.includes('http://');
-            const isHostSet = /new Set\(\[[^\]]*peakbagger\.com/i.test(line);
-            if ((isPattern || isHostSet) && HOST_LITERAL.test(line)) {
-                offenders.push(`${path.relative(root, file)}:${index + 1} duplicates the host check`);
-            }
-        }
-    }
-    assert.deepEqual(offenders, [],
-        'derive URLs and trust checks from src/peakbagger/peakbagger-origin.js');
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15, 'expected the authored runtime module set');
+    assert.deepEqual(sources.flatMap(originFindings), []);
 });
 
 // The module header claims the fetch and sender predicates currently agree.

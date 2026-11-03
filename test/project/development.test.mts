@@ -12,7 +12,6 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import { ESLint } from 'eslint';
 
@@ -20,22 +19,34 @@ import {
     BUILD_TREE_PREFIX,
     cleanupAbandonedBuildTrees,
     formatReloadLog,
-    publishBuildTree,
+    publishBuildTree as publishBuildTreeJS,
     RELOAD_SIGNAL,
 } from '../../scripts/build.mjs';
-import { ENTRIES, resolvePageSource, root } from '../../scripts/build-config.mjs';
+import { AUTHORED_SOURCE_ROOTS, root as projectRoot } from '../../scripts/build-config.mjs';
 import { webExtArguments } from '../../scripts/run-development.mjs';
 import {
     createFirefoxSource,
-    syncFirefoxSource,
+    syncFirefoxSource as syncFirefoxSourceJS,
 } from '../../scripts/run-firefox.mjs';
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+import { isRuntimeSource, runtimeSourceFiles } from '../helpers/runtime-sources.mts';
+
+interface PublishOptions {candidateDir: string; targetDir?: string; renameTree?: typeof rename}
+const publishBuildTree = publishBuildTreeJS as (options: PublishOptions) => Promise<void>;
+interface SyncOptions {
+    distDir?: string; sourceDir: string; reloadToken: number;
+    copyTree?: (source: string, candidate: string, options?: {preserve?: Set<string>}) => Promise<void>;
+    writeText?: (destination: string, contents: string) => Promise<void>;
+    validateTree?: (options: {distDir: string}) => Promise<void>;
+    publishTree?: (options: PublishOptions) => Promise<void>; renameTree?: typeof rename;
+}
+const syncFirefoxSource = syncFirefoxSourceJS as (options: SyncOptions) => Promise<void>;
+const missing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT';
 
 test('source and tests stay organized by owning domain', async () => {
     const sourceEntries = await readdir(path.join(projectRoot, 'src'), { withFileTypes: true });
     const sourceFiles = sourceEntries
-        .filter(entry => entry.isFile() && /\.(?:js|css)$/.test(entry.name))
+        .filter(entry => entry.isFile() && (isRuntimeSource(entry.name) || entry.name.endsWith('.css')))
         .map(entry => entry.name);
     assert.deepEqual(sourceFiles, [], 'src/ must not contain loose runtime source files');
 
@@ -52,13 +63,13 @@ test('source and tests stay organized by owning domain', async () => {
     );
 
     const ungroupedTests = testEntries
-        .filter(entry => entry.isFile() && /\.(?:test|scale)\.mjs$/.test(entry.name))
+        .filter(entry => entry.isFile() && /\.(?:test|scale)\.m[jt]s$/.test(entry.name))
         .map(entry => entry.name);
     assert.deepEqual(ungroupedTests, [], 'test files must live in a domain directory');
 
     const scaleEntries = await readdir(path.join(projectRoot, 'test', 'scale'), { withFileTypes: true });
     const ungroupedScaleTests = scaleEntries
-        .filter(entry => entry.isFile() && entry.name.endsWith('.scale.mjs'))
+        .filter(entry => entry.isFile() && /\.scale\.m[jt]s$/.test(entry.name))
         .map(entry => entry.name);
     assert.deepEqual(ungroupedScaleTests, [], 'scale tests must live in a domain directory');
 });
@@ -68,26 +79,27 @@ test('source and tests stay organized by owning domain', async () => {
 // lint script and the ESLint browser-globals block both enumerate directories
 // by hand, and a new page surface is easy to add to neither.
 test('every page-local bundle source is linted like shared source', async () => {
-    const pageLocalFiles = [...new Set(
-        ENTRIES.flatMap(entry => entry.sources)
-            .map(name => resolvePageSource(name))
-            .filter(file => !file.startsWith(path.join(root, 'src') + path.sep)),
-    )].sort();
+    const pageLocalFiles = (await runtimeSourceFiles()).filter(file => !file.startsWith(path.join(projectRoot,'src') + path.sep));
     assert.ok(pageLocalFiles.length > 0, 'expected page-local bundle sources to exist');
 
     const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
     const lintTargets = packageJson.scripts.lint.split(/\s+/).slice(1);
     const unlintedDirectories = [...new Set(pageLocalFiles
-        .map(file => path.relative(root, file).split(path.sep)[0])
+        .map(file => path.relative(projectRoot, file).split(path.sep)[0])
         .filter(directory => !lintTargets.includes(directory)))].sort();
     assert.deepEqual(unlintedDirectories, [],
         'lint:js must pass every page-local bundle directory to ESLint');
 
     const eslint = new ESLint({ cwd: projectRoot });
-    for (const file of pageLocalFiles) {
+    const typedProbes = AUTHORED_SOURCE_ROOTS.filter(directory => directory !== 'src').map(directory => path.join(projectRoot,directory,'coverage-probe.ts'));
+    for (const file of [...pageLocalFiles,...typedProbes]) {
         const config = await eslint.calculateConfigForFile(file);
-        const relative = path.relative(root, file);
-        assert.equal(config.rules?.['no-undef']?.[0], 2, `${relative} must be checked for undeclared names`);
+        const relative = path.relative(projectRoot, file);
+        assert.ok(config, `${relative} must have lint configuration`);
+        if (/\.[cm]?tsx?$/.test(file)) {
+            assert.equal(config.rules?.['no-undef']?.[0], 0, `${relative} delegates undeclared names to TypeScript`);
+            assert.equal(config.rules?.['@typescript-eslint/no-unused-vars']?.[0], 2, `${relative} must use typed lint rules`);
+        } else assert.equal(config.rules?.['no-undef']?.[0], 2, `${relative} must be checked for undeclared names`);
         assert.equal(config.rules?.eqeqeq?.[0], 2, `${relative} must be checked for loose equality`);
         assert.equal(config.languageOptions?.globals?.window, false,
             `${relative} must resolve browser globals`);
@@ -135,7 +147,7 @@ test('a failed build-tree publication restores the complete prior generation', a
         await assert.rejects(publishBuildTree({
             candidateDir,
             targetDir,
-            renameTree: async (...args) => {
+            renameTree: async (...args: Parameters<typeof rename>) => {
                 renames++;
                 if (renames === 2) throw new Error('PUBLISH_FAILURE_SENTINEL');
                 return rename(...args);
@@ -162,7 +174,7 @@ test('publishing a complete build tree removes stale outputs as one generation',
     try {
         await publishBuildTree({ candidateDir, targetDir });
         assert.equal(await readFile(path.join(targetDir, 'generation.txt'), 'utf8'), 'complete\n');
-        await assert.rejects(readFile(path.join(targetDir, 'stale.js')), error => error.code === 'ENOENT');
+        await assert.rejects(readFile(path.join(targetDir, 'stale.js')), missing);
         assert.deepEqual(await readdir(temporaryRoot), ['dist']);
     } finally {
         await rm(temporaryRoot, { recursive: true, force: true });
@@ -264,7 +276,7 @@ test('Firefox mirrors a completed build before exposing its reload signal', asyn
         );
         await assert.rejects(
             readFile(path.join(prepared.sourceDir, 'content', 'stale.js')),
-            error => error.code === 'ENOENT',
+            missing,
         );
     } finally {
         await prepared.cleanup();
@@ -273,7 +285,8 @@ test('Firefox mirrors a completed build before exposing its reload signal', asyn
 });
 
 test('failed Firefox generations preserve the complete prior tree and token', async t => {
-    const cases = [
+    interface CasePaths {distDir: string; sourceDir: string}
+    const cases: {name: string; prepare?: (paths: CasePaths) => Promise<unknown>; options: (paths: CasePaths) => Partial<SyncOptions>; pattern: RegExp}[] = [
         {
             name: 'nested copy',
             options: () => ({
@@ -337,7 +350,7 @@ test('failed Firefox generations preserve the complete prior tree and token', as
             options: () => {
                 let renames = 0;
                 return {
-                    renameTree: async (...args) => {
+                    renameTree: async (...args: Parameters<typeof rename>) => {
                         renames++;
                         if (renames === 2) throw new Error('PUBLISH_RENAME_FAILURE_SENTINEL');
                         if (renames === 3) throw new Error('ROLLBACK_RENAME_FAILURE_SENTINEL');
@@ -408,7 +421,7 @@ test('failed Firefox generations preserve the complete prior tree and token', as
                 );
                 await assert.rejects(
                     readFile(path.join(prepared.sourceDir, 'nested', 'new.js')),
-                    error => error.code === 'ENOENT',
+                    missing,
                 );
                 const leftovers = (await readdir(temporaryRoot))
                     .filter(name => name.startsWith('.better-peakbagger-firefox-generation-')

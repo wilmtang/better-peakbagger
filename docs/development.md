@@ -74,6 +74,19 @@ conversion must also update the relevant source guards and watch coverage from
 [the adoption plan](plans/modern-stack-adoption.md). This setup does not install
 Svelte or replace existing runtime owners.
 
+Repository-wide runtime policy checks use
+[test/helpers/runtime-sources.mts](../test/helpers/runtime-sources.mts), which
+recursively discovers the build's `AUTHORED_SOURCE_ROOTS` rather than maintaining
+another directory list. It includes JavaScript, TypeScript and Svelte source,
+excludes declaration files and generated/vendor directories, and keeps test
+fixtures outside production discovery. TypeScript syntax is erased alongside
+raw text for policy matching; Svelte script blocks receive the same treatment
+while template handlers remain visible in the raw scan. The actual policy
+functions live in [source-policies.mts](../test/helpers/source-policies.mts),
+shared by the repository checks and failing fixture tests. Reviewed settings
+read counts and module-specific exceptions must be updated explicitly when an
+owner changes. Svelte compilation and the build-watcher work remain separate.
+
 `npm run typecheck` checks separate browser/Node projects without emitting files.
 The current Chrome definitions include the cross-browser `browser` alias; do not
 install conflicting global definitions or assume these types prove Firefox API
@@ -279,7 +292,7 @@ use this only with the isolated fixture verifiers.
 ## Commands
 
 `package.json` is strict JSON and cannot carry comments. This table is the
-complete command reference; `test/project/development.test.mjs` fails when a
+complete command reference; `test/project/development.test.mts` fails when a
 script is added or removed without updating it.
 
 | Command | What it does |
@@ -607,7 +620,7 @@ build config does not ship.
 ### Testing a module
 
 - **Pure logic** (no DOM/chrome/vendor globals): `import` it directly in a
-  `test/<domain>/*.test.mjs` and call it. Set any ambient browser global the
+  `test/<domain>/*.test.mts` and call it. Set any ambient browser global the
   module reads (`DOMParser`, `location`, …) from a throwaway jsdom.
 - **Content-script behaviour**: evaluate the *built bundle* into a jsdom page
   with `evalBundle` from `test/helpers/load-page.mjs`. This runs exactly what

@@ -18,7 +18,9 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
-import { walkFiles } from '../helpers/walk-files.mts';
+
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { settingsDefaultFindings } from '../helpers/source-policies.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -42,7 +44,7 @@ test('every unit override shares validation and invalid values inherit the defau
 });
 
 test('display preferences default on, retain explicit opt-outs and reject non-booleans', () => {
-    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'showSummitCloud']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'showSummitCloud'] as const) {
         assert.equal(Schema.DEFAULTS[key], true);
         assert.equal(Schema.clean({})[key], true);
         assert.equal(Schema.clean({ [key]: false })[key], false);
@@ -76,7 +78,7 @@ test('peak-card layout uses bounded identities and independent boolean disclosur
     assert.equal(clean.peakSunCollapsed, true); assert.equal(clean.peakSnowCollapsed, false);
     assert.deepEqual(Schema.clean(clean), clean);
     assert.notEqual(Schema.clean({}).peakCardOrder, Schema.DEFAULTS.peakCardOrder);
-    for (const key of ['peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed', 'peakCloudCollapsed']) {
+    for (const key of ['peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed', 'peakCloudCollapsed'] as const) {
         assert.equal(Schema.clean({ [key]: true })[key], true);
         for (const value of [null, 0, 'false', [], {}]) assert.equal(Schema.clean({ [key]: value })[key], Schema.DEFAULTS[key]);
     }
@@ -260,31 +262,9 @@ test('the storage writer and the page-world readers resolve a value identically'
 });
 
 test('known route, viewport, and theme defaults and bounds stay schema-owned', async () => {
-    // This is the concrete regression this scan prevents: these route,
-    // viewport, and theme values once lived in multiple files and drifted.
-    const sourceRoot = path.join(root, 'src');
-    const sources = (await walkFiles(sourceRoot, file => file.endsWith('.js')))
-        .filter(file => path.basename(file) !== 'settings-schema.js');
-    assert.ok(sources.length >= 15, 'expected the src module set to be present');
-
-    const banned = [
-        { pattern: /#d9483b/i, what: 'the default route color' },
-        { pattern: /casingWidth:\s*9\b/, what: 'the default casing width' },
-        { pattern: /\b(?:1,\s*12|3,\s*20|240,\s*720)\b/, what: 'a route/viewport bound pair' },
-        { pattern: /\blet\s+pref\s*=\s*['"]system['"]/, what: 'the default theme preference' },
-        { pattern: /\b(?:showSunMoon|showWeather|showSnotel)\s*:\s*(?:true|false)\b/, what: 'a section display default' },
-        { pattern: /\['BLM',\s*'USFS',\s*'FED',\s*'STAT',\s*'LOC',\s*'TRIB',\s*'CROWN'/, what: 'the default land type selection' },
-    ];
-
-    const leaks = [];
-    for (const file of sources) {
-        const text = await readFile(file, 'utf8');
-        for (const { pattern, what } of banned) {
-            if (pattern.test(text)) leaks.push(`${path.relative(root, file)} hardcodes ${what}`);
-        }
-    }
-    assert.deepEqual(leaks, [],
-        `these belong in src/settings/settings-schema.js:\n${leaks.join('\n')}`);
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15, 'expected the authored runtime module set');
+    assert.deepEqual(sources.flatMap(settingsDefaultFindings), []);
 });
 
 test('provider and filter lists validate duplicates, unknown IDs, and explicit all-off', () => {
@@ -307,14 +287,12 @@ test('planning link order removes unknown and duplicate IDs and fills missing sl
     assert.notEqual(Schema.clean({}).peakLinkOrder, Schema.DEFAULTS.peakLinkOrder);
 });
 
-
 test('peak-card columns reject unknown destinations and return independent validated maps', () => {
     const cleaned = Schema.clean({ peakCardColumns: { sun: 'details', weather: 'unknown', snow: 'details-bottom', unknown: 'details' } });
     assert.deepEqual(cleaned.peakCardColumns, { sun: 'details', weather: 'map', cloud: 'map', snow: 'details-bottom' });
     assert.deepEqual(Schema.clean(cleaned), cleaned);
     assert.notEqual(Schema.clean({}).peakCardColumns, Schema.DEFAULTS.peakCardColumns);
 });
-
 
 test('device-local land preferences preserve legacy defaults and explicit empty selection', () => {
     assert.deepEqual(Schema.mapOverlayPreferences({ land: 35 }).landTypes, [...Schema.MAP_LAND_TYPE_IDS]);

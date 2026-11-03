@@ -4,12 +4,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { JSDOM } from '../helpers/test-dom.mts';
 
 import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.js';
-import { walkFiles } from '../helpers/walk-files.mts';
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { cloudflareFindings } from '../helpers/source-policies.mts';
 
 test('managed-challenge detection matches peakbagger-cli response evidence', () => {
     assert.equal(Cloudflare.isManagedChallenge(403, { 'cf-mitigated': 'challenge' }, '<html/>'), true);
@@ -46,7 +46,7 @@ test('document challenge detection uses page evidence, not report prose or backg
         ['<title>Ascent of Mount Rainier</title><p>Just a moment... Cloudflare verified the browser.</p>', false],
         ['<title>Ascent of Mount Rainier</title><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script>', false],
         ['<title>Just a moment on the summit</title>', false],
-    ]) {
+    ] as const) {
         const env = new JSDOM(html);
         try { assert.equal(Cloudflare.isChallengeDocument(env.window.document), expected, html); }
         finally { env.window.close(); }
@@ -54,12 +54,9 @@ test('document challenge detection uses page evidence, not report prose or backg
 });
 
 test('runtime Cloudflare signatures and Peakbagger human-check copy remain centralized', async () => {
-    const sourceRoot = fileURLToPath(new URL('../../src/', import.meta.url));
-    const files = (await walkFiles(sourceRoot, file => file.endsWith('.js')))
-        .filter(file => !['peakbagger-cloudflare.js', 'provider-response.js'].includes(path.basename(file)));
-    const source = (await Promise.all(files.map(file => readFile(file, 'utf8')))).join('\n');
-    assert.doesNotMatch(source, /cf-mitigated|_cf_chl_opt|cf-chl-|challenge-platform|Just a moment/);
-    assert.doesNotMatch(source, /Peakbagger is asking for a human check|Complete check on Peakbagger/);
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15);
+    assert.deepEqual(sources.flatMap(cloudflareFindings), []);
 
     const providerClassifier = await readFile(
         fileURLToPath(new URL('../../src/capture/provider-response.js', import.meta.url)),

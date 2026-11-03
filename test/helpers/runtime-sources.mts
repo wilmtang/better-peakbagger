@@ -19,8 +19,8 @@ export async function runtimeSourceFiles(repositoryRoot = root): Promise<string[
 }
 export interface RuntimeSource { file: string; text: string; variants: string[]; }
 export function sourceVariants(file: string, text: string): string[] {
-    const transpile = (code: string) => ts.transpileModule(code, {fileName: 'policy.ts', compilerOptions: {
-        target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, removeComments: false,
+    const transpile = (code: string) => ts.transpileModule(code, {fileName: file.endsWith('.tsx') ? 'policy.tsx' : 'policy.ts', compilerOptions: {
+        target: ts.ScriptTarget.ESNext, jsx: ts.JsxEmit.Preserve, module: ts.ModuleKind.ESNext, removeComments: false,
     }}).outputText;
     // Preserve the raw check as well: formatting-sensitive policies must not
     // lose evidence while TypeScript annotations and generic calls are erased.
