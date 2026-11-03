@@ -31,8 +31,9 @@ Generated output and upstream third-party code retain their required formats;
 the exact excluded roots are in `scripts/typescript-policy.mts`. An authored
 tool-required JavaScript exception needs a narrow documented policy change,
 not a general exclusion of scripts or tests. Follow the compatibility checklist
-in `docs/plans/modern-stack-adoption.md` for runtime conversions; the shared
-source-guard/watch work and Svelte setup remain separate prerequisites. Svelte
+in `docs/plans/modern-stack-adoption.md` for runtime conversions and record
+source-guard/watch coverage gaps until its shared coverage work is complete.
+Svelte compilation and UI integration remain separate prerequisites. Svelte
 is not enabled by this policy; when enabled, component scripts must use TypeScript.
 
 Run `npm run typecheck`, `npm run lint`, and the appropriate tests. Before
@@ -42,9 +43,11 @@ complete PR/push diff, so an intermediate commit or skipped local hook cannot
 retain modified JavaScript in the final change.
 
 For every new or changed map layer, evaluate point inspection. Applicable enabled
-layers must implement the typed right-click information contract; explicitly
-document non-applicable layers. Queries must respect selected subtypes, provider
-coverage, cancellation, cooldowns and privacy permissions. Use compact labelled
+layers must implement `InspectableMapLayer.rightClick()` in
+`src/maps/map-layer-inspection.ts`. Register each built-in layer in
+`POINT_INSPECTION_DECISIONS` and its query factory, or record why it is not
+applicable; the registry test must cover every schema layer. Queries must
+respect selected subtypes, provider coverage, cancellation, cooldowns and privacy permissions. Use compact labelled
 readings, distinguish no data from zero, and keep popup geometry stable while
 asynchronous results arrive. Legends must match the renderer/service actually
 used, with readable swatches and source/date attribution.

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { createMapLayerControl } from '../../src/maps/map-layer-control.js';
+import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { readSentinelCooldown } from '../../scripts/verify-terrain-provider-ui.mjs';
 

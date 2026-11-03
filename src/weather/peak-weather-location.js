@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { readMapPoint } from '../maps/map-location-menu.js';
+import { readMapPoint } from '../maps/map-location-menu.ts';
 
 export const weatherLocationLabel = point => `${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}`;
 

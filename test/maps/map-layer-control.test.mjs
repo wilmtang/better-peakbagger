@@ -5,7 +5,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { publicLandInfo } from '../../src/maps/map-overlay-providers.js';
-import { createMapLayerControl } from '../../src/maps/map-layer-control.js';
+import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
 import { readSnowDepthLegend } from '../../src/maps/snow-depth.js';
 import { snowDepthLegend } from '../helpers/snow-depth-fixture.mjs';
 

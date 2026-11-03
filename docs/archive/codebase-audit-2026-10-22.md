@@ -167,7 +167,7 @@ were stale; the closure ledger records what was actually changed.
   - `src/maps/sentinel-layer.js:32-245` (`createSentinelLayer`, 214 lines)
   - `docs/mountain-local-time.md:28`
 - **Root Cause:**
-  Commit `b900d73b` unified the 2D and 3D map overlays into `src/maps/map-layers.js`, `src/maps/map-layer-control.js`, `src/maps/map-overlay-leaflet.js`, `src/maps/sentinel-session.js`, and `src/maps/snotel-map-leaflet.js`. An `esbuild` metafile trace across all 50 `ENTRIES` and `COPY_FILES` in `scripts/build-config.mjs` confirms:
+  Commit `b900d73b` unified the 2D and 3D map overlays into `src/maps/map-layers.js`, `src/maps/map-layer-control.ts`, `src/maps/map-overlay-leaflet.js`, `src/maps/sentinel-session.js`, and `src/maps/snotel-map-leaflet.js`. An `esbuild` metafile trace across all 50 `ENTRIES` and `COPY_FILES` in `scripts/build-config.mjs` confirms:
   - `src/maps/sentinel-map.js`, `src/maps/sentinel.css`, and `src/maps/peak-snow-map.js` are never bundled or copied into `dist/`.
   - `src/maps/sentinel-layer.js` is imported by `src/maps/sentinel-session.js` solely for the 17-line `sentinelCaptureChoice` helper; its 214-line `createSentinelLayer` export is tree-shaken out of every `dist/` bundle and is only exercised by `test/maps/sentinel.test.mjs`.
   - Leaving these dead modules in `src/maps/` masked **F1** during code search and creates maintenance traps where fixes can be applied to unshipped files.

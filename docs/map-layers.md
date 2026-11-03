@@ -439,7 +439,7 @@ scroll callbacks update dropdown viewport limits and visibility. Document
 coordinates survive asynchronous status paints and the dark theme's positioned body.
 The overlay bootstrap does not depend on GPX readiness or 3D eligibility.
 
-The presentation lives in `src/maps/map-layer-control.js`. State and opacity
+The presentation lives in `src/maps/map-layer-control.ts`. State and opacity
 validation use `src/settings/settings-schema.js`; opacity and land-type choices
 use portable settings through a separate narrow bridge, never the analyzer
 settings-write allowlist. They travel through browser sync, settings files and
@@ -678,3 +678,83 @@ hidden Chrome and Firefox, using synthetic keys and HTTPS fixture providers
 without CORS headers. Disposable test manifests pregrant the fixture host;
 these runs do not establish native permission-prompt behavior or compatibility
 with every provider's billing/referrer policies.
+
+## Right-click layer readings
+
+The shared location popup keeps elevation and coordinates, followed by one
+label/value row for each applicable enabled overlay. Only visible overlays
+(nonzero opacity, sufficient zoom and provider coverage) participate. Disabled
+layers make no point requests. Changing layer settings, dismissing the popup,
+selecting another point or disposing its map cancels the old transaction.
+Rows reserve their possible wrapping before positioning, so loading, success
+and failure do not move the forecast action. Provider details are available in
+the row's tooltip and accessible reading; no extra action or disclosure is added.
+
+- **Snow depth** identifies NOAA ArcGIS layer 3 and shows its displayed depth
+  band, not an unverified conversion of `Service Pixel Value`. No estimate is
+  distinct from the lowest `0–0.39 in` band. No current legend means unavailable.
+- **Public lands** queries US PAD-US fee ownership and management, respecting
+  selected categories, or regional Alberta ownership classes. Unmapped areas
+  are unknown; ownership does not establish access or camping permission.
+  ParcelMap BC point details remain unavailable: the existing optional image
+  transport must not be repurposed into arbitrary parcel queries.
+- **Slope angle** requests the same USGS `Slope Degrees` function used by the
+  shading, validates 0–90 degrees, and labels it an estimate.
+- **Sentinel-2** has no scalar point value; its capture details stay in Overlays.
+  **SNOTEL** and **Wildfires** retain their station/incident popups.
+
+The typed `InspectableMapLayer` contract in
+[src/maps/map-layer-inspection.ts](../src/maps/map-layer-inspection.ts) requires
+`applicable()` and `rightClick()`. The presentation control registers only a
+document-local state reader; it does no networking. The menu selects the source
+whose measured map contains the click. Every schema layer must have a query
+implementation or a reason in `POINT_INSPECTION_DECISIONS`; the regression test
+checks both the schema and factory. Future custom imagery sources need their own
+explicit point-information decision before adding a query.
+
+Point requests use fixed public endpoints, omit credentials/referrers, reject
+redirects, enforce an eight-second deadline and a 64 KiB body limit, and retain
+429 cooldowns in page memory. Replies are validated; partial parcel results do
+not imply complete ownership information. Nothing is written to storage.
+
+### Why the snow legends differ
+
+Peakbagger's native NOAA map in the reported screenshot groups trace snow
+through 2 inches, then uses 2–4, 4–8 and other breaks. This overlay uses NOAA's
+separate ArcGIS Snow Analysis depth renderer, whose published legend includes
+0–0.39 and 0.39–2.0 inches and different higher breaks. The palette and bins must
+match the actual tiles, so copying the native map's labels would misrepresent
+this overlay. See the [NOAA ArcGIS legend](https://mapservices.weather.noaa.gov/raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer/legend?f=pjson)
+and [depth layer metadata](https://mapservices.weather.noaa.gov/raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer/3?f=pjson).
+Two equal-width legend columns now use full-width 18-pixel color bars instead
+of 10-pixel chips. The NOAA analysis time remains above the legend.
+
+Run `node scripts/verify-layer-inspection.mts chrome` and the matching `firefox`
+command for hidden HTTPS component fixtures. They exercise pending, success,
+error, keyboard retry, layer invalidation and full-width color bars at desktop
+and narrow widths, both themes and enlarged text. Public provider replies and
+elevation are stubbed; real extension loading and rendering are checked
+separately by the browser and snow-depth verifiers.
+
+### Verification and boundaries (November 3, 2026)
+
+- **Fixed and verified:** strict TypeScript checks, repository ESLint, web-ext
+  lint with its eight existing owned warnings, and focused regression tests.
+  Hidden Chrome 156.0.8078.4 and Playwright Firefox 157.0 each passed eight
+  component cases at 1280×900 and 375×900, light/dark, normal/200% text, plus
+  a bundled Leaflet right-click case. Geometry checks cover pending, success,
+  error and retry; the original stylesheet fails the full-width swatch assertion.
+  Real-extension snow checks passed eleven cases each in Chrome 156 and Firefox
+  159 at 1440×1000 and 375×1000 using Apple M3 Pro Metal/ANGLE, native and 3D.
+- **Intentionally not changed:** BC parcel queries, imagery point values, and
+  the existing SNOTEL/incident detail popups. General TypeScript source-walker
+  migration remains tracked in the adoption plan.
+- **Not fully proven:** providers are stubbed in browser fixtures; no native
+  focus/window-placement behavior or minimum-supported-browser run is claimed.
+  A bounded public PAD-US query confirmed the field names and ownership data;
+  the live USGS slope probe timed out and correctly remains a no-data risk.
+  The full test snapshot passed 3,863/3,866 with the same two unregistered
+  snow-legend fixture failures and missing script-inventory entry recorded in
+  the adoption plan. The broad Chrome verifier stopped at Garmin navigation;
+  the older control verifiers stopped at their iframe-theme fixture wait in
+  both browsers. Those gates are not reported as green.

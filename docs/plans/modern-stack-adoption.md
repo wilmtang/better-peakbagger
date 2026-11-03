@@ -483,3 +483,14 @@ replacement and WXT cutover can then proceed independently when justified.
 Source report: the externally supplied
 `ts_svelte_vite_migration_and_stack_report.md`. The pasted attachment was its
 review summary; the complete report was also read during this investigation.
+
+### Bounded map-layer TypeScript adoption
+
+The map-layer control and location popup are now authored as TypeScript, with a
+new typed layer point-inspection interface and validated provider readers.
+Their legacy callers change only filename references. This establishes a
+bounded plain-DOM runtime use of TypeScript; it does not complete the general
+source-walker/watch prerequisites or enable Svelte. The affected map directory
+is already watched. The seven existing JavaScript-only policy scans still need
+the shared-runtime coverage work in 1B; focused point-reader tests cover the new
+requests, permissions, bounds and cancellation in this feature.

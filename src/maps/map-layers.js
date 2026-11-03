@@ -3,7 +3,7 @@
 
 import { createCustomOverlayControl } from './custom-overlay-control.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
-import { createMapLayerControl } from './map-layer-control.js';
+import { createMapLayerControl } from './map-layer-control.ts';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { createSnowDepthMetadata, SNOW_DEPTH_LEGEND } from './snow-depth.js';
@@ -15,7 +15,7 @@ import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
-import { createMapLocationMenu } from './map-location-menu.js';
+import { createMapLocationMenu } from './map-location-menu.ts';
 import { bindMapLocationMenu } from './peak-weather-map.js';
 
 const MAP_PAGES = /\/(?:ascent|peak|bigmap)\.aspx$/i;

@@ -190,3 +190,12 @@ independent of the existing targets.
 - [verify-settings-fragments.mjs](verify-settings-fragments.mjs) — real packaged Chrome/Firefox Settings anchors, refresh, keyboard navigation, Back/Forward and manual reading positions; run `npm run verify -- settings-navigation`.
 - [verify-signed-out.mjs](verify-signed-out.mjs) — signed-out recovery and held filter retries in Chrome/Firefox; run with `npm run verify -- signed-out`.
 
+
+- [verify-layer-inspection.mts](verify-layer-inspection.mts) — hidden Chrome/Firefox
+  HTTPS fixtures for compact right-click overlay readings, pending/success/error
+  geometry, keyboard retry, layer invalidation and full-width legend swatches.
+  Run with exactly `chrome` or `firefox`; `BPB_INSPECTION_SCREENSHOT_DIR` retains
+  the desktop/narrow, light/dark and enlarged-text renders.
+
+  `BPB_INSPECTION_CSS` can select a read-only historical stylesheet to prove that
+  the swatch regression assertion rejects the previous small samples.

@@ -7,19 +7,41 @@ import { createWildfireList } from './wildfire-details.js';
 import { WILDFIRE_MIN_ZOOM, WILDFIRE_SOURCE } from './wildfire-core.js';
 import { SENTINEL_MIN_ZOOM } from './sentinel-core.js';
 
-const LABELS = { sentinel: 'Sentinel-2', snow: 'Snow depth', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations', wildfire: 'Wildfires' };
-const NAMES = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
-const LAND_GUIDANCE = {
+import { registerLayerInspection, notifyLayerInspection } from './map-layer-inspection.ts';
+import type { LayerControlModel, LayerLegendEntry } from './map-layer-inspection.ts';
+
+const LABELS: Record<string, string> = { sentinel: 'Sentinel-2', snow: 'Snow depth', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations', wildfire: 'Wildfires' };
+const NAMES: Record<string, string> = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
+const LAND_GUIDANCE: Record<string, [string, string]> = {
     blm: ['BLM camping rules', 'https://www.blm.gov/programs/recreation/camping'],
     bc: ['BC Crown land rules', 'https://www2.gov.bc.ca/gov/content/industry/crown-land-water/crown-land/crown-land-uses'],
     ab: ['Alberta camping rules', 'https://www.alberta.ca/camping-on-public-land'],
 };
 
+interface ControlOptions {
+    document: Document; onToggle?: (id: string, enabled: boolean) => void; onOpacity?: (id: string, opacity: number) => void;
+    onCommit?: () => void; onLandTypes?: (types: string[]) => void; onCapture?: (capture: string) => void;
+    onRetry?: (id: string) => void; onOpen?: (open: boolean) => void;
+}
+interface Row {
+    row: HTMLDivElement; checkbox: HTMLInputElement; disclosure: HTMLButtonElement; value: HTMLSpanElement;
+    amount: HTMLSpanElement; spinner: HTMLSpanElement; rowStatus: HTMLSpanElement;
+}
+interface Detail {
+    fireList: ReturnType<typeof createWildfireList> | null; analysis: HTMLParagraphElement | null; detail: HTMLElement;
+    slider: HTMLInputElement | null; output: HTMLOutputElement | null; capture: HTMLSelectElement | null;
+    legend: HTMLDivElement; guidance: HTMLDivElement | null; types: HTMLDivElement | null;
+    allTypes: HTMLInputElement | null; typeCount: HTMLSpanElement | null;
+    typeRows: Map<string, {checkbox: HTMLInputElement; only: HTMLButtonElement}>;
+    feedback: HTMLDivElement; status: HTMLSpanElement; retry: HTMLButtonElement;
+    captureKey: string; guidanceKey: string; legendKey: string; typesKey: string; recovering?: boolean; reloading?: boolean;
+}
 // Presentation only. The owner supplies validated state and performs all I/O.
 export function createMapLayerControl({ document: doc, onToggle = () => {}, onOpacity = () => {},
-    onCommit = () => {}, onLandTypes = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {} }) {
+    onCommit = () => {}, onLandTypes = () => {}, onCapture = () => {}, onRetry = () => {}, onOpen = () => {} }: ControlOptions) {
     const win = doc.defaultView;
-    const node = (tag, className, text) => {
+    if (!win) throw new Error('Layer control requires a live document');
+    const node = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
         const element = doc.createElement(tag);
         if (tag === 'select' || tag === 'input') element.setAttribute('form', '');
         if (className) element.className = className;
@@ -30,7 +52,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const trigger = node('button', 'bpb-layers-trigger', 'Overlays'); trigger.type = 'button';
     trigger.setAttribute('aria-expanded', 'false');
     const indicator = node('span', 'bpb-layers-indicator'); indicator.setAttribute('aria-hidden', 'true'); trigger.append(indicator);
-    const chevron = className => {
+    const chevron = (className: string) => {
         const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('class', className); svg.setAttribute('viewBox', '0 0 12 12');
         svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
@@ -44,11 +66,19 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const panel = node('div', 'bpb-layers-panel'); panel.hidden = true;
     const id = `bpb-layers-${Math.random().toString(36).slice(2)}`;
     panel.id = id; trigger.setAttribute('aria-controls', id);
-    const rows = new Map(), details = new Map();
+    const rows = new Map<string, Row>(), details = new Map<string, Detail>();
     const well = node('div', 'bpb-layers-details'); well.hidden = true;
     well.id = `${id}-details`;
     const live = node('span', 'bpb-layers-live'); live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
-    let open = false, expanded = null, rect = null, model = {}, disposed = false, cooldownTimer = null;
+    let open = false, expanded: string | null = null, rect: {left: number; top: number; bottom: number; width: number; height: number} | null = null;
+    let model: LayerControlModel = {}, disposed = false, cooldownTimer: number | undefined;
+    const unregister = registerLayerInspection(doc, { at(point) {
+        if (!rect || element.hidden || !element.isConnected || point.x + win.scrollX < rect.left
+            || point.x + win.scrollX > rect.left + rect.width || point.y + win.scrollY < rect.top || point.y + win.scrollY > rect.bottom) return null;
+        return { state: Schema.mapOverlayState(model.state), landTypes: Schema.mapLandTypes(model.landTypes),
+            statuses: model.statuses || {}, zoom: model.zoom ?? 0, coverage: model.coverage || {} };
+    } });
+    let inspectionKey = '';
     for (const key of Schema.MAP_OVERLAY_IDS) {
         const row = node('div', 'bpb-layers-row'); row.dataset.layer = key;
         const label = node('label', 'bpb-layers-choice');
@@ -69,7 +99,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         detail.dataset.overlay = key;
         detail.setAttribute('aria-label', `${NAMES[key]} settings`);
         if (key !== 'land') detail.append(node('div', 'bpb-layers-detail-title', NAMES[key]));
-        let slider = null, output = null, capture = null;
+        let slider: HTMLInputElement | null = null, output: HTMLOutputElement | null = null, capture: HTMLSelectElement | null = null;
         if (!['snotel', 'wildfire'].includes(key)) {
             const caption = node('label', 'bpb-layers-opacity'); caption.append(node('span', '', 'Opacity'));
             output = node('output'); caption.append(output);
@@ -80,18 +110,18 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             if (key === 'land') {
                 const line = node('div', 'bpb-layers-opacity-line'); line.append(caption, slider, output); detail.append(line);
             } else detail.append(caption, slider, ends);
-            slider.addEventListener('input', () => onOpacity(key, Number(slider.value)));
+            slider.addEventListener('input', () => onOpacity(key, Number(slider!.value)));
             slider.addEventListener('change', () => onCommit());
         }
         if (key === 'sentinel') {
             capture = node('select'); capture.setAttribute('aria-label', 'Sentinel-2 capture');
             capture.addEventListener('change', () => {
-                capture.title = capture.selectedOptions[0]?.title || '';
-                onCapture(capture.value);
+                capture!.title = capture!.selectedOptions[0]?.title || '';
+                onCapture(capture!.value);
             }); detail.append(capture);
         }
-        let types = null, allTypes = null, typeCount = null;
-        const typeRows = new Map();
+        let types: HTMLDivElement | null = null, allTypes: HTMLInputElement | null = null, typeCount: HTMLSpanElement | null = null;
+        const typeRows = new Map<string, {checkbox: HTMLInputElement; only: HTMLButtonElement}>();
         if (key === 'land') {
             const group = node('fieldset', 'bpb-layers-land-types');
             const groupName = node('legend', 'bpb-layers-live', 'Land types'); group.append(groupName);
@@ -102,7 +132,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             types = node('div'); group.append(allRow, types); detail.append(group);
             allTypes.addEventListener('change', () => {
                 const selected = new Set(Schema.mapLandTypes(model.landTypes));
-                for (const type of typeRows.keys()) { if (allTypes.checked) selected.add(type); else selected.delete(type); }
+                for (const type of typeRows.keys()) { if (allTypes!.checked) selected.add(type); else selected.delete(type); }
                 onLandTypes([...selected]);
             });
         }
@@ -121,8 +151,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const retry = node('button', 'bpb-layers-retry', 'Retry'); retry.type = 'button'; retry.hidden = true;
         retry.addEventListener('click', () => {
             const current = model.statuses?.[key];
-            if (model.coverage?.[key] === false || current?.pending || current?.retryAt > Date.now() || current?.permission) return;
-            const recovery = details.get(key); recovery.recovering = true; recovery.reloading = retry.textContent === 'Reload';
+            if (model.coverage?.[key] === false || current?.pending || (current?.retryAt || 0) > Date.now() || current?.permission) return;
+            const recovery = details.get(key)!; recovery.recovering = true; recovery.reloading = retry.textContent === 'Reload';
             // Long errors can make a zoomed menu scroll. Shrinking feedback at
             // activation clamps that scroll and moves the focused action. Hold
             // its current space only for this focused recovery transaction.
@@ -130,7 +160,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             if (height > 0) recovery.feedback.style.minHeight = `${height}px`;
             onRetry(key);
         });
-        retry.addEventListener('blur', () => { const recovery = details.get(key); recovery.recovering = false; recovery.reloading = false; recovery.feedback.style.minHeight = ''; paint(); });
+        retry.addEventListener('blur', () => { const recovery = details.get(key)!; recovery.recovering = false; recovery.reloading = false; recovery.feedback.style.minHeight = ''; paint(); });
         action.append(retry); feedback.append(status, action);
         if (fireList) detail.insertBefore(feedback, fireList.element);
         else if (analysis) detail.insertBefore(feedback, analysis);
@@ -164,8 +194,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const parent = element.offsetParent;
         const parentRect = parent && (parent !== doc.body || win.getComputedStyle(parent).position !== 'static')
             ? parent.getBoundingClientRect() : null;
-        const originX = parentRect ? parentRect.left + win.scrollX + parent.clientLeft - parent.scrollLeft : 0;
-        const originY = parentRect ? parentRect.top + win.scrollY + parent.clientTop - parent.scrollTop : 0;
+        const originX = parentRect ? parentRect.left + win.scrollX + parent!.clientLeft - parent!.scrollLeft : 0;
+        const originY = parentRect ? parentRect.top + win.scrollY + parent!.clientTop - parent!.scrollTop : 0;
         element.style.left = `${left + win.scrollX - originX}px`; element.style.top = `${top - originY}px`;
         panel.style.width = `${Math.min(232, width - 16)}px`;
         panel.style.left = `${Math.min(0, width - 8 - left - Math.min(232, width - 16))}px`;
@@ -175,7 +205,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const paint = () => {
         if (disposed) return;
         win.clearTimeout(cooldownTimer);
-        const nextRetry = Math.min(...Object.values(model.statuses || {}).map(status => status.retryAt).filter(value => value > Date.now()));
+        const nextRetry = Math.min(...Object.values(model.statuses || {}).map(status => status.retryAt || 0).filter(value => value > Date.now()));
         if (Number.isFinite(nextRetry)) cooldownTimer = win.setTimeout(paint, Math.max(1, Math.min(86400000, nextRetry - Date.now() + 1)));
         element.dataset.theme = model.theme === 'dark' ? 'dark' : 'light';
         panel.hidden = !open; well.hidden = !open || !expanded;
@@ -183,29 +213,29 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const state = Schema.mapOverlayState(model.state);
         const landTypes = Schema.mapLandTypes(model.landTypes);
         const landEntries = model.statuses?.land?.legendEntries;
-        const hasLandTypes = landTypes.length > 0 && (!Array.isArray(landEntries) || landEntries.some(entry => landTypes.includes(entry.value)));
-        const needsZoom = key => Number.isFinite(model.zoom) && (key === 'sentinel' ? model.zoom < SENTINEL_MIN_ZOOM
-            : key === 'snow' ? model.zoom < OVERLAY_MIN_ZOOM : key === 'wildfire' ? Math.round(model.zoom) < WILDFIRE_MIN_ZOOM : (key === 'slope' || key === 'land') && Math.round(model.zoom) < OVERLAY_MIN_ZOOM);
+        const hasLandTypes = landTypes.length > 0 && (!Array.isArray(landEntries) || landEntries.some(entry => landTypes.includes(entry.value || '')));
+        const needsZoom = (key: string) => typeof model.zoom === 'number' && (key === 'sentinel' ? (model.zoom ?? 0) < SENTINEL_MIN_ZOOM
+            : key === 'snow' ? (model.zoom ?? 0) < OVERLAY_MIN_ZOOM : key === 'wildfire' ? Math.round(model.zoom ?? 0) < WILDFIRE_MIN_ZOOM : (key === 'slope' || key === 'land') && Math.round(model.zoom ?? 0) < OVERLAY_MIN_ZOOM);
         const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled && model.coverage?.[key] !== false);
         const failed = active.some(key => (key !== 'land' || hasLandTypes) && !needsZoom(key) && (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
         trigger.setAttribute('aria-label', `Overlays${active.length ? `, ${active.length} active` : ''}${failed ? ', overlay unavailable' : ''}`);
         for (const key of Schema.MAP_OVERLAY_IDS) {
-            const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
+            const row = rows.get(key)!, detail = details.get(key)!, current = state[key], status = model.statuses?.[key] || {};
             const unavailable = model.coverage?.[key] === false;
             const noTypes = key === 'land' && !hasLandTypes;
             const shown = !unavailable && current.enabled && !noTypes && (key === 'snotel' || current.opacity > 0);
             const zoomedOut = shown && needsZoom(key);
             const kind = unavailable ? 'coverage' : !shown ? '' : zoomedOut ? 'zoom' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
-            const cooldown = status.retryAt > Date.now();
+            const cooldown = (status.retryAt || 0) > Date.now();
             const summary = kind === 'loading' ? status.permission ? 'Waiting' : 'Loading'
                 : kind === 'saved' ? 'Refresh failed' : kind === 'zoom' ? 'Zoom in' : kind === 'permission' ? status.partial ? 'Partly loaded' : 'Needs access'
                     : kind === 'coverage' ? 'No coverage' : kind === 'error' ? cooldown ? 'Service busy' : status.captureError ? 'Search failed' : status.partial ? 'Partly loaded' : 'Couldn’t load' : '';
             const heldRecovery = shown && !zoomedOut && detail.recovering && doc.activeElement === detail.retry && !status.permission;
             const recovered = heldRecovery && !status.pending && !status.error;
-            row.row.hidden = model.available && !model.available.includes(key);
+            row.row.hidden = !!model.available && !model.available.includes(key);
             row.row.dataset.unavailable = String(unavailable);
-            if (unavailable && [row.checkbox, detail.slider, detail.capture].includes(doc.activeElement)) row.disclosure.focus({ preventScroll: true });
+            if (unavailable && [row.checkbox, detail.slider, detail.capture].some(item => item === doc.activeElement)) row.disclosure.focus({ preventScroll: true });
             row.checkbox.checked = !unavailable && current.enabled; row.checkbox.disabled = unavailable || status.unavailable === true;
             row.disclosure.setAttribute('aria-expanded', String(open && expanded === key));
             row.row.dataset.selected = String(open && expanded === key);
@@ -217,32 +247,32 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             detail.detail.hidden = !open || expanded !== key || row.row.hidden;
             if (detail.slider) {
                 detail.slider.value = String(current.opacity); detail.slider.disabled = unavailable || !current.enabled;
-                detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent opacity`); detail.output.value = `${current.opacity}%`;
+                detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent opacity`); detail.output!.value = `${current.opacity}%`;
             }
             if (detail.analysis) {
-                const time = Number.isSafeInteger(status.analysisTime) && status.analysisTime > 0 && status.analysisTime <= Date.now() + 300000
-                    ? new Date(status.analysisTime).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) + ' UTC' : '';
+                const time = Number.isSafeInteger(status.analysisTime) && (status.analysisTime || 0) > 0 && (status.analysisTime || 0) <= Date.now() + 300000
+                    ? new Date(status.analysisTime || 0).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) + ' UTC' : '';
                 detail.analysis.textContent = time ? `${status.metadataError ? 'Last known' : 'Latest NOAA'} analysis: ${time}`
                     : status.metadataPending ? 'Checking analysis time…' : 'Analysis time unavailable.';
-                detail.analysis.title = time ? new Date(status.analysisTime).toISOString() : '';
+                detail.analysis.title = time ? new Date(status.analysisTime || 0).toISOString() : '';
             }
             if (detail.fireList) {
                 const focused = doc.activeElement, ownedFocus = detail.fireList.element.contains(focused);
                 detail.fireList.update(shown ? status.fires || [] : []);
-                if (ownedFocus && !focused.isConnected) row.disclosure.focus({ preventScroll: true });
+                if (ownedFocus && !focused?.isConnected) row.disclosure.focus({ preventScroll: true });
             }
             const legendKey = JSON.stringify([status.legendEntries || [], status.legend || '', key === 'snow' && status.metadataError === true]);
             if (detail.types) {
-                const entries = (status.legendEntries || []).filter(entry => Schema.MAP_LAND_TYPE_IDS.includes(entry.value));
+                const entries = (status.legendEntries || []).filter((entry): entry is LayerLegendEntry & {value: string} => typeof entry.value === 'string' && Schema.MAP_LAND_TYPE_IDS.includes(entry.value));
                 const typesKey = JSON.stringify(entries);
                 if (typesKey !== detail.typesKey) {
-                    const focused = [...detail.typeRows].find(([, item]) => [item.checkbox, item.only].includes(doc.activeElement));
+                    const focused = [...detail.typeRows].find(([, item]) => [item.checkbox, item.only].some(control => control === doc.activeElement));
                     detail.typesKey = typesKey; detail.typeRows.clear();
                     detail.types.replaceChildren(...entries.map(entry => {
                         const item = node('div', 'bpb-layers-land-type'); item.dataset.landType = entry.value;
                         const label = node('label'), checkbox = node('input'); checkbox.type = 'checkbox';
                         checkbox.setAttribute('aria-label', `${entry.label} land`);
-                        const swatch = node('i'); swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
+                        const swatch = node('i'); swatch.style.backgroundColor = entry.color || ''; swatch.setAttribute('aria-hidden', 'true');
                         label.append(checkbox, swatch, doc.createTextNode(entry.label));
                         const only = node('button', 'bpb-layers-land-only', 'Only'); only.type = 'button'; only.setAttribute('aria-label', `Show only ${entry.label} land`);
                         checkbox.addEventListener('change', () => {
@@ -253,13 +283,13 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                         only.addEventListener('click', () => onLandTypes([entry.value]));
                         detail.typeRows.set(entry.value, { checkbox, only }); item.append(label, only); return item;
                     }));
-                    if (focused) (unavailable || !entries.length ? row.disclosure : detail.typeRows.get(focused[0])?.checkbox || detail.allTypes).focus({ preventScroll: true });
+                    if (focused) (unavailable || !entries.length ? row.disclosure : detail.typeRows.get(focused[0])?.checkbox || detail.allTypes!).focus({ preventScroll: true });
                 }
-                const count = entries.filter(entry => landTypes.includes(entry.value)).length;
-                detail.allTypes.checked = count > 0 && count === entries.length;
-                detail.allTypes.indeterminate = count > 0 && count < entries.length;
-                detail.typeCount.textContent = `${count} of ${entries.length}`;
-                detail.allTypes.disabled = unavailable || !current.enabled || !entries.length;
+                const count = entries.filter(entry => landTypes.includes(entry.value || '')).length;
+                detail.allTypes!.checked = count > 0 && count === entries.length;
+                detail.allTypes!.indeterminate = count > 0 && count < entries.length;
+                detail.typeCount!.textContent = `${count} of ${entries.length}`;
+                detail.allTypes!.disabled = unavailable || !current.enabled || !entries.length;
                 for (const [value, item] of detail.typeRows) {
                     item.checkbox.checked = landTypes.includes(value);
                     item.checkbox.disabled = item.only.disabled = unavailable || !current.enabled;
@@ -269,16 +299,16 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 detail.legendKey = legendKey;
                 detail.legend.replaceChildren(...(key === 'land' ? [] : status.legendEntries || []).map(entry => {
                     const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');
-                    swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
+                    swatch.style.backgroundColor = entry.color || ''; swatch.setAttribute('aria-hidden', 'true');
                     if (key === 'snow' && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(entry.image || '')) swatch.style.backgroundImage = `url("${entry.image}")`;
                     item.append(swatch, doc.createTextNode(entry.label)); return item;
-                }), node('div', 'bpb-layers-legend-caption', (key === 'snow' && status.metadataError ? 'Depth legend could not be refreshed. ' : '') + (status.legend || '')));
+                }), node('div', 'bpb-layers-legend-caption', (key === 'snow' && status.metadataError ? 'Depth legend could not be refreshed. ' : '') + (status.legend || '') + (key === 'snow' ? ' This ArcGIS layer uses different color breaks from Peakbagger’s native NOAA map.' : '')));
                 if (key === 'wildfire') { const link = node('a', '', 'Official NIFC source'); link.href = WILDFIRE_SOURCE; link.target = '_blank'; link.rel = 'noopener noreferrer'; detail.legend.append(link); }
             }
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
-            detail.status.textContent = unavailable ? 'No coverage here.' : !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
+            detail.status.textContent = unavailable ? 'No coverage here.' : !current.enabled ? status.unavailable ? status.message || '' : 'Turn on to show this overlay.'
                 : noTypes ? 'Select a land type.' : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in for ${key === 'wildfire' ? 'reported fires' : key === 'sentinel' ? 'imagery' : key === 'land' ? 'public lands' : key === 'snow' ? 'snow depth' : 'slope shading'}.`
-                    : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
+                    : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt || 0).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
                 const signature = JSON.stringify(keys);
@@ -307,12 +337,12 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             detail.retry.textContent = ['wildfire', 'snow'].includes(key) ? status.error ? 'Retry' : 'Refresh' : status.permission ? 'Allow' : status.error ? 'Retry' : (heldRecovery && !status.pending || detail.reloading) ? 'Reload' : 'Retry';
             detail.retry.dataset.bpbBcPermission = String(key === 'land' && status.permission === true);
             detail.retry.setAttribute('aria-label', status.permission ? 'Allow BC land maps' : detail.retry.textContent);
-            detail.retry.setAttribute('aria-disabled', String(status.pending === true || status.retryAt > Date.now()));
-            detail.retry.title = status.retryAt > Date.now() ? `Try again after ${new Date(status.retryAt).toLocaleTimeString()}` : '';
+            detail.retry.setAttribute('aria-disabled', String(status.pending === true || (status.retryAt || 0) > Date.now()));
+            detail.retry.title = (status.retryAt || 0) > Date.now() ? `Try again after ${new Date(status.retryAt || 0).toLocaleTimeString()}` : '';
         }
         position();
     };
-    const setOpen = value => {
+    const setOpen = (value: boolean) => {
         if (open === value) return;
         open = value;
         if (!open) expanded = null;
@@ -322,8 +352,13 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     paint();
     return {
         element, trigger,
-        render(next) { model = next; paint(); },
-        position(next) {
+        render(next: LayerControlModel) {
+            model = next;
+            const key = JSON.stringify([Schema.mapOverlayState(model.state), Schema.mapLandTypes(model.landTypes), model.coverage, model.zoom, model.available]);
+            if (key !== inspectionKey) { inspectionKey = key; notifyLayerInspection(doc); }
+            paint();
+        },
+        position(next: Pick<DOMRect, 'left' | 'top' | 'bottom' | 'width' | 'height'>) {
             // Store document coordinates when the owner measures the map.
             // Async status paints can run before its next scroll callback.
             rect = { left: next.left + win.scrollX, top: next.top + win.scrollY,
@@ -331,7 +366,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             position();
         },
         isOpen: () => open,
-        announce(message) { live.textContent = message; },
-        dispose() { disposed = true; win.clearTimeout(cooldownTimer); element.remove(); },
+        announce(message: string) { live.textContent = message; },
+        dispose() { disposed = true; unregister(); notifyLayerInspection(doc); win.clearTimeout(cooldownTimer); element.remove(); },
     };
 }
