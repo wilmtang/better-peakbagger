@@ -102,6 +102,11 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Compare with policy adoption, not the previous release, so an unchanged
+      # violation cannot become grandfathered merely by releasing it once.
+      - name: Enforce the TypeScript adoption policy
+        run: npm run check:typescript-policy -- --base d7bc366311ccb384d9460eb17d68872e986d6a35
+
       - name: Check TypeScript
         run: npm run typecheck
 

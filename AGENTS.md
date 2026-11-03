@@ -6,6 +6,39 @@ When making code changes, commit each completed independent unit of work before 
 
 For audit-remediation work, keep an explicit closure ledger with three categories: fixed and verified, intentionally not changed, and changed but not fully proven. Do not summarize the audit as completely fixed while owner-choice items or verification gaps remain. Preserve that ledger when archiving the completed plan so the handoff distinguishes product risk from optional cleanup and missing evidence.
 
+## TypeScript on creation and modification
+
+All new authored JavaScript-family code must be TypeScript: use `.ts` for browser
+modules and `.mts` for Node ESM scripts, tests and configuration. This includes
+code under documentation, fixtures and store-asset tooling. HTML, CSS, JSON,
+Markdown and other non-JavaScript formats keep their normal extensions.
+
+When modifying an existing authored `.js`, `.mjs`, `.cjs` or `.jsx` file, convert
+that module to TypeScript in the same focused change. Untouched legacy files
+can stay JavaScript. Mechanical import-only edits count as modifications too;
+plan the required caller conversions before renaming a shared module. New
+TypeScript may import untouched legacy JavaScript without converting it.
+Update imports, entry aliases, command/workflow references,
+literal source readers, test discovery and documentation together. Preserve
+manifest output filenames and script order: generated extension bundles remain
+`.js`. Do not leave a JavaScript forwarding stub, rename unrelated callers, or
+use `@ts-nocheck`/blanket `any` to make a conversion appear complete. Preserve the
+owning module's behavior and run its relevant regression checks.
+
+Generated output and upstream third-party code retain their required formats;
+the exact excluded roots are in `scripts/typescript-policy.mts`. An authored
+tool-required JavaScript exception needs a narrow documented policy change,
+not a general exclusion of scripts or tests. Follow the compatibility checklist
+in `docs/plans/modern-stack-adoption.md` for runtime conversions; the shared
+source-guard/watch work and Svelte setup remain separate prerequisites. Svelte
+is not enabled by this policy; when enabled, component scripts must use TypeScript.
+
+Run `npm run typecheck`, `npm run lint`, and the appropriate tests. Before
+committing, `npm run check:typescript-policy` checks staged additions and changes;
+the pre-commit hook runs it after the privacy scan. CI independently checks the
+complete PR/push diff, so an intermediate commit or skipped local hook cannot
+retain modified JavaScript in the final change.
+
 ## Repository skills
 
 Before adding or changing a peak-page card, saved-ascent card, or embedded ascent-form panel, read [card implementation conventions](docs/card-conventions.md). Follow the owning surface: peak cards use the shared peak layout owner; ascent cards use their existing column/drag or embedded-feature owners. Keep this guide current when the common contract changes.

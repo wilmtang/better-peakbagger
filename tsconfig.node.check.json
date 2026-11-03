@@ -15,7 +15,7 @@
     "allowImportingTsExtensions": true
   },
   "include": [
-    "eslint.config.mts",
+    "*.mts",
     "scripts/**/*.ts", "scripts/**/*.mts",
     "test/**/*.ts", "test/**/*.mts",
     "docs/**/*.ts", "docs/**/*.mts",

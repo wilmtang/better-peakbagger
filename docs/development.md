@@ -29,6 +29,8 @@ Better Peakbagger module uses a global as an internal dependency.
   invisible until something has already been committed. If you already set
   `core.hooksPath` yourself the install leaves it alone and says so; enable the
   scan by hand with `git config core.hooksPath .githooks`.
+  The pre-commit hook also enforces the TypeScript creation/modification rule
+  below, after the privacy scan.
 - For Chrome verification: `npx playwright install chromium` (Chrome for
   Testing — stable Chrome refuses `--load-extension`).
   On macOS, run browser checks outside Codex's Seatbelt sandbox through its
@@ -48,6 +50,45 @@ Better Peakbagger module uses a global as an internal dependency.
   fixture is served over HTTPS on a real Peakbagger hostname. That is required
   by the product, not a formality: `src/peakbagger/peakbagger-request.js`
   refuses any other origin.
+
+## TypeScript creation and modification policy
+
+New authored JavaScript-family modules use TypeScript: `.ts` for browser code,
+`.mts` for Node ESM scripts, tests and configuration. Modifying an existing
+`.js`, `.mjs`, `.cjs` or `.jsx` module requires converting it in the same change;
+untouched legacy modules remain supported. This includes authored fixtures,
+documentation probes and store-asset tooling. HTML, CSS, JSON and prose keep
+their existing formats. Generated bundles and reviewed upstream code retain
+their required JavaScript formats; exclusions are limited to the output/vendor
+roots recorded in [the guard](../scripts/typescript-policy.mts).
+Import-only edits count too, so a shared-module rename can require converting
+its callers. Plan that scope before starting; importing an untouched JS module
+from a new TS file does not itself require converting the JS module.
+
+Convert the actual implementation, update exact import extensions, build entry
+aliases, scripts/workflows, source readers and test discovery, and preserve the
+generated `.js` filenames consumed by the manifest and pages. New Node tests use
+`.test.mts`; run converted scale tests explicitly until their owning runner is
+updated. Do not add forwarding JavaScript stubs or disable checking. Runtime
+conversion must also update the relevant source guards and watch coverage from
+[the adoption plan](plans/modern-stack-adoption.md). This setup does not install
+Svelte or replace existing runtime owners.
+
+`npm run typecheck` checks separate browser/Node projects without emitting files.
+The current Chrome definitions include the cross-browser `browser` alias; do not
+install conflicting global definitions or assume these types prove Firefox API
+support. ESLint loads [its TypeScript config](../eslint.config.mts) through the
+locked Jiti loader. Existing JS retains its rules; TS uses compiler name checking
+and the TypeScript-aware unused/shadow rules. The checking projects deliberately
+are not named `tsconfig.json`, so esbuild cannot silently change legacy output
+through automatic configuration discovery.
+
+`npm run check:typescript-policy` examines the staged Git index, including partial
+staging. CI independently checks the full committed PR/push diff with `--base`;
+release verification compares with the policy-adoption baseline. Deletions and
+JS-to-TS renames are allowed. Moving code to another JavaScript path is rejected.
+The pre-commit hook runs this guard after privacy scanning, and an unknown option
+or unavailable base revision fails rather than skipping enforcement.
 
 ## Shared UI/UX skill
 
@@ -250,6 +291,7 @@ script is added or removed without updating it.
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. |
 | `npm run typecheck` | Strict, no-emit TypeScript checks using separate browser and Node checking projects; runs in Test CI and release verification. |
+| `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
