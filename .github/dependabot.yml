@@ -47,6 +47,10 @@ updates:
       semver-patch-days: 3
       semver-minor-days: 7
       semver-major-days: 21
+    # Keep the compiler within the peer range admitted by the TS/Svelte tools.
+    ignore:
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
     groups:
       # Bundled into the shipped extension by esbuild.
       bundled-runtime:
@@ -77,6 +81,11 @@ updates:
           - playwright
           - selenium-webdriver
           - web-ext
+          - typescript
+          - typescript-eslint
+          - jiti
+          - "@types/node"
+          - "@types/chrome"
 
       # GitHub assigns an update to the first matching group. Keep this last
       # among version-update rules so named release-path groups retain their

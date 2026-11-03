@@ -1,6 +1,9 @@
 import globals from 'globals';
+import { defineConfig } from 'eslint/config';
+import type { Linter } from 'eslint';
+import tseslint from 'typescript-eslint';
 
-const rules = {
+const rules: Linter.RulesRecord = {
     'no-undef': 'error',
     'no-unused-vars': ['error', {
         argsIgnorePattern: '^_',
@@ -24,7 +27,9 @@ const rules = {
     'no-var': 'error',
 };
 
-export default [
+const typescriptFiles = ['**/*.ts', '**/*.mts'];
+
+export default defineConfig([
     {
         // The config file lints itself: it matched no `files` glob before, so
         // it was the one source file in the repository with no rules applied.
@@ -86,4 +91,27 @@ export default [
             globals: { ...globals.node, ...globals.browser, ...globals.webextensions },
         },
     },
-];
+    ...tseslint.configs.recommended.map(config => ({ ...config, files: typescriptFiles })),
+    {
+        files: typescriptFiles,
+        rules: {
+            ...rules,
+            'no-undef': 'off',
+            'no-unused-vars': 'off',
+            'no-shadow': 'off',
+            '@typescript-eslint/no-unused-vars': ['error', {
+                argsIgnorePattern: '^_', caughtErrors: 'none',
+            }],
+            '@typescript-eslint/no-shadow': 'error',
+        },
+    },
+    {
+        files: ['src/**/*.ts', 'options/**/*.ts', 'popup/**/*.ts', 'photos/**/*.ts'],
+        languageOptions: { globals: { ...globals.browser, ...globals.webextensions } },
+    },
+    {
+        files: ['*.mts', 'scripts/**/*.{ts,mts}', 'test/**/*.{ts,mts}',
+            'docs/**/*.{ts,mts}', 'store-assets/**/*.{ts,mts}'],
+        languageOptions: { globals: globals.node },
+    },
+]);

@@ -1,6 +1,7 @@
 # Modern stack adoption with legacy compatibility
 
-Status: investigation and implementation plan; runtime migration has not started.
+Status: TypeScript checking/lint foundation implemented; runtime and Svelte
+migration have not started. Remaining enabling work is listed below.
 Reviewed October 31, 2026 against commit `a951cf7b`; re-audited November 2, 2026
 against `32cfc8ed` (findings 9–10 and the dependency-policy rows were added then).
 
@@ -43,7 +44,8 @@ without waiting for a rewrite of the worker or shared settings schema.
    need their TypeScript-aware replacements in TS scopes. Configure Svelte
    separately so template syntax and `<script lang="ts">` use the right parsers.
    Do not spread the existing formatting rules blindly onto template markup.
-   Today the gap is silent, not loud: [eslint.config.mjs](../../eslint.config.mjs)
+   At investigation time the gap was silent, not loud: the former
+   `eslint.config.mjs` (now [eslint.config.mts](../../eslint.config.mts))
    matches only `*.js`/`*.mjs`, so `eslint src options popup photos …` skips a
    new `.ts` or `.svelte` file without a diagnostic (`calculateConfigForFile`
    returns no config for either). A TS scope must exist before the first `.ts`
@@ -408,6 +410,23 @@ replacement and WXT cutover can then proceed independently when justified.
 
 ## Evidence and outstanding work
 
+- **November 2 implementation checkpoint:** strict browser and Node checking
+  projects, typed ESLint configuration, `.test.mts` discovery, the Node 24 floor,
+  CI/release type checks and the compiler-major Dependabot hold are implemented.
+  The selected Chrome definitions already declare the `browser` alias; a second
+  global Firefox definitions package conflicts and is not installed. The full
+  development build remains byte-for-byte identical to the pre-tooling build.
+  Source-walker/watch changes, typed runtime adapters, Svelte compilation and
+  the production UI milestone remain open; do not treat tooling as UI readiness.
+  Type checking and lint passed; 36 focused checks passed. All `dist/` files
+  matched the pre-tooling build by SHA-256. The full suite passed 3,846 of 3,849
+  checks: two unchanged fixture-registration checks reject the existing snow-depth
+  JSON fixture, and the unchanged script inventory lacks its ascent-filter entry.
+  The dependency audit fails on the existing deepmerge and minimatch advisories;
+  an isolated audit of the committed pre-tooling lockfile confirmed both IDs.
+  The new ESLint toolchain adds six affected packages to that existing chain.
+  Audit policy is unchanged; release readiness and local Node 24 execution remain
+  unproven (these checks ran on Node 26.13.0).
 - **Verified during investigation:** inventory derived from current `ENTRIES`;
   watcher-root coverage; six disposable Node/esbuild assertions covering mixed
   JS/TS, browser bundling, stale specifiers, missing type checking and uncompiled
@@ -435,9 +454,10 @@ replacement and WXT cutover can then proceed independently when justified.
   (0.9.5, peers `esbuild >=0.17.0`, `svelte >=4.2.1 <6`) and `eslint-plugin-svelte`
   (3.23.1, peers ESLint 10); and the Dependabot group test's source-text walk.
   No package was installed, and the TS 6 option defaults were not executed.
-- **Intentionally not changed:** runtime source, dependencies/lockfile, manifest,
-  build/check configuration, storage formats and existing features. The external
-  report was read without editing it. This repository-local plan is the output.
+- **Intentionally not changed:** runtime source, manifest, storage formats and
+  existing features. Investigation originally left dependencies and check
+  configuration untouched; the implementation checkpoint above records their
+  subsequent changes. The external report was read without editing it.
 - **Not yet proven:** locked Svelte/plugin/ESLint compatibility, compiled Svelte
   output under the actual AMO baseline, production CSP/style injection,
   browser/BFCache/geometry behavior, size estimates, native permissions and a
