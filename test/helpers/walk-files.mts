@@ -4,11 +4,12 @@
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-export async function walkFiles(directory, predicate = () => true) {
+export async function walkFiles(directory: string, predicate: (file: string) => boolean = () => true,
+    descend: (directory: string) => boolean = () => true): Promise<string[]> {
     const files = [];
     for (const entry of await readdir(directory, { withFileTypes: true })) {
         const file = path.join(directory, entry.name);
-        if (entry.isDirectory()) files.push(...await walkFiles(file, predicate));
+        if (entry.isDirectory() && descend(file)) files.push(...await walkFiles(file, predicate, descend));
         else if (entry.isFile() && predicate(file)) files.push(file);
     }
     return files.sort();

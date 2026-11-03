@@ -13,7 +13,7 @@ import {
     isPeakbaggerSenderUrl,
     isPeakbaggerPageOrigin,
 } from '../../src/peakbagger/peakbagger-origin.js';
-import { walkFiles } from '../helpers/walk-files.mjs';
+import { walkFiles } from '../helpers/walk-files.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ORIGIN_MODULE = path.join(root, 'src/peakbagger/peakbagger-origin.js');

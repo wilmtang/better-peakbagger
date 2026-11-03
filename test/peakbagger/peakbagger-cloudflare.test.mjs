@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.js';
-import { walkFiles } from '../helpers/walk-files.mjs';
+import { walkFiles } from '../helpers/walk-files.mts';
 
 test('managed-challenge detection matches peakbagger-cli response evidence', () => {
     assert.equal(Cloudflare.isManagedChallenge(403, { 'cf-mitigated': 'challenge' }, '<html/>'), true);

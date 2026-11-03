@@ -12,7 +12,7 @@ import { captureCore as Core } from '../../src/capture/capture-core.js';
 import { gpxParse as Parse } from '../../src/gpx/gpx-parse.js';
 import { gpxMetrics as Metrics } from '../../src/gpx/gpx-metrics.js';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
-import { walkFiles } from '../helpers/walk-files.mjs';
+import { walkFiles } from '../helpers/walk-files.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const point = (lat, lon, ele = 100, time = null) => ({ lat, lon, ele, time });

@@ -18,7 +18,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
-import { walkFiles } from '../helpers/walk-files.mjs';
+import { walkFiles } from '../helpers/walk-files.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
