@@ -61,9 +61,9 @@ documentation probes and store-asset tooling. HTML, CSS, JSON and prose keep
 their existing formats. Generated bundles and reviewed upstream code retain
 their required JavaScript formats; exclusions are limited to the output/vendor
 roots recorded in [the guard](../scripts/typescript-policy.mts).
-Import-only edits count too, so a shared-module rename can require converting
-its callers. Plan that scope before starting; importing an untouched JS module
-from a new TS file does not itself require converting the JS module.
+Exact filename-reference upgrades to TypeScript may remain in legacy callers
+when every other byte is unchanged; the guard verifies this exception. Substantive
+edits still require conversion. Importing untouched JS from TS remains supported.
 
 Convert the actual implementation, update exact import extensions, build entry
 aliases, scripts/workflows, source readers and test discovery, and preserve the

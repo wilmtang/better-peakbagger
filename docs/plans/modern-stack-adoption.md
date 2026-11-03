@@ -420,8 +420,9 @@ replacement and WXT cutover can then proceed independently when justified.
   retaining the same three existing fixture/inventory failures listed below.
   The pre-commit guard inspects staged content; CI checks the whole PR/push diff,
   and release verification compares against the tooling/adoption baseline.
-  Import-only edits count as modifications under the requested strict policy,
-  so shared-module renames can require caller conversions too.
+  The initial policy counted import-only edits as modifications. Its map-layer
+  follow-up permits exact filename-reference upgrades with every other byte
+  unchanged, avoiding unrelated caller conversion cascades.
 - **November 2 implementation checkpoint:** strict browser and Node checking
   projects, typed ESLint configuration, `.test.mts` discovery, the Node 24 floor,
   CI/release type checks and the compiler-major Dependabot hold are implemented.

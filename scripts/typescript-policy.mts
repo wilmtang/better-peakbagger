@@ -4,6 +4,7 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 // These are output or upstream-code boundaries, not exceptions for authored
 // tests, fixtures, evidence scripts, configuration or store-asset tooling.
@@ -14,6 +15,27 @@ export const JAVASCRIPT_EXCLUDED_ROOTS = Object.freeze([
 export function typescriptPolicyViolations(paths: readonly string[]): string[] {
     return [...new Set(paths)].filter(file => /\.(?:[cm]?js|jsx)$/i.test(file)
         && !JAVASCRIPT_EXCLUDED_ROOTS.some(prefix => file.startsWith(prefix))).sort();
+}
+
+// Reference-only migration edits must not force an unrelated caller rewrite.
+// Preserve every other byte, including comments, whitespace and quote style.
+export function isMechanicalTypeScriptReferenceUpdate(before: string, after: string): boolean {
+    if (before.length !== after.length || before === after) return false;
+    const source = ts.createSourceFile('legacy.js', before, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    const replacements: { start: number; end: number; value: string }[] = [];
+    const visit = (node: ts.Node) => {
+        if (ts.isStringLiteralLike(node) && /^[\w./@-]+\.(?:js|mjs|cjs)$/.test(node.text)) {
+            const start = node.getStart(source), raw = before.slice(start, node.end);
+            const value = raw.replace(/\.(mjs|cjs|js)(['"`])$/, (_all, extension: string, quote: string) =>
+                `.${extension === 'mjs' ? 'mts' : extension === 'cjs' ? 'cts' : 'ts'}${quote}`);
+            if (value !== raw && after.slice(start, node.end) === value) replacements.push({ start, end: node.end, value });
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(source);
+    let updated = before;
+    for (const item of replacements.reverse()) updated = updated.slice(0, item.start) + item.value + updated.slice(item.end);
+    return replacements.length > 0 && updated === after;
 }
 
 export type PolicySelection = { kind: 'staged' } | { kind: 'committed'; base: string };
@@ -48,8 +70,17 @@ export function changedPolicyPaths(selection: PolicySelection, cwd: string): str
 }
 
 export function runTypeScriptPolicy(args: readonly string[], cwd: string): void {
-    const paths = changedPolicyPaths(policySelection(args), cwd);
-    const violations = typescriptPolicyViolations(paths);
+    const selection = policySelection(args), paths = changedPolicyPaths(selection, cwd);
+    const read = (revision: string, file: string) => {
+        try { return execFileSync('git', ['-c', 'core.fsmonitor=false', 'show', `${revision}:${file}`],
+            { cwd, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] }); }
+        catch { return null; } // Missing/new files and unreadable comparisons remain rejected.
+    };
+    const violations = typescriptPolicyViolations(paths).filter(file => {
+        const before = read(selection.kind === 'staged' ? 'HEAD' : selection.base, file);
+        const after = read(selection.kind === 'staged' ? '' : 'HEAD', file);
+        return before === null || after === null || !isMechanicalTypeScriptReferenceUpdate(before, after);
+    });
     if (violations.length) {
         throw new Error('Convert new or modified authored JavaScript files to TypeScript:\n'
             + violations.map(file => `- ${JSON.stringify(file)}`).join('\n')

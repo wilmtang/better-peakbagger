@@ -15,8 +15,10 @@ Markdown and other non-JavaScript formats keep their normal extensions.
 
 When modifying an existing authored `.js`, `.mjs`, `.cjs` or `.jsx` file, convert
 that module to TypeScript in the same focused change. Untouched legacy files
-can stay JavaScript. Mechanical import-only edits count as modifications too;
-plan the required caller conversions before renaming a shared module. New
+can stay JavaScript. Pure filename-reference updates from `.js` to `.ts`, `.mjs`
+to `.mts`, or `.cjs` to `.cts` may remain in legacy callers: the policy guard
+requires every other byte to remain unchanged. This avoids cascading unrelated
+conversions while keeping substantive code edits in TypeScript. New
 TypeScript may import untouched legacy JavaScript without converting it.
 Update imports, entry aliases, command/workflow references,
 literal source readers, test discovery and documentation together. Preserve
@@ -38,6 +40,14 @@ committing, `npm run check:typescript-policy` checks staged additions and change
 the pre-commit hook runs it after the privacy scan. CI independently checks the
 complete PR/push diff, so an intermediate commit or skipped local hook cannot
 retain modified JavaScript in the final change.
+
+For every new or changed map layer, evaluate point inspection. Applicable enabled
+layers must implement the typed right-click information contract; explicitly
+document non-applicable layers. Queries must respect selected subtypes, provider
+coverage, cancellation, cooldowns and privacy permissions. Use compact labelled
+readings, distinguish no data from zero, and keep popup geometry stable while
+asynchronous results arrive. Legends must match the renderer/service actually
+used, with readable swatches and source/date attribution.
 
 ## Repository skills
 

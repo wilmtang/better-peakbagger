@@ -8,10 +8,21 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { changedPolicyPaths, policySelection, typescriptPolicyViolations } from '../../scripts/typescript-policy.mts';
+import { changedPolicyPaths, policySelection, typescriptPolicyViolations, isMechanicalTypeScriptReferenceUpdate } from '../../scripts/typescript-policy.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const script = path.join(root, 'scripts/typescript-policy.mts');
+
+test('only exact filename-reference upgrades can remain in existing JavaScript', () => {
+    const before = "import { value } from './value.js';\nconst source = 'src/source.mjs';\n";
+    const after = "import { value } from './value.ts';\nconst source = 'src/source.mts';\n";
+    assert.equal(isMechanicalTypeScriptReferenceUpdate(before, after), true);
+    for (const changed of [after + '// comment\n', after.replace('const source', 'let source'),
+        after.replace('value.ts', 'other.ts'), before, after.replace('source.mts', 'source.mjs').replace('value.ts', 'value.js')]) {
+        assert.equal(isMechanicalTypeScriptReferenceUpdate(before, changed), false);
+    }
+    assert.equal(isMechanicalTypeScriptReferenceUpdate(after, before), false);
+});
 
 async function fixture() {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-typescript-policy-'));
@@ -76,6 +87,20 @@ test('NUL-delimited paths preserve whitespace, quotes and newlines', async () =>
         await f.write(file);
         f.git('add', '.');
         assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)), [file]);
+    } finally { await f.close(); }
+});
+
+test('the staged CLI permits a reference upgrade but rejects additional caller changes', async () => {
+    const f = await fixture();
+    try {
+        await f.write('caller.mjs', "import './legacy.js';\n");
+        f.git('add', '.'); f.git('commit', '--quiet', '-m', 'legacy caller');
+        f.git('mv', 'legacy.js', 'legacy.ts');
+        await f.write('caller.mjs', "import './legacy.ts';\n"); f.git('add', '.');
+        const run = () => spawnSync(process.execPath, [script, '--staged'], { cwd: f.directory, encoding: 'utf8' });
+        const passed = run(); assert.equal(passed.status, 0, passed.stderr);
+        await f.write('caller.mjs', "import './legacy.ts';\nconsole.log('changed');\n"); f.git('add', '.');
+        const failed = run(); assert.equal(failed.status, 1); assert.match(failed.stderr, /caller\.mjs/);
     } finally { await f.close(); }
 });
 
