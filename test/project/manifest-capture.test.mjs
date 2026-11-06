@@ -254,7 +254,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     // copy of it; a copy is how a reason the bridge had not heard of reached
     // the user as the wrong message. terrain-lifecycle.js likewise keeps the
     // parked-frame TTL shared with reviewer metadata instead of duplicating it.
-    assert.deepEqual(bundleSources('content/terrain-map.js'), ['terrain/terrain-camera.js', 'terrain/terrain-failure.js', 'terrain/terrain-lifecycle.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-map.js']);
+    assert.deepEqual(bundleSources('content/terrain-map.js'), ['terrain/terrain-camera.js', 'terrain/terrain-failure.js', 'terrain/terrain-lifecycle.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-map.ts']);
     assert.ok(terrainEntry.matches.every(pattern => /peakbagger\.com\/climber\/(?:a|A)scent\.aspx/.test(pattern)));
 
     // Both entries are pages a Peakbagger tab has to be able to reach: the
@@ -298,7 +298,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     const terrainBundle = ENTRIES.find(entry => entry.out === 'terrain/terrain-frame.js');
     assert.equal(terrainBundle.format, 'esm');
     assert.deepEqual(terrainBundle.browserImports, { 'maplibre-gl': '../vendor/maplibre-gl.mjs' });
-    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.js', 'terrain/terrain-frame.js']);
+    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.ts', 'terrain/terrain-frame.js']);
     const frameEntrySource = await fs.readFile(new URL('../../src/terrain/terrain-frame.js', import.meta.url), 'utf8');
     assert.match(frameEntrySource, /import \* as maplibre from ['"]maplibre-gl['"]/);
     assert.match(frameEntrySource, /settings\.requireCurrent\(\)/,

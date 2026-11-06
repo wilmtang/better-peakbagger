@@ -463,7 +463,7 @@ loading, partial/empty results, refresh recovery, keyboard details and geometry.
 
 ## Implementation boundaries
 
-`src/maps/map-layers.js` owns the page session and outer control. Embedded
+`src/maps/map-layers.ts` owns the page session and outer control. Embedded
 MasterMap documents defer to a recognized parent, so one map has one menu.
 The native basemap selector retains its existing options and handler. The
 2D vector adapter adds one private option and intercepts only that choice. The

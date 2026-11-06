@@ -6,8 +6,12 @@
 import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../settings/settings-schema.js';
+import type * as MapLibre from 'maplibre-gl';
+import type { LngLat, Map as MapLibreMap, MapMouseEvent, Popup, PointLike } from 'maplibre-gl';
 import { terrainStyle as TerrainStyle } from './terrain-style.ts';
+import type { VectorSprite, VectorStyle } from './terrain-style.ts';
 import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, vectorBasemap } from '../maps/vector-basemap.ts';
+import type { VectorBasemap } from '../maps/vector-basemap.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.ts';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
@@ -21,8 +25,29 @@ import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 
 export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
 
-const authorizeThroughWorker = async ({ token, action }) => {
-    const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
+interface TerrainDrape {
+    name: string; tiles: string[]; tileSize: number; minzoom: number; maxzoom: number; scheme: 'xyz' | 'tms';
+    attribution: string; thriftyLod: boolean;
+}
+interface PeakProperties { id: number; name: string; state: string; }
+interface PeakFeature { type: 'Feature'; geometry: { type: 'Point'; coordinates: [number, number] }; properties: PeakProperties; }
+type PeakMarker = MapLibre.Marker;
+interface StyleResources { glyphs?: string | null; sprite?: VectorSprite | null; }
+interface FrameData { [field: string]: unknown; }
+interface TerrainFrameData {
+    conditions?: string[]; snowStations?: unknown; basemap?: { kind?: string; provider?: string } | null; basemaps?: unknown;
+    routeStyle?: unknown; theme?: unknown; zoomControl?: unknown; routeSegments?: unknown; camera?: unknown;
+}
+type RateLimitedError = Error & { status?: number; retryAt?: number; code?: string; url?: string };
+interface MapErrorEvent { error?: RateLimitedError; sourceId?: string; tile?: unknown; dataType?: string; }
+type Point = { x: number; y: number };
+type DataSource = { setData?(data: unknown): unknown };
+// Legacy modules infer only their default parameter values; these are their real contracts.
+const limitMessage = rateLimitMessage as (service: string, retryAt?: unknown) => string;
+const retryDeadline = readRetryAt as (value: unknown) => number | null;
+
+const authorizeThroughWorker = async ({ token, action }: { token?: unknown; action: string }) => {
+    const runtime = ((globalThis as unknown as { browser?: typeof chrome }).browser || globalThis.chrome)?.runtime;
     if (!runtime || typeof runtime.sendMessage !== 'function'
         || typeof token !== 'string' || !token) return false;
     try {
@@ -40,12 +65,12 @@ const authorizeThroughWorker = async ({ token, action }) => {
 // The production entry passes the statically imported MapLibre namespace and
 // consumes activation through the worker. Tests inject a narrow MapLibre stub
 // and an explicit authorization decision so jsdom never allocates WebGL.
-export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker } = {}) => {
-    let snowConditions = new Set();
+export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = authorizeThroughWorker }: { authorize?: (request: { token?: unknown; action: string }) => Promise<boolean> } = {}) => {
+    let snowConditions = new Set<string>();
     const snowMarkers = createTerrainSnotelMarkers({ maplibre, document,
-        canSelect: id => snowConditions.has(id),
-        onSelect: stationId => post('snowSelect', { stationId }) });
-    let snowStations = [];
+        canSelect: ((id: string) => snowConditions.has(id)) as () => boolean,
+        onSelect: (stationId: string) => post('snowSelect', { stationId }) });
+    let snowStations: { id: string }[] = [];
     const snowReveal = createSnotelMapReveal({ window, terrain: true, getMap: () => map });
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';
@@ -187,30 +212,30 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // The eight compass directions a snap step can move in.
     const COMPASS_STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
-    let map = null;
-    let mapElement = null;
-    let rendererCanvas = null;
-    let contextLostHandler = null;
-    let resizeObserver = null;
-    let loadTimer = null;
-    let gestureHintTimer = null;
-    let gestureHintElement = null;
+    let map: MapLibreMap | null = null;
+    let mapElement: HTMLElement | null = null;
+    let rendererCanvas: HTMLCanvasElement | null = null;
+    let contextLostHandler: ((event: Event) => void) | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    let loadTimer: ReturnType<typeof setTimeout> | null = null;
+    let gestureHintTimer: ReturnType<typeof setTimeout> | null = null;
+    let gestureHintElement: HTMLElement | null = null;
     let loaded = false;
     let suspended = false;
-    let parentOrigin = null;
-    let activeGeneration = null;
+    let parentOrigin: string | null = null;
+    let activeGeneration: unknown = null;
     let authorized = false;
     let authorizationRevision = 0;
     let activeTheme = 'light';
-    let activeBasemap = null;
-    let drapedBasemapTiles = null;
-    let availableBasemaps = [];
+    let activeBasemap: TerrainDrape | null = null;
+    let drapedBasemapTiles: string | null = null;
+    let availableBasemaps: TerrainDrape[] = [];
     let activeBasemapIndex = -1;
-    let initialVectorBasemap = null;
+    let initialVectorBasemap: VectorBasemap | null = null;
     let basemapErrored = false;
     let basemapContentLoaded = false;
     let basemapChecked = false;
-    let overlays = null;
+    let overlays: ReturnType<typeof createTerrainOverlays> | null = null;
     // True once the user chose a drape in the 3D picker. A resume then keeps
     // their choice; otherwise it re-resolves the drape from the page so a 2D
     // layer change is reflected.
@@ -219,10 +244,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // very fast user may choose a drape in that window; retain the choice and
     // apply it as soon as the base style is ready instead of marking a swap that
     // never happened.
-    let pendingBasemapSelection = null;
-    let pickerElement = null;
-    let noticeElement = null;
-    let terrainCache = null;
+    let pendingBasemapSelection: number | string | null = null;
+    let pickerElement: HTMLSelectElement | null = null;
+    let noticeElement: HTMLElement | null = null;
+    let terrainCache: ReturnType<typeof TerrainCache.create> | null = null;
     let terrainProtocolRegistered = false;
     // Elevation outcomes for this frame, counted at the protocol because that is
     // the only place that sees them: MapLibre answers a missing DEM tile with a
@@ -234,8 +259,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // Warming writes into the DEM cache, so a zero cache budget makes it pure
     // waste: every tile would be fetched and then thrown away.
     let terrainCacheWarmable = false;
-    let tiltWarmTimer = null;
-    let tiltWarmController = null;
+    let tiltWarmTimer: ReturnType<typeof setTimeout> | null = null;
+    let tiltWarmController: AbortController | null = null;
     let tiltWarmAt = 0;
     const tiltWarmedTiles = new Set();
     let activeRouteStyle = { ...settingsSchema.ROUTE_STYLE };
@@ -244,14 +269,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let vectorInstalling = false;
     const vectorStyleLoaders = new Map(VECTOR_BASEMAPS.map(basemap => [basemap.id, TerrainStyle.createVectorStyleLoader({ basemap, styleUrl: basemap.styleUrl })]));
     const vectorCooldowns = new Map();
-    let vectorCooldownTimer = null;
-    let vectorChoice = null, attributionControl = null, attributionProvider = null, maptoolkitLogo = null;
+    let vectorCooldownTimer: ReturnType<typeof setTimeout> | null = null;
+    let vectorChoice: VectorBasemap | null = null, attributionControl: MapLibre.AttributionControl | null = null, attributionProvider: boolean | null = null, maptoolkitLogo: HTMLAnchorElement | null = null;
     let vectorSwapToken = 0;
-    const vectorRequests = new Set();
+    const vectorRequests = new Set<AbortController>();
     const cancelVectorRequests = () => { for (const controller of vectorRequests) controller.abort(); vectorRequests.clear(); };
-    let vectorLayerIds = [];
-    let vectorSourceIds = [];
-    let vectorStyleResources = null;
+    let vectorLayerIds: string[] = [];
+    let vectorSourceIds: string[] = [];
+    let vectorStyleResources: StyleResources | null = null;
     // True when the route carries per-track colors (group maps), so the route
     // line is painted data-driven from each feature instead of one flat color.
     let routeHasFeatureColors = false;
@@ -259,27 +284,27 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // was cut from, which is what makes a whole-track hover highlight possible.
     let routeHasTrackIds = false;
     // The track index under the pointer, or null when nothing is hovered.
-    let hoveredRouteTrack = null;
-    let peakPopup = null;
-    let routePopup = null;
+    let hoveredRouteTrack: unknown = null;
+    let peakPopup: Popup | null = null;
+    let routePopup: Popup | null = null;
     let peaksRequestId = 0;
-    let peaksDebounceTimer = null;
+    let peaksDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let peaksUnavailable = false;
     let peaksLimitedUntil = 0;
-    let lastPeaksBoundsKey = null;
+    let lastPeaksBoundsKey: string | null = null;
     // The currently rendered peak features, kept for the screen-space hit
     // test, and the pointer's last position for the frame-throttled hover.
-    let peakFeatures = [];
-    let peakMarkers = [];
+    let peakFeatures: PeakFeature[] = [];
+    let peakMarkers: PeakMarker[] = [];
     // Peak pages pass their subject explicitly because Peakbagger's `t=P`
     // nearby-marker feed may exclude that same peak. Keep it independent of
     // each replace-style feed response so the summit never disappears.
-    let focusPeakFeature = null;
-    let peakPointerPoint = null;
-    let peakPointerFrame = null;
+    let focusPeakFeature: PeakFeature | null = null;
+    let peakPointerPoint: Point | null = null;
+    let peakPointerFrame: number | null = null;
     // Throttles the bearing/pitch stream the page compass reads to one post per
     // painted frame, like the peak-hover throttle.
-    let viewFrame = null;
+    let viewFrame: number | null = null;
     // MapLibre 6 source updates are asynchronous. Track the newest operation
     // per source so a late rejection from an update superseded by a newer one,
     // or from a map already torn down, cannot hide/fail the current renderer.
@@ -289,7 +314,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const peakSnapCache = new Map();
     const PEAK_SNAP_CACHE_LIMIT = 4000;
 
-    const post = (type, detail = {}) => {
+    const post = (type: string, detail: Record<string, unknown> = {}) => {
         if (!parentOrigin) return;
         window.parent.postMessage({
             [FRAME_MESSAGE_TAG]: true,
@@ -313,7 +338,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (!map?.getBounds || typeof map.getZoom !== 'function' || !loaded) return;
         const bounds = map.getBounds();
         const surface = mapElement?.getBoundingClientRect(), logo = maptoolkitLogo && !maptoolkitLogo.hidden ? maptoolkitLogo.getBoundingClientRect() : null;
-        const footer = surface?.height > 0 && logo ? Math.max(0, Math.min(1, (surface.bottom - logo.top + 8) / surface.height)) : 0;
+        const footer = (surface?.height ?? 0) > 0 && logo ? Math.max(0, Math.min(1, (surface!.bottom - logo.top + 8) / surface!.height)) : 0;
         post('layerView', { bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], zoom: map.getZoom() + 1, ...(footer ? { footer } : {}) });
     };
     const scheduleView = () => {
@@ -376,7 +401,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     const removeTerrain = () => {
         cancelVectorRequests();
-        clearTimeout(vectorCooldownTimer); vectorCooldownTimer = null;
+        clearTimeout(vectorCooldownTimer!); vectorCooldownTimer = null;
         snowReveal.cancel();
         snowMarkers.clear(); snowStations = [];
         removeLoadTimer();
@@ -510,12 +535,12 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         setRouteHover(null);
     };
 
-    const fail = reason => {
+    const fail = (reason: string) => {
         removeTerrain();
         post('error', { reason });
     };
 
-    const setLayerVisibility = (layerId, visible, terrainMap = map) => {
+    const setLayerVisibility = (layerId: string, visible: boolean, terrainMap: MapLibreMap | null = map) => {
         if (!terrainMap || typeof terrainMap.setLayoutProperty !== 'function') return;
         try {
             terrainMap.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
@@ -526,31 +551,31 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // every v6 outcome explicitly and apply it only while this exact source and
     // revision still belong to the live map. A teardown rejection is expected
     // stale work, but an active rejection must reach the owning overlay policy.
-    const setSourceData = (sourceId, data, { onSuccess, onFailure } = {}) => {
+    const setSourceData = (sourceId: string, data: unknown, { onSuccess, onFailure }: { onSuccess?: (terrainMap: MapLibreMap, source: unknown) => void; onFailure?: (error: unknown, terrainMap: MapLibreMap, source: unknown) => void } = {}) => {
         const terrainMap = map;
         const source = terrainMap && typeof terrainMap.getSource === 'function'
             ? terrainMap.getSource(sourceId)
             : null;
-        if (!source || typeof source.setData !== 'function') return false;
+        if (!source || typeof (source as DataSource).setData !== 'function') return false;
 
         const revision = (sourceDataRevisions.get(sourceId) || 0) + 1;
         sourceDataRevisions.set(sourceId, revision);
         const isCurrent = () => {
             if (map !== terrainMap || sourceDataRevisions.get(sourceId) !== revision) return false;
-            try { return terrainMap.getSource(sourceId) === source; } catch (error) { return false; }
+            try { return terrainMap!.getSource(sourceId) === source; } catch (error) { return false; }
         };
         const succeed = () => {
             if (!isCurrent()) return;
             try {
-                onSuccess?.(terrainMap, source);
+                onSuccess?.(terrainMap!, source);
             } catch (error) {
                 reject(error);
             }
         };
-        const reject = error => {
+        const reject = (error: unknown) => {
             if (!isCurrent()) return;
             try {
-                onFailure?.(error, terrainMap, source);
+                onFailure?.(error, terrainMap!, source);
             } catch (handlerError) {
                 // Promise handlers must terminate here rather than turning an
                 // already-routed source failure into an unhandled rejection.
@@ -560,12 +585,12 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
         let outcome;
         try {
-            outcome = source.setData(data);
+            outcome = (source as DataSource).setData!(data);
         } catch (error) {
             reject(error);
             return false;
         }
-        if (outcome && typeof outcome.then === 'function') {
+        if (outcome && typeof (outcome as Promise<unknown>).then === 'function') {
             void Promise.resolve(outcome).then(succeed, reject);
         } else {
             succeed();
@@ -573,18 +598,18 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         return true;
     };
 
-    const validateRoute = (segments, colors, links, tracks) => {
+    const validateRoute = (segments: unknown, colors: unknown, links: unknown, tracks: unknown) => {
         if (!Array.isArray(segments) || !segments.length || segments.length > MAX_ROUTE_SEGMENTS) return null;
         const colorList = Array.isArray(colors) ? colors : [];
         const linkList = Array.isArray(links) ? links : [];
         const trackList = Array.isArray(tracks) ? tracks : [];
-        const hexColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
-        const trackId = value =>
-            Number.isInteger(value) && value >= 0 && value < MAX_ROUTE_SEGMENTS ? value : null;
-        const cleanLink = value => {
+        const hexColor = (value: unknown) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+        const trackId = (value: unknown) =>
+            Number.isInteger(value) && (value as number) >= 0 && (value as number) < MAX_ROUTE_SEGMENTS ? value : null;
+        const cleanLink = (value: unknown) => {
             if (!value || typeof value !== 'object') return null;
-            const { id, label } = value;
-            if (!Number.isInteger(id) || id <= 0 || id > 1e9
+            const { id, label } = value as { id?: unknown; label?: unknown };
+            if (!Number.isInteger(id) || (id as number) <= 0 || (id as number) > 1e9
                 || typeof label !== 'string' || !label || label.length > 200
                 || /[\u0000-\u001f\u007f]/.test(label)) return null;
             return { id, label };
@@ -643,12 +668,12 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         };
     };
 
-    const validateFocus = (value, requestedZoom) => {
+    const validateFocus = (value: unknown, requestedZoom: unknown) => {
         if (!Array.isArray(value) || value.length !== 2) return null;
         const [lat, lon] = value;
         if (!Number.isFinite(lat) || Math.abs(lat) > MAX_MERCATOR_LAT
             || !Number.isFinite(lon) || Math.abs(lon) > 180) return null;
-        const zoom = Number.isFinite(requestedZoom) && requestedZoom >= 0 && requestedZoom <= 18
+        const zoom = Number.isFinite(requestedZoom) && (requestedZoom as number) >= 0 && (requestedZoom as number) <= 18
             ? requestedZoom
             : 13;
         return { center: [lon, lat], zoom };
@@ -657,16 +682,16 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // The host page is cross-origin to this frame, so its style is untrusted;
     // the shared schema keeps this check identical to the page-world and
     // storage-side ones.
-    const validateStyle = style => settingsSchema.routeStyle(style);
+    const validateStyle = (style: unknown) => settingsSchema.routeStyle(style);
 
-    const isPublicHostname = hostname => {
+    const isPublicHostname = (hostname: string) => {
         const host = hostname.toLowerCase();
         if (!host || host === 'localhost' || host.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return false;
         if (['.localhost', '.local', '.internal', '.test', '.invalid'].some(suffix => host.endsWith(suffix))) return false;
         return host.includes('.');
     };
 
-    const validateRemoteUrl = (value, allowTemplate = false) => {
+    const validateRemoteUrl = (value: unknown, allowTemplate = false) => {
         if (typeof value !== 'string' || !value || value.length > MAX_BASEMAP_URL_LENGTH || /[\u0000-\u001f\u007f]/.test(value)) return null;
         if (allowTemplate && !/^https?:\/\//i.test(value)) return null;
 
@@ -686,15 +711,16 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         return allowTemplate ? value : parsed.href;
     };
 
-    const escapeHtml = value => value.replace(/[&<>"']/g, character => ({
+    const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character: string) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    })[character]);
+    } as Record<string, string>)[character]!);
 
-    const sanitizeAttribution = value => {
+    const sanitizeAttribution = (value: unknown) => {
         if (typeof value !== 'string' || value.length > MAX_BASEMAP_ATTRIBUTION_LENGTH) return '';
         const parsed = new DOMParser().parseFromString(value, 'text/html');
 
-        const serialize = node => {
+        const serialize = (input: Node): string => {
+            const node = input as Element;
             if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent || '');
             if (node.nodeType === Node.ELEMENT_NODE && ['SCRIPT', 'STYLE'].includes(node.tagName)) return '';
             const children = Array.from(node.childNodes || [], serialize).join('');
@@ -708,7 +734,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         return Array.from(parsed.body.childNodes, serialize).join('').trim();
     };
 
-    const validateBasemap = value => {
+    const validateBasemap = (input: unknown): TerrainDrape | null => {
+        const value = input as Partial<TerrainDrape> | null | undefined;
         if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
         const name = typeof value.name === 'string' ? value.name.trim() : '';
         const tileUrl = Array.isArray(value.tiles) && value.tiles.length === 1
@@ -716,8 +743,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             : null;
         if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name) || !tileUrl) return null;
 
-        const integer = (candidate, min, max, fallback) =>
-            Number.isInteger(candidate) && candidate >= min && candidate <= max ? candidate : fallback;
+        const integer = (candidate: unknown, min: number, max: number, fallback: number) =>
+            Number.isInteger(candidate) && (candidate as number) >= min && (candidate as number) <= max ? candidate as number : fallback;
         const minzoom = integer(value.minzoom, 0, 22, 0);
         const maxzoom = integer(value.maxzoom, minzoom, 24, Math.max(minzoom, 19));
         return {
@@ -801,14 +828,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // evicting; its own default is 5 (util/config.ts MAX_TILE_CACHE_ZOOM_LEVELS).
     const TILE_CACHE_ZOOM_LEVELS = 8;
 
-    const setSourceLod = (sourceId, levelsOnScreen, tileCountRatio) => {
+    const setSourceLod = (sourceId: string, levelsOnScreen: number, tileCountRatio: number) => {
         if (!map || typeof map.setSourceTileLodParams !== 'function') return;
         try {
             map.setSourceTileLodParams(levelsOnScreen, tileCountRatio, sourceId);
         } catch (error) { /* An older MapLibre or a source that already went away. */ }
     };
 
-    const applyBasemapLod = basemap => {
+    const applyBasemapLod = (basemap: TerrainDrape) => {
         if (!basemap) return;
         if (basemap.thriftyLod) {
             setSourceLod('basemap',
@@ -821,7 +848,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const applyTerrainLod = () =>
         setSourceLod('terrain', TERRAIN_LOD_ZOOM_LEVELS_ON_SCREEN, TERRAIN_LOD_TILE_COUNT_RATIO);
 
-    const reliefExpression = palette => [
+    const reliefExpression = (palette: typeof PALETTES.light) => [
         'interpolate', ['linear'], ['elevation'],
         -100, palette.relief[0],
         0, palette.relief[1],
@@ -832,8 +859,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         5000, palette.relief[6]
     ];
 
-    const terrainStyle = theme => {
-        const palette = PALETTES[theme];
+    const terrainStyle = (theme: string) => {
+        const palette = PALETTES[theme as keyof typeof PALETTES];
         const sources = {
             terrain: {
                 type: 'raster-dem',
@@ -845,7 +872,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener noreferrer">© Mapterhorn</a>'
             }
         };
-        const layers = [
+        const layers: Record<string, unknown>[] = [
             { id: 'terrain-background', type: 'background', paint: { 'background-color': palette.background } },
             {
                 id: 'terrain-relief', type: 'color-relief', source: 'terrain',
@@ -880,14 +907,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const renderPicker = () => {
-        clearTimeout(vectorCooldownTimer);
-        const next = Math.min(...[...vectorCooldowns.values()].map(value => readRetryAt(value)).filter(Boolean));
+        clearTimeout(vectorCooldownTimer!);
+        const next = Math.min(...[...vectorCooldowns.values()].map(value => retryDeadline(value)).filter((value): value is number => !!value));
         if (Number.isFinite(next)) vectorCooldownTimer = setTimeout(() => { if (map && loaded) renderPicker(); }, Math.max(1, next - Date.now() + 1));
-        const choices = [
+        const choices: { id: string; label: string; disabled?: boolean }[] = [
             ...availableBasemaps.map((basemap, index) => ({ id: String(index), label: basemap.name || `Map ${index + 1}`, disabled: false })),
             ...VECTOR_BASEMAPS.map(basemap => ({ id: basemap.id, label: basemap.name, disabled: !!readRetryAt(vectorCooldowns.get(basemap.id)) })), { id: 'terrain', label: 'Terrain only' },
         ];
-        const selection = vectorActive || vectorLoading ? vectorChoice.id : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
+        const selection = vectorActive || vectorLoading ? vectorChoice!.id : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
         if (pickerElement) {
             pickerElement.replaceChildren(...choices.map(choice => {
                 const option = document.createElement('option');
@@ -899,7 +926,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         post('layerBasemaps', { choices, selection });
     };
 
-    const selectBasemap = selection => {
+    const selectBasemap = (selection: string) => {
         const vector = vectorBasemap(selection);
         const choice = selection === 'terrain' ? -1 : vector ? vector.id
             : /^\d{1,3}$/.test(selection) ? Number(selection) : null;
@@ -908,7 +935,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         else if (swapBasemap(choice)) userPickedBasemap = true;
     };
 
-    const showNotice = (text, kind = 'error') => {
+    const showNotice = (text: string, kind = 'error') => {
         if (!noticeElement) return;
         if (noticeElement.textContent === text && noticeElement.dataset.kind === kind) return;
         noticeElement.textContent = text;
@@ -916,9 +943,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         noticeElement.hidden = !text;
     };
 
-    const addBasemapLayer = basemap => {
+    const addBasemapLayer = (basemap: TerrainDrape) => {
         drapedBasemapTiles = basemap.tiles[0];
-        map.addSource('basemap', {
+        map!.addSource('basemap', {
             type: 'raster',
             tiles: basemap.tiles,
             tileSize: basemap.tileSize,
@@ -928,30 +955,30 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             attribution: basemap.attribution
         });
         // Keep the drape beneath the hillshade so relief still reads through it.
-        map.addLayer({
+        map!.addLayer({
             id: 'basemap', type: 'raster', source: 'basemap',
             paint: { 'raster-opacity': 0.78, 'raster-fade-duration': 0, 'raster-resampling': 'linear' }
-        }, typeof map.getLayer === 'function' && map.getLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
+        }, typeof map!.getLayer === 'function' && map!.getLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
         applyBasemapLod(basemap);
     };
 
     const removeBasemapLayer = () => {
         drapedBasemapTiles = null;
         try {
-            if (typeof map.getLayer === 'function' && map.getLayer('basemap')) map.removeLayer('basemap');
-            if (map.getSource('basemap') && typeof map.removeSource === 'function') map.removeSource('basemap');
+            if (typeof map!.getLayer === 'function' && map!.getLayer('basemap')) map!.removeLayer('basemap');
+            if (map!.getSource('basemap') && typeof map!.removeSource === 'function') map!.removeSource('basemap');
         } catch (error) { /* A failed raster source may already be absent. */ }
     };
 
     // Bounded fetch, shape validation, and per-lifetime memoization all live in
     // the pure loader; only the grafting below needs MapLibre.
-    const fetchVectorStyle = basemap => vectorStyleLoaders.get(basemap.id).load()
-        .then(style => TerrainStyle.renderingStyle(style, { basemap, terrain: true }));
+    const fetchVectorStyle = (basemap: VectorBasemap) => vectorStyleLoaders.get(basemap.id)!.load()
+        .then((style: VectorStyle) => TerrainStyle.renderingStyle(style, { basemap, terrain: true }));
 
-    const setVectorSprite = sprite => {
-        if (!Array.isArray(sprite)) { map.setSprite?.(sprite); return; }
-        map.setSprite(null);
-        for (const item of sprite) map.addSprite(item.id, item.url);
+    const setVectorSprite = (sprite: VectorSprite | null | undefined) => {
+        if (!Array.isArray(sprite)) { map!.setSprite?.(sprite as string | null); return; }
+        map!.setSprite(null);
+        for (const item of sprite) map!.addSprite(item.id, item.url);
     };
 
     const updateVectorAttribution = () => {
@@ -973,23 +1000,23 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // map.setStyle, so the Mapterhorn terrain mesh, hillshade, and route
     // layers survive untouched. Everything is added under prefixed ids so it
     // can be removed wholesale and can never collide with extension layers.
-    const restoreVectorResources = resources => {
+    const restoreVectorResources = (resources: StyleResources | null) => {
         if (!resources) return;
         try {
-            if (typeof map.setGlyphs === 'function') map.setGlyphs(resources.glyphs);
+            if (typeof map!.setGlyphs === 'function') map!.setGlyphs(resources.glyphs);
         } catch (error) { /* The style may be tearing down. */ }
         try {
-            if (typeof map.setSprite === 'function') setVectorSprite(resources.sprite);
+            if (typeof map!.setSprite === 'function') setVectorSprite(resources.sprite);
         } catch (error) { /* The style may be tearing down. */ }
     };
 
-    const removeVectorResources = ({ layers, sources, resources }) => {
+    const removeVectorResources = ({ layers, sources, resources }: { layers: string[]; sources: string[]; resources: StyleResources | null }) => {
         let pendingLayers = [...layers].reverse();
         for (let pass = 0; pass < 2 && pendingLayers.length; pass++) {
             const failed = [];
             for (const id of pendingLayers) {
                 try {
-                    if (typeof map.getLayer === 'function' && map.getLayer(id)) map.removeLayer(id);
+                    if (typeof map!.getLayer === 'function' && map!.getLayer(id)) map!.removeLayer(id);
                 } catch (error) { failed.push(id); }
             }
             pendingLayers = failed;
@@ -999,7 +1026,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             const failed = [];
             for (const id of pendingSources) {
                 try {
-                    if (map.getSource(id) && typeof map.removeSource === 'function') map.removeSource(id);
+                    if (map!.getSource(id) && typeof map!.removeSource === 'function') map!.removeSource(id);
                 } catch (error) { failed.push(id); }
             }
             pendingSources = failed;
@@ -1007,8 +1034,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         restoreVectorResources(resources);
     };
 
-    const addVectorBasemap = style => {
-        const currentStyle = typeof map.getStyle === 'function' ? map.getStyle() : null;
+    const addVectorBasemap = (style: VectorStyle) => {
+        const currentStyle = typeof map!.getStyle === 'function' ? map!.getStyle() : null;
         const currentSprite = currentStyle?.sprite;
         const resources = {
             glyphs: typeof currentStyle?.glyphs === 'string' ? currentStyle.glyphs : null,
@@ -1020,14 +1047,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         const addedSources = [];
         vectorInstalling = true;
         try {
-            if (typeof style.glyphs === 'string' && typeof map.setGlyphs === 'function') map.setGlyphs(style.glyphs);
-            if (style.sprite != null && typeof map.setSprite === 'function') setVectorSprite(style.sprite);
+            if (typeof style.glyphs === 'string' && typeof map!.setGlyphs === 'function') map!.setGlyphs(style.glyphs);
+            if (style.sprite != null && typeof map!.setSprite === 'function') setVectorSprite(style.sprite);
             for (const [id, source] of Object.entries(style.sources)) {
                 const prefixed = `${VECTOR_PREFIX}${id}`;
-                map.addSource(prefixed, source);
+                map!.addSource(prefixed, source as unknown as MapLibre.SourceSpecification);
                 addedSources.push(prefixed);
             }
-            const hasLayer = id => typeof map.getLayer === 'function' && map.getLayer(id);
+            const hasLayer = (id: string) => typeof map!.getLayer === 'function' && map!.getLayer(id);
             for (const layer of style.layers) {
                 const copy = { ...layer, id: `${VECTOR_PREFIX}${layer.id}` };
                 if (typeof copy.source === 'string') copy.source = `${VECTOR_PREFIX}${copy.source}`;
@@ -1038,7 +1065,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 const before = layer.type === 'symbol'
                     ? (hasLayer('bpb-highlight') ? 'bpb-highlight' : undefined)
                     : (hasLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
-                map.addLayer(copy, before);
+                map!.addLayer(copy as unknown as MapLibre.AddLayerObject, before);
                 addedLayers.push(copy.id);
             }
             vectorLayerIds = addedLayers;
@@ -1071,7 +1098,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
     // selects the extension-provided vector basemap. Each swap re-arms the
     // one-shot tile check so the new layer is judged on its own.
-    const swapBasemap = selection => {
+    const swapBasemap = (selection: number | string) => {
         if (!map || !loaded) return false;
         // Repeated selection and mode-resume must not rebuild the same vector graph.
         if ((vectorActive || vectorLoading) && vectorBasemap(selection) === vectorChoice) return true;
@@ -1088,7 +1115,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         const selectedVector = vectorBasemap(selection);
         if (selectedVector) {
             const retryAt = readRetryAt(vectorCooldowns.get(selectedVector.id));
-            if (retryAt) { renderPicker(); showNotice(rateLimitMessage(selectedVector.provider, retryAt)); return true; }
+            if (retryAt) { renderPicker(); showNotice(limitMessage(selectedVector.provider, retryAt)); return true; }
             vectorChoice = selectedVector;
             vectorLoading = true;
             updateVectorAttribution();
@@ -1115,7 +1142,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 });
             return true;
         }
-        const index = selection;
+        const index = selection as number;
         activeBasemapIndex = index >= 0 && index < availableBasemaps.length ? index : -1;
         activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
         if (activeBasemap) addBasemapLayer(activeBasemap);
@@ -1126,7 +1153,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     // No usable tiles after an error: retain the map and a natural retry via
     // the existing picker. A tile error cannot establish CORS as the cause.
-    const markBasemapFailed = index => {
+    const markBasemapFailed = (index: number) => {
         const name = index >= 0 && index < availableBasemaps.length ? availableBasemaps[index].name : '';
         swapBasemap(-1);
         showNotice(`${name || 'That map layer'} couldn’t load. Select it again to retry.`);
@@ -1137,7 +1164,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // (falling back to the first available, then terrain-only). Resets the
     // per-drape tile-check flags so the resolved layer is judged fresh. Used by
     // the initial boot and by resume (to reflect a 2D layer change).
-    const resolveBasemaps = data => {
+    const resolveBasemaps = (data: FrameData & { basemap?: { kind?: string; provider?: string } | null; basemaps?: unknown }) => {
         initialVectorBasemap = data.basemap?.kind === 'vector' ? vectorBasemap(data.basemap.provider === undefined ? 'vector' : data.basemap.provider) : null;
         const initialBasemap = validateBasemap(data.basemap);
         const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
@@ -1163,44 +1190,45 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     // Group maps paint each track its own color (falling back to the preferred
     // color for any track without one); single tracks use one flat color.
-    const routeBaseColor = style => routeHasFeatureColors
+    const routeBaseColor = (style: { color: string }) => routeHasFeatureColors
         ? ['coalesce', ['get', 'color'], style.color]
         : style.color;
 
     // While a track is hovered, only that track's features take the hover look;
     // everything else keeps the base paint.
-    const onHoveredTrack = (hovered, base) => hoveredRouteTrack === null
+    const onHoveredTrack = (hovered: unknown, base: unknown) => hoveredRouteTrack === null
         ? base
         : ['case', ['==', ['get', 'track'], hoveredRouteTrack], hovered, base];
 
-    const routeLineColor = style => onHoveredTrack(ROUTE_HOVER_COLOR, routeBaseColor(style));
-    const routeLineWidth = style => onHoveredTrack(
+    const routeLineColor = (style: { color: string }) => onHoveredTrack(ROUTE_HOVER_COLOR, routeBaseColor(style)) as MapLibre.DataDrivenPropertyValueSpecification<string>;
+    const routeLineWidth = (style: { width: number; casingWidth: number }) => onHoveredTrack(
         Math.min(style.width + ROUTE_HOVER_WIDTH_GAIN, style.casingWidth - 1), style.width);
 
-    const setRoutePaint = routeStyle => {
+    const setRoutePaint = (routeStyle: unknown) => {
         const style = validateStyle(routeStyle);
         activeRouteStyle = style;
         if (!map || !loaded) return;
         map.setPaintProperty('bpb-route-casing', 'line-color', style.casingColor);
         map.setPaintProperty('bpb-route-casing', 'line-width', style.casingWidth);
         map.setPaintProperty('bpb-route', 'line-color', routeLineColor(style));
-        map.setPaintProperty('bpb-route', 'line-width', routeLineWidth(style));
+        map.setPaintProperty('bpb-route', 'line-width', routeLineWidth(style) as MapLibre.DataDrivenPropertyValueSpecification<number>);
     };
 
     // Repaint only the route line when the hovered track changes; the casing
     // and every other layer are untouched by hover.
-    const setRouteHover = track => {
+    const setRouteHover = (track: unknown) => {
         const next = routeHasTrackIds && Number.isInteger(track) ? track : null;
         if (next === hoveredRouteTrack) return;
         hoveredRouteTrack = next;
         if (!map || !loaded) return;
         try {
             map.setPaintProperty('bpb-route', 'line-color', routeLineColor(activeRouteStyle));
-            map.setPaintProperty('bpb-route', 'line-width', routeLineWidth(activeRouteStyle));
+            map.setPaintProperty('bpb-route', 'line-width', routeLineWidth(activeRouteStyle) as MapLibre.DataDrivenPropertyValueSpecification<number>);
         } catch (error) { /* The route layer may be mid-teardown; hover is decoration. */ }
     };
 
-    const setZoomControl = value => {
+    const setZoomControl = (input: unknown) => {
+        const value = input as Record<string, number> | null | undefined;
         if (!mapElement || !value || !['right', 'bottom', 'width', 'height'].every(key =>
             Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 10000)
             || value.width < 16 || value.height < 32) return;
@@ -1221,17 +1249,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             const height = Math.max(0, zoom.bottom + 4 - credits.top);
             const width = height > 0 ? Math.max(64, credits.right - zoom.left + 4) : 0;
             const values = [['width', width], ['height', height]];
-            if (values.every(([key, value]) => mapElement.style.getPropertyValue(`--bpb-credit-obstruction-${key}`) === `${value}px`)) break;
-            for (const [key, value] of values) mapElement.style.setProperty(`--bpb-credit-obstruction-${key}`, `${value}px`);
+            if (values.every(([key, value]) => mapElement!.style.getPropertyValue(`--bpb-credit-obstruction-${key}`) === `${value}px`)) break;
+            for (const [key, value] of values) mapElement!.style.setProperty(`--bpb-credit-obstruction-${key}`, `${value}px`);
         }
         const credits = mapElement?.querySelector('.maplibregl-ctrl-attrib')?.getBoundingClientRect();
         const left = mapElement?.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
-        if (credits && left) mapElement.style.setProperty('--bpb-credits-inset',
+        if (credits && left) mapElement!.style.setProperty('--bpb-credits-inset',
             `${credits.left < left.right ? credits.height : 0}px`);
         if (loaded) postOverlayView();
     };
 
-    const setTheme = theme => {
+    const setTheme = (theme: unknown) => {
         const nextTheme = theme === 'dark' ? 'dark' : 'light';
         activeTheme = nextTheme;
         if (mapElement) mapElement.dataset.theme = nextTheme;
@@ -1239,7 +1267,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
         const palette = PALETTES[nextTheme];
         map.setPaintProperty('terrain-background', 'background-color', palette.background);
-        map.setPaintProperty('terrain-relief', 'color-relief-color', reliefExpression(palette));
+        map.setPaintProperty('terrain-relief', 'color-relief-color', reliefExpression(palette) as unknown as MapLibre.ExpressionSpecification);
         map.setPaintProperty('terrain-hillshade', 'hillshade-shadow-color', palette.hillShadow);
         map.setPaintProperty('terrain-hillshade', 'hillshade-highlight-color', palette.hillHighlight);
         map.setPaintProperty('terrain-hillshade', 'hillshade-accent-color', palette.hillAccent);
@@ -1252,8 +1280,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // move events that follow, so the camera never tilts. Normalize only that
     // impossible physical-button combination into the Chrome-shaped event;
     // real secondary-button drags report buttons=2 and pass through untouched.
-    const normalizeControlPrimaryDrag = container => {
-        container.addEventListener('mousedown', event => {
+    const normalizeControlPrimaryDrag = (container: HTMLElement) => {
+        container.addEventListener('mousedown', (event: MouseEvent) => {
             if (!event.ctrlKey || event.button !== 2 || event.buttons !== 1) return;
             const target = event.target;
             if (!target || typeof target.dispatchEvent !== 'function') return;
@@ -1280,16 +1308,16 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }, true);
     };
 
-    const setHighlight = (coordinates, series) => {
+    const setHighlight = (coordinates: unknown, series: string) => {
         if (!map || !loaded) return;
         const source = map.getSource('bpb-highlight');
-        if (!source || typeof source.setData !== 'function') return;
+        if (!source || typeof (source as DataSource).setData !== 'function') return;
         const valid = Array.isArray(coordinates) && coordinates.length === 2
             && Number.isFinite(coordinates[0]) && Math.abs(coordinates[0]) <= 180
             && Number.isFinite(coordinates[1]) && Math.abs(coordinates[1]) <= MAX_MERCATOR_LAT;
         if (valid) {
             const color = Object.hasOwn(HIGHLIGHT_COLORS, series)
-                ? HIGHLIGHT_COLORS[series]
+                ? HIGHLIGHT_COLORS[series as keyof typeof HIGHLIGHT_COLORS]
                 : HIGHLIGHT_COLORS.distance;
             map.setPaintProperty('bpb-highlight', 'circle-color', color);
         }
@@ -1301,7 +1329,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // rejection leaves this optional overlay hidden without killing 3D.
         setLayerVisibility('bpb-highlight', false);
         setSourceData('bpb-highlight', data, {
-            onSuccess: terrainMap => setLayerVisibility('bpb-highlight', valid, terrainMap),
+            onSuccess: (terrainMap: MapLibreMap) => setLayerVisibility('bpb-highlight', valid, terrainMap),
             onFailure: error => {
                 console.warn('Better Peakbagger: 3D highlight update failed', error);
             }
@@ -1317,7 +1345,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const peakStateColor = () => {
         const expression = ['match', ['get', 'state']];
         for (const [state, style] of Object.entries(PEAK_MARKERS.states)) expression.push(state, style.color);
-        expression.push(PEAK_MARKERS.states[PEAK_MARKERS.fallbackState].color);
+        expression.push(PEAK_MARKERS.states[PEAK_MARKERS.fallbackState as keyof typeof PEAK_MARKERS.states].color);
         return expression;
     };
 
@@ -1339,9 +1367,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     }];
 
     // All-or-nothing like validateRoute: one malformed row drops the batch.
-    const validatePeaks = value => {
+    const validatePeaks = (value: unknown): PeakFeature[] | null => {
         if (!Array.isArray(value) || value.length > PEAK_MARKERS.maxCount) return null;
-        const features = [];
+        const features: PeakFeature[] = [];
         for (const peak of value) {
             if (!peak || typeof peak !== 'object') return null;
             const { id, name, lat, lon, state } = peak;
@@ -1372,7 +1400,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // even though queryRenderedFeatures still reports it. MapLibre's DOM
     // Marker path has an explicit terrain-depth tolerance, so use it for the
     // fixed-size rings and keep the circle layer as the API-reduced fallback.
-    const replacePeakMarkers = (features, terrainMap) => {
+    const replacePeakMarkers = (features: PeakFeature[], terrainMap: MapLibreMap) => {
         for (const marker of peakMarkers) {
             try { marker.remove(); } catch (error) { /* Already detached. */ }
         }
@@ -1388,7 +1416,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 element.className = 'bpb-terrain-peak-marker';
                 element.title = feature.properties.name;
                 element.setAttribute('aria-label', feature.properties.name);
-                element.style.setProperty('--bpb-peak-color', PEAK_MARKERS.states[state].color);
+                element.style.setProperty('--bpb-peak-color', PEAK_MARKERS.states[state as keyof typeof PEAK_MARKERS.states].color);
                 element.addEventListener('click', event => {
                     event.stopPropagation();
                     showPeakPopup(feature);
@@ -1429,7 +1457,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // and map.project() returns exactly that anchor in screen pixels, so a
     // pixel-distance test against the ring spec reproduces the drawn shape at
     // any pitch. Nearest hit wins; anything unprojectable is a miss.
-    const peakFeatureAt = point => {
+    const peakFeatureAt = (point: Point) => {
         if (!map || !loaded || typeof map.project !== 'function'
             || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
         let best = null;
@@ -1453,10 +1481,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     // A line lies on the terrain, so unlike the billboarded peak rings it can
     // be resolved with MapLibre's own rendered-layer query.
-    const routeFeaturesAt = point => {
+    const routeFeaturesAt = (point: Point) => {
         if (!map || !loaded || typeof map.queryRenderedFeatures !== 'function' || !point) return [];
         try {
-            const features = map.queryRenderedFeatures(point, { layers: ['bpb-route'] });
+            const features = map.queryRenderedFeatures(point as unknown as PointLike, { layers: ['bpb-route'] });
             return Array.isArray(features) ? features : [];
         } catch (error) {
             return [];
@@ -1464,7 +1492,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     // Only group-map segments carry an ascent link, and only those are clickable.
-    const routeLinkIn = features => features.find(feature => {
+    const routeLinkIn = (features: MapLibre.MapGeoJSONFeature[]) => features.find(feature => {
         const properties = feature && feature.properties;
         return properties && Number.isInteger(Number(properties.ascentId))
             && Number(properties.ascentId) > 0
@@ -1472,7 +1500,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     }) || null;
 
     // The topmost drawn track wins the hover, which is the one the user sees.
-    const routeTrackIn = features => {
+    const routeTrackIn = (features: MapLibre.MapGeoJSONFeature[]) => {
         for (const feature of features) {
             const raw = feature && feature.properties ? Number(feature.properties.track) : NaN;
             if (Number.isInteger(raw) && raw >= 0) return raw;
@@ -1482,7 +1510,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     // One pass per pointer position: the peak rings, the ascent-link cursor,
     // and the hovered group track all read the same point.
-    const updatePointer = point => {
+    const updatePointer = (point: Point) => {
         const routeFeatures = routeFeaturesAt(point);
         setRouteHover(routeTrackIn(routeFeatures));
         const canvas = map && typeof map.getCanvas === 'function' ? map.getCanvas() : null;
@@ -1491,7 +1519,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     // Hover hit tests are deferred to the next animation frame so a fast
     // pointer costs at most one scan of the (≤400) dots per painted frame.
-    const schedulePointerUpdate = point => {
+    const schedulePointerUpdate = (point: Point) => {
         peakPointerPoint = point;
         if (peakPointerFrame !== null) return;
         peakPointerFrame = requestAnimationFrame(() => {
@@ -1528,24 +1556,24 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // never an interim hop back to the feed coordinates — and the re-climb
     // retries on the next batch (see docs/3d-peak-markers.md, "Known
     // limitations").
-    const climbToLocalSummit = feature => {
+    const climbToLocalSummit = (feature: PeakFeature) => {
         const { leashM, riseM, strideM, finestStrideM } = PEAK_MARKERS.snap;
         const [feedLon, feedLat] = feature.geometry.coordinates;
         const metersPerDegreeLat = 111320;
         const metersPerDegreeLon = metersPerDegreeLat * Math.cos(feedLat * Math.PI / 180);
         if (!(metersPerDegreeLon > 0)) return null;
-        const elevationAt = (lon, lat) => {
+        const elevationAt = (lon: number, lat: number) => {
             try {
-                const elevation = map.queryTerrainElevation([lon, lat]);
+                const elevation = map!.queryTerrainElevation([lon, lat]);
                 return Number.isFinite(elevation) ? elevation : 0;
             } catch (error) {
                 return 0;
             }
         };
-        const metersFromFeed = (lon, lat) =>
+        const metersFromFeed = (lon: number, lat: number) =>
             Math.hypot((lon - feedLon) * metersPerDegreeLon, (lat - feedLat) * metersPerDegreeLat);
         let best = elevationAt(feedLon, feedLat);
-        if (!(best > 0)) return null;
+        if (!(best! > 0)) return null;
         const startElevation = best;
         let lon = feedLon;
         let lat = feedLat;
@@ -1557,7 +1585,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     const stepLat = lat + north * stride / metersPerDegreeLat;
                     if (metersFromFeed(stepLon, stepLat) > leashM) continue;
                     const elevation = elevationAt(stepLon, stepLat);
-                    if (elevation > best) {
+                    if (elevation! > best!) {
                         best = elevation;
                         lon = stepLon;
                         lat = stepLat;
@@ -1569,18 +1597,18 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // Gaining more than the rise leash means the walk summited a taller
         // neighboring feature inside the horizontal leash, or a DEM spike —
         // a few dozen meters of database error never buys this much height.
-        if (best - startElevation > riseM) return { lon: feedLon, lat: feedLat };
+        if (best! - startElevation! > riseM) return { lon: feedLon, lat: feedLat };
         if (lon !== feedLon || lat !== feedLat) {
             for (const [east, north] of COMPASS_STEPS) {
                 const beyondLon = lon + east * finestStrideM / metersPerDegreeLon;
                 const beyondLat = lat + north * finestStrideM / metersPerDegreeLat;
-                if (elevationAt(beyondLon, beyondLat) > best) return { lon: feedLon, lat: feedLat };
+                if (elevationAt(beyondLon, beyondLat)! > best!) return { lon: feedLon, lat: feedLat };
             }
         }
         return { lon, lat };
     };
 
-    const snapToLocalSummit = feature => {
+    const snapToLocalSummit = (feature: PeakFeature) => {
         if (!map || typeof map.queryTerrainElevation !== 'function'
             || typeof map.getZoom !== 'function') return feature;
         const [feedLon, feedLat] = feature.geometry.coordinates;
@@ -1613,13 +1641,13 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             : { ...feature, geometry: { type: 'Point', coordinates: [verdict.lon, verdict.lat] } };
     };
 
-    const setPeakData = features => {
+    const setPeakData = (features: PeakFeature[]) => {
         const merged = focusPeakFeature
             ? [focusPeakFeature, ...features
-                .filter(feature => feature.properties.id !== focusPeakFeature.properties.id)
+                .filter(feature => feature.properties.id !== focusPeakFeature!.properties.id)
                 .slice(0, PEAK_MARKERS.maxCount - 1)]
             : features;
-        const nextPeakFeatures = merged.map(snapToLocalSummit);
+        const nextPeakFeatures = merged.map(snapToLocalSummit) as PeakFeature[];
         setSourceData(PEAK_MARKERS.sourceId, {
             type: 'FeatureCollection', features: nextPeakFeatures
         }, {
@@ -1640,7 +1668,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             },
             onFailure: error => {
                 peakFeatures = [];
-                replacePeakMarkers([], map);
+                replacePeakMarkers([], map!);
                 setLayerVisibility(PEAK_MARKERS.layerId, false);
                 console.warn('Better Peakbagger: 3D peak update failed', error);
             }
@@ -1650,17 +1678,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // The visible bounds, clamped to boundsFactor × the straight-down viewport
     // around the camera center so a pitched camera never asks for the horizon.
     const peakRequestBounds = () => {
-        const rawBounds = map.getBounds();
-        const center = map.getCenter();
-        const canvas = typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+        const rawBounds = map!.getBounds();
+        const center = map!.getCenter();
+        const canvas = typeof map!.getCanvas === 'function' ? map!.getCanvas() : null;
         const width = canvas ? (canvas.clientWidth || canvas.width) : 0;
         const height = canvas ? (canvas.clientHeight || canvas.height) : 0;
         if (!rawBounds || !center || !(width > 0) || !(height > 0)) return null;
-        const degreesPerPixel = 360 / (512 * Math.pow(2, map.getZoom()));
+        const degreesPerPixel = 360 / (512 * Math.pow(2, map!.getZoom()));
         const halfLon = (width * degreesPerPixel * PEAK_MARKERS.boundsFactor) / 2;
         const halfLat = (height * degreesPerPixel * PEAK_MARKERS.boundsFactor) / 2
             * Math.cos(center.lat * Math.PI / 180);
-        const round = value => Math.round(value * 1e4) / 1e4;
+        const round = (value: number) => Math.round(value * 1e4) / 1e4;
         const bounds = {
             miny: round(Math.max(rawBounds.getSouth(), center.lat - halfLat)),
             maxy: round(Math.min(rawBounds.getNorth(), center.lat + halfLat)),
@@ -1699,8 +1727,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }, PEAK_MARKERS.debounceMs);
     };
 
-    const cameraIsMoving = () => ['isMoving', 'isZooming', 'isRotating']
-        .some(name => typeof map[name] === 'function' && map[name]());
+    const cameraIsMoving = () => (['isMoving', 'isZooming', 'isRotating'] as const)
+        .some(name => typeof map![name] === 'function' && map![name]());
 
     // Fetch the coarse elevation levels a tilt from here would ask for, so the
     // tilt itself finds them cached instead of stalling on a download. Runs only
@@ -1742,7 +1770,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             expand: TILT_WARM_VIEW_EXPAND,
             expandStep: TILT_WARM_VIEW_EXPAND_STEP,
             capPolicy: TerrainTiles.CAP_POLICY.SHED_FINEST
-        }).map(tile => ({ tile, key: `${tile.z}/${tile.x}/${tile.y}` }))
+        } as unknown as Parameters<typeof TerrainTiles.tilesForView>[0]).map(tile => ({ tile, key: `${tile.z}/${tile.x}/${tile.y}` }))
             .filter(entry => !tiltWarmedTiles.has(entry.key));
         if (!fresh.length) return;
         tiltWarmAt = now;
@@ -1787,7 +1815,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }, TILT_WARM_IDLE_MS);
     };
 
-    const applyPeaks = data => {
+    const applyPeaks = (data: FrameData) => {
         if (!map || !loaded || suspended) return;
         if (map.getZoom() < PEAK_MARKERS.minZoom) return;
         if (data.unavailable === true) {
@@ -1800,10 +1828,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (data.requestId !== peaksRequestId) return;
         if (data.rateLimited === true) {
             const now = Date.now();
-            const retryAt = Number.isFinite(data.retryAt) && data.retryAt > now && data.retryAt <= now + 86400_000 ? data.retryAt : null;
+            const retryAt = Number.isFinite(data.retryAt) && (data.retryAt as number) > now && (data.retryAt as number) <= now + 86400_000 ? data.retryAt as number : null;
             peaksLimitedUntil = retryAt || now + 60000;
             lastPeaksBoundsKey = null;
-            showNotice(`${rateLimitMessage('Peakbagger', retryAt)} ${peakFeatures.length ? 'Showing the last loaded peaks.' : 'Nearby peaks could not be loaded.'}`);
+            showNotice(`${limitMessage('Peakbagger', retryAt)} ${peakFeatures.length ? 'Showing the last loaded peaks.' : 'Nearby peaks could not be loaded.'}`);
             return;
         }
         peaksLimitedUntil = 0;
@@ -1813,7 +1841,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // The same white name-link bubble the 2D markers open, rebuilt from
     // validated fields only: the link target is derived from the integer peak
     // id, never from received markup.
-    const showPeakPopup = feature => {
+    const showPeakPopup = (feature: PeakFeature) => {
         const properties = (feature && feature.properties) || {};
         const id = properties.id;
         const name = properties.name;
@@ -1845,17 +1873,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         })
             .setLngLat([coordinates[0], coordinates[1]])
             .setDOMContent(content)
-            .addTo(map);
+            .addTo(map!);
     };
 
-    const showRoutePopup = (feature, lngLat) => {
+    const showRoutePopup = (feature: MapLibre.MapGeoJSONFeature, lngLat: LngLat) => {
         const properties = (feature && feature.properties) || {};
         const id = Number(properties.ascentId);
         const label = properties.label;
         const position = lngLat && Number.isFinite(lngLat.lng) && Number.isFinite(lngLat.lat)
             ? [lngLat.lng, lngLat.lat]
             : null;
-        if (!Number.isInteger(id) || id <= 0 || id > 1e9
+        if (!Number.isInteger(id) || (id as number) <= 0 || (id as number) > 1e9
             || typeof label !== 'string' || !label || !position || !parentOrigin
             || !maplibre || typeof maplibre.Popup !== 'function') return;
         if (peakPopup) {
@@ -1875,15 +1903,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         link.textContent = label;
         content.append(link);
         routePopup = new maplibre.Popup({ closeButton: true, closeOnClick: true, maxWidth: '420px' })
-            .setLngLat(position)
+            .setLngLat(position as [number, number])
             .setDOMContent(content)
-            .addTo(map);
+            .addTo(map!);
     };
 
-    const createTerrain = data => {
+    const createTerrain = (data: FrameData & TerrainFrameData) => {
         if (map || mapElement) return;
         snowStations = readSnotelMapStations(data.snowStations) || [];
-        snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : []);
+        snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter((id: string) => snowStations.some(station => station.id === id)) : []);
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
         const requestedCamera = terrainCamera.toMapLibre(data.camera);
@@ -1898,8 +1926,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
         const focusPeak = focus ? validatePeaks([data.focusPeak]) : null;
         focusPeakFeature = focusPeak && focusPeak.length === 1
-            && Math.abs(focusPeak[0].geometry.coordinates[0] - focus.center[0]) < 1e-6
-            && Math.abs(focusPeak[0].geometry.coordinates[1] - focus.center[1]) < 1e-6
+            && Math.abs(focusPeak[0].geometry.coordinates[0] - focus!.center[0]) < 1e-6
+            && Math.abs(focusPeak[0].geometry.coordinates[1] - focus!.center[1]) < 1e-6
             ? focusPeak[0]
             : null;
 
@@ -1958,10 +1986,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
         try {
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
-            terrainCache = TerrainCache.create({ limitMb: cacheLimitMb });
+            terrainCache = TerrainCache.create({ limitMb: cacheLimitMb } as Parameters<typeof TerrainCache.create>[0]);
             terrainCacheWarmable = cacheLimitMb > 0;
             const cacheOwner = terrainCache;
-            const recordDem = (url, outcome) => {
+            const recordDem = (url: string, outcome: string) => {
                 if (terrainCache !== cacheOwner) return;
                 demOutcomes.delete(url); demOutcomes.set(url, outcome);
                 if (demOutcomes.size > 1000) demOutcomes.delete(demOutcomes.keys().next().value);
@@ -1978,13 +2006,13 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 const owner = map, basemap = vectorChoice, token = vectorSwapToken;
                 if (!basemap) return Promise.reject(Object.assign(new Error('Vector map removed.'), { name: 'AbortError' }));
                 const isCurrent = () => map === owner && vectorChoice === basemap && vectorSwapToken === token;
-                const obsolete = error => Object.assign(new Error('Vector map replaced.'), { name: 'AbortError',
+                const obsolete = (error?: RateLimitedError) => Object.assign(new Error('Vector map replaced.'), { name: 'AbortError',
                     ...(error?.status === 429 ? { status: 429, retryAt: error.retryAt } : {}) });
                 vectorRequests.add(controller);
                 return createVectorMapRequest({ basemap, onRateLimit(error) {
                     vectorCooldowns.set(basemap.id, Math.max(vectorCooldowns.get(basemap.id) || 0, readRetryAt(error.retryAt) || Date.now() + 300000));
                     if (map !== owner || vectorChoice !== basemap) return;
-                    swapBasemap(-1); showNotice(rateLimitMessage(basemap.provider, vectorCooldowns.get(basemap.id)));
+                    swapBasemap(-1); showNotice(limitMessage(basemap.provider, vectorCooldowns.get(basemap.id)));
                 } })(parameters, controller).then(result => {
                     if (!isCurrent()) throw obsolete();
                     return result;
@@ -2005,14 +2033,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                         bounds: route.bounds,
                         fitBoundsOptions: { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0 }
                     }
-                    : { center: focus.center, zoom: focus.zoom });
+                    : { center: focus!.center, zoom: focus!.zoom });
             map = new maplibre.Map({
                 container: canvas,
                 // A raster drape must never gate MapLibre's initial `load`:
                 // throttled or pending provider tiles can otherwise hold the
                 // entire 3D surface behind the page timeout. Add it only after
                 // the terrain style is ready, like every live picker swap.
-                style: terrainStyle(activeTheme),
+                style: terrainStyle(activeTheme) as unknown as MapLibre.StyleSpecification,
                 ...initialCamera,
                 pitch: 60,
                 bearing: 0,
@@ -2033,25 +2061,26 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 // of the *visible* tile count, measured by terrain:lod at 96
                 // rather than 60 retained elevation tiles for an 1100x700 frame.
                 maxTileCacheZoomLevels: TILE_CACHE_ZOOM_LEVELS,
-                transformRequest: (url, resourceType) => {
+                transformRequest: (url: string, resourceType?: MapLibre.ResourceType) => {
                     if (!(vectorInstalling || vectorActive)) return { url };
                     if (vectorChoice && TerrainStyle.providerUrl(url, { basemap: vectorChoice })) {
-                        return { url: vectorRequestUrl(url, vectorChoice), credentials: 'omit', referrerPolicy: 'no-referrer' };
+                        return { url: vectorRequestUrl(url, vectorChoice), credentials: 'omit', referrerPolicy: 'no-referrer' } as unknown as MapLibre.RequestParameters;
                     }
                     let parsed;
                     try { parsed = new URL(url); } catch { return { url }; }
-                    if (['Source', 'Tile', 'Glyphs', 'SpriteImage', 'SpriteJSON'].includes(resourceType)
+                    if (['Source', 'Tile', 'Glyphs', 'SpriteImage', 'SpriteJSON'].includes(resourceType as string)
                         && (parsed.protocol === 'https:' || parsed.protocol === 'http:')) {
                         throw new Error('Vector basemap requested an unapproved provider origin.');
                     }
                     return { url };
                 }
-            });
+            } as unknown as MapLibre.MapOptions);
             const terrainMap = map;
             // Register the failure route before controls or canvas inspection:
             // MapLibre 6 reports WebGL2 initialization through its error event,
             // and no setup step may race ahead and leave the host on a spinner.
-            terrainMap.on('error', event => {
+            terrainMap.on('error', (mapError: unknown) => {
+                const event = mapError as MapErrorEvent;
                 if (map !== terrainMap) return;
                 if (event?.error?.name === 'AbortError') return;
                 if (event?.sourceId?.startsWith(VECTOR_PREFIX) && (!vectorChoice
@@ -2067,7 +2096,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                         : source.startsWith(VECTOR_PREFIX) ? vectorChoice?.provider || 'Vector provider'
                             : source === 'terrain' ? 'Mapterhorn' : 'Map service';
                     if (source === 'basemap' || source.startsWith(VECTOR_PREFIX)) swapBasemap(-1);
-                    showNotice(rateLimitMessage(service, event.error.retryAt));
+                    showNotice(limitMessage(service, event.error.retryAt));
                     return;
                 }
                 if (event && event.sourceId === 'basemap') {
@@ -2110,7 +2139,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             });
             rendererCanvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
             if (rendererCanvas && typeof rendererCanvas.addEventListener === 'function') {
-                contextLostHandler = event => {
+                contextLostHandler = (event: Event) => {
                     if (map !== terrainMap) return;
                     // We are abandoning this renderer and falling back to the
                     // native map, so suppress MapLibre's competing restoration
@@ -2137,7 +2166,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             // A raster tile that loads fires a 'source' data event carrying the
             // tile. One such event proves the drape can render, so a handful of
             // later tile failures must not tear the whole layer down.
-            terrainMap.on('data', event => {
+            terrainMap.on('data', (event: MapErrorEvent) => {
                 if (map === terrainMap && event && event.sourceId === 'basemap'
                     && event.dataType === 'source' && event.tile) basemapContentLoaded = true;
             });
@@ -2159,8 +2188,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                         const match = /^bpb-dem:\/\/(\d+)\/(\d+)\/(\d+)\.webp$/.exec(url);
                         if (!match) return false;
                         const [, z, x, y] = match.map(Number);
-                        return x >= TerrainTiles.lonToTileX(bounds.getWest(), z) && x <= TerrainTiles.lonToTileX(bounds.getEast(), z)
-                            && y >= TerrainTiles.latToTileY(bounds.getNorth(), z) && y <= TerrainTiles.latToTileY(bounds.getSouth(), z);
+                        return x >= TerrainTiles.lonToTileX(bounds!.getWest(), z) && x <= TerrainTiles.lonToTileX(bounds!.getEast(), z)
+                            && y >= TerrainTiles.latToTileY(bounds!.getNorth(), z) && y <= TerrainTiles.latToTileY(bounds!.getSouth(), z);
                     }).map(([, outcome]) => outcome);
                     if (outcomes.includes('missing') && !outcomes.includes('data')) {
                         fail('coverage');
@@ -2182,7 +2211,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 applyTerrainLod();
                 terrainMap.addSource('bpb-route', {
                     type: 'geojson',
-                    data: route ? route.geojson : { type: 'FeatureCollection', features: [] }
+                    data: (route ? route.geojson : { type: 'FeatureCollection', features: [] }) as GeoJSON.GeoJSON
                 });
                 terrainMap.addLayer({
                     id: 'bpb-route-casing', type: 'line', source: 'bpb-route',
@@ -2195,12 +2224,12 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     paint: { 'line-color': routeLineColor(activeRouteStyle), 'line-width': activeRouteStyle.width }
                 });
                 terrainMap.addSource(PEAK_MARKERS.sourceId, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-                for (const layer of buildPeakLayers()) terrainMap.addLayer(layer);
+                for (const layer of buildPeakLayers()) terrainMap.addLayer(layer as MapLibre.AddLayerObject);
                 setPeakData([]);
                 // Click and hover go through the screen-space hit test —
                 // never layer-scoped events, which die on a pitched terrain
                 // camera (see peakFeatureAt).
-                terrainMap.on('click', event => {
+                terrainMap.on('click', (event: MapMouseEvent) => {
                     if (map !== terrainMap || !event) return;
                     const feature = peakFeatureAt(event.point);
                     if (feature) showPeakPopup(feature);
@@ -2209,12 +2238,12 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                         if (routeFeature) showRoutePopup(routeFeature, event.lngLat);
                     }
                 });
-                terrainMap.on('contextmenu', event => {
+                terrainMap.on('contextmenu', (event: MapMouseEvent) => {
                     if (map !== terrainMap || !event?.lngLat || !event.originalEvent) return;
                     post('locationContext', { latitude: event.lngLat.lat, longitude: event.lngLat.wrap().lng,
                         x: event.originalEvent.clientX, y: event.originalEvent.clientY });
                 });
-                terrainMap.getCanvas?.()?.addEventListener?.('keydown', event => {
+                terrainMap.getCanvas?.()?.addEventListener?.('keydown', (event: KeyboardEvent) => {
                     if (map !== terrainMap || !event.isTrusted
                         || !(event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) return;
                     const center = terrainMap.getCenter(), rect = terrainMap.getCanvas().getBoundingClientRect();
@@ -2222,7 +2251,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     post('locationContext', { latitude: center.lat, longitude: center.wrap().lng, keyboard: true,
                         x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
                 });
-                terrainMap.on('mousemove', event => {
+                terrainMap.on('mousemove', (event: MapMouseEvent) => {
                     if (map === terrainMap && event && event.point) schedulePointerUpdate(event.point);
                 });
                 terrainMap.on('mouseout', () => {
@@ -2317,14 +2346,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // Re-apply a fresh route/camera/theme to the parked (suspended) map instead
     // of rebuilding it. Returns false when there is no live map to resume, so
     // the caller boots fresh via createTerrain.
-    const resumeTerrain = data => {
+    const resumeTerrain = (data: FrameData & TerrainFrameData) => {
         if (!map || !loaded) return false;
         suspended = false;
         elevationChecked = false;
         const drapeBefore = drapedBasemapTiles, drapeProven = basemapContentLoaded;
         basemapChecked = basemapErrored = basemapContentLoaded = false;
         snowStations = readSnotelMapStations(data.snowStations) || [];
-        snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : []);
+        snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter((id: string) => snowStations.some(station => station.id === id)) : []);
         if (!snowMarkers.replace(map, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
@@ -2341,14 +2370,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
         const focusPeak = focus ? validatePeaks([data.focusPeak]) : null;
         focusPeakFeature = focusPeak && focusPeak.length === 1
-            && Math.abs(focusPeak[0].geometry.coordinates[0] - focus.center[0]) < 1e-6
-            && Math.abs(focusPeak[0].geometry.coordinates[1] - focus.center[1]) < 1e-6
+            && Math.abs(focusPeak[0].geometry.coordinates[0] - focus!.center[0]) < 1e-6
+            && Math.abs(focusPeak[0].geometry.coordinates[1] - focus!.center[1]) < 1e-6
             ? focusPeak[0]
             : null;
 
         // Route, style, and theme applied to the existing sources/layers.
         const routeSource = typeof map.getSource === 'function' ? map.getSource('bpb-route') : null;
-        if (routeSource && typeof routeSource.setData === 'function') {
+        if (routeSource && typeof (routeSource as DataSource).setData === 'function') {
             setSourceData('bpb-route', route ? route.geojson : { type: 'FeatureCollection', features: [] }, {
                 // Showing the previous trip's route is materially wrong. If
                 // the live worker rejects the replacement, abandon this 3D
@@ -2380,11 +2409,11 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // Camera: the live 2D camera wins; else frame the route; else center the
         // focus. Pitch/bearing reset to the fresh-boot defaults either way.
         if (requestedCamera) {
-            map.jumpTo({ ...requestedCamera, pitch: 60, bearing: 0 });
+            map.jumpTo({ ...requestedCamera, pitch: 60, bearing: 0 } as MapLibre.JumpToOptions);
         } else if (route) {
-            map.fitBounds(route.bounds, { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0, duration: 0 });
+            map.fitBounds(route.bounds as unknown as MapLibre.LngLatBoundsLike, { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0, duration: 0 });
         } else {
-            map.jumpTo({ center: focus.center, zoom: focus.zoom, pitch: 60, bearing: 0 });
+            map.jumpTo({ center: focus!.center, zoom: focus!.zoom, pitch: 60, bearing: 0 } as MapLibre.JumpToOptions);
         }
 
         // Peaks: clear stale dots (keeping the focus peak) and refetch for the
@@ -2422,7 +2451,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     : undefined;
             if (nextGeneration === undefined) return;
             const revision = ++authorizationRevision;
-            const finishAuthorization = allowed => {
+            const finishAuthorization = (allowed: boolean) => {
                 if (!allowed || revision !== authorizationRevision) return;
                 parentOrigin = event.origin;
                 activeGeneration = nextGeneration;
@@ -2435,7 +2464,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 if (decision && typeof decision.then === 'function') {
                     void decision.then(finishAuthorization, () => {});
                 } else {
-                    finishAuthorization(decision);
+                    finishAuthorization(decision as unknown as boolean);
                 }
             } catch {
                 // Authorization failure is deliberately silent and starts no
@@ -2479,7 +2508,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             const stations = readSnotelMapStations(data.snowStations);
             if (!stations) return;
             snowStations = stations;
-            if (Array.isArray(data.conditions)) snowConditions = new Set(data.conditions.filter(id => stations.some(station => station.id === id)));
+            if (Array.isArray(data.conditions)) snowConditions = new Set(data.conditions.filter((id: string) => stations.some(station => station.id === id)));
             if (loaded && !snowMarkers.replace(map, stations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
             if (!stations.length) snowReveal.cancel();
             else if (loaded && data.reveal === true) snowReveal.show(stations, readSnotelMapOcclusions(data.occlusions));
@@ -2504,7 +2533,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (event.key !== 'Escape' || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !map || !loaded) return;
         // Native pickers and editable controls own their Escape interaction.
         // Closing a layer list must not also leave the terrain view.
-        if (event.target?.closest?.('select, input, textarea, [contenteditable]:not([contenteditable="false" i]), [role="combobox"], [role="slider"]')) return;
+        if ((event.target as Element | null)?.closest?.('select, input, textarea, [contenteditable]:not([contenteditable="false" i]), [role="combobox"], [role="slider"]')) return;
         if (snowMarkers.closePopup()) { event.preventDefault(); return; }
         if (peakPopup || routePopup) {
             event.preventDefault();

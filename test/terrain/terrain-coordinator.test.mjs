@@ -8,7 +8,7 @@ import {
     TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS,
     terrainCoordinator as TerrainCoordinator,
 } from '../../src/terrain/terrain-coordinator.js';
-import { TERRAIN_FRAME_LOAD_TIMEOUT_MS } from '../../src/terrain/terrain-frame-runtime.js';
+import { TERRAIN_FRAME_LOAD_TIMEOUT_MS } from '../../src/terrain/terrain-frame-runtime.ts';
 
 test('the outer terrain deadline leaves room for the renderer handoff', () => {
     assert.ok(TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS >= TERRAIN_FRAME_LOAD_TIMEOUT_MS + 5000,

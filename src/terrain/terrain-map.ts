@@ -14,6 +14,12 @@ import { overlayBounds } from '../maps/map-overlay-providers.js';
 import { terrainFailure } from './terrain-failure.js';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
+interface TerrainInitData { [field: string]: unknown; }
+type LayerSnapshot = NonNullable<ReturnType<typeof readLayerSnapshot>>;
+interface PendingInit { payload?: unknown; conditions?: unknown[]; [field: string]: unknown; }
+interface ActivationRequest { token: string; expiresAt: number; }
+interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean; token?: string; expiresAt?: number } | undefined>; getURL(path: string): string; }
+
 // Kept as an IIFE for scoping; dependencies are ES imports, no globals published.
 (() => {
     'use strict';
@@ -24,32 +30,32 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     // src/terrain/terrain-failure.js owns, never a local copy of it.
     const ALLOWED_FAILURES = terrainFailure.REASONS;
 
-    let frame = null;
-    let pendingInit = null;
+    let frame: HTMLIFrameElement | null = null;
+    let pendingInit: PendingInit | null = null;
     // Capture updates before the worker has even issued the frame capability;
     // pendingInit owns the later iframe handshake and authorization window.
-    let pendingLaunch = null;
+    let pendingLaunch: PendingInit | null = null;
     // Keep-alive: after a 'destroy' the loaded frame stays in the DOM at opacity
     // 0 for a TTL so a quick 2D→3D re-entry resumes MapLibre instead of rebuilding
     // it. frameLoaded gates whether there is anything worth suspending.
     let suspended = false;
-    let suspendTimer = null;
+    let suspendTimer: ReturnType<typeof setTimeout> | null = null;
     let frameLoaded = false;
     let frameGeneration = 0;
     let launchRevision = 0;
     let awaitingFrameReady = false;
-    let latestLayers = null;
-    let terrainEnabled = false;
+    let latestLayers: LayerSnapshot | null = null;
+    let terrainEnabled: boolean | null | undefined = false;
     let terrainTheme = 'system';
     let settingsRevision = 0;
-    let consentElement = null;
-    let consentKeyHandler = null;
-    let consentReturnFocus = null;
-    const activationPromises = new Map();
+    let consentElement: HTMLElement | null = null;
+    let consentKeyHandler: ((event: KeyboardEvent) => void) | null = null;
+    let consentReturnFocus: HTMLElement | null = null;
+    const activationPromises = new Map<string, Promise<ActivationRequest | null>>();
 
-    const runtime = () => (globalThis.browser || globalThis.chrome)?.runtime || null;
+    const runtime = () => ((globalThis as unknown as { browser?: { runtime?: BasicRuntime } }).browser || globalThis.chrome as unknown as { runtime?: BasicRuntime } | undefined)?.runtime || null;
 
-    const issueActivation = action => {
+    const issueActivation = (action: string) => {
         const api = runtime();
         if (!api || typeof api.sendMessage !== 'function') return Promise.resolve(null);
         const request = Promise.resolve(api.sendMessage({
@@ -57,13 +63,13 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             action,
         })).then(reply => reply?.ok === true && typeof reply.token === 'string'
             && Number.isFinite(reply.expiresAt)
-            ? { token: reply.token, expiresAt: reply.expiresAt }
+            ? { token: reply.token, expiresAt: reply.expiresAt! }
             : null, () => null);
         activationPromises.set(action, request);
         return request;
     };
 
-    const activationFor = async (action, consume = true) => {
+    const activationFor = async (action: string, consume = true) => {
         const pending = activationPromises.get(action);
         if (!pending) return null;
         if (consume) activationPromises.delete(action);
@@ -72,8 +78,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         return activation.token;
     };
 
-    const terrainControl = event => {
-        const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+    const terrainControl = (event: Event) => {
+        const path = (typeof event.composedPath === 'function' ? event.composedPath() : [event.target]) as (Element | null)[];
         return path.find(node => node?.id === 'bpb-terrain-toggle'
             || node?.classList?.contains('bpb-terrain-consent-primary')) || null;
     };
@@ -98,7 +104,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         if (event.isTrusted && terrainControl(event)) void issueActivation('prefetch');
     }, true);
 
-    const postToPage = (type, detail = {}) => window.postMessage({
+    const postToPage = (type: string, detail: Record<string, unknown> = {}) => window.postMessage({
         [PAGE_MESSAGE_TAG]: true,
         dir: 'toPage',
         type,
@@ -146,7 +152,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         catch { return null; }
     };
 
-    const postToFrame = (type, detail = {}) => {
+    const postToFrame = (type: string, detail: Record<string, unknown> = {}) => {
         const target = frameOrigin();
         if (!frame || !frame.contentWindow || !target) return;
         try {
@@ -169,21 +175,21 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     // Read DOM geometry in the isolated bridge for every owning surface. The
     // native map stays laid out while hidden, so credits wrapping and viewport
     // resizing cannot give the two renderers different zoom-control anchors.
-    let controlResizeObserver = null;
+    let controlResizeObserver: ResizeObserver | null = null;
     const nativeZoomControl = () => {
         try {
-            const native = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+            const native = document.querySelector<HTMLIFrameElement>('iframe[src*="MasterMap.aspx" i]');
             const doc = native?.contentDocument || document;
             const zoom = doc.querySelector('.leaflet-control-zoom')?.getBoundingClientRect();
-            const map = native ? { width: native.contentWindow.innerWidth, height: native.contentWindow.innerHeight,
-                right: native.contentWindow.innerWidth, bottom: native.contentWindow.innerHeight }
+            const map = native ? { width: native.contentWindow!.innerWidth, height: native.contentWindow!.innerHeight,
+                right: native.contentWindow!.innerWidth, bottom: native.contentWindow!.innerHeight }
                 : document.getElementById('map')?.getBoundingClientRect();
             if (!zoom?.width || !zoom.height || !map?.width || !map.height) return null;
             return { right: map.right - zoom.right, bottom: map.bottom - zoom.bottom, width: zoom.width, height: zoom.height };
         } catch { return null; }
     };
 
-    const fail = reason => {
+    const fail = (reason: string) => {
         launchRevision++;
         removeFrame();
         postToPage('error', { reason: ALLOWED_FAILURES.has(reason) ? reason : 'renderer' });
@@ -193,7 +199,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     // checked TERRAIN_PREFETCH. Only fires while the feature is on; the worker
     // still re-validates the sender, the feature gate, and the numbers. The
     // reply is ignored — a warm cache is a best-effort optimization.
-    const forwardPrefetch = async data => {
+    const forwardPrefetch = async (data: TerrainInitData & { viewport?: { width: number; height: number }; bounds?: { minLat: number; minLon: number; maxLat: number; maxLon: number }; center?: [number, number]; zoom?: number }) => {
         const activation = await activationFor('prefetch');
         if (!activation) return;
         // A hover can arrive in the same task that booted this bridge. Wait for
@@ -205,7 +211,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         if (!api || typeof api.sendMessage !== 'function') return;
         const viewport = data && data.viewport;
         if (!viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height)) return;
-        const payload = {
+        const payload: Record<string, unknown> = {
             type: 'TERRAIN_PREFETCH',
             activation,
             viewport: { width: viewport.width, height: viewport.height }
@@ -235,7 +241,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     // Named `next`, not `settings`: the module-level import is the settings
     // store, and shadowing it here made `settings.set(...)` inside this file
     // read as though it might mean the snapshot rather than the store.
-    const applySettings = next => {
+    const applySettings = (next: { enable3dMap?: unknown; theme?: unknown; [field: string]: unknown } | null | undefined) => {
         terrainEnabled = next && next.enable3dMap === true;
         terrainTheme = next && typeof next.theme === 'string' ? next.theme : 'system';
         if (!terrainEnabled) launchRevision++;
@@ -244,7 +250,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
     const dismissConsent = () => {
         if (!consentElement) return;
-        document.removeEventListener('keydown', consentKeyHandler, true);
+        document.removeEventListener('keydown', consentKeyHandler!, true);
         consentElement.remove();
         consentElement = null;
         consentKeyHandler = null;
@@ -253,12 +259,12 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         if (returnFocus && returnFocus.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus();
     };
 
-    const finishConsent = enabled => {
+    const finishConsent = (enabled: boolean) => {
         dismissConsent();
         postToPage('consentResult', { enabled: enabled === true });
     };
 
-    const createTextElement = (tag, className, text) => {
+    const createTextElement = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text: string) => {
         const element = document.createElement(tag);
         if (className) element.className = className;
         element.textContent = text;
@@ -267,7 +273,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
     const showConsent = () => {
         if (consentElement) {
-            consentElement.querySelector('.bpb-terrain-consent-primary')?.focus();
+            consentElement.querySelector<HTMLElement>('.bpb-terrain-consent-primary')?.focus();
             return;
         }
 
@@ -292,7 +298,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
         const providerList = document.createElement('ul');
         providerList.className = 'bpb-terrain-consent-providers';
-        const addProvider = (name, detail, href) => {
+        const addProvider = (name: string, detail: string, href: string) => {
             const item = document.createElement('li');
             const copy = document.createElement('span');
             const providerName = createTextElement('strong', '', name);
@@ -361,7 +367,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             }
         });
 
-        consentKeyHandler = event => {
+        consentKeyHandler = (event: KeyboardEvent) => {
             if (!consentElement) return;
             if (event.key === 'Escape') {
                 event.preventDefault();
@@ -369,7 +375,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 return;
             }
             if (event.key !== 'Tab') return;
-            const focusable = Array.from(dialog.querySelectorAll('a[href], button:not(:disabled)'));
+            const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)'));
             if (!focusable.length) return;
             const first = focusable[0];
             const last = focusable[focusable.length - 1];
@@ -395,12 +401,12 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         if (settingsRevision === initialSettingsRevision) terrainEnabled = false;
     });
 
-    settings.subscribe(changed => {
+    settings.subscribe((changed: Record<string, unknown>) => {
         settingsRevision++;
         applySettings(changed);
     });
 
-    const buildInitPayload = data => ({
+    const buildInitPayload = (data: TerrainInitData) => ({
         routeSegments: data.routeSegments,
         routeColors: data.routeColors,
         routeLinks: data.routeLinks,
@@ -420,7 +426,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         zoomControl: nativeZoomControl()
     });
 
-    const createFrame = async data => {
+    const createFrame = async (data: TerrainInitData) => {
         const revision = ++launchRevision;
         const payload = buildInitPayload(data);
         pendingLaunch = payload;
@@ -477,7 +483,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             });
             controlResizeObserver.observe(viewport);
             try {
-                const credits = document.querySelector('iframe[src*="MasterMap.aspx" i]')?.contentDocument
+                const credits = document.querySelector<HTMLIFrameElement>('iframe[src*="MasterMap.aspx" i]')?.contentDocument
                     ?.querySelector('.leaflet-control-attribution');
                 if (credits) controlResizeObserver.observe(credits);
             } catch { /* A cross-origin native map cannot supply geometry. */ }
@@ -562,12 +568,12 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 const snowStations = readSnotelMapStations(data.snowStations);
                 if (!snowStations) return;
                 const reveal = data.reveal === true && !suspended;
-                const conditions = Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : undefined;
+                const conditions = Array.isArray(data.conditions) ? data.conditions.filter((id: string) => snowStations.some(station => station.id === id)) : undefined;
                 const pending = pendingLaunch || pendingInit;
                 if (pending) {
                     pending.snowStations = snowStations; pending.revealSnowStations = reveal;
                     pending.occlusions = readSnotelMapOcclusions(data.occlusions);
-                    pending.conditions = (conditions || pending.conditions).filter(id => snowStations.some(station => station.id === id));
+                    pending.conditions = (conditions || pending.conditions as string[]).filter((id: string) => snowStations.some(station => station.id === id));
                 }
                 postToFrame('snowStations', { snowStations, reveal, conditions, occlusions: readSnotelMapOcclusions(data.occlusions) });
             } else if (data.type === 'update') {

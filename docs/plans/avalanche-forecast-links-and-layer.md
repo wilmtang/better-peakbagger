@@ -245,7 +245,7 @@ flowchart LR
 - **Rendering:** follow [map-overlay-leaflet.js](../../src/maps/map-overlay-leaflet.js) for
   bounded attachment and teardown on the native MAIN-world map. Add a dedicated
   Leaflet pane for forecast polygons rather than altering native layers.
-  [terrain-frame-runtime.js](../../src/terrain/terrain-frame-runtime.js) owns
+  [terrain-frame-runtime.ts](../../src/terrain/terrain-frame-runtime.ts) owns
   MapLibre sources/layers. Extend its authenticated coordinator protocol with
   bounded sanitized records; revalidate on both sides. Do not widen the settings
   bridge's privileged write allowlist or add page-world extension API calls.

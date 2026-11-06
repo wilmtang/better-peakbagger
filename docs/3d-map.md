@@ -8,7 +8,7 @@ not runtime specifications.
 
 The shared [Layers menu](map-layers.md) at the upper-left owns independent
 Sentinel, slope, public-land and SNOTEL overlays across native and 3D maps.
-`src/maps/map-layers.js` owns the outer session; `sentinel-session.js` owns each
+`src/maps/map-layers.ts` owns the outer session; `sentinel-session.js` owns each
 active renderer's capture catalog and status. The frame's basemap picker stays
 at the upper-right, matching the native map's separate basemap selector.
 Both engines use `src/maps/sentinel-core.js` for bounded capture validation.
@@ -144,9 +144,9 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
 | `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
-| `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
+| `src/terrain/terrain-map.ts` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
 | `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
-| `src/terrain/terrain-frame-runtime.js` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
+| `src/terrain/terrain-frame-runtime.ts` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
 | `src/terrain/terrain-basemap.ts` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |

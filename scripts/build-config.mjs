@@ -80,13 +80,13 @@ export const ENTRIES = [
     { out: 'content/theme.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/theme-bootstrap.js', 'theme/dynamic-inline-colors.js', 'theme/site-dark-css.js', 'theme/theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'settings/bridge.js'] },
     { out: 'content/gpx-analyzer.js', sources: ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.js', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.js', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js'] },
-    { out: 'content/terrain-map.js', sources: ['terrain/terrain-camera.js', 'terrain/terrain-failure.js', 'terrain/terrain-lifecycle.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-map.js'] },
+    { out: 'content/terrain-map.js', sources: ['terrain/terrain-camera.js', 'terrain/terrain-failure.js', 'terrain/terrain-lifecycle.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-map.ts'] },
     { out: 'content/ascent-filter.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/trusted-action.js', 'ascent/ascent-filter.js'] },
     { out: 'content/climber-favorite.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'favorites/climber-favorite.js', 'favorites/climber-ignore.js'] },
     { out: 'content/profile-backup.js', sources: ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-snapshot.js', 'reports/report-markup.js', 'ascent/ascent-backup-source.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'profile/profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'maps/peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'avalanche/avalanche-location.js', 'avalanche/avalanche-links.js', 'maps/peak-link-order.js', 'maps/peak-links.js'] },
-    { out: 'content/map-layers.js', sources: ['maps/map-layers.js'] },
+    { out: 'content/map-layers.js', sources: ['maps/map-layers.ts'] },
     { out: 'content/vector-map.js', sources: ['maps/vector-map.ts'] },
     { out: 'content/vector-map-bridge.js', sources: ['maps/vector-map-bridge.ts'] },
     { out: 'terrain/vector-map-frame.js', sources: ['maps/vector-map-frame.ts'], format: 'esm',
@@ -108,7 +108,7 @@ export const ENTRIES = [
 
     {
         out: 'terrain/terrain-frame.js',
-        sources: ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.js', 'terrain/terrain-frame.js'],
+        sources: ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.ts', 'terrain/terrain-frame.js'],
         format: 'esm',
         browserImports: { 'maplibre-gl': '../vendor/maplibre-gl.mjs' }
     },

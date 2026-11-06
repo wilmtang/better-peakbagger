@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { installMapLayers } from '../../src/maps/map-layers.js';
+import { installMapLayers } from '../../src/maps/map-layers.ts';
 
 const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longitude: -121.74767, elevation: 1570 };
 const bounds = [-121.77, 46.84, -121.75, 46.86];
