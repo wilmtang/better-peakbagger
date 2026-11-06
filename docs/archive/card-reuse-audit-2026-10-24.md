@@ -18,7 +18,7 @@ already requires agents to read that guide. This audit follows the new conventio
 Baseline: `991ee692c790049a92338dabde73d641cbf2aa30`, including convention commit
 `991ee692`. Existing uncommitted peak hourly-chart, weather test, verifier and
 feature-document edits were inspected only where relevant and preserved. The
-[reproduction output](evidence/card-reuse-audit.json) records the ascent source,
+[reproduction output](../plans/evidence/card-reuse-audit.json) records the ascent source,
 built bundle and current peak-chart source hashes; conclusions about peak chart
 mechanics refer to that working-tree snapshot, not exclusively to HEAD.
 
@@ -76,8 +76,8 @@ Evidence: [ascent chart](../../src/ascent/ascent-weather.js#L335),
 [ascent range and rounding](../../src/ascent/ascent-weather.js#L392),
 [peak range policy](../../src/weather/peak-weather-hourly.js#L121),
 [shared series/table](../../src/weather/weather-hourly-table.js#L14),
-[reproduction script](evidence/card-reuse-audit.mjs) and
-[recorded output](evidence/card-reuse-audit.json).
+[reproduction script](../plans/evidence/card-reuse-audit.mjs) and
+[recorded output](../plans/evidence/card-reuse-audit.json).
 
 **Extraction:** first share pure range/tick selection and series/interval math;
 then consider a narrow SVG/reading controller. Inputs must state units, precision,
@@ -282,7 +282,7 @@ runtime changes require the real-browser checks in the convention and AGENTS.
 
 ## Remediation verification — October 25
 
-The [machine-readable evidence](evidence/card-reuse-remediation-2026-10-25.json)
+The [machine-readable evidence](../plans/evidence/card-reuse-remediation-2026-10-25.json)
 records tested bundle hashes, matrices, pre-fix proof and teardown checks.
 
 | Check | Result |
@@ -312,8 +312,8 @@ New regressions failed on the original collapsed-load and calm-axis defects
 before their fixes. Visual inspection then caught a dark-header color regression
 from the CSS extraction; a new browser color assertion reproduced it, and the
 common heading token/theme exclusions fixed it in both browsers. Selected
-[narrow peak](evidence/card-reuse-remediation/peak-firefox-dark-375.png) and
-[narrow ascent](evidence/card-reuse-remediation/ascent-chrome-dark-375.png)
+[narrow peak](../plans/evidence/card-reuse-remediation/peak-firefox-dark-375.png) and
+[narrow ascent](../plans/evidence/card-reuse-remediation/ascent-chrome-dark-375.png)
 captures were inspected alongside the cloud and wide-column views.
 
 The verifiers were corrected where their old assumptions conflicted with current

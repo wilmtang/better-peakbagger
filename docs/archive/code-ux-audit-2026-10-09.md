@@ -13,7 +13,7 @@ Native, live-service, and release proof gaps remain explicit below; this is not 
   settings and theme ownership, GitHub backup acknowledgements, Photo Library
   transactions and keyboard behavior, photo annotation interaction, report
   editing, popup layout, test coverage, and dependency policy.
-- Read the [active CI/UX audit](../plans/ci-ux-maintainability-audit-2026-10-03.md) and
+- Read the [active CI/UX audit](ci-ux-maintainability-audit-2026-10-03.md) and
   [recent UI-state closure ledger](ui-state-audit-2026-10-06.md).
   Their completed fixes are not repeated as new findings. Existing dependency
   and release-recovery follow-ups keep their original owners and disposition.

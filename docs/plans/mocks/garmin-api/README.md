@@ -1,7 +1,7 @@
 # Garmin workflow prototype
 
 This documentation-only HTML/CSS/JavaScript prototype accompanies the
-[Garmin integration plan](../../garmin-personal-api-draft-inbox.md). It reuses
+[Garmin integration plan](../../../archive/garmin-personal-api-draft-inbox.md). It reuses
 [the shared panel stylesheet](../../../../src/theme/panel.css) and the packaged
 extension icon. It is outside the extension's runtime build.
 

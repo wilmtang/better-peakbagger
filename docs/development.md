@@ -491,7 +491,7 @@ unchecked during an ordinary-use capture. Cache bypass reproduced the reported
 block, and disabling that option restored the user's 3D map. The raster path
 leaves HTTP caching and request identity with the browser; changing the tile
 transport or spoofing headers is not an established fix. See the
-[policy/recovery closure ledger](plans/2026-10-24-osm-terrain-policy.md).
+[policy/recovery closure ledger](archive/2026-10-24-osm-terrain-policy.md).
 
 Ordinary Test CI runs `snow`, `peak-cards`, `peak-card-placement` and `weather-interactions` per browser after the generic
 layout matrix, reusing its completed `dist/` build. A separate always-run

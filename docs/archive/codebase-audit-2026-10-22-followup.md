@@ -1,8 +1,8 @@
 # Repository bugs, performance, engineering, and UX audit — October 22 follow-up
 
 Status: **F1–F4 implemented and verified locally; dependency follow-up D1 remains open.** This is separate from the earlier
-[October 22 Gemini audit](../archive/codebase-audit-2026-10-22.md) and
-[terrain audit](../archive/3d-map-audit-2026-10-22.md).
+[October 22 Gemini audit](codebase-audit-2026-10-22.md) and
+[terrain audit](3d-map-audit-2026-10-22.md).
 
 ## Findings first
 

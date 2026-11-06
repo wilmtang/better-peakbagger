@@ -116,7 +116,7 @@ Retry's rectangle before/after two Enter activations was identical:
 assertion requiring retained focus failed with `false !== true` on this current,
 unfixed bundle. It reached the user-visible focus defect, not a setup timeout.
 
-![Signed-out Buddy filter at 375 px](evidence/signed-out-2026-10-23/buddy-filter-375-light.png)
+![Signed-out Buddy filter at 375 px](../plans/evidence/signed-out-2026-10-23/buddy-filter-375-light.png)
 
 **Root cause.** `src/favorites/favorite-source.js` (lines 21–30) emits a string
 error for missing owner identity. `src/favorites/peak-report-filter.js`
@@ -197,7 +197,7 @@ original account. In the tested sequence, adding/removing a custom Favorite
 first left **Saved.** visible, suppressing even that explanation. Reopening
 the card exposed the refresh instruction.
 
-![Signed-out cached Buddy protection at 375 px, dark](evidence/signed-out-2026-10-23/cached-buddy-375-dark.png)
+![Signed-out cached Buddy protection at 375 px, dark](../plans/evidence/signed-out-2026-10-23/cached-buddy-375-dark.png)
 
 **Root cause.** `src/favorites/climber-card-state.js` (lines 53–79) intentionally
 protects every saved Buddy member from Ignore, even when cache ownership cannot

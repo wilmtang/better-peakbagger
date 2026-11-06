@@ -31,7 +31,7 @@ explicit below.
   succeeded at their snapshots. This is not remote proof for new local changes.
 - Keep the exact existing development-advisory exception and October 17 expiry.
   Historical-tag Firefox recovery has the separate limitations recorded in the
-  [October 3 ledger](../plans/ci-ux-maintainability-audit-2026-10-03.md).
+  [October 3 ledger](ci-ux-maintainability-audit-2026-10-03.md).
 - Existing audits already removed substantial dead/duplicated code. No whole
   runtime module is newly proven unused. Remove actual duplicate owners rather
   than compressing readable code or deleting correctness/privacy guards.

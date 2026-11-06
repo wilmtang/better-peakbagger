@@ -298,7 +298,7 @@ These are carried findings, not eight additional new defects or fresh full
 reproductions. Keep their acceptance criteria and independent commits in the
 earlier plan rather than duplicating the execution ledger.
 
-The [October 3 CI ledger](../plans/ci-ux-maintainability-audit-2026-10-03.md) retains the
+The [October 3 CI ledger](ci-ux-maintainability-audit-2026-10-03.md) retains the
 dependency and historical-tag recovery work. Current strict npm audit still
 rejects exactly `@devicefarmer/adbkit`, `node-forge`, and `web-ext`. The existing
 explicit reviewed exception passes and expires **2026-10-17 00:00 PDT**

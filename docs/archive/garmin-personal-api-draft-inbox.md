@@ -68,10 +68,10 @@ typography, controls, and Strong/Probable colors. All names, routes, activity
 values and credentials are fictional. They do not connect to Garmin, open
 Peakbagger forms, export a file or implement the proposed feature.
 
-The [HTML prototype](mocks/garmin-api/index.html) includes screen, theme and
-simulated-response selectors. A separate [toolbar popup prototype](mocks/garmin-api/popup.html)
+The [HTML prototype](../plans/mocks/garmin-api/index.html) includes screen, theme and
+simulated-response selectors. A separate [toolbar popup prototype](../plans/mocks/garmin-api/popup.html)
 uses the actual popup stylesheet and adds context, badge and opening-error
-scenarios. The [mock guide](mocks/garmin-api/README.md) describes the interactions
+scenarios. The [mock guide](../plans/mocks/garmin-api/README.md) describes the interactions
 and reproducible screenshot checks.
 
 ### Open the inbox from the extension toolbar
@@ -85,7 +85,7 @@ Describe the inbox's benefit directly: **“Your Garmin activities, imported
 automatically.”** Use **“Your Garmin activities, ready when you check.”** in
 Manual only, and **“Connect Garmin to import your activities.”** before setup.
 
-![Toolbar popup with Activity inbox, a count of three pending activities and a separate Capture this activity action](mocks/garmin-api/images/10-popup-activity.png)
+![Toolbar popup with Activity inbox, a count of three pending activities and a separate Capture this activity action](../plans/mocks/garmin-api/images/10-popup-activity.png)
 
 The inbox remains available on every website, before Garmin setup, and during a
 capture or connection failure. Credentials and the activity list belong in the
@@ -95,14 +95,14 @@ handoff; tab creation/reuse is implemented in the extension.
 <details>
 <summary>Popup on another website, dark mode and opening-error recovery</summary>
 
-![Toolbar popup on an unrelated website with an available Activity inbox and guidance for capturing an activity](mocks/garmin-api/images/13-popup-any-site.png)
+![Toolbar popup on an unrelated website with an available Activity inbox and guidance for capturing an activity](../plans/mocks/garmin-api/images/13-popup-any-site.png)
 
-![Dark toolbar popup with the same inbox entry and explicit capture action](mocks/garmin-api/images/11-popup-dark.png)
+![Dark toolbar popup with the same inbox entry and explicit capture action](../plans/mocks/garmin-api/images/11-popup-dark.png)
 
 Keep the label and control dimensions stable while opening. If opening fails,
 retain focus and show a short error below the same button so it can be retried.
 
-![Dark popup showing Couldn’t open inbox, Try again below the unchanged inbox button](mocks/garmin-api/images/12-popup-open-error.png)
+![Dark popup showing Couldn’t open inbox, Try again below the unchanged inbox button](../plans/mocks/garmin-api/images/12-popup-open-error.png)
 
 </details>
 
@@ -116,22 +116,22 @@ the earlier two-step setup for historical context. **Get a Garmin API key ↗**
 sits beside the key-field label and opens Garmin's key page in a new tab. The field contains only a
 read-only demo value; the mock makes no API requests.
 
-![Garmin connection mock with create-key guidance, a masked personal-key field and Connect Garmin action](mocks/garmin-api/images/01-connect.png)
+![Garmin connection mock with create-key guidance, a masked personal-key field and Connect Garmin action](../plans/mocks/garmin-api/images/01-connect.png)
 
 ### Recover from an expired key
 
 The expiry-specific scene below is illustrative. Live testing verified key
 rejection, not expiry specifically; use the generic **“Garmin needs a new API
-key”** state by default. See [authentication findings](experiments/garmin-key-expiry.md).
+key”** state by default. See [authentication findings](../plans/experiments/garmin-key-expiry.md).
 
 Only with confirmed expiry, show **“Garmin API key expired. Imports paused;
 your drafts are safe.”** with
 **Update key**. Keep the inbox and its draft count available. The action opens
 the replacement form, with the same direct Garmin link and **Reconnect Garmin**.
 
-![Inbox retaining its activities with an expired-key message and Update key action](mocks/garmin-api/images/17-expired-inbox.png)
+![Inbox retaining its activities with an expired-key message and Update key action](../plans/mocks/garmin-api/images/17-expired-inbox.png)
 
-![Replacement-key form with a direct Get a Garmin API key link beside the field](mocks/garmin-api/images/18-reconnect.png)
+![Replacement-key form with a direct Get a Garmin API key link beside the field](../plans/mocks/garmin-api/images/18-reconnect.png)
 
 ### Set the schedule
 
@@ -145,7 +145,7 @@ This earlier rendered mock predates the separate configurable ranges. The
 design; the implemented range controls have now been rendered and checked in
 Chrome and Firefox at desktop and narrow sizes, in both themes.
 
-![Connected Garmin settings mock showing Every 4 hours, activity choices, history scope and Check now](mocks/garmin-api/images/02-schedule.png)
+![Connected Garmin settings mock showing Every 4 hours, activity choices, history scope and Check now](../plans/mocks/garmin-api/images/02-schedule.png)
 
 ### Keep a durable activity inbox
 
@@ -154,7 +154,7 @@ September draft demonstrates that pending work does not disappear after a few
 days. A refresh keeps the list in place. Import earlier activities is a separate,
 deliberate expansion of the selected history.
 
-![Activity inbox mock showing ready summit matches, a Peakbagger sign-in dependency and an older retained draft](mocks/garmin-api/images/03-inbox.png)
+![Activity inbox mock showing ready summit matches, a Peakbagger sign-in dependency and an older retained draft](../plans/mocks/garmin-api/images/03-inbox.png)
 
 ### Review before opening Peakbagger forms
 
@@ -163,7 +163,7 @@ selected and Probable matches require a choice. Refresh is explicit. Open drafts
 hands off to Peakbagger; Save remains the user's action there. The route graphic
 is a local schematic, not a basemap or a real recording.
 
-![Activity review mock with a route schematic, two selected Strong summits, one unchecked Probable summit and Open 2 drafts](mocks/garmin-api/images/04-review.png)
+![Activity review mock with a route schematic, two selected Strong summits, one unchecked Probable summit and Open 2 drafts](../plans/mocks/garmin-api/images/04-review.png)
 
 ### Include the key only when requested
 
@@ -172,7 +172,7 @@ it checked; the prototype starts unchecked. The included-fields summary changes
 without moving Export settings. Retain the existing unencrypted-file disclosure
 beside the credential choice.
 
-![Settings export mock with Include saved credentials checked and Garmin personal key listed in the credential scope](mocks/garmin-api/images/05-export-key.png)
+![Settings export mock with Include saved credentials checked and Garmin personal key listed in the credential scope](../plans/mocks/garmin-api/images/05-export-key.png)
 
 <details>
 <summary>Checking, offline recovery, narrow layout and dark mode</summary>
@@ -180,18 +180,18 @@ beside the credential choice.
 Checking replaces only the reserved feedback text; the heading, Check now
 button, list and footer keep their positions.
 
-![Inbox mock while a check is pending, retaining the existing activities](mocks/garmin-api/images/03b-inbox-checking.png)
+![Inbox mock while a check is pending, retaining the existing activities](../plans/mocks/garmin-api/images/03b-inbox-checking.png)
 
 At 390px, navigation wraps above the content and each activity action follows
 its details. The offline state preserves every draft and offers the same Check
 now action after recovery.
 
-![Narrow dark-mode inbox mock with an offline error and retained drafts](mocks/garmin-api/images/06-narrow-dark-error.png)
+![Narrow dark-mode inbox mock with an offline error and retained drafts](../plans/mocks/garmin-api/images/06-narrow-dark-error.png)
 
 The review becomes a single column. Summit choices and Open drafts remain
 available below the route, without horizontal scrolling.
 
-![Narrow dark-mode activity review mock with stacked route and summit choices](mocks/garmin-api/images/07-narrow-dark-review.png)
+![Narrow dark-mode activity review mock with stacked route and summit choices](../plans/mocks/garmin-api/images/07-narrow-dark-review.png)
 
 </details>
 
@@ -214,7 +214,7 @@ state updates. A 200% CSS zoom case at 390 × 1000 also exercised opening/error
 feedback. Visual inspection caught fragmented words in the enlarged inbox
 label; a new assertion failed on that defect and passed after the constrained
 layout hid only the decorative inbox icon. The label, count and progress slot
-remain readable. See the [enlarged popup](mocks/garmin-api/images/15-popup-enlarged.png).
+remain readable. See the [enlarged popup](../plans/mocks/garmin-api/images/15-popup-enlarged.png).
 
 Key recovery passed eight cases per browser: direct key-page link (navigation
 intercepted), expiry, unknown rejection, rejected replacement, offline retry and
@@ -259,7 +259,7 @@ Malformed and altered keys both returned **401 with an empty body**. These
 tests establish rejection, not its cause. Neither the published OpenAPI nor
 Garmin's reference client supplies an expiry-specific contract. Default to
 **Update key**, without claiming expiry; a genuinely expired key is still needed
-to verify that response. [Test results](experiments/garmin-key-expiry.md)
+to verify that response. [Test results](../plans/experiments/garmin-key-expiry.md)
 
 ### Live sample, with private values omitted
 
@@ -308,7 +308,7 @@ We successfully retrieved an activity more than five years old. The 30-day
 window is our efficiency choice, not Garmin's history limit or a draft expiry.
 There is no verified “only uploads since the last import” shortcut.
 
-[Detailed test evidence and remaining uncertainty](experiments/garmin-upload-ordering.md)
+[Detailed test evidence and remaining uncertainty](../plans/experiments/garmin-upload-ordering.md)
 are kept separately so the implementation decision stays readable.
 
 ### Data shape and projection
@@ -351,7 +351,7 @@ scope was established by the reviewed public documentation.
 | Prepared jobs and tracks expire after 30 minutes. | [Privacy contract](../../PRIVACY.md#activity-capture), [capture architecture](../architecture.md#deep-dive-garminstrava-capture-and-local-gpx-processing) | Add a consented durable inbox snapshot and retain the existing short-lived form handoff. Existing capture retention does not already authorize durable storage. |
 | Save verification is currently conditional. | `savedDraftContext` requires `waitForSave`; selected multi-summit drafts use this path in [background.js](../../src/background/background.js). | A universal inbox “Saved” state requires verification for single-summit imports too. Tab creation, Preview, or closing a form is insufficient. |
 | Background Garmin access and persistent import history are new permissions/data uses. | [manifest](../../manifest.json), [Privacy](../../PRIVACY.md) | Add a separate optional API-origin grant, consent and documented retention. Preserve the existing toolbar path. |
-| Feed export is a separate proposed feature. | [Owned activity feed export plan](activity-feed-export.md) | Share analysis and confidence presentation, but do not make API import depend on provider DOM or combine the implementations. |
+| Feed export is a separate proposed feature. | [Owned activity feed export plan](../plans/activity-feed-export.md) | Share analysis and confidence presentation, but do not make API import depend on provider DOM or combine the implementations. |
 | Settings files already have an opt-in credential export and sensitive import confirmation. | [settings-file-routes.js](../../src/background/settings-file-routes.js), [settings-transfer.js](../../src/settings/settings-transfer.js), [settings-backup.js](../../options/settings-backup.js) | Extend the existing checkbox and versioned payload for the Garmin key; preserve omission semantics and keep automated backups credential-free. |
 
 ## User workflow
@@ -785,7 +785,7 @@ compatibility. This is an engineering licensing assessment, not a legal opinion.
 
 Two third-party JavaScript candidates were checked against their actual license
 files and tested on October 23. The reproducible
-[decoder evaluation](experiments/fit-decoders/README.md) includes 22 independent
+[decoder evaluation](../plans/experiments/fit-decoders/README.md) includes 22 independent
 synthetic fixtures, 12 public recordings, two authorized private Garmin downloads,
 and hidden Chrome/Firefox Worker checks. No runtime dependency was added.
 
@@ -935,7 +935,7 @@ complete set of new/modified activities. Historical imports use the same rules.
 
 Upload-time checkpoints are **not part of this design**. Revisit them only if
 Garmin provides a verified upload sort/filter; the
-[research note](experiments/garmin-upload-ordering.md#requirements-for-a-future-upload-checkpoint)
+[research note](../plans/experiments/garmin-upload-ordering.md#requirements-for-a-future-upload-checkpoint)
 records the requirements. Until then, keep the date scans and ID deduplication
 above.
 
@@ -1069,7 +1069,7 @@ Evidence status: live Garmin token/list/detail/ZIP reads, FIT field presence,
 and a separate oldest-activity/original-file read were verified. Pinned third-party
 decoders were exercised against public, synthetic and private inputs; browser
 Worker bundles were checked in hidden Chrome and Firefox. The
-[decoder evaluation](experiments/fit-decoders/README.md) records defects, bundle
+[decoder evaluation](../plans/experiments/fit-decoders/README.md) records defects, bundle
 sizes, an owned-decoder estimate and the remaining adoption gates.
 Browser extension networking, production FIT decoding, full summit/draft
 integration and scheduled operation have not been implemented or verified.

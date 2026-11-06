@@ -82,5 +82,5 @@ credentials** is checked. Importing a validated key also enables drafts on the
 destination device, after granting Garmin access. It does not copy the source
 device's Peakbagger account binding.
 
-See the [audit ledger](plans/garmin-inbox-audit.md) for verification and release
-gaps, and the [investigation](plans/garmin-personal-api-draft-inbox.md) for API evidence.
+See the [audit ledger](archive/garmin-inbox-audit.md) for verification and release
+gaps, and the [investigation](archive/garmin-personal-api-draft-inbox.md) for API evidence.

@@ -69,6 +69,10 @@ another. This document update queues the work; it does not implement it.
 
 ### M1 — Repair baseline bookkeeping
 
+Status: complete on November 6, 2026 (`c1ba9599`, `6e4a3041`, `01616f47`). The
+full-suite and audit outcomes are in the
+[follow-up ledger](follow-ups.md); the deepmerge finding is still unresolved.
+
 1. Register the existing snow-depth legend JSON fixture in the
    [privacy manifest](../../test/helpers/fixture-privacy-manifest.mts), with
    decoding/validation coverage. Convert substantively changed modules/tests to

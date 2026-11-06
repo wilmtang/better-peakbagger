@@ -191,7 +191,7 @@ To avoid false positives or re-reporting closed items, the following areas were 
    - Verified recent commits (`c73be873`, `ff365fa2`, `5149d2eb`, `685b1163`): `AbortController` propagation cancels superseded DEM/satellite work cleanly, `ImageBitmap.close()` is called on replaced/cleared overlay textures, and `terrain-cache.js` enforces byte/entry eviction in memory and IndexedDB.
 4. **Content-Script Page Features (`src/gpx/gpx-analyzer.js`, `src/ascent/ascent-filter.js`, `src/ascent/ascent-weather.js`, `src/weather/peak-weather.js`, `src/reports/report-editor.js`, `src/favorites/climber-hover-card.ts`):**
    - Verified generation guards on async weather/ERA5/sun/hover fetches, offline mountain-local timezone fallback (`src/time/mountain-tz.js`), and HTML escaping (`esc()`) across tooltip and summary templates.
-5. **Prior Audit Items Reconciled (`docs/archive/codebase-audit-2026-10-21.md`, `docs/archive/map-overlays-audit-2026-10-21.md`, `docs/plans/codebase-audit-2026-10-19.md`):**
+5. **Prior Audit Items Reconciled (`docs/archive/codebase-audit-2026-10-21.md`, `docs/archive/map-overlays-audit-2026-10-21.md`, `docs/archive/codebase-audit-2026-10-19.md`):**
    - All fixed items from the 2026-10-21 codebase and map-overlays audits remain intact in `HEAD`.
    - The `npm run audit:ci` `web-ext -> @devicefarmer/adbkit -> node-forge` advisory remains an unowned dev-only transitive dependency tracked in prior closure ledgers.
 
