@@ -246,7 +246,7 @@ changes.
 
 ## F7 — Restore the dependency gate without weakening its policy
 
-**Source.** `scripts/check-npm-audit.mjs` (lines 18–33, 61–62) accepts two exact
+**Source.** `scripts/check-npm-audit.mts` (lines 18–33, 61–62) accepts two exact
 development-tool advisories only through **2026-09-21**. The actual current
 `npm run audit:ci` run exited 1 on that expiry. The guard is behaving as designed;
 the unresolved maintenance item is the expired acceptance, not an incorrect

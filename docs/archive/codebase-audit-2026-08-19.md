@@ -508,7 +508,7 @@ only after publication, and leave no staging artifacts after shutdown.
 **Broken invariant.** Reviewer metadata must identify every authored runtime
 source root used to reproduce the submitted extension.
 
-**Evidence.** `scripts/create-amo-metadata.mjs` (lines 60–78) tells Firefox
+**Evidence.** `scripts/create-amo-metadata.mts` (lines 60–78) tells Firefox
 reviewers that runtime source lives under `src/`, `options/`, and `popup/`.
 `scripts/build-config.mjs` (lines 26–39 and 83–87) also resolves
 `photos/photos.js` and `photos/guide.js` from the authored `photos/` root and
@@ -532,7 +532,7 @@ gates. Actual AMO reviewer acceptance remains external evidence.
 ## Dated dependency decision before 2026-08-22
 
 This is an intentional release guardrail, not a newly introduced runtime
-finding. `scripts/check-npm-audit.mjs` (lines 11–33 and 48–104) accepts exactly
+finding. `scripts/check-npm-audit.mts` (lines 11–33 and 48–104) accepts exactly
 two high `image-size` advisories in the development-only `web-ext` path through
 2026-08-21 and deliberately fails afterward. Both test and release workflows
 run the gate. The production graph is currently clean under

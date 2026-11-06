@@ -367,7 +367,7 @@ intentional test refactoring around the shared module.
   days, timed/untimed/partial route points, and the invariant that a preview-time
   action never changes route identity.
 - [x] Update `ACKNOWLEDGEMENTS.md`, `scripts/dependency-metadata.mjs`,
-  `scripts/create-amo-metadata.mjs`, and their tests so reviewer metadata and the
+  `scripts/create-amo-metadata.mts`, and their tests so reviewer metadata and the
   generated `THIRD_PARTY_NOTICES.txt` name the exact bundled package and BSD
   license.
 - [x] Inspect the esbuild metafile/package notice inventory to prove SunCalc is

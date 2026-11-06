@@ -281,7 +281,7 @@ require fresh visual inspection of their affected states before closure.
 
 The fresh dependency audit still reports the existing high-severity
 `web-ext` → `@devicefarmer/adbkit` → `node-forge` advisory path.
-`scripts/check-npm-audit.mjs` accepts only the exact development-tool path and
+`scripts/check-npm-audit.mts` accepts only the exact development-tool path and
 versions through **2026-10-17 07:00 UTC** when the reviewed exception is explicitly
 requested; default evaluation remains strict. The lock entries are development
 dependencies and these three packages were absent from the shipped attribution

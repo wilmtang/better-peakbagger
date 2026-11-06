@@ -481,7 +481,7 @@ narrow ascent-page widths.
 This unit contains one reviewer-contract defect and three low-risk drifts that
 should be one focused commit after their runtime owners are stable:
 
-- `scripts/create-amo-metadata.mjs` says returning to 2D destroys the renderer;
+- `scripts/create-amo-metadata.mts` says returning to 2D destroys the renderer;
   runtime and `PRIVACY.md` correctly say it is parked idle for up to five
   minutes. Generate accurate reviewer copy and pin it to the lifecycle
   constant/contract.

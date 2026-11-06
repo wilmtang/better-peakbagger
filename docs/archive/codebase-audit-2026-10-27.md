@@ -23,7 +23,7 @@ recovery, saved state, resource lifetime or required verification.
 
 ## A01 — current development advisories invalidate the reviewed gate
 
-**Evidence.** [The audit policy](../../scripts/check-npm-audit.mjs) (lines
+**Evidence.** [The audit policy](../../scripts/check-npm-audit.mts) (lines
 21–78) accepts one exact graph with three high findings. Both
 [`test.yml`](../../.github/workflows/test.yml) (line 61) and
 [`release.yml`](../../.github/workflows/release.yml) (line 101) opt into that

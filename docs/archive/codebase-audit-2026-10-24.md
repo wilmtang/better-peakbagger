@@ -48,8 +48,8 @@ checks. Browser, live-service and native-UI evidence remain distinct.
 
 ### F1 — Dependency gate and expiry diagnostics (P1)
 
-`scripts/check-npm-audit.mjs`, `package-lock.json`,
-`test/project/dependency-advisory.test.mjs`.
+`scripts/check-npm-audit.mts`, `package-lock.json`,
+`test/project/dependency-advisory.test.mts`.
 
 - Update compatible fast-uri and undici resolutions to patched releases.
 - Recheck upstream node-forge/web-ext releases before narrowly renewing the existing
