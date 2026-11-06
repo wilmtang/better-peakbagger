@@ -3144,9 +3144,11 @@ async function main() {
             .keyDown(modifier).sendKeys('b').keyUp(modifier)
             .sendKeys('.')
             .perform();
+        // An async action can return before its last key lands, so wait for the whole
+        // string; a wrong serialization still times out here or fails the assertion.
         const editorTypedState = await waitForScript(
             driver,
-            "const value = document.getElementById('JournalText')?.value || ''; return value.includes('Cross-browser') ? { value } : false;",
+            "const value = document.getElementById('JournalText')?.value || ''; return value.includes('Cross-browser') && value.endsWith('.') ? { value } : false;",
             'Firefox editor serialization',
         );
         assertState(
