@@ -7,10 +7,44 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { JSDOM } from 'jsdom';
+import { JSDOM as TestJSDOM } from '../helpers/test-dom.mts';
+import type { TestDom, TestDomOptions, TestWindow } from '../helpers/test-dom.mts';
 import { fireTrustedEvent, makeChromeStub } from '../helpers/load-page.mjs';
 import { terrainFailure } from '../../src/terrain/terrain-failure.js';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
+
+
+// Loose fixtures for a harness that drives the bundled bridge and frame through
+// the same untyped messages and MapLibre calls they exchange in production.
+interface TestMessage {
+    type?: string; reason?: string; generation?: number; activation?: string; id?: string; action?: string; selection?: string; provider?: string;
+    camera?: { center?: unknown; zoom?: number; [field: string]: unknown } | null; routeStyle?: { color?: string; width?: number; [field: string]: unknown } | null; conditions?: string[]; occlusions?: number[][]; captures?: { title: string }[]; capture?: string; routeSegments?: unknown; basemap?: { name?: string; tiles?: string[]; kind?: string; provider?: string; [field: string]: unknown } | null; basemaps?: unknown; theme?: string; retryAt?: number;
+    stationId?: string; revision?: number; snapshot?: unknown; bounds?: unknown; zoom?: number; footer?: number; [field: string]: unknown;
+}
+type StubEvent = { sourceId?: string; dataType?: string; tile?: unknown; error?: unknown; point?: unknown; lngLat?: unknown; originalEvent?: unknown; [field: string]: unknown };
+type Handler = (event?: StubEvent) => unknown;
+interface StubLayer { id: string; type?: string; source?: string; paint?: Record<string, unknown>; layout?: Record<string, unknown>; [field: string]: unknown; }
+interface StubSourceData { features: { properties: Record<string, unknown>; geometry: { coordinates: unknown } }[]; [field: string]: unknown }
+interface StubSource { type?: string; tiles?: string[]; tileSize?: number; attribution?: string; data?: StubSourceData; setData?(data: StubSourceData): unknown; [field: string]: unknown; }
+interface StubOptions {
+    style: { sources: Record<string, StubSource>; layers: StubLayer[]; terrain?: { exaggeration?: number }; [field: string]: unknown };
+    container?: HTMLElement; center?: unknown; bounds?: number[][]; fitBoundsOptions?: { maxZoom?: number; pitch?: number }; zoom?: number; pitch?: number; bearing?: number; transformRequest?(url: string, type?: string): unknown; [field: string]: unknown;
+}
+interface StubMap {
+    options: StubOptions; sources: Map<string, StubSource>; layers: StubLayer[]; handlers: Map<string, Handler>; removed?: boolean;
+    getSource(id: string): StubSource; getLayer(id: string): StubLayer | undefined; canvas: HTMLCanvasElement; paint: unknown[][]; layout: unknown[][];
+    controls: StubControl[]; sprites: { id: string; url: string }[]; sourceDataOutcomes: Map<string, unknown[]>; loadCallback: Handler; [field: string]: unknown;
+}
+interface StubControl { onAdd?(map: unknown): Node | undefined; onRemove?(): void; options?: { customAttribution?: string }; }
+interface StubPopup { node: Element; lngLat: unknown; removedPopup?: boolean; options?: unknown; target?: unknown; }
+type StubProtocol = (parameters: { url: string; type?: string }, controller: AbortController) => Promise<unknown>;
+const withResolvers = <T = void,>() => {
+    let resolve!: (value: T) => void, reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((onResolve, onReject) => { resolve = onResolve; reject = onReject; });
+    return { promise, resolve, reject };
+};
+type HarnessWindow = TestWindow & { chrome: unknown; maplibregl: unknown; authorizeTerrain?: unknown };
+const JSDOM = TestJSDOM as unknown as new (html?: string, options?: TestDomOptions) => Omit<TestDom, 'window'> & { window: HarnessWindow };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const makeWebp = () => {
@@ -26,12 +60,12 @@ const makeWebp = () => {
 // The bridge imports settings, so tests provide the real chrome.storage shape
 // that module reads from, plus the getURL the bridge needs. Push updates with
 // chrome.storage.sync.set(...).
-const chromeWith = settings => {
+const chromeWith = (settings: Record<string, unknown>) => {
     const chrome = makeChromeStub({ bpbSettings: settings });
-    chrome.runtime.getURL = path => `chrome-extension://test-id/${path}`;
+    chrome.runtime.getURL = (resource: string) => `chrome-extension://test-id/${resource}`;
     return chrome;
 };
-const armTerrain = (window, type = 'click') => {
+const armTerrain = (window: HarnessWindow, type = 'click') => {
     let toggle = window.document.getElementById('bpb-terrain-toggle');
     if (!toggle) {
         toggle = window.document.createElement('button');
@@ -48,7 +82,7 @@ const armTerrain = (window, type = 'click') => {
 const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
 const frameHarnessBuild = await build({
     stdin: {
-        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.js'))};\nconst originalPost=window.parent.postMessage.bind(window.parent); window.parent.postMessage=(message,...args)=>{if(message.type==='layerBasemaps')window.__testLayerBasemaps=message;return originalPost(message,...args)};
+        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.ts'))};\nconst originalPost=window.parent.postMessage.bind(window.parent); window.parent.postMessage=(message,...args)=>{if(message.type==='layerBasemaps')window.__testLayerBasemaps=message;return originalPost(message,...args)};
 startTerrainFrame(globalThis.maplibregl, { authorize: request => globalThis.authorizeTerrain ? globalThis.authorizeTerrain(request) : true });\n`,
         resolveDir: root,
         sourcefile: 'terrain-frame-test-harness.js',
@@ -64,17 +98,17 @@ startTerrainFrame(globalThis.maplibregl, { authorize: request => globalThis.auth
 });
 const frameBundle = frameHarnessBuild.outputFiles[0].text;
 
-function framePicker(window) {
-    return window.document.querySelector('.bpb-terrain-controls select[aria-label="Base map"]');
+function framePicker(window: HarnessWindow) {
+    return window.document.querySelector<HTMLSelectElement>('.bpb-terrain-controls select[aria-label="Base map"]')!;
 }
 
 const terrainCss = await readFile(path.join(root, 'src', 'terrain', 'terrain-map.css'), 'utf8');
 
 // Share frame wiring, while each case retains its own renderer and failure model.
-const bootTerrainFrame = (window, MapStub, {
+const bootTerrainFrame = (window: HarnessWindow, MapStub: unknown, {
     messages = [], popups, maplibre = {}, fetch = () => Promise.resolve()
-} = {}) => {
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+}: { messages?: TestMessage[]; popups?: StubPopup[]; maplibre?: Record<string, unknown>; fetch?: (url: string, options: RequestInit) => unknown } = {}) => {
+    Object.assign(window, { chrome: { runtime: { getURL: (resource: string) => `chrome-extension://test-id/${resource}` } } });
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class NavigationControl {},
@@ -84,18 +118,19 @@ const bootTerrainFrame = (window, MapStub, {
         addProtocol() {},
         removeProtocol() {},
         ...(popups ? { Popup: class {
-            constructor(options) { this.options = options; popups.push(this); }
-            setLngLat(lngLat) { this.lngLat = lngLat; return this; }
-            setDOMContent(node) { this.node = node; return this; }
-            addTo(target) { this.target = target; return this; }
+            declare options: unknown; declare lngLat: unknown; declare node: Element; declare target: unknown; declare removedPopup: boolean;
+            constructor(options: StubOptions) { this.options = options; popups!.push(this as unknown as StubPopup); }
+            setLngLat(lngLat: [number, number]) { this.lngLat = lngLat; return this; }
+            setDOMContent(node: Element) { this.node = node; return this; }
+            addTo(target: unknown) { this.target = target; return this; }
             remove() { this.removedPopup = true; }
         } } : {}),
         ...maplibre
     };
     window.postMessage = message => { messages.push(message); };
-    window.fetch = fetch;
+    Object.assign(window, { fetch });
     window.eval(frameBundle);
-    return data => window.dispatchEvent(new window.MessageEvent('message', {
+    return (data: TestMessage) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
         data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
@@ -113,14 +148,14 @@ test('3D terrain waits for the extension frame handshake before sending route co
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    const pageMessages = [];
-    const frameMessages = [];
-    window.chrome = chromeWith({ enable3dMap: true });
+    const pageMessages: TestMessage[] = [];
+    const frameMessages: TestMessage[] = [];
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
     window.postMessage = message => { pageMessages.push(message); };
     window.eval(bridgeBundle);
     await new Promise(resolve => window.setTimeout(resolve, 0)); // settings.get() resolves
 
-    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatchPage = (data: TestMessage) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
@@ -146,11 +181,11 @@ test('3D terrain waits for the extension frame handshake before sending route co
     });
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
-    const frame = window.document.getElementById('bpb-terrain-frame');
+    const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
     assert.ok(frame);
     assert.equal(frame.src, 'chrome-extension://test-id/terrain/terrain.html');
     assert.equal(frameMessages.length, 0, 'route coordinates must wait until the frame listener is ready');
-    frame.contentWindow.postMessage = message => { frameMessages.push(message); };
+    frame.contentWindow!.postMessage = (message: TestMessage) => { frameMessages.push(message); };
 
     dispatchPage({ type: 'update', routeStyle: { color: '#347a3f' }, theme: 'dark' });
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -168,21 +203,21 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(init.focusZoom, 13);
     assert.deepEqual(init.focusPeak,
         { id: 2829, name: 'Mount Shuksan', lat: 48.83115, lon: -121.60214, state: 'unclimbed' });
-    assert.equal(init.routeStyle.color, '#347a3f');
+    assert.equal(init.routeStyle!.color, '#347a3f');
     assert.equal(init.theme, 'dark');
     assert.equal(init.cacheLimitMb, 512);
-    assert.equal(init.basemap.name, 'Open Topo Map');
+    assert.equal(init.basemap!.name, 'Open Topo Map');
     assert.deepEqual(JSON.parse(JSON.stringify(init.snowStations)), [snowStation], 'the frame receives only bounded public station fields');
-    assert.match(init.activation, /^test-terrain-activation-/,
+    assert.match(init.activation!, /^test-terrain-activation-/,
         'the private frame message carries the isolated-world capability');
 
     const beforeInvalidSnow = frameMessages.length;
     dispatchPage({ type: 'snowStations', snowStations: [{ ...snowStation, longitude: 181 }] });
     assert.equal(frameMessages.length, beforeInvalidSnow, 'invalid map metadata cannot cross the isolated bridge');
     dispatchPage({ type: 'snowStations', snowStations: [snowStation], reveal: true });
-    assert.equal(frameMessages.at(-1).reveal, true, 'explicit reveal reaches a loading frame');
+    assert.equal(frameMessages.at(-1)!.reveal, true, 'explicit reveal reaches a loading frame');
     dispatchPage({ type: 'snowStations', snowStations: [] });
-    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1).snowStations)), [], 'toggle-off reaches a loading frame');
+    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1)!.snowStations)), [], 'toggle-off reaches a loading frame');
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
@@ -197,28 +232,28 @@ test('3D terrain waits for the extension frame handshake before sending route co
     }));
     assert.equal(frame.style.opacity, '1');
     assert.equal(frame.style.pointerEvents, 'auto');
-    assert.equal(frameMessages.at(-1).type, 'snowStations');
-    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1).snowStations)), [], 'ready replays toggle-off even if authorization dropped its earlier update');
-    assert.equal(frameMessages.at(-1).reveal, false, 'toggle-off clears a queued reveal before the renderer is ready');
-    assert.equal(pageMessages.at(-1).type, 'loaded');
-    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.73, -121.78], zoom: 13.25 });
+    assert.equal(frameMessages.at(-1)!.type, 'snowStations');
+    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1)!.snowStations)), [], 'ready replays toggle-off even if authorization dropped its earlier update');
+    assert.equal(frameMessages.at(-1)!.reveal, false, 'toggle-off clears a queued reveal before the renderer is ready');
+    assert.equal(pageMessages.at(-1)!.type, 'loaded');
+    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1)!.camera)), { center: [48.73, -121.78], zoom: 13.25 });
 
     const beforeFireRetry = frameMessages.length;
     dispatchPage({ type: 'layerAction', action: 'retry', id: 'wildfire', url: 'https://untrusted.example', fires: [{ geometry: 'untrusted' }] });
     assert.equal(frameMessages.length, beforeFireRetry + 1, 'a validated wildfire Refresh must reach the active renderer');
-    assert.equal(frameMessages.at(-1).action, 'retry'); assert.equal(frameMessages.at(-1).id, 'wildfire');
-    assert.equal(Object.hasOwn(frameMessages.at(-1), 'url'), false); assert.equal(Object.hasOwn(frameMessages.at(-1), 'fires'), false);
+    assert.equal(frameMessages.at(-1)!.action, 'retry'); assert.equal(frameMessages.at(-1)!.id, 'wildfire');
+    assert.equal(Object.hasOwn(frameMessages.at(-1)!, 'url'), false); assert.equal(Object.hasOwn(frameMessages.at(-1)!, 'fires'), false);
     const afterFireRetry = frameMessages.length;
     dispatchPage({ type: 'layerAction', action: 'capture', id: 'wildfire' });
     dispatchPage({ type: 'layerAction', action: 'retry', id: 'arbitrary' });
     assert.equal(frameMessages.length, afterFireRetry, 'wildfires expose retry only; unknown layers remain blocked');
 
-    const snowSelect = (stationId, generation = init.generation) => window.dispatchEvent(new window.MessageEvent('message', {
+    const snowSelect = (stationId: string, generation = init.generation) => window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow, origin: 'chrome-extension://test-id',
         data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'snowSelect', generation, stationId },
     }));
     const beforeSnowSelect = pageMessages.length;
-    snowSelect('https://untrusted.example/'); snowSelect(snowStation.id, init.generation + 1);
+    snowSelect('https://untrusted.example/'); snowSelect(snowStation.id, init.generation! + 1);
     assert.equal(pageMessages.length, beforeSnowSelect, 'invalid and stale station actions cannot reach the card');
     snowSelect(snowStation.id);
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), {
@@ -236,8 +271,8 @@ test('3D terrain waits for the extension frame handshake before sending route co
             camera: { center: [48.74, -121.77], zoom: 14 }
         }
     }));
-    assert.equal(pageMessages.at(-1).type, 'camera');
-    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.74, -121.77], zoom: 14 });
+    assert.equal(pageMessages.at(-1)!.type, 'camera');
+    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1)!.camera)), { center: [48.74, -121.77], zoom: 14 });
 
     dispatchPage({ type: 'cameraRequest', requestId: 7 });
     assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1))), {
@@ -259,7 +294,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
             camera: { center: [48.75, -121.76], zoom: 14.25 }
         }
     }));
-    assert.equal(pageMessages.at(-1).requestId, 7,
+    assert.equal(pageMessages.at(-1)!.requestId, 7,
         'the bridge preserves the request identity so an older camera event cannot win the switch race');
 
     dispatchPage({ type: 'highlight', coordinates: [-121.81, 48.71], series: 'time' });
@@ -303,13 +338,13 @@ test('3D terrain waits for the extension frame handshake before sending route co
 
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
-    assert.equal(pageMessages.at(-1).type, 'error');
-    assert.equal(pageMessages.at(-1).reason, 'unavailable');
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null);
+    assert.equal(pageMessages.at(-1)!.type, 'error');
+    assert.equal(pageMessages.at(-1)!.reason, 'unavailable');
 
     dispatchPage({ type: 'destroy' });
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
-    assert.equal(pageMessages.at(-1).type, 'destroyed');
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null);
+    assert.equal(pageMessages.at(-1)!.type, 'destroyed');
     dom.window.close();
 });
 
@@ -326,20 +361,20 @@ const bootLoadedFrame = async (initOverrides = {}, { deferLoaded = false } = {})
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    const pageMessages = [];
-    const frameMessages = [];
-    const timers = [];
+    const pageMessages: TestMessage[] = [];
+    const frameMessages: TestMessage[] = [];
+    const timers: Handler[] = [];
     const realSetTimeout = window.setTimeout.bind(window);
-    window.setTimeout = (fn, delay) => {
+    (window as unknown as Record<string, unknown>).setTimeout = (fn: Handler, delay: number) => {
         if (delay === TERRAIN_FRAME_KEEP_ALIVE_MS) { timers.push(fn); return timers.length; }
         return realSetTimeout(fn, delay);
     };
-    window.chrome = chromeWith({ enable3dMap: true });
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
     window.postMessage = message => { pageMessages.push(message); };
     window.eval(bridgeBundle);
     await new Promise(resolve => realSetTimeout(resolve, 0));
 
-    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatchPage = (data: TestMessage) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
@@ -355,14 +390,14 @@ const bootLoadedFrame = async (initOverrides = {}, { deferLoaded = false } = {})
     armTerrain(window);
     dispatchPage(initData);
     await new Promise(resolve => realSetTimeout(resolve, 0));
-    const frame = window.document.getElementById('bpb-terrain-frame');
-    frame.contentWindow.postMessage = message => { frameMessages.push(structuredClone(message)); };
+    const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
+    frame!.contentWindow!.postMessage = (message: TestMessage) => { frameMessages.push(structuredClone(message)); };
 
-    const dispatchFrame = data => {
+    const dispatchFrame = (data: TestMessage) => {
         const outboundGeneration = [...frameMessages].reverse()
             .find(message => message.type === 'init' || message.type === 'resume')?.generation;
         window.dispatchEvent(new window.MessageEvent('message', {
-            source: frame.contentWindow, origin: 'chrome-extension://test-id',
+            source: frame!.contentWindow, origin: 'chrome-extension://test-id',
             data: {
                 __bpbTerrainFrame: true,
                 dir: 'toParent',
@@ -387,7 +422,7 @@ for (const action of ['init', 'resume']) test(`terrain ${action} replays style, 
             await new Promise(resolve => realSetTimeout(resolve, 0));
         }
         const original = frameMessages.filter(message => message.type === action).at(-1);
-        assert.equal(original.theme, 'light');
+        assert.equal(original!.theme, 'light');
         dispatchPage({ type: 'update', routeStyle: { color: '#347a3f', width: 6 } });
         dispatchPage({ type: 'update', theme: 'dark' });
         dispatchPage({ type: 'snowStations', snowStations: [station], conditions: [station.id, 'not-a-station'], reveal: true, occlusions: [[0, 0, .2, .4]] });
@@ -395,18 +430,18 @@ for (const action of ['init', 'resume']) test(`terrain ${action} replays style, 
         dispatchFrame({ type: 'loaded' });
         const replay = frameMessages.slice(beforeLoaded);
         assert.equal(replay.find(message => message.type === 'update')?.theme, 'dark', 'authorization must not drop the new theme');
-        assert.equal(replay.find(message => message.type === 'update')?.routeStyle.color, '#347a3f');
-        assert.deepEqual(Array.from(replay.find(message => message.type === 'snowStations').conditions || []), [station.id], 'membership crosses the ready replay');
-        assert.equal(replay.find(message => message.type === 'snowStations').reveal, true);
-        assert.deepEqual(Array.from(replay.find(message => message.type === 'snowStations').occlusions || [], row => Array.from(row)), [[0, 0, .2, .4]]);
-        assert.equal(original.theme, 'light', 'the fixture models structured message serialization');
+        assert.equal(replay.find(message => message.type === 'update')?.routeStyle!.color, '#347a3f');
+        assert.deepEqual(Array.from(replay.find(message => message.type === 'snowStations')!.conditions || []), [station.id], 'membership crosses the ready replay');
+        assert.equal(replay.find(message => message.type === 'snowStations')!.reveal, true);
+        assert.deepEqual(Array.from(replay.find(message => message.type === 'snowStations')!.occlusions || [], row => Array.from(row)), [[0, 0, .2, .4]]);
+        assert.equal(original!.theme, 'light', 'the fixture models structured message serialization');
     } finally { window.close(); }
 });
 
 for (const action of ['init', 'resume']) test(`terrain ${action} retains updates while the worker issues its activation`, async () => {
     const env = await bootLoadedFrame();
     const { window, dispatchPage, frameMessages, initData, timers, realSetTimeout } = env;
-    const pending = [], station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
+    const pending: ((value: unknown) => void)[] = [], station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
     try {
         dispatchPage({ type: 'destroy' });
         if (action === 'init') timers[0]();
@@ -415,45 +450,49 @@ for (const action of ['init', 'resume']) test(`terrain ${action} retains updates
         armTerrain(window); dispatchPage(initData);
         dispatchPage({ type: 'update', routeStyle: { color: '#347a3f' }, theme: 'dark' });
         dispatchPage({ type: 'snowStations', snowStations: [station], conditions: [station.id] });
-        pending.shift()({ ok: true, token: 'deferred-activation', expiresAt: Date.now() + 10000 });
+        pending.shift()!({ ok: true, token: 'deferred-activation', expiresAt: Date.now() + 10000 });
         await new Promise(resolve => realSetTimeout(resolve, 0));
         if (action === 'init') {
-            const frame = window.document.getElementById('bpb-terrain-frame');
-            frame.contentWindow.postMessage = message => frameMessages.push(structuredClone(message));
-            window.dispatchEvent(new window.MessageEvent('message', { source: frame.contentWindow, origin: 'chrome-extension://test-id',
+            const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
+            frame!.contentWindow!.postMessage = (message: TestMessage) => frameMessages.push(structuredClone(message));
+            window.dispatchEvent(new window.MessageEvent('message', { source: frame!.contentWindow, origin: 'chrome-extension://test-id',
                 data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' } }));
         }
         const payload = frameMessages.find(message => message.type === action);
         assert.equal(payload?.theme, 'dark', 'the issued capability must carry the latest theme');
-        assert.equal(payload.routeStyle.color, '#347a3f');
+        assert.equal(payload.routeStyle!.color, '#347a3f');
         assert.deepEqual(Array.from(payload.conditions || []), [station.id]);
     } finally { dispatchPage({ type: 'destroy' }); window.close(); }
 });
 
 test('terrain station actions require explicit membership, preserve omitted updates and reset on resume', async () => {
     const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=1', runScripts: 'outside-only', pretendToBeVisual: true });
-    const popups = [], messages = []; let map;
+    const popups: StubPopup[] = [], messages: TestMessage[] = []; let map;
     class MapStub {
-        constructor(options) { map = this; this.layers = options.style.layers; this.sources = new Map(); }
-        addControl() {} once(type, callback) { if (type === 'load') this.load = callback; } on() {}
-        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
-        getSource(id) { return this.sources.get(id); } removeSource(id) { this.sources.delete(id); }
-        addLayer(layer) { this.layers.push(layer); } getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        declare layers: StubLayer[];
+        declare load: Handler;
+        declare sources: Map<string, StubSource>;
+        constructor(options: StubOptions) { map = this as unknown as StubMap; this.layers = options.style.layers; this.sources = new Map(); }
+        addControl() {} once(type: string, callback: Handler) { if (type === 'load') this.load = callback; } on() {}
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {} }); }
+        getSource(id: string) { return this.sources.get(id); } removeSource(id: string) { this.sources.delete(id); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); } getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
         setPaintProperty() {} fitBounds() {} resize() {} remove() {}
         getZoom() { return 12; } getCenter() { return { lng: -121.74, lat: 46.78 }; }
     }
     class Marker { setLngLat() { return this; } addTo() { return this; } remove() {} }
     class Popup {
-        constructor() { popups.push(this); } setDOMContent(node) { this.node = node; return this; }
+        declare node: Node;
+        constructor() { popups.push(this as unknown as StubPopup); } setDOMContent(node: Element) { this.node = node; return this; }
         on() { return this; } remove() {}
     }
     const dispatch = bootTerrainFrame(dom.window, MapStub, { messages, maplibre: { Marker, Popup } });
     const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
     const payload = { focus: [46.78, -121.74], snowStations: [station] };
-    const action = () => popups.at(-1).node.querySelector('.bpb-snotel-show-conditions');
+    const action = () => popups.at(-1)!.node.querySelector<HTMLElement>('.bpb-snotel-show-conditions');
     try {
-        dispatch({ type: 'init', ...payload }); map.load();
+        dispatch({ type: 'init', ...payload }); map!.load();
         assert.ok(messages.some(message => message.type === 'loaded'), 'the renderer stub reached the loaded state');
         assert.equal(action(), null, 'unknown membership must not offer an unavailable weather action');
         dispatch({ type: 'snowStations', snowStations: [station], conditions: [station.id] }); assert.ok(action());
@@ -471,15 +510,15 @@ test('a parked terrain frame cannot reveal stations and resume does not replay t
     try {
         const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
         dispatchPage({ type: 'snowStations', snowStations: [station], reveal: true });
-        assert.equal(frameMessages.at(-1).reveal, true);
+        assert.equal(frameMessages.at(-1)!.reveal, true);
         dispatchPage({ type: 'destroy' });
         dispatchPage({ type: 'snowStations', snowStations: [station], reveal: true });
-        assert.equal(frameMessages.at(-1).reveal, false, 'hidden terrain must not animate');
+        assert.equal(frameMessages.at(-1)!.reveal, false, 'hidden terrain must not animate');
         armTerrain(window); dispatchPage({ ...initData, snowStations: [station] });
         await new Promise(resolve => harness.realSetTimeout(resolve, 0));
         dispatchFrame({ type: 'loaded', navTop: 96 });
-        assert.equal(frameMessages.at(-1).type, 'snowStations');
-        assert.equal(frameMessages.at(-1).reveal, false, 'an ordinary handoff only restores the layer');
+        assert.equal(frameMessages.at(-1)!.type, 'snowStations');
+        assert.equal(frameMessages.at(-1)!.reveal, false, 'an ordinary handoff only restores the layer');
     } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
 });
 
@@ -488,7 +527,7 @@ test('3D location points require the active frame generation and valid coordinat
     const { window, frame, dispatchPage, dispatchFrame, pageMessages, frameMessages, initData } = harness;
     try {
         const card = window.document.createElement('section'); card.id = 'bpb-peak-weather'; window.document.body.append(card);
-        frame.getBoundingClientRect = () => ({ left: 100, top: 50, width: 600, height: 400 });
+        frame!.getBoundingClientRect = () => ({ left: 100, top: 50, width: 600, height: 400 }) as DOMRect;
         const context = { type: 'locationContext', latitude: 46.8, longitude: -121.7, x: 20, y: 30 };
         dispatchFrame(context);
         assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), { __bpbMapLocation: true, type: 'context', map: 'terrain', latitude: 46.8, longitude: -121.7, x: 120, y: 80 });
@@ -496,8 +535,8 @@ test('3D location points require the active frame generation and valid coordinat
         for (const invalid of [{ latitude: 91 }, { x: 601 }, { longitude: '1' }, { generation: -1 }]) dispatchFrame({ ...context, ...invalid });
         assert.equal(pageMessages.length, count);
         card.hidden = true; dispatchFrame(context); assert.equal(pageMessages.length, count + 1);
-        card.hidden = false; dispatchFrame({ type: 'locationDismiss' }); assert.equal(pageMessages.at(-1).type, 'dismiss');
-        const oldGeneration = frameMessages.find(message => message.type === 'init').generation;
+        card.hidden = false; dispatchFrame({ type: 'locationDismiss' }); assert.equal(pageMessages.at(-1)!.type, 'dismiss');
+        const oldGeneration = frameMessages.find(message => message.type === 'init')!.generation;
         dispatchPage({ type: 'destroy' });
         const parkedCount = pageMessages.length;
         dispatchFrame(context); dispatchFrame({ type: 'locationDismiss' });
@@ -507,23 +546,23 @@ test('3D location points require the active frame generation and valid coordinat
         dispatchFrame({ type: 'loaded', navTop: 96 });
         const resumedCount = pageMessages.length;
         dispatchFrame({ ...context, generation: oldGeneration }); assert.equal(pageMessages.length, resumedCount);
-        dispatchFrame(context); assert.equal(pageMessages.at(-1).type, 'context');
+        dispatchFrame(context); assert.equal(pageMessages.at(-1)!.type, 'context');
     } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
 });
 
 test('a loaded 3D frame suspends on destroy and resumes on re-entry without a new iframe', async () => {
     const ctx = await bootLoadedFrame();
     const { window, frame, initData, dispatchPage, dispatchFrame, pageMessages, frameMessages } = ctx;
-    assert.equal(frame.style.opacity, '1', 'the loaded frame is visible');
+    assert.equal(frame!.style.opacity, '1', 'the loaded frame is visible');
 
     // destroy → suspend: the iframe stays, parked at opacity 0.
     frameMessages.length = 0;
     dispatchPage({ type: 'destroy' });
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), frame, 'the frame stays in the DOM');
-    assert.equal(frame.style.opacity, '0');
-    assert.equal(frame.style.pointerEvents, 'none');
-    assert.equal(frameMessages.at(-1).type, 'suspend', 'the frame is told to suspend');
-    assert.equal(pageMessages.at(-1).type, 'destroyed', 'the page still gets its destroyed ack');
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, frame, 'the frame stays in the DOM');
+    assert.equal(frame!.style.opacity, '0');
+    assert.equal(frame!.style.pointerEvents, 'none');
+    assert.equal(frameMessages.at(-1)!.type, 'suspend', 'the frame is told to suspend');
+    assert.equal(pageMessages.at(-1)!.type, 'destroyed', 'the page still gets its destroyed ack');
     assert.equal(ctx.timers.length, 1, 'a keep-alive TTL is armed');
 
     // re-entry → resume: no new iframe, a resume posted carrying the fresh payload.
@@ -532,23 +571,23 @@ test('a loaded 3D frame suspends on destroy and resumes on re-entry without a ne
     dispatchPage(initData);
     await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
     assert.equal(window.document.querySelectorAll('#bpb-terrain-frame').length, 1, 'no second iframe is built');
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), frame, 'the same iframe is reused');
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, frame, 'the same iframe is reused');
     const resume = frameMessages.find(message => message.type === 'resume');
     assert.ok(resume, 'a resume is posted instead of a fresh boot');
     assert.equal(frameMessages.some(message => message.type === 'init'), false, 'no init handshake on resume');
     assert.deepEqual(JSON.parse(JSON.stringify(resume.camera)), { center: [48.72, -121.79], zoom: 12.5 });
-    assert.match(resume.activation, /^test-terrain-activation-/);
+    assert.match(resume.activation!, /^test-terrain-activation-/);
 
     // The frame's normal 'loaded' reply restores the frame to visible.
     dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
-    assert.equal(frame.style.opacity, '1');
+    assert.equal(frame!.style.opacity, '1');
     ctx.dom.window.close();
 });
 
 test('the bridge ignores wrong-origin and stale-generation replies from the current frame window', async () => {
     const ctx = await bootLoadedFrame();
     const { window, frame, dispatchPage, frameMessages, pageMessages } = ctx;
-    const firstGeneration = frameMessages.find(message => message.type === 'init').generation;
+    const firstGeneration = frameMessages.find(message => message.type === 'init')!.generation;
 
     dispatchPage({ type: 'destroy' });
     frameMessages.length = 0;
@@ -564,24 +603,24 @@ test('the bridge ignores wrong-origin and stale-generation replies from the curr
         { type: 'error', reason: 'renderer' },
     ]) {
         window.dispatchEvent(new window.MessageEvent('message', {
-            source: frame.contentWindow,
+            source: frame!.contentWindow,
             origin: 'https://attacker.example',
             data: { __bpbTerrainFrame: true, dir: 'toParent', generation: firstGeneration, ...data },
         }));
     }
-    assert.equal(frame.style.opacity, '0');
-    assert.equal(frame.style.pointerEvents, 'none');
+    assert.equal(frame!.style.opacity, '0');
+    assert.equal(frame!.style.pointerEvents, 'none');
     assert.deepEqual(frameMessages, [], 'wrong-origin ready must not disclose the pending route');
     assert.deepEqual(pageMessages, [], 'wrong-origin replies must not reach the page coordinator');
 
     armTerrain(window);
     dispatchPage(ctx.initData);
     await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
-    const resumed = frameMessages.find(message => message.type === 'resume');
-    assert.ok(resumed.generation > firstGeneration);
+    const resumed = (frameMessages as TestMessage[]).find(message => message.type === 'resume');
+    assert.ok(resumed!.generation! > firstGeneration!);
     pageMessages.length = 0;
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: frame.contentWindow,
+        source: frame!.contentWindow,
         origin: 'chrome-extension://test-id',
         data: {
             __bpbTerrainFrame: true,
@@ -591,7 +630,7 @@ test('the bridge ignores wrong-origin and stale-generation replies from the curr
             camera: { center: [0, 0], zoom: 1 },
         },
     }));
-    assert.equal(frame.style.opacity, '0', 'a stale loaded reply cannot expose the resumed frame');
+    assert.equal(frame!.style.opacity, '0', 'a stale loaded reply cannot expose the resumed frame');
     assert.deepEqual(pageMessages, []);
 
     ctx.dom.window.close();
@@ -601,13 +640,13 @@ test('the keep-alive TTL hard-destroys the parked frame when it expires', async 
     const ctx = await bootLoadedFrame();
     const { window, frame, dispatchPage, frameMessages, timers } = ctx;
     dispatchPage({ type: 'destroy' });
-    assert.equal(frame.style.opacity, '0');
+    assert.equal(frame!.style.opacity, '0');
     assert.equal(timers.length, 1);
 
     frameMessages.length = 0;
     timers[0](); // fire the 5-minute TTL
-    assert.equal(frameMessages.at(-1).type, 'destroy', 'the frame is fully destroyed at expiry');
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), null, 'the iframe is removed');
+    assert.equal(frameMessages.at(-1)!.type, 'destroy', 'the frame is fully destroyed at expiry');
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null, 'the iframe is removed');
     ctx.dom.window.close();
 });
 
@@ -616,24 +655,24 @@ test('a destroy that races the boot hard-destroys instead of suspending', async 
       <div id="bpb-map-viewport"><iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe></div>
     </body>`, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only' });
     const { window } = dom;
-    const pageMessages = [];
-    window.chrome = chromeWith({ enable3dMap: true });
+    const pageMessages: TestMessage[] = [];
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
     window.postMessage = message => { pageMessages.push(message); };
     window.eval(bridgeBundle);
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatchPage = (data: TestMessage) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
     armTerrain(window);
     dispatchPage({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]], theme: 'light', cacheLimitMb: 512 });
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.ok(window.document.getElementById('bpb-terrain-frame'), 'the iframe was created');
+    assert.ok(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, 'the iframe was created');
 
     // No 'loaded' yet → destroy tears it down (nothing worth suspending).
     dispatchPage({ type: 'destroy' });
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), null, 'the un-loaded frame is removed');
-    assert.equal(pageMessages.at(-1).type, 'destroyed');
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null, 'the un-loaded frame is removed');
+    assert.equal(pageMessages.at(-1)!.type, 'destroyed');
     dom.window.close();
 });
 
@@ -641,12 +680,12 @@ test('disabling 3D tears down even a suspended frame immediately', async () => {
     const ctx = await bootLoadedFrame();
     const { window, frame, dispatchPage, timers } = ctx;
     dispatchPage({ type: 'destroy' });
-    assert.equal(frame.style.opacity, '0', 'the frame is suspended');
+    assert.equal(frame!.style.opacity, '0', 'the frame is suspended');
     assert.equal(timers.length, 1);
 
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
     await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), null, 'the suspended frame is removed at once');
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null, 'the suspended frame is removed at once');
     ctx.dom.window.close();
 });
 
@@ -655,14 +694,14 @@ test('cancelling 3D while activation is pending cannot mount an abandoned frame'
         url: 'https://www.peakbagger.com/peak.aspx?pid=1', runScripts: 'outside-only',
     });
     const { window } = dom;
-    const pending = [];
-    window.chrome = chromeWith({ enable3dMap: true });
+    const pending: ((value: unknown) => void)[] = [];
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
     Object.defineProperty(window.chrome.runtime, 'sendMessage', {
         value: () => new Promise(resolve => pending.push(resolve)),
     });
     window.postMessage = () => {};
     window.eval(bridgeBundle);
-    const dispatch = type => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatch = (type: string) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', type, focus: [48.7, -121.8] },
     }));
@@ -670,15 +709,15 @@ test('cancelling 3D while activation is pending cannot mount an abandoned frame'
     try {
         await settle();
         armTerrain(window); dispatch('init'); dispatch('destroy');
-        pending.shift()({ ok: true, token: 'cancelled-activation', expiresAt: Date.now() + 10000 });
+        pending.shift()!({ ok: true, token: 'cancelled-activation', expiresAt: Date.now() + 10000 });
         await settle();
-        assert.equal(window.document.getElementById('bpb-terrain-frame'), null,
+        assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null,
             'a late activation cannot reopen a cancelled view');
 
         armTerrain(window); dispatch('init');
-        pending.shift()({ ok: true, token: 'fresh-activation', expiresAt: Date.now() + 10000 });
+        pending.shift()!({ ok: true, token: 'fresh-activation', expiresAt: Date.now() + 10000 });
         await settle();
-        assert.ok(window.document.getElementById('bpb-terrain-frame'), 'a new user attempt still opens 3D');
+        assert.ok(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, 'a new user attempt still opens 3D');
     } finally { dispatch('destroy'); dom.window.close(); }
 });
 
@@ -692,8 +731,8 @@ test('3D terrain bridge refuses forged page requests without trusted activation'
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    const messages = [];
-    window.chrome = chromeWith({ enable3dMap: false });
+    const messages: TestMessage[] = [];
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: false }) });
     window.postMessage = message => { messages.push(message); };
     window.eval(bridgeBundle);
 
@@ -709,7 +748,7 @@ test('3D terrain bridge refuses forged page requests without trusted activation'
     }));
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
-    assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
+    assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null);
     assert.equal(messages.length, 0, 'a forged request gets no bridge response or frame');
     dom.window.close();
 });
@@ -721,8 +760,8 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const messages = [];
-    window.chrome = chromeWith({ enable3dMap: false, theme: 'light' });
+    const messages: TestMessage[] = [];
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: false, theme: 'light' }) });
     window.postMessage = message => { messages.push(message); };
     window.eval(bridgeBundle);
 
@@ -736,12 +775,12 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     };
     requestConsent({ trusted: false });
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.equal(window.document.querySelector('[role="dialog"]'), null,
+    assert.equal(window.document.querySelector<HTMLElement>('[role="dialog"]'), null,
         'host-page script cannot open extension consent with a forged bridge message');
     requestConsent();
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
-    let dialog = window.document.querySelector('[role="dialog"]');
+    let dialog = window.document.querySelector<HTMLElement>('[role="dialog"]');
     assert.ok(dialog, 'the isolated-world bridge should own the confirmation UI');
     assert.equal(dialog.getAttribute('aria-modal'), 'true');
     assert.match(dialog.textContent, /Mapterhorn/);
@@ -757,24 +796,24 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
         ['Privacy notice', 'privacy.microsoft.com']
     ]);
     const featureEnabled = async () =>
-        (await window.chrome.storage.sync.get('bpbSettings')).bpbSettings.enable3dMap;
+        (await window.chrome.storage.sync.get('bpbSettings') as { bpbSettings: { enable3dMap: boolean } }).bpbSettings.enable3dMap;
     assert.equal(await featureEnabled(), false, 'opening the confirmation must not change the setting');
 
-    dialog.querySelector('.bpb-terrain-consent-secondary').click();
-    assert.equal(window.document.querySelector('[role="dialog"]'), null);
-    assert.equal(messages.at(-1).type, 'consentResult');
-    assert.equal(messages.at(-1).enabled, false);
+    dialog.querySelector<HTMLElement>('.bpb-terrain-consent-secondary')!.click();
+    assert.equal(window.document.querySelector<HTMLElement>('[role="dialog"]'), null);
+    assert.equal(messages.at(-1)!.type, 'consentResult');
+    assert.equal(messages.at(-1)!.enabled, false);
     assert.equal(await featureEnabled(), false, 'declining must keep the feature off');
 
     requestConsent();
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    dialog = window.document.querySelector('[role="dialog"]');
-    dialog.querySelector('.bpb-terrain-consent-primary').click();
+    dialog = window.document.querySelector<HTMLElement>('[role="dialog"]');
+    dialog!.querySelector<HTMLElement>('.bpb-terrain-consent-primary')!.click();
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(await featureEnabled(), false,
         'host-page script must not enable an extension feature through DOM click()');
-    assert.ok(window.document.querySelector('[role="dialog"]'), 'scripted acceptance must leave the confirmation open');
-    dialog.querySelector('.bpb-terrain-consent-secondary').click();
+    assert.ok(window.document.querySelector<HTMLElement>('[role="dialog"]'), 'scripted acceptance must leave the confirmation open');
+    dialog!.querySelector<HTMLElement>('.bpb-terrain-consent-secondary')!.click();
     dom.window.close();
 });
 
@@ -788,11 +827,11 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    window.chrome = chromeWith({ enable3dMap: false });
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: false }) });
     // Defer the initial storage read so a subscribe push can land before it.
-    let resolveInitialGet;
+    let resolveInitialGet!: () => void;
     window.chrome.storage.sync.get = () => new Promise(resolve => {
-        resolveInitialGet = () => resolve({ bpbSettings: { enable3dMap: false } });
+        resolveInitialGet = () => resolve({ bpbSettings: { enable3dMap: false } } as never);
     });
     window.postMessage = () => {};
     window.eval(bridgeBundle);
@@ -810,10 +849,10 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
             routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
         }
     }));
-    resolveInitialGet(); // the stale initial read resolves (disabled), after the push
+    resolveInitialGet!(); // the stale initial read resolves (disabled), after the push
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
-    assert.ok(window.document.getElementById('bpb-terrain-frame'),
+    assert.ok(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null,
         'the stale initial read must not undo the newer enabled setting');
     dom.window.close();
 });
@@ -824,22 +863,23 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    const maps = [];
-    const messages = [];
+    const maps: StubMap[] = [];
+    const messages: TestMessage[] = [];
     let removals = 0;
     const validTokens = new Set(['one-use']);
-    window.authorizeTerrain = ({ token, action }) => {
+    window.authorizeTerrain = ({ token, action }: { token: string; action: string }) => {
         if (action !== 'init' || !validTokens.delete(token)) return false;
         return true;
     };
     class MapStub {
-        constructor(options) { this.options = options; maps.push(this); }
+        declare options: StubOptions;
+        constructor(options: StubOptions) { this.options = options; maps.push(this as unknown as StubMap); }
         addControl() {}
         once() {}
         on() {}
         remove() { removals += 1; }
     }
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    Object.assign(window, { chrome: { runtime: { getURL: (resource: string) => `chrome-extension://test-id/${resource}` } } });
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class {},
@@ -847,10 +887,10 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
         AttributionControl: class {},
         setWorkerUrl() {}, addProtocol() {}, removeProtocol() {}
     };
-    window.fetch = () => { throw new Error('authorization failure must not fetch'); };
+    (window as unknown as Record<string, unknown>).fetch = () => { throw new Error('authorization failure must not fetch'); };
     window.postMessage = message => { messages.push(message); };
     window.eval(frameBundle);
-    const dispatch = (activation, generation) => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatch = (activation: string | undefined, generation: number) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
         data: {
@@ -880,8 +920,8 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
         data: { __bpbTerrainFrame: true, dir: 'toFrame', type: 'destroy', generation: 7 }
     }));
     assert.equal(removals, 1);
-    assert.equal(messages.at(-1).type, 'destroyed');
-    assert.equal(messages.at(-1).generation, 7, 'frame replies echo the generation that authorized them');
+    assert.equal(messages.at(-1)!.type, 'destroyed');
+    assert.equal(messages.at(-1)!.generation, 7, 'frame replies echo the generation that authorized them');
     dispatch('one-use', 8);
     assert.equal(maps.length, 1, 'the consumed token cannot build a second renderer');
     dom.window.close();
@@ -894,16 +934,16 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const messages = [];
-    const maps = [];
+    const messages: TestMessage[] = [];
+    const maps: StubMap[] = [];
     const protocolHandlers = new Map();
-    const popups = [];
-    const markers = [];
-    const gestureHintTimers = [];
+    const popups: StubPopup[] = [];
+    const markers: { removed?: boolean; options: { opacityWhenCovered?: number; element: HTMLElement }; lngLat?: unknown; target?: unknown }[] = [];
+    const gestureHintTimers: Handler[] = [];
     let workerUrl = '';
 
     const realSetTimeout = window.setTimeout.bind(window);
-    window.setTimeout = (callback, delay, ...args) => {
+    (window as unknown as Record<string, unknown>).setTimeout = (callback: Handler, delay: number, ...args: unknown[]) => {
         if (delay === 6000) {
             gestureHintTimers.push(callback);
             return 6000;
@@ -912,7 +952,23 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     };
 
     class MapStub {
-        constructor(options) {
+        declare cameraCenter: unknown;
+        declare cameraZoom: number;
+        declare canvas: HTMLCanvasElement;
+        declare controls: StubControl[];
+        declare data: unknown;
+        declare fitted: unknown;
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare layout: unknown[];
+        declare options: StubOptions;
+        declare paint: unknown[];
+        declare removed: boolean;
+        declare renderCalls: unknown[];
+        declare routeHit: unknown;
+        declare sourceDataOutcomes: Map<string, unknown[]>;
+        declare sources: Map<string, StubSource>;
+        constructor(options: StubOptions) {
             this.options = options;
             this.sources = new Map();
             this.layers = [];
@@ -924,19 +980,19 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             this.renderCalls = [];
             this.canvas = window.document.createElement('canvas');
             this.sourceDataOutcomes = new Map();
-            maps.push(this);
+            maps.push(this as unknown as StubMap);
         }
-        addControl(control, position) { this.controls.push({ control, position }); }
-        once(type, callback) {
+        addControl(control: StubControl, position: [number, number]) { this.controls.push({ control, position } as StubControl); }
+        once(type: string, callback: Handler) {
             if (type === 'load') window.queueMicrotask(callback);
         }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) {
-            const terrainMap = this;
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) {
+            const outcomes = this.sourceDataOutcomes;
             const stored = {
                 ...source,
-                setData(data) {
-                    const outcome = terrainMap.sourceDataOutcomes.get(id)?.shift();
+                setData(data: StubSourceData) {
+                    const outcome = outcomes.get(id)?.shift();
                     if (!outcome) {
                         this.data = data;
                         return undefined;
@@ -946,20 +1002,20 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             };
             this.sources.set(id, stored);
         }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); }
         getCanvas() { return this.canvas; }
-        removeSource(id) { this.sources.delete(id); }
-        setPaintProperty(...args) { this.paint.push(args); }
-        setLayoutProperty(...args) { this.layout.push(args); }
-        fitBounds(bounds, options) { this.fitted = { bounds, options }; }
+        removeSource(id: string) { this.sources.delete(id); }
+        setPaintProperty(...args: unknown[]) { this.paint.push(args); }
+        setLayoutProperty(...args: unknown[]) { this.layout.push(args); }
+        fitBounds(bounds: unknown, options: StubOptions) { this.fitted = { bounds, options }; }
         getCenter() {
-            const center = this.cameraCenter || this.options.center || [
-                (this.options.bounds[0][0] + this.options.bounds[1][0]) / 2,
-                (this.options.bounds[0][1] + this.options.bounds[1][1]) / 2
-            ];
+            const center = (this.cameraCenter || this.options.center || [
+                (this.options.bounds![0][0] + this.options.bounds![1][0]) / 2,
+                (this.options.bounds![0][1] + this.options.bounds![1][1]) / 2
+            ]) as number[];
             return { lng: center[0], lat: center[1] };
         }
         getZoom() { return this.cameraZoom ?? this.options.zoom ?? 12; }
@@ -970,20 +1026,25 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     }
 
     class MarkerStub {
-        constructor(options) { this.options = options; markers.push(this); }
-        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
-        addTo(target) { this.target = target; return this; }
+        declare lngLat: unknown;
+        declare options: StubOptions;
+        declare removed: boolean;
+        declare target: unknown;
+        constructor(options: StubOptions) { this.options = options; markers.push(this as unknown as (typeof markers)[number]); }
+        setLngLat(lngLat: [number, number]) { this.lngLat = lngLat; return this; }
+        addTo(target: unknown) { this.target = target; return this; }
         remove() { this.removed = true; return this; }
     }
 
-    const resizeObservers = [];
-    window.ResizeObserver = class {
-        constructor(callback) {
+    const resizeObservers: { callback: Handler; observed: Element[]; disconnected?: boolean }[] = [];
+    (window as unknown as Record<string, unknown>).ResizeObserver = class {
+        declare callback: Handler; declare observed: Element[]; declare disconnected: boolean;
+        constructor(callback: Handler) {
             this.callback = callback;
             this.observed = [];
-            resizeObservers.push(this);
+            resizeObservers.push(this as unknown as { callback: Handler; observed: Element[] });
         }
-        observe(element) { this.observed.push(element); }
+        observe(element: Element) { this.observed.push(element); }
         disconnect() { this.disconnected = true; }
     };
 
@@ -991,24 +1052,24 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         messages, popups,
         maplibre: {
             Marker: MarkerStub,
-            setWorkerUrl(url) { workerUrl = url; },
-            addProtocol(name, handler) { protocolHandlers.set(name, handler); },
-            removeProtocol(name) { protocolHandlers.delete(name); }
+            setWorkerUrl(url: string) { workerUrl = url; },
+            addProtocol(name: string, handler: StubProtocol) { protocolHandlers.set(name, handler); },
+            removeProtocol(name: string) { protocolHandlers.delete(name); }
         }
     });
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8, 1000], [48.71, -121.81, 1200]]] });
     assert.equal(maps.length, 0, 'points with extra elevation data must fail closed');
-    assert.equal(messages.at(-1).type, 'error');
+    assert.equal(messages.at(-1)!.type, 'error');
 
     const oversizedRoute = Array.from({ length: 3001 }, (_, index) => [48.7 + index / 1000000, -121.8]);
     dispatch({ type: 'init', routeSegments: [oversizedRoute] });
     assert.equal(maps.length, 0, 'routes above the 3,000-point privacy and rendering cap must fail closed');
-    assert.equal(messages.at(-1).type, 'error');
+    assert.equal(messages.at(-1)!.type, 'error');
 
     dispatch({ type: 'init', focus: [99, -121.8] });
     assert.equal(maps.length, 0, 'an invalid summit focus must fail before public DEM tiles can load');
-    assert.equal(messages.at(-1).type, 'error');
+    assert.equal(messages.at(-1)!.type, 'error');
 
     const routeSegments = [
         [[48.7, -121.8], [48.71, -121.81]],
@@ -1035,20 +1096,20 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             attribution: '<a href="https://example.com/copyright">© Example Maps</a><script>alert(1)</script>'
         }
     });
-    assert.equal(window.document.querySelector('.bpb-terrain-hint')?.hidden, true,
+    assert.equal(window.document.querySelector<HTMLElement>('.bpb-terrain-hint')?.hidden, true,
         'gesture instructions stay hidden while the terrain map is still loading');
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
 
     assert.equal(maps.length, 1);
     const map = maps[0];
     const mapElement = window.document.getElementById('bpb-terrain-map');
-    assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-bottom'), '43px');
-    assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-width'), '34px');
+    assert.equal(mapElement!.style.getPropertyValue('--bpb-zoom-bottom'), '43px');
+    assert.equal(mapElement!.style.getPropertyValue('--bpb-zoom-width'), '34px');
     dispatch({ type: 'zoomControl', zoomControl: { right: 12, bottom: 60, width: 34, height: 64 } });
-    assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-bottom'), '60px', 'resize updates the measured native zoom anchor');
+    assert.equal(mapElement!.style.getPropertyValue('--bpb-zoom-bottom'), '60px', 'resize updates the measured native zoom anchor');
     for (const bottom of [-1, Infinity, '80px', 10001]) {
         dispatch({ type: 'zoomControl', zoomControl: { right: 10, bottom, width: 34, height: 64 } });
-        assert.equal(mapElement.style.getPropertyValue('--bpb-zoom-bottom'), '60px', 'untrusted layout values cannot enter CSS');
+        assert.equal(mapElement!.style.getPropertyValue('--bpb-zoom-bottom'), '60px', 'untrusted layout values cannot enter CSS');
     }
     assert.equal(workerUrl, 'chrome-extension://test-id/vendor/maplibre-gl-worker.mjs');
     assert.equal(map.options.zoomLevelsToOverscale, undefined,
@@ -1056,28 +1117,28 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.deepEqual(JSON.parse(JSON.stringify(map.options.style.sources.terrain.tiles)), ['bpb-dem://{z}/{x}/{y}.webp']);
     assert.equal(map.options.style.sources.terrain.encoding, 'terrarium');
     assert.ok(protocolHandlers.has('bpb-dem'));
-    assert.equal(map.options.style.terrain.exaggeration, 1, 'terrain must not distort mountaineering geometry');
+    assert.equal(map.options.style.terrain!.exaggeration, 1, 'terrain must not distort mountaineering geometry');
     assert.deepEqual(Object.keys(map.options.style.sources), ['terrain'],
         'the constructor style stays terrain-only so a pending drape cannot gate MapLibre load');
     assert.equal(map.options.style.layers.some(layer => layer.id === 'basemap'), false);
     assert.deepEqual(JSON.parse(JSON.stringify(map.getSource('basemap').tiles)), ['https://a.tile.example.com/{z}/{x}/{y}.png']);
     assert.equal(map.getSource('basemap').tileSize, 256);
     const osmTile = 'https://tile.openstreetmap.org/0/0/0.png';
-    assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest(osmTile, 'Tile'))), { url: osmTile },
+    assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest!(osmTile, 'Tile'))), { url: osmTile },
         'raster requests preserve browser caching and identity defaults without injecting headers or a cache bypass');
-    assert.match(map.getSource('basemap').attribution, /https:\/\/example\.com\/copyright/);
-    assert.doesNotMatch(map.getSource('basemap').attribution, /script|alert/i);
-    assert.equal(map.layers.find(layer => layer.id === 'basemap').paint['raster-opacity'], 0.78);
-    assert.equal(map.options.style.layers.find(layer => layer.id === 'terrain-hillshade').paint['hillshade-illumination-anchor'], 'map',
+    assert.match(map.getSource('basemap').attribution!, /https:\/\/example\.com\/copyright/);
+    assert.doesNotMatch(map.getSource('basemap').attribution!, /script|alert/i);
+    assert.equal(map.layers.find(layer => layer.id === 'basemap')!.paint!['raster-opacity'], 0.78);
+    assert.equal(map.options.style.layers.find(layer => layer.id === 'terrain-hillshade')!.paint!['hillshade-illumination-anchor'], 'map',
         'hillshade is anchored to the map, so rotating/tilting the camera does not swing the light and flip the shading');
     const picker = () => framePicker(window);
-    const notice = () => window.document.querySelector('.bpb-terrain-notice');
+    const notice = () => window.document.querySelector<HTMLElement>('.bpb-terrain-notice');
     assert.ok(picker(), 'a drape picker is shown when a layer is offered');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'Open Topo Map',
         'the picker labels and selects the active drape');
     assert.ok(Array.from(picker().options).some(option => option.textContent === 'Terrain only'),
         'the picker always offers a terrain-only choice');
-    const hint = window.document.querySelector('.bpb-terrain-hint');
+    const hint = window.document.querySelector<HTMLElement>('.bpb-terrain-hint');
     assert.ok(hint, 'a gesture hint is shown when the terrain map becomes interactive');
     assert.equal(hint.hidden, false, 'the hint waits until the map is usable before starting its teaching window');
     assert.match(hint.textContent, /Drag to pan/);
@@ -1086,7 +1147,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.doesNotMatch(hint.textContent, /⌘|Ctrl/,
         'plain scroll zooms — the hint must not demand a modifier key');
     assert.equal(gestureHintTimers.length, 1, 'the gesture hint gets one post-load dismissal timer');
-    window.document.getElementById('bpb-terrain-map').dispatchEvent(new window.Event('wheel', { bubbles: true }));
+    window.document.getElementById('bpb-terrain-map')!.dispatchEvent(new window.Event('wheel', { bubbles: true }));
     assert.equal(hint.classList.contains('bpb-terrain-hint-dismissed'), true,
         'the first map interaction immediately dismisses the gesture hint');
     assert.equal(hint.getAttribute('aria-hidden'), 'true',
@@ -1100,7 +1161,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         'the dismissed state visually clears the attribution');
     assert.ok(!map.options.cooperativeGestures,
         'cooperative gestures would require a modifier to scroll-zoom, unlike the 2D map');
-    assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data)), {
+    assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route')!.data)), {
         type: 'FeatureCollection',
         features: [
             {
@@ -1111,39 +1172,39 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-121.82, 48.75], [-121.815, 48.76]] } }
         ]
     });
-    map.routeHit = map.sources.get('bpb-route').data.features[0];
-    map.handlers.get('click')({ point: { x: 200, y: 150 }, lngLat: { lng: -121.805, lat: 48.705 } });
+    map.routeHit = map.sources.get('bpb-route')!.data!.features[0];
+    map.handlers.get('click')!({ point: { x: 200, y: 150 }, lngLat: { lng: -121.805, lat: 48.705 } });
     assert.equal(popups.length, 1, 'clicking a route with validated metadata opens its ascent popup');
     const routeLink = popups[0].node.querySelector('a');
-    assert.equal(routeLink.href, 'https://www.peakbagger.com/climber/ascent.aspx?aid=3230293');
-    assert.equal(routeLink.textContent, '2026-06-12 - Fei (Kautz Glacier) TR-98');
-    assert.equal(routeLink.target, '_blank');
-    assert.equal(routeLink.rel, 'noopener noreferrer');
+    assert.equal(routeLink!.href, 'https://www.peakbagger.com/climber/ascent.aspx?aid=3230293');
+    assert.equal(routeLink!.textContent, '2026-06-12 - Fei (Kautz Glacier) TR-98');
+    assert.equal(routeLink!.target, '_blank');
+    assert.equal(routeLink!.rel, 'noopener noreferrer');
     // The camera is framed on the route at construction, not re-fitted after
     // 'load' — fitting later would load a throwaway tileset for the placeholder
     // view and rebuild the terrain mesh, the dominant chunk of load time.
     assert.deepEqual(JSON.parse(JSON.stringify(map.options.bounds)), [[-121.82, 48.7], [-121.8, 48.76]]);
-    assert.equal(map.options.fitBoundsOptions.maxZoom, 15.5);
-    assert.equal(map.options.fitBoundsOptions.pitch, 60);
+    assert.equal(map.options.fitBoundsOptions!.maxZoom, 15.5);
+    assert.equal(map.options.fitBoundsOptions!.pitch, 60);
     assert.equal(map.fitted, undefined, 'no redundant post-load fitBounds');
-    assert.equal(window.document.getElementById('bpb-terrain-map').style.pointerEvents, 'auto');
-    assert.equal(messages.filter(message => message.type !== 'locationDismiss').at(-1).type, 'loaded');
+    assert.equal(window.document.getElementById('bpb-terrain-map')!.style.pointerEvents, 'auto');
+    assert.equal(messages.filter(message => message.type !== 'locationDismiss').at(-1)!.type, 'loaded');
     assert.equal(map.handlers.has('data'), true,
         'the frame reports loaded without waiting for a drape tile data event');
-    map.handlers.get('error')({ sourceId: 'terrain', error: new Error('one DEM tile failed') });
+    map.handlers.get('error')!({ sourceId: 'terrain', error: new Error('one DEM tile failed') });
     assert.equal(map.removed, false, 'a post-load source error remains a recoverable coverage gap');
-    assert.equal(messages.filter(message => message.type !== 'locationDismiss').at(-1).type, 'loaded', 'recoverable source errors stay silent to the page');
-    map.handlers.get('contextmenu')({ lngLat: { lat: 48.7, wrap: () => ({ lng: -121.8 }) }, originalEvent: { clientX: 20, clientY: 30 } });
-    assert.equal(messages.at(-1).type, 'locationContext', 'route terrain exposes a location without a focus peak');
+    assert.equal(messages.filter(message => message.type !== 'locationDismiss').at(-1)!.type, 'loaded', 'recoverable source errors stay silent to the page');
+    map.handlers.get('contextmenu')!({ lngLat: { lat: 48.7, wrap: () => ({ lng: -121.8 }) }, originalEvent: { clientX: 20, clientY: 30 } });
+    assert.equal(messages.at(-1)!.type, 'locationContext', 'route terrain exposes a location without a focus peak');
 
     // macOS Firefox rewrites Ctrl + primary-button mousedown to button=2 but
     // leaves buttons=1. MapLibre cannot continue that internally inconsistent
     // gesture when the following moves arrive as primary-button events.
     const canvas = window.document.getElementById('bpb-terrain-canvas');
     const gestureTarget = window.document.createElement('span');
-    canvas.append(gestureTarget);
-    const starts = [];
-    canvas.addEventListener('mousedown', event => starts.push({
+    canvas!.append(gestureTarget);
+    const starts: unknown[] = [];
+    canvas!.addEventListener('mousedown', event => starts.push({
         button: event.button,
         buttons: event.buttons,
         ctrlKey: event.ctrlKey
@@ -1174,16 +1235,16 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     // flicker. The observer callback must redraw synchronously, before paint.
     const frameObserver = resizeObservers[0];
     assert.ok(frameObserver, 'the frame watches its own element for size changes');
-    assert.ok(frameObserver.observed.includes(window.document.getElementById('bpb-terrain-map')));
+    assert.ok(frameObserver.observed.includes(window.document.getElementById('bpb-terrain-map')!));
     frameObserver.callback();
     assert.deepEqual(map.renderCalls, ['resize', 'redraw'],
         'a resize repaints in the same task so the cleared canvas is never composited');
 
     dispatch({ type: 'highlight', coordinates: [-121.81, 48.71], series: 'time' });
-    assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-highlight').data.geometry)), {
+    assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-highlight')!.data!.geometry)), {
         type: 'Point', coordinates: [-121.81, 48.71]
     });
-    assert.ok(map.paint.some(call => call[0] === 'bpb-highlight'
+    assert.ok(map.paint.some((call: unknown[]) => call[0] === 'bpb-highlight'
         && call[1] === 'circle-color' && call[2] === '#0055ff'),
     'the time-series chaser is blue in 3D');
 
@@ -1191,18 +1252,18 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.deepEqual(map.paint.at(-1), ['bpb-highlight', 'circle-color', '#ff3b30'],
         'the terrain frame does not treat an unknown series as a color');
 
-    const activeHighlight = Promise.withResolvers();
+    const activeHighlight = withResolvers();
     map.sourceDataOutcomes.set('bpb-highlight', [activeHighlight.promise]);
     dispatch({ type: 'highlight', coordinates: [-121.805, 48.705], series: 'distance' });
     assert.deepEqual(map.layout.at(-1), ['bpb-highlight', 'visibility', 'none'],
         'an asynchronous highlight stays hidden until the worker accepts it');
     activeHighlight.reject(new Error('highlight worker rejected'));
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     assert.equal(map.removed, false, 'an optional highlight rejection does not kill healthy terrain');
     assert.deepEqual(map.layout.at(-1), ['bpb-highlight', 'visibility', 'none'],
         'an actively rejected highlight cannot leave its stale dot visible');
 
-    const acceptedHighlight = Promise.withResolvers();
+    const acceptedHighlight = withResolvers();
     map.sourceDataOutcomes.set('bpb-highlight', [acceptedHighlight.promise]);
     dispatch({ type: 'highlight', coordinates: [-121.806, 48.706], series: 'distance' });
     acceptedHighlight.resolve();
@@ -1215,20 +1276,20 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         routeStyle: { color: '#347a3f', width: 6, casingColor: '#ffffff', casingWidth: 10 },
         theme: 'light'
     });
-    assert.ok(map.paint.some(call => call[0] === 'bpb-route' && call[1] === 'line-color' && call[2] === '#347a3f'));
-    assert.equal(window.document.getElementById('bpb-terrain-map').dataset.theme, 'light');
+    assert.ok(map.paint.some((call: unknown[]) => call[0] === 'bpb-route' && call[1] === 'line-color' && call[2] === '#347a3f'));
+    assert.equal(window.document.getElementById('bpb-terrain-map')!.dataset.theme, 'light');
 
     // A drape that loaded at least one tile must survive sparse later tile
     // failures: one error is no longer enough to tear the whole layer down.
-    map.handlers.get('data')({ sourceId: 'basemap', dataType: 'source', tile: {} });
-    map.handlers.get('error')({ sourceId: 'basemap' });
-    map.handlers.get('idle')();
+    map.handlers.get('data')!({ sourceId: 'basemap', dataType: 'source', tile: {} });
+    map.handlers.get('error')!({ sourceId: 'basemap' });
+    map.handlers.get('idle')!();
     assert.equal(picker().value, '0', 'a drape that rendered a tile stays selected');
     assert.equal(picker().options[0].disabled, false, 'a working drape is not disabled');
-    assert.equal(notice().hidden, true, 'no failure notice for a drape that rendered a tile');
+    assert.equal(notice()!.hidden, true, 'no failure notice for a drape that rendered a tile');
 
-    const staleHighlight = Promise.withResolvers();
-    const rejectedRoute = Promise.withResolvers();
+    const staleHighlight = withResolvers();
+    const rejectedRoute = withResolvers();
     map.sourceDataOutcomes.set('bpb-highlight', [staleHighlight.promise]);
     map.sourceDataOutcomes.set('bpb-route', [rejectedRoute.promise]);
     dispatch({ type: 'highlight', coordinates: [-121.807, 48.707], series: 'distance' });
@@ -1237,7 +1298,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(map.removed, true,
         'rejecting the current route replacement restores authoritative 2D instead of showing the old trip');
-    assert.equal(messages.at(-1).reason, 'renderer');
+    assert.equal(messages.at(-1)!.reason, 'renderer');
     const messagesAfterRouteFailure = messages.length;
     staleHighlight.reject(new Error('map was removed'));
     await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -1248,7 +1309,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(map.removed, true);
     assert.equal(protocolHandlers.has('bpb-dem'), false);
     assert.equal(window.document.getElementById('bpb-terrain-map'), null);
-    assert.equal(messages.at(-1).type, 'destroyed');
+    assert.equal(messages.at(-1)!.type, 'destroyed');
 
     dispatch({
         type: 'init',
@@ -1258,7 +1319,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             tiles: ['https://127.0.0.1/{z}/{x}/{y}.png']
         }
     });
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     assert.deepEqual(Object.keys(maps[1].options.style.sources), ['terrain'],
         'the extension frame must reject private-network tile templates');
 
@@ -1272,23 +1333,23 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         camera: { center: [47.61, -122.33], zoom: 12.25 },
         routeStyle: { color: '#2457a7', width: 7, casingColor: '#ffffff', casingWidth: 12 }
     });
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     const grouped = maps.at(-1);
-    assert.deepEqual(JSON.parse(JSON.stringify(grouped.options.center)), [-122.33, 47.61],
+    assert.deepEqual(JSON.parse(JSON.stringify(grouped!.options.center)), [-122.33, 47.61],
         'a validated 2D camera overrides the route-wide initial framing');
-    assert.equal(grouped.options.zoom, 12.25);
-    assert.equal(grouped.options.bounds, undefined);
+    assert.equal(grouped!.options.zoom, 12.25);
+    assert.equal(grouped!.options.bounds, undefined);
     assert.deepEqual(
-        JSON.parse(JSON.stringify(grouped.sources.get('bpb-route').data.features.map(feature => feature.properties.color))),
+        JSON.parse(JSON.stringify(grouped!.sources.get('bpb-route')!.data!.features.map(feature => feature.properties.color))),
         ['#e34a33', '#3182bd'],
         'each group-map track keeps its own native color');
     assert.deepEqual(
-        JSON.parse(JSON.stringify(grouped.layers.find(layer => layer.id === 'bpb-route').paint['line-color'])),
+        JSON.parse(JSON.stringify(grouped!.layers.find(layer => layer.id === 'bpb-route')!.paint!['line-color'])),
         ['coalesce', ['get', 'color'], '#2457a7'],
         'the route line is painted from each track color, not one flat color');
-    grouped.cameraCenter = [-122.29, 47.64];
-    grouped.cameraZoom = 13.5;
-    grouped.handlers.get('moveend')();
+    grouped!.cameraCenter = [-122.29, 47.64];
+    grouped!.cameraZoom = 13.5;
+    grouped!.handlers.get('moveend')!();
     assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {
         __bpbTerrainFrame: true,
         dir: 'toParent',
@@ -1303,10 +1364,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         requestId: 11,
         camera: { center: [47.64, -122.29], zoom: 13.5 }
     }, 'an explicit switch request reads the live camera instead of relying on event timing');
-    grouped.handlers.get('error')({ error: new Error('renderer stopped') });
-    assert.equal(grouped.removed, true, 'a source-less post-load renderer error tears down the dead canvas');
-    assert.equal(messages.at(-1).type, 'error');
-    assert.equal(messages.at(-1).reason, 'renderer');
+    grouped!.handlers.get('error')!({ error: new Error('renderer stopped') });
+    assert.equal(grouped!.removed, true, 'a source-less post-load renderer error tears down the dead canvas');
+    assert.equal(messages.at(-1)!.type, 'error');
+    assert.equal(messages.at(-1)!.reason, 'renderer');
 
     // A drape whose every tile fails (e.g. a whole layer blocked by CORS)
     // loads no tile, so it is dropped to terrain-only at the first idle.
@@ -1319,18 +1380,18 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png']
         }
     });
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     const blocked = maps.at(-1);
     assert.equal(picker().options[picker().selectedIndex].textContent, 'Blocked Layer',
         'the picker starts on the layer name before any tile is attempted');
-    blocked.handlers.get('error')({ sourceId: 'basemap' });
-    blocked.handlers.get('error')({ sourceId: 'basemap' });
-    blocked.handlers.get('idle')();
+    blocked!.handlers.get('error')!({ sourceId: 'basemap' });
+    blocked!.handlers.get('error')!({ sourceId: 'basemap' });
+    blocked!.handlers.get('idle')!();
     assert.equal(picker().value, 'terrain',
         'a drape whose every tile fails is dropped to terrain-only at the first idle');
     assert.equal(picker().options[0].disabled, false, 'a temporary failure must leave the layer available to retry');
-    assert.equal(notice().hidden, false);
-    assert.match(notice().textContent, /Blocked Layer.*couldn’t load.*Select it again to retry/s,
+    assert.equal(notice()!.hidden, false);
+    assert.match(notice()!.textContent, /Blocked Layer.*couldn’t load.*Select it again to retry/s,
         'the notice names the layer and a recovery action without inventing a cause');
 
     // Peak pages have no GPX route. They initialize the same renderer around
@@ -1349,24 +1410,24 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             state: 'unclimbed'
         }
     });
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     const focused = maps.at(-1);
-    focused.handlers.get('contextmenu')({ lngLat: { lat: 46.8, wrap: () => ({ lng: -121.7 }) }, originalEvent: { clientX: 30, clientY: 40 } });
-    assert.equal(messages.at(-1).type, 'locationContext');
-    assert.equal(messages.at(-1).latitude, 46.8); assert.equal(messages.at(-1).longitude, -121.7);
+    focused!.handlers.get('contextmenu')!({ lngLat: { lat: 46.8, wrap: () => ({ lng: -121.7 }) }, originalEvent: { clientX: 30, clientY: 40 } });
+    assert.equal(messages.at(-1)!.type, 'locationContext');
+    assert.equal(messages.at(-1)!.latitude, 46.8); assert.equal(messages.at(-1)!.longitude, -121.7);
     const pickerPointer = new window.Event('pointerdown', { bubbles: true, cancelable: true });
-    window.document.getElementById('bpb-terrain-map').dispatchEvent(pickerPointer);
+    window.document.getElementById('bpb-terrain-map')!.dispatchEvent(pickerPointer);
     assert.equal(pickerPointer.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'locationDismiss'));
     const weatherWheel = new window.Event('wheel', { bubbles: true, cancelable: true });
-    window.document.querySelector('#bpb-terrain-map').dispatchEvent(weatherWheel);
+    window.document.querySelector<HTMLElement>('#bpb-terrain-map')!.dispatchEvent(weatherWheel);
     assert.equal(weatherWheel.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'locationDismiss'));
-    assert.deepEqual(JSON.parse(JSON.stringify(focused.options.center)), [-121.60214, 48.83115]);
-    assert.equal(focused.options.zoom, 13);
-    assert.equal(focused.options.bounds, undefined, 'a summit view does not synthesize route bounds');
-    assert.deepEqual(JSON.parse(JSON.stringify(focused.getSource('bpb-route').data)), {
+    assert.deepEqual(JSON.parse(JSON.stringify(focused!.options.center)), [-121.60214, 48.83115]);
+    assert.equal(focused!.options.zoom, 13);
+    assert.equal(focused!.options.bounds, undefined, 'a summit view does not synthesize route bounds');
+    assert.deepEqual(JSON.parse(JSON.stringify(focused!.getSource('bpb-route').data)), {
         type: 'FeatureCollection', features: []
     }, 'a summit view carries an honest empty route source');
-    const focusedPeaks = () => JSON.parse(JSON.stringify(focused.getSource('bpb-peaks').data.features));
+    const focusedPeaks = () => JSON.parse(JSON.stringify(focused!.getSource('bpb-peaks').data!.features));
     assert.deepEqual(focusedPeaks(), [{
         type: 'Feature',
         properties: { id: 2829, name: 'Mount Shuksan', state: 'unclimbed' },
@@ -1386,28 +1447,28 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     focusMarker.options.element.click();
     assert.equal(popups.length, popupsBeforeMarkerClick + 1,
         'the terrain-aware marker preserves the existing name-link popup');
-    assert.equal(popups.at(-1).node.querySelector('a').href,
+    assert.equal(popups.at(-1)!.node.querySelector('a')!.href,
         'https://www.peakbagger.com/peak.aspx?pid=2829');
 
-    const rejectedPeaks = Promise.withResolvers();
-    focused.sourceDataOutcomes.set('bpb-peaks', [rejectedPeaks.promise]);
+    const rejectedPeaks = withResolvers();
+    focused!.sourceDataOutcomes.set('bpb-peaks', [rejectedPeaks.promise]);
     dispatch({ type: 'peaks', unavailable: true });
     rejectedPeaks.reject(new Error('peak worker rejected'));
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.equal(focused.removed, false, 'an optional peak overlay rejection does not kill healthy terrain');
+    assert.equal(focused!.removed, false, 'an optional peak overlay rejection does not kill healthy terrain');
     assert.equal(markers.some(marker => !marker.removed), false,
         'an actively rejected peak update removes stale navigational dots');
-    assert.deepEqual(focused.layout.at(-1), ['bpb-peaks-ring', 'visibility', 'none']);
+    assert.deepEqual(focused!.layout.at(-1), ['bpb-peaks-ring', 'visibility', 'none']);
 
     dispatch({ type: 'peaks', unavailable: true });
     assert.equal(focusedPeaks().length, 1, 'the subject peak remains when the nearby feed is unavailable');
 
     const contextLoss = new window.Event('webglcontextlost', { cancelable: true });
-    assert.equal(focused.canvas.dispatchEvent(contextLoss), false,
+    assert.equal(focused!.canvas.dispatchEvent(contextLoss), false,
         'the frame cancels MapLibre restoration when it deliberately falls back to 2D');
-    assert.equal(focused.removed, true, 'WebGL context loss tears down the unusable renderer');
-    assert.equal(messages.at(-1).type, 'error');
-    assert.equal(messages.at(-1).reason, 'renderer');
+    assert.equal(focused!.removed, true, 'WebGL context loss tears down the unusable renderer');
+    assert.equal(messages.at(-1)!.type, 'error');
+    assert.equal(messages.at(-1)!.reason, 'renderer');
 
     dom.window.close();
 });
@@ -1419,25 +1480,30 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const maps = [];
+    const maps: StubMap[] = [];
 
     class MapStub {
-        constructor(options) {
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare loadCallback: Handler;
+        declare options: StubOptions;
+        declare sources: Map<string, StubSource>;
+        constructor(options: StubOptions) {
             this.options = options;
             this.sources = new Map();
             this.layers = [];
             this.handlers = new Map();
-            maps.push(this);
+            maps.push(this as unknown as StubMap);
         }
         addControl() {}
-        once(type, callback) { if (type === 'load') this.loadCallback = callback; }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
+        once(type: string, callback: Handler) { if (type === 'load') this.loadCallback = callback; }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {} }); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); }
+        removeSource(id: string) { this.sources.delete(id); }
         setPaintProperty() {}
         fitBounds() {}
         resize() {}
@@ -1447,7 +1513,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     bootTerrainFrame(window, MapStub);
 
     const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
-    const layer = (name, host) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
+    const layer = (name: string, host: string) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -1465,7 +1531,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     assert.equal(picker().options[picker().selectedIndex].textContent, 'MyTopo',
         'the initially-selected native layer is preselected');
 
-    const swap = value => {
+    const swap = (value: string) => {
         picker().value = value;
         picker().dispatchEvent(new window.Event('change'));
     };
@@ -1476,7 +1542,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     assert.equal(map.getSource('basemap'), undefined,
         'a picker change made during boot is queued instead of mutating an unloaded style');
     map.loadCallback();
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     assert.deepEqual(JSON.parse(JSON.stringify(map.getSource('basemap').tiles)),
         ['https://ct.example.com/{z}/{x}/{y}.png'], 'the queued pre-load selection applies as soon as terrain is ready');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'CalTopo');
@@ -1488,28 +1554,28 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     // A failed layer returns to terrain-only and stays available for retry.
     swap('2');
     assert.equal(JSON.parse(JSON.stringify(map.getSource('basemap').tiles))[0], 'https://ot.example.com/{z}/{x}/{y}.png');
-    map.handlers.get('idle')(); // An early settle must not disarm the failure check.
-    map.handlers.get('error')({ sourceId: 'basemap' });
-    map.handlers.get('idle')();
+    map.handlers.get('idle')!(); // An early settle must not disarm the failure check.
+    map.handlers.get('error')!({ sourceId: 'basemap' });
+    map.handlers.get('idle')!();
     assert.equal(picker().value, 'terrain', 'a failed manual selection reverts to terrain-only');
     assert.equal(picker().options[2].disabled, false, 'the failed layer remains retryable');
-    const notice = window.document.querySelector('.bpb-terrain-notice');
-    assert.match(notice.textContent, /OpenTopo.*couldn’t load/);
-    assert.doesNotMatch(notice.textContent, /CORS|cross-origin/);
+    const notice = window.document.querySelector<HTMLElement>('.bpb-terrain-notice');
+    assert.match(notice!.textContent, /OpenTopo.*couldn’t load/);
+    assert.doesNotMatch(notice!.textContent, /CORS|cross-origin/);
     picker().focus();
     picker().value = '2'; picker().dispatchEvent(new window.Event('change'));
     assert.equal(picker().value, '2', 'the same layer can be selected again after a transient block');
     assert.ok(map.getSource('basemap'), 'retry restores the raster source');
-    assert.equal(notice.hidden, true, 'retry clears the previous failure while the new tiles load');
+    assert.equal(notice!.hidden, true, 'retry clears the previous failure while the new tiles load');
     assert.equal(window.document.activeElement, picker(), 'retry retains keyboard focus on the existing picker');
-    map.handlers.get('data')({ sourceId: 'basemap', dataType: 'source', tile: {} });
-    map.handlers.get('idle')();
-    assert.equal(picker().value, '2'); assert.equal(notice.hidden, true);
-    map.handlers.get('error')({ sourceId: 'basemap', error: { status: 403 } });
+    map.handlers.get('data')!({ sourceId: 'basemap', dataType: 'source', tile: {} });
+    map.handlers.get('idle')!();
+    assert.equal(picker().value, '2'); assert.equal(notice!.hidden, true);
+    map.handlers.get('error')!({ sourceId: 'basemap', error: { status: 403 } });
     assert.equal(picker().value, 'terrain', 'an explicit policy denial is handled even after good tiles rendered');
-    assert.match(notice.textContent, /Select it again to retry/);
+    assert.match(notice!.textContent, /Select it again to retry/);
     picker().value = 'terrain'; picker().dispatchEvent(new window.Event('change'));
-    assert.equal(notice.hidden, true, 'a deliberate switch to terrain-only does not retain a stale provider warning');
+    assert.equal(notice!.hidden, true, 'a deliberate switch to terrain-only does not retain a stale provider warning');
 
     dom.window.close();
 });
@@ -1519,37 +1585,42 @@ test('re-entering 3D drapes the raster layer chosen in 2D, without rebuilding an
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only', pretendToBeVisual: true,
     });
     const { window } = dom;
-    let map, added = 0;
+    let map!: StubMap, added = 0;
     class MapStub {
-        constructor(options) { this.options = options; this.sources = new Map(); this.layers = []; this.handlers = new Map(); map = this; }
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare loadCallback: Handler;
+        declare options: StubOptions;
+        declare sources: Map<string, StubSource>;
+        constructor(options: StubOptions) { this.options = options; this.sources = new Map(); this.layers = []; this.handlers = new Map(); map = this as unknown as StubMap; }
         addControl() {}
-        once(type, callback) { if (type === 'load') this.loadCallback = callback; }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { if (id === 'basemap') added++; this.sources.set(id, { ...source, setData() {} }); }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
+        once(type: string, callback: Handler) { if (type === 'load') this.loadCallback = callback; }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) { if (id === 'basemap') added++; this.sources.set(id, { ...source, setData() {} }); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); }
+        removeSource(id: string) { this.sources.delete(id); }
         setPaintProperty() {} fitBounds() {} resize() {} remove() {}
     }
     const dispatch = bootTerrainFrame(window, MapStub);
     try {
         const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
-        const layer = (name, host) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
+        const layer = (name: string, host: string) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
         const basemaps = [layer('CalTopo', 'ct.example.com'), layer('MyTopo', 'mt.example.com')];
         const tiles = () => JSON.parse(JSON.stringify(map.getSource('basemap').tiles))[0];
         dispatch({ type: 'init', routeSegments, basemap: basemaps[0], basemaps });
-        map.loadCallback();
-        await new Promise(resolve => window.queueMicrotask(resolve));
+        map!.loadCallback();
+        await new Promise<void>(resolve => window.queueMicrotask(resolve));
         assert.equal(tiles(), 'https://ct.example.com/{z}/{x}/{y}.png');
         assert.equal(added, 1);
-        map.handlers.get('data')({ sourceId: 'basemap', dataType: 'source', tile: {} });
+        map!.handlers.get('data')!({ sourceId: 'basemap', dataType: 'source', tile: {} });
 
         dispatch({ type: 'suspend' });
         dispatch({ type: 'resume', routeSegments, basemap: basemaps[0], basemaps });
         assert.equal(added, 1, 'an unchanged layer keeps its loaded source across a mode switch');
-        map.handlers.get('error')({ sourceId: 'basemap' }); map.handlers.get('idle')();
+        map!.handlers.get('error')!({ sourceId: 'basemap' }); map!.handlers.get('idle')!();
         assert.equal(framePicker(window).options[framePicker(window).selectedIndex].textContent, 'CalTopo',
             'a tile gap after resume does not discard a layer that already rendered');
 
@@ -1571,38 +1642,46 @@ test('the extension-provided vector entry grafts the provider style under the ex
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const maps = [];
+    const maps: StubMap[] = [];
 
     class MapStub {
-        constructor(options) {
+        declare failAddLayerId: string;
+        declare failRemoveLayerId: string | null;
+        declare glyphs: string | null;
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare options: StubOptions;
+        declare sources: Map<string, StubSource>;
+        declare sprite: string | null;
+        constructor(options: StubOptions) {
             this.options = options;
             this.sources = new Map(Object.entries(options.style.sources).map(([id, source]) => [id, { ...source }]));
-            this.layers = options.style.layers.map(layer => ({ ...layer }));
+            this.layers = options.style.layers.map((layer: StubLayer) => ({ ...layer }));
             this.handlers = new Map();
             this.glyphs = null;
             this.sprite = null;
-            maps.push(this);
+            maps.push(this as unknown as StubMap);
         }
         addControl() {}
-        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
-        addLayer(layer, before) {
+        once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {} }); }
+        addLayer(layer: StubLayer, before: string) {
             if (this.failAddLayerId === layer.id) throw new Error('injected addLayer failure');
             const index = before ? this.layers.findIndex(existing => existing.id === before) : -1;
             if (index >= 0) this.layers.splice(index, 0, layer);
             else this.layers.push(layer);
         }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) {
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) {
             if (this.failRemoveLayerId === id) {
                 this.failRemoveLayerId = null;
                 throw new Error('injected removeLayer failure');
             }
             this.layers = this.layers.filter(layer => layer.id !== id);
         }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
+        getSource(id: string) { return this.sources.get(id); }
+        removeSource(id: string) { this.sources.delete(id); }
         getStyle() {
             return {
                 ...this.options.style,
@@ -1610,8 +1689,8 @@ test('the extension-provided vector entry grafts the provider style under the ex
                 ...(this.sprite ? { sprite: this.sprite } : {})
             };
         }
-        setGlyphs(url) { this.glyphs = url; }
-        setSprite(url) { this.sprite = url; }
+        setGlyphs(url: string) { this.glyphs = url; }
+        setSprite(url: string) { this.sprite = url; }
         setPaintProperty() {}
         fitBounds() {}
         resize() {}
@@ -1629,9 +1708,9 @@ test('the extension-provided vector entry grafts the provider style under the ex
             { id: 'place-label', type: 'symbol', source: 'openmaptiles', 'source-layer': 'place' }
         ]
     };
-    const fetches = [];
+    const fetches: string[] = [];
     let failFetch = true;
-    window.fetch = url => {
+    (window as unknown as Record<string, unknown>).fetch = (url: string) => {
         fetches.push(url);
         if (failFetch) return Promise.reject(new Error('offline'));
         return Promise.resolve({
@@ -1653,7 +1732,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
             routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
         }
     }));
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
 
     const picker = () => framePicker(window);
     const map = maps[0];
@@ -1676,7 +1755,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
     assert.deepEqual(fetches, ['https://tiles.openfreemap.org/styles/liberty'],
         'selecting the entry requests the provider style');
     assert.equal(picker().value, 'terrain', 'a failed style fetch reverts to terrain-only');
-    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /OSM Vector \(experimental\) is unavailable/);
+    assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /OSM Vector \(experimental\) is unavailable/);
 
     failFetch = false;
     picker().value = 'vector';
@@ -1694,7 +1773,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
         'labels sit above the route so text stays readable');
     assert.ok(ids.indexOf('bpb-vector:place-label') < ids.indexOf('bpb-highlight'),
         'labels stay below the hover highlight');
-    assert.equal(map.layers.find(layer => layer.id === 'bpb-vector:land').source, 'bpb-vector:openmaptiles',
+    assert.equal(map.layers.find(layer => layer.id === 'bpb-vector:land')!.source, 'bpb-vector:openmaptiles',
         'grafted layers point at the prefixed source');
 
     picker().value = 'terrain';
@@ -1710,29 +1789,29 @@ test('the extension-provided vector entry grafts the provider style under the ex
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(fetches.length, 2, 'a successful style fetch is cached for the frame lifetime');
     assert.ok(map.getSource('bpb-vector:openmaptiles'), 'the cached style is re-grafted');
-    assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest(
+    assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest!(
         'https://tiles.openfreemap.org/planet/1/2/3.pbf', 'Tile'))), {
         url: 'bpb-vector://https://tiles.openfreemap.org/planet/1/2/3.pbf',
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
     });
-    assert.throws(() => map.options.transformRequest('https://foreign.example/1/2/3.pbf', 'Tile'),
+    assert.throws(() => map.options.transformRequest!('https://foreign.example/1/2/3.pbf', 'Tile'),
         /unapproved provider origin/,
         'a TileJSON response cannot redirect vector tiles to another provider');
-    assert.throws(() => map.options.transformRequest('https://foreign.example/source.json', 'Source'),
+    assert.throws(() => map.options.transformRequest!('https://foreign.example/source.json', 'Source'),
         /unapproved provider origin/);
-    assert.throws(() => map.options.transformRequest(
+    assert.throws(() => map.options.transformRequest!(
         'https://user:secret@tiles.openfreemap.org/planet/1/2/3.pbf', 'Tile'),
     /unapproved provider origin/);
-    assert.throws(() => map.options.transformRequest(
+    assert.throws(() => map.options.transformRequest!(
         'https://tiles.openfreemap.org/planet/1/2/3.pbf#fragment', 'Tile'),
     /unapproved provider origin/);
 
-    map.handlers.get('error')({ sourceId: 'bpb-vector:openmaptiles' });
+    map.handlers.get('error')!({ sourceId: 'bpb-vector:openmaptiles' });
     assert.equal(picker().value, 'terrain', 'a late TileJSON or tile failure rolls the vector graft back');
     assert.equal(map.getSource('bpb-vector:openmaptiles'), undefined);
     assert.ok(!map.layers.some(layer => layer.id.startsWith('bpb-vector:')));
-    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /unavailable/);
+    assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /unavailable/);
 
     // A later install failure rolls back every mutation. A one-shot cleanup
     // failure cannot skip the remaining layers or source, and is retried.
@@ -1748,68 +1827,75 @@ test('the extension-provided vector entry grafts the provider style under the ex
         'no provider layer survives a failed transaction');
     assert.equal(map.glyphs, frameGlyphs);
     assert.equal(map.sprite, frameSprite);
-    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /unavailable/);
+    assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /unavailable/);
 
     dom.window.close();
 });
 
 test('Maptoolkit terrain preserves its mesh and route, restores named sprites and enforces provider cooldowns', async () => {
     const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
-    const { window } = dom, maps = [], protocols = new Map(), calls = [];
+    const { window } = dom, maps: StubMap[] = [], protocols = new Map<string, StubProtocol>(), calls: string[] = [];
     let finishStyle, rejectLate, now = Date.now(); window.Date.now = () => now;
     class MapStub {
-        constructor(options) { this.options = options; this.sources = new Map(Object.entries(options.style.sources)); this.layers = [...options.style.layers]; this.controls = []; this.sprites = []; this.handlers = new Map(); maps.push(this); }
-        addControl(control) { this.controls.push(control); const node = control.onAdd?.(this); if (node) this.options.container.append(node); }
-        removeControl(control) { this.controls = this.controls.filter(item => item !== control); control.onRemove?.(); }
-        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
-        on(type, callback) { this.handlers.set(type, callback); } fitBounds() {} resize() {} remove() {} setPaintProperty() {}
+        declare controls: StubControl[];
+        declare glyphs: string | null;
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare options: StubOptions;
+        declare sources: Map<string, StubSource>;
+        declare sprites: { id: string; url: string }[];
+        constructor(options: StubOptions) { this.options = options; this.sources = new Map(Object.entries(options.style.sources)); this.layers = [...options.style.layers]; this.controls = []; this.sprites = []; this.handlers = new Map(); maps.push(this as unknown as StubMap); }
+        addControl(control: StubControl) { this.controls.push(control); const node = control.onAdd?.(this); if (node) this.options.container!.append(node); }
+        removeControl(control: StubControl) { this.controls = this.controls.filter(item => item !== control); control.onRemove?.(); }
+        once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); } fitBounds() {} resize() {} remove() {} setPaintProperty() {}
         getBounds() { return { getWest: () => -122, getSouth: () => 46, getEast: () => -121, getNorth: () => 47 }; }
         getZoom() { return 10; }
-        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
-        getSource(id) { return this.sources.get(id); } removeSource(id) { this.sources.delete(id); }
-        addLayer(layer, before) { const index = this.layers.findIndex(item => item.id === before); this.layers.splice(index < 0 ? this.layers.length : index, 0, layer); }
-        getLayer(id) { return this.layers.find(item => item.id === id); } removeLayer(id) { this.layers = this.layers.filter(item => item.id !== id); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {} }); }
+        getSource(id: string) { return this.sources.get(id); } removeSource(id: string) { this.sources.delete(id); }
+        addLayer(layer: StubLayer, before: string) { const index = this.layers.findIndex(item => item.id === before); this.layers.splice(index < 0 ? this.layers.length : index, 0, layer); }
+        getLayer(id: string) { return this.layers.find(item => item.id === id); } removeLayer(id: string) { this.layers = this.layers.filter(item => item.id !== id); }
         getStyle() { return { ...this.options.style, sprite: this.sprites, glyphs: this.glyphs || null }; }
-        setGlyphs(value) { this.glyphs = value; } setSprite(value) { this.sprites = typeof value === 'string' ? [{ id: 'default', url: value }] : []; }
-        addSprite(id, url) { this.sprites.push({ id, url }); }
+        setGlyphs(value: string | null) { this.glyphs = value; } setSprite(value: unknown) { this.sprites = typeof value === 'string' ? [{ id: 'default', url: value }] : []; }
+        addSprite(id: string, url: string) { this.sprites.push({ id, url }); }
     }
-    class AttributionControl { constructor(options) { this.options = options; } }
+    class AttributionControl { declare options: { customAttribution?: string }; constructor(options: { customAttribution?: string }) { this.options = options; } }
     const toolkitStyle = { version: 8, sources: { mtk: { type: 'vector', url: 'https://tiles.maptoolkit.org/mtk-contours.json' }, dem: { type: 'raster-dem', url: 'https://tiles.maptoolkit.org/terrainrgb.json', encoding: 'terrarium', tileSize: 8192 } },
         layers: [{ id: 'land', type: 'fill', source: 'mtk', 'source-layer': 'land' }], sprite: [{ id: 'sdf', url: 'https://icons.maptoolkit.org/sprite' }, { id: 'nature', url: 'https://icons.maptoolkit.org/nature' }] };
-    const reply = (url, style) => ({ ok: true, status: 200, url, text: async () => JSON.stringify(style) });
-    const fetch = async url => {
+    const reply = (url: string, style: unknown) => ({ ok: true, status: 200, url, text: async () => JSON.stringify(style) });
+    const fetch = async (url: string) => {
         calls.push(url);
         if (url.endsWith('/hiking.json')) return new Promise(resolve => { finishStyle = () => resolve(reply(url, toolkitStyle)); });
         if (url.endsWith('/late.pbf')) return new Promise((_resolve, reject) => { rejectLate = reject; });
         if (url.endsWith('.pbf')) return { status: 429, headers: new Headers({ 'retry-after': '120' }) };
         return reply(url, { version: 8, sources: {}, layers: [] });
     };
-    const send = bootTerrainFrame(window, MapStub, { fetch, maplibre: { AttributionControl, addProtocol(name, handler) { protocols.set(name, handler); } } });
+    const send = bootTerrainFrame(window, MapStub, { fetch, maplibre: { AttributionControl, addProtocol(name: string, handler: StubProtocol) { protocols.set(name, handler); } } });
     const tick = () => new Promise(resolve => setImmediate(resolve));
-    const choose = value => { const picker = framePicker(window); picker.value = value; picker.dispatchEvent(new window.Event('change')); };
+    const choose = (value: string) => { const picker = framePicker(window); picker.value = value; picker.dispatchEvent(new window.Event('change')); };
     try {
         send({ type: 'init', routeSegments: [[[46.85, -121.76], [46.86, -121.77]]], basemap: { kind: 'vector', provider: 'maptoolkit' } }); await tick();
         assert.equal(framePicker(window).value, 'maptoolkit', 'The 2D provider is honored on initial entry');
         const map = maps[0], terrain = map.getSource('terrain'), route = map.getLayer('bpb-route'); assert.ok(terrain && route);
-        choose('terrain'); finishStyle(); await tick(); assert.equal(map.getSource('bpb-vector:mtk'), undefined, 'A cancelled style cannot graft into the replacement choice');
+        choose('terrain'); finishStyle!(); await tick(); assert.equal(map.getSource('bpb-vector:mtk'), undefined, 'A cancelled style cannot graft into the replacement choice');
         choose('maptoolkit'); await tick();
         assert.equal(map.getSource('terrain'), terrain); assert.equal(map.getLayer('bpb-route'), route);
         assert.equal(map.getSource('bpb-vector:dem'), undefined, 'Unused provider elevation must not load beside the terrain mesh'); assert.deepEqual(map.sprites.map(item => item.id), ['sdf', 'nature']);
-        assert.match(map.controls.find(item => item instanceof AttributionControl).options.customAttribution, /Maptoolkit/);
+        assert.match(map.controls.find((item: StubControl) => item instanceof AttributionControl)!.options!.customAttribution!, /Maptoolkit/);
         const request = protocols.get('bpb-vector');
         const originalSource = map.getSource('bpb-vector:mtk'); choose('maptoolkit'); await tick();
         assert.equal(map.getSource('bpb-vector:mtk'), originalSource, 'Reselecting the active provider must not rebuild its source graph');
         const controller = new AbortController();
-        const late = request({ url: 'bpb-vector://https://tiles.maptoolkit.org/late.pbf', type: 'arrayBuffer' }, controller);
-        const ignored = assert.rejects(late, error => error.name === 'AbortError');
+        const late = request!({ url: 'bpb-vector://https://tiles.maptoolkit.org/late.pbf', type: 'arrayBuffer' }, controller);
+        const ignored = assert.rejects(late, (error: Error) => error.name === 'AbortError');
         choose('vector'); await tick(); assert.equal(controller.signal.aborted, true, 'A layer switch cancels the outgoing transport');
-        rejectLate(Object.assign(new Error('old provider failed'), { status: 503 })); await ignored;
-        map.handlers.get('error')({ sourceId: 'bpb-vector:mtk', error: Object.assign(new Error('cancelled'), { name: 'AbortError' }) });
+        rejectLate!(Object.assign(new Error('old provider failed'), { status: 503 })); await ignored;
+        map.handlers.get('error')!({ sourceId: 'bpb-vector:mtk', error: Object.assign(new Error('cancelled'), { name: 'AbortError' }) });
         assert.equal(framePicker(window).value, 'vector', 'An outgoing provider cannot roll the replacement back to terrain');
         choose('maptoolkit'); await tick();
-        await assert.rejects(request({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf', type: 'arrayBuffer' }, new AbortController()), error => error.status === 429);
-        assert.equal(framePicker(window).value, 'terrain'); assert.equal(framePicker(window).querySelector('[value="maptoolkit"]').disabled, true);
-        assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /Maptoolkit request limit/);
+        await assert.rejects(request!({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf', type: 'arrayBuffer' }, new AbortController()), (error: Error & { status?: number }) => error.status === 429);
+        assert.equal(framePicker(window).value, 'terrain'); assert.equal(framePicker(window).querySelector<HTMLOptionElement>('[value="maptoolkit"]')!.disabled, true);
+        assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /Maptoolkit request limit/);
         const count = calls.length; choose('maptoolkit'); await tick(); assert.equal(calls.length, count, 'Retry cannot bypass the tile-level cooldown');
         choose('vector'); await tick(); assert.equal(framePicker(window).value, 'vector', 'Other providers remain available');
         now += 120001; choose('terrain'); choose('maptoolkit'); await tick();
@@ -1828,9 +1914,9 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    const pageMessages = [];
-    const frameMessages = [];
-    window.chrome = chromeWith({ enable3dMap: true });
+    const pageMessages: TestMessage[] = [];
+    const frameMessages: TestMessage[] = [];
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
     window.postMessage = message => { pageMessages.push(message); };
     window.eval(bridgeBundle);
     await new Promise(resolve => window.setTimeout(resolve, 0)); // settings.get() resolves
@@ -1845,18 +1931,18 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
         }
     }));
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    const frame = window.document.getElementById('bpb-terrain-frame');
-    frame.contentWindow.postMessage = message => { frameMessages.push(message); };
+    const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
+    frame!.contentWindow!.postMessage = (message: TestMessage) => { frameMessages.push(message); };
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: frame.contentWindow,
+        source: frame!.contentWindow,
         origin: 'chrome-extension://test-id',
         data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' }
     }));
-    const generation = frameMessages.find(message => message.type === 'init').generation;
+    const generation = frameMessages.find(message => message.type === 'init')!.generation;
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: frame.contentWindow,
+        source: frame!.contentWindow,
         origin: 'chrome-extension://test-id',
         data: {
             __bpbTerrainFrame: true, dir: 'toParent', type: 'peaksRequest',
@@ -1865,10 +1951,10 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
         }
     }));
     const request = pageMessages.at(-1);
-    assert.equal(request.type, 'peaksRequest');
-    assert.equal(request.dir, 'toPage');
-    assert.equal(request.requestId, 3);
-    assert.deepEqual(request.bounds, { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 });
+    assert.equal(request!.type, 'peaksRequest');
+    assert.equal(request!.dir, 'toPage');
+    assert.equal(request!.requestId, 3);
+    assert.deepEqual(request!.bounds, { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 });
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -1880,16 +1966,16 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
         }
     }));
     const reply = frameMessages.at(-1);
-    assert.equal(reply.type, 'peaks');
-    assert.equal(reply.dir, 'toFrame');
-    assert.equal(reply.requestId, 3);
-    assert.deepEqual(reply.peaks, [{ id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' }]);
+    assert.equal(reply!.type, 'peaks');
+    assert.equal(reply!.dir, 'toFrame');
+    assert.equal(reply!.requestId, 3);
+    assert.deepEqual(reply!.peaks, [{ id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' }]);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', type: 'peaks', requestId: 3, rateLimited: true, retryAt: Number.MAX_VALUE }
     }));
-    assert.equal(frameMessages.at(-1).rateLimited, true);
-    assert.equal(frameMessages.at(-1).retryAt, null, 'the bridge rejects an unreasonable retry time');
+    assert.equal(frameMessages.at(-1)!.rateLimited, true);
+    assert.equal(frameMessages.at(-1)!.retryAt, null, 'the bridge rejects an unreasonable retry time');
 
     dom.window.close();
 });
@@ -1900,13 +1986,13 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    const sent = [];
-    window.chrome = chromeWith({ enable3dMap: true });
-    window.chrome.runtime.sendMessage = message => { sent.push(message); return Promise.resolve({ ok: true }); };
+    const sent: TestMessage[] = [];
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
+    Object.assign((window.chrome as unknown as { runtime: object }).runtime, { sendMessage: (message: TestMessage) => { sent.push(message); return Promise.resolve({ ok: true }); } });
     window.postMessage = () => {};
     window.eval(bridgeBundle);
 
-    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatchPage = (data: TestMessage) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
@@ -1969,10 +2055,10 @@ test('terrain warming cancels for gestures and suspension without restarting fro
         pretendToBeVisual: true,
     });
     const { window } = dom;
-    const timers = new Map(), requests = [];
+    const timers = new Map<number, { callback: Handler; ms: number }>(), requests: AbortSignal[] = [];
     let timerId = 0, map;
-    window.setTimeout = (callback, ms) => { timers.set(++timerId, { callback, ms }); return timerId; };
-    window.clearTimeout = id => timers.delete(id);
+    (window as unknown as Record<string, unknown>).setTimeout = (callback: Handler, ms: number) => { timers.set(++timerId, { callback, ms }); return timerId; };
+    (window as unknown as Record<string, unknown>).clearTimeout = (id: number) => timers.delete(id);
     const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
     const runWarmTimer = async () => {
         for (const [id, timer] of [...timers]) if (timer.ms === 350) {
@@ -1981,15 +2067,18 @@ test('terrain warming cancels for gestures and suspension without restarting fro
         await tick();
     };
     class MapStub {
-        constructor() { map = this; this.sources = new Map(); this.layers = []; this.handlers = new Map(); }
-        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
-        on(type, callback) { this.handlers.set(type, callback); }
-        fire(type) { this.handlers.get(type)?.(); }
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare sources: Map<string, StubSource>;
+        constructor() { map = this as unknown as StubMap; this.sources = new Map(); this.layers = []; this.handlers = new Map(); }
+        once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        fire(type: string) { this.handlers.get(type)?.(); }
         addControl() {}
-        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
-        getSource(id) { return this.sources.get(id); }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {} }); }
+        getSource(id: string) { return this.sources.get(id); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
         setPaintProperty() {}
         setLayoutProperty() {}
         getCanvas() { return { clientWidth: 800, clientHeight: 600 }; }
@@ -2003,8 +2092,8 @@ test('terrain warming cancels for gestures and suspension without restarting fro
         remove() {}
     }
     const dispatch = bootTerrainFrame(window, MapStub, { fetch: (_url, options) => {
-        requests.push(options.signal);
-        return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () =>
+        requests.push(options.signal!);
+        return new Promise((_resolve, reject) => options.signal!.addEventListener('abort', () =>
             reject(new window.DOMException('Cancelled', 'AbortError')), { once: true }));
     } });
     try {
@@ -2012,13 +2101,13 @@ test('terrain warming cancels for gestures and suspension without restarting fro
         dispatch({ type: 'init', ...payload });
         await tick(); await runWarmTimer();
         assert.equal(requests.length, 2, 'a still camera starts only two speculative downloads');
-        map.fire('movestart');
+        map!.fire('movestart');
         await tick();
         assert.ok(requests.every(signal => signal.aborted), 'starting a gesture cancels speculative transport');
         await tick();
 
         dispatch({ type: 'suspend' });
-        map.fire('moveend'); map.fire('idle');
+        map!.fire('moveend'); map!.fire('idle');
         await runWarmTimer();
         assert.equal(requests.length, 2, 'hidden map events cannot restart warming');
 
@@ -2044,9 +2133,9 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const messages = [];
-    const maps = [];
-    const popups = [];
+    const messages: TestMessage[] = [];
+    const maps: StubMap[] = [];
+    const popups: StubPopup[] = [];
     const camera = {
         zoom: 13,
         center: { lng: -121.805, lat: 48.73 },
@@ -2057,30 +2146,38 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     const projections = new Map();
 
     class MapStub {
-        constructor(options) {
+        declare canvas: HTMLCanvasElement;
+        declare data: unknown;
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare options: StubOptions;
+        declare paint: unknown[];
+        declare removed: boolean;
+        declare sources: Map<string, StubSource>;
+        constructor(options: StubOptions) {
             this.options = options;
             this.sources = new Map();
             this.layers = [];
             this.paint = [];
             this.handlers = new Map();
-            this.canvas = { clientWidth: 800, clientHeight: 600, style: {} };
-            maps.push(this);
+            this.canvas = { clientWidth: 800, clientHeight: 600, style: {} } as unknown as HTMLCanvasElement;
+            maps.push(this as unknown as StubMap);
         }
         addControl() {}
-        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
-        on(type, layerOrCallback, maybeCallback) {
+        once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, layerOrCallback: unknown, maybeCallback: Handler) {
             const key = typeof layerOrCallback === 'string' ? `${type}:${layerOrCallback}` : type;
-            this.handlers.set(key, typeof layerOrCallback === 'function' ? layerOrCallback : maybeCallback);
+            this.handlers.set(key, (typeof layerOrCallback === 'function' ? layerOrCallback : maybeCallback) as Handler);
         }
-        addSource(id, source) {
+        addSource(id: string, source: StubSource) {
             this.sources.set(id, { ...source, setData(data) { this.data = data; } });
         }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
-        setPaintProperty(...args) { this.paint.push(args); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); }
+        removeSource(id: string) { this.sources.delete(id); }
+        setPaintProperty(...args: unknown[]) { this.paint.push(args); }
         getZoom() { return camera.zoom; }
         getCenter() { return camera.center; }
         getBounds() {
@@ -2093,7 +2190,7 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
             };
         }
         getCanvas() { return this.canvas; }
-        project([lng, lat]) {
+        project([lng, lat]: [number, number]) {
             return projections.get(`${lng},${lat}`) || { x: -10000, y: -10000 };
         }
         resize() {}
@@ -2103,22 +2200,22 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     const settle = () => new Promise(resolve => window.setTimeout(resolve, 320));
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     const map = maps[0];
     assert.ok(map.getLayer('bpb-peaks-ring'), 'the peak ring layer exists');
     assert.ok(map.getSource('bpb-peaks'), 'the peak source exists');
-    const ringPaint = map.getLayer('bpb-peaks-ring').paint;
-    assert.deepEqual(JSON.parse(JSON.stringify(ringPaint['circle-stroke-color'])),
+    const ringPaint = map.getLayer('bpb-peaks-ring')!.paint;
+    assert.deepEqual(JSON.parse(JSON.stringify(ringPaint!['circle-stroke-color'])),
         ['match', ['get', 'state'], 'climbed', '#00ff00', 'unclimbed', '#ff6699', 'unknown', '#ffcc33', '#ffcc33'],
         'ring colors are data-driven from the marker spec');
-    assert.equal(ringPaint['circle-pitch-scale'], 'viewport',
+    assert.equal(ringPaint!['circle-pitch-scale'], 'viewport',
         'rings keep a constant screen size so the drawn extent matches the screen-space hit radius');
 
     await settle();
     const request = messages.at(-1);
-    assert.equal(request.type, 'peaksRequest', 'the frame asks for dots after load settles');
-    assert.equal(request.requestId, 1);
-    const bounds = request.bounds;
+    assert.equal(request!.type, 'peaksRequest', 'the frame asks for dots after load settles');
+    assert.equal(request!.requestId, 1);
+    const bounds = request!.bounds as Record<string, number>;
     assert.ok(bounds.miny > camera.bounds.south && bounds.maxy < camera.bounds.north,
         'the request is clamped inside the raw view latitudes');
     assert.ok(bounds.minx > camera.bounds.west && bounds.maxx < camera.bounds.east,
@@ -2135,7 +2232,7 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
             { id: 12, name: 'Weird State', lat: 48.75, lon: -121.83, state: 'purple' }
         ]
     });
-    const rendered = () => JSON.parse(JSON.stringify(map.getSource('bpb-peaks').data.features));
+    const rendered = () => JSON.parse(JSON.stringify(map.getSource('bpb-peaks').data!.features));
     assert.equal(rendered().length, 3);
     assert.deepEqual(rendered()[0], {
         type: 'Feature',
@@ -2145,8 +2242,8 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     assert.equal(rendered()[2].properties.state, 'unknown', 'an unrecognized state falls back safely');
     dispatch({ type: 'peaks', requestId: 1, rateLimited: true, retryAt: Number.MAX_VALUE });
     assert.equal(rendered().length, 3, 'rate limits retain the last marker set');
-    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /Peakbagger request limit reached/);
-    assert.equal(window.document.querySelector('.bpb-terrain-notice').textContent.includes('Try again after'), false,
+    assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /Peakbagger request limit reached/);
+    assert.equal(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent.includes('Try again after'), false,
         'untrusted unreasonable retry timestamps cannot enter warning copy');
 
 
@@ -2196,25 +2293,25 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     click({ point: { x: 403, y: 297 } });
     assert.equal(popups.length, 2, 'a pitched-camera ring is clickable wherever it is drawn');
     const link = popups[1].node.querySelector('a');
-    assert.equal(link.href, 'https://www.peakbagger.com/peak.aspx?pid=58603',
+    assert.equal(link!.href, 'https://www.peakbagger.com/peak.aspx?pid=58603',
         'the link is built from the integer peak id only');
-    assert.equal(link.textContent, 'Iron <b>&</b> Mountain', 'the name renders as text, never as markup');
-    assert.equal(link.target, '_blank');
-    assert.equal(link.rel, 'noopener noreferrer');
+    assert.equal(link!.textContent, 'Iron <b>&</b> Mountain', 'the name renders as text, never as markup');
+    assert.equal(link!.target, '_blank');
+    assert.equal(link!.rel, 'noopener noreferrer');
     assert.deepEqual(JSON.parse(JSON.stringify(popups[1].lngLat)), [-121.79, 48.72]);
 
     // The hover cursor runs through the same hit test, one frame behind the
     // pointer.
     const nextFrame = () => new Promise(resolve => window.requestAnimationFrame(resolve));
-    map.handlers.get('mousemove')({ point: { x: 401, y: 299 } });
+    map.handlers.get('mousemove')!({ point: { x: 401, y: 299 } });
     await nextFrame();
     assert.equal(map.canvas.style.cursor, 'pointer', 'hovering a ring shows the pointer cursor');
-    map.handlers.get('mousemove')({ point: { x: 500, y: 500 } });
+    map.handlers.get('mousemove')!({ point: { x: 500, y: 500 } });
     await nextFrame();
     assert.equal(map.canvas.style.cursor, '', 'leaving the ring restores the default cursor');
-    map.handlers.get('mousemove')({ point: { x: 401, y: 299 } });
+    map.handlers.get('mousemove')!({ point: { x: 401, y: 299 } });
     await nextFrame();
-    map.handlers.get('mouseout')();
+    map.handlers.get('mouseout')!();
     assert.equal(map.canvas.style.cursor, '', 'leaving the map restores the default cursor');
 
     dispatch({
@@ -2222,12 +2319,12 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         requestId: 1,
         peaks: [{ id: 7, name: 'Fresh Peak', lat: 48.71, lon: -121.81, state: 'unclimbed' }]
     });
-    assert.equal(popups.at(-1).removedPopup, true,
+    assert.equal(popups.at(-1)!.removedPopup, true,
         'refreshing the dots closes an open popup, like the native marker rebuild');
 
     const beforeZoomOut = messages.filter(message => message.type === 'peaksRequest').length;
     camera.zoom = 9;
-    map.handlers.get('moveend')();
+    map.handlers.get('moveend')!();
     await settle();
     assert.equal(messages.filter(message => message.type === 'peaksRequest').length, beforeZoomOut,
         'no request below the native zoom cutoff');
@@ -2244,7 +2341,7 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
 
     camera.zoom = 13;
     dispatch({ type: 'peaks', unavailable: true });
-    map.handlers.get('moveend')();
+    map.handlers.get('moveend')!();
     await settle();
     assert.equal(messages.filter(message => message.type === 'peaksRequest').length, beforeZoomOut,
         'a surface without a peak feed is never asked again');
@@ -2261,7 +2358,7 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const maps = [];
+    const maps: StubMap[] = [];
     const camera = {
         zoom: 13,
         center: { lng: -121.805, lat: 48.73 },
@@ -2278,12 +2375,12 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     //   own genuine apex inside the horizontal leash (a taller neighbor, not
     //   a plausible coordinate correction).
     const METERS_PER_DEG_LAT = 111320;
-    const metersBetween = (a, b) => Math.hypot(
+    const metersBetween = (a: number[], b: number[]) => Math.hypot(
         (a[0] - b[0]) * METERS_PER_DEG_LAT * Math.cos(b[1] * Math.PI / 180),
         (a[1] - b[1]) * METERS_PER_DEG_LAT
     );
     const conePeakFeed = [-121.79, 48.72];
-    const apexOffsetM = (offsetM, from = conePeakFeed) => [
+    const apexOffsetM = (offsetM: number, from = conePeakFeed) => [
         from[0] + offsetM / (METERS_PER_DEG_LAT * Math.cos(from[1] * Math.PI / 180)),
         from[1] + offsetM / METERS_PER_DEG_LAT
     ];
@@ -2295,7 +2392,7 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     let voidPeakElevation = 0;
     let coneReadable = true;
     let elevationQueries = 0;
-    const elevationOf = ([lng, lat]) => {
+    const elevationOf = ([lng, lat]: number[]) => {
         elevationQueries += 1;
         if (coneReadable && metersBetween([lng, lat], conePeakFeed) < 500) {
             return 3000 - metersBetween([lng, lat], coneApex);
@@ -2313,22 +2410,27 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     };
 
     class MapStub {
+        declare canvas: HTMLCanvasElement;
+        declare data: unknown;
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare sources: Map<string, StubSource>;
         constructor() {
             this.sources = new Map();
             this.layers = [];
             this.handlers = new Map();
-            this.canvas = { clientWidth: 800, clientHeight: 600, style: {} };
-            maps.push(this);
+            this.canvas = { clientWidth: 800, clientHeight: 600, style: {} } as unknown as HTMLCanvasElement;
+            maps.push(this as unknown as StubMap);
         }
         addControl() {}
-        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
+        once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); }
+        removeSource(id: string) { this.sources.delete(id); }
         setPaintProperty() {}
         getZoom() { return camera.zoom; }
         getCenter() { return camera.center; }
@@ -2343,7 +2445,7 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         }
         getCanvas() { return this.canvas; }
         project() { return { x: -10000, y: -10000 }; }
-        queryTerrainElevation(lngLat) { return elevationOf(lngLat); }
+        queryTerrainElevation(lngLat: [number, number]) { return elevationOf(lngLat); }
         resize() {}
         remove() {}
     }
@@ -2351,7 +2453,7 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     const dispatch = bootTerrainFrame(window, MapStub, { maplibre: { Popup: class { remove() {} } } });
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     await new Promise(resolve => window.setTimeout(resolve, 320));
     const sendBatch = () => dispatch({
         type: 'peaks',
@@ -2363,7 +2465,7 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
             { id: 4, name: 'Flank Peak', lat: flankPeakFeed[1], lon: flankPeakFeed[0], state: 'unclimbed' }
         ]
     });
-    const rendered = () => JSON.parse(JSON.stringify(maps[0].getSource('bpb-peaks').data.features));
+    const rendered = () => JSON.parse(JSON.stringify(maps[0].getSource('bpb-peaks').data!.features));
 
     sendBatch();
     let features = rendered();
@@ -2437,12 +2539,21 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const messages = [];
-    const maps = [];
-    const popups = [];
+    const messages: TestMessage[] = [];
+    const maps: StubMap[] = [];
+    const popups: StubPopup[] = [];
 
     class MapStub {
-        constructor(options) {
+        declare canvas: HTMLCanvasElement;
+        declare data: unknown;
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare options: StubOptions;
+        declare paint: unknown[];
+        declare removed: boolean;
+        declare routeHits: unknown[];
+        declare sources: Map<string, StubSource>;
+        constructor(options: StubOptions) {
             this.options = options;
             this.sources = new Map();
             this.layers = [];
@@ -2450,19 +2561,19 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
             this.handlers = new Map();
             // What queryRenderedFeatures answers, topmost first.
             this.routeHits = [];
-            this.canvas = { style: {} };
-            maps.push(this);
+            this.canvas = { style: {} } as HTMLCanvasElement;
+            maps.push(this as unknown as StubMap);
         }
         addControl() {}
-        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
-        setPaintProperty(...args) { this.paint.push(args); }
+        once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); }
+        removeSource(id: string) { this.sources.delete(id); }
+        setPaintProperty(...args: unknown[]) { this.paint.push(args); }
         queryRenderedFeatures() { return this.routeHits; }
         project() { return { x: -10000, y: -10000 }; }
         getCanvas() { return this.canvas; }
@@ -2473,9 +2584,9 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
         remove() { this.removed = true; }
     }
     const dispatch = bootTerrainFrame(window, MapStub, { messages, popups });
-    const nextFrame = () => new Promise(resolve => window.requestAnimationFrame(() => resolve()));
+    const nextFrame = () => new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
     const routeStyle = { color: '#2457a7', width: 5, casingColor: '#ffffff', casingWidth: 9 };
-    const groupInit = tracks => ({
+    const groupInit = (tracks: unknown) => ({
         type: 'init',
         // Two segments cut from one climber's track, then a second climber's.
         routeSegments: [
@@ -2488,7 +2599,7 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
         routeStyle,
         theme: 'light'
     });
-    const linePaint = map => map.paint.filter(call => call[0] === 'bpb-route');
+    const linePaint = (map: StubMap) => map.paint.filter((call: unknown[]) => call[0] === 'bpb-route');
     const escape = () => {
         const event = new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
         window.document.dispatchEvent(event);
@@ -2496,7 +2607,7 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     };
 
     dispatch(groupInit([0, 0, 1]));
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     const map = maps.at(-1);
     const messagesBeforeControlEscape = messages.length;
     for (const modifier of ['ctrlKey', 'metaKey', 'altKey', 'shiftKey']) {
@@ -2510,86 +2621,86 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     assert.equal(pickerEscape.defaultPrevented, false);
     assert.equal(messages.length, messagesBeforeControlEscape, 'the native layer picker owns Escape');
     for (const tag of ['input', 'textarea']) {
-        const control = window.document.createElement(tag); window.document.querySelector('#bpb-terrain-map').append(control);
+        const control = window.document.createElement(tag); window.document.querySelector<HTMLElement>('#bpb-terrain-map')!.append(control);
         control.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true }));
         assert.equal(messages.length, messagesBeforeControlEscape, `${tag} Escape stays local`); control.remove();
     }
     assert.deepEqual(
-        JSON.parse(JSON.stringify(map.sources.get('bpb-route').data.features.map(feature => feature.properties.track))),
+        JSON.parse(JSON.stringify(map!.sources.get('bpb-route')!.data!.features.map(feature => feature.properties.track))),
         [0, 0, 1],
         'every segment names the native track it was cut from');
 
     // Hovering either half of the first climber's track blackens and thickens
     // that whole track — Peakbagger's own 2D group-map hover cue — and leaves
     // every other track on its native color.
-    map.routeHits = [map.sources.get('bpb-route').data.features[1]];
-    map.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    map!.routeHits = [map!.sources.get('bpb-route')!.data!.features[1]];
+    map!.handlers.get('mousemove')!({ point: { x: 120, y: 90 } });
     await nextFrame();
-    const hovered = linePaint(map).slice(-2);
+    const hovered = linePaint(map!).slice(-2);
     assert.deepEqual(JSON.parse(JSON.stringify(hovered)), [
         ['bpb-route', 'line-color',
             ['case', ['==', ['get', 'track'], 0], '#000000', ['coalesce', ['get', 'color'], '#2457a7']]],
         ['bpb-route', 'line-width', ['case', ['==', ['get', 'track'], 0], 7, 5]]
     ], 'only the hovered track takes the hover paint, and it stays inside its casing');
-    assert.equal(map.canvas.style.cursor, '', 'a track with no ascent link is not clickable');
+    assert.equal(map!.canvas.style.cursor, '', 'a track with no ascent link is not clickable');
 
     // Moving onto the other climber switches the highlight rather than adding one.
-    map.routeHits = [map.sources.get('bpb-route').data.features[2]];
-    map.handlers.get('mousemove')({ point: { x: 200, y: 140 } });
+    map!.routeHits = [map!.sources.get('bpb-route')!.data!.features[2]];
+    map!.handlers.get('mousemove')!({ point: { x: 200, y: 140 } });
     await nextFrame();
-    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map).at(-1))),
+    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map!).at(-1))),
         ['bpb-route', 'line-width', ['case', ['==', ['get', 'track'], 1], 7, 5]]);
 
     // Leaving the canvas restores the plain route paint.
-    map.handlers.get('mouseout')();
-    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map).slice(-2))), [
+    map!.handlers.get('mouseout')!();
+    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map!).slice(-2))), [
         ['bpb-route', 'line-color', ['coalesce', ['get', 'color'], '#2457a7']],
         ['bpb-route', 'line-width', 5]
     ], 'the hover cue is removed with the pointer');
 
     // A live style change while a track is hovered keeps the highlight.
-    map.routeHits = [map.sources.get('bpb-route').data.features[0]];
-    map.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    map!.routeHits = [map!.sources.get('bpb-route')!.data!.features[0]];
+    map!.handlers.get('mousemove')!({ point: { x: 120, y: 90 } });
     await nextFrame();
     dispatch({
         type: 'update',
         routeStyle: { color: '#347a3f', width: 6, casingColor: '#ffffff', casingWidth: 10 },
         theme: 'light'
     });
-    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map).at(-1))),
+    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map!).at(-1))),
         ['bpb-route', 'line-width', ['case', ['==', ['get', 'track'], 0], 8, 6]],
         'a restyle re-applies the hover on top of the new width');
 
     // Escape asks the page to return to 2D; the page owns whether it can.
     const exitKey = escape();
     assert.equal(exitKey.defaultPrevented, true);
-    assert.equal(messages.at(-1).type, 'exit');
-    assert.equal(messages.at(-1).dir, 'toParent');
+    assert.equal(messages.at(-1)!.type, 'exit');
+    assert.equal(messages.at(-1)!.dir, 'toParent');
 
     // An open popup is the nearer layer: Escape dismisses it and stays in 3D.
-    map.routeHits = [{
+    map!.routeHits = [{
         type: 'Feature',
         properties: { ascentId: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98', track: 0 },
         geometry: { type: 'LineString', coordinates: [[-121.8, 48.7], [-121.81, 48.71]] }
     }];
-    map.handlers.get('click')({ point: { x: 120, y: 90 }, lngLat: { lng: -121.805, lat: 48.705 } });
+    map!.handlers.get('click')!({ point: { x: 120, y: 90 }, lngLat: { lng: -121.805, lat: 48.705 } });
     assert.equal(popups.length, 1);
     const messagesBeforeEscape = messages.length;
     escape();
     assert.equal(popups[0].removedPopup, true, 'the popup closes first');
     assert.equal(messages.length, messagesBeforeEscape, 'and the view stays open');
     escape();
-    assert.equal(messages.at(-1).type, 'exit', 'a second Escape leaves 3D');
+    assert.equal(messages.at(-1)!.type, 'exit', 'a second Escape leaves 3D');
 
     // Partly attributed segments would highlight half a track, so hover is off.
     dispatch({ type: 'destroy' });
     dispatch(groupInit([0, null, 1]));
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     const partial = maps.at(-1);
-    partial.routeHits = [partial.sources.get('bpb-route').data.features[0]];
-    partial.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    partial!.routeHits = [partial!.sources.get('bpb-route')!.data!.features[0]];
+    partial!.handlers.get('mousemove')!({ point: { x: 120, y: 90 } });
     await nextFrame();
-    assert.deepEqual(linePaint(partial), [],
+    assert.deepEqual(linePaint(partial!), [],
         'an incompletely attributed route never repaints on hover');
 
     // The analyzer and single-ascent maps send no track identity at all.
@@ -2600,13 +2711,13 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
         routeStyle,
         theme: 'light'
     });
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     const single = maps.at(-1);
-    assert.equal(single.sources.get('bpb-route').data.features[0].properties.track, undefined);
-    single.routeHits = [single.sources.get('bpb-route').data.features[0]];
-    single.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    assert.equal(single!.sources.get('bpb-route')!.data!.features[0].properties.track, undefined);
+    single!.routeHits = [single!.sources.get('bpb-route')!.data!.features[0]];
+    single!.handlers.get('mousemove')!({ point: { x: 120, y: 90 } });
     await nextFrame();
-    assert.deepEqual(linePaint(single), [], 'a lone route has nothing to be told apart from');
+    assert.deepEqual(linePaint(single!), [], 'a lone route has nothing to be told apart from');
 
     dom.window.close();
 });
@@ -2614,17 +2725,22 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
 test('3D overlays retain a pinned pass and native base through suspend, refresh, retry and stale snapshots', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A&d=1', runScripts: 'outside-only', pretendToBeVisual: true });
-    const messages = [], pending = [];
-    let map;
+    const messages: TestMessage[] = [], pending: { resolve(value: unknown): void; url: string; options: RequestInit }[] = [];
+    let map!: StubMap;
     class MapStub {
-        constructor(options) { map = this; this.sources = new Map(); this.layers = [...options.style.layers]; this.handlers = new Map(); }
-        addControl() {} once(type, callback) { if (type === 'load') this.loadCallback = callback; }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { this.sources.set(id, { ...source, setData() {}, setTiles(tiles) { this.tiles = tiles; } }); }
-        addLayer(layer, before) { const i = this.layers.findIndex(item => item.id === before); if (i < 0) this.layers.push(layer); else this.layers.splice(i, 0, layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); } removeSource(id) { this.sources.delete(id); }
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare loadCallback: Handler;
+        declare sources: Map<string, StubSource>;
+        declare tiles: unknown;
+        constructor(options: StubOptions) { map = this as unknown as StubMap; this.sources = new Map(); this.layers = [...options.style.layers]; this.handlers = new Map(); }
+        addControl() {} once(type: string, callback: Handler) { if (type === 'load') this.loadCallback = callback; }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {}, setTiles(tiles: string[]) { this.tiles = tiles; } }); }
+        addLayer(layer: StubLayer, before: string) { const i = this.layers.findIndex(item => item.id === before); if (i < 0) this.layers.push(layer); else this.layers.splice(i, 0, layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); } removeSource(id: string) { this.sources.delete(id); }
         getStyle() { return { layers: this.layers }; } moveLayer() {}
         getBounds() { return { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 }; }
         getZoom() { return 13; } setPaintProperty() {} fitBounds() {} resize() {} remove() {}
@@ -2633,36 +2749,36 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
     const payload = { routeSegments: [[[46.5, -121.5], [46.51, -121.51]]], basemap: { name: 'Native topo', tiles: ['https://example.com/{z}/{x}/{y}.png'] } };
     const time = Date.now() - 2 * 86400000;
     const catalog = [0, 1].map(index => ({ id: `scene_${index}`, collection: 'sentinel-2-l2a', properties: { datetime: new Date(time - index * 86400000).toISOString(), platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 41 }, geometry: { type: 'Polygon', coordinates: [[[-122,46],[-121,46],[-121,47],[-122,47],[-122,46]]] } }));
-    const answer = async index => { pending[index].resolve({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify({ features: catalog }) }); await new Promise(resolve => setImmediate(resolve)); };
+    const answer = async (index: number) => { pending[index].resolve({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify({ features: catalog }) }); await new Promise(resolve => setImmediate(resolve)); };
     const snapshot = { revision: 1, state: { sentinel: { enabled: true, opacity: 50 } }, capture: { time: time - 86400000, platform: 'Sentinel-2B', orbit: '13' }, menuOpen: true };
     try {
-        dispatch({ type: 'init', ...payload }); map.loadCallback();
+        dispatch({ type: 'init', ...payload }); map!.loadCallback();
         assert.equal(pending.length, 0, 'providers stay idle until a validated overlay snapshot');
         dispatch({ type: 'layers', snapshot }); assert.equal(pending.length, 1); await answer(0);
-        const sourceId = [...map.sources.keys()].find(id => id.startsWith('bpb-overlay-sentinel-'));
-        const currentSource = () => map.getSource([...map.sources.keys()].find(id => id.startsWith('bpb-overlay-sentinel-')));
+        const sourceId = [...map!.sources.keys()].find(id => id.startsWith('bpb-overlay-sentinel-'));
+        const currentSource = () => map.getSource([...map.sources.keys()].find(id => id.startsWith('bpb-overlay-sentinel-'))!);
         const source = currentSource(); assert.ok(source); assert.equal(source.maxzoom, 14);
-        assert.ok(map.getSource('basemap'), 'imagery keeps the native drape');
-        assert.equal(dom.window.document.querySelector('.bpb-sentinel'), null, 'overlay settings stay in the outer shared menu');
+        assert.ok(map!.getSource('basemap'), 'imagery keeps the native drape');
+        assert.equal(dom.window.document.querySelector<HTMLElement>('.bpb-sentinel'), null, 'overlay settings stay in the outer shared menu');
         assert.ok(framePicker(dom.window), 'basemap has its separate frame-owned picker');
         const beforeInteraction = messages.length;
-        dom.window.document.getElementById('bpb-terrain-map').dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }));
+        dom.window.document.getElementById('bpb-terrain-map')!.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }));
         dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-        assert.equal(messages.at(-1).type, 'exit', 'map Escape retains its normal exit behavior while Layers stays open');
+        assert.equal(messages.at(-1)!.type, 'exit', 'map Escape retains its normal exit behavior while Layers stays open');
         assert.equal(messages.slice(beforeInteraction).some(message => message.type === 'layerDismiss'), false, '3D interaction never dismisses Layers');
         const status = () => messages.filter(message => message.type === 'layerStatus').at(-1);
         // This renderer stub never requests protocol tiles. A completed catalog
         // must retain its metadata without claiming the imagery has loaded.
-        assert.equal(status().message, 'Loading imagery'); assert.equal(status().pending, true); assert.equal(status().capturePending, false);
-        assert.match(status().captures[0].title, /Clouds 41%/); assert.notEqual(status().capture, 'latest');
+        assert.equal(status()!.message, 'Loading imagery'); assert.equal(status()!.pending, true); assert.equal(status()!.capturePending, false);
+        assert.match(status()!.captures![0].title, /Clouds 41%/); assert.notEqual(status()!.capture, 'latest');
         dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 2, state: { sentinel: { enabled: true, opacity: 75 } } } });
-        assert.equal(status().revision, 2); assert.equal(status().message, 'Loading imagery');
+        assert.equal(status()!.revision, 2); assert.equal(status()!.message, 'Loading imagery');
         assert.equal(pending.length, 1, 'a newer opacity snapshot republishes status without another catalog request');
-        map.handlers.get('moveend')(); t.mock.timers.tick(300); await answer(1);
+        map!.handlers.get('moveend')!(); t.mock.timers.tick(300); await answer(1);
         assert.equal(currentSource(), source, 'same scenes reuse decoded tile resources');
         dispatch({ type: 'layerAction', action: 'basemap', selection: 'terrain' });
-        assert.equal(map.getSource('basemap'), undefined); assert.equal(currentSource(), source);
-        map.handlers.get('error')({ sourceId, error: new Error('tile unavailable') }); assert.equal(status().retry, true);
+        assert.equal(map!.getSource('basemap'), undefined); assert.equal(currentSource(), source);
+        map!.handlers.get('error')!({ sourceId, error: new Error('tile unavailable') }); assert.equal(status()!.retry, true);
         dispatch({ type: 'layerAction', action: 'retry', id: 'sentinel' });
         assert.equal(pending.length, 2, 'imagery recovery does not repeat the catalog search');
         assert.equal(currentSource(), source, 'failed tiles reload in the existing source');
@@ -2672,12 +2788,12 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
         assert.ok(messages.filter(message => message.type === 'layerBasemaps').length > choicesBeforeResume, 'resume republishes the preserved user-selected basemap');
         assert.equal(pending.length, 3);
         dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
-        assert.equal(pending[2].options.signal.aborted, true, 'BFCache freeze releases the renderer catalog'); await answer(2);
+        assert.equal(pending[2].options.signal!.aborted, true, 'BFCache freeze releases the renderer catalog'); await answer(2);
         dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
-        assert.equal(messages.at(-1).type, 'layerResume', 'the restored renderer requests the latest bridge snapshot');
+        assert.equal(messages.at(-1)!.type, 'layerResume', 'the restored renderer requests the latest bridge snapshot');
         dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 3 } }); assert.equal(pending.length, 4);
-        dispatch({ type: 'layers', snapshot: { revision: 2, state: {} } }); assert.equal(pending[3].options.signal.aborted, false, 'stale snapshots cannot turn off newer intent');
-        dispatch({ type: 'layers', snapshot: { revision: 4, state: {} } }); assert.equal(pending[3].options.signal.aborted, true);
+        dispatch({ type: 'layers', snapshot: { revision: 2, state: {} } }); assert.equal(pending[3].options.signal!.aborted, false, 'stale snapshots cannot turn off newer intent');
+        dispatch({ type: 'layers', snapshot: { revision: 4, state: {} } }); assert.equal(pending[3].options.signal!.aborted, true);
         await answer(3); assert.equal(currentSource(), undefined, 'late catalogs cannot redraw a disabled overlay');
     } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
 });
@@ -2687,41 +2803,48 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
 // without a network or a renderer. Returns the pieces a coverage assertion
 // needs: the posted messages, the live map stub, and the protocol handler
 // MapLibre would call for each tile.
-const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
+const bootFrameWithTileHost = ({ tileStatus, deferLoad = false }: { tileStatus?: (url: string) => number; deferLoad?: boolean } = {}) => {
     const dom = new JSDOM('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
         pretendToBeVisual: true
     });
     const { window } = dom;
-    const messages = [];
-    const maps = [];
-    const requested = [];
-    let protocol = null;
-    let fireLoad = null;
+    const messages: TestMessage[] = [];
+    const maps: StubMap[] = [];
+    const requested: string[] = [];
+    let protocol: StubProtocol | null = null;
+    let fireLoad: Handler | null = null;
 
     class MapStub {
-        constructor(options) {
+        declare canvas: HTMLCanvasElement;
+        declare data: unknown;
+        declare handlers: Map<string, Handler>;
+        declare layers: StubLayer[];
+        declare options: StubOptions;
+        declare removed: boolean;
+        declare sources: Map<string, StubSource>;
+        constructor(options: StubOptions) {
             this.options = options;
             this.sources = new Map();
             this.layers = [];
             this.handlers = new Map();
-            this.canvas = { style: {}, addEventListener() {}, removeEventListener() {} };
-            maps.push(this);
+            this.canvas = { style: {}, addEventListener() {}, removeEventListener() {} } as unknown as HTMLCanvasElement;
+            maps.push(this as unknown as StubMap);
         }
         addControl() {}
-        once(type, callback) {
+        once(type: string, callback: Handler) {
             if (type !== 'load') return;
             if (deferLoad) fireLoad = callback;
             else window.queueMicrotask(callback);
         }
-        on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
-        addLayer(layer) { this.layers.push(layer); }
-        getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); }
+        getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id: string) { return this.sources.get(id); }
+        removeSource(id: string) { this.sources.delete(id); }
         setPaintProperty() {}
         setSourceTileLodParams() {}
         queryRenderedFeatures() { return []; }
@@ -2744,9 +2867,9 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
         remove() { this.removed = true; }
     }
 
-    const fetch = async url => {
+    const fetch = async (url: string) => {
         requested.push(String(url));
-        const status = tileStatus(String(url));
+        const status = tileStatus!(String(url));
         if (status === 200) {
             return new Response(makeWebp(), {
                 status: 200, headers: { 'content-type': 'image/webp' }
@@ -2758,7 +2881,7 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
         messages, fetch,
         maplibre: {
             Popup: class { setLngLat() { return this; } setDOMContent() { return this; } addTo() { return this; } remove() {} },
-            addProtocol(name, handler) { if (name === 'bpb-dem') protocol = handler; },
+            addProtocol(name: string, handler: StubProtocol) { if (name === 'bpb-dem') protocol = handler; },
             removeProtocol() { protocol = null; }
         }
     });
@@ -2780,10 +2903,10 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
 
     // Each tile MapLibre would fetch, driven through the frame's own protocol
     // registration so the outcome is counted exactly as it is in the browser.
-    const loadTiles = async (...urls) => Promise.all(urls.map(url =>
-        protocol({ url }, new AbortController()).then(() => 'data', error => error)));
+    const loadTiles = async (...urls: string[]) => Promise.all(urls.map(url =>
+        protocol!({ url }, new AbortController()).then(() => 'data', (error: { status?: number }) => error) as Promise<{ status?: number } | string>));
 
-    return { dom, window, messages, maps, requested, loadTiles, dispatch: payload => window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin, data: { __bpbTerrainFrame: true, dir: 'toFrame', ...payload } })), fireLoad: () => fireLoad() };
+    return { dom, window, messages, maps, requested, loadTiles, dispatch: (payload: TestMessage) => window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin, data: { __bpbTerrainFrame: true, dir: 'toFrame', ...payload } })), fireLoad: () => fireLoad!() };
 };
 
 test('a region the elevation provider does not cover returns to 2D instead of paving the mountain', async () => {
@@ -2793,17 +2916,17 @@ test('a region the elevation provider does not cover returns to 2D instead of pa
     // errors, so nothing else can catch this: the protocol is the only place
     // that sees a tile come back absent.
     const host = bootFrameWithTileHost({ tileStatus: () => 404 });
-    await new Promise(resolve => host.window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => host.window.queueMicrotask(resolve));
     const map = host.maps[0];
-    assert.equal(host.messages.at(-1).type, 'loaded', 'a coverage gap must not block the boot handshake');
+    assert.equal(host.messages.at(-1)!.type, 'loaded', 'a coverage gap must not block the boot handshake');
 
     const outcomes = await host.loadTiles(
         'bpb-dem://12/662/1411.webp', 'bpb-dem://11/331/705.webp', 'bpb-dem://10/165/352.webp');
-    assert.ok(outcomes.every(outcome => outcome.status === 404), 'every tile was absent');
+    assert.ok(outcomes.every(outcome => (outcome as { status?: number }).status === 404), 'every tile was absent');
 
-    map.handlers.get('idle')();
+    map.handlers.get('idle')!();
     assert.deepEqual(
-        { type: host.messages.at(-1).type, reason: host.messages.at(-1).reason },
+        { type: host.messages.at(-1)!.type, reason: host.messages.at(-1)!.reason },
         { type: 'error', reason: 'coverage' });
     host.dom.window.close();
 });
@@ -2815,19 +2938,19 @@ test('an elevation gap above the provider level keeps the 3D view on the coarser
     // from the parent level it does have, which is a slightly softer mesh —
     // not a failure, and not something to tear the view down for.
     const host = bootFrameWithTileHost({
-        tileStatus: url => (Number(url.match(/(\d+)\/\d+\/\d+\.webp$/)[1]) > 13 ? 404 : 200)
+        tileStatus: (url: string) => (Number(url.match(/(\d+)\/\d+\/\d+\.webp$/)![1]) > 13 ? 404 : 200)
     });
-    await new Promise(resolve => host.window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => host.window.queueMicrotask(resolve));
     const map = host.maps[0];
 
     const outcomes = await host.loadTiles(
         'bpb-dem://14/2650/5644.webp', 'bpb-dem://13/1325/2822.webp', 'bpb-dem://12/662/1411.webp');
-    assert.deepEqual(outcomes.map(outcome => outcome.status ?? outcome), [404, 'data', 'data']);
+    assert.deepEqual(outcomes.map(outcome => (outcome as { status?: number }).status ?? outcome), [404, 'data', 'data']);
 
-    map.handlers.get('idle')();
+    map.handlers.get('idle')!();
     assert.ok(!host.messages.some(message => message.type === 'error'),
         `a partial coverage gap must not fail: ${JSON.stringify(host.messages.map(m => m.type))}`);
-    assert.equal(host.messages.at(-1).type, 'loaded');
+    assert.equal(host.messages.at(-1)!.type, 'loaded');
     host.dom.window.close();
 });
 
@@ -2837,9 +2960,9 @@ test('an elevation source that cannot be reached during boot does not blame the 
     // sends them to check a GPU that is working fine.
     const host = bootFrameWithTileHost({ tileStatus: () => 500, deferLoad: true });
     const map = host.maps[0];
-    map.handlers.get('error')({ sourceId: 'terrain', error: new Error('DEM tile request failed (500)') });
+    map.handlers.get('error')!({ sourceId: 'terrain', error: new Error('DEM tile request failed (500)') });
     assert.deepEqual(
-        { type: host.messages.at(-1).type, reason: host.messages.at(-1).reason },
+        { type: host.messages.at(-1)!.type, reason: host.messages.at(-1)!.reason },
         { type: 'error', reason: 'elevation' });
     host.dom.window.close();
 });
@@ -2847,9 +2970,9 @@ test('an elevation source that cannot be reached during boot does not blame the 
 test('a style or renderer failure during boot still reports the browser', async () => {
     const host = bootFrameWithTileHost({ tileStatus: () => 200, deferLoad: true });
     const map = host.maps[0];
-    map.handlers.get('error')({ error: new Error('WebGL context could not be created') });
+    map.handlers.get('error')!({ error: new Error('WebGL context could not be created') });
     assert.deepEqual(
-        { type: host.messages.at(-1).type, reason: host.messages.at(-1).reason },
+        { type: host.messages.at(-1)!.type, reason: host.messages.at(-1)!.reason },
         { type: 'error', reason: 'maplibre' });
     host.dom.window.close();
 });
@@ -2865,8 +2988,8 @@ test('every failure reason the frame can report survives the bridge relay intact
         const harness = await bootLoadedFrame();
         harness.dispatchFrame({ type: 'error', reason });
         const relayed = harness.pageMessages.at(-1);
-        assert.equal(relayed.type, 'error');
-        assert.equal(relayed.reason, reason, `the bridge rewrote '${reason}'`);
+        assert.equal(relayed!.type, 'error');
+        assert.equal(relayed!.reason, reason, `the bridge rewrote '${reason}'`);
         // Whatever survives must also have something to say for itself.
         assert.match(terrainFailure.message(reason), /2D map is unchanged/);
         harness.dom.window.close();
@@ -2874,7 +2997,7 @@ test('every failure reason the frame can report survives the bridge relay intact
 
     const unknown = await bootLoadedFrame();
     unknown.dispatchFrame({ type: 'error', reason: 'something-a-page-made-up' });
-    assert.equal(unknown.pageMessages.at(-1).reason, 'renderer',
+    assert.equal(unknown.pageMessages.at(-1)!.reason, 'renderer',
         'an unrecognised reason must still fail closed to a known one');
     unknown.dom.window.close();
 });
@@ -2882,8 +3005,8 @@ test('every failure reason the frame can report survives the bridge relay intact
 test('a DEM rate limit during boot reports the provider rather than a renderer failure', async () => {
     const host = bootFrameWithTileHost({ tileStatus: () => 429, deferLoad: true });
     try {
-        host.maps[0].handlers.get('error')({ sourceId: 'terrain', error: Object.assign(new Error('limit'), { status: 429 }) });
-        assert.equal(host.messages.at(-1).reason, 'elevation-rate-limit');
+        host.maps[0].handlers.get('error')!({ sourceId: 'terrain', error: Object.assign(new Error('limit'), { status: 429 }) });
+        assert.equal(host.messages.at(-1)!.reason, 'elevation-rate-limit');
         assert.match(terrainFailure.message('elevation-rate-limit'), /Mapterhorn request limit reached/);
     } finally { host.dom.window.close(); }
 });
@@ -2893,35 +3016,35 @@ test('a loaded DEM limit keeps the working terrain and shows one contextual noti
     try {
         await new Promise(resolve => setImmediate(resolve));
         const map = host.maps[0];
-        map.handlers.get('error')({ sourceId: 'terrain', error: Object.assign(new Error('limit'), { status: 429 }) });
-        assert.match(host.window.document.querySelector('.bpb-terrain-notice').textContent, /Mapterhorn request limit reached/);
+        map.handlers.get('error')!({ sourceId: 'terrain', error: Object.assign(new Error('limit'), { status: 429 }) });
+        assert.match(host.window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /Mapterhorn request limit reached/);
         assert.equal(map.removed, undefined);
         assert.equal(host.messages.some(message => message.type === 'error'), false);
     } finally { host.dom.window.close(); }
 });
 
 test('resumed coverage cannot borrow successful DEM tiles from the previous region', async () => {
-    const host = bootFrameWithTileHost({ tileStatus: url => url.includes('/662/') ? 200 : 404 });
+    const host = bootFrameWithTileHost({ tileStatus: (url: string) => url.includes('/662/') ? 200 : 404 });
     try {
-        await new Promise(resolve => host.window.queueMicrotask(resolve));
+        await new Promise<void>(resolve => host.window.queueMicrotask(resolve));
         const map = host.maps[0];
-        await host.loadTiles('bpb-dem://12/662/1411.webp'); map.handlers.get('idle')();
+        await host.loadTiles('bpb-dem://12/662/1411.webp'); map.handlers.get('idle')!();
         host.dispatch({ type: 'suspend' });
         map.getBounds = () => ({ getWest: () => 10, getEast: () => 11, getSouth: () => 45, getNorth: () => 46 });
         host.dispatch({ type: 'resume', focus: [45.5, 10.5], focusZoom: 12, theme: 'light' });
-        await new Promise(resolve => host.window.queueMicrotask(resolve));
-        await host.loadTiles('bpb-dem://12/2167/1465.webp'); map.handlers.get('idle')();
-        assert.equal(host.messages.at(-1).reason, 'coverage');
+        await new Promise<void>(resolve => host.window.queueMicrotask(resolve));
+        await host.loadTiles('bpb-dem://12/2167/1465.webp'); map.handlers.get('idle')!();
+        assert.equal(host.messages.at(-1)!.reason, 'coverage');
     } finally { host.window.close(); }
 });
 
 test('parking the terrain renderer clears transient provider notices', async () => {
     const host = bootFrameWithTileHost({ tileStatus: () => 200 });
     try {
-        await new Promise(resolve => host.window.queueMicrotask(resolve));
-        host.maps[0].handlers.get('error')({ sourceId: 'terrain', error: { status: 429, retryAt: Date.now() + 60000 } });
-        assert.equal(host.window.document.querySelector('.bpb-terrain-notice').hidden, false);
+        await new Promise<void>(resolve => host.window.queueMicrotask(resolve));
+        host.maps[0].handlers.get('error')!({ sourceId: 'terrain', error: { status: 429, retryAt: Date.now() + 60000 } });
+        assert.equal(host.window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.hidden, false);
         host.dispatch({ type: 'suspend' });
-        assert.equal(host.window.document.querySelector('.bpb-terrain-notice').hidden, true);
+        assert.equal(host.window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.hidden, true);
     } finally { host.window.close(); }
 });

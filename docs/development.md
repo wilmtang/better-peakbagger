@@ -643,7 +643,7 @@ build config.
 3. If it's a brand-new entry point (a new content script, page, or worker), add
    an `ENTRIES` record **and** wire it into `manifest.json` (or the page HTML).
 4. Add focused coverage and run `npm test`.
-   `test/project/manifest-capture.test.mjs` cross-checks that every manifest bundle
+   `test/project/manifest-capture.test.mts` cross-checks that every manifest bundle
    reference is a declared build output and pins security-sensitive bundle
    composition.
 

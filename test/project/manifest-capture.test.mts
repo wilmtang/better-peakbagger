@@ -13,15 +13,22 @@ import {
     VENDOR_COPY
 } from '../../scripts/build-config.mjs';
 
-const manifest = JSON.parse(await fs.readFile(new URL('../../manifest.json', import.meta.url), 'utf8'));
+interface ContentScript { js: string[]; css?: string[]; matches: string[]; world?: string; run_at?: string; all_frames?: boolean; [field: string]: unknown; }
+interface ExtensionManifest {
+    content_scripts: ContentScript[]; host_permissions: string[]; optional_host_permissions: string[];
+    web_accessible_resources: { resources: string[]; matches: string[] }[]; permissions: string[];
+    action: { default_popup?: string; [field: string]: unknown }; background: { service_worker: string; scripts: string[]; [field: string]: unknown };
+    browser_specific_settings: { gecko: { id?: string; strict_min_version?: string; data_collection_permissions: { required: string[]; [field: string]: unknown }; [field: string]: unknown }; gecko_android: { strict_min_version?: string }; [field: string]: unknown }; [field: string]: unknown;
+}
+const manifest = JSON.parse(await fs.readFile(new URL('../../manifest.json', import.meta.url), 'utf8')) as ExtensionManifest;
 const packageJson = JSON.parse(await fs.readFile(new URL('../../package.json', import.meta.url), 'utf8'));
 
 // The build config is the single source of truth for what each bundle contains.
 // The manifest only names bundle files; these helpers cross-check the two so a
 // bundle can't silently lose a module or reorder its dependencies.
-const bundle = out => ENTRIES.find(entry => entry.out === out);
-const bundleSources = out => bundle(out)?.sources;
-const contentEntry = js => manifest.content_scripts.find(entry => entry.js.includes(js));
+const bundle = (out: string) => ENTRIES.find(entry => entry.out === out);
+const bundleSources = (out: string) => bundle(out)?.sources;
+const contentEntry = (js: string) => manifest.content_scripts.find(entry => entry.js.includes(js));
 
 test('capture permissions are explicit and provider access remains activeTab-only', () => {
     assert.equal(manifest.version, packageJson.version);
@@ -88,11 +95,11 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
 
 test('climber cards stay in the isolated top-level Peakbagger surface', () => {
     const entry = contentEntry('content/climber-hover-card.js');
-    assert.deepEqual(entry.matches, ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']);
-    assert.equal(entry.world || 'ISOLATED', 'ISOLATED');
-    assert.equal(entry.all_frames, false);
-    assert.equal(entry.run_at, 'document_end');
-    assert.deepEqual(entry.css, ['css/climber-hover-card.css']);
+    assert.deepEqual(entry!.matches, ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']);
+    assert.equal(entry!.world || 'ISOLATED', 'ISOLATED');
+    assert.equal(entry!.all_frames, false);
+    assert.equal(entry!.run_at, 'document_end');
+    assert.deepEqual(entry!.css, ['css/climber-hover-card.css']);
     assert.deepEqual(bundleSources('content/climber-hover-card.js'), ['favorites/climber-hover-card.ts']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/favorites/climber-hover-card.css'
         && output === 'css/climber-hover-card.css'));
@@ -100,11 +107,11 @@ test('climber cards stay in the isolated top-level Peakbagger surface', () => {
 
 test('snow catalog and overlay preferences share an isolated map bundle without new host permissions', () => {
     const entry = contentEntry('content/peak-snow.js');
-    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, true);
-    assert.equal(entry.run_at, 'document_end');
-    assert.ok(entry.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
-    assert.ok(entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
-    assert.deepEqual(contentEntry('content/peak-cards.js').css, ['css/peak-snow.css', 'css/summit-cloud.css']);
+    assert.equal(entry!.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry!.all_frames, true);
+    assert.equal(entry!.run_at, 'document_end');
+    assert.ok(entry!.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
+    assert.ok(entry!.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
+    assert.deepEqual(contentEntry('content/peak-cards.js')!.css, ['css/peak-snow.css', 'css/summit-cloud.css']);
     assert.deepEqual(bundleSources('content/peak-snow.js'), ['snow/peak-snow.js', 'maps/map-layer-bridge.js']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/snow/peak-snow.css' && output === 'css/peak-snow.css'));
     assert.ok(![...manifest.host_permissions, ...manifest.optional_host_permissions].some(pattern => /usda/.test(pattern)));
@@ -112,18 +119,18 @@ test('snow catalog and overlay preferences share an isolated map bundle without 
 
 test('peak-card layout stays isolated and shares the peak display schema', () => {
     const entry = contentEntry('content/peak-cards.js');
-    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, false);
-    assert.equal(entry.run_at, 'document_end');
-    assert.ok(entry.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
+    assert.equal(entry!.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry!.all_frames, false);
+    assert.equal(entry!.run_at, 'document_end');
+    assert.ok(entry!.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
     assert.deepEqual(bundleSources('content/peak-cards.js'), ['maps/peak-cards.js']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/ui/peak-card-layout.css' && output === 'css/peak-card-layout.css'));
 });
 
 test('summit cloud loads before its shared layout owner without new network permissions', () => {
     const entry = contentEntry('content/summit-cloud.js');
-    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, false);
-    assert.ok(entry.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
-    assert.deepEqual(entry.js, ['content/summit-cloud.js', 'content/peak-cards.js']);
+    assert.equal(entry!.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry!.all_frames, false);
+    assert.ok(entry!.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
+    assert.deepEqual(entry!.js, ['content/summit-cloud.js', 'content/peak-cards.js']);
     assert.deepEqual(bundleSources('content/summit-cloud.js'), ['weather/summit-cloud.js']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/weather/summit-cloud.css' && output === 'css/summit-cloud.css'));
     assert.ok(!manifest.host_permissions.some(pattern => /open-meteo/.test(pattern)));
@@ -203,14 +210,14 @@ test('the Buddy refresh helper confines first-party navigation to Peakbagger ori
         ['#origin=https%3A%2F%2Fpeakbagger.com%2Fevil', 'https://www.peakbagger.com'],
     ]) {
         let destination;
-        vm.runInNewContext(source, { URL, URLSearchParams, location: { hash, replace: url => { destination = url; } } });
+        vm.runInNewContext(source, { URL, URLSearchParams, location: { hash, replace: (url: string) => { destination = url; } } });
         assert.equal(destination, `${origin}/report/report.aspx?r=b`);
     }
 });
 
 // Parse the module graph instead of depending on upstream minifier formatting.
 // MapLibre 6.12 imports a shared sibling; 6.13 bundles that code into each entry.
-const moduleImports = async source => {
+const moduleImports = async (source: string) => {
     const { metafile } = await build({
         stdin: { contents: source, sourcefile: 'module.mjs' },
         bundle: true, write: false, format: 'esm', external: ['*'],
@@ -296,8 +303,8 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     assert.doesNotMatch(terrainFrame, /<script[^>]+src=["']https?:/i,
         'the terrain frame must load renderer code only from the extension origin');
     const terrainBundle = ENTRIES.find(entry => entry.out === 'terrain/terrain-frame.js');
-    assert.equal(terrainBundle.format, 'esm');
-    assert.deepEqual(terrainBundle.browserImports, { 'maplibre-gl': '../vendor/maplibre-gl.mjs' });
+    assert.equal(terrainBundle!.format, 'esm');
+    assert.deepEqual(terrainBundle!.browserImports, { 'maplibre-gl': '../vendor/maplibre-gl.mjs' });
     assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.ts', 'terrain/terrain-frame.js']);
     const frameEntrySource = await fs.readFile(new URL('../../src/terrain/terrain-frame.js', import.meta.url), 'utf8');
     assert.match(frameEntrySource, /import \* as maplibre from ['"]maplibre-gl['"]/);
@@ -341,14 +348,14 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
 });
 
 test('BigMap overlay owners load for both native Map path spellings and route groups', () => {
-    const matches = (pattern, url) => new RegExp('^' + pattern.split('*')
-        .map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$').test(url);
+    const matches = (pattern: string, url: string) => new RegExp('^' + pattern.split('*')
+        .map((part: string) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$').test(url);
     for (const host of ['www.peakbagger.com', 'peakbagger.com']) {
         for (const pathname of ['/Map/BigMap.aspx', '/map/BigMap.aspx', '/map/bigmap.aspx']) {
             for (const group of ['rc', 'rt']) {
                 const url = `https://${host}${pathname}?t=G&d=2096&c=40786&gt=${group}`;
                 for (const script of ['content/map-layers.js', 'content/peak-snow.js']) {
-                    assert.ok(contentEntry(script).matches.some(pattern => matches(pattern, url)), `${script} must load on ${url}`);
+                    assert.ok(contentEntry(script)!.matches.some(pattern => matches(pattern, url)), `${script} must load on ${url}`);
                 }
             }
         }
@@ -424,9 +431,9 @@ test('climber pages get the favorite toggle and confirmed Buddy refresh in the e
 
 test('peak report filtering starts early in the isolated world on both hosts', () => {
     const script = contentEntry('content/peak-report-filter.js');
-    assert.equal(script.run_at, 'document_start');
-    assert.equal(script.world, undefined);
-    assert.equal(script.matches.length, 4);
+    assert.equal(script!.run_at, 'document_start');
+    assert.equal(script!.world, undefined);
+    assert.equal(script!.matches.length, 4);
     assert.deepEqual(bundleSources('content/peak-report-filter.js'), ['favorites/peak-report-filter.js']);
 });
 
@@ -464,7 +471,7 @@ test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated
 // manifest names a bundle the build config never produces, the load is dead.
 test('every manifest and page bundle reference is a declared build output', () => {
     const outputs = new Set(ENTRIES.map(entry => entry.out));
-    const referenced = new Set();
+    const referenced = new Set<string>();
     for (const entry of manifest.content_scripts) {
         for (const js of entry.js) if (!js.startsWith('vendor/')) referenced.add(js);
     }
@@ -481,7 +488,7 @@ test('full-profile backup is isolated to ClimbListC with its own bundled surface
     assert.deepEqual(script.css, ['css/profile-backup.css']);
     assert.ok(script.matches.every(match => /climblistc\.aspx/i.test(match)));
     const entry = ENTRIES.find(candidate => candidate.out === 'content/profile-backup.js');
-    assert.deepEqual(entry.sources, ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-snapshot.js', 'reports/report-markup.js', 'ascent/ascent-backup-source.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'profile/profile-backup.js']);
+    assert.deepEqual(entry!.sources, ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-snapshot.js', 'reports/report-markup.js', 'ascent/ascent-backup-source.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'profile/profile-backup.js']);
 });
 
 test('individual and profile backups bundle the same Peakbagger source reader', () => {
@@ -490,7 +497,7 @@ test('individual and profile backups bundle the same Peakbagger source reader', 
     assert.deepEqual(individual.css, ['css/ascent-backup.css']);
     assert.deepEqual(bundleSources('content/ascent-backup.js'),
         ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'reports/report-markup.js', 'ascent/ascent-snapshot.js', 'ascent/ascent-backup-source.js', 'ascent/ascent-page.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'ascent/ascent-backup.js']);
-    assert.ok(bundleSources('content/profile-backup.js').includes('ascent/ascent-backup-source.js'));
+    assert.ok(bundleSources('content/profile-backup.js')!.includes('ascent/ascent-backup-source.js'));
 });
 
 test('saved map handoffs share one independent isolated-world surface', () => {
@@ -597,7 +604,7 @@ test('the bundled service worker boots and registers its listener', async () => 
             onChanged: { addListener: () => {} },
         },
         runtime: {
-            getURL: path => `chrome-extension://test-extension/${path}`,
+            getURL: (resource: string) => `chrome-extension://test-extension/${resource}`,
             onMessage: { addListener: () => { registeredListener = true; } },
         },
         tabs: { onRemoved: { addListener: () => {} } },
@@ -614,12 +621,12 @@ test('the bundled service worker boots and registers its listener', async () => 
 
 test('profile biography loads the shared editor and Markdown vendor without ascent entrypoints', () => {
     const entry = contentEntry('content/profile-editor.js');
-    assert.deepEqual(entry.js, ['vendor/marked.umd.js', 'content/profile-editor.js']);
-    assert.deepEqual(entry.css, ['css/report-editor.css']);
-    assert.equal(entry.run_at, 'document_end');
-    assert.equal(entry.all_frames, false);
-    assert.equal(entry.world || 'ISOLATED', 'ISOLATED');
-    assert.deepEqual(new Set(entry.matches), new Set([
+    assert.deepEqual(entry!.js, ['vendor/marked.umd.js', 'content/profile-editor.js']);
+    assert.deepEqual(entry!.css, ['css/report-editor.css']);
+    assert.equal(entry!.run_at, 'document_end');
+    assert.equal(entry!.all_frames, false);
+    assert.equal(entry!.world || 'ISOLATED', 'ISOLATED');
+    assert.deepEqual(new Set(entry!.matches), new Set([
         'https://www.peakbagger.com/climber/climberedit.aspx*',
         'https://www.peakbagger.com/climber/ClimberEdit.aspx*',
         'https://peakbagger.com/climber/climberedit.aspx*',

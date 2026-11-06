@@ -241,7 +241,7 @@ test/ascent/ascent-gaia.test.mjs
 test/background/gaia-routes.test.mjs
 test/gaia/gaia-access.test.mjs
 test/gpx/saved-gpx-source.test.mjs
-test/project/manifest-capture.test.mjs
+test/project/manifest-capture.test.mts
 ```
 
 `npm run verify -- map-handoffs` builds and loads

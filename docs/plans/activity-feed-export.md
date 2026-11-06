@@ -272,7 +272,7 @@ scripts/verify-feed-capture.mjs          proposed integrated browser verifier
 - Provide immediate state feedback without shifting existing popup capture
   controls. Handle first enablement on an existing tab, denied or externally
   revoked permission, re-enable, browser update, and MV3 worker restart.
-- Update [manifest tests](../../test/project/manifest-capture.test.mjs), worker
+- Update [manifest tests](../../test/project/manifest-capture.test.mts), worker
   boot/bundle checks, permission lifecycle tests, popup tests, and panel sender
   tests together. Required provider host access must remain absent.
 - Update [Privacy](../../PRIVACY.md), [README](../../README.md),
@@ -333,7 +333,7 @@ Existing checks to run during implementation, scaled to each affected unit:
 
 ```sh
 npm run build
-node --test test/capture/provider-url.test.mjs test/capture/provider-page.test.mjs test/background/background-capture.test.mjs test/popup/popup.test.mjs test/project/manifest-capture.test.mjs
+node --test test/capture/provider-url.test.mjs test/capture/provider-page.test.mjs test/background/background-capture.test.mjs test/popup/popup.test.mjs test/project/manifest-capture.test.mts
 node --test test/project/documentation.test.mjs test/project/fixtures-privacy.test.mjs
 npm test
 npm run lint

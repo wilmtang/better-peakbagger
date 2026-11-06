@@ -1013,7 +1013,7 @@ shows the exact bracket source.
 - `test/options/options-github.test.mjs` pins manager ordering, labels, exact Markdown copy
   versus bracket conversion, expiry cleanup, live refresh, and reversible
   single/bulk deletion.
-- `test/project/manifest-capture.test.mjs` pins the vendored parser before the converter
+- `test/project/manifest-capture.test.mts` pins the vendored parser before the converter
   and editor in the real content-script list.
 - `npm run verify -- browsers` loads the unpacked extension in hidden Chrome and
   Firefox and exercises each store-specific credit, real typing, Ctrl/Cmd+B,
