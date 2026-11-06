@@ -15,7 +15,7 @@ were stale; the closure ledger records what was actually changed.
 | `npm test` | Pass | 3,194 / 3,194 tests passed (`duration_ms 41136`). |
 | `npm run lint` | Pass | `eslint .` passes with 0 warnings/errors; `scripts/check-web-ext-lint.mjs` builds all 50 `dist/` bundles and passes with 0 errors and the 8 existing allowlisted `web-ext` warnings (`DANGEROUS_EVAL`, `UNSAFE_VAR_ASSIGNMENT`). |
 | `npm run audit:ci` | Fail (known dev-only chain) | 5 vulnerabilities (2 moderate, 3 high) in `node-forge <=1.3.x` via `web-ext -> @devicefarmer/adbkit -> node-forge`. Tracked in prior audit ledgers as an unowned dev-tooling dependency outside `dist/`. |
-| `node scripts/verify-layout-stability.mjs --chrome-only --surface=maps` | **Fail (`ENOENT`)** | Crashes immediately attempting to read removed `dist/css/sentinel.css` (see **F1**). |
+| `node scripts/verify-layout-stability.mts --chrome-only --surface=maps` | **Fail (`ENOENT`)** | Crashes immediately attempting to read removed `dist/css/sentinel.css` (see **F1**). |
 
 ---
 
@@ -23,7 +23,7 @@ were stale; the closure ledger records what was actually changed.
 
 | ID | Severity | Category | Surface / Files | Summary |
 | --- | --- | --- | --- | --- |
-| **F1** | **P2** | Bug / CI Gate Breakage | `scripts/verify-layout-stability.mjs:725-726` | `verify-layout-stability.mjs` still loads removed `dist/css/sentinel.css` and `dist/content/sentinel-map.js`, crashing `npm run verify -- layout-stability` (`ENOENT`). |
+| **F1** | **P2** | Bug / CI Gate Breakage | `scripts/verify-layout-stability.mts:725-726` | `verify-layout-stability.mts` still loads removed `dist/css/sentinel.css` and `dist/content/sentinel-map.js`, crashing `npm run verify -- layout-stability` (`ENOENT`). |
 | **F2** | **P2** | Bug / Bad UX | `src/maps/map-overlay-leaflet.js:58, 64-71`, `src/maps/map-layers.js:158-159` | 2D raster overlays (`slope`, `land`) enabled during a rate-limit cooldown get stuck in permanent `Loading` on **Retry** after the cooldown expires because `retry(id)` never calls `add(id)` when `!layers.has(id)`. |
 | **F3** | **P2** | Bug / State Race | `src/maps/map-layer-bridge.js:19, 29, 50-54, 116-123`, `src/maps/map-layers.js:270-277` | `installMapLayerBridge` announces default overlay opacities before `chrome.storage.local.get` finishes reading saved opacities, and a late `storage.get` callback can overwrite newer `save` writes. |
 | **F4** | **P2** | Bug / Bridge Race | `src/terrain/terrain-map.js:416-417, 512-525, 542-549`, `src/terrain/terrain-frame-runtime.js:42-45, 2254-2293, 2313-2318` | Terrain bridge drops `update` (`routeStyle` / `theme`) and `snowStations.conditions` that arrive while frame activation `authorize()` is in flight, and initializes `snowConditions` to `null` (permissive `canSelect`). |
@@ -34,21 +34,21 @@ were stale; the closure ledger records what was actually changed.
 
 ## Detailed Findings & Remediation Plan
 
-### F1 — `scripts/verify-layout-stability.mjs` crashes with `ENOENT` on the `maps` surface (P2 Bug / CI Gate Breakage)
+### F1 — `scripts/verify-layout-stability.mts` crashes with `ENOENT` on the `maps` surface (P2 Bug / CI Gate Breakage)
 
 - **Location:**
-  - `scripts/verify-layout-stability.mjs:725-726`
+  - `scripts/verify-layout-stability.mts:725-726`
   - `.github/workflows/test.yml:143` (`npm run verify -- layout-stability`)
 - **Root Cause:**
-  Commit `b900d73b` (`feat: share map overlays across native and terrain views`) replaced the standalone Sentinel map bundle (`content/sentinel-map.js` and `css/sentinel.css`) with the unified map layers bundle (`content/map-layers.js` and `css/map-layers.css`) in `scripts/build-config.mjs` and `manifest.json`. However, `mapCase` in `scripts/verify-layout-stability.mjs` still reads `await asset('css/sentinel.css')` and `await asset('content/sentinel-map.js')` and queries the legacy `#bpb-sentinel-bar` / `#bpb-snow-bar` DOM selectors.
+  Commit `b900d73b` (`feat: share map overlays across native and terrain views`) replaced the standalone Sentinel map bundle (`content/sentinel-map.js` and `css/sentinel.css`) with the unified map layers bundle (`content/map-layers.js` and `css/map-layers.css`) in `scripts/build-config.mjs` and `manifest.json`. However, `mapCase` in `scripts/verify-layout-stability.mts` still reads `await asset('css/sentinel.css')` and `await asset('content/sentinel-map.js')` and queries the legacy `#bpb-sentinel-bar` / `#bpb-snow-bar` DOM selectors.
 - **Reproduction:**
-  Run `node scripts/verify-layout-stability.mjs --chrome-only --surface=maps` after `npm run build`. It fails before launching a page with:
+  Run `node scripts/verify-layout-stability.mts --chrome-only --surface=maps` after `npm run build`. It fails before launching a page with:
   `Error: ENOENT: no such file or directory, open '.../dist/css/sentinel.css'`.
 - **Why existing tests missed it:**
-  `test/project/manifest-capture.test.mjs` validates `manifest.json` against `scripts/build-config.mjs`, and `test/project/showcase.test.mjs` checks HTTPS fixture invariants across verifier scripts, but no unit test verifies that `asset('...')` paths referenced in `scripts/verify-layout-stability.mjs` exist in `scripts/build-config.mjs`.
+  `test/project/manifest-capture.test.mjs` validates `manifest.json` against `scripts/build-config.mjs`, and `test/project/showcase.test.mjs` checks HTTPS fixture invariants across verifier scripts, but no unit test verifies that `asset('...')` paths referenced in `scripts/verify-layout-stability.mts` exist in `scripts/build-config.mjs`.
 - **Remediation Plan:**
-  1. Update `mapCase` in `scripts/verify-layout-stability.mjs` to inject `css/map-layers.css` and `content/map-layers.js` and verify layout stability across the unified `#bpb-map-layers` Overlays control (menu toggle, `sentinel` / `snotel` / `slope` / `land` rows, inline status/retry transitions, and date/filter interactions).
-  2. Add a structural assertion in `test/project/manifest-capture.test.mjs` (or `test/project/showcase.test.mjs`) that parses `asset('...')` calls in `scripts/verify-layout-stability.mjs` and verifies every referenced path is declared in `scripts/build-config.mjs` (`ENTRIES` or `COPY_FILES`).
+  1. Update `mapCase` in `scripts/verify-layout-stability.mts` to inject `css/map-layers.css` and `content/map-layers.js` and verify layout stability across the unified `#bpb-map-layers` Overlays control (menu toggle, `sentinel` / `snotel` / `slope` / `land` rows, inline status/retry transitions, and date/filter interactions).
+  2. Add a structural assertion in `test/project/manifest-capture.test.mjs` (or `test/project/showcase.test.mjs`) that parses `asset('...')` calls in `scripts/verify-layout-stability.mts` and verifies every referenced path is declared in `scripts/build-config.mjs` (`ENTRIES` or `COPY_FILES`).
 
 ---
 
@@ -199,7 +199,7 @@ To avoid false positives or re-reporting closed items, the following areas were 
 
 ## Prioritized Remediation Order
 
-1. **Step 1 (F1 + F6):** Update `scripts/verify-layout-stability.mjs` to load `css/map-layers.css` and `content/map-layers.js`, add a build-config asset assertion test in `test/project/`, remove unshipped `src/maps/sentinel-map.js`, `src/maps/sentinel.css`, `src/maps/peak-snow-map.js`, and `createSentinelLayer`, and update `docs/mountain-local-time.md`.
+1. **Step 1 (F1 + F6):** Update `scripts/verify-layout-stability.mts` to load `css/map-layers.css` and `content/map-layers.js`, add a build-config asset assertion test in `test/project/`, remove unshipped `src/maps/sentinel-map.js`, `src/maps/sentinel.css`, `src/maps/peak-snow-map.js`, and `createSentinelLayer`, and update `docs/mountain-local-time.md`.
 2. **Step 2 (F2 + F5):** Fix `createLeafletOverlays.retry(id)` in `src/maps/map-overlay-leaflet.js` so retrying an unmounted cooldown-blocked layer calls `add(id)`, and enforce monotonic `Math.max` rate-limit cooldown retention across `src/maps/map-overlay-tiles.js`, `src/maps/sentinel-session.js`, `src/maps/map-layer-bridge.js`, and `src/maps/map-layers.js`.
 3. **Step 3 (F3):** Gate `installMapLayerBridge` initial `announce()` on `preferencesReady` and guard initial `storage.get` with a revision counter in `src/maps/map-layer-bridge.js`.
 4. **Step 4 (F4):** Preserve and replay `routeStyle`, `theme`, and `snowStations.conditions` across terrain frame activation in `src/terrain/terrain-map.js` and tighten `snowConditions` initialization in `src/terrain/terrain-frame-runtime.js`.

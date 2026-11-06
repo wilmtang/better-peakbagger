@@ -273,7 +273,7 @@ this lifecycle fix independently, after F1 establishes the pending gate.
 - **O2, P3 — Put the newer peak-card/snow matrices on a maintained CI path.**
   The cases are available through `scripts/verify.mjs` (lines 26–28), but the
   required layout case map omits them:
-  `scripts/verify-layout-stability.mjs` (lines 1199–1202). The Test workflow's
+  `scripts/verify-layout-stability.mts` (lines 1199–1202). The Test workflow's
   layout job in `.github/workflows/test.yml` invokes only that generic matrix
   (lines 138–143); neither that
   workflow nor its package action invokes the snow, snow-map or peak-cards

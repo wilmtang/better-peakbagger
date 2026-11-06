@@ -82,13 +82,13 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.ok(job.steps.find(step => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(packageJson.scripts.verify, 'node scripts/verify.mjs');
-    const verifier = await readFile(new URL('../../scripts/verify-layout-stability.mjs', import.meta.url), 'utf8');
+    const verifier = await readFile(new URL('../../scripts/verify-layout-stability.mts', import.meta.url), 'utf8');
     assert.match(verifier, /'weather-models':.*verifyPeakWeatherRefresh/,
         'ordinary CI must exercise summit model loading, not just hourly readings');
 });
 
 test('layout browser selections reject conflicting engines and unknown selections before launching', () => {
-    const script = fileURLToPath(new URL('../../scripts/verify-layout-stability.mjs', import.meta.url));
+    const script = fileURLToPath(new URL('../../scripts/verify-layout-stability.mts', import.meta.url));
     for (const [args, expected] of [
         [['--chrome-only', '--firefox-only'], /Choose only one layout browser/],
         [['--firefoxx-only'], /Unknown layout argument/],

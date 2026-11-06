@@ -19,7 +19,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['capture-popup'], [['verify-capture-popup.mjs']]],
         [['gpx-header'], [['verify-gpx-header.mjs']]],
         [['layout-stability', '--firefox-only', '--surface=maps'],
-            [['verify-layout-stability.mjs', '--firefox-only', '--surface=maps']]],
+            [['verify-layout-stability.mts', '--firefox-only', '--surface=maps']]],
         [['multi-summit'], [['verify-multi-summit.mjs']]],
         [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
         [['profile-editor'], [['verify-profile-editor.mjs', 'chrome'], ['verify-profile-editor.mjs', 'firefox']]],

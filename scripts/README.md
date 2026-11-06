@@ -173,14 +173,14 @@ independent of the existing targets.
 - [verify-api-rate-limits.mjs](verify-api-rate-limits.mjs)
 - [verify-ascent-backup-lifecycle.mjs](verify-ascent-backup-lifecycle.mjs)
 - [verify-firefox-terrain.mjs](verify-firefox-terrain.mjs)
-- [verify-layout-stability.mjs](verify-layout-stability.mjs)
+- [verify-layout-stability.mts](verify-layout-stability.mts)
 - [verify-ascent-column-widths.mjs](verify-ascent-column-widths.mjs) — native peak/ascent metadata widths, nested map containment and card edge alignment, run by `layout-stability`.
 - [verify-ascent-filters.mjs](verify-ascent-filters.mjs) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.
 - [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
 - [verify-photo-editor.mjs](verify-photo-editor.mjs)
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
 - [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
-- [verify-report-caption-stability.mjs](verify-report-caption-stability.mjs)
+- [verify-report-caption-stability.mts](verify-report-caption-stability.mts)
 - [verify-report-security.mjs](verify-report-security.mjs) — real response protection, hostile reports, native map scripts, Quick Search and Cloudflare exceptions in hidden Chrome/Firefox.
 - [verify-instagram.mjs](verify-instagram.mjs) — packaged per-post grants, native captions, bounded player sizing, compact placeholders, consent, error/retry/cancel geometry and Rich paste in hidden Chrome/Firefox. Includes same-origin lazy-video playback and sandbox isolation. `npm run verify -- instagram`; `--live` checks public post/Reel samples and all slides plus decoded video playback in the reported mixed carousel. `--display` pregrants the optional host only in a disposable test copy, then checks native terminal navigation, identical pending/loaded viewport widths and live light/dark transitions with unchanged media colors/geometry. It does not prove the native permission prompt. `BPB_INSTAGRAM_LIVE_POST` adds one validated public sample.
 - [verify-report-image-help.mjs](verify-report-image-help.mjs) — image-popover Instagram help: hover, keyboard dismissal, tooltip bounds and stable geometry at desktop/narrow widths in both themes and enlarged text; invoked by the Instagram verifier.

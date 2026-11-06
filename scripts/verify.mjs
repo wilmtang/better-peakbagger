@@ -13,7 +13,7 @@ const targets = {
     firefox: [['verify-firefox-extension.mjs']],
     browsers: [['verify-extension.mjs'], ['verify-firefox-extension.mjs']],
     'capture-popup': [['verify-capture-popup.mjs']],
-    'layout-stability': [['verify-layout-stability.mjs']],
+    'layout-stability': [['verify-layout-stability.mts']],
     'fixture-preflight': [['verify-fixture-preflight.mjs']],
     'gpx-header': [['verify-gpx-header.mjs']],
     'multi-summit': [['verify-multi-summit.mjs']],

@@ -17,7 +17,7 @@ test('script inventory discovery includes TypeScript tooling beside legacy modul
 });
 
 test('layout verification loads only assets declared by the build', async () => {
-    const source = await readFile(new URL('../../scripts/verify-layout-stability.mjs', import.meta.url), 'utf8');
+    const source = await readFile(new URL('../../scripts/verify-layout-stability.mts', import.meta.url), 'utf8');
     const shipped = new Set([...ENTRIES.map(entry => entry.out), ...COPY_FILES.map(([, output]) => output),
         ...VENDOR_COPY.map(([, output]) => output), ...GENERATED_FILES]);
     const assets = [...source.matchAll(/\basset\(['"]([^'"]+)['"]\)/g)].map(match => match[1]);

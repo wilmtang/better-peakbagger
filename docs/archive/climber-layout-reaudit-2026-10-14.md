@@ -30,7 +30,7 @@ regressions remain explicitly carried below.
   test/favorites/climber-hover-card.test.mts
   test/favorites/climber-membership.test.mjs
   test/favorites/climber-card-state.test.mjs`: **42 passed**.
-- The unchanged `node scripts/verify-layout-stability.mjs --surface=climbers`
+- The unchanged `node scripts/verify-layout-stability.mts --surface=climbers`
   passed all eight Chrome/Firefox × light/dark × 390/1280 cases. Those green
   results coexist with the reproduced failures below.
 - A separate read-only audit probe executed the shipped `dist/` IIFEs against
@@ -234,7 +234,7 @@ correct actionable control without shifting it.
 
 ### C08 — P1: the verification gate and closure wording certify the wrong invariant
 
-Evidence: `scripts/verify-layout-stability.mjs` (lines 842–879),
+Evidence: `scripts/verify-layout-stability.mts` (lines 842–879),
 `scripts/verify-climber-membership.mjs` (lines 10–39), and the historical
 J11 closure in the linked layout ledger.
 The gate checks the card Favorite/Buddy bounds. The profile test injects a storage

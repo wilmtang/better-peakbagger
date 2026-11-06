@@ -212,7 +212,7 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
   build, focused ESLint and diff checks passed.
 - **J01 capture popup:** feedback follows the persistent actions; opening and
   deletion failures retain the result list and original controls. The new
-  `scripts/verify-layout-stability.mjs` reproduced disappearing actions before
+  `scripts/verify-layout-stability.mts` reproduced disappearing actions before
   the fix and now compares button geometry through controlled pending, failure,
   retry, grouping completion and deletion failure. Hidden Chrome 153.0.8010.12
   and Playwright Firefox 155.0 passed in light/dark at 390×900 and 1280×900;
@@ -265,7 +265,7 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 - `npm run lint`: passed, including the shipped `dist/` manifest and the six
   existing owned web-ext warnings. The added CI guard then passed with all
   thirteen focused project integration checks and focused ESLint.
-- `scripts/verify-layout-stability.mjs`: **96 passed matrix cases** — twelve
+- `scripts/verify-layout-stability.mts`: **96 passed matrix cases** — twelve
   surface groups, two browsers, light/dark, 390×900 and 1280×900. Each case
   exercises multiple transitions, with one CSS pixel rounding tolerance;
   repeated progress also compares panel bounds and focused node identity.

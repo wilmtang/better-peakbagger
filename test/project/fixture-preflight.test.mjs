@@ -12,7 +12,7 @@ test('preflight exercises real locale, evidence, worker authorization and produc
         assert.equal(calls.length, 3);
         assert.match(calls[0][1].join(' '), /formatting-locale.*browser-verification-evidence/);
         assert.match(calls[1][1].join(' '), /capture controls reject\|privileged extension routes reject/);
-        assert.deepEqual(calls[2][1], ['scripts/verify-layout-stability.mjs', `--${browser}-only`, '--preflight']);
+        assert.deepEqual(calls[2][1], ['scripts/verify-layout-stability.mts', `--${browser}-only`, '--preflight']);
     }
 });
 

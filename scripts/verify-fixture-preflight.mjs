@@ -13,7 +13,7 @@ export function fixturePreflightCommands(args) {
     return [
         ['--test', 'test/project/formatting-locale-verification.test.mjs', 'test/project/browser-verification-evidence.test.mjs'],
         ['--test', '--test-name-pattern=capture controls reject|privileged extension routes reject', 'test/background/background-capture.test.mjs'],
-        ['scripts/verify-layout-stability.mjs', args[0], '--preflight'],
+        ['scripts/verify-layout-stability.mts', args[0], '--preflight'],
     ];
 }
 
