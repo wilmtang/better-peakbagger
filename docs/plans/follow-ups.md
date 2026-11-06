@@ -60,6 +60,11 @@ ran hidden.
 
 ### Needs a decision or a person
 
+- **Maptoolkit branch TypeScript policy.** `codex/maptoolkit-basemap` modifies 22
+  JavaScript files, including the terrain coordinators the adoption plan converts
+  last, so CI's policy check fails until they convert or the owner chooses another
+  sequence. See the [branch audit](../archive/maptoolkit-branch-audit-2026-11-06.md).
+
 - **Garmin distribution agreement.** The review is still open.
 
 ### Reproduced or still open

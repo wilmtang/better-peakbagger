@@ -5,17 +5,6 @@
   blocker, terrain warming timing, Linux backup widths, hosted CI and manual
   release checks. Includes the latest full acceptance run.
 
-- [2D vector zoom audit — November 1](vector-zoom-audit-2026-11-01.md)
-  — implemented camera/image handoff and parent-clock rendering; repeated
-  animation proof and explicit unrelated repository gates in the closure ledger.
-
-- [Maptoolkit performance and picker audit — October 31](maptoolkit-performance-audit-2026-10-31.md)
-  — five findings implemented: picker containment, progressive loading, reduced
-  shading, bounded renderer reuse and 3D request ownership.
-
-- [Maptoolkit basemap integration — October 31](maptoolkit-basemap-2026-10-31.md)
-  — implemented Hiking in native 2D and 3D; provider boundaries, attribution,
-  live checks and explicit verification gaps.
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
   — TypeScript tooling, policy scans and bounded map adoption implemented;
