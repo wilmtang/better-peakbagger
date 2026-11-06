@@ -4,22 +4,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { terrainBasemap } from '../../src/terrain/terrain-basemap.js';
+import { terrainBasemap } from '../../src/terrain/terrain-basemap.ts';
 
 const load = () => terrainBasemap;
 
 // The module builds objects in the JSDOM realm, so strict deepEqual would trip
 // on the foreign prototype; compare structure by value instead.
-const plain = value => JSON.parse(JSON.stringify(value));
+const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
 
 // A minimal #selmap-like select without a real DOM: enumerate/active only read
 // .options, .value, .selectedIndex, and each option's .value/.textContent.
-const makeSelect = (options, selectedIndex = 0) => ({
+type SelectOption = { value: unknown; textContent: string | null; dataset?: { bpbSentinelCapture?: string } };
+const makeSelect = (options: SelectOption[], selectedIndex = 0) => ({
     options,
     selectedIndex,
     get value() { return options[selectedIndex] ? options[selectedIndex].value : ''; }
 });
-const option = (value, textContent) => ({ value, textContent });
+const option = (value: string, textContent: string): SelectOption => ({ value, textContent });
 
 test('drapeFromCode maps known #selmap codes to fixed xyz raster specs and rejects the rest', () => {
     const B = load();
@@ -38,8 +39,8 @@ test('drapeFromCode maps known #selmap codes to fixed xyz raster specs and rejec
     assert.equal(B.drapeFromCode('L_GG', 'Google'), null);
     assert.equal(B.drapeFromCode('', 'Nameless'), null);
     // Missing/blank names fall back to the code itself.
-    assert.equal(B.drapeFromCode('L_OS').name, 'L_OS');
-    assert.equal(B.drapeFromCode('L_OS', '   ').name, 'L_OS');
+    assert.equal(B.drapeFromCode('L_OS')!.name, 'L_OS');
+    assert.equal(B.drapeFromCode('L_OS', '   ')!.name, 'L_OS');
 });
 
 test('enumerate mirrors the drape-able #selmap options in order, deduped', () => {
@@ -62,8 +63,8 @@ test('active prefers the known-code spec for the selected layer', () => {
     const select = makeSelect([option('L_CT', 'CalTopo'), option('L_MT', 'MyTopo USA/Canada')], 1);
     const map = { _layers: {}, hasLayer: () => true };
     const drape = B.active({}, map, select);
-    assert.equal(drape.name, 'MyTopo USA/Canada');
-    assert.equal(drape.tiles[0], B.TERRAIN_DRAPE_LAYERS.L_MT.tiles);
+    assert.equal(drape!.name, 'MyTopo USA/Canada');
+    assert.equal(drape!.tiles![0], B.TERRAIN_DRAPE_LAYERS.L_MT.tiles);
 });
 
 test('active falls back to the live Leaflet layer for a code it carries no spec for', () => {
@@ -76,12 +77,12 @@ test('active falls back to the live Leaflet layer for a code it carries no spec 
     };
     const select = makeSelect([option('L_NAT', 'National Basemap')]);
     const mapWin = { L_NAT: liveLayer, L: { Browser: { retina: false } }, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } };
-    const map = { _layers: { active: liveLayer }, hasLayer: layer => layer === liveLayer };
+    const map = { _layers: { active: liveLayer }, hasLayer: (layer: unknown) => layer === liveLayer };
     const drape = B.active(mapWin, map, select);
-    assert.equal(drape.name, 'National Basemap');
-    assert.equal(drape.tiles[0], 'https://a.national.example/{z}/{x}/{y}.png');
-    assert.equal(drape.minzoom, 3);
-    assert.equal(drape.maxzoom, 17);
+    assert.equal(drape!.name, 'National Basemap');
+    assert.equal(drape!.tiles![0], 'https://a.national.example/{z}/{x}/{y}.png');
+    assert.equal(drape!.minzoom, 3);
+    assert.equal(drape!.maxzoom, 17);
 });
 
 test('active fails closed when there is no map or no selected option', () => {
@@ -103,10 +104,10 @@ test('the custom Leaflet Sentinel choice starts the matching 3D provider, not it
     assert.deepEqual(load().active({}, { _layers: { native } }, select), { kind: 'sentinel', name: 'Sentinel-2 (experimental)' });
     const capture = { time: Date.parse('2026-10-03T19:02:31Z'), platform: 'Sentinel-2C', orbit: '13' };
     select.options[0].dataset = { bpbSentinelCapture: JSON.stringify({ ...capture, tiles: ['https://evil.example/'] }) };
-    assert.deepEqual(load().active({}, { _layers: { native } }, select).capture, capture,
+    assert.deepEqual(load().active({}, { _layers: { native } }, select)!.capture, capture,
         'only the validated capture identity crosses into the 3D renderer');
     select.options[0].dataset.bpbSentinelCapture = '{bad';
-    assert.equal(load().active({}, { _layers: { native } }, select).capture, undefined);
+    assert.equal(load().active({}, { _layers: { native } }, select)!.capture, undefined);
 });
 
 test('fromLayer rejects WMS and reprojected layers, expands subdomains and retina, and absolutizes', () => {
@@ -118,11 +119,11 @@ test('fromLayer rejects WMS and reprojected layers, expands subdomains and retin
         _url: 'https://{s}.tiles.example/{z}/{x}/{y}{r}.png',
         options: { subdomains: 'abc', minZoom: 2, maxZoom: 16 }
     }, 'Example', mapWin);
-    assert.equal(retina.tiles[0], 'https://a.tiles.example/{z}/{x}/{y}@2x.png');
+    assert.equal(retina!.tiles[0], 'https://a.tiles.example/{z}/{x}/{y}@2x.png');
 
     // A relative Leaflet URL is resolved against the map window's location.
     const relative = B.fromLayer({ _url: '/tiles/{z}/{x}/{y}.png', options: {} }, 'Rel', mapWin);
-    assert.equal(relative.tiles[0], 'https://www.peakbagger.com/tiles/{z}/{x}/{y}.png');
+    assert.equal(relative!.tiles[0], 'https://www.peakbagger.com/tiles/{z}/{x}/{y}.png');
 
     // WMS and reprojected layers cannot drape.
     assert.equal(B.fromLayer({ _url: 'https://wms.example/', wmsParams: {}, options: {} }, 'WMS', mapWin), null);
@@ -137,11 +138,11 @@ test('fromLayer rejects WMS and reprojected layers, expands subdomains and retin
 test('drape specs keep the stock LOD for OpenTopoMap and for unknown live layers', () => {
     const B = load();
 
-    assert.equal(B.drapeFromCode('L_OT', 'OpenTopoMap').thriftyLod, true,
+    assert.equal(B.drapeFromCode('L_OT', 'OpenTopoMap')!.thriftyLod, true,
         'OpenTopoMap must stay on the stock LOD to respect its tile usage policy');
 
     for (const code of ['L_CT', 'L_FS', 'L_MT', 'L_OS', 'L_AG', 'L_AI', 'L_XX', 'L_AU']) {
-        assert.equal(B.drapeFromCode(code, code).thriftyLod, false,
+        assert.equal(B.drapeFromCode(code, code)!.thriftyLod, false,
             `${code} is hosted on infrastructure that tolerates the volume, so it takes the tuned LOD`);
     }
 
@@ -150,5 +151,5 @@ test('drape specs keep the stock LOD for OpenTopoMap and for unknown live layers
         L: { Browser: { retina: false } },
         location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
     });
-    assert.equal(live.thriftyLod, true, 'an unknown live host must not be handed tripled tile requests');
+    assert.equal(live!.thriftyLod, true, 'an unknown live host must not be handed tripled tile requests');
 });

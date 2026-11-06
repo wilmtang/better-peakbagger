@@ -2,33 +2,36 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
-import { installVectorMapBridge } from '../../src/maps/vector-map-bridge.js';
+import { JSDOM } from '../helpers/test-dom.mts';
+import type { TestWindow } from '../helpers/test-dom.mts';
+import { installVectorMapBridge } from '../../src/maps/vector-map-bridge.ts';
 import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView, readVectorPaint } from '../../src/maps/vector-basemap.ts';
-import { terrainBasemap } from '../../src/terrain/terrain-basemap.js';
+import { terrainBasemap } from '../../src/terrain/terrain-basemap.ts';
 
 const view = { center: [46.85, -121.76], zoom: 9 };
 const settle = () => new Promise(resolve => setImmediate(resolve));
-function setup({ sendMessage } = {}) {
+interface BridgeMessage { type?: string; activation?: string; token?: string; retryAt?: number; basemap?: string; bitmap?: unknown; id?: string; [key: string]: unknown; }
+type Activation = { ok?: boolean; token?: string } | undefined;
+function setup({ sendMessage }: { sendMessage?: (message: BridgeMessage) => Activation | Promise<Activation> } = {}) {
     const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_VECTOR">Vector</option><option value="BPB_MAPTOOLKIT">Maptoolkit</option></select><div id="bpb-vector-slot-test-vector"></div><div id="bpb-vector-slot-test-maptoolkit"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
-    const win = dom.window, captures = new Map(), calls = [], messages = [];
-    win.ImageBitmap = class { width = 640; height = 480; closed = false; close() { this.closed = true; } };
+    const win = dom.window, captures = new Map<string, (event: unknown) => void>(), calls: BridgeMessage[] = [], messages: BridgeMessage[] = [];
+    Object.assign(win, { ImageBitmap: class { width = 640; height = 480; closed = false; close() { this.closed = true; } } });
     const add = win.document.addEventListener.bind(win.document);
-    win.document.addEventListener = (type, callback, options) => { if (options === true) captures.set(type, callback); add(type, callback, options); };
-    win.postMessage = message => messages.push(message);
+    Object.assign(win.document, { addEventListener(type: string, callback: (event: unknown) => void, options?: boolean) { if (options === true) captures.set(type, callback); add(type, callback as EventListener, options); } });
+    Object.assign(win, { postMessage(message: BridgeMessage) { messages.push(message); } });
     const bridge = installVectorMapBridge(win, { runtime: {
         getURL: value => `chrome-extension://test/${value}`,
-        sendMessage: async message => { calls.push(message); return sendMessage ? sendMessage(message) : { ok: true, token: 'opaque' }; },
+        sendMessage: async (message: unknown) => { calls.push(message as BridgeMessage); return sendMessage ? sendMessage(message as BridgeMessage) : { ok: true, token: 'opaque' }; },
     } });
-    const send = (type, extra = {}, source = win, origin = win.location.origin) => win.dispatchEvent(new win.MessageEvent('message', {
-        source, origin, data: { [VECTOR_MESSAGE]: true, dir: 'toCS', id: 'test', type, view, ...extra },
+    const send = (type: string, extra: BridgeMessage = {}, source: unknown = win, origin = win.location.origin) => win.dispatchEvent(new (win as TestWindow).MessageEvent('message', {
+        source: source as MessageEventSource, origin, data: { [VECTOR_MESSAGE]: true, dir: 'toCS', id: 'test', type, view, ...extra },
     }));
-    const choose = (trusted = true, control = win.document.querySelector('select')) => captures.get('change')({ type: 'change', isTrusted: trusted, target: control });
-    const frame = () => win.document.querySelector('iframe:not([data-bpb-vector-parked])');
-    const fromFrame = (type, origin = 'chrome-extension://test', source = frame()?.contentWindow, detail = {}) => send(type, { dir: 'fromFrame', generation: calls.length, ...detail }, source, origin);
-    const retry = disabled => {
+    const choose = (trusted = true, control = win.document.querySelector('select')) => captures.get('change')!({ type: 'change', isTrusted: trusted, target: control });
+    const frame = () => win.document.querySelector<HTMLIFrameElement>('iframe:not([data-bpb-vector-parked])');
+    const fromFrame = (type: string, origin = 'chrome-extension://test', source: unknown = frame()?.contentWindow, detail: BridgeMessage = {}) => send(type, { dir: 'fromFrame', generation: calls.length, ...detail }, source, origin);
+    const retry = (disabled: boolean) => {
         const button = win.document.createElement('button'); button.dataset.bpbVectorMap = 'test'; button.dataset.bpbVectorBasemap = 'vector'; button.setAttribute('aria-disabled', String(disabled));
-        captures.get('click')({ type: 'click', isTrusted: true, target: button });
+        captures.get('click')!({ type: 'click', isTrusted: true, target: button });
     };
     return { win, calls, messages, send, choose, frame, fromFrame, retry, close() { bridge.dispose(); dom.window.close(); } };
 }
@@ -36,7 +39,7 @@ function setup({ sendMessage } = {}) {
 test('planar vector views validate coordinates and preserve world zoom zero', () => {
     assert.deepEqual(readVectorView({ center: [0, 0], zoom: -1 }), { center: [0, 0], zoom: -1 });
     for (const bad of [{ ...view, center: [90, 0] }, { ...view, center: [0, 181] }, { ...view, zoom: NaN }, { ...view, zoom: 24 }, { ...view, center: [0, 0, 0] }]) assert.equal(readVectorView(bad), null);
-    assert.deepEqual(terrainBasemap.active({}, {}, { value: VECTOR_BASEMAP.code, selectedIndex: 0, options: [{}] }), { kind: 'vector', name: VECTOR_BASEMAP.name });
+    assert.deepEqual(terrainBasemap.active({}, {}, { value: VECTOR_BASEMAP.code, selectedIndex: 0, options: [{ textContent: null }] }), { kind: 'vector', name: VECTOR_BASEMAP.name });
 });
 test('paint metadata rejects invalid cameras and unbounded CSS dimensions', () => {
     assert.deepEqual(readVectorPaint({ view, width: 640, height: 480 }), { view, width: 640, height: 480 });
@@ -48,37 +51,37 @@ test('paint relays require the current frame, activation and bounded metadata', 
     try {
         env.choose(); env.send('view'); env.fromFrame('ready'); await settle();
         for (const extra of [{ generation: 0 }, { width: 0 }, { view: { center: [0, 0], zoom: NaN } }]) {
-            const bitmap = new env.win.ImageBitmap();
+            const bitmap = new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap();
             env.fromFrame('painted', undefined, undefined, { bitmap, width: 640, height: 480, ...extra });
             assert.equal(bitmap.closed, true, 'Stale or invalid GPU images are released');
         }
-        const bitmap = new env.win.ImageBitmap();
+        const bitmap = new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap();
         env.fromFrame('painted', undefined, undefined, { bitmap, width: 640, height: 480 });
-        assert.equal(env.messages.at(-1).type, 'painted'); assert.equal(env.messages.at(-1).bitmap, bitmap);
-        assert.equal(env.messages.at(-1).basemap, 'vector', 'A queued paint remains scoped to its selected provider');
+        assert.equal(env.messages.at(-1)!.type, 'painted'); assert.equal(env.messages.at(-1)!.bitmap, bitmap);
+        assert.equal(env.messages.at(-1)!.basemap, 'vector', 'A queued paint remains scoped to its selected provider');
         assert.equal(bitmap.closed, false, 'The accepted bitmap transfers to the page owner');
-        const older = new env.win.ImageBitmap();
+        const older = new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap();
         env.fromFrame('painted', undefined, undefined, { bitmap: older, width: 640, height: 480, view: { center: [0, 0], zoom: 9 } });
         assert.equal(older.closed, false, 'Older coupled cameras can be reprojected instead of starving a fast pan');
         env.fromFrame('loaded'); env.send('stop');
-        const late = new env.win.ImageBitmap();
-        env.fromFrame('painted', undefined, env.win.document.querySelector('iframe').contentWindow, { bitmap: late, width: 640, height: 480 });
+        const late = new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap();
+        env.fromFrame('painted', undefined, env.win.document.querySelector('iframe')!.contentWindow, { bitmap: late, width: 640, height: 480 });
         assert.equal(late.closed, true, 'A parked provider cannot paint over the native map');
     } finally { env.close(); }
 });
 test('renderer paint requests coalesce on the parent clock and cannot survive suspension', async () => {
-    const env = setup(), callbacks = [], cancelled = [], sent = [];
-    env.win.requestAnimationFrame = callback => { callbacks.push(callback); return callbacks.length; };
-    env.win.cancelAnimationFrame = id => cancelled.push(id);
+    const env = setup(), callbacks: FrameRequestCallback[] = [], cancelled: number[] = [], sent: BridgeMessage[] = [];
+    env.win.requestAnimationFrame = (callback: FrameRequestCallback) => { callbacks.push(callback); return callbacks.length; };
+    env.win.cancelAnimationFrame = (id: number) => { cancelled.push(id); };
     try {
         env.choose(); env.send('view'); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
-        env.frame().contentWindow.postMessage = data => sent.push(data);
+        env.frame()!.contentWindow!.postMessage = (data: BridgeMessage) => { sent.push(data); };
         env.fromFrame('renderNeeded', undefined, undefined, { generation: 0 }); assert.equal(callbacks.length, 0);
         env.fromFrame('renderNeeded'); env.fromFrame('renderNeeded'); assert.equal(callbacks.length, 1);
-        callbacks[0](); env.send('renderClock', { generation: 1 }); env.send('render', { generation: 1 });
+        callbacks[0]!(0); env.send('renderClock', { generation: 1 }); env.send('render', { generation: 1 });
         assert.equal(sent.filter(data => data.type === 'render').length, 1);
         env.fromFrame('renderNeeded'); env.send('pause'); assert.ok(cancelled.includes(2));
-        callbacks[1](); assert.equal(sent.filter(data => data.type === 'render').length, 1, 'A cancelled clock cannot redraw a parked renderer');
+        callbacks[1]!(0); assert.equal(sent.filter(data => data.type === 'render').length, 1, 'A cancelled clock cannot redraw a parked renderer');
     } finally { env.close(); }
 });
 test('forged selection and page messages cannot start vector requests', () => {
@@ -94,7 +97,7 @@ test('only the selected extension frame can obtain one initialization capability
         env.fromFrame('ready', 'chrome-extension://test', env.win); assert.equal(env.calls.length, 0);
         env.fromFrame('ready'); env.fromFrame('ready'); await Promise.resolve();
         assert.deepEqual(env.calls, [{ type: 'VECTOR_MAP_ACTIVATION_ISSUE', action: 'init' }]);
-        env.fromFrame('loaded'); assert.equal(env.messages.at(-1).type, 'loaded');
+        env.fromFrame('loaded'); assert.equal(env.messages.at(-1)!.type, 'loaded');
         env.send('stop'); assert.equal(env.frame(), null);
         env.fromFrame('loaded', 'chrome-extension://test', frame.contentWindow);
         assert.equal(env.messages.filter(message => message.type === 'loaded').length, 1, 'Detached frames cannot complete a later selection');
@@ -110,15 +113,15 @@ test('pause tears down requests while retaining only the current trusted selecti
     } finally { env.close(); }
 });
 test('an outgoing authorization rejection cannot destroy the resumed frame', async () => {
-    const pending = [], env = setup({ sendMessage: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) });
+    const pending: { resolve: (value: Activation) => void; reject: (reason: Error) => void }[] = [], env = setup({ sendMessage: () => new Promise<Activation>((resolve, reject) => { pending.push({ resolve, reject }); }) });
     try {
         env.choose(); env.send('view'); const outgoing = env.frame(); env.fromFrame('ready');
-        env.send('pause'); env.send('resume'); const replacement = env.frame(), sent = [];
-        replacement.contentWindow.postMessage = data => sent.push(data);
+        env.send('pause'); env.send('resume'); const replacement = env.frame(), sent: BridgeMessage[] = [];
+        replacement!.contentWindow!.postMessage = (data: BridgeMessage) => { sent.push(data); };
         env.fromFrame('ready'); assert.equal(pending.length, 2);
         pending[0].reject(new Error('Outgoing worker channel closed')); await settle();
-        assert.equal(replacement.isConnected, true, 'The outgoing failure must leave the replacement renderer alive');
-        assert.equal(env.frame(), replacement); assert.equal(outgoing.isConnected, false);
+        assert.equal(replacement!.isConnected, true, 'The outgoing failure must leave the replacement renderer alive');
+        assert.equal(env.frame(), replacement); assert.equal(outgoing!.isConnected, false);
         assert.equal(env.messages.some(message => message.type === 'error'), false);
         pending[1].resolve({ ok: true, token: 'replacement-activation' }); await settle();
         assert.equal(sent.find(message => message.type === 'init')?.activation, 'replacement-activation');
@@ -151,12 +154,12 @@ test('a provider cooldown survives renderer removal, re-selection and suspension
     const realNow = Date.now; let now = realNow(); Date.now = () => now;
     const env = setup(), retryAt = now + 120000;
     try {
-        env.choose(); env.send('view'); const outgoing = env.frame().contentWindow;
-        env.fromFrame('error', undefined, undefined, { retryAt });
-        assert.equal(env.frame(), null); assert.equal(env.messages.at(-1).retryAt, retryAt);
+        env.choose(); env.send('view'); const outgoing = env.frame()!.contentWindow;
+        env.fromFrame('error', undefined, undefined, { retryAt: retryAt as number });
+        assert.equal(env.frame(), null); assert.equal(env.messages.at(-1)!.retryAt, retryAt);
         for (const authorize of [env.choose, () => env.retry(false)]) {
             authorize(); env.send('view'); assert.equal(env.frame(), null, 'Renderer replacement cannot discard Retry-After');
-            assert.equal(env.messages.at(-1).retryAt, retryAt);
+            assert.equal(env.messages.at(-1)!.retryAt, retryAt);
         }
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
@@ -175,9 +178,9 @@ test('a provider cooldown stops every renderer in the isolated document', () => 
         const second = env.win.document.createElement('select'); second.dataset.bpbVectorMap = 'second';
         second.innerHTML = '<option value="BPB_VECTOR">Vector</option>';
         const slot = env.win.document.createElement('div'); slot.id = 'bpb-vector-slot-second-vector'; env.win.document.body.append(second, slot);
-        env.choose(); env.send('view'); const first = env.frame().contentWindow;
+        env.choose(); env.send('view'); const first = env.frame()!.contentWindow;
         env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.win.document.querySelectorAll('iframe').length, 2);
-        env.fromFrame('error', undefined, first, { retryAt });
+        env.fromFrame('error', undefined, first, { retryAt: retryAt as number });
         assert.equal(env.win.document.querySelectorAll('iframe').length, 0);
         assert.deepEqual(env.messages.map(message => [message.id, message.retryAt]), [['test', retryAt], ['second', retryAt]]);
         env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.frame(), null); assert.equal(env.calls.length, 0);
@@ -187,9 +190,9 @@ test('a trusted provider choice cannot be changed by page messages or another pr
     const env = setup();
     try {
         env.choose(); env.send('view'); env.fromFrame('error', undefined, undefined, { retryAt: Date.now() + 120000 });
-        env.win.document.querySelector('select').value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view', { basemap: 'vector' });
-        const frame = env.frame(), sent = []; assert.ok(frame, 'OpenFreeMap cooldown does not disable Maptoolkit');
-        frame.contentWindow.postMessage = data => sent.push(data); env.fromFrame('ready'); await settle();
+        env.win.document.querySelector('select')!.value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view', { basemap: 'vector' });
+        const frame = env.frame(), sent: BridgeMessage[] = []; assert.ok(frame, 'OpenFreeMap cooldown does not disable Maptoolkit');
+        frame.contentWindow!.postMessage = (data: BridgeMessage) => { sent.push(data); }; env.fromFrame('ready'); await settle();
         assert.equal(sent.find(item => item.type === 'init')?.basemap, 'maptoolkit');
         assert.equal(frame.title, 'Maptoolkit vector basemap');
     } finally { env.close(); }
@@ -198,8 +201,8 @@ test('untrusted and unbounded cooldown messages cannot disable future vector sel
     for (const retryAt of [Date.now() - 1, Date.now() + 86401000, Infinity, '120000']) {
         const env = setup();
         try {
-            env.choose(); env.send('view'); env.send('error', { retryAt }); assert.ok(env.frame());
-            env.fromFrame('error', undefined, undefined, { retryAt }); env.choose(); env.send('view'); assert.ok(env.frame());
+            env.choose(); env.send('view'); env.send('error', { retryAt: retryAt as number }); assert.ok(env.frame());
+            env.fromFrame('error', undefined, undefined, { retryAt: retryAt as number }); env.choose(); env.send('view'); assert.ok(env.frame());
         } finally { env.close(); }
     }
 });
@@ -209,11 +212,11 @@ test('a completed renderer can warm-start only after a fresh trusted choice and 
     try {
         env.choose(); env.send('view'); const original = env.frame();
         env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
-        env.send('stop'); assert.equal(env.frame(), null); assert.equal(original.isConnected, true, 'The initialized frame stays bounded in memory');
+        env.send('stop'); assert.equal(env.frame(), null); assert.equal(original!.isConnected, true, 'The initialized frame stays bounded in memory');
         const count = env.calls.length;
         env.send('resume'); env.send('view'); env.choose(false);
         assert.equal(env.calls.length, count, 'A parked frame has no page-owned activation authority');
-        const sent = []; original.contentWindow.postMessage = data => sent.push(data);
+        const sent: BridgeMessage[] = []; original!.contentWindow!.postMessage = (data: BridgeMessage) => { sent.push(data); };
         env.choose(); env.send('view'); await settle();
         assert.equal(env.frame(), original, 'The trusted choice reuses its own provider frame');
         assert.equal(env.calls.length, count + 1); assert.equal(sent.find(data => data.type === 'resume')?.generation, 2);
@@ -222,25 +225,24 @@ test('a completed renderer can warm-start only after a fresh trusted choice and 
         assert.equal(env.messages.filter(data => data.type === 'loaded').length, loaded, 'The previous activation cannot complete the new selection');
         env.fromFrame('error', undefined, undefined, { generation: 1 }); assert.equal(env.frame(), original, 'A stale failure cannot destroy the new activation');
         env.fromFrame('loaded'); assert.equal(env.messages.filter(data => data.type === 'loaded').length, loaded + 1);
-        env.send('dispose'); assert.equal(original.isConnected, false);
+        env.send('dispose'); assert.equal(original!.isConnected, false);
     } finally { env.close(); }
 });
 
 test('parked renderer expiry frees its resources without restoring activation authority', async () => {
-    const env = setup(), timers = [];
-    env.win.setTimeout = (callback, ms) => { timers.push({ callback, ms }); return timers.length; };
-    env.win.clearTimeout = () => {};
+    const env = setup(), timers: { callback: () => void; ms: number }[] = [];
+    Object.assign(env.win, { setTimeout(callback: () => void, ms: number) { timers.push({ callback, ms }); return timers.length; }, clearTimeout() {} });
     try {
         env.choose(); env.send('view'); const original = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
         env.send('stop'); const expiry = timers.find(item => item.ms === 60000); assert.ok(expiry);
-        expiry.callback(); assert.equal(original.isConnected, false);
+        expiry.callback(); assert.equal(original!.isConnected, false);
         env.send('resume'); env.send('view'); assert.equal(env.frame(), null);
         env.choose(); env.send('view'); assert.ok(env.frame()); assert.notEqual(env.frame(), original);
     } finally { env.close(); }
 });
 
 test('an outgoing warm authorization cannot tear down a newer activation of the same frame', async () => {
-    const pending = [], env = setup({ sendMessage: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) });
+    const pending: { resolve: (value: Activation) => void; reject: (reason: Error) => void }[] = [], env = setup({ sendMessage: () => new Promise<Activation>((resolve, reject) => { pending.push({ resolve, reject }); }) });
     try {
         env.choose(); env.send('view'); const original = env.frame(); env.fromFrame('ready');
         pending[0].resolve({ ok: true, token: 'initial' }); await settle(); env.fromFrame('loaded');
@@ -251,7 +253,7 @@ test('an outgoing warm authorization cannot tear down a newer activation of the 
         pending[2].resolve({ ok: true, token: 'current' }); await settle(); env.fromFrame('loaded');
         assert.equal(env.frame(), original); env.send('pause');
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
-        assert.equal(original.isConnected, false, 'BFCache releases parked frames and their authorization');
+        assert.equal(original!.isConnected, false, 'BFCache releases parked frames and their authorization');
     } finally { env.close(); }
 });
 
@@ -259,13 +261,13 @@ test('each provider keeps its own bounded warm renderer and a parked limit canno
     const env = setup();
     try {
         env.choose(); env.send('view'); const vector = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
-        env.win.document.querySelector('select').value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view');
+        env.win.document.querySelector('select')!.value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view');
         const toolkit = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
         assert.notEqual(vector, toolkit); assert.equal(env.win.document.querySelectorAll('iframe').length, 2);
-        env.win.document.querySelector('select').value = 'BPB_VECTOR'; env.choose(); env.send('view'); await settle();
+        env.win.document.querySelector('select')!.value = 'BPB_VECTOR'; env.choose(); env.send('view'); await settle();
         assert.equal(env.frame(), vector); assert.equal(env.calls.length, 3);
-        env.fromFrame('error', undefined, toolkit.contentWindow, { retryAt: Date.now() + 120000 });
-        assert.equal(toolkit.isConnected, false); assert.equal(env.frame(), vector);
+        env.fromFrame('error', undefined, toolkit!.contentWindow, { retryAt: Date.now() + 120000 });
+        assert.equal(toolkit!.isConnected, false); assert.equal(env.frame(), vector);
         env.send('dispose'); assert.equal(env.win.document.querySelectorAll('iframe').length, 0);
     } finally { env.close(); }
 });
@@ -275,12 +277,12 @@ test('a parked renderer that fails is replaced on reselection rather than awaite
     try {
         env.choose(); env.send('view'); env.fromFrame('ready'); await settle();
         const parked = env.frame();
-        env.fromFrame('painted', undefined, undefined, { bitmap: new env.win.ImageBitmap(), width: 640, height: 480 });
+        env.fromFrame('painted', undefined, undefined, { bitmap: new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap(), width: 640, height: 480 });
         env.send('stop');
-        assert.equal(parked.dataset.bpbVectorParked, 'true');
+        assert.equal(parked!.dataset.bpbVectorParked, 'true');
         const generation = env.calls.length;
-        env.send('error', { dir: 'fromFrame', generation }, parked.contentWindow, 'chrome-extension://test');
-        assert.equal(parked.isConnected, false, 'A renderer that disposed itself while parked is not retained');
+        env.send('error', { dir: 'fromFrame', generation }, parked!.contentWindow, 'chrome-extension://test');
+        assert.equal(parked!.isConnected, false, 'A renderer that disposed itself while parked is not retained');
         env.choose(); env.send('view');
         assert.notEqual(env.frame(), parked, 'Reselection boots a live renderer instead of waiting 20 seconds on a dead one');
     } finally { env.close(); }
@@ -291,12 +293,12 @@ test('a renderer failing during 3D suspension leaves the selection able to resum
     try {
         env.choose(); env.send('view'); env.fromFrame('ready'); await settle();
         const paused = env.frame();
-        env.fromFrame('painted', undefined, undefined, { bitmap: new env.win.ImageBitmap(), width: 640, height: 480 });
+        env.fromFrame('painted', undefined, undefined, { bitmap: new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap(), width: 640, height: 480 });
         env.send('pause');
         const generation = env.calls.length;
-        env.send('error', { dir: 'fromFrame', generation, retryAt: Date.now() + 1 }, paused.contentWindow, 'chrome-extension://test');
-        env.send('error', { dir: 'fromFrame', generation }, paused.contentWindow, 'chrome-extension://test');
-        assert.equal(paused.isConnected, false);
+        env.send('error', { dir: 'fromFrame', generation, retryAt: Date.now() + 1 }, paused!.contentWindow, 'chrome-extension://test');
+        env.send('error', { dir: 'fromFrame', generation }, paused!.contentWindow, 'chrome-extension://test');
+        assert.equal(paused!.isConnected, false);
         assert.equal(env.messages.some(message => message.type === 'error'), false, 'A suspended page ignores errors, so none is spent on it');
         await new Promise(resolve => setTimeout(resolve, 5));
         env.send('resume');

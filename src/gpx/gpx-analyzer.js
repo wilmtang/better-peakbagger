@@ -22,7 +22,7 @@ import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { pageSettingsClient as PageSettingsClient } from '../settings/page-settings-client.js';
 import { peakMarkers } from '../maps/peak-markers.js';
 import { mountainTime as MountainTime } from '../time/mountain-time.js';
-import { terrainBasemap } from '../terrain/terrain-basemap.js';
+import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';

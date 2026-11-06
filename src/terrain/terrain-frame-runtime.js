@@ -6,7 +6,7 @@
 import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../settings/settings-schema.js';
-import { terrainStyle as TerrainStyle } from './terrain-style.js';
+import { terrainStyle as TerrainStyle } from './terrain-style.ts';
 import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, vectorBasemap } from '../maps/vector-basemap.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.ts';
 import { terrainCache as TerrainCache } from './terrain-cache.js';

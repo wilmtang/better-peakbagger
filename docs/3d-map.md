@@ -147,7 +147,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
 | `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
 | `src/terrain/terrain-frame-runtime.js` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
-| `src/terrain/terrain-basemap.js` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
+| `src/terrain/terrain-basemap.ts` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
 | `src/terrain/terrain-cache.js` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
@@ -402,7 +402,7 @@ during boot and applies it once the renderer's base style is ready.
 
 ### Drape sources
 
-`src/terrain/terrain-basemap.js` exposes only Leaflet sources MapLibre can sample as a
+`src/terrain/terrain-basemap.ts` exposes only Leaflet sources MapLibre can sample as a
 single raster `{z}/{x}/{y}` template. It omits WMS, dynamic image exports,
 unsupported projections, Google/Bing integrations, non-zero zoom offsets, and
 other shapes that do not map safely to a raster source.

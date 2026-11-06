@@ -2,21 +2,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import * as maplibre from 'maplibre-gl';
-import { terrainStyle } from '../terrain/terrain-style.js';
+import type { Map as MapLibreMap, RequestParameters, StyleSpecification } from 'maplibre-gl';
+import { terrainStyle } from '../terrain/terrain-style.ts';
+import type { VectorStyle } from '../terrain/terrain-style.ts';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
+import type { VectorView } from './vector-basemap.ts';
 import { vectorMapAvailability, vectorMapReadyToPublish } from './vector-map-availability.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.ts';
 import { readRetryAt } from '../net/rate-limit.js';
 
-let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, settledView = null, lastSize = '', lastCamera = '';
-let active = false, style = null, revision = 0, generation = null;
+let map: MapLibreMap | null = null, parentOrigin: string | null = null, attempted = false, disposed = false, timer: ReturnType<typeof setTimeout> | null = null, view: VectorView | null = null, settledView: string | null = null, lastSize = '', lastCamera = '';
+let active = false, style: VectorStyle | null = null, revision = 0, generation: number | null = null;
 let capturing = false, captureAgain = false;
 let drawRequested = false;
 let nextFrame = 0;
-const frames = new Map();
-const requests = new Set();
-const post = (type, detail = {}, transfer = []) => {
+const frames = new Map<number, FrameRequestCallback>();
+const requests = new Set<AbortController>();
+const post = (type: string, detail: Record<string, unknown> = {}, transfer: Transferable[] = []) => {
     if (parentOrigin) parent.postMessage({ [VECTOR_MESSAGE]: true, dir: 'fromFrame', type, generation, ...detail }, parentOrigin, transfer);
 };
 const requestDraw = () => {
@@ -32,7 +35,7 @@ window.requestAnimationFrame = callback => {
 window.cancelAnimationFrame = id => frames.delete(id);
 const publishPaint = () => {
     if (capturing) { captureAgain = true; return; }
-    const canvas = map.getCanvas(), width = canvas.clientWidth, height = canvas.clientHeight;
+    const canvas = map!.getCanvas(), width = canvas.clientWidth, height = canvas.clientHeight;
     if (!width || !height) return;
     if (!readVectorPaint({ view, width, height })) { fail(); return; }
     if (timer === null) timer = setTimeout(fail, 15000);
@@ -49,7 +52,7 @@ const publishPaint = () => {
         try {
             const key = JSON.stringify([camera, width, height]);
             if (key !== settledView) { settledView = key; post('loaded', { view: camera }); }
-            post('painted', { bitmap, view: camera, width, height }, [bitmap]); clearTimeout(timer); timer = null;
+            post('painted', { bitmap, view: camera, width, height }, [bitmap]); clearTimeout(timer!); timer = null;
         }
         catch (error) { bitmap.close(); fail(error); }
     }, error => { if (!disposed && active && generation === owner) fail(error); }).finally(() => {
@@ -59,15 +62,15 @@ const publishPaint = () => {
     });
 };
 const release = () => {
-    active = false; drawRequested = false; revision++; clearTimeout(timer); timer = null;
+    active = false; drawRequested = false; revision++; clearTimeout(timer!); timer = null;
     for (const controller of requests) controller.abort(); requests.clear();
     map?.stop?.(); map?.setStyle({ version: 8, sources: {}, layers: [] }, { diff: false });
 };
-const dispose = () => { disposed = true; active = false; revision++; clearTimeout(timer); for (const controller of requests) controller.abort(); requests.clear(); map?.remove(); map = null; frames.clear(); };
-const fail = error => { if (!disposed) { post('error', { retryAt: readRetryAt(error?.retryAt) }); dispose(); } };
+const dispose = () => { disposed = true; active = false; revision++; clearTimeout(timer!); for (const controller of requests) controller.abort(); requests.clear(); map?.remove(); map = null; frames.clear(); };
+const fail = (error?: unknown) => { if (!disposed) { post('error', { retryAt: readRetryAt((error as { retryAt?: number } | undefined)?.retryAt) }); dispose(); } };
 const update = () => {
     if (!active || !map || !view) return;
-    const container = document.getElementById('map'), size = `${container.clientWidth}/${container.clientHeight}`, camera = JSON.stringify(view);
+    const container = document.getElementById('map'), size = `${container!.clientWidth}/${container!.clientHeight}`, camera = JSON.stringify(view);
     if (size !== lastSize) { lastSize = size; map.resize(); }
     if (camera !== lastCamera) { lastCamera = camera; map.jumpTo({ center: [view.center[1], view.center[0]], zoom: view.zoom, bearing: 0, pitch: 0 }); }
     requestDraw();
@@ -76,12 +79,12 @@ const settled = (progressive = false) => {
     if (disposed || !active || !map || !progressive && !map.areTilesLoaded()) return;
     try {
         const availability = vectorMapAvailability(map);
-        if (progressive && !vectorMapReadyToPublish(map, view.center)) return;
+        if (progressive && !vectorMapReadyToPublish(map, view!.center)) return;
         if (availability.requested && !availability.usable) {
             console.warn('Better Peakbagger vector map: No usable viewport tiles.'); fail(); return;
         }
         if (progressive) publishPaint();
-    } catch (error) { console.warn('Better Peakbagger vector map:', error.message); fail(); }
+    } catch (error) { console.warn('Better Peakbagger vector map:', (error as Error).message); fail(); }
 };
 window.addEventListener('message', async event => {
     const data = event.data;
@@ -97,7 +100,7 @@ window.addEventListener('message', async event => {
             for (const [id, callback] of callbacks) if (frames.delete(id)) callback(timestamp);
             // A render that completed during capture still needs a fresh
             // snapshot, even when MapLibre has no animation callback left.
-            if (!callbacks.length) map.redraw();
+            if (!callbacks.length) map!.redraw();
             if (frames.size) requestDraw();
         } catch (error) { fail(error); }
         return;
@@ -108,12 +111,12 @@ window.addEventListener('message', async event => {
         const owner = ++revision;
         generation = data.generation; view = readVectorView(data.view);
         try {
-            const ext = globalThis.browser || globalThis.chrome;
+            const ext = (globalThis as unknown as { browser?: typeof chrome }).browser || globalThis.chrome;
             const reply = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_CONSUME', token: data.activation, action: 'init' });
             if (disposed || owner !== revision) return;
             if (reply?.ok !== true) { fail(); return; }
             active = true; settledView = null; lastSize = ''; lastCamera = '';
-            timer = setTimeout(fail, 15000); map.setStyle(style, { diff: false }); update();
+            timer = setTimeout(fail, 15000); map!.setStyle(style as unknown as StyleSpecification, { diff: false }); update();
         } catch (error) { if (owner === revision) fail(error); }
         return;
     }
@@ -122,7 +125,7 @@ window.addEventListener('message', async event => {
     attempted = true; parentOrigin = event.origin; generation = data.generation; view = readVectorView(data.view);
     timer = setTimeout(() => { console.warn('Better Peakbagger vector map: Initialization timed out.'); fail(); }, 15000);
     try {
-        const ext = globalThis.browser || globalThis.chrome;
+        const ext = (globalThis as unknown as { browser?: typeof chrome }).browser || globalThis.chrome;
         const reply = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_CONSUME', token: data.activation, action: 'init' });
         if (disposed) return;
         if (reply?.ok !== true) { fail(); return; }
@@ -137,14 +140,14 @@ window.addEventListener('message', async event => {
             requests.add(controller);
             return request(parameters, controller).finally(() => requests.delete(controller));
         });
-        map = new maplibre.Map({ container: document.getElementById('map'), style,
-            center: [view.center[1], view.center[0]], zoom: view.zoom, minZoom: -1, maxZoom: 23,
+        map = new maplibre.Map({ container: document.getElementById('map')!, style: style as unknown as StyleSpecification,
+            center: [view!.center[1], view!.center[0]], zoom: view!.zoom, minZoom: -1, maxZoom: 23,
             // Leaflet owns the camera, including world views and polar edges.
             // Fitting this overscanned frame to Mercator bounds shifts geometry.
             transformConstrain: (center, zoom) => ({ center, zoom }),
             interactive: false, attributionControl: false, fadeDuration: 0, zoomLevelsToOverscale: undefined,
             transformRequest(url) {
-                return { url: vectorRequestUrl(url, basemap), credentials: 'omit', referrerPolicy: 'no-referrer' };
+                return { url: vectorRequestUrl(url, basemap), credentials: 'omit', referrerPolicy: 'no-referrer' } as unknown as RequestParameters;
             },
         });
         map.on('error', error => { console.warn('Better Peakbagger vector map:', error.error?.message || 'Map resource unavailable.'); });
@@ -158,7 +161,7 @@ window.addEventListener('message', async event => {
         map.on('render', () => settled(true));
         map.getCanvas().addEventListener('webglcontextlost', fail);
         update();
-    } catch (error) { if (!disposed) { console.warn('Better Peakbagger vector map:', error.message); fail(error); } }
+    } catch (error) { if (!disposed) { console.warn('Better Peakbagger vector map:', (error as Error).message); fail(error); } }
 });
 window.addEventListener('pagehide', dispose);
 // No preconnect, provider fetch or renderer exists until a one-use worker

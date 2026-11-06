@@ -8,7 +8,7 @@
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
-import { terrainBasemap } from '../terrain/terrain-basemap.js';
+import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';

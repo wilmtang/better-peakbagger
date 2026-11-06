@@ -2,47 +2,58 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
+import type { VectorBasemap, VectorView } from './vector-basemap.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
-export function installVectorMapBridge(win = window, ext = globalThis.browser || globalThis.chrome) {
-    const entries = new Map(), parked = new Map();
+interface BridgeEntry {
+    id: string; basemap: VectorBasemap; frame: HTMLIFrameElement | null; view: VectorView | null; paused: boolean; revision: number;
+    drawFrame?: number | null; drawQueued?: boolean; timer?: number; expiry?: number; initializing?: boolean;
+    loaded?: boolean; released?: boolean; generation?: number | null;
+}
+interface BridgeExtension {
+    runtime: { getURL(path: string): string; sendMessage(message: unknown): Promise<{ ok?: boolean; token?: string } | undefined> };
+}
+type VectorControl = (HTMLSelectElement | HTMLButtonElement) & { dataset: DOMStringMap };
+
+export function installVectorMapBridge(win: Window & typeof globalThis = window, ext: BridgeExtension = (globalThis as { browser?: BridgeExtension }).browser || globalThis.chrome as unknown as BridgeExtension) {
+    const entries = new Map<string, BridgeEntry>(), parked = new Map<string, BridgeEntry>();
     const url = ext.runtime.getURL('terrain/vector.html'), parsed = new URL(url);
     const origin = parsed.origin === 'null' ? `${parsed.protocol}//${parsed.host}` : parsed.origin;
     let active = true, sequence = 0;
-    const cooldowns = new Map();
-    const retryAt = basemap => readRetryAt(cooldowns.get(basemap.id));
-    const post = (id, type, detail = {}, transfer = []) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toPage', id, type, ...detail }, win.location.origin, transfer);
-    const key = entry => `${entry.id}:${entry.basemap.id}`;
-    const remove = entry => {
+    const cooldowns = new Map<string, number>();
+    const retryAt = (basemap: VectorBasemap) => readRetryAt(cooldowns.get(basemap.id));
+    const post = (id: string, type: string, detail: Record<string, unknown> = {}, transfer: Transferable[] = []) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toPage', id, type, ...detail }, win.location.origin, transfer);
+    const key = (entry: BridgeEntry) => `${entry.id}:${entry.basemap.id}`;
+    const remove = (entry: BridgeEntry) => {
         if (entry.drawFrame != null) win.cancelAnimationFrame(entry.drawFrame); entry.drawFrame = null; entry.drawQueued = false;
         win.clearTimeout(entry.timer); win.clearTimeout(entry.expiry); entry.revision++; entry.initializing = false;
         entry.frame?.remove(); entry.frame = null; entry.loaded = false; entry.released = false;
         if (parked.get(key(entry)) === entry) parked.delete(key(entry));
     };
-    const stop = id => { const entry = entries.get(id); if (entry) remove(entry); entries.delete(id); };
+    const stop = (id: string) => { const entry = entries.get(id); if (entry) remove(entry); entries.delete(id); };
     // A suspended page ignores errors and later resumes this same selection, so
     // only its renderer is discarded; resuming then boots or reports afresh.
-    const fail = entry => { if (entries.get(entry.id) !== entry || entry.paused) { remove(entry); return; } stop(entry.id); post(entry.id, 'error', { retryAt: retryAt(entry.basemap), basemap: entry.basemap.id }); };
-    const send = (entry, type, detail = {}) => entry.frame?.contentWindow?.postMessage({
+    const fail = (entry: BridgeEntry) => { if (entries.get(entry.id) !== entry || entry.paused) { remove(entry); return; } stop(entry.id); post(entry.id, 'error', { retryAt: retryAt(entry.basemap), basemap: entry.basemap.id }); };
+    const send = (entry: BridgeEntry, type: string, detail: Record<string, unknown> = {}) => entry.frame?.contentWindow?.postMessage({
         [VECTOR_MESSAGE]: true, dir: 'toFrame', type, ...detail,
     }, origin);
-    const release = entry => {
+    const release = (entry: BridgeEntry) => {
         if (entry.drawFrame != null) win.cancelAnimationFrame(entry.drawFrame); entry.drawFrame = null; entry.drawQueued = false;
         win.clearTimeout(entry.timer); entry.revision++; entry.generation = null; entry.initializing = false; entry.paused = true;
         if (!entry.loaded) { remove(entry); return; }
         // The frame clears its style and aborts every provider request. Keep
         // only its GL/worker setup and accepted style for a bounded warm start.
-        send(entry, 'release'); entry.released = true; entry.frame.dataset.bpbVectorParked = 'true';
+        send(entry, 'release'); entry.released = true; entry.frame!.dataset.bpbVectorParked = 'true';
         win.clearTimeout(entry.expiry);
         entry.expiry = win.setTimeout(() => remove(entry), VECTOR_KEEPALIVE_MS);
     };
-    const park = id => {
+    const park = (id: string) => {
         const entry = entries.get(id); if (!entry) return;
         release(entry); entries.delete(id);
         if (entry.frame) parked.set(key(entry), entry);
     };
-    const activate = async (entry, type) => {
+    const activate = async (entry: BridgeEntry, type: string) => {
         if (entry.initializing) return;
         entry.initializing = true;
         entry.generation = ++sequence;
@@ -55,7 +66,7 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
             send(entry, type, { activation: activation.token, view: entry.view, basemap: entry.basemap.id, generation: entry.generation });
         } catch { if (isCurrent()) fail(entry); }
     };
-    const ensure = entry => {
+    const ensure = (entry: BridgeEntry) => {
         if (!active || !entry.view || entry.paused) return;
         if (retryAt(entry.basemap)) { fail(entry); return; }
         if (entry.frame) {
@@ -75,14 +86,14 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         entry.timer = win.setTimeout(() => fail(entry), 20000);
         slot.append(frame);
     };
-    const trusted = event => {
+    const trusted = (event: Event) => {
         if (!active || !event.isTrusted) return;
-        const control = event.target?.closest?.('[data-bpb-vector-map]');
+        const control = (event.target as Element | null)?.closest?.('[data-bpb-vector-map]') as VectorControl | null | undefined;
         if (!control
             || event.type === 'click' && (control.tagName !== 'BUTTON' || control.getAttribute('aria-disabled') === 'true')) return;
         const basemap = vectorBasemap(event.type === 'change' ? control.value : control.dataset.bpbVectorBasemap);
         if (!basemap) return;
-        const id = control.dataset.bpbVectorMap;
+        const id = control.dataset.bpbVectorMap as string;
         if (!/^[a-z0-9-]{1,80}$/i.test(id || '')) return;
         park(id);
         if (retryAt(basemap)) { post(id, 'error', { retryAt: retryAt(basemap), basemap: basemap.id }); return; }
@@ -92,7 +103,7 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         if (cached) { parked.delete(key(cached)); win.clearTimeout(cached.expiry); cached.view = null; cached.paused = false; }
         entries.set(id, cached || { id, basemap, frame: null, view: null, paused: false, revision: 0 });
     };
-    const receive = async event => {
+    const receive = async (event: MessageEvent) => {
         const data = event.data;
         if (!active || !data || data[VECTOR_MESSAGE] !== true) return;
         if (data.dir === 'fromFrame' && event.origin === origin) {

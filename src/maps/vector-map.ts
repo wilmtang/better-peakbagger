@@ -2,18 +2,59 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, VECTOR_BASEMAPS, VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
+import type { VectorPaint } from './vector-basemap.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
-export function bindVectorMap(win, map, select) {
+// The minimal Leaflet contract used here; Peakbagger's page owns the library.
+interface LeafletPoint {
+    x: number; y: number; add(other: LeafletPoint): LeafletPoint; subtract(other: LeafletPoint): LeafletPoint;
+    multiplyBy(factor: number): LeafletPoint; round(): LeafletPoint;
+}
+interface LeafletLatLng { lat: number; lng: number; wrap(): LeafletLatLng; }
+interface LeafletLayer { options?: { bpbVector?: boolean; bpbOverlay?: boolean; pane?: string }; addTo(map: LeafletMap): LeafletLayer; }
+interface LeafletMap {
+    getContainer(): HTMLElement; getPane(name: string): HTMLElement | undefined; createPane(name: string): HTMLElement;
+    getSize(): LeafletPoint; getCenter(): LeafletLatLng; getZoom(): number; getZoomScale(to: number, from: number): number;
+    latLngToLayerPoint(point: LeafletLatLng): LeafletPoint; layerPointToContainerPoint(point: LeafletPoint): LeafletPoint;
+    containerPointToLayerPoint(point: LeafletPoint): LeafletPoint;
+    _latLngToNewLayerPoint(point: LeafletLatLng, zoom: number, center: LeafletLatLng): LeafletPoint;
+    _animatingZoom?: boolean; attributionControl?: { getContainer(): HTMLElement | undefined };
+    hasLayer(layer: LeafletLayer): boolean; addLayer(layer: LeafletLayer): unknown; removeLayer(layer: LeafletLayer): unknown;
+    eachLayer(callback: (layer: LeafletLayer) => void): void;
+    on(type: string, callback: () => void): unknown; off(type: string, callback: () => void): unknown; once(type: string, callback: () => void): unknown;
+    options?: { crs?: unknown };
+}
+interface LeafletZoomEvent { zoom: number; center: LeafletLatLng; }
+interface VectorLayerInstance extends LeafletLayer {
+    element?: HTMLElement; surface?: HTMLCanvasElement; context?: ImageBitmapRenderingContext | CanvasRenderingContext2D | null;
+    painted?: VectorPaint | null; motion?: number | null; hostPosition: LeafletPoint;
+    moving(): void; clearPaint(): void; paintedCenter(paint?: VectorPaint): LeafletLatLng;
+    geometry(paint: VectorPaint): { scale: number; offset: LeafletPoint; coverage: number; zoomError: number };
+    position(): void; paint(data: PaintMessage): boolean; update(): void; animateZoom(event: LeafletZoomEvent): void;
+}
+interface PaintMessage extends Partial<VectorPaint> { bitmap: ImageBitmap; }
+interface LeafletNamespace {
+    Layer: { extend<T>(properties: T & ThisType<VectorLayerInstance>): new () => VectorLayerInstance };
+    GridLayer: new () => LeafletLayer; CRS?: { EPSG3857?: unknown };
+    DomEvent: { disableClickPropagation(element: HTMLElement): void };
+    DomUtil: { setPosition(element: HTMLElement, point: LeafletPoint): void; setTransform(element: HTMLElement, offset: LeafletPoint, scale: number): void };
+    point(x: number, y: number): LeafletPoint; latLng(value: [number, number]): LeafletLatLng;
+}
+type LeafletWindow = Window & typeof globalThis & {
+    L: LeafletNamespace; mapsPlaceholder?: LeafletMap; map?: LeafletMap; [leafletMaps: symbol]: LeafletMap[] | undefined;
+};
+interface VectorBinding { dispose(): void; reset(): void; select: HTMLSelectElement; map: LeafletMap; }
+
+export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLSelectElement): VectorBinding {
     const L = win.L, doc = win.document, container = map.getContainer();
-    const id = win.crypto.randomUUID(), native = [], elements = new Map(), previousId = select.dataset.bpbVectorMap;
+    const id = win.crypto.randomUUID(), native: LeafletLayer[] = [], elements = new Map<string, HTMLElement>(), previousId = select.dataset.bpbVectorMap;
     const options = VECTOR_BASEMAPS.map(basemap => { const option = doc.createElement('option'); option.value = basemap.code; option.textContent = basemap.name; return option; });
     select.append(...options); select.dataset.bpbVectorMap = id;
     const previousWidth = select.style.width, pickerStyle = win.getComputedStyle(select);
-    const surround = select.closest('#selboxdiv'), previousSurroundId = surround?.dataset.bpbVectorPicker;
+    const surround = select.closest<HTMLElement>('#selboxdiv'), previousSurroundId = surround?.dataset.bpbVectorPicker;
     if (surround) surround.dataset.bpbVectorPicker = id;
-    const metrics = doc.createElement('canvas').getContext('2d');
+    const metrics = doc.createElement('canvas').getContext('2d')!;
     metrics.font = `${pickerStyle.fontStyle} ${pickerStyle.fontWeight} ${pickerStyle.fontSize} ${pickerStyle.fontFamily}`;
     // Firefox can defer the new option's intrinsic width until selection.
     // Reserve its label and native arrow before interaction, bounded to the map.
@@ -21,9 +62,9 @@ export function bindVectorMap(win, map, select) {
     // overflows Peakbagger's fixed 170px wrapper and can hide the native arrow.
     select.style.width = `${Math.ceil(Math.max(...[...select.options].map(item => metrics.measureText(item.textContent).width)) + 40)}px`;
     const reservedPickerWidth = select.style.width;
-    let previous = select.value, layer = null, paused = false, replacing = false, disposed = false, attributionReservation = null;
-    let basemap = VECTOR_BASEMAP, retryTimer = null;
-    const cooldowns = new Map();
+    let previous = select.value, layer: VectorLayerInstance | null = null, paused = false, replacing = false, disposed = false, attributionReservation: { element: HTMLElement; minHeight: string; visibility: string } | null = null;
+    let basemap = VECTOR_BASEMAP, retryTimer: number | null = null;
+    const cooldowns = new Map<string, number>();
     const status = doc.createElement('div'); status.className = 'bpb-vector-status'; status.hidden = true;
     const message = doc.createElement('span'); message.setAttribute('role', 'status');
     const retry = doc.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.dataset.bpbVectorMap = id;
@@ -32,7 +73,7 @@ export function bindVectorMap(win, map, select) {
     status.append(retry, message, dismiss); container.append(status);
     L.DomEvent.disableClickPropagation(status);
     const credits = doc.createElement('div'); credits.className = 'leaflet-control-attribution bpb-vector-credits';
-    const creditLink = (href, text) => { const link = doc.createElement('a'); link.href = href; link.textContent = text; return link; };
+    const creditLink = (href: string, text: string) => { const link = doc.createElement('a'); link.href = href; link.textContent = text; return link; };
     const logo = creditLink('https://www.maptoolkit.org/', ''); logo.className = 'bpb-vector-maptoolkit-logo'; logo.id = `bpb-vector-logo-${id}`; logo.setAttribute('aria-label', 'Maptoolkit'); logo.hidden = true;
     logo.target = '_blank'; logo.rel = 'noopener noreferrer';
     container.append(logo); L.DomEvent.disableClickPropagation(logo);
@@ -50,11 +91,11 @@ export function bindVectorMap(win, map, select) {
         if (!credits.hidden) container.style.setProperty('--bpb-vector-credit-height', `${credits.offsetHeight}px`);
     });
     creditResize.observe(credits);
-    const pickerKey = event => event.stopPropagation();
+    const pickerKey = (event: Event) => event.stopPropagation();
     // Some native shells place the picker inside Leaflet's keyboard target.
     // Arrow keys belong to that picker while it has focus, not to map panning.
     select.addEventListener('keydown', pickerKey);
-    const post = (type, view) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toCS', id, type, view }, win.location.origin);
+    const post = (type: string, view?: unknown) => win.postMessage({ [VECTOR_MESSAGE]: true, dir: 'toCS', id, type, view }, win.location.origin);
     const view = () => {
         const point = map.getCenter().wrap();
         return readVectorView({ center: [point.lat, point.lng], zoom: map.getZoom() - 1 });
@@ -64,7 +105,7 @@ export function bindVectorMap(win, map, select) {
         retry.setAttribute('aria-disabled', String(retrying)); select.setAttribute('aria-busy', 'true');
     };
     const cooldown = () => {
-        win.clearTimeout(retryTimer);
+        win.clearTimeout(retryTimer!);
         const until = readRetryAt(cooldowns.get(basemap.id));
         retry.setAttribute('aria-disabled', String(!!until));
         message.textContent = until ? `${basemap.provider} is busy. Retry after ${new Date(until).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.` : 'Vector map unavailable.';
@@ -85,7 +126,7 @@ export function bindVectorMap(win, map, select) {
             attributionReservation = { element: attribution, minHeight: attribution.style.minHeight, visibility: attribution.style.visibility };
             attribution.style.minHeight = `${attribution.offsetHeight}px`;
         }
-        map.eachLayer(item => {
+        map.eachLayer((item: LeafletLayer) => {
             if (item instanceof L.GridLayer && !item.options?.bpbOverlay && (!item.options?.pane || item.options.pane === 'tilePane')) {
                 native.push(item); map.removeLayer(item);
             }
@@ -115,7 +156,7 @@ export function bindVectorMap(win, map, select) {
             this.update();
         },
         onRemove() {
-            win.cancelAnimationFrame(this.motion); this.element.hidden = true; this.element.className = 'bpb-vector-parked';
+            win.cancelAnimationFrame(this.motion!); this.element!.hidden = true; this.element!.className = 'bpb-vector-parked';
             this.clearPaint();
             if (!replacing) post('stop');
         },
@@ -125,12 +166,12 @@ export function bindVectorMap(win, map, select) {
             this.motion = win.requestAnimationFrame(() => { this.motion = null; if (!paused && !map._animatingZoom) this.update(); });
         },
         clearPaint() { this.painted = null; if (this.surface) { this.surface.width = 0; this.surface.height = 0; } },
-        paintedCenter(paint = this.painted) {
+        paintedCenter(this: VectorLayerInstance, paint: VectorPaint = this.painted!) {
             const center = L.latLng(paint.view.center);
             center.lng += Math.round((map.getCenter().lng - center.lng) / 360) * 360;
             return center;
         },
-        geometry(paint) {
+        geometry(paint: VectorPaint) {
             const scale = map.getZoomScale(map.getZoom(), paint.view.zoom + 1), size = L.point(paint.width, paint.height).multiplyBy(scale);
             const offset = map.latLngToLayerPoint(this.paintedCenter(paint)).subtract(size.multiplyBy(.5));
             const origin = map.layerPointToContainerPoint(offset), viewport = map.getSize();
@@ -141,9 +182,9 @@ export function bindVectorMap(win, map, select) {
         position() {
             if (!this.painted) return;
             const { offset, scale } = this.geometry(this.painted);
-            L.DomUtil.setTransform(this.surface, offset.subtract(this.hostPosition), scale);
+            L.DomUtil.setTransform(this.surface!, offset.subtract(this.hostPosition), scale);
         },
-        paint(data) {
+        paint(data: PaintMessage) {
             const paint = readVectorPaint(data);
             if (!paint || map._animatingZoom) { data.bitmap.close(); return false; }
             const incoming = this.geometry(paint), current = this.painted && this.geometry(this.painted);
@@ -155,11 +196,12 @@ export function bindVectorMap(win, map, select) {
                 data.bitmap.close(); return false;
             }
             if (!this.context) throw new Error('Vector map canvas unavailable.');
-            if (this.surface.width !== data.bitmap.width) this.surface.width = data.bitmap.width;
-            if (this.surface.height !== data.bitmap.height) this.surface.height = data.bitmap.height;
-            this.surface.style.width = `${paint.width}px`; this.surface.style.height = `${paint.height}px`;
-            if (typeof this.context.transferFromImageBitmap === 'function') this.context.transferFromImageBitmap(data.bitmap);
-            else { this.context.clearRect(0, 0, this.surface.width, this.surface.height); this.context.drawImage(data.bitmap, 0, 0); data.bitmap.close(); }
+            if (this.surface!.width !== data.bitmap.width) this.surface!.width = data.bitmap.width;
+            if (this.surface!.height !== data.bitmap.height) this.surface!.height = data.bitmap.height;
+            this.surface!.style.width = `${paint.width}px`; this.surface!.style.height = `${paint.height}px`;
+            const context = this.context as ImageBitmapRenderingContext & CanvasRenderingContext2D;
+            if (typeof context.transferFromImageBitmap === 'function') context.transferFromImageBitmap(data.bitmap);
+            else { context.clearRect(0, 0, this.surface!.width, this.surface!.height); context.drawImage(data.bitmap, 0, 0); data.bitmap.close(); }
             // Image and camera change in this one task. The iframe's later
             // repaint can never be exposed under an earlier Leaflet transform.
             this.painted = paint; this.position(); return true;
@@ -181,23 +223,23 @@ export function bindVectorMap(win, map, select) {
             this.element.style.width = `${size.x}px`; this.element.style.height = `${size.y}px`;
             if (!paused) post('view', view());
         },
-        animateZoom(event) {
+        animateZoom(event: LeafletZoomEvent) {
             if (!this.painted) return;
             const scale = map.getZoomScale(event.zoom, this.painted.view.zoom + 1);
             const offset = map._latLngToNewLayerPoint(this.paintedCenter(), event.zoom, event.center).subtract(L.point(this.painted.width, this.painted.height).multiplyBy(.5 * scale));
-            L.DomUtil.setTransform(this.surface, offset.subtract(this.hostPosition), scale);
+            L.DomUtil.setTransform(this.surface!, offset.subtract(this.hostPosition), scale);
         },
     });
     const stop = () => {
-        win.clearTimeout(retryTimer); retryTimer = null;
+        win.clearTimeout(retryTimer!); retryTimer = null;
         if (layer) map.removeLayer(layer);
         layer = null; restore(); status.hidden = true; select.removeAttribute('aria-busy');
     };
     const start = (retrying = false, selected = basemap) => {
         replacing = true; stop(); replacing = false; basemap = selected; retry.dataset.bpbVectorBasemap = basemap.id; renderCredits();
-        paused = false; pending(retrying); layer = new VectorLayer().addTo(map);
+        paused = false; pending(retrying); layer = new VectorLayer().addTo(map) as VectorLayerInstance;
     };
-    const change = event => {
+    const change = (event: Event) => {
         const selected = vectorBasemap(select.value);
         if (selected) {
             // Peakbagger's switch has no such code. Do not let it remove its
@@ -207,8 +249,8 @@ export function bindVectorMap(win, map, select) {
             start(false, selected);
         } else { stop(); previous = select.value; }
     };
-    const retryClick = event => { if (event.isTrusted && !readRetryAt(cooldowns.get(basemap.id)) && retry.getAttribute('aria-disabled') !== 'true') { select.value = basemap.code; start(true); } };
-    const receive = event => {
+    const retryClick = (event: Event) => { if (event.isTrusted && !readRetryAt(cooldowns.get(basemap.id)) && retry.getAttribute('aria-disabled') !== 'true') { select.value = basemap.code; start(true); } };
+    const receive = (event: MessageEvent) => {
         const data = event.data;
         if (event.source !== win || event.origin !== win.location.origin || data?.[VECTOR_MESSAGE] !== true
             || data.dir !== 'toPage' || data.id !== id) return;
@@ -216,23 +258,23 @@ export function bindVectorMap(win, map, select) {
             if (!layer || paused || data.basemap !== basemap.id) { data.bitmap.close(); return; }
             try { if (!layer.paint(data)) return; }
             catch { data.bitmap.close(); post('stop'); unavailable(); return; }
-            layer.element.style.opacity = '1'; holdNative(); status.hidden = true; select.removeAttribute('aria-busy');
+            layer.element!.style.opacity = '1'; holdNative(); status.hidden = true; select.removeAttribute('aria-busy');
             if (doc.activeElement === retry) select.focus({ preventScroll: true });
         } else if (data.type === 'error' && layer && !paused && data.basemap === basemap.id) unavailable(data.retryAt);
     };
-    const unavailable = retryAt => {
+    const unavailable = (retryAt?: unknown) => {
         cooldowns.set(basemap.id, Math.max(cooldowns.get(basemap.id) || 0, readRetryAt(retryAt) || 0));
         stop(); select.value = previous; status.hidden = false; retry.hidden = false; dismiss.hidden = false; cooldown();
     };
     const pause = () => {
         if (!layer || paused) return;
-        paused = true; post('pause'); layer.element.style.opacity = '0'; layer.clearPaint(); restore(); status.hidden = true;
+        paused = true; post('pause'); layer.element!.style.opacity = '0'; layer.clearPaint(); restore(); status.hidden = true;
     };
     const resume = () => {
         if (!layer || !paused) return;
         paused = false; pending(); layer.update(); post('resume', view());
     };
-    const terrain = event => {
+    const terrain = (event: MessageEvent) => {
         if (event.source !== win.parent || event.origin !== win.location.origin || event.data?.__bpbTerrain !== true) return;
         if (event.data.dir === 'toCS' && event.data.type === 'init') pause();
         if (event.data.dir === 'toCS' && event.data.type === 'destroy') resume();
@@ -245,7 +287,7 @@ export function bindVectorMap(win, map, select) {
     try { win.parent.addEventListener('message', terrain); } catch { /* Standalone map. */ }
     const dispose = () => {
         if (disposed) return; disposed = true;
-        win.clearTimeout(retryTimer);
+        win.clearTimeout(retryTimer!);
         stop(); post('dispose'); for (const element of elements.values()) element.remove(); elements.clear();
         if (vectorBasemap(select.value)) select.value = previous;
         for (const option of options) option.remove(); status.remove(); credits.remove(); logo.remove(); creditResize.disconnect();
@@ -266,16 +308,16 @@ export function bindVectorMap(win, map, select) {
     return { dispose, reset() { stop(); select.value = previous; }, select, map };
 }
 
-export function installVectorMaps(win = window) {
-    const bindings = new Map(), unloaded = new WeakSet(); let timer = null, active = true;
+export function installVectorMaps(win = window as LeafletWindow) {
+    const bindings = new Map<LeafletMap, VectorBinding>(), unloaded = new WeakSet<LeafletMap>(); let timer: number | null = null, active = true;
     const scan = () => {
         if (!active || !win.L?.Layer || !win.L?.GridLayer || !win.L?.CRS?.EPSG3857) return;
         for (const [map, binding] of bindings) if (!map.getContainer().isConnected || !binding.select.isConnected) { binding.dispose(); bindings.delete(map); }
-        const maps = new Set([win.mapsPlaceholder, win.map, ...win[Symbol.for('bpb.leafletMaps')] || []]);
+        const maps = new Set<LeafletMap | undefined>([win.mapsPlaceholder, win.map, ...win[Symbol.for('bpb.leafletMaps')] || []]);
         for (const map of maps) {
             if (!map?.getContainer || !map.getContainer().isConnected || bindings.has(map) || unloaded.has(map)
                 || map.options?.crs !== win.L.CRS.EPSG3857) continue;
-            const select = map.getContainer().querySelector('#selmap') || win.document.getElementById('selmap');
+            const select = (map.getContainer().querySelector('#selmap') || win.document.getElementById('selmap')) as HTMLSelectElement | null;
             if (select && !select.dataset.bpbVectorMap) {
                 bindings.set(map, bindVectorMap(win, map, select));
                 map.once('unload', () => { unloaded.add(map); bindings.delete(map); });
@@ -290,7 +332,7 @@ export function installVectorMaps(win = window) {
         onSuspend() { active = false; for (const binding of bindings.values()) binding.reset(); },
         onResume() { active = true; scan(); },
         onDispose() {
-            active = false; observer.disconnect(); clearTimeout(timer); win.removeEventListener('bpb-map-ready', schedule);
+            active = false; observer.disconnect(); clearTimeout(timer!); win.removeEventListener('bpb-map-ready', schedule);
             for (const binding of bindings.values()) binding.dispose(); bindings.clear();
         },
     });
