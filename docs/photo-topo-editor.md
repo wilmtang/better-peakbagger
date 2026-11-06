@@ -73,7 +73,7 @@ containment is scoped to the view toolbar, keeping the image and contextual
 field outside that layout boundary.
 
 Focused hidden packaged-browser verification: build, then run
-`node scripts/verify-photo-editor.mjs`. Optional screenshots are written only
+`node scripts/verify-photo-editor.mts`. Optional screenshots are written only
 when `BPB_PHOTO_SCREENSHOTS` names an output directory. This check exercises
 real extension storage, zoom/pan/drawing coordinates, stable control geometry,
 resizing, and desktop/narrow layouts without navigating to a live site.

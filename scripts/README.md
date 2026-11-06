@@ -78,7 +78,7 @@ independent of the existing targets.
 
 ## Complete extension and package verification
 
-- [verify-extension.mjs](verify-extension.mjs)
+- [verify-extension.mts](verify-extension.mts)
 - [verify-firefox-extension.mts](verify-firefox-extension.mts)
 - [verify-packaged-extensions.mjs](verify-packaged-extensions.mjs)
 
@@ -177,7 +177,7 @@ independent of the existing targets.
 - [verify-ascent-column-widths.mjs](verify-ascent-column-widths.mjs) — native peak/ascent metadata widths, nested map containment and card edge alignment, run by `layout-stability`.
 - [verify-ascent-filters.mjs](verify-ascent-filters.mjs) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.
 - [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
-- [verify-photo-editor.mjs](verify-photo-editor.mjs)
+- [verify-photo-editor.mts](verify-photo-editor.mts)
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
 - [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
 - [verify-report-caption-stability.mts](verify-report-caption-stability.mts)

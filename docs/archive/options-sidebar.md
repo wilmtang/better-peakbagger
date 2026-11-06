@@ -155,7 +155,7 @@ Each step is a commit-sized unit; run `npm test` before committing.
      is what step 5 is for.
 5. **Real-browser verification** (AGENTS.md rules): hidden Chrome for Testing
    (`channel: 'chromium'`, `headless: true`, `--load-extension` per
-   `scripts/verify-extension.mjs`), open `options/options.html`, and check:
+   `scripts/verify-extension.mts`), open `options/options.html`, and check:
    click-to-scroll, highlight tracking while scrolling, bottom clamp on the
    last section, deep link (`#map-chart`) on load, light + dark, narrow
    viewport, and keyboard Tab order/focus rings. Screenshot the page, not the

@@ -80,7 +80,7 @@ intentional worker→page boundary.
 - **Step 8 done** — all transitional `globalThis.BPB*` bridges removed; only
   `provider-page`'s deliberate page-world API remains. Fixed fallout: worker-boot test asserts
   only the registered listener; big-map/options tests poke settings via chrome.storage / schema
-  instead of the removed page global; `verify-extension.mjs` readiness probes switched from
+  instead of the removed page global; `verify-extension.mts` readiness probes switched from
   `window.BPB*` to real DOM signals (the rendered toggle proves the bundle initialized). 240
   green; verify:extension passes. **Zero-globals ESM achieved.**
 - **Step 7 done** — `background` drops its `importScripts` block and imports `{ captureCore }`

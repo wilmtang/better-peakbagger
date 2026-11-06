@@ -103,7 +103,7 @@ Requested follow-up: reproduce and fix intermittent 2D zoom flicker on
   change its registration or privacy rules.
 - `npm run verify -- chrome` reaches the existing Garmin Settings visibility
   timeout in `scripts/verify-settings-navigation.mjs` (line 308), called from
-  `scripts/verify-extension.mjs`. The required gate was run again after the
+  `scripts/verify-extension.mts`. The required gate was run again after the
   bridge change; it is not reported as passing.
 
 ## Changed but not fully proven

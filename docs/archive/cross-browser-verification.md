@@ -150,7 +150,7 @@ next begins.
 ### Step 1 — Name the verification tiers
 
 - Add `verify:chrome` as the authoritative name for the current
-  `scripts/verify-extension.mjs` behavior.
+  `scripts/verify-extension.mts` behavior.
 - Keep `verify:extension` as an alias so existing docs and CI do not break
   mid-migration.
 - Document the target commands without claiming Firefox coverage yet.
@@ -371,7 +371,7 @@ The plan is complete when:
 
 ## 8. Implementation references
 
-- [`scripts/verify-extension.mjs`](../../scripts/verify-extension.mjs) — real
+- [`scripts/verify-extension.mts`](../../scripts/verify-extension.mts) — real
   Chrome fixture server, isolated profile, manifest load, and assertions.
 - [`scripts/verify-firefox-extension.mts`](../../scripts/verify-firefox-extension.mts)
   — real Firefox manifest, background, surface, storage, and draft-handoff

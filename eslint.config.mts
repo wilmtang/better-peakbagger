@@ -86,7 +86,7 @@ export default defineConfig([
         rules,
     },
     {
-        files: ['scripts/verify-extension.mjs'],
+        files: ['scripts/verify-extension.mts'],
         languageOptions: {
             globals: { ...globals.node, ...globals.browser, ...globals.webextensions },
         },

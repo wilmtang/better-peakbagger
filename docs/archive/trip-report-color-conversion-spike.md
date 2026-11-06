@@ -321,7 +321,7 @@ Add cases in `test/reports/report-editor.test.mjs` proving:
 
 ### Hidden real-browser verification
 
-Extend `scripts/verify-extension.mjs` to exercise the real unpacked extension
+Extend `scripts/verify-extension.mts` to exercise the real unpacked extension
 in hidden Chrome for Testing at its existing 1000×760 viewport:
 
 1. Enter hex markup in Plain.

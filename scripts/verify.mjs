@@ -9,9 +9,9 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const targets = {
     garmin: [['verify-garmin-ui.mjs']],
     connections: [['verify-connections.mjs']],
-    chrome: [['verify-extension.mjs']],
+    chrome: [['verify-extension.mts']],
     firefox: [['verify-firefox-extension.mts']],
-    browsers: [['verify-extension.mjs'], ['verify-firefox-extension.mts']],
+    browsers: [['verify-extension.mts'], ['verify-firefox-extension.mts']],
     'capture-popup': [['verify-capture-popup.mjs']],
     'layout-stability': [['verify-layout-stability.mts']],
     'fixture-preflight': [['verify-fixture-preflight.mjs']],

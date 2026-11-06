@@ -260,7 +260,7 @@ bundled with any other popup commit.
   `host_permissions`; normalizing would churn many files for no behavior
   change.
 - `test/options/options.test.mjs` (1,843 lines) and
-  `scripts/verify-extension.mjs` (1,916 lines) are large but cohesive test
+  `scripts/verify-extension.mts` (1,916 lines) are large but cohesive test
   tooling; splitting them risks more than it buys today.
 - Rewriting the `\n\n` commit bodies — history is immutable here; the process
   note above is the fix.

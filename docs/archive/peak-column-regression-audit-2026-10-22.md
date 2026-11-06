@@ -60,7 +60,7 @@ Commands actually run:
 | Focused project fixture, inventory, documentation and placement checks | 21 passed |
 | ESLint on every changed JavaScript module/test | Passed |
 | `node scripts/check-web-ext-lint.mjs` | Passed with the eight existing owner-reviewed warnings |
-| `node scripts/verify-extension.mjs` | Hidden Chrome for Testing 156.0.8078.4 passed, base viewport 1000×760, BFCache and teardown passed |
+| `node scripts/verify-extension.mts` | Hidden Chrome for Testing 156.0.8078.4 passed, base viewport 1000×760, BFCache and teardown passed |
 | `node scripts/verify-firefox-extension.mts` | Hidden Firefox 158.0.1 passed, base viewport 1000×760, BFCache and teardown passed |
 | `node scripts/verify-ascent-weather.mjs --cards` and the same command with `--firefox` | Both passed at 1440×1100 and 375×1100, light/dark, plus 200% browser zoom; teardown passed |
 | `git diff --check` | Passed |

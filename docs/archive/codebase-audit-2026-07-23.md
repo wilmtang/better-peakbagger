@@ -223,7 +223,7 @@ run.
   analyzer's inline unit control with its new three-option width, the "Outline"
   labels in Settings and on the map control, and the settings-import
   confirmation in its new busy state. The audit session had a visual
-  verification pass in flight — extending `scripts/verify-extension.mjs` with
+  verification pass in flight — extending `scripts/verify-extension.mts` with
   screenshot hooks for these controls — when it hit its usage limit. That
   extension was not completed and is the most useful next step.
 - **The live delete-mirroring transaction has not been exercised against real

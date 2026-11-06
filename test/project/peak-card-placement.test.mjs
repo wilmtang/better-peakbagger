@@ -28,7 +28,7 @@ test('the shared browser gate accepts an independent card while retaining the na
 });
 
 test('Chrome and Firefox broad gates serialize the same placement contract', async () => {
-    const chrome = await readFile(new URL('../../scripts/verify-extension.mjs', import.meta.url), 'utf8');
+    const chrome = await readFile(new URL('../../scripts/verify-extension.mts', import.meta.url), 'utf8');
     const firefox = await readFile(new URL('../../scripts/verify-firefox-extension.mts', import.meta.url), 'utf8');
     assert.match(chrome, /waitForFunction\(readPeakSunPlacement\)/);
     assert.match(firefox, /webdriverScript\(readPeakSunPlacement\)/);

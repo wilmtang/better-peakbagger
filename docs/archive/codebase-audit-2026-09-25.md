@@ -49,7 +49,7 @@ subsystems are complex.
 | `npm test` | **1,943 passed; 0 failed** | Rebuilt shipped bundles; Node/jsdom coverage |
 | `npm run lint` | Passed, with eight owned web-ext warnings | One manifest, five MapLibre, one ProseMirror, one TipTap warning |
 | `npm run test:scale` | **14 passed; 0 failed** | Node/jsdom scale checks; not a browser interaction-latency measurement |
-| `node scripts/verify-extension.mjs` | Passed against the freshly built unpacked extension | Hidden Chrome for Testing 153.0.8010.12, new headless; base viewport 1000×760, with the verifier's additional narrow states |
+| `node scripts/verify-extension.mts` | Passed against the freshly built unpacked extension | Hidden Chrome for Testing 153.0.8010.12, new headless; base viewport 1000×760, with the verifier's additional narrow states |
 | `npm run audit:ci` | **Failed: expired acceptance** | F7; passing functional tests do not make this gate green |
 | `node --test test/project/documentation.test.mjs` | **3 passed; 0 failed** after writing this plan | Documentation links and repository paths |
 | `git diff --check` | Passed | Whitespace validation |
@@ -307,7 +307,7 @@ Final local verification:
   warning acceptance. `npm run audit:ci`: zero vulnerabilities.
 - `npm run package`: passed for the patched dependency toolchain. No package
   was published, signed, tagged, or uploaded.
-- `node scripts/verify-extension.mjs`: passed with the real unpacked extension
+- `node scripts/verify-extension.mts`: passed with the real unpacked extension
   in hidden Chrome for Testing **153.0.8010.12**, base viewport **1000×760**
   plus the verifier's narrow states.
 - `node scripts/verify-firefox-extension.mts`: passed in hidden Firefox

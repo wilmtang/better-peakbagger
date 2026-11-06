@@ -1,3 +1,6 @@
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+/* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
@@ -66,6 +69,47 @@ import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
 import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mjs';
 
+import type { BrowserContext, ConsoleMessage, Download, JSHandle, Locator, Page } from 'playwright';
+
+// Page-world callbacks run against fixtures whose markup this script owns, so a
+// lookup is treated as the union of the elements these checks actually read.
+type PageElement = HTMLElement & HTMLInputElement & HTMLAnchorElement & HTMLImageElement & HTMLTableElement & HTMLTableRowElement & { contentWindow: Window };
+// The stored shapes these checks read back. Every value is optional because a
+// check commonly polls until the record appears.
+interface StoredBuddyEntry { cid: number; [field: string]: unknown }
+interface StoredRecords {
+    bpbSettings: Record<string, string | number | boolean | null | undefined> & { units?: string; mapRouteColor?: string };
+    bpbImgbbAuth: { key?: string }; bpbFavoriteClimbers: { entries: StoredBuddyEntry[]; [field: string]: unknown }; bpbBetaSettingsTabs: Record<number, unknown>; bpbCaptureJobs: Record<number, unknown>; bpbDraftTabs: Record<number, unknown>; bpbBuddyCache: { entries: StoredBuddyEntry[]; ownerCid: number; [field: string]: unknown };
+    bpbDeviceSettings: { settings: Record<string, number> }; [key: string]: never | object | undefined;
+}
+
+// Playwright deserializes page results as untyped JSON; the checks assert on them directly.
+type PageResult = Awaited<ReturnType<JSHandle['jsonValue']>>;
+
+// Instrumentation these checks plant in page and worker globals.
+declare global {
+    interface Window {
+        __bpbNativeFetch: typeof fetch; __bpbBuddyRequests: number; __bpbBuddyRequestTimes: number[]; __bpbBuddyHelperReads: object[];
+        __bpbNativeTabMessage: typeof chrome.tabs.sendMessage; __bpbBuddyNativeRuntimeMessage: typeof chrome.runtime.sendMessage;
+        __bpbNativeRuntimeSendMessage: typeof chrome.runtime.sendMessage; __bpbReleaseMissingBuddyWorker: () => void;
+        __bpbBuddyTabDiagnostics: { restore(): void; events: object[] }; __bpbBuddyNativeCreate: typeof chrome.tabs.create;
+        __bpbMirrorBuddyRequests: number; __bpbHeldReplacement: ((response: object) => void) | null; __bpbReplacementDismissals: number;
+        __bpbReplacementWasHidden: boolean | string; __bpbReplacementObserver: MutationObserver;
+        __bpbThemeStartupProbe: { addedStyles: string[]; firstFrame: { theme: string | null; background: string } | null };
+        __bpbSettingsPushes: { settings?: Record<string, unknown> }[]; __bpbScaleFrameGaps: number[]; __bpbResetScaleFrameGaps: () => void;
+        __bpbReportActivationProbe: unknown[]; __bpbScaleChart: unknown; __bpbTerrain: unknown; __bpbTerrainProbe: unknown; __bpbTerrainFrame: unknown;
+        __bpbPeakTerrainInit: unknown; __bpbPeakBigMapTerrainInit: unknown;
+    }
+    var __bpbMaxCardsPerPhoto: number;
+    var Chart: { getChart(canvas: unknown): { data: { datasets: { data: { _raw?: unknown }[] }[] }; [member: string]: unknown } };
+    var BPBPeakbaggerPage: { accountEvidence(): unknown; request(id: string, url: string, resource: string): unknown };
+    var __bpbIgnoredGithub: { head: number; proposals: Map<string, { path: string; content: string }[]>; commits: Map<string, string>; files: Record<string, string>; race?: boolean };
+    var __bpbSliderEvents: { input: number; change: number };
+    var __bpbForgedAuthorization: Promise<unknown>;
+    var __bpbIgnoredOriginalFetch: typeof fetch;
+}
+
+
 assertChromeLaunchAllowed();
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -93,8 +137,8 @@ try {
 }
 
 const resources = createResourceStack();
-let profile;
-let fixture;
+let profile!: string;
+let fixture!: Awaited<ReturnType<typeof createBrowserFixtureServer>>;
 let setupError = null;
 try {
     profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
@@ -107,13 +151,13 @@ try {
         analyzerGpx: capitolRegressionGpx,
         analyzerGpxByCase: { scale: createScaleAnalyzerGpx(), suspect: segmentsGpx(suspectSegments()) },
         analyzerDelayMs: Math.max(0, Number(process.env.BPB_VERIFY_ANALYZER_DELAY_MS) || 0),
-    });
+    } as never);
     resources.defer('Chrome browser fixture', () => fixture.close());
 } catch (error) {
     setupError = error;
 }
-if (setupError) await resources.dispose(setupError);
-const port = fixture.port;
+if (setupError) await resources.dispose(setupError as never);
+const port = fixture!.port;
 const buddyListFixture = await resources.guard(readFile(
     path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'),
     'utf8',
@@ -128,15 +172,15 @@ const { failures, check } = failureCollector;
 
 // The dark site's global button rules used to paint the entire 44px media
 // touch target, leaving an unexplained square beside its tiny corner dot.
-const verifyMediaResizeAppearance = async (page, handle) => {
+const verifyMediaResizeAppearance = async (page: Page, handle: Locator) => {
     const originalTheme = await page.locator('html').getAttribute('data-bpb-theme');
     try {
         for (const theme of ['light', 'dark']) {
-            await page.locator('html').evaluate((html, value) => {
-                html.dataset.bpbTheme = value;
+            await page.locator('html').evaluate((html: Element, value: string) => {
+                (html as HTMLElement).dataset.bpbTheme = value;
             }, theme);
             await handle.hover();
-            const appearance = await handle.evaluate(element => {
+            const appearance = await handle.evaluate((element: HTMLElement) => {
                 const style = getComputedStyle(element);
                 const icon = getComputedStyle(element, '::before');
                 return {
@@ -157,21 +201,21 @@ const verifyMediaResizeAppearance = async (page, handle) => {
             `${theme} media resize should show a centered icon without button chrome: ${JSON.stringify(appearance)}`);
         }
     } finally {
-        await page.locator('html').evaluate((html, theme) => {
+        await page.locator('html').evaluate((html: Element, theme: string | null) => {
             if (theme === null) html.removeAttribute('data-bpb-theme');
-            else html.dataset.bpbTheme = theme;
+            else (html as HTMLElement).dataset.bpbTheme = theme;
         }, originalTheme);
     }
 };
 
-const readDownloadText = async download => {
+const readDownloadText = async (download: Download) => {
     const stream = await download.createReadStream();
     const chunks = [];
     for await (const chunk of stream) chunks.push(Buffer.from(chunk));
     return Buffer.concat(chunks).toString('utf8');
 };
 
-let context;
+let context!: BrowserContext;
 let requestEvidence;
 let primaryError = null;
 let chromeBfcacheResult = null;
@@ -187,7 +231,7 @@ try {
         ignoreDefaultArgs: ['--disable-back-forward-cache', '--enable-unsafe-swiftshader'],
         viewport: verificationViewport,
         args: [
-            ...fixture.chromeTrustArgs,
+            ...fixture!.chromeTrustArgs,
             `--disable-extensions-except=${dist}`,
             `--load-extension=${dist}`,
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'
@@ -195,7 +239,7 @@ try {
     });
     resources.defer('Chrome verification context', () => context.close());
     console.log(`Verification browser: ${assertVerificationBrowser({
-        name: context.browser().browserType().name(), version: context.browser().version(),
+        name: context.browser()!.browserType().name(), version: context.browser()!.version(),
         expectedName: 'chromium', expectedVersion: process.env.BPB_EXPECT_CHROME_VERSION,
     })}`);
     requestEvidence = watchFixtureRequests(context, `https://www.peakbagger.com:${port}`);
@@ -209,7 +253,7 @@ try {
         'tile.openstreetmap.org',
         'services.arcgisonline.com',
     ]);
-    const terrainProviderRequests = [];
+    const terrainProviderRequests: string[] = [];
     context.on('request', request => {
         try {
             const url = new URL(request.url());
@@ -229,12 +273,12 @@ try {
         const extensionRecord = await registryPage.waitForFunction(() => {
             try {
                 const records = JSON.parse(document.body.innerText);
-                return records.find(record => record.location === 'COMMAND_LINE'
+                return records.find((record: PageResult) => record.location === 'COMMAND_LINE'
                     && record.name === 'Better Peakbagger') || false;
             } catch {
                 return false;
             }
-        }, null, { timeout: 15000 }).then(handle => handle.jsonValue());
+        }, null, { timeout: 15000 }).then((handle: JSHandle) => handle.jsonValue());
         const registeredPath = await realpath(extensionRecord.path);
         const expectedPath = await realpath(dist);
         check(registeredPath === expectedPath
@@ -249,7 +293,7 @@ try {
     await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
     if (extensionId && optionsPage) {
         // A live worker answers; a bailed-out one has no listener at all.
-        const reply = await optionsPage.evaluate(async () =>
+        const reply: PageResult = await optionsPage.evaluate(async () =>
             chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: -1 })
                 .then(value => ({ ok: true, value: value ?? null, extensionId: chrome.runtime.id }))
                 .catch(error => ({ ok: false, error: String(error) })));
@@ -266,7 +310,7 @@ try {
                 session: 'bpbBrowserVerifySession'
             };
             const changed = new Promise(resolve => {
-                const listener = (changes, area) => {
+                const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
                     if (area === 'local' && changes[keys.local]?.newValue === 'local') {
                         chrome.storage.onChanged.removeListener(listener);
                         resolve(true);
@@ -280,9 +324,9 @@ try {
                 chrome.storage.session.set({ [keys.session]: 'session' })
             ]);
             const [sync, local, session, onChanged] = await Promise.all([
-                chrome.storage.sync.get(keys.sync),
-                chrome.storage.local.get(keys.local),
-                chrome.storage.session.get(keys.session),
+                chrome.storage.sync.get<StoredRecords>(keys.sync),
+                chrome.storage.local.get<StoredRecords>(keys.local),
+                chrome.storage.session.get<StoredRecords>(keys.session),
                 changed
             ]);
             await Promise.all([
@@ -294,7 +338,7 @@ try {
                 origin: location.origin,
                 version: chrome.runtime.getManifest().version,
                 optionsOpenInTab: chrome.runtime.getManifest().options_ui?.open_in_tab,
-                renderedVersion: document.getElementById('about-version')?.textContent,
+                renderedVersion: (document.getElementById('about-version') as PageElement | null)?.textContent,
                 values: [sync[keys.sync], local[keys.local], session[keys.session]],
                 onChanged
             };
@@ -319,13 +363,13 @@ try {
         check(imgbbSaved?.ok, `Chrome Settings could not save the ImgBB verifier key: ${
             JSON.stringify(imgbbSaved)}`);
         const imgbbOptionsState = await optionsPage.waitForFunction(() => {
-            const status = document.getElementById('imgbb-key-status')?.textContent || '';
+            const status = (document.getElementById('imgbb-key-status') as PageElement | null)?.textContent || '';
             if (!status.startsWith('ImgBB is configured')) return false;
             return {
                 status,
-                removeVisible: !document.getElementById('imgbb-key-remove')?.hidden,
+                removeVisible: !(document.getElementById('imgbb-key-remove') as PageElement | null)?.hidden,
             };
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(imgbbOptionsState?.removeVisible
             && /ImgBB is configured/.test(imgbbOptionsState?.status || ''),
         `Chrome Settings did not own the saved ImgBB connection: ${JSON.stringify(imgbbOptionsState)}`);
@@ -367,10 +411,10 @@ try {
             });
         }
         const settingsImportCopy = await optionsPage.waitForFunction(() => {
-            const confirmation = document.getElementById('settings-backup-confirmation');
-            const copy = document.getElementById('settings-backup-confirmation-detail')?.textContent || '';
+            const confirmation = (document.getElementById('settings-backup-confirmation') as PageElement | null);
+            const copy = (document.getElementById('settings-backup-confirmation-detail') as PageElement | null)?.textContent || '';
             return !confirmation?.hidden && /settings and saved API keys/i.test(copy) ? copy : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(async () =>
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(async () =>
             optionsPage.locator('#settings-backup-confirmation-detail').textContent().catch(() => ''));
         check(/settings and saved API keys/i.test(settingsImportCopy || ''),
             `Chrome settings import did not disclose API-key replacement: ${JSON.stringify(settingsImportCopy)}`);
@@ -385,13 +429,13 @@ try {
             await optionsPage.locator('#github-settings-backup .card').screenshot({
                 path: process.env.BPB_VERIFY_SETTINGS_TRANSFER_NARROW_SCREENSHOT,
             });
-            if (previousViewport) await optionsPage.setViewportSize(previousViewport);
+            if (previousViewport) await optionsPage.setViewportSize(previousViewport!);
         }
         await optionsPage.locator('#settings-backup-confirm').click();
         const importedSettingsState = await waitForPageCondition(optionsPage, async () => {
             const [{ bpbSettings }, { bpbImgbbAuth }] = await Promise.all([
-                chrome.storage.sync.get('bpbSettings'),
-                chrome.storage.local.get('bpbImgbbAuth'),
+                chrome.storage.sync.get<StoredRecords>('bpbSettings'),
+                chrome.storage.local.get<StoredRecords>('bpbImgbbAuth'),
             ]);
             return bpbSettings?.units === 'imperial'
                 && bpbImgbbAuth?.key === 'browser-verification-imported';
@@ -404,8 +448,8 @@ try {
                 content,
             });
             const [{ bpbSettings }, { bpbImgbbAuth }] = await Promise.all([
-                chrome.storage.sync.get('bpbSettings'),
-                chrome.storage.local.get('bpbImgbbAuth'),
+                chrome.storage.sync.get<StoredRecords>('bpbSettings'),
+                chrome.storage.local.get<StoredRecords>('bpbImgbbAuth'),
             ]);
             return {
                 response,
@@ -421,12 +465,12 @@ try {
 
         await optionsPage.locator('#units').selectOption('metric');
         const optionPersisted = await waitForPageCondition(optionsPage, async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'metric',
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.units === 'metric',
         null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(optionPersisted, 'the Chrome options page did not persist a real setting change');
         await optionsPage.locator('#units').selectOption('auto');
         await waitForPageCondition(optionsPage, async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'auto',
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.units === 'auto',
         null, { timeout: 5000 });
         await optionsPage.evaluate(async () => {
             // Use the worker's settings queue. A raw read/replace here can
@@ -448,7 +492,7 @@ try {
 
         // --- Extension-owned photo editor and local library -----------------
         const photoPage = await context.newPage();
-        const photoErrors = [];
+        const photoErrors: string[] = [];
         photoPage.on('pageerror', error => photoErrors.push(String(error)));
         // Record the worst duplication the grid ever showed rather than a single
         // late sample: overlapping renders can settle, so sampling once cannot
@@ -456,11 +500,11 @@ try {
         await photoPage.addInitScript(() => {
             globalThis.__bpbMaxCardsPerPhoto = 0;
             addEventListener('DOMContentLoaded', () => {
-                const list = document.getElementById('library-list');
+                const list = (document.getElementById('library-list') as PageElement | null);
                 if (!list) return;
                 const sample = () => {
                     const counts = new Map();
-                    for (const heading of list.querySelectorAll('.photo-card h3')) {
+                    for (const heading of list.querySelectorAll<PageElement>('.photo-card h3')) {
                         counts.set(heading.textContent, (counts.get(heading.textContent) || 0) + 1);
                     }
                     for (const count of counts.values()) {
@@ -474,16 +518,16 @@ try {
         await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html?mode=library`);
         await photoPage.locator('#library-view').waitFor({ state: 'visible', timeout: 5000 });
         const photoLibraryState = await photoPage.waitForFunction(() => {
-            const status = document.getElementById('photo-backup-status')?.textContent || '';
+            const status = (document.getElementById('photo-backup-status') as PageElement | null)?.textContent || '';
             if (/Checking/.test(status)) return false;
             return {
-                heading: document.getElementById('library-heading')?.textContent,
-                backup: document.querySelector('.backup-card')?.textContent,
+                heading: (document.getElementById('library-heading') as PageElement | null)?.textContent,
+                backup: document.querySelector<PageElement>('.backup-card')?.textContent,
                 status,
-                credentialHidden: document.getElementById('credential-card')?.hidden,
+                credentialHidden: (document.getElementById('credential-card') as PageElement | null)?.hidden,
                 horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(photoLibraryState?.heading === 'Photo library'
             && /photo-library\.json/.test(photoLibraryState?.backup || '')
             && /Original images, API keys, and remote deletion links stay on this device/.test(
@@ -509,26 +553,26 @@ try {
                 canvas.width = 900;
                 canvas.height = 600;
                 const drawing = canvas.getContext('2d');
-                const sky = drawing.createLinearGradient(0, 0, 0, 600);
+                const sky = drawing!.createLinearGradient(0, 0, 0, 600);
                 sky.addColorStop(0, '#8fc7e8');
                 sky.addColorStop(1, '#f2dfba');
-                drawing.fillStyle = sky;
-                drawing.fillRect(0, 0, 900, 600);
-                drawing.fillStyle = '#566b60';
-                drawing.beginPath();
-                drawing.moveTo(0, 600);
-                drawing.lineTo(260, 230);
-                drawing.lineTo(430, 410);
-                drawing.lineTo(640, 150);
-                drawing.lineTo(900, 600);
-                drawing.closePath();
-                drawing.fill();
+                drawing!.fillStyle = sky;
+                drawing!.fillRect(0, 0, 900, 600);
+                drawing!.fillStyle = '#566b60';
+                drawing!.beginPath();
+                drawing!.moveTo(0, 600);
+                drawing!.lineTo(260, 230);
+                drawing!.lineTo(430, 410);
+                drawing!.lineTo(640, 150);
+                drawing!.lineTo(900, 600);
+                drawing!.closePath();
+                drawing!.fill();
                 const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
                 const transfer = new DataTransfer();
-                transfer.items.add(new File([blob], 'browser-verification-topo.png', { type: 'image/png' }));
-                const input = document.getElementById('photo-file');
+                transfer.items.add(new File([blob as Blob], 'browser-verification-topo.png', { type: 'image/png' }));
+                const input: PageResult = (document.getElementById('photo-file') as PageElement | null);
                 Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
-                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input!.dispatchEvent(new Event('change', { bubbles: true }));
             });
         }
         await photoPage.locator('#editor-workspace').waitFor({ state: 'visible', timeout: 5000 });
@@ -553,17 +597,17 @@ try {
             await photoPage.locator('#finish-route').click();
         }
         const photoEditorState = await photoPage.waitForFunction(() => {
-            const saved = document.getElementById('save-status')?.textContent || '';
-            const route = document.querySelector('#photo-overlay path');
+            const saved = (document.getElementById('save-status') as PageElement | null)?.textContent || '';
+            const route = document.querySelector<PageElement>('#photo-overlay path');
             if (!/Saved on this device/.test(saved) || !route) return false;
-            const viewport = document.getElementById('photo-viewport')?.getBoundingClientRect();
+            const viewport = (document.getElementById('photo-viewport') as PageElement | null)?.getBoundingClientRect();
             return {
                 saved,
                 route: route.getAttribute('d'),
-                upload: document.getElementById('upload-insert')?.textContent,
+                upload: (document.getElementById('upload-insert') as PageElement | null)?.textContent,
                 viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
             };
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(photoEditorState?.route
             && photoEditorState.upload === 'Upload to ImgBB'
             && photoEditorState.viewport?.width > 300
@@ -581,7 +625,7 @@ try {
         await photoPage.locator('#add-at-center').focus();
         await photoPage.keyboard.press('Enter');
         await photoPage.waitForFunction(() =>
-            document.querySelectorAll('#annotation-list [data-object-id]').length === 2);
+            document.querySelectorAll<PageElement>('#annotation-list [data-object-id]').length === 2);
         const boltControl = photoPage.locator('#annotation-list [data-object-id]', {
             hasText: /^Bolt$/,
         });
@@ -613,10 +657,10 @@ try {
         const routeAfterKeyboardNudge = await selectedRoutePath.getAttribute('d');
         await photoPage.keyboard.press('Control+z');
         const semanticEditorState = await photoPage.evaluate(() => ({
-            annotations: [...document.querySelectorAll('#annotation-list [data-object-id]')]
+            annotations: [...document.querySelectorAll<PageElement>('#annotation-list [data-object-id]')]
                 .map(button => button.textContent),
-            overlayHidden: document.getElementById('photo-overlay')?.getAttribute('aria-hidden'),
-            focusedVertex: document.activeElement?.dataset?.vertex ?? null,
+            overlayHidden: (document.getElementById('photo-overlay') as PageElement | null)?.getAttribute('aria-hidden'),
+            focusedVertex: (document.activeElement as HTMLElement | null)?.dataset?.vertex ?? null,
             selectedVertex: document.activeElement?.getAttribute?.('aria-pressed') ?? null,
             restoredRoute: document.querySelector(
                 '#photo-overlay [data-bpb-object].selected > path:not([data-bpb-hit-target])'
@@ -659,10 +703,10 @@ try {
         const widthBox = await routeWidthControl.boundingBox();
         const widthBefore = await routeWidthControl.inputValue();
         await photoPage.evaluate(() => {
-            const slider = document.getElementById('route-width');
+            const slider = (document.getElementById('route-width') as PageElement | null);
             globalThis.__bpbSliderEvents = { input: 0, change: 0 };
-            slider.addEventListener('input', () => { globalThis.__bpbSliderEvents.input += 1; });
-            slider.addEventListener('change', () => { globalThis.__bpbSliderEvents.change += 1; });
+            slider!.addEventListener('input', () => { globalThis.__bpbSliderEvents.input += 1; });
+            slider!.addEventListener('change', () => { globalThis.__bpbSliderEvents.change += 1; });
         });
         if (widthBox) {
             const thumbFraction = (Number(widthBefore) - 1) / 99;
@@ -678,15 +722,15 @@ try {
         }
         const sliderUndoState = await photoPage.evaluate(async widthAtStart => {
             const events = { ...globalThis.__bpbSliderEvents };
-            const dragged = document.getElementById('route-width').value;
-            document.getElementById('undo').click();
+            const dragged = (document.getElementById('route-width') as PageElement | null)!.value;
+            (document.getElementById('undo') as PageElement | null)!.click();
             await new Promise(resolve => setTimeout(resolve, 0));
             return {
                 events,
                 dragged,
-                afterOneUndo: document.getElementById('route-width').value,
+                afterOneUndo: (document.getElementById('route-width') as PageElement | null)!.value,
                 widthAtStart,
-                routeSurvived: !!document.querySelector('#photo-overlay path'),
+                routeSurvived: !!document.querySelector<PageElement>('#photo-overlay path'),
             };
         }, widthBefore);
         check(sliderUndoState.events.input >= 5
@@ -699,19 +743,19 @@ try {
             photoErrors,
         })}`);
         const originalUploadState = await photoPage.waitForFunction(() => {
-            const estimate = document.getElementById('upload-estimate')?.textContent || '';
+            const estimate = (document.getElementById('upload-estimate') as PageElement | null)?.textContent || '';
             if (!/^Estimated upload ·/.test(estimate)) return false;
-            const format = document.getElementById('upload-format');
+            const format = (document.getElementById('upload-format') as PageElement | null);
             return {
                 format: format?.value,
-                labels: [...(format?.options || [])].map(option => option.textContent),
-                qualityHidden: document.getElementById('jpeg-quality-control')?.hidden,
+                labels: [...((format as unknown as HTMLSelectElement | null)?.options || [])].map(option => option.textContent),
+                qualityHidden: (document.getElementById('jpeg-quality-control') as PageElement | null)?.hidden,
                 estimate,
-                note: document.getElementById('upload-estimate-note')?.textContent,
-                sourceWidth: document.getElementById('source-image')?.naturalWidth,
-                sourceHeight: document.getElementById('source-image')?.naturalHeight,
+                note: (document.getElementById('upload-estimate-note') as PageElement | null)?.textContent,
+                sourceWidth: (document.getElementById('source-image') as PageElement | null)?.naturalWidth,
+                sourceHeight: (document.getElementById('source-image') as PageElement | null)?.naturalHeight,
             };
-        }, null, { timeout: 10_000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 10_000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(originalUploadState?.format === 'original'
             && originalUploadState.labels.join('|')
                 === 'Follow original format · PNG|PNG · lossless|JPEG · smaller file'
@@ -726,27 +770,27 @@ try {
 
         await photoPage.locator('#upload-format').selectOption('jpeg');
         await photoPage.locator('#jpeg-quality').evaluate(input => {
-            input.value = '70';
+            (input as HTMLInputElement).value = '70';
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
         });
         const jpegUploadState = await photoPage.waitForFunction(() => {
-            const estimate = document.getElementById('upload-estimate')?.textContent || '';
-            const saved = document.getElementById('save-status')?.textContent || '';
+            const estimate = (document.getElementById('upload-estimate') as PageElement | null)?.textContent || '';
+            const saved = (document.getElementById('save-status') as PageElement | null)?.textContent || '';
             if (!/^Estimated upload ·/.test(estimate) || !/Saved on this device/.test(saved)) return false;
-            const footer = document.querySelector('.editor-footer')?.getBoundingClientRect();
+            const footer = document.querySelector<PageElement>('.editor-footer')?.getBoundingClientRect();
             return {
-                format: document.getElementById('upload-format')?.value,
-                qualityHidden: document.getElementById('jpeg-quality-control')?.hidden,
-                quality: document.getElementById('jpeg-quality')?.value,
-                qualityLabel: document.getElementById('jpeg-quality-value')?.textContent,
+                format: (document.getElementById('upload-format') as PageElement | null)?.value,
+                qualityHidden: (document.getElementById('jpeg-quality-control') as PageElement | null)?.hidden,
+                quality: (document.getElementById('jpeg-quality') as PageElement | null)?.value,
+                qualityLabel: (document.getElementById('jpeg-quality-value') as PageElement | null)?.textContent,
                 estimate,
-                note: document.getElementById('upload-estimate-note')?.textContent,
-                sourceWidth: document.getElementById('source-image')?.naturalWidth,
-                sourceHeight: document.getElementById('source-image')?.naturalHeight,
+                note: (document.getElementById('upload-estimate-note') as PageElement | null)?.textContent,
+                sourceWidth: (document.getElementById('source-image') as PageElement | null)?.naturalWidth,
+                sourceHeight: (document.getElementById('source-image') as PageElement | null)?.naturalHeight,
                 footerHeight: footer?.height,
             };
-        }, null, { timeout: 10_000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 10_000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(jpegUploadState?.format === 'jpeg'
             && jpegUploadState.qualityHidden === false
             && jpegUploadState.quality === '70'
@@ -760,7 +804,7 @@ try {
             photoErrors,
         })}`);
         if (photoShowcaseSource && overlayBounds) {
-            const place = async (tool, x, y) => {
+            const place = async (tool: string, x: number, y: number) => {
                 await photoPage.locator(`[data-tool="${tool}"]`).click();
                 await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * x,
                     overlayBounds.y + overlayBounds.height * y);
@@ -779,11 +823,11 @@ try {
             await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.39,
                 overlayBounds.y + overlayBounds.height * 0.65);
             await photoPage.waitForFunction(() => {
-                const saved = document.getElementById('save-status')?.textContent || '';
-                const estimate = document.getElementById('upload-estimate')?.textContent || '';
+                const saved = (document.getElementById('save-status') as PageElement | null)?.textContent || '';
+                const estimate = (document.getElementById('upload-estimate') as PageElement | null)?.textContent || '';
                 return /Saved on this device/.test(saved)
                     && /^Estimated upload ·/.test(estimate)
-                    && document.querySelectorAll('#photo-overlay [data-bpb-object]').length >= 6;
+                    && document.querySelectorAll<PageElement>('#photo-overlay [data-bpb-object]').length >= 6;
             }, null, { timeout: 10_000 });
         }
         if (process.env.BPB_VERIFY_PHOTO_SCREENSHOT) {
@@ -797,17 +841,17 @@ try {
         await photoPage.setViewportSize({ width: 520, height: 800 });
         const narrowPhotoState = await photoPage.evaluate(() => ({
             horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-            sidebarWidth: document.querySelector('.editor-sidebar')?.getBoundingClientRect().width,
-            annotationWidth: document.querySelector('.annotation-browser')?.getBoundingClientRect().width,
+            sidebarWidth: document.querySelector<PageElement>('.editor-sidebar')?.getBoundingClientRect().width,
+            annotationWidth: document.querySelector<PageElement>('.annotation-browser')?.getBoundingClientRect().width,
             bodyWidth: document.body.getBoundingClientRect().width,
-            footerHeight: document.querySelector('.editor-footer')?.getBoundingClientRect().height,
-            formatWidth: document.getElementById('upload-format')?.getBoundingClientRect().width,
+            footerHeight: document.querySelector<PageElement>('.editor-footer')?.getBoundingClientRect().height,
+            formatWidth: (document.getElementById('upload-format') as PageElement | null)?.getBoundingClientRect().width,
         }));
         check(!narrowPhotoState.horizontalOverflow
-            && narrowPhotoState.sidebarWidth <= narrowPhotoState.bodyWidth
-            && narrowPhotoState.annotationWidth <= narrowPhotoState.bodyWidth
-            && narrowPhotoState.footerHeight < 420
-            && narrowPhotoState.formatWidth <= narrowPhotoState.bodyWidth,
+            && narrowPhotoState.sidebarWidth! <= narrowPhotoState.bodyWidth
+            && narrowPhotoState.annotationWidth! <= narrowPhotoState.bodyWidth
+            && narrowPhotoState.footerHeight! < 420
+            && narrowPhotoState.formatWidth! <= narrowPhotoState.bodyWidth,
         `the narrow photo editor overflowed horizontally: ${JSON.stringify(narrowPhotoState)}`);
         if (process.env.BPB_VERIFY_PHOTO_NARROW_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, 0));
@@ -816,25 +860,25 @@ try {
                 fullPage: true,
             });
         }
-        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
+        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport!);
 
         // Reopen on the library with that autosaved photo in IndexedDB. This is
         // the "Choose from library…" entry point, and it is the one boot where
         // setView() and initialize() both start a render.
         await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html?mode=library`);
         const listedPhotoState = await photoPage.waitForFunction(() => {
-            const cards = document.querySelectorAll('#library-list .photo-card');
-            const storage = document.getElementById('storage-summary')?.textContent || '';
+            const cards = document.querySelectorAll<PageElement>('#library-list .photo-card');
+            const storage = (document.getElementById('storage-summary') as PageElement | null)?.textContent || '';
             // storage-summary is written at the end of a render pass, so this
             // waits for a finished list rather than a partly drawn one.
             if (!cards.length || !storage) return false;
             return {
                 cards: cards.length,
-                titles: [...cards].map(card => card.querySelector('h3')?.textContent),
+                titles: [...cards].map(card => card.querySelector<PageElement>('h3')?.textContent),
                 maxCardsPerPhoto: globalThis.__bpbMaxCardsPerPhoto,
-                emptyHidden: document.getElementById('library-empty')?.hidden,
+                emptyHidden: (document.getElementById('library-empty') as PageElement | null)?.hidden,
             };
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(listedPhotoState?.cards === 1
             && listedPhotoState.maxCardsPerPhoto === 1
             && listedPhotoState.titles[0] === photoTitle
@@ -850,12 +894,12 @@ try {
         // bundle, and CSS; the scale suite separately pins catalog timing and
         // transaction counts in a deterministic harness.
         await photoPage.evaluate(async () => {
-            const database = await new Promise((resolve, reject) => {
+            const database: PageResult = await new Promise((resolve, reject) => {
                 const request = indexedDB.open('betterPeakbaggerPhotos');
                 request.onsuccess = () => resolve(request.result);
                 request.onerror = () => reject(request.error);
             });
-            const [photo, thumbnail] = await new Promise((resolve, reject) => {
+            const [photo, thumbnail]: PageResult = await new Promise((resolve, reject) => {
                 const transaction = database.transaction(['photos', 'thumbnails']);
                 const photoRequest = transaction.objectStore('photos').getAll();
                 const thumbnailRequest = transaction.objectStore('thumbnails').getAll();
@@ -895,22 +939,22 @@ try {
         });
         await photoPage.reload();
         const pagedLibraryState = await photoPage.waitForFunction(() => {
-            const cards = document.querySelectorAll('#library-list .photo-card');
-            const pagination = document.getElementById('library-pagination');
+            const cards = document.querySelectorAll<PageElement>('#library-list .photo-card');
+            const pagination = (document.getElementById('library-pagination') as PageElement | null);
             if (cards.length !== 48 || pagination?.hidden) return false;
-            const pageStatus = document.getElementById('library-page-status')?.textContent || '';
-            const paginationRect = pagination.getBoundingClientRect();
+            const pageStatus = (document.getElementById('library-page-status') as PageElement | null)?.textContent || '';
+            const paginationRect = pagination!.getBoundingClientRect();
             return {
                 cards: cards.length,
                 pageStatus,
-                previousDisabled: document.getElementById('library-previous')?.disabled,
-                nextDisabled: document.getElementById('library-next')?.disabled,
+                previousDisabled: (document.getElementById('library-previous') as PageElement | null)?.disabled,
+                nextDisabled: (document.getElementById('library-next') as PageElement | null)?.disabled,
                 paginationWidth: paginationRect.width,
                 viewportWidth: document.documentElement.clientWidth,
                 horizontalOverflow:
                     document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(pagedLibraryState?.cards === 48
             && pagedLibraryState.pageStatus === 'Page 1 of 2 · 49 photos'
             && pagedLibraryState.previousDisabled === true
@@ -929,11 +973,11 @@ try {
 
         await photoPage.setViewportSize({ width: 520, height: 800 });
         const narrowLibraryState = await photoPage.evaluate(() => {
-            const pagination = document.getElementById('library-pagination');
-            const bounds = pagination.getBoundingClientRect();
+            const pagination = (document.getElementById('library-pagination') as PageElement | null);
+            const bounds = pagination!.getBoundingClientRect();
             return {
-                cards: document.querySelectorAll('#library-list .photo-card').length,
-                pageStatus: document.getElementById('library-page-status')?.textContent,
+                cards: document.querySelectorAll<PageElement>('#library-list .photo-card').length,
+                pageStatus: (document.getElementById('library-page-status') as PageElement | null)?.textContent,
                 paginationLeft: bounds.left,
                 paginationRight: bounds.right,
                 viewportWidth: document.documentElement.clientWidth,
@@ -954,20 +998,20 @@ try {
         }
         await photoPage.locator('#library-next').click();
         const secondPageState = await photoPage.waitForFunction(() => {
-            const pageStatus = document.getElementById('library-page-status')?.textContent || '';
+            const pageStatus = (document.getElementById('library-page-status') as PageElement | null)?.textContent || '';
             if (pageStatus !== 'Page 2 of 2 · 49 photos') return false;
             return {
-                cards: document.querySelectorAll('#library-list .photo-card').length,
-                previousDisabled: document.getElementById('library-previous')?.disabled,
-                nextDisabled: document.getElementById('library-next')?.disabled,
+                cards: document.querySelectorAll<PageElement>('#library-list .photo-card').length,
+                previousDisabled: (document.getElementById('library-previous') as PageElement | null)?.disabled,
+                nextDisabled: (document.getElementById('library-next') as PageElement | null)?.disabled,
             };
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(secondPageState?.cards === 1
             && secondPageState.previousDisabled === false
             && secondPageState.nextDisabled === true,
         `the packaged photo library did not navigate to its final page: ${
             JSON.stringify(secondPageState)}`);
-        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
+        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport!);
 
         // A report return context adds presentation controls to both Library
         // and Editor. The token need not be worker-valid until an insertion is
@@ -986,10 +1030,10 @@ try {
         await photoPage.locator('#upload-format').selectOption('jpeg');
         await photoPage.locator('#jpeg-quality-control').waitFor({ state: 'visible', timeout: 5000 });
         await waitForPageCondition(photoPage, async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.reportImageWidth === 320,
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.reportImageWidth === 320,
         null, { timeout: 5000 });
         const reportSizeState = await photoPage.evaluate(() => {
-            const rect = node => {
+            const rect = (node: PageResult) => {
                 const bounds = node?.getBoundingClientRect();
                 return bounds ? {
                     top: bounds.top,
@@ -1000,17 +1044,17 @@ try {
                     height: bounds.height,
                 } : null;
             };
-            const visible = [...document.querySelectorAll('[data-report-width-control]')]
+            const visible = [...document.querySelectorAll<PageElement>('[data-report-width-control]')]
                 .find(control => !control.hidden && control.offsetParent);
-            const stage = document.getElementById('photo-stage');
+            const stage = (document.getElementById('photo-stage') as PageElement | null);
             const stageRect = stage?.getBoundingClientRect();
             const controlRect = visible?.getBoundingClientRect();
-            const estimateBox = document.querySelector('.upload-estimate');
-            const estimateStrong = document.getElementById('upload-estimate');
-            const estimateNote = document.getElementById('upload-estimate-note');
+            const estimateBox = document.querySelector<PageElement>('.upload-estimate');
+            const estimateStrong = (document.getElementById('upload-estimate') as PageElement | null);
+            const estimateNote = (document.getElementById('upload-estimate-note') as PageElement | null);
             const estimateColors = () => ({
-                strong: getComputedStyle(estimateStrong).color,
-                note: getComputedStyle(estimateNote).color,
+                strong: getComputedStyle(estimateStrong!).color,
+                note: getComputedStyle(estimateNote!).color,
             });
             const estimateWasWarning = estimateBox?.classList.contains('is-warning');
             estimateBox?.classList.remove('is-warning');
@@ -1019,35 +1063,35 @@ try {
             const warningEstimateColors = estimateColors();
             estimateBox?.classList.toggle('is-warning', estimateWasWarning);
             return {
-                choices: [...document.querySelectorAll('[data-report-width]')]
+                choices: [...document.querySelectorAll<PageElement>('[data-report-width]')]
                     .map(select => ({
                         value: select.value,
-                        labels: [...select.options].map(option => option.textContent),
+                        labels: [...(select as unknown as HTMLSelectElement).options].map(option => option.textContent),
                     })),
-                note: visible?.querySelector('.report-width-note')?.textContent,
+                note: visible?.querySelector<PageElement>('.report-width-note')?.textContent,
                 stage: stageRect ? {
                     width: stageRect.width,
-                    maxWidth: getComputedStyle(stage).maxWidth,
+                    maxWidth: getComputedStyle(stage!).maxWidth,
                 } : null,
                 control: controlRect ? {
                     left: controlRect.left,
                     right: controlRect.right,
                     width: controlRect.width,
                 } : null,
-                exportSummary: document.getElementById('export-summary')?.textContent,
-                sourceWidth: document.getElementById('source-image')?.naturalWidth,
-                sourceHeight: document.getElementById('source-image')?.naturalHeight,
+                exportSummary: (document.getElementById('export-summary') as PageElement | null)?.textContent,
+                sourceWidth: (document.getElementById('source-image') as PageElement | null)?.naturalWidth,
+                sourceHeight: (document.getElementById('source-image') as PageElement | null)?.naturalHeight,
                 footer: {
-                    box: rect(document.querySelector('.editor-footer')),
-                    summary: rect(document.querySelector('.editor-summary')),
-                    options: rect(document.querySelector('.upload-options')),
-                    actions: rect(document.querySelector('.footer-actions')),
-                    format: rect(document.querySelector('.upload-options > .upload-option:first-child')),
-                    quality: rect(document.getElementById('jpeg-quality-control')),
-                    estimate: rect(document.querySelector('.upload-estimate')),
+                    box: rect(document.querySelector<PageElement>('.editor-footer')),
+                    summary: rect(document.querySelector<PageElement>('.editor-summary')),
+                    options: rect(document.querySelector<PageElement>('.upload-options')),
+                    actions: rect(document.querySelector<PageElement>('.footer-actions')),
+                    format: rect(document.querySelector<PageElement>('.upload-options > .upload-option:first-child')),
+                    quality: rect((document.getElementById('jpeg-quality-control') as PageElement | null)),
+                    estimate: rect(document.querySelector<PageElement>('.upload-estimate')),
                     reportSize: rect(visible),
-                    clear: rect(document.getElementById('clear-annotations')),
-                    primary: rect(document.getElementById('upload-insert')),
+                    clear: rect((document.getElementById('clear-annotations') as PageElement | null)),
+                    primary: rect((document.getElementById('upload-insert') as PageElement | null)),
                 },
                 estimateColors: {
                     neutral: neutralEstimateColors,
@@ -1057,9 +1101,9 @@ try {
                     document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
         });
-        const aligned = (first, second, edge, tolerance = 1) =>
+        const aligned = (first: PageResult, second: PageResult, edge: string, tolerance = 1) =>
             Math.abs((first?.[edge] ?? Number.NaN) - (second?.[edge] ?? Number.NaN)) <= tolerance;
-        const actionGap = reportSizeState.footer.primary?.left
+        const actionGap = (reportSizeState.footer.primary?.left as number)
             - reportSizeState.footer.clear?.right;
         check(reportSizeState.choices.length === 2
             && reportSizeState.choices.every(choice => choice.value === '320')
@@ -1067,7 +1111,7 @@ try {
                 choice.labels.join('|')
                     === 'Small · 320 px|Medium · 480 px|Large · 640 px|Original')
             && /Upload stays full resolution/.test(reportSizeState.note || '')
-            && reportSizeState.stage?.width <= 320.5
+            && (reportSizeState.stage?.width as number) <= 320.5
             && reportSizeState.stage?.maxWidth === '320px'
             && (reportSizeState.exportSummary || '').includes(
                 `${reportSizeState.sourceWidth} × ${reportSizeState.sourceHeight}`
@@ -1076,8 +1120,8 @@ try {
         `the report display choice changed pixels or failed to resize the stage: ${
             JSON.stringify(reportSizeState)
         }`);
-        check(reportSizeState.footer.estimate?.top >= reportSizeState.footer.actions?.bottom
-            && reportSizeState.footer.summary?.top >= reportSizeState.footer.actions?.bottom
+        check(reportSizeState.footer.estimate?.top >= (reportSizeState.footer.actions?.bottom as number)
+            && (reportSizeState.footer.summary?.top as number) >= (reportSizeState.footer.actions?.bottom as number)
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'left')
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'right')
             && aligned(reportSizeState.footer.format, reportSizeState.footer.reportSize, 'left')
@@ -1105,7 +1149,7 @@ try {
         }
         await photoPage.setViewportSize({ width: 520, height: 800 });
         const narrowReportSizeState = await photoPage.evaluate(() => {
-            const visible = [...document.querySelectorAll('[data-report-width-control]')]
+            const visible = [...document.querySelectorAll<PageElement>('[data-report-width-control]')]
                 .find(control => !control.hidden && control.offsetParent);
             const controlRect = visible?.getBoundingClientRect();
             return {
@@ -1115,16 +1159,16 @@ try {
                 controlWidth: controlRect?.width,
                 controlLeft: controlRect?.left,
                 controlRight: controlRect?.right,
-                stageWidth: document.getElementById('photo-stage')?.getBoundingClientRect().width,
-                footerHeight: document.querySelector('.editor-footer')?.getBoundingClientRect().height,
+                stageWidth: (document.getElementById('photo-stage') as PageElement | null)?.getBoundingClientRect().width,
+                footerHeight: document.querySelector<PageElement>('.editor-footer')?.getBoundingClientRect().height,
             };
         });
         check(!narrowReportSizeState.horizontalOverflow
-            && narrowReportSizeState.controlWidth <= narrowReportSizeState.bodyWidth
-            && narrowReportSizeState.controlLeft >= 0
-            && narrowReportSizeState.controlRight <= narrowReportSizeState.bodyWidth
-            && narrowReportSizeState.stageWidth <= 320.5
-            && narrowReportSizeState.footerHeight < 500,
+            && narrowReportSizeState.controlWidth! <= narrowReportSizeState.bodyWidth
+            && narrowReportSizeState.controlLeft! >= 0
+            && narrowReportSizeState.controlRight! <= narrowReportSizeState.bodyWidth
+            && narrowReportSizeState.stageWidth! <= 320.5
+            && narrowReportSizeState.footerHeight! < 500,
         `the narrow report-size control overflowed: ${JSON.stringify(narrowReportSizeState)}`);
         if (process.env.BPB_VERIFY_PHOTO_SIZE_NARROW_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, document.body.scrollHeight));
@@ -1133,15 +1177,15 @@ try {
                 fullPage: true,
             });
         }
-        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
+        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport!);
         await photoPage.locator('[data-report-width]').first().selectOption('640');
         await waitForPageCondition(photoPage, async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.reportImageWidth === 640,
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.reportImageWidth === 640,
         null, { timeout: 5000 });
 
         // Every other extension panel honors the Light/Dark setting; this page
         // shipped following only the OS color scheme.
-        const setVerificationTheme = theme => patchVerificationSettings(photoPage, { theme });
+        const setVerificationTheme = (theme: string) => patchVerificationSettings(photoPage, { theme });
         await setVerificationTheme('dark');
         await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html`);
         const photoThemeState = await photoPage.waitForFunction(() => {
@@ -1151,10 +1195,10 @@ try {
             // rather than pinning a literal here: this check is about the page
             // honoring the setting, and a hardcoded colour would have to be
             // re-pinned — silently, and possibly wrongly — on every repaint.
-            const probe = document.createElement('div');
+            const probe: PageResult = document.createElement('div');
             probe.style.color = 'var(--dark-bg)';
             document.body.append(probe);
-            const panelDark = getComputedStyle(probe).color;
+            const panelDark = getComputedStyle(probe!).color;
             probe.remove();
             return {
                 theme,
@@ -1167,10 +1211,10 @@ try {
                 // its own copy is the drift this consolidated away.
                 sharedSheet: [...document.styleSheets].some(sheet => /\/css\/panel\.css$/.test(sheet.href || '')),
             };
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(photoThemeState?.background === photoThemeState?.panelDark
-            && photoThemeState.colorScheme === 'dark'
-            && photoThemeState.sharedSheet === true,
+            && photoThemeState!.colorScheme === 'dark'
+            && photoThemeState!.sharedSheet === true,
         `the photo page ignored the extension's dark theme on a light OS: ${JSON.stringify({
             photoThemeState,
             photoErrors,
@@ -1195,22 +1239,22 @@ try {
             window.__bpbBuddyRequestTimes = [];
             window.__bpbBuddyHelperReads = [];
             window.__bpbNativeTabMessage = chrome.tabs.sendMessage;
-            chrome.tabs.sendMessage = function (...args) {
+            (chrome.tabs as PageResult).sendMessage = function (...args: PageResult[]) {
                 if (args[1]?.type !== 'BUDDY_PAGE_READ' || typeof args.at(-1) !== 'function') {
-                    return window.__bpbNativeTabMessage.apply(chrome.tabs, args);
+                    return (window.__bpbNativeTabMessage as PageResult).apply(chrome.tabs, args);
                 }
-                const callback = args.at(-1);
+                const callback: PageResult = args.at(-1);
                 const record = { at: Date.now(), tabId: args[0] };
                 window.__bpbBuddyHelperReads.push(record);
-                args[args.length - 1] = response => {
+                args[args.length - 1] = (response: PageResult) => {
                     Object.assign(record, { done: Date.now(), error: chrome.runtime.lastError?.message,
                         url: response?.url, fetchedAt: response?.cache?.fetchedAt,
                         ownerCid: response?.cache?.ownerCid, entries: response?.cache?.entries?.length });
                     callback(response);
                 };
-                return window.__bpbNativeTabMessage.apply(chrome.tabs, args);
+                return (window.__bpbNativeTabMessage as PageResult).apply(chrome.tabs, args);
             };
-            window.fetch = async (input, init) => {
+            (window as PageResult).fetch = async (input: PageResult, init: PageResult) => {
                 if (String(input) !== signedInBuddyUrl) return window.__bpbNativeFetch(input, init);
                 const request = ++window.__bpbBuddyRequests;
                 window.__bpbBuddyRequestTimes.push(Date.now());
@@ -1235,29 +1279,29 @@ try {
         // missing route must give extension recovery, never a claimed load/save.
         const beforeMissingWorker = await optionsPage.evaluate(async () => {
             window.__bpbBuddyNativeRuntimeMessage = chrome.runtime.sendMessage;
-            chrome.runtime.sendMessage = function (...args) {
+            (chrome.runtime as PageResult).sendMessage = function (...args: PageResult[]) {
                 if (args[0]?.type === 'BUDDY_CACHE_UPDATE' && args[0].phase === 'begin') {
-                    return new Promise(resolve => { window.__bpbReleaseMissingBuddyWorker = () => resolve(null); });
+                    return new Promise((resolve: PageResult) => { window.__bpbReleaseMissingBuddyWorker = () => resolve(null); });
                 }
-                return window.__bpbBuddyNativeRuntimeMessage.apply(chrome.runtime, args);
+                return (window.__bpbBuddyNativeRuntimeMessage as PageResult).apply(chrome.runtime, args);
             };
-            return JSON.stringify(await chrome.storage.local.get(['bpbBuddyCache', 'bpbFavoriteClimbers']));
+            return JSON.stringify(await chrome.storage.local.get<StoredRecords>(['bpbBuddyCache', 'bpbFavoriteClimbers']));
         });
         const buddyAction = optionsPage.locator('#favorites-refresh-buddies');
-        const buddyActionBefore = await buddyAction.boundingBox();
+        const buddyActionBefore: PageResult = await buddyAction.boundingBox();
         const buddyThemeBefore = await optionsPage.locator('html').getAttribute('data-bpb-theme');
         try {
             await buddyAction.click();
             await optionsPage.waitForFunction(() => typeof window.__bpbReleaseMissingBuddyWorker === 'function'
-                && document.getElementById('favorites-buddy-status').textContent === 'Refreshing…');
+                && (document.getElementById('favorites-buddy-status') as PageElement | null)!.textContent === 'Refreshing…');
             const buddyActionPending = await buddyAction.boundingBox();
             await optionsPage.evaluate(() => window.__bpbReleaseMissingBuddyWorker());
-            await optionsPage.waitForFunction(() => !document.getElementById('favorites-refresh-buddies').disabled);
+            await optionsPage.waitForFunction(() => !(document.getElementById('favorites-refresh-buddies') as PageElement | null)!.disabled);
             const missingWorker = await optionsPage.evaluate(async () => ({
-                text: document.getElementById('favorites-buddy-status').textContent,
-                link: !!document.getElementById('favorites-buddy-status').querySelector('a'),
+                text: (document.getElementById('favorites-buddy-status') as PageElement | null)!.textContent,
+                link: !!(document.getElementById('favorites-buddy-status') as PageElement | null)!.querySelector<PageElement>('a'),
                 requests: window.__bpbBuddyRequests,
-                saved: JSON.stringify(await chrome.storage.local.get(['bpbBuddyCache', 'bpbFavoriteClimbers'])),
+                saved: JSON.stringify(await chrome.storage.local.get<StoredRecords>(['bpbBuddyCache', 'bpbFavoriteClimbers'])),
             }));
             check(/Reload the extension, then reload this page/.test(missingWorker.text)
                 && !/loaded|could not save|reach Peakbagger/.test(missingWorker.text)
@@ -1265,14 +1309,14 @@ try {
             `an unavailable Buddy worker gave misleading recovery or changed data: ${JSON.stringify(missingWorker)}`);
             const buddyActionFailed = await buddyAction.boundingBox();
             check([buddyActionPending, buddyActionFailed].every(box => box && buddyActionBefore
-                && ['x', 'y', 'width', 'height'].every(key => Math.abs(box[key] - buddyActionBefore[key]) <= 1)),
+                && ['x', 'y', 'width', 'height'].every(key => Math.abs((box as PageResult)[key] - buddyActionBefore[key]) <= 1)),
             `the Buddy refresh action moved through pending/error: ${JSON.stringify({ buddyActionBefore, buddyActionPending, buddyActionFailed })}`);
             if (buddyScreenshotDir) {
                 await mkdir(buddyScreenshotDir, { recursive: true });
                 for (const width of [1000, 390]) {
                     await optionsPage.setViewportSize({ width, height: 760 });
                     for (const theme of ['light', 'dark']) {
-                        await optionsPage.locator('html').evaluate((html, value) => { html.dataset.bpbTheme = value; }, theme);
+                        await optionsPage.locator('html').evaluate((html, value) => { (html as HTMLElement).dataset.bpbTheme = value; }, theme);
                         await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, `buddy-worker-unavailable-${width}-${theme}.png`), fullPage: true });
                     }
                 }
@@ -1281,14 +1325,14 @@ try {
             await optionsPage.evaluate(() => { chrome.runtime.sendMessage = window.__bpbBuddyNativeRuntimeMessage; });
             await optionsPage.locator('html').evaluate((html, theme) => {
                 if (theme === null) html.removeAttribute('data-bpb-theme');
-                else html.dataset.bpbTheme = theme;
+                else (html as HTMLElement).dataset.bpbTheme = theme;
             }, buddyThemeBefore);
-            await optionsPage.setViewportSize(verificationViewport);
+            await optionsPage.setViewportSize(verificationViewport!);
         }
         await optionsPage.locator('#favorites-refresh-buddies').click();
         const buddyRefresh = await waitForPageCondition(optionsPage, async () => {
-            const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
-            const status = document.getElementById('favorites-buddy-status')?.textContent || '';
+            const cache = (await chrome.storage.local.get<StoredRecords>('bpbBuddyCache')).bpbBuddyCache;
+            const status = (document.getElementById('favorites-buddy-status') as PageElement | null)?.textContent || '';
             return cache?.entries?.length === 6 && /6 buddies/.test(status)
                 ? { ownerCid: cache.ownerCid, entries: cache.entries.length, status }
                 : false;
@@ -1302,12 +1346,12 @@ try {
 
         await optionsPage.locator('#favorites-refresh-buddies').click();
         const buddyRecovery = await optionsPage.waitForFunction(() => {
-            const status = document.getElementById('favorites-buddy-status');
-            const link = status?.querySelector('a');
+            const status = (document.getElementById('favorites-buddy-status') as PageElement | null);
+            const link = status?.querySelector<PageElement>('a');
             return /temporarily unavailable \(HTTP 500\)/.test(status?.textContent || '') && link
                 ? { label: link.textContent, href: link.href }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         check(buddyRequests === 2
             && buddyRecovery?.label === 'Open Buddy List'
@@ -1315,19 +1359,19 @@ try {
         `the options Buddy recovery did not point back to the direct report: ${JSON.stringify({ buddyRequests, buddyRecovery })}`);
 
         await optionsPage.locator('input[name="favorites-source"][value="custom"]').check();
-        if (!await optionsPage.locator('.favorites-buddy-options').evaluate(node => node.open)) {
+        if (!await optionsPage.locator('.favorites-buddy-options').evaluate((node: HTMLDetailsElement) => node.open)) {
             await optionsPage.locator('.favorites-buddy-options summary').click();
         }
         await optionsPage.locator('#favorites-mirror-buddies').click();
         const importRecovery = await optionsPage.waitForFunction(() => {
-            const status = document.getElementById('favorites-import-status');
-            const link = status?.querySelector('a');
+            const status = (document.getElementById('favorites-import-status') as PageElement | null);
+            const link = status?.querySelector<PageElement>('a');
             return !status?.hidden
                 && /temporarily unavailable \(HTTP 500\)/.test(status?.textContent || '')
                 && link
                 ? { label: link.textContent, href: link.href }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         check(buddyRequests === 3
             && importRecovery?.label === 'Open Buddy List'
@@ -1351,7 +1395,7 @@ try {
         null, { timeout: 5000 });
         await optionsPage.locator('#favorites-merge-buddies').click();
         await waitForCondition(
-            () => context.pages().filter(page => page.url() === fallbackBuddyUrl).length === 2,
+            () => context.pages().filter((page: Page) => page.url() === fallbackBuddyUrl).length === 2,
             { description: 'the first-party Buddy helper navigation', timeoutMs: 5000 }
         ).catch(() => false);
         // The fallback opens a helper tab that loads the real site page. That
@@ -1361,11 +1405,11 @@ try {
         // docs/verify-extension-load-flake.md; raising this number treats the
         // symptom and hides real regressions, so it is deliberately not raised.
         const readFallbackImport = () => optionsPage.evaluate(async () => {
-            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
-            const status = document.getElementById('favorites-import-status');
+            const favorites = (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            const status = (document.getElementById('favorites-import-status') as PageElement | null);
             return favorites?.entries?.length === 6
                 && /Merge complete: 6 added, 0 removed/.test(status?.textContent || '')
-                ? { count: favorites.entries.length, status: status.textContent }
+                ? { count: favorites.entries.length, status: status!.textContent }
                 : false;
         });
         const fallbackImport = await waitForCondition(readFallbackImport, {
@@ -1379,20 +1423,20 @@ try {
             window.__bpbBuddyTabDiagnostics.restore();
         });
         const fallbackDebug = await optionsPage.evaluate(async () => ({
-            importStatus: document.getElementById('favorites-import-status')?.textContent || '',
-            cache: (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache || null,
-            favorites: (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers || null,
+            importStatus: (document.getElementById('favorites-import-status') as PageElement | null)?.textContent || '',
+            cache: (await chrome.storage.local.get<StoredRecords>('bpbBuddyCache')).bpbBuddyCache || null,
+            favorites: (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers || null,
             requestTimes: window.__bpbBuddyRequestTimes,
             helperReads: window.__bpbBuddyHelperReads,
             tabCalls: window.__bpbBuddyTabDiagnostics.events,
         }));
         // Import success can precede the asynchronous tabs.remove close event.
         const fallbackCleanup = await waitForBuddyHelperCleanup(context, fallbackBuddyUrl, workingBuddyPage)
-            .catch(() => ({ closed: false, urls: context.pages().map(page => page.url()) }));
+            .catch(() => ({ closed: false, urls: context.pages().map((page: Page) => page.url()) }));
         const fallbackPageUrls = fallbackCleanup.urls;
         const fallbackTabClosed = fallbackCleanup.closed;
         check(buddyRequests === 4
-            && fixture.requests.buddyReports >= 2
+            && fixture!.requests.buddyReports >= 2
             && fallbackImport?.count === 6
             && fallbackTabClosed,
         `the first-party Buddy import fallback failed or leaked its tab: ${JSON.stringify({
@@ -1405,20 +1449,20 @@ try {
         // page still holds the failed fetch's warning. Verify the visible
         // recovery, including the independent persistent error banner.
         const settingsBeforeBuddyRecovery = await optionsPage.evaluate(async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings);
+            (await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings);
         try {
             await optionsPage.evaluate(async () => {
                 window.__bpbBuddyNativeCreate = chrome.tabs.create;
-                chrome.tabs.create = (details, callback) => callback({});
-                window.fetch = async () => ({ status: 403, headers: {},
+                (chrome.tabs as PageResult).create = (details: PageResult, callback: PageResult) => callback({});
+                (window as PageResult).fetch = async () => ({ status: 403, headers: {},
                     text: async () => '<html><head><title>Just a moment...</title></head></html>' });
-                const stored = (await chrome.storage.sync.get('bpbSettings')).bpbSettings;
+                const stored = (await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings;
                 await chrome.storage.sync.set({ bpbSettings: { ...stored, favoritesSource: 'buddies' } });
             });
-            await optionsPage.waitForFunction(() => !document.getElementById('favorites-buddy-panel').hidden);
+            await optionsPage.waitForFunction(() => !(document.getElementById('favorites-buddy-panel') as PageElement | null)!.hidden);
             await optionsPage.locator('#favorites-refresh-buddies').click();
-            await optionsPage.waitForFunction(() => !document.getElementById('status-error').hidden
-                && /human check/.test(document.getElementById('favorites-buddy-status').textContent));
+            await optionsPage.waitForFunction(() => !(document.getElementById('status-error') as PageElement | null)!.hidden
+                && /human check/.test((document.getElementById('favorites-buddy-status') as PageElement | null)!.textContent));
             if (buddyScreenshotDir) {
                 await mkdir(buddyScreenshotDir, { recursive: true });
                 await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-challenged-wide.png'), fullPage: true });
@@ -1426,17 +1470,17 @@ try {
                 await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-challenged-narrow.png'), fullPage: true });
             }
             await optionsPage.evaluate(async () => {
-                const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
+                const cache = (await chrome.storage.local.get<StoredRecords>('bpbBuddyCache')).bpbBuddyCache;
                 await chrome.storage.local.set({ bpbBuddyCache: { ...cache, fetchedAt: Date.now() } });
             });
             const repairedBuddyStatus = await optionsPage.waitForFunction(() => {
-                const status = document.getElementById('favorites-buddy-status').textContent;
-                return /^6 buddies · updated just now$/.test(status) && document.getElementById('status-error').hidden;
+                const status = (document.getElementById('favorites-buddy-status') as PageElement | null)!.textContent;
+                return /^6 buddies · updated just now$/.test(status) && (document.getElementById('status-error') as PageElement | null)!.hidden;
             }).then(() => true).catch(() => false);
             check(repairedBuddyStatus, 'a fresh signed-in Buddy List did not clear the stale challenge warning and banner');
             if (buddyScreenshotDir) {
                 await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-recovered-narrow.png'), fullPage: true });
-                await optionsPage.setViewportSize(verificationViewport);
+                await optionsPage.setViewportSize(verificationViewport!);
                 await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-recovered-wide.png'), fullPage: true });
             }
         } finally {
@@ -1445,11 +1489,11 @@ try {
                 window.fetch = window.__bpbNativeFetch;
                 await chrome.storage.sync.set({ bpbSettings: previous });
             }, settingsBeforeBuddyRecovery);
-            await optionsPage.setViewportSize(verificationViewport);
+            await optionsPage.setViewportSize(verificationViewport!);
         }
 
         await optionsPage.evaluate(async ({ signedInBuddyUrl, buddyListFixture }) => {
-            const current = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            const current = (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             await chrome.storage.local.set({
                 bpbFavoriteClimbers: {
                     schemaVersion: 1,
@@ -1465,7 +1509,7 @@ try {
                 },
             });
             window.__bpbMirrorBuddyRequests = 0;
-            window.fetch = async (input, init) => {
+            (window as PageResult).fetch = async (input: PageResult, init: PageResult) => {
                 if (String(input) !== signedInBuddyUrl) return window.__bpbNativeFetch(input, init);
                 window.__bpbMirrorBuddyRequests++;
                 return { status: 200, headers: {}, text: async () => buddyListFixture };
@@ -1473,22 +1517,22 @@ try {
         }, { signedInBuddyUrl, buddyListFixture });
         await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
         const favoriteSourceCounts = await optionsPage.evaluate(() => Object.fromEntries(
-            [...document.querySelectorAll('[data-favorites-source-filter]')].map(button => [
+            [...document.querySelectorAll<PageElement>('[data-favorites-source-filter]')].map(button => [
                 button.dataset.favoritesSourceFilter,
-                button.querySelector('[data-favorites-source-count]')?.textContent || '',
+                button.querySelector<PageElement>('[data-favorites-source-count]')?.textContent || '',
             ])
         ));
         await optionsPage.locator('[data-favorites-source-filter="manual"]').click();
         const manualFavoritesFiltered = await optionsPage.waitForFunction(() => {
-            const rows = [...document.querySelectorAll('.favorite-item')];
+            const rows = [...document.querySelectorAll<PageElement>('.favorite-item')];
             return rows.length === 1 && rows[0].dataset.cid === '900099'
-                && document.getElementById('favorites-count')?.textContent === '1 of 7 favorites';
+                && (document.getElementById('favorites-count') as PageElement | null)?.textContent === '1 of 7 favorites';
         }, null, { timeout: 5000 }).then(() => true).catch(() => false);
         await optionsPage.locator('[data-favorites-source-filter="buddy"]').click();
         const buddyFavoritesFiltered = await optionsPage.waitForFunction(() =>
-            document.querySelectorAll('.favorite-item').length === 6
-                && !document.querySelector('.favorite-item[data-cid="900099"]')
-                && document.getElementById('favorites-count')?.textContent === '6 of 7 favorites',
+            document.querySelectorAll<PageElement>('.favorite-item').length === 6
+                && !document.querySelector<PageElement>('.favorite-item[data-cid="900099"]')
+                && (document.getElementById('favorites-count') as PageElement | null)?.textContent === '6 of 7 favorites',
         null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(favoriteSourceCounts.all === '7'
             && favoriteSourceCounts.buddy === '6'
@@ -1500,18 +1544,18 @@ try {
         })}`);
         await optionsPage.locator('[data-favorites-source-filter="all"]').click();
         await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
-        if (!await optionsPage.locator('.favorites-buddy-options').evaluate(node => node.open)) {
+        if (!await optionsPage.locator('.favorites-buddy-options').evaluate((node: HTMLDetailsElement) => node.open)) {
             await optionsPage.locator('.favorites-buddy-options summary').click();
         }
         await optionsPage.locator('#favorites-mirror-buddies').click();
         const mirrorConfirmation = await waitForPageCondition(optionsPage, async () => {
-            const dialog = document.getElementById('favorites-mirror-confirmation');
-            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            const dialog = (document.getElementById('favorites-mirror-confirmation') as PageElement | null);
+            const favorites = (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             return dialog && !dialog.hidden && favorites?.entries?.length === 7
                 ? {
                     role: dialog.getAttribute('role'),
                     text: dialog.textContent || '',
-                    confirm: document.getElementById('favorites-mirror-confirm')?.textContent || '',
+                    confirm: (document.getElementById('favorites-mirror-confirm') as PageElement | null)?.textContent || '',
                     focused: document.activeElement?.id || '',
                 }
                 : false;
@@ -1531,36 +1575,36 @@ try {
             `the Add action must stay compact on one line, not collapse into a vertical label: ${addButtonHeight}px`);
         await optionsPage.locator('#favorites-mirror-cancel').click();
         const mirrorCancelled = await optionsPage.evaluate(async () => {
-            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
-            return document.getElementById('favorites-mirror-confirmation')?.hidden === true
-                && favorites?.entries?.some(entry => entry.cid === 900099);
+            const favorites = (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            return (document.getElementById('favorites-mirror-confirmation') as PageElement | null)?.hidden === true
+                && favorites?.entries?.some((entry: { cid: number }) => entry.cid === 900099);
         });
         check(mirrorCancelled, 'cancelling the Buddy mirror changed custom favorites');
 
         await optionsPage.evaluate(() => {
-            const dialog = document.getElementById('favorites-mirror-confirmation');
+            const dialog = (document.getElementById('favorites-mirror-confirmation') as PageElement | null);
             window.__bpbNativeRuntimeSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
             window.__bpbHeldReplacement = null;
             window.__bpbReplacementDismissals = 0;
-            window.__bpbReplacementWasHidden = dialog.hidden;
+            window.__bpbReplacementWasHidden = dialog!.hidden;
             window.__bpbReplacementObserver = new MutationObserver(() => {
-                if (dialog.hidden && !window.__bpbReplacementWasHidden) {
+                if (dialog!.hidden && !window.__bpbReplacementWasHidden) {
                     window.__bpbReplacementDismissals++;
                 }
-                window.__bpbReplacementWasHidden = dialog.hidden;
+                window.__bpbReplacementWasHidden = dialog!.hidden;
             });
-            window.__bpbReplacementObserver.observe(dialog, {
+            window.__bpbReplacementObserver.observe(dialog as Node, {
                 attributes: true,
                 attributeFilter: ['hidden'],
             });
             chrome.runtime.sendMessage = message => {
-                if (message?.type !== 'FAVORITES_MUTATE' || message.mutation?.kind !== 'replace') {
+                if ((message as PageResult)?.type !== 'FAVORITES_MUTATE' || (message as PageResult).mutation?.kind !== 'replace') {
                     return window.__bpbNativeRuntimeSendMessage(message);
                 }
-                return new Promise(resolve => { window.__bpbHeldReplacement = resolve; });
+                return new Promise((resolve: PageResult) => { window.__bpbHeldReplacement = resolve; });
             };
         });
-        if (!await optionsPage.locator('.favorites-buddy-options').evaluate(node => node.open)) {
+        if (!await optionsPage.locator('.favorites-buddy-options').evaluate((node: HTMLDetailsElement) => node.open)) {
             await optionsPage.locator('.favorites-buddy-options summary').click();
         }
         await optionsPage.locator('#favorites-mirror-buddies').click();
@@ -1568,9 +1612,9 @@ try {
         const reviewedReplacement = await optionsPage.locator('#favorites-mirror-confirmation-detail').textContent();
         await optionsPage.locator('#favorites-mirror-confirm').click();
         const mirrorBusy = await optionsPage.waitForFunction(() => {
-            const dialog = document.getElementById('favorites-mirror-confirmation');
-            const confirm = document.getElementById('favorites-mirror-confirm');
-            const cancel = document.getElementById('favorites-mirror-cancel');
+            const dialog = (document.getElementById('favorites-mirror-confirmation') as PageElement | null);
+            const confirm = (document.getElementById('favorites-mirror-confirm') as PageElement | null);
+            const cancel = (document.getElementById('favorites-mirror-cancel') as PageElement | null);
             return dialog?.getAttribute('aria-busy') === 'true'
                 && document.activeElement === dialog
                 && confirm?.disabled
@@ -1583,7 +1627,7 @@ try {
                     cancelDisabled: cancel.disabled,
                 }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(mirrorBusy?.focused === 'favorites-mirror-confirmation'
             && mirrorBusy.busy === 'true'
             && mirrorBusy.confirmDisabled
@@ -1596,35 +1640,35 @@ try {
         }
         const busyStayedOpen = await optionsPage.evaluate(() => {
             document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-            document.getElementById('favorites-mirror-cancel')
+            (document.getElementById('favorites-mirror-cancel') as PageElement | null)!
                 .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-            const dialog = document.getElementById('favorites-mirror-confirmation');
-            return !dialog.hidden && dialog.getAttribute('aria-busy') === 'true';
+            const dialog = (document.getElementById('favorites-mirror-confirmation') as PageElement | null);
+            return !dialog!.hidden && dialog!.getAttribute('aria-busy') === 'true';
         });
         check(busyStayedOpen, 'Escape or Cancel dismissed an in-progress Buddy replacement');
         await optionsPage.evaluate(() => {
-            window.__bpbHeldReplacement({
+            window.__bpbHeldReplacement!({
                 ok: false,
                 error: { code: 'unavailable', message: 'browser verification failure' },
             });
             window.__bpbHeldReplacement = null;
         });
         const retryableReplacement = await optionsPage.waitForFunction(expectedImpact => {
-            const dialog = document.getElementById('favorites-mirror-confirmation');
-            const confirm = document.getElementById('favorites-mirror-confirm');
-            const cancel = document.getElementById('favorites-mirror-cancel');
-            return !dialog.hidden
-                && !dialog.hasAttribute('aria-busy')
+            const dialog = (document.getElementById('favorites-mirror-confirmation') as PageElement | null);
+            const confirm = (document.getElementById('favorites-mirror-confirm') as PageElement | null);
+            const cancel = (document.getElementById('favorites-mirror-cancel') as PageElement | null);
+            return !dialog!.hidden
+                && !dialog!.hasAttribute('aria-busy')
                 && document.activeElement === confirm
-                && !confirm.disabled
-                && !cancel.disabled
-                && document.getElementById('favorites-mirror-confirmation-detail')?.textContent === expectedImpact
+                && !confirm!.disabled
+                && !cancel!.disabled
+                && (document.getElementById('favorites-mirror-confirmation-detail') as PageElement | null)?.textContent === expectedImpact
                 ? {
-                    focused: document.activeElement.id,
+                    focused: document.activeElement!.id,
                     dismissals: window.__bpbReplacementDismissals,
                 }
                 : false;
-        }, reviewedReplacement, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, reviewedReplacement, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(retryableReplacement?.focused === 'favorites-mirror-confirm'
             && retryableReplacement.dismissals === 0,
         `the failed Buddy replacement was not retryable in place: ${JSON.stringify(retryableReplacement)}`);
@@ -1634,14 +1678,14 @@ try {
         const buddyRequestsBeforeRetry = await optionsPage.evaluate(() => window.__bpbMirrorBuddyRequests);
         await optionsPage.locator('#favorites-mirror-confirm').click();
         const mirrorApplied = await waitForPageCondition(optionsPage, async () => {
-            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
-            const status = document.getElementById('favorites-import-status')?.textContent || '';
+            const favorites = (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            const status = (document.getElementById('favorites-import-status') as PageElement | null)?.textContent || '';
             return favorites?.entries?.length === 6
-                && !favorites.entries.some(entry => entry.cid === 900099)
+                && !favorites.entries.some((entry: { cid: number }) => entry.cid === 900099)
                 && /Mirror complete: 0 added, 1 removed/.test(status)
                 ? {
                     dismissals: window.__bpbReplacementDismissals,
-                    hidden: document.getElementById('favorites-mirror-confirmation')?.hidden,
+                    hidden: (document.getElementById('favorites-mirror-confirmation') as PageElement | null)?.hidden,
                     buddyRequests: window.__bpbMirrorBuddyRequests,
                 }
                 : false;
@@ -1665,12 +1709,12 @@ try {
             await optionsPage.setViewportSize({ width: 480, height: 760 });
             await optionsPage.locator('#favorites-source-filter').scrollIntoViewIfNeeded();
             await optionsPage.screenshot({ path: process.env.BPB_VERIFY_FAVORITES_NARROW_SCREENSHOT });
-            if (previousViewport) await optionsPage.setViewportSize(previousViewport);
+            if (previousViewport) await optionsPage.setViewportSize(previousViewport!);
         }
         if (process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT) {
             // The theme control lives on Settings; on this page set it through
             // the worker, which the shared panel-theme bootstrap reflects.
-            const setTheme = theme => patchVerificationSettings(optionsPage, { theme });
+            const setTheme = (theme: string) => patchVerificationSettings(optionsPage, { theme });
             await setTheme('dark');
             await optionsPage.waitForFunction(() => document.documentElement.getAttribute('data-bpb-theme') === 'dark');
             await optionsPage.locator('.content').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT });
@@ -1686,7 +1730,7 @@ try {
                 addedAt: index,
                 source: index % 2 ? 'buddy' : 'manual',
             }));
-            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
             await Promise.all([
                 chrome.storage.sync.set({
                     bpbSettings: { ...bpbSettings, favoritesSource: 'custom' },
@@ -1697,24 +1741,24 @@ try {
             ]);
         });
         const scaleFavoritesRendered = await optionsPage.waitForFunction(() =>
-            document.querySelectorAll('.favorite-item').length === 1500,
+            document.querySelectorAll<PageElement>('.favorite-item').length === 1500,
         null, { timeout: 10000 }).then(() => true).catch(() => false);
         const fullFavoriteCount = await optionsPage.locator('#favorites-count').textContent();
         await optionsPage.locator('#favorites-search').fill('alpin clmber 1499');
         const fuzzyFavoriteSearch = await optionsPage.waitForFunction(() => {
-            const rows = [...document.querySelectorAll('.favorite-item')];
-            const count = document.getElementById('favorites-count')?.textContent || '';
+            const rows = [...document.querySelectorAll<PageElement>('.favorite-item')];
+            const count = (document.getElementById('favorites-count') as PageElement | null)?.textContent || '';
             return rows.length === 1 && count === '1 of 1,500 favorites'
-                ? { name: rows[0].querySelector('.favorite-name')?.textContent || '', count }
+                ? { name: rows[0].querySelector<PageElement>('.favorite-name')?.textContent || '', count }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(fullFavoriteCount === '1,500 favorites'
             && fuzzyFavoriteSearch?.name === 'Navigation Alpine Climber 1499',
         `the real 1,500-row custom list did not report or fuzzy-filter its total: ${JSON.stringify({
             fullFavoriteCount, fuzzyFavoriteSearch
         })}`);
         await optionsPage.locator('#favorites-search').fill('');
-        await optionsPage.waitForFunction(() => document.querySelectorAll('.favorite-item').length === 1500,
+        await optionsPage.waitForFunction(() => document.querySelectorAll<PageElement>('.favorite-item').length === 1500,
             null, { timeout: 10000 });
 
         // Back to Settings for the sidebar scroll-spy: the workspace list moved
@@ -1725,7 +1769,7 @@ try {
         try {
             await verifySettingsNavigation({
                 navigate: hash => optionsPage.goto(`chrome-extension://${extensionId}/options/options.html${hash}`),
-                evaluate: (fn, arg) => optionsPage.evaluate(fn, arg),
+                evaluate: ((fn: PageResult, arg: PageResult) => optionsPage.evaluate(fn, arg)) as PageResult,
                 resize: (width, height) => optionsPage.setViewportSize({ width, height }),
                 click: selector => optionsPage.locator(selector).click(),
                 toggle: selector => optionsPage.locator(selector).press('Space'),
@@ -1733,34 +1777,34 @@ try {
                 forward: () => optionsPage.goForward(),
                 wait: fn => optionsPage.waitForFunction(fn, null, { timeout: 5000 }),
                 screenshot: process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR ? name => optionsPage.screenshot({
-                    path: path.join(process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR, `${name}.png`),
+                    path: path.join(process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR!, `${name}.png`),
                 }) : null,
             });
         } finally {
-            await optionsPage.setViewportSize(settingsNavigationViewport);
+            await optionsPage.setViewportSize(settingsNavigationViewport!);
             await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
         }
         const longDistanceNavigation = await optionsPage.evaluate(() => {
-            const content = document.querySelector('.content');
-            const target = document.getElementById('drafts');
-            const link = document.querySelector('.side-nav a[href="#drafts"]');
-            const previousBehavior = content.style.scrollBehavior;
-            content.style.scrollBehavior = 'auto';
-            content.scrollTop = 0;
-            void content.scrollTop;
-            if (previousBehavior) content.style.scrollBehavior = previousBehavior;
-            else content.style.removeProperty('scroll-behavior');
+            const content = document.querySelector<PageElement>('.content');
+            const target = (document.getElementById('drafts') as PageElement | null);
+            const link = document.querySelector<PageElement>('.side-nav a[href="#drafts"]');
+            const previousBehavior = content!.style.scrollBehavior;
+            content!.style.scrollBehavior = 'auto';
+            content!.scrollTop = 0;
+            void content!.scrollTop;
+            if (previousBehavior) content!.style.scrollBehavior = previousBehavior;
+            else content!.style.removeProperty('scroll-behavior');
 
-            const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
-            const distance = () => target.getBoundingClientRect().top
-                - content.getBoundingClientRect().top - margin;
+            const margin = parseFloat(getComputedStyle(target!).scrollMarginTop) || 0;
+            const distance = () => target!.getBoundingClientRect().top
+                - content!.getBoundingClientRect().top - margin;
             const before = distance();
-            link.click();
+            link!.click();
             return {
                 before,
                 after: distance(),
-                viewportHeight: content.clientHeight,
-                scrollTop: content.scrollTop,
+                viewportHeight: content!.clientHeight,
+                scrollTop: content!.scrollTop,
                 hash: location.hash,
             };
         });
@@ -1774,7 +1818,7 @@ try {
         })}`);
 
         await optionsPage.evaluate(async () => {
-            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
             await Promise.all([
                 chrome.storage.sync.set({
                     bpbSettings: { ...bpbSettings, favoritesSource: 'custom', theme: 'dark' },
@@ -1799,7 +1843,7 @@ try {
                 && localStorage.getItem('bpbThemePref') === 'dark',
         null, { timeout: 5000 });
         await startupPage.addInitScript(() => {
-            const probe = {
+            const probe: PageResult = {
                 addedStyles: [],
                 firstFrame: null,
             };
@@ -1822,7 +1866,7 @@ try {
                 }
                 probe.firstFrame = {
                     theme: root.getAttribute('data-bpb-theme'),
-                    background: getComputedStyle(root).backgroundColor,
+                    background: getComputedStyle(root!).backgroundColor,
                 };
                 observer.disconnect();
             };
@@ -1831,7 +1875,7 @@ try {
         await startupPage.reload({ waitUntil: 'load' });
         const startupProbe = await startupPage.waitForFunction(() =>
             window.__bpbThemeStartupProbe?.firstFrame ? window.__bpbThemeStartupProbe : false,
-        null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         const fallbackIndex = startupProbe?.addedStyles?.indexOf('bpb-site-dark-fallback') ?? -1;
         const fullThemeIndex = startupProbe?.addedStyles?.indexOf('bpb-site-dark') ?? -1;
         check(startupProbe?.firstFrame?.theme === 'dark'
@@ -1846,18 +1890,18 @@ try {
         await climberPage.goto(climberPageUrl, { waitUntil: 'load' });
         await climberPage.locator('#bpb-climber-favorite').waitFor({ state: 'visible', timeout: 5000 });
         const favoriteToggle = await climberPage.evaluate(() => {
-            const heading = document.querySelector('#TitleLabel h1');
-            const host = document.getElementById('TitleLabel');
-            const button = document.getElementById('bpb-climber-favorite');
-            const headingRect = heading.getBoundingClientRect();
-            const buttonRect = button.getBoundingClientRect();
-            const caption = [...document.querySelectorAll('span')]
+            const heading = document.querySelector<PageElement>('#TitleLabel h1');
+            const host = (document.getElementById('TitleLabel') as PageElement | null);
+            const button = (document.getElementById('bpb-climber-favorite') as PageElement | null);
+            const headingRect = heading!.getBoundingClientRect();
+            const buttonRect = button!.getBoundingClientRect();
+            const caption = [...document.querySelectorAll<PageElement>('span')]
                 .find(element => element.textContent.trim() === '(Updated every 24 hours)');
-            const captionColor = caption ? getComputedStyle(caption).color : '';
-            const captionSurface = caption?.closest('table.gray');
-            const captionBackground = captionSurface ? getComputedStyle(captionSurface).backgroundColor : '';
-            const parseRgb = value => (value.match(/\d+(?:\.\d+)?/g) || []).slice(0, 3).map(Number);
-            const luminance = value => {
+            const captionColor = caption ? getComputedStyle(caption!).color : '';
+            const captionSurface = caption?.closest<PageElement>('table.gray');
+            const captionBackground = captionSurface ? getComputedStyle(captionSurface!).backgroundColor : '';
+            const parseRgb = (value: string) => (value.match(/\d+(?:\.\d+)?/g) || []).slice(0, 3).map(Number);
+            const luminance = (value: string) => {
                 const [r, g, b] = parseRgb(value).map(channel => {
                     const normalized = channel / 255;
                     return normalized <= 0.04045
@@ -1870,14 +1914,14 @@ try {
                 ? (Math.max(luminance(captionColor), luminance(captionBackground)) + 0.05)
                     / (Math.min(luminance(captionColor), luminance(captionBackground)) + 0.05)
                 : 0;
-            const headerLink = document.querySelector('.mainbanner a');
+            const headerLink = document.querySelector<PageElement>('.mainbanner a');
             return {
-                text: button.textContent,
-                label: button.getAttribute('aria-label'),
-                title: button.title,
-                pressed: button.getAttribute('aria-pressed'),
-                hostDisplay: getComputedStyle(host).display,
-                sameHost: button.parentElement === host && heading.parentElement === host,
+                text: button!.textContent,
+                label: button!.getAttribute('aria-label'),
+                title: button!.title,
+                pressed: button!.getAttribute('aria-pressed'),
+                hostDisplay: getComputedStyle(host!).display,
+                sameHost: button!.parentElement === host && heading!.parentElement === host,
                 buttonWidth: buttonRect.width,
                 buttonHeight: buttonRect.height,
                 followsHeading: buttonRect.left >= headingRect.right - 1,
@@ -1893,7 +1937,7 @@ try {
                     contrast,
                 } : null,
                 header: headerLink ? {
-                    computed: getComputedStyle(headerLink).color,
+                    computed: getComputedStyle(headerLink!).color,
                     marked: headerLink.hasAttribute('data-bpb-dark-inline-color'),
                 } : null,
             };
@@ -1918,12 +1962,12 @@ try {
         `the climber dark theme or favorite toggle regressed: ${JSON.stringify(favoriteToggle)}`);
         await climberPage.locator('#BuddyButton').hover();
         const nativeBuddyHover = await climberPage.waitForFunction(() => {
-            const element = document.getElementById('BuddyButton');
-            const filter = element ? getComputedStyle(element).filter : '';
+            const element = (document.getElementById('BuddyButton') as PageElement | null);
+            const filter = element ? getComputedStyle(element!).filter : '';
             return element?.classList.contains('bpb-native-buddy-action') && filter === 'brightness(1.18)'
                 ? { marked: true, filter }
                 : false;
-        }, null, { timeout: 1000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 1000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(nativeBuddyHover?.marked && nativeBuddyHover.filter === 'brightness(1.18)',
             `the native Buddy control lost its dark-theme hover feedback: ${JSON.stringify(nativeBuddyHover)}`);
         if (process.env.BPB_VERIFY_CLIMBER_FAVORITE_SCREENSHOT) {
@@ -1931,15 +1975,15 @@ try {
         }
         await climberPage.locator('#bpb-climber-favorite').click();
         const favoriteAppliedUi = await climberPage.waitForFunction(() => {
-            const button = document.getElementById('bpb-climber-favorite');
+            const button = (document.getElementById('bpb-climber-favorite') as PageElement | null);
             return button?.textContent === '★'
                 && button.getAttribute('aria-pressed') === 'true'
                 ? { text: button.textContent, pressed: button.getAttribute('aria-pressed') }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         const favoriteAppliedStorage = await waitForPageCondition(optionsPage, async () => {
-            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
-            return favorites?.entries?.some(entry => entry.cid === 900002) ? favorites : false;
+            const favorites = (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            return favorites?.entries?.some((entry: { cid: number }) => entry.cid === 900002) ? favorites : false;
         }, null, { timeout: 5000 }).catch(() => null);
         check(!!favoriteAppliedUi && !!favoriteAppliedStorage,
             `the compact climber favorite toggle did not persist or fill after clicking: ${JSON.stringify({ favoriteAppliedUi, favoriteAppliedStorage })}`);
@@ -1950,39 +1994,39 @@ try {
         // refreshed report before touching favorites.
         await climberPage.locator('#bpb-climber-favorite').click();
         await waitForPageCondition(optionsPage, async () => {
-            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
-            return !favorites?.entries?.some(entry => entry.cid === 900002);
+            const favorites = (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            return !favorites?.entries?.some((entry: { cid: number }) => entry.cid === 900002);
         }, null, { timeout: 5000 });
         const buddyMutationBaseline = {
-            ...fixture.requests,
-            buddyReportStates: [...fixture.requests.buddyReportStates],
+            ...fixture!.requests,
+            buddyReportStates: [...fixture!.requests.buddyReportStates],
             storage: await optionsPage.evaluate(async () =>
-                chrome.storage.local.get(['bpbFavoriteClimbers', 'bpbBuddyCache'])),
+                chrome.storage.local.get<StoredRecords>(['bpbFavoriteClimbers', 'bpbBuddyCache'])),
         };
         await climberPage.locator('#BuddyButton').click();
         const buddyAddedUi = await climberPage.waitForFunction(() => {
-            const nativeButton = document.getElementById('BuddyButton');
-            const favorite = document.getElementById('bpb-climber-favorite');
+            const nativeButton = (document.getElementById('BuddyButton') as PageElement | null);
+            const favorite = (document.getElementById('bpb-climber-favorite') as PageElement | null);
             return nativeButton?.value === 'Remove from My Buddy List'
                 && favorite?.textContent === '★'
                 ? { nativeValue: nativeButton.value, favorite: favorite.textContent }
                 : false;
-        }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 10000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         await optionsPage.bringToFront();
         const buddyAddedStorage = await optionsPage.evaluate(async () => {
-            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
+            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get<StoredRecords>([
                 'bpbFavoriteClimbers', 'bpbBuddyCache'
             ]);
             return {
-                favorite: favorites?.entries?.find(entry => entry.cid === 900002) || null,
-                cached: cache?.entries?.some(entry => entry.cid === 900002) || false,
+                favorite: favorites?.entries?.find((entry: { cid: number }) => entry.cid === 900002) || null,
+                cached: cache?.entries?.some((entry: { cid: number }) => entry.cid === 900002) || false,
             };
         });
         check(buddyAddedUi?.favorite === '★'
             && buddyAddedStorage.favorite?.source === 'buddy'
             && buddyAddedStorage.cached,
         `a confirmed native Buddy addition did not refresh and join custom favorites: ${JSON.stringify({
-            buddyAddedUi, buddyAddedStorage, buddyMutationBaseline, fixtureRequests: fixture.requests
+            buddyAddedUi, buddyAddedStorage, buddyMutationBaseline, fixtureRequests: fixture!.requests
         })}`);
 
         await climberPage.bringToFront();
@@ -1993,11 +2037,11 @@ try {
         );
         await optionsPage.bringToFront();
         const removalPreserved = await waitForPageCondition(optionsPage, async () => {
-            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
+            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get<StoredRecords>([
                 'bpbFavoriteClimbers', 'bpbBuddyCache'
             ]);
-            return favorites?.entries?.some(entry => entry.cid === 900002)
-                && cache?.entries && !cache.entries.some(entry => entry.cid === 900002);
+            return favorites?.entries?.some((entry: { cid: number }) => entry.cid === 900002)
+                && cache?.entries && !cache.entries.some((entry: { cid: number }) => entry.cid === 900002);
         }, null, { timeout: 10000 }).then(() => true).catch(() => false);
         check(removalPreserved,
             'the default native Buddy removal did not refresh the cache while preserving the custom favorite');
@@ -2006,27 +2050,27 @@ try {
         // this check is about the climber-page integration, so flip the setting
         // it controls through storage, exactly as that toggle's save() does.
         await optionsPage.evaluate(async () => {
-            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
             await chrome.storage.sync.set({
                 bpbSettings: { ...bpbSettings, removeFavoriteWhenBuddyRemoved: true },
             });
         });
         await waitForPageCondition(optionsPage, async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.removeFavoriteWhenBuddyRemoved === true,
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.removeFavoriteWhenBuddyRemoved === true,
         null, { timeout: 10000 });
         await climberPage.bringToFront();
         await climberPage.locator('#BuddyButton').click();
         const syncedAdditionUi = await climberPage.waitForFunction(() =>
-            document.getElementById('BuddyButton')?.value === 'Remove from My Buddy List'
-                && document.getElementById('bpb-climber-favorite')?.textContent === '★',
+            (document.getElementById('BuddyButton') as PageElement | null)?.value === 'Remove from My Buddy List'
+                && (document.getElementById('bpb-climber-favorite') as PageElement | null)?.textContent === '★',
         null, { timeout: 20000 }).then(() => true).catch(() => false);
         await optionsPage.bringToFront();
         const syncedAdditionStorage = await waitForPageCondition(optionsPage, async () => {
-            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
+            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get<StoredRecords>([
                 'bpbFavoriteClimbers', 'bpbBuddyCache'
             ]);
-            return favorites?.entries?.some(entry => entry.cid === 900002)
-                && cache?.entries?.some(entry => entry.cid === 900002);
+            return favorites?.entries?.some((entry: { cid: number }) => entry.cid === 900002)
+                && cache?.entries?.some((entry: { cid: number }) => entry.cid === 900002);
         }, null, { timeout: 20000 }).then(() => true).catch(() => false);
         const syncedAdditionRequests = await waitForCondition(() =>
             fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations >= 3
@@ -2039,7 +2083,7 @@ try {
                 syncedAdditionStorage,
                 syncedAdditionRequests,
                 before: buddyMutationBaseline,
-                after: fixture.requests,
+                after: fixture!.requests,
             })}`);
         await climberPage.bringToFront();
         await climberPage.locator('#BuddyButton').click();
@@ -2049,24 +2093,24 @@ try {
         { description: 'the opt-in Buddy removal refresh', timeoutMs: 20000 })
             .then(() => true).catch(() => false);
         const removalSyncedUi = await climberPage.waitForFunction(() =>
-            document.getElementById('BuddyButton')?.value === 'Add to My Buddy List'
-                && document.getElementById('bpb-climber-favorite')?.textContent === '☆',
+            (document.getElementById('BuddyButton') as PageElement | null)?.value === 'Add to My Buddy List'
+                && (document.getElementById('bpb-climber-favorite') as PageElement | null)?.textContent === '☆',
         null, { timeout: 20000 }).then(() => true).catch(() => false);
         await optionsPage.bringToFront();
         const removalSyncedStorage = await waitForPageCondition(optionsPage, async () => {
-            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
+            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get<StoredRecords>([
                 'bpbFavoriteClimbers', 'bpbBuddyCache'
             ]);
-            return favorites?.entries && !favorites.entries.some(entry => entry.cid === 900002)
-                && cache?.entries && !cache.entries.some(entry => entry.cid === 900002);
+            return favorites?.entries && !favorites.entries.some((entry: { cid: number }) => entry.cid === 900002)
+                && cache?.entries && !cache.entries.some((entry: { cid: number }) => entry.cid === 900002);
         }, null, { timeout: 20000 }).then(() => true).catch(() => false);
         const buddyMutationsStayedInPlace = await climberPage.evaluate(() => ({
             loads: sessionStorage.getItem('bpbFixtureClimberLoads'),
             url: location.href,
         }));
         check(syncedRemovalRequests && removalSyncedUi && removalSyncedStorage
-            && fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations === 4
-            && fixture.requests.buddyReports - buddyMutationBaseline.buddyReports === 4
+            && fixture!.requests.buddyMutations - buddyMutationBaseline.buddyMutations === 4
+            && fixture!.requests.buddyReports - buddyMutationBaseline.buddyReports === 4
             && buddyMutationsStayedInPlace.loads === '1'
             && buddyMutationsStayedInPlace.url === climberPageUrl,
         `opt-in Buddy removal sync or its one-refresh-per-action contract failed: ${JSON.stringify({
@@ -2075,35 +2119,35 @@ try {
             syncedRemovalRequests,
             buddyMutationsStayedInPlace,
             before: buddyMutationBaseline,
-            after: fixture.requests,
+            after: fixture!.requests,
         })}`);
         await verifyClimberMembership({
-            evaluate: fn => climberPage.evaluate(fn),
-            wait: fn => climberPage.waitForFunction(fn),
-            click: selector => climberPage.locator(selector).click({ force: true }),
-            key: selector => climberPage.locator(selector).press('Enter'),
-            resize: (width, height) => climberPage.setViewportSize({ width, height }),
+            evaluate: (fn: () => unknown) => climberPage.evaluate(fn),
+            wait: (fn: () => unknown) => climberPage.waitForFunction(fn),
+            click: (selector: string) => climberPage.locator(selector).click({ force: true }),
+            key: (selector: string) => climberPage.locator(selector).press('Enter'),
+            resize: (width: number, height: number) => climberPage.setViewportSize({ width, height }),
             mutations: () => fixture.requests.buddyMutations,
-            screenshot: process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR ? name => climberPage.screenshot({
-                path: path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR, `chrome-${name}.png`),
+            screenshot: process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR ? (name: string) => climberPage.screenshot({
+                path: path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR!, `chrome-${name}.png`),
             }) : null,
         });
         await climberPage.goto(`${climberPageUrl}&hover=1`);
         await verifyClimberHoverCard({
-            evaluate: fn => climberPage.evaluate(fn),
-            wait: fn => climberPage.waitForFunction(fn),
-            click: selector => climberPage.locator(selector).click(),
-            hover: selector => climberPage.locator(selector).hover(),
-            key: (selector, value) => climberPage.locator(selector).press(value),
-            resize: (width, height) => climberPage.setViewportSize({ width, height }),
-            screenshot: process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR ? name => climberPage.screenshot({
-                path: path.join(process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR, `chrome-${name}.png`),
+            evaluate: (fn: () => unknown) => climberPage.evaluate(fn),
+            wait: (fn: () => unknown) => climberPage.waitForFunction(fn),
+            click: (selector: string) => climberPage.locator(selector).click(),
+            hover: (selector: string) => climberPage.locator(selector).hover(),
+            key: (selector: string, value: string) => climberPage.locator(selector).press(value),
+            resize: (width: number, height: number) => climberPage.setViewportSize({ width, height }),
+            screenshot: process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR ? (name: string) => climberPage.screenshot({
+                path: path.join(process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR!, `chrome-${name}.png`),
             }) : null,
         });
         await climberPage.goto(climberPageUrl);
-        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.disabled === false);
+        await climberPage.waitForFunction(() => (document.getElementById('bpb-climber-ignore') as PageElement | null)?.disabled === false);
         await climberPage.locator('#bpb-climber-ignore').click();
-        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Unignore');
+        await climberPage.waitForFunction(() => (document.getElementById('bpb-climber-ignore') as PageElement | null)?.textContent === 'Unignore');
         await optionsPage.goto(`chrome-extension://${extensionId}/options/favorites.html#ignored`);
         await optionsPage.locator('#ignored-list .favorite-item').waitFor({ state: 'visible' });
         check(await optionsPage.locator('#ignored-tab').getAttribute('aria-selected') === 'true',
@@ -2114,12 +2158,12 @@ try {
                 await climberPage.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
                 for (const [width, height] of [[1024, 900], [390, 844]]) {
                     await optionsPage.setViewportSize({ width, height });
-                    await optionsPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                    await optionsPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR!,
                         `manager-${theme}-${width}.png`) });
                 }
                 for (const [width, height] of [[1440, 1000], [390, 844]]) {
                     await climberPage.setViewportSize({ width, height });
-                    await climberPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                    await climberPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR!,
                         `profile-${theme}-${width}.png`) });
                 }
             }
@@ -2129,15 +2173,15 @@ try {
         await optionsPage.locator('#ignored-undo-button').click();
         await optionsPage.locator('#ignored-list .favorite-item').waitFor({ state: 'visible' });
         await climberPage.locator('#bpb-climber-ignore').click();
-        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Ignore');
+        await climberPage.waitForFunction(() => (document.getElementById('bpb-climber-ignore') as PageElement | null)?.textContent === 'Ignore');
         await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
-        await optionsPage.setViewportSize(verificationViewport);
+        await optionsPage.setViewportSize(verificationViewport!);
         await climberPage.close();
 
         // The favorites controls moved to their own page; reset the settings
         // they own through storage before leaving Settings.
         await optionsPage.evaluate(async () => {
-            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
             await chrome.storage.sync.set({
                 bpbSettings: {
                     ...bpbSettings,
@@ -2180,21 +2224,21 @@ try {
         });
         const captureTransportPage = await context.newPage();
         await captureTransportPage.goto(captureLoginUrl);
-        const captureTransportState = await optionsPage.evaluate(async ({ loginUrl, peaksUrl }) => {
+        const captureTransportState: PageResult = await optionsPage.evaluate(async ({ loginUrl, peaksUrl }) => {
             const tab = (await chrome.tabs.query({})).find(candidate => candidate.url === loginUrl);
             if (!tab?.id) return { error: 'request tab not found' };
             await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
+                target: { tabId: tab.id! },
                 files: ['peakbagger-page.js'],
                 world: 'MAIN',
             });
             const evidence = await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
+                target: { tabId: tab.id! },
                 func: () => globalThis.BPBPeakbaggerPage.accountEvidence(),
                 world: 'MAIN',
             }).then(results => results?.[0]?.result);
-            const call = (requestId, url, kind) => chrome.scripting.executeScript({
-                target: { tabId: tab.id },
+            const call = (requestId: string, url: string, kind: string) => chrome.scripting.executeScript({
+                target: { tabId: tab.id! },
                 func: (id, requestedUrl, resource) =>
                     globalThis.BPBPeakbaggerPage.request(id, requestedUrl, resource),
                 args: [requestId, url, kind],
@@ -2207,9 +2251,9 @@ try {
             ]);
             return {
                 evidence,
-                login: { kind: login?.kind, signedIn: /\bcid=77\b/.test(login?.text || '') },
-                peaks: { kind: peaks?.kind, hasPeak: /\bi="7"/.test(peaks?.text || '') },
-                refused: refused?.error?.code,
+                login: { kind: (login as PageResult)?.kind, signedIn: /\bcid=77\b/.test((login as PageResult)?.text || '') },
+                peaks: { kind: (peaks as PageResult)?.kind, hasPeak: /\bi="7"/.test((peaks as PageResult)?.text || '') },
+                refused: (refused as PageResult)?.error?.code,
             };
         }, { loginUrl: captureLoginUrl, peaksUrl: capturePeaksUrl });
         check(captureTransportState?.evidence?.pageUrl === captureLoginUrl
@@ -2239,10 +2283,10 @@ try {
         // original tab; an expired never-selected exact helper remains safe to
         // reclaim. The one-shot alarms make both checks deterministic without
         // waiting for the production five-minute sweep.
-        const helperLeaseState = await optionsPage.evaluate(async loginUrl => {
+        const helperLeaseState: PageResult = await optionsPage.evaluate(async loginUrl => {
             const leaseKey = 'bpbPeakbaggerHelperLeases';
             const cleanupAlarm = 'bpb-capture-cleanup';
-            const wait = async (predicate, description, diagnostic = () => null) => {
+            const wait = async (predicate: () => unknown, description: string, diagnostic: () => unknown = () => null) => {
                 const deadline = Date.now() + 5000;
                 while (!await predicate()) {
                     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${description}; current: ${JSON.stringify(await diagnostic())}`);
@@ -2253,8 +2297,8 @@ try {
             if (!optionsTab?.id || !Number.isInteger(optionsTab.windowId)) {
                 return { error: 'options tab identity unavailable' };
             }
-            const makeLease = (tab, generation, expiresAt) => ({
-                tabId: tab.id,
+            const makeLease = (tab: chrome.tabs.Tab, generation: string, expiresAt: number) => ({
+                tabId: tab.id!,
                 generation,
                 createdAt: Date.now() - 1000,
                 expiresAt,
@@ -2270,9 +2314,9 @@ try {
                 windowId: optionsTab.windowId,
                 url: loginUrl,
             });
-            await wait(async () => (await chrome.tabs.get(adoptedHelper.id)).status === 'complete',
+            await wait(async () => (await chrome.tabs.get(adoptedHelper.id!)).status === 'complete',
                 'adopted helper load');
-            const loadedAdoptedHelper = await chrome.tabs.get(adoptedHelper.id);
+            const loadedAdoptedHelper = await chrome.tabs.get(adoptedHelper.id!);
 
             // Complete both navigations before the durable adoption/release
             // barriers below. Creating or removing tabs between direct lease
@@ -2283,22 +2327,22 @@ try {
                 windowId: optionsTab.windowId,
                 url: loginUrl,
             });
-            await wait(async () => (await chrome.tabs.get(scratch.id)).status === 'complete',
+            await wait(async () => (await chrome.tabs.get(scratch.id!)).status === 'complete',
                 'scratch helper load');
-            const loadedScratch = await chrome.tabs.get(scratch.id);
+            const loadedScratch = await chrome.tabs.get(scratch.id!);
             await chrome.storage.session.set({
                 [leaseKey]: {
-                    [adoptedHelper.id]: makeLease(
+                    [adoptedHelper.id!]: makeLease(
                         loadedAdoptedHelper,
                         'verify-adopted-helper',
                         Date.now() + 60_000,
                     ),
                 },
             });
-            await chrome.tabs.update(adoptedHelper.id, { active: true });
+            await chrome.tabs.update(adoptedHelper.id!, { active: true });
             await wait(async () => {
-                const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-                return leases[adoptedHelper.id]?.adopted === true;
+                const leases: PageResult = (await chrome.storage.session.get<StoredRecords>(leaseKey))[leaseKey] || {};
+                return leases[adoptedHelper.id!]?.adopted === true;
             }, 'durable helper adoption');
             // Do not collapse the select-and-return sequence into one browser
             // scheduling turn. Chrome 128 can coalesce those activation events;
@@ -2306,17 +2350,17 @@ try {
             // remains durable after returning to Settings.
             await chrome.tabs.update(optionsTab.id, { active: true });
             const expireAdoptedLease = async () => {
-                const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-                const lease = leases[adoptedHelper.id];
+                const leases: PageResult = (await chrome.storage.session.get<StoredRecords>(leaseKey))[leaseKey] || {};
+                const lease = leases[adoptedHelper.id!];
                 if (!lease) return;
-                leases[adoptedHelper.id] = { ...lease, expiresAt: Date.now() - 1 };
+                leases[adoptedHelper.id!] = { ...lease, expiresAt: Date.now() - 1 };
                 await chrome.storage.session.set({ [leaseKey]: leases });
                 chrome.alarms.create(cleanupAlarm, { when: Date.now() + 50 });
             };
             await expireAdoptedLease();
             await wait(async () => {
-                const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-                const lease = leases[adoptedHelper.id];
+                const leases: PageResult = (await chrome.storage.session.get<StoredRecords>(leaseKey))[leaseKey] || {};
+                const lease = leases[adoptedHelper.id!];
                 if (!lease) return true;
                 // Returning to Settings itself emits an activation. Its queued
                 // no-op lease mutation can finish after the verifier's direct
@@ -2326,11 +2370,11 @@ try {
                 if (lease.expiresAt > Date.now()) await expireAdoptedLease();
                 return false;
             }, 'adopted helper lease release');
-            const adoptedRetained = await chrome.tabs.get(adoptedHelper.id)
+            const adoptedRetained = await chrome.tabs.get(adoptedHelper.id!)
                 .then(() => true, () => false);
             await chrome.storage.session.set({
                 [leaseKey]: {
-                    [scratch.id]: makeLease(
+                    [scratch.id!]: makeLease(
                         loadedScratch,
                         'verify-unadopted-helper',
                         Date.now() - 1,
@@ -2340,25 +2384,25 @@ try {
             chrome.alarms.create(cleanupAlarm, { when: Date.now() + 50 });
             await wait(async () => {
                 const [tabGone, leases] = await Promise.all([
-                    chrome.tabs.get(scratch.id).then(() => false, () => true),
-                    chrome.storage.session.get(leaseKey).then(value => value[leaseKey] || {}),
+                    chrome.tabs.get(scratch.id!).then(() => false, () => true),
+                    chrome.storage.session.get<StoredRecords>(leaseKey).then(value => value[leaseKey] || {}),
                 ]);
-                return tabGone && !leases[scratch.id];
+                return tabGone && !(leases as PageResult)[scratch.id!];
             }, 'unadopted helper removal', async () => ({
-                tab: await chrome.tabs.get(scratch.id).then(tab => ({
+                tab: await chrome.tabs.get(scratch.id!).then(tab => ({
                     active: tab.active,
                     status: tab.status,
                     urlMatches: tab.url === loadedScratch.url,
                 }), () => null),
-                lease: (await chrome.storage.session.get(leaseKey))[leaseKey]?.[scratch.id] || null,
+                lease: ((await chrome.storage.session.get<StoredRecords>(leaseKey)) as PageResult)[leaseKey as string]?.[scratch.id!] || null,
                 alarm: await chrome.alarms.get(cleanupAlarm),
             }));
-            const leasesAfterCleanup = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-            await chrome.tabs.remove(adoptedHelper.id);
+            const leasesAfterCleanup: PageResult = (await chrome.storage.session.get<StoredRecords>(leaseKey))[leaseKey] || {};
+            await chrome.tabs.remove(adoptedHelper.id!);
             chrome.alarms.create(cleanupAlarm, { periodInMinutes: 5 });
             return {
                 adoptedRetained,
-                unadoptedRemoved: !leasesAfterCleanup[scratch.id],
+                unadoptedRemoved: !leasesAfterCleanup[scratch.id!],
             };
         }, captureLoginUrl).catch(error => ({ error: String(error) }));
         check(helperLeaseState.adoptedRetained === true
@@ -2374,7 +2418,7 @@ try {
         // compatibility-floor check into a locale assertion.
         await optionsPage.locator('#units').selectOption('imperial');
         await waitForPageCondition(optionsPage, async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'imperial',
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.units === 'imperial',
         null, { timeout: 5000 });
         await optionsPage.close();
 
@@ -2391,13 +2435,13 @@ try {
         await popupActivePage.bringToFront();
         await popupPage.goto(`chrome-extension://${extensionId}/popup/popup.html`);
         const popupState = await popupPage.waitForFunction(() => {
-            const text = document.getElementById('state')?.textContent || '';
+            const text = (document.getElementById('state') as PageElement | null)?.textContent || '';
             return /Open an activity to begin/.test(text) ? text : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         const popupDiagnostics = popupState ? null : await popupPage.evaluate(async () => ({
-            state: document.getElementById('state')?.textContent,
+            state: (document.getElementById('state') as PageElement | null)?.textContent,
             tabs: (await chrome.tabs.query({ active: true, currentWindow: true })).map(tab => ({
-                id: tab.id, url: tab.url, active: tab.active,
+                id: tab.id!, url: tab.url, active: tab.active,
             })),
         }));
         check(/Garmin Connect or Strava/.test(popupState || ''),
@@ -2409,38 +2453,38 @@ try {
 
     const openAscent = async () => {
         const page = await context.newPage();
-        const runtimeErrors = [];
-        page.on('pageerror', error => runtimeErrors.push(String(error)));
-        page.on('console', message => {
+        const runtimeErrors: string[] = [];
+        page.on('pageerror', (error: Error) => runtimeErrors.push(String(error)));
+        page.on('console', (message: ConsoleMessage) => {
             if (message.type() === 'error') runtimeErrors.push(message.text());
         });
         await page.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`, { waitUntil: 'load' });
         try {
             await page.waitForFunction(() => {
-                const panel = document.getElementById('bpb-gpx-analysis');
-                const status = panel?.querySelector('.bpb-gpx-stats')?.textContent || '';
-                const legendButtons = panel?.querySelectorAll('#bpb-gpx-chart-legend button').length || 0;
-                const toggle = document.getElementById('bpb-terrain-toggle');
-                const sun = panel?.querySelector('.bpb-sun-calculator');
+                const panel = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
+                const status = panel?.querySelector<PageElement>('.bpb-gpx-stats')?.textContent || '';
+                const legendButtons = panel?.querySelectorAll<PageElement>('#bpb-gpx-chart-legend button').length || 0;
+                const toggle = (document.getElementById('bpb-terrain-toggle') as PageElement | null);
+                const sun = panel?.querySelector<PageElement>('.bpb-sun-calculator');
                 return /^Interactive Stats:/.test(status)
                     && legendButtons === 2
-                    && document.getElementById('bpb-ascent-table-resize-handle')
+                    && (document.getElementById('bpb-ascent-table-resize-handle') as PageElement | null)
                     && toggle?.disabled === false
-                    && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === false
-                    && sun?.querySelector('.bpb-sun-calculator__summary')?.textContent.includes('Trailhead')
+                    && sun?.querySelector<PageElement>('.bpb-sun-calculator__toggle')?.disabled === false
+                    && sun?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent.includes('Trailhead')
                     && /Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/.test(
-                        sun?.querySelector('.bpb-sun-calculator__header-events')?.textContent || '');
+                        sun?.querySelector<PageElement>('.bpb-sun-calculator__header-events')?.textContent || '');
             }, null, { timeout: 15_000 });
         } catch (error) {
             const domState = await page.evaluate(() => ({
                 url: location.href,
                 title: document.title,
                 isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme'),
-                stats: document.querySelector('#bpb-gpx-analysis .bpb-gpx-stats')?.textContent || null,
-                legendButtons: document.querySelectorAll('#bpb-gpx-chart-legend button').length,
-                terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled ?? null,
+                stats: document.querySelector<PageElement>('#bpb-gpx-analysis .bpb-gpx-stats')?.textContent || null,
+                legendButtons: document.querySelectorAll<PageElement>('#bpb-gpx-chart-legend button').length,
+                terrainDisabled: (document.getElementById('bpb-terrain-toggle') as PageElement | null)?.disabled ?? null,
                 body: (document.body?.innerText || '').slice(0, 500),
-            })).catch(readError => ({ unavailable: readError.message }));
+            })).catch((readError: Error) => ({ unavailable: readError.message }));
             const current = { ...domState, runtimeErrors, priorFailures: [...failures] };
             throw new Error(
                 `Timed out waiting for the analyzer's final visible state; current value: ${JSON.stringify(current)}`,
@@ -2450,17 +2494,17 @@ try {
         return page;
     };
 
-    const readToggle = page => page.evaluate(() => {
-        const button = document.getElementById('bpb-terrain-toggle');
+    const readToggle = (page: Page) => page.evaluate(() => {
+        const button = (document.getElementById('bpb-terrain-toggle') as PageElement | null);
         return {
             // theme.js imports settings in the isolated-world bundle, so this
             // attribute proves that bundle initialized there.
             isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme'),
-            analyzerPanel: !!document.getElementById('bpb-gpx-analysis'),
-            stats: document.querySelector('#bpb-gpx-analysis div')?.textContent || '',
+            analyzerPanel: !!(document.getElementById('bpb-gpx-analysis') as PageElement | null),
+            stats: document.querySelector<PageElement>('#bpb-gpx-analysis div')?.textContent || '',
             exists: !!button,
             hidden: button ? button.hasAttribute('hidden') : null,
-            display: button ? getComputedStyle(button).display : null,
+            display: button ? getComputedStyle(button!).display : null,
             visible: button ? button.getBoundingClientRect().width > 0 : null,
             disabled: button ? button.disabled : null,
             title: button ? button.title : null
@@ -2482,10 +2526,10 @@ try {
             ['no-points', /No track points/i, false],
             ['no-valid-points', /No valid track points/i, false],
         ];
-        const retryErrors = [];
+        const retryErrors: string[] = [];
         const unavailablePage = await context.newPage();
-        unavailablePage.on('pageerror', error => retryErrors.push(String(error)));
-        unavailablePage.on('console', message => {
+        unavailablePage.on('pageerror', (error: Error) => retryErrors.push(String(error)));
+        unavailablePage.on('console', (message: ConsoleMessage) => {
             if (message.type() === 'error') retryErrors.push(message.text());
         });
         for (const [analyzerCase, expectedMessage, retryable] of unavailableCases) {
@@ -2495,15 +2539,15 @@ try {
                 { waitUntil: 'load' },
             );
             const unavailable = await page.waitForFunction(() => {
-                const panel = document.getElementById('bpb-gpx-analysis');
-                const stats = panel?.querySelector('.bpb-gpx-stats');
+                const panel = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
+                const stats = panel?.querySelector<PageElement>('.bpb-gpx-stats');
                 if (!panel || stats?.dataset.state !== 'error') return false;
-                const canvas = panel.querySelector('canvas');
-                const focusable = [...panel.querySelectorAll('button, select, input, [tabindex]')]
+                const canvas = panel.querySelector<PageElement>('canvas');
+                const focusable = [...panel.querySelectorAll<PageElement>('button, select, input, [tabindex]')]
                     .filter(element => !element.disabled
                     && element.tabIndex >= 0
-                    && !element.closest('[hidden]'));
-                const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
+                    && !element.closest<PageElement>('[hidden]'));
+                const iframe: PageResult = document.querySelector<PageElement>('iframe[src*="MasterMap.aspx"]');
                 const mapLayers = iframe?.contentWindow?.mapsPlaceholder?.layers;
                 // The failure UI and MasterMap fixture initialize independently.
                 // Do not sample a null frame seam and report it as stale route
@@ -2517,21 +2561,21 @@ try {
                     canvasRole: canvas?.getAttribute('role'),
                     canvasShortcuts: canvas?.getAttribute('aria-keyshortcuts'),
                     canvasLabel: canvas?.getAttribute('aria-label'),
-                    controlsHidden: panel.querySelector('.bpb-gpx-controls')?.hidden === true,
-                    coordinatesHidden: panel.querySelector('.bpb-gpx-coordinate-controls')?.hidden === true,
-                    legendHidden: panel.querySelector('.bpb-gpx-chart-legend')?.hidden === true,
-                    retryHidden: panel.querySelector('.bpb-gpx-retry')?.hidden === true,
+                    controlsHidden: panel.querySelector<PageElement>('.bpb-gpx-controls')?.hidden === true,
+                    coordinatesHidden: panel.querySelector<PageElement>('.bpb-gpx-coordinate-controls')?.hidden === true,
+                    legendHidden: panel.querySelector<PageElement>('.bpb-gpx-chart-legend')?.hidden === true,
+                    retryHidden: panel.querySelector<PageElement>('.bpb-gpx-retry')?.hidden === true,
                     focusable: focusable.map(element => element.className || element.id || element.textContent),
-                    terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled === true,
+                    terrainDisabled: (document.getElementById('bpb-terrain-toggle') as PageElement | null)?.disabled === true,
                     extensionRouteLayers: mapLayers.filter(
                         layer => /^bpb-route-/.test(layer?.options?.className || '')
                     ).length,
                 };
             }, null, { timeout: analyzerCase === 'timeout' ? 20_000 : 5000 })
-                .then(handle => handle.jsonValue())
+                .then((handle: JSHandle) => handle.jsonValue())
                 .catch(() => null);
             check(unavailable
-            && expectedMessage.test(unavailable.message)
+            && (expectedMessage as RegExp).test(unavailable.message)
             && unavailable.live === 'polite'
             && unavailable.canvasHidden
             && unavailable.canvasTabIndex === -1
@@ -2555,7 +2599,7 @@ try {
                 downloadInsideExplorer: Boolean(document.querySelector(
                     '#bpb-route-explorer a[href*="track.gpx"]'
                 )),
-                retryTabIndex: document.querySelector('.bpb-gpx-retry')?.tabIndex,
+                retryTabIndex: document.querySelector<PageElement>('.bpb-gpx-retry')?.tabIndex,
             }));
             check(failureExplorer.fullScreenWithMap && !failureExplorer.downloadInsideExplorer
                 && (!retryable || failureExplorer.retryTabIndex === 0),
@@ -2571,16 +2615,16 @@ try {
                 await page.locator('.bpb-gpx-retry').focus();
                 await page.keyboard.press('Enter');
                 const recoveredAnalyzer = await page.waitForFunction(() => {
-                    const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+                    const canvas = document.querySelector<PageElement>('#bpb-gpx-analysis canvas');
                     return canvas?.getAttribute('role') === 'application'
                     && canvas.tabIndex === 0
                     && canvas.parentElement?.hidden === false
-                    && /^Interactive Stats:/.test(document.querySelector('.bpb-gpx-stats')?.textContent || '');
+                    && /^Interactive Stats:/.test(document.querySelector<PageElement>('.bpb-gpx-stats')?.textContent || '');
                 }, null, { timeout: 15_000 }).then(() => true).catch(() => false);
-                check(recoveredAnalyzer && fixture.requests.analyzerTracks.retry === 2,
+                check(recoveredAnalyzer && (fixture.requests as PageResult).analyzerTracks.retry === 2,
                     `the packaged Analyzer retry did not recover exactly once: ${JSON.stringify({
                         recoveredAnalyzer,
-                        requests: fixture.requests.analyzerTracks.retry,
+                        requests: (fixture.requests as PageResult).analyzerTracks.retry,
                         runtimeErrors: retryErrors,
                     })}`);
             } else if (analyzerCase === 'challenge') {
@@ -2598,14 +2642,14 @@ try {
                     await page.locator('#bpb-gpx-analysis').screenshot({
                         path: process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT,
                     });
-                    if (previousViewport) await page.setViewportSize(previousViewport);
+                    if (previousViewport) await page.setViewportSize(previousViewport!);
                 }
                 if (extensionId && process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT) {
                     const themePage = await context.newPage();
                     await themePage.goto(`chrome-extension://${extensionId}/options/options.html`);
                     await patchVerificationSettings(themePage, { theme: 'dark' });
                     await page.waitForFunction(() =>
-                        document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
+                        (document.getElementById('bpb-gpx-analysis') as PageElement | null)?.dataset.theme === 'dark',
                     null, { timeout: 5000 });
                     await page.locator('#bpb-gpx-analysis').screenshot({
                         path: process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT,
@@ -2623,10 +2667,10 @@ try {
     check(off.isolatedWorldReady !== null,
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
     check(off.analyzerPanel, 'the GPX analyzer panel never rendered');
-    const bfcacheDiagnostics = [];
+    const bfcacheDiagnostics: { notRestoredExplanations?: string[] }[] = [];
     const bfcacheSession = await context.newCDPSession(offPage);
     await bfcacheSession.send('Page.enable');
-    bfcacheSession.on('Page.backForwardCacheNotUsed', event => bfcacheDiagnostics.push(event));
+    bfcacheSession.on('Page.backForwardCacheNotUsed', (event: PageResult) => bfcacheDiagnostics.push(event));
     await offPage.evaluate(() => {
         window.__bpbSettingsPushes = [];
         window.addEventListener('message', event => {
@@ -2639,15 +2683,15 @@ try {
     const settingsProbePage = await context.newPage();
     await settingsProbePage.goto(`chrome-extension://${extensionId}/options/options.html`);
     const crossTabSettings = await settingsProbePage.evaluate(async () => {
-        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
         const original = bpbSettings.mapRouteColor || '#2457a7';
         const changed = original.toLowerCase() === '#347a3f' ? '#7a3f34' : '#347a3f';
         await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: changed } });
         return { original, changed };
     });
-    const crossTabBridgeState = await offPage.waitForFunction(expected => {
-        const control = document.getElementById('bpb-map-route-color');
-        const push = window.__bpbSettingsPushes?.find(message =>
+    const crossTabBridgeState = await offPage.waitForFunction((expected: string) => {
+        const control = (document.getElementById('bpb-map-route-color') as PageElement | null);
+        const push: PageResult = window.__bpbSettingsPushes?.find((message: { settings?: Record<string, unknown> }) =>
             message.settings?.mapRouteColor === expected);
         return control?.value === expected && push ? {
             control: control.value,
@@ -2656,18 +2700,18 @@ try {
             metadataInSettings: 'snapshotRevision' in push.settings
                 || 'throughRequestId' in push.settings,
         } : false;
-    }, crossTabSettings.changed, { timeout: 5000 }).then(handle => handle.jsonValue());
+    }, crossTabSettings.changed, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue());
     check(Number.isSafeInteger(crossTabBridgeState.snapshotRevision)
         && crossTabBridgeState.snapshotRevision > 0
         && crossTabBridgeState.throughRequestId === 0
         && !crossTabBridgeState.metadataInSettings,
     `the cross-tab settings push was unordered or leaked protocol metadata: ${JSON.stringify(crossTabBridgeState)}`);
     await settingsProbePage.evaluate(async original => {
-        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
         await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: original } });
     }, crossTabSettings.original);
-    await offPage.waitForFunction(expected =>
-        document.getElementById('bpb-map-route-color')?.value === expected,
+    await offPage.waitForFunction((expected: string) =>
+        (document.getElementById('bpb-map-route-color') as PageElement | null)?.value === expected,
     crossTabSettings.original, { timeout: 5000 });
 
     await offPage.evaluate(installAnalyzerBfcacheProbe);
@@ -2676,7 +2720,7 @@ try {
         { waitUntil: 'load' },
     );
     await settingsProbePage.evaluate(async changed => {
-        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
         await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: changed } });
     }, crossTabSettings.changed);
     // A BFCache restoration does not fire DOMContentLoaded again. Waiting for
@@ -2686,7 +2730,7 @@ try {
         readAnalyzerBfcacheState,
         crossTabSettings.changed,
         { timeout: 15_000 },
-    ).then(handle => handle.jsonValue());
+    ).then((handle: JSHandle) => handle.jsonValue());
     const restoredFromBfcache = bfcacheState.token === 'preserve-this-document'
         && bfcacheState.hidePersisted === true
         && bfcacheState.showPersisted === true
@@ -2707,33 +2751,33 @@ try {
         && bfcacheState.toggles === 1),
     `Chrome neither restored nor cleanly remounted the analyzer after history traversal: ${JSON.stringify(chromeBfcacheResult)}`);
     await settingsProbePage.evaluate(async original => {
-        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        const { bpbSettings = {} } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
         await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: original } });
     }, crossTabSettings.original);
-    await offPage.waitForFunction(expected =>
-        document.getElementById('bpb-map-route-color')?.value === expected,
+    await offPage.waitForFunction((expected: string) =>
+        (document.getElementById('bpb-map-route-color') as PageElement | null)?.value === expected,
     crossTabSettings.original, { timeout: 5000 });
     await settingsProbePage.close();
-    const ascentSplitBefore = await offPage.evaluate(() => {
-        const wrapper = document.getElementById('bpb-ascent-table-split');
-        const report = document.getElementById('ascent-report');
-        const handle = document.getElementById('bpb-ascent-table-resize-handle');
-        const summary = document.getElementById('ascent-summary');
-        const rect = element => {
+    const ascentSplitBefore: PageResult = await offPage.evaluate(() => {
+        const wrapper = (document.getElementById('bpb-ascent-table-split') as PageElement | null);
+        const report = (document.getElementById('ascent-report') as PageElement | null);
+        const handle = (document.getElementById('bpb-ascent-table-resize-handle') as PageElement | null);
+        const summary: PageResult = (document.getElementById('ascent-summary') as PageElement | null);
+        const rect = (element: PageResult) => {
             if (!element) return null;
             const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
             return { left, right, top, bottom, width, height };
         };
         return {
-            display: wrapper ? getComputedStyle(wrapper).display : null,
+            display: wrapper ? getComputedStyle(wrapper!).display : null,
             children: wrapper ? [...wrapper.children].map(element => element.id) : [],
             report: rect(report),
             handle: rect(handle),
             summary: rect(summary),
             role: handle?.getAttribute('role'),
             orientation: handle?.getAttribute('aria-orientation'),
-            background: handle ? getComputedStyle(handle).backgroundColor : null,
-            border: handle ? getComputedStyle(handle).borderWidth : null,
+            background: handle ? getComputedStyle(handle!).backgroundColor : null,
+            border: handle ? getComputedStyle(handle!).borderWidth : null,
             value: Number(handle?.getAttribute('aria-valuenow')),
         };
     });
@@ -2750,12 +2794,12 @@ try {
         );
         await offPage.mouse.up();
     }
-    const ascentSplitAfter = await offPage.evaluate(storageKey => {
-        const report = document.getElementById('ascent-report');
-        const handle = document.getElementById('bpb-ascent-table-resize-handle');
-        const summary = document.getElementById('ascent-summary');
+    const ascentSplitAfter = await offPage.evaluate((storageKey: string) => {
+        const report = (document.getElementById('ascent-report') as PageElement | null);
+        const handle = (document.getElementById('bpb-ascent-table-resize-handle') as PageElement | null);
+        const summary: PageResult = (document.getElementById('ascent-summary') as PageElement | null);
         let saved = null;
-        try { saved = JSON.parse(localStorage.getItem(storageKey)); } catch { /* checked below */ }
+        try { saved = JSON.parse(localStorage.getItem(storageKey)!); } catch { /* checked below */ }
         return {
             reportWidth: report?.getBoundingClientRect().width || 0,
             summaryWidth: summary?.getBoundingClientRect().width || 0,
@@ -2771,11 +2815,11 @@ try {
         && Math.abs(ascentSplitBefore.handle?.width - 13) <= 0.5
         && ascentSplitBefore.background === 'rgba(0, 0, 0, 0)'
         && ascentSplitBefore.border === '0px'
-        && ascentSplitBefore.handle?.height >= 43.5
-        && ascentSplitBefore.report?.right <= ascentSplitBefore.handle?.left + 1
-        && ascentSplitBefore.handle?.right <= ascentSplitBefore.summary?.left + 1
-        && ascentSplitAfter.reportWidth > ascentSplitBefore.report?.width + 70
-        && ascentSplitAfter.summaryWidth < ascentSplitBefore.summary?.width - 70
+        && (ascentSplitBefore.handle?.height as number) >= 43.5
+        && (ascentSplitBefore.report?.right as number) <= (ascentSplitBefore.handle?.left as number) + 1
+        && (ascentSplitBefore.handle?.right as number) <= (ascentSplitBefore.summary?.left as number) + 1
+        && ascentSplitAfter.reportWidth > (ascentSplitBefore.report?.width as number) + 70
+        && ascentSplitAfter.summaryWidth < (ascentSplitBefore.summary?.width as number) - 70
         && ascentSplitAfter.value > ascentSplitBefore.value
         && Math.abs(ascentSplitAfter.saved - ascentSplitAfter.value) <= 1,
     `the packaged ascent table split did not mount, drag, or persist correctly: before=${
@@ -2816,24 +2860,24 @@ try {
         const imageHandle = imagePage.locator('#bpb-ascent-table-resize-handle');
         await imageHandle.waitFor();
         await imagePage.waitForFunction(() => {
-            const images = [...document.querySelectorAll('#ascent-report img')];
+            const images = [...document.querySelectorAll<PageElement>('#ascent-report img')];
             return images.length === 5 && images.every(image => image.complete && image.naturalWidth);
         });
         const imageAttributes = () => imagePage.locator('#ascent-report img').evaluateAll(images =>
             images.map(image => [image.getAttribute('width'), image.getAttribute('height')]));
         const originalAttributes = await imageAttributes();
-        const checkImageLayout = async (label, { stacked = false, wide = false } = {}) => {
+        const checkImageLayout = async (label: string, { stacked = false, wide = false } = {}) => {
             const state = await imagePage.evaluate(() => {
-                const rect = element => {
+                const rect = (element: PageResult) => {
                     const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
                     return { left, right, top, bottom, width, height };
                 };
                 return {
-                    report: rect(document.getElementById('ascent-report')),
-                    handle: rect(document.getElementById('bpb-ascent-table-resize-handle')),
-                    summary: rect(document.getElementById('ascent-summary')),
-                    images: [...document.querySelectorAll('#ascent-report img')].map(image => ({
-                        ...rect(image), cell: rect(image.closest('td')), id: image.alt,
+                    report: rect((document.getElementById('ascent-report') as PageElement | null)),
+                    handle: rect((document.getElementById('bpb-ascent-table-resize-handle') as PageElement | null)),
+                    summary: rect((document.getElementById('ascent-summary') as PageElement | null)),
+                    images: [...document.querySelectorAll<PageElement>('#ascent-report img')].map(image => ({
+                        ...rect(image), cell: rect(image.closest<PageElement>('td')), id: image.alt,
                     })),
                     viewport: innerWidth,
                     pageWidth: document.documentElement.scrollWidth,
@@ -2855,7 +2899,7 @@ try {
         };
         for (const theme of ['light', 'dark']) {
             await imagePage.locator('html').evaluate((html, value) => {
-                html.dataset.bpbTheme = value;
+                (html as HTMLElement).dataset.bpbTheme = value;
             }, theme);
             await imagePage.setViewportSize({ width: 1200, height: 800 });
             await imageHandle.press('Home');
@@ -2894,16 +2938,16 @@ try {
             // Resize may replace the metric note between locator resolution and
             // evaluation. Resolve the connected header and measure it atomically.
             const geometry = await waitForPageCondition(offPage, () => {
-                const note = document.querySelector('.bpb-gpx-metric-note');
-                const count = note?.querySelector('.bpb-gpx-point-count');
-                const header = note?.closest('.bpb-gpx-header');
+                const note = document.querySelector<PageElement>('.bpb-gpx-metric-note');
+                const count = note?.querySelector<PageElement>('.bpb-gpx-point-count');
+                const header = note?.closest<PageElement>('.bpb-gpx-header');
                 if (!count || !header?.isConnected) return false;
-                const full = note.getBoundingClientRect();
+                const full = note!.getBoundingClientRect();
                 if (full.width <= 0 || full.height <= 0) return false;
                 const countBox = count.getBoundingClientRect();
                 const headerHeight = header.getBoundingClientRect().height;
                 count.hidden = true;
-                const without = note.getBoundingClientRect();
+                const without = note!.getBoundingClientRect();
                 const withoutHeaderHeight = header.getBoundingClientRect().height;
                 count.hidden = false;
                 return { height: full.height, previousHeight: without.height, headerHeight, withoutHeaderHeight,
@@ -2919,24 +2963,24 @@ try {
             }
         }
     } finally {
-        await offPage.setViewportSize(metricViewport);
+        await offPage.setViewportSize(metricViewport!);
     }
     const segmentPage = await context.newPage();
     const segmentSettings = await context.newPage();
     await segmentSettings.goto(`chrome-extension://${extensionId}/options/options.html`);
     const savedSegmentTheme = await segmentSettings.evaluate(async () =>
-        (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.theme || 'system');
+        ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.theme || 'system');
     try {
         for (const theme of ['light', 'dark']) {
             await patchVerificationSettings(segmentSettings, { theme });
             await verifyGpxSegments({
                 navigate: () => segmentPage.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-suspect`),
-                evaluate: fn => segmentPage.evaluate(fn),
-                resize: (width, height) => segmentPage.setViewportSize({ width, height }),
-                click: selector => segmentPage.locator(selector).click(),
-                press: (selector, key) => segmentPage.locator(selector).press(key),
-                wait: fn => segmentPage.waitForFunction(fn),
-                screenshot: process.env.BPB_VERIFY_GPX_SEGMENTS_SCREENSHOT ? name => segmentPage.locator('#bpb-gpx-analysis').screenshot({
+                evaluate: (fn: () => unknown) => segmentPage.evaluate(fn),
+                resize: (width: number, height: number) => segmentPage.setViewportSize({ width, height }),
+                click: (selector: string) => segmentPage.locator(selector).click(),
+                press: (selector: string, key: string) => segmentPage.locator(selector).press(key),
+                wait: (fn: () => unknown) => segmentPage.waitForFunction(fn),
+                screenshot: process.env.BPB_VERIFY_GPX_SEGMENTS_SCREENSHOT ? (name: string) => segmentPage.locator('#bpb-gpx-analysis').screenshot({
                     path: `${process.env.BPB_VERIFY_GPX_SEGMENTS_SCREENSHOT}.${theme}.${name}.png`,
                 }) : null,
             });
@@ -2949,8 +2993,8 @@ try {
     const coordinateCanvas = offPage.locator('#bpb-gpx-analysis canvas');
     const capitolChartState = await offPage.evaluate(readAnalyzerChartState);
     check(capitolChartState?.labels?.join('|') === 'Elevation by Distance|Elevation by Time'
-        && capitolChartState.pointCounts?.every(count => count <= capitolChartState.pointBudget)
-        && capitolChartState.pointCounts?.every(count => count >= 2)
+        && capitolChartState.pointCounts?.every((count: number) => count <= capitolChartState.pointBudget)
+        && capitolChartState.pointCounts?.every((count: number) => count >= 2)
         && capitolChartState.breakCounts?.join('|') === '0|0'
         && capitolChartState.animation === false,
     `the packaged analyzer reintroduced a Capitol chart break: ${JSON.stringify(capitolChartState)}`);
@@ -2958,12 +3002,12 @@ try {
     await scalePage.setViewportSize({ width: 520, height: 760 });
     await scalePage.addInitScript(() => {
         window.__bpbScaleFrameGaps = [];
-        let previous = 0;
+        let previous: PageResult = 0;
         window.__bpbResetScaleFrameGaps = () => {
             window.__bpbScaleFrameGaps = [];
             previous = 0;
         };
-        const record = now => {
+        const record = (now: number) => {
             if (previous) window.__bpbScaleFrameGaps.push(now - previous);
             previous = now;
             requestAnimationFrame(record);
@@ -2978,7 +3022,7 @@ try {
         readScaleChartState,
         null,
         { timeout: 30_000 },
-    ).then(handle => handle.jsonValue());
+    ).then((handle: JSHandle) => handle.jsonValue());
     check(narrowScaleState.animation === false
         && narrowScaleState.sourceIndexes.includes(0)
         && narrowScaleState.sourceIndexes.includes(19_999)
@@ -2990,50 +3034,50 @@ try {
     const narrowSun = await scalePage.locator('.bpb-sun-calculator__summary').textContent();
     await scalePage.evaluate(() => {
         window.__bpbScaleChart = globalThis.Chart.getChart(
-            document.querySelector('#bpb-gpx-analysis canvas'));
+            document.querySelector<PageElement>('#bpb-gpx-analysis canvas'));
         window.__bpbResetScaleFrameGaps();
     });
     await scalePage.setViewportSize({ width: 1100, height: 760 });
     const wideScaleState = await scalePage.waitForFunction(narrowCount => {
-        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        const canvas = document.querySelector<PageElement>('#bpb-gpx-analysis canvas');
         const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
         const count = chart?.data?.datasets?.[0]?.data?.filter(point => point?._raw).length || 0;
         if (count <= narrowCount) return null;
         return {
             count,
             sameChart: chart === window.__bpbScaleChart,
-            selected: document.getElementById('bpb-gpx-coordinate-status')?.textContent || '',
+            selected: (document.getElementById('bpb-gpx-coordinate-status') as PageElement | null)?.textContent || '',
             maxFrameGapMs: Math.max(0, ...window.__bpbScaleFrameGaps),
         };
-    }, narrowScaleState.pointCounts[0], { timeout: 5_000 }).then(handle => handle.jsonValue());
+    }, narrowScaleState.pointCounts[0], { timeout: 5_000 }).then((handle: JSHandle) => handle.jsonValue());
     check(/Selected point 1 of /.test(narrowSelected || '') && /°/.test(narrowSun || '')
-        && wideScaleState.sameChart
-        && /Selected point 1 of /.test(wideScaleState.selected)
-        && wideScaleState.maxFrameGapMs < 1_000,
+        && wideScaleState!.sameChart
+        && /Selected point 1 of /.test(wideScaleState!.selected)
+        && wideScaleState!.maxFrameGapMs < 1_000,
     `the 20,000-point Chrome chart lost interaction/selection or exceeded its latency bound: ${JSON.stringify({
         narrowSelected, narrowSun, wideScaleState,
     })}`);
     await scalePage.close();
     const analyzerSunState = await offPage.evaluate(() => {
-        const panel = document.getElementById('bpb-gpx-analysis');
-        const coordinates = panel?.querySelector('.bpb-gpx-coordinate-controls');
-        const sun = panel?.querySelector('.bpb-sun-calculator');
-        const legend = panel?.querySelector('#bpb-gpx-chart-legend');
-        const canvasContainer = panel?.querySelector('canvas')?.parentElement;
+        const panel = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
+        const coordinates = panel?.querySelector<PageElement>('.bpb-gpx-coordinate-controls');
+        const sun = panel?.querySelector<PageElement>('.bpb-sun-calculator');
+        const legend = panel?.querySelector<PageElement>('#bpb-gpx-chart-legend');
+        const canvasContainer = panel?.querySelector<PageElement>('canvas')?.parentElement;
         const rootRect = sun?.getBoundingClientRect();
         return {
             exists: Boolean(sun),
-            hasDateInput: Boolean(sun?.querySelector('input[type="date"]')),
-            collapsed: sun?.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
-            summary: sun?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
-            events: sun?.querySelector('.bpb-sun-calculator__header-events')?.textContent || '',
-            disabled: sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === true,
-            legendBeforeChart: Boolean(legend?.compareDocumentPosition(canvasContainer) & Node.DOCUMENT_POSITION_FOLLOWING),
-            feedbackAfterChart: Boolean(canvasContainer?.compareDocumentPosition(coordinates) & Node.DOCUMENT_POSITION_FOLLOWING),
-            afterChart: Boolean(coordinates?.compareDocumentPosition(sun) & Node.DOCUMENT_POSITION_FOLLOWING),
-            insidePanel: Boolean(rootRect) && rootRect.left >= panel.getBoundingClientRect().left
-                && rootRect.right <= panel.getBoundingClientRect().right + 1,
-            borderStyle: sun ? getComputedStyle(sun).borderStyle : null,
+            hasDateInput: Boolean(sun?.querySelector<PageElement>('input[type="date"]')),
+            collapsed: sun?.querySelector<PageElement>('.bpb-sun-calculator__panel')?.hidden === true,
+            summary: sun?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '',
+            events: sun?.querySelector<PageElement>('.bpb-sun-calculator__header-events')?.textContent || '',
+            disabled: sun?.querySelector<PageElement>('.bpb-sun-calculator__toggle')?.disabled === true,
+            legendBeforeChart: Boolean((legend?.compareDocumentPosition(canvasContainer!) as number) & Node.DOCUMENT_POSITION_FOLLOWING),
+            feedbackAfterChart: Boolean((canvasContainer?.compareDocumentPosition(coordinates!) as number) & Node.DOCUMENT_POSITION_FOLLOWING),
+            afterChart: Boolean((coordinates?.compareDocumentPosition(sun!) as number) & Node.DOCUMENT_POSITION_FOLLOWING),
+            insidePanel: Boolean(rootRect) && rootRect!.left >= panel!.getBoundingClientRect().left
+                && rootRect!.right <= panel!.getBoundingClientRect().right + 1,
+            borderStyle: sun ? getComputedStyle(sun!).borderStyle : null,
         };
     });
     check(analyzerSunState.exists && !analyzerSunState.hasDateInput
@@ -3051,7 +3095,7 @@ try {
     const readOpenSunGeometry = () => offPage.evaluate(readSunCalculatorGeometry);
     const promptSunGeometry = await readOpenSunGeometry();
     const summaryHeightVariants = await analyzerSunToggle.evaluate(toggle => {
-        const summary = toggle.querySelector('.bpb-sun-calculator__summary');
+        const summary: PageResult = toggle.querySelector<PageElement>('.bpb-sun-calculator__summary');
         const original = summary.textContent;
         summary.textContent = '80° E · 1° below horizon';
         const belowHorizon = toggle.getBoundingClientRect().height;
@@ -3061,8 +3105,8 @@ try {
         const prompt = toggle.getBoundingClientRect().height;
         return { belowHorizon, aboveHorizon, prompt };
     });
-    const promptHoverTarget = await coordinateCanvas.evaluate(canvas => {
-        const chart = globalThis.Chart?.getChart?.(canvas);
+    const promptHoverTarget = await coordinateCanvas.evaluate((canvas: HTMLCanvasElement) => {
+        const chart: PageResult = globalThis.Chart?.getChart?.(canvas);
         const meta = chart?.getSortedVisibleDatasetMetas?.()[0];
         const index = meta?.data?.length ? Math.floor(meta.data.length * 0.8) : -1;
         const point = index >= 0 ? meta.data[index]?.getCenterPoint?.() : null;
@@ -3074,21 +3118,21 @@ try {
     check(promptHoverTarget, 'the packaged Analyzer chart exposed no pre-selection hover target');
     if (promptHoverTarget) await offPage.mouse.move(promptHoverTarget.x, promptHoverTarget.y);
     const hoveredPromptSunState = promptHoverTarget ? await offPage.waitForFunction(() => {
-        const calculator = document.querySelector('.bpb-sun-calculator');
-        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        const calculator = document.querySelector<PageElement>('.bpb-sun-calculator');
+        const summary = calculator?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '';
         if (!summary.includes('Hovered point')) return false;
-        const events = calculator?.querySelector('.bpb-sun-calculator__header-events')?.textContent || '';
+        const events = calculator?.querySelector<PageElement>('.bpb-sun-calculator__header-events')?.textContent || '';
         if (!/Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/.test(events)) return false;
         return { summary, layoutState: calculator?.dataset.layoutState || '' };
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null) : null;
     const hoveredPromptSunGeometry = hoveredPromptSunState ? await readOpenSunGeometry() : null;
     if (promptHoverTarget) await offPage.mouse.move(1, 1);
     const restoredPromptSunState = promptHoverTarget ? await offPage.waitForFunction(() => {
-        const calculator = document.querySelector('.bpb-sun-calculator');
-        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        const calculator = document.querySelector<PageElement>('.bpb-sun-calculator');
+        const summary = calculator?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '';
         if (!summary.includes('Trailhead')) return false;
         return { summary, layoutState: calculator?.dataset.layoutState || '' };
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null) : null;
     const restoredPromptSunGeometry = restoredPromptSunState ? await readOpenSunGeometry() : null;
     const stableCalculatorGeometryKeys = [
         'calculatorHeight', 'toggleHeight', 'panelHeight', 'layoutHeight', 'controlsHeight',
@@ -3096,8 +3140,8 @@ try {
         'directionHeight', 'elevationHeight', 'moonHeight', 'eventsHeight', 'limitationHeight',
         'canvasTop', 'canvasHeight',
     ];
-    const geometryMatches = (left, right, keys) => Boolean(left && right)
-        && keys.every(key => Math.abs(left[key] - right[key]) <= 0.5);
+    const geometryMatches = (left: PageResult, right: PageResult, keys: string[]) => Boolean(left && right)
+        && keys.every((key: string) => Math.abs(left![key] - right![key]) <= 0.5);
     check(summaryHeightVariants.belowHorizon === summaryHeightVariants.aboveHorizon
         && summaryHeightVariants.aboveHorizon === summaryHeightVariants.prompt
         && hoveredPromptSunGeometry?.layoutState === ''
@@ -3162,25 +3206,25 @@ try {
             `the packaged chart series button did not keyboard-toggle and restore: ${JSON.stringify({ before, after, restored })}`);
     }
     check(initialSeriesState.length === 2
-        && initialSeriesState.every(item => item.tabIndex === 0 && /^(true|false)$/.test(item.pressed))
+        && initialSeriesState.every((item: PageResult) => item.tabIndex === 0 && /^(true|false)$/.test(item.pressed))
         && tabbedSeries === 'Elevation by Time',
     `the packaged chart legend is not a complete tab-reachable button group: ${JSON.stringify({ initialSeriesState, tabbedSeries })}`);
     await coordinateCanvas.focus();
     await coordinateCanvas.press('ArrowRight');
     const coordinateSelection = await offPage.waitForFunction(() => {
-        const status = document.getElementById('bpb-gpx-coordinate-status');
-        const button = document.getElementById('bpb-gpx-copy-coordinates');
+        const status = (document.getElementById('bpb-gpx-coordinate-status') as PageElement | null);
+        const button = (document.getElementById('bpb-gpx-copy-coordinates') as PageElement | null);
         if (!/^Selected point \d+ of \d+:/.test(status?.textContent || '')) return false;
-        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        const canvas = document.querySelector<PageElement>('#bpb-gpx-analysis canvas');
         const focus = canvas ? getComputedStyle(canvas) : null;
         return {
-            status: status.textContent,
+            status: status!.textContent,
             buttonEnabled: button?.disabled === false,
             focusVisible: canvas?.matches(':focus-visible') === true,
             outlineWidth: focus?.outlineWidth,
             outlineStyle: focus?.outlineStyle
         };
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
     check(coordinateSelection?.buttonEnabled
         && coordinateSelection?.focusVisible
         && coordinateSelection?.outlineWidth === '3px'
@@ -3190,22 +3234,22 @@ try {
         && /Time: /.test(coordinateSelection?.status || ''),
     `the analyzer keyboard selection or visible focus ring failed: ${JSON.stringify(coordinateSelection)}`);
     const selectedSun = await offPage.waitForFunction(() => {
-        const calculator = document.querySelector('.bpb-sun-calculator');
-        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
-        const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
-        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
-        const elevation = calculator?.querySelector('.bpb-sun-calculator__elevation')?.textContent || '';
-        const moon = calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '';
-        const moonEvents = calculator?.querySelector('.bpb-sun-calculator__moon-events-text')?.textContent || '';
-        const eventLine = calculator?.querySelector('.bpb-sun-calculator__event-line');
-        const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
-        const daylightPath = daylightRange?.querySelector('.bpb-sun-calculator__daylight-path');
-        const moonRange = calculator?.querySelector('.bpb-sun-calculator__moon-visibility-range');
-        const moonPath = moonRange?.querySelector('.bpb-sun-calculator__moon-visibility-path');
-        const moonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker');
-        const compass = calculator?.querySelector('.bpb-sun-calculator__compass-ring');
-        const moonDisc = moonMarker?.querySelector('.bpb-sun-calculator__moon-marker-disc');
-        const slider = calculator?.querySelector('.bpb-sun-calculator__time');
+        const calculator = document.querySelector<PageElement>('.bpb-sun-calculator');
+        const summary = calculator?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '';
+        const direction = calculator?.querySelector<PageElement>('.bpb-sun-calculator__direction')?.textContent || '';
+        const toggle = calculator?.querySelector<PageElement>('.bpb-sun-calculator__toggle');
+        const elevation = calculator?.querySelector<PageElement>('.bpb-sun-calculator__elevation')?.textContent || '';
+        const moon = calculator?.querySelector<PageElement>('.bpb-sun-calculator__moon')?.textContent || '';
+        const moonEvents = calculator?.querySelector<PageElement>('.bpb-sun-calculator__moon-events-text')?.textContent || '';
+        const eventLine = calculator?.querySelector<PageElement>('.bpb-sun-calculator__event-line');
+        const daylightRange = calculator?.querySelector<PageElement>('.bpb-sun-calculator__daylight-range');
+        const daylightPath = daylightRange?.querySelector<PageElement>('.bpb-sun-calculator__daylight-path');
+        const moonRange = calculator?.querySelector<PageElement>('.bpb-sun-calculator__moon-visibility-range');
+        const moonPath = moonRange?.querySelector<PageElement>('.bpb-sun-calculator__moon-visibility-path');
+        const moonMarker = calculator?.querySelector<PageElement>('.bpb-sun-calculator__moon-marker');
+        const compass = calculator?.querySelector<PageElement>('.bpb-sun-calculator__compass-ring');
+        const moonDisc = moonMarker?.querySelector<PageElement>('.bpb-sun-calculator__moon-marker-disc');
+        const slider = calculator?.querySelector<PageElement>('.bpb-sun-calculator__time');
         const compassRect = compass?.getBoundingClientRect();
         const moonRect = moonDisc?.getBoundingClientRect();
         const moonRadius = compassRect && moonRect ? Math.hypot(
@@ -3214,32 +3258,32 @@ try {
         ) : null;
         const moonPathStyle = moonPath ? getComputedStyle(moonPath) : null;
         const separateMoonBand = Number.isFinite(moonRadius)
-            && Math.abs(compassRect.width * 0.28 - moonRadius) <= 3
+            && Math.abs(compassRect!.width * 0.28 - moonRadius!) <= 3
             && / A 28 28 /.test(moonPath?.getAttribute('d') || '')
-            && moonRange.querySelectorAll('.bpb-sun-calculator__moon-visibility-endpoint').length === 2
+            && moonRange!.querySelectorAll<PageElement>('.bpb-sun-calculator__moon-visibility-endpoint').length === 2
             && parseFloat(moonPathStyle?.strokeWidth || '0') >= 2
             && moonPathStyle?.stroke !== 'none'
-            && compassRect.width <= 208.5;
+            && compassRect!.width <= 208.5;
         return toggle?.disabled === false && /°/.test(summary) && /Sun direction\s*\d+°/i.test(direction)
             && /Sun elevation\s*\d+°/i.test(elevation) && eventLine?.hidden === false
             && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute('d') || '')
-            && daylightRange.querySelectorAll('.bpb-sun-calculator__daylight-endpoint').length === 2
+            && daylightRange.querySelectorAll<PageElement>('.bpb-sun-calculator__daylight-endpoint').length === 2
             && /Moon phase/i.test(moon) && /\d+°\s+[NSEW]{1,3}/.test(moon)
             && /(?:above|below) horizon/.test(moon)
             && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
-            && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator.dataset.moonPhase || '')
+            && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator!.dataset.moonPhase || '')
             && /Moon.*(?:gray band|level horizon)/i.test(moonEvents)
             && /(?:rise|all day)/i.test(moonEvents)
             && moonMarker?.hidden === false && /^rotate\(/.test(moonMarker.style.transform)
             && moonRange?.hidden === false && separateMoonBand
-            && calculator.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
-            && calculator.querySelector('.bpb-sun-calculator__icon')
+            && calculator!.querySelector<PageElement>('.bpb-sun-calculator__moon-icon')?.textContent
+            && calculator!.querySelector<PageElement>('.bpb-sun-calculator__icon')
             ? {
                 summary, direction, elevation, moon, moonEvents,
                 valueText: slider?.getAttribute('aria-valuetext') || '',
-                moonBandGeometry: { compass: compassRect.width, moonRadius, path: moonPath.getAttribute('d') },
+                moonBandGeometry: { compass: compassRect!.width, moonRadius, path: moonPath!.getAttribute('d') },
             } : false;
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
     check(selectedSun,
         `the packaged GPX Sun calculator did not follow keyboard route selection: ${JSON.stringify(selectedSun)}`);
     if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') await analyzerSunToggle.click();
@@ -3248,18 +3292,18 @@ try {
     const analyzerSunSlider = offPage.locator('.bpb-sun-calculator__time');
     const originalSunMinute = Number(await analyzerSunSlider.inputValue());
     const originalSunClock = await offPage.locator('.bpb-sun-calculator__clock').textContent();
-    const readGeometryAtMinute = async (minute, expectedClock) => {
-        await analyzerSunSlider.evaluate((slider, nextMinute) => {
+    const readGeometryAtMinute = async (minute: number, expectedClock: string) => {
+        await analyzerSunSlider.evaluate((slider: HTMLInputElement, nextMinute: number) => {
             slider.value = String(nextMinute);
             slider.dispatchEvent(new Event('input', { bubbles: true }));
         }, minute);
         const updated = await offPage.waitForFunction(({ nextMinute, clock }) => {
-            const calculator = document.querySelector('.bpb-sun-calculator');
-            const slider = calculator?.querySelector('.bpb-sun-calculator__time');
-            const displayedClock = calculator?.querySelector('.bpb-sun-calculator__clock')?.textContent || '';
+            const calculator = document.querySelector<PageElement>('.bpb-sun-calculator');
+            const slider = calculator?.querySelector<PageElement>('.bpb-sun-calculator__time');
+            const displayedClock = calculator?.querySelector<PageElement>('.bpb-sun-calculator__clock')?.textContent || '';
             return Number(slider?.value) === nextMinute && displayedClock === clock;
         }, { nextMinute: minute, clock: expectedClock }, { timeout: 5000 })
-            .then(handle => handle.jsonValue()).catch(() => false);
+            .then((handle: JSHandle) => handle.jsonValue()).catch(() => false);
         if (!updated) return null;
         await offPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() =>
             requestAnimationFrame(resolve))));
@@ -3267,7 +3311,7 @@ try {
     };
     const morningSunGeometry = await readGeometryAtMinute(634, '10:34 AM');
     const afternoonSunGeometry = await readGeometryAtMinute(843, '02:03 PM');
-    const restoredMinuteGeometry = await readGeometryAtMinute(originalSunMinute, originalSunClock);
+    const restoredMinuteGeometry = await readGeometryAtMinute(originalSunMinute, originalSunClock!);
     check(geometryMatches(morningSunGeometry, afternoonSunGeometry,
         stableCalculatorGeometryKeys)
         && geometryMatches(selectedSunGeometry, restoredMinuteGeometry,
@@ -3282,8 +3326,8 @@ try {
         selectedSunGeometry,
         restoredMinuteGeometry,
     })}`);
-    const hoverTarget = await coordinateCanvas.evaluate(canvas => {
-        const chart = globalThis.Chart?.getChart?.(canvas);
+    const hoverTarget = await coordinateCanvas.evaluate((canvas: HTMLCanvasElement) => {
+        const chart: PageResult = globalThis.Chart?.getChart?.(canvas);
         const meta = chart?.getSortedVisibleDatasetMetas?.()[0];
         const index = meta?.data?.length ? Math.floor(meta.data.length * 0.8) : -1;
         const point = index >= 0 ? meta.data[index]?.getCenterPoint?.() : null;
@@ -3294,25 +3338,25 @@ try {
     });
     check(hoverTarget, 'the packaged Analyzer chart exposed no real hover target');
     if (hoverTarget) await offPage.mouse.move(hoverTarget.x, hoverTarget.y);
-    const hoveredSun = hoverTarget ? await offPage.waitForFunction(previous => {
-        const calculator = document.querySelector('.bpb-sun-calculator');
-        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
-        const valueText = calculator?.querySelector('.bpb-sun-calculator__time')
+    const hoveredSun = hoverTarget ? await offPage.waitForFunction((previous: PageResult) => {
+        const calculator = document.querySelector<PageElement>('.bpb-sun-calculator');
+        const summary = calculator?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '';
+        const valueText = calculator?.querySelector<PageElement>('.bpb-sun-calculator__time')
             ?.getAttribute('aria-valuetext') || '';
         return summary !== previous.summary && valueText !== previous.valueText
             ? { summary, valueText } : false;
-    }, selectedSun, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    }, selectedSun, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null) : null;
     check(hoveredSun,
         `the packaged GPX Sun calculator did not preview a hovered chart point: ${JSON.stringify({ selectedSun, hoveredSun })}`);
     const hoveredSelectedSunGeometry = hoveredSun ? await readOpenSunGeometry() : null;
     if (hoverTarget) await offPage.mouse.move(1, 1);
-    const restoredSun = hoverTarget ? await offPage.waitForFunction(previous => {
-        const calculator = document.querySelector('.bpb-sun-calculator');
-        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
-        const valueText = calculator?.querySelector('.bpb-sun-calculator__time')
+    const restoredSun = hoverTarget ? await offPage.waitForFunction((previous: PageResult) => {
+        const calculator = document.querySelector<PageElement>('.bpb-sun-calculator');
+        const summary = calculator?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '';
+        const valueText = calculator?.querySelector<PageElement>('.bpb-sun-calculator__time')
             ?.getAttribute('aria-valuetext') || '';
         return summary === previous.summary && valueText === previous.valueText;
-    }, selectedSun, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    }, selectedSun, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null) : null;
     check(restoredSun,
         `the packaged GPX Sun calculator did not restore its selected point after hover: ${JSON.stringify({ selectedSun, hoveredSun })}`);
     const restoredSelectedSunGeometry = restoredSun ? await readOpenSunGeometry() : null;
@@ -3327,31 +3371,30 @@ try {
     })}`);
     await analyzerSunToggle.focus();
     await offPage.keyboard.press('Tab');
-    const analyzerSunBefore = await analyzerSunSlider.evaluate(slider => ({
+    const analyzerSunBefore = await analyzerSunSlider.evaluate((slider: HTMLInputElement) => ({
         value: Number(slider.value),
         valueText: slider.getAttribute('aria-valuetext') || '',
         height: slider.getBoundingClientRect().height,
         focusVisible: slider.matches(':focus-visible'),
-        outlineWidth: getComputedStyle(slider).outlineWidth,
-        outlineStyle: getComputedStyle(slider).outlineStyle,
-        horizon: slider.closest('.bpb-sun-calculator')?.dataset.horizon || '',
-        belowClass: slider.closest('.bpb-sun-calculator')
-            ?.querySelector('.bpb-sun-calculator__sun')
+        outlineWidth: getComputedStyle(slider!).outlineWidth,
+        outlineStyle: getComputedStyle(slider!).outlineStyle,
+        horizon: slider.closest<PageElement>('.bpb-sun-calculator')?.dataset.horizon || '',
+        belowClass: slider.closest<PageElement>('.bpb-sun-calculator')
+            ?.querySelector<PageElement>('.bpb-sun-calculator__sun')
             ?.classList.contains('bpb-sun-calculator__sun--below-horizon') === true,
-        summary: slider.closest('.bpb-sun-calculator')
-            ?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
-        chevronTransform: getComputedStyle(slider.closest('.bpb-sun-calculator')
-            ?.querySelector('.bpb-sun-calculator__chevron')).transform,
+        summary: slider.closest<PageElement>('.bpb-sun-calculator')
+            ?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '',
+        chevronTransform: getComputedStyle(slider.closest<PageElement>('.bpb-sun-calculator')?.querySelector<PageElement>('.bpb-sun-calculator__chevron') as Element).transform,
     }));
     await offPage.keyboard.press('ArrowRight');
-    const analyzerSunAfter = await offPage.waitForFunction(previous => {
-        const slider = document.querySelector('.bpb-sun-calculator__time');
+    const analyzerSunAfter = await offPage.waitForFunction((previous: PageResult) => {
+        const slider = document.querySelector<PageElement>('.bpb-sun-calculator__time');
         const valueText = slider?.getAttribute('aria-valuetext') || '';
         return Number(slider?.value) === previous.value + 1 && valueText !== previous.valueText
             && /\d.*:\d.*(?:[A-Z]{2,5}|UTC)/.test(valueText)
-            ? { value: Number(slider.value), valueText }
+            ? { value: Number(slider!.value), valueText }
             : false;
-    }, analyzerSunBefore, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    }, analyzerSunBefore, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
     check(analyzerSunBefore.height >= 44 && analyzerSunBefore.focusVisible
         && analyzerSunBefore.outlineWidth === '3px' && analyzerSunBefore.outlineStyle === 'solid'
         && /\d.*:\d/.test(analyzerSunBefore.valueText) && analyzerSunAfter
@@ -3360,14 +3403,14 @@ try {
         && analyzerSunBefore.chevronTransform !== 'none',
     `the packaged GPX Sun slider lacks clock semantics, keyboard updates, focus, or target geometry: ${JSON.stringify({ analyzerSunBefore, analyzerSunAfter })}`);
     const openAnalyzerSunLayout = await offPage.evaluate(() => {
-        const panel = document.getElementById('bpb-gpx-analysis');
-        const calculator = panel?.querySelector('.bpb-sun-calculator');
+        const panel = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
+        const calculator = panel?.querySelector<PageElement>('.bpb-sun-calculator');
         return {
-            panelOverflow: Boolean(panel) && panel.scrollWidth > panel.clientWidth,
-            calculatorOverflow: Boolean(calculator) && calculator.scrollWidth > calculator.clientWidth,
+            panelOverflow: Boolean(panel) && panel!.scrollWidth > panel!.clientWidth,
+            calculatorOverflow: Boolean(calculator) && calculator!.scrollWidth > calculator!.clientWidth,
             documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             calculatorColumns: calculator
-                ? getComputedStyle(calculator.querySelector('.bpb-sun-calculator__layout')).gridTemplateColumns
+                ? getComputedStyle(calculator.querySelector<PageElement>('.bpb-sun-calculator__layout')!).gridTemplateColumns
                 : null,
         };
     });
@@ -3378,13 +3421,13 @@ try {
     if (await analyzerSunToggle.getAttribute('aria-expanded') === 'true') await analyzerSunToggle.click();
     await coordinateCanvas.press('ArrowRight');
     const routeScrubber = await offPage.waitForFunction(() => {
-        const status = document.getElementById('bpb-gpx-coordinate-status')?.textContent || '';
+        const status = (document.getElementById('bpb-gpx-coordinate-status') as PageElement | null)?.textContent || '';
         const selected = status.match(
             /^Selected point \d+ of \d+: (-?\d+\.\d+), (-?\d+\.\d+)/
         );
-        const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
+        const iframe: PageResult = document.querySelector<PageElement>('iframe[src*="MasterMap.aspx"]');
         const marker = iframe?.contentWindow?.mapsPlaceholder?.layers?.find(
-            layer => layer?.options?.radius === 9
+            (layer: PageResult) => layer?.options?.radius === 9
         );
         const raw = marker?.getLatLngs?.()[0];
         const lat = Array.isArray(raw) ? raw[0] : raw?.lat;
@@ -3393,13 +3436,13 @@ try {
         if (Math.abs(lat - Number(selected[1])) > 1e-5
             || Math.abs(lon - Number(selected[2])) > 1e-5) return false;
         return { status, lat, lon };
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
     check(!!routeScrubber,
         `the analyzer keyboard selection did not move the route scrubber: ${JSON.stringify(routeScrubber)}`);
     const effectiveHeightSettingsPage = await context.newPage();
     await effectiveHeightSettingsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
     const originalHeightSettings = await effectiveHeightSettingsPage.evaluate(async () => {
-        const { bpbDeviceSettings } = await chrome.storage.local.get('bpbDeviceSettings');
+        const { bpbDeviceSettings } = await chrome.storage.local.get<StoredRecords>('bpbDeviceSettings');
         await chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: 720 } });
         return bpbDeviceSettings.settings;
     });
@@ -3415,9 +3458,9 @@ try {
     await offPage.setViewportSize({ width: 1200, height: 600 });
     await offPage.locator('#bpb-map-resize-handle').scrollIntoViewIfNeeded();
     const readEffectiveMapHeight = () => offPage.evaluate(() => {
-        const map = document.getElementById('bpb-map-viewport');
-        const frame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
-        const handle = document.getElementById('bpb-map-resize-handle');
+        const map = (document.getElementById('bpb-map-viewport') as PageElement | null);
+        const frame = map?.querySelector<PageElement>('iframe[src*="MasterMap.aspx"]');
+        const handle = (document.getElementById('bpb-map-resize-handle') as PageElement | null);
         const mapRect = map?.getBoundingClientRect();
         const frameRect = frame?.getBoundingClientRect();
         const label = handle?.getAttribute('aria-label') || '';
@@ -3430,9 +3473,9 @@ try {
         } : null;
     });
     const shortPreferredHeight = await offPage.waitForFunction(expectedWrapperHeight => {
-        const map = document.getElementById('bpb-map-viewport');
-        const frame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
-        const handle = document.getElementById('bpb-map-resize-handle');
+        const map = (document.getElementById('bpb-map-viewport') as PageElement | null);
+        const frame = map?.querySelector<PageElement>('iframe[src*="MasterMap.aspx"]');
+        const handle = (document.getElementById('bpb-map-resize-handle') as PageElement | null);
         const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
         const labelledHeight = Number(/by (\d+) pixels high/.exec(
             handle?.getAttribute('aria-label') || '')?.[1]);
@@ -3442,44 +3485,44 @@ try {
                 contentHeight,
                 labelledHeight,
             } : false;
-    }, 720 + mapResizeGeometry.railHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    }, 720 + mapResizeGeometry.railHeight, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue());
     await offPage.setViewportSize({ width: 1200, height: 1100 });
     const grownUntouchedHeight = await offPage.waitForFunction(() => {
-        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
-        const handle = document.getElementById('bpb-map-resize-handle');
+        const frame = document.querySelector<PageElement>('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = (document.getElementById('bpb-map-resize-handle') as PageElement | null);
         const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
         const labelledHeight = Number(/by (\d+) pixels high/.exec(
             handle?.getAttribute('aria-label') || '')?.[1]);
         return contentHeight === 720 && labelledHeight === contentHeight
             ? { contentHeight, labelledHeight } : false;
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue());
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue());
     await offPage.setViewportSize({ width: 1200, height: 600 });
-    await offPage.waitForFunction(expected => {
-        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+    await offPage.waitForFunction((expected: number) => {
+        const frame = document.querySelector<PageElement>('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
         return Math.round(frame?.getBoundingClientRect().height || 0) === expected;
     }, shortPreferredHeight.contentHeight, { timeout: 5000 });
     const effectiveMapHandle = offPage.locator('#bpb-map-resize-handle');
     await effectiveMapHandle.focus();
     await offPage.keyboard.press('ArrowUp');
-    const firstUpHeight = await offPage.waitForFunction(previous => {
-        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
-        const handle = document.getElementById('bpb-map-resize-handle');
+    const firstUpHeight = await offPage.waitForFunction((previous: PageResult) => {
+        const frame = document.querySelector<PageElement>('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = (document.getElementById('bpb-map-resize-handle') as PageElement | null);
         const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
         const labelledHeight = Number(/by (\d+) pixels high/.exec(
             handle?.getAttribute('aria-label') || '')?.[1]);
         return contentHeight === previous - 10 && labelledHeight === contentHeight
             ? { contentHeight, labelledHeight } : false;
-    }, shortPreferredHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    }, shortPreferredHeight.contentHeight, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue());
     await offPage.keyboard.press('ArrowDown');
-    const firstDownHeight = await offPage.waitForFunction(expected => {
-        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
-        const handle = document.getElementById('bpb-map-resize-handle');
+    const firstDownHeight = await offPage.waitForFunction((expected: number) => {
+        const frame = document.querySelector<PageElement>('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = (document.getElementById('bpb-map-resize-handle') as PageElement | null);
         const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
         const labelledHeight = Number(/by (\d+) pixels high/.exec(
             handle?.getAttribute('aria-label') || '')?.[1]);
         return contentHeight === expected && labelledHeight === contentHeight
             ? { contentHeight, labelledHeight } : false;
-    }, shortPreferredHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    }, shortPreferredHeight.contentHeight, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue());
     const effectiveHandleBox = await effectiveMapHandle.boundingBox();
     if (effectiveHandleBox) {
         const x = effectiveHandleBox.x + effectiveHandleBox.width / 2;
@@ -3489,19 +3532,19 @@ try {
         await offPage.mouse.move(x, y - 1);
         await offPage.mouse.up();
     }
-    const firstPointerHeight = await offPage.waitForFunction(previous => {
-        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
-        const handle = document.getElementById('bpb-map-resize-handle');
+    const firstPointerHeight = await offPage.waitForFunction((previous: PageResult) => {
+        const frame = document.querySelector<PageElement>('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = (document.getElementById('bpb-map-resize-handle') as PageElement | null);
         const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
         const labelledHeight = Number(/by (\d+) pixels high/.exec(
             handle?.getAttribute('aria-label') || '')?.[1]);
         return contentHeight === previous - 1 && labelledHeight === contentHeight
             ? { contentHeight, labelledHeight } : false;
-    }, firstDownHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
-    let persistedEffectiveHeight;
+    }, firstDownHeight.contentHeight, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue());
+    let persistedEffectiveHeight: unknown;
     await waitForCondition(async () => {
         persistedEffectiveHeight = await effectiveHeightSettingsPage.evaluate(async () => {
-            const { bpbDeviceSettings } = await chrome.storage.local.get('bpbDeviceSettings');
+            const { bpbDeviceSettings } = await chrome.storage.local.get<StoredRecords>('bpbDeviceSettings');
             return bpbDeviceSettings.settings.mapViewportHeight;
         });
         return persistedEffectiveHeight === firstPointerHeight.contentHeight;
@@ -3510,11 +3553,11 @@ try {
         throw error;
     });
     await offPage.setViewportSize({ width: 1200, height: 1100 });
-    const grownInteractedHeight = await offPage.waitForFunction(expected => {
-        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+    const grownInteractedHeight = await offPage.waitForFunction((expected: number) => {
+        const frame = document.querySelector<PageElement>('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
         return Math.round(frame?.getBoundingClientRect().height || 0) === expected
             ? expected : false;
-    }, firstPointerHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    }, firstPointerHeight.contentHeight, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue());
     check(shortPreferredHeight.contentHeight
         === shortPreferredHeight.viewportHeight - 16 - mapResizeGeometry.railHeight
         && shortPreferredHeight.labelledHeight === shortPreferredHeight.contentHeight
@@ -3533,9 +3576,9 @@ try {
         await chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: original.mapViewportHeight } });
     }, originalHeightSettings);
     await effectiveHeightSettingsPage.close();
-    if (effectiveHeightViewport) await offPage.setViewportSize(effectiveHeightViewport);
+    if (effectiveHeightViewport) await offPage.setViewportSize(effectiveHeightViewport!);
     await offPage.waitForFunction(({ expected, railHeight }) => {
-        const map = document.getElementById('bpb-map-viewport');
+        const map = (document.getElementById('bpb-map-viewport') as PageElement | null);
         return map?.style.height === `${expected + railHeight}px`;
     }, {
         expected: originalHeightSettings.mapViewportHeight || 450,
@@ -3547,37 +3590,37 @@ try {
     // Bringing only the canvas into view no longer frames both surfaces.
     await offPage.locator('#bpb-route-explorer').evaluate(explorer => explorer.scrollIntoView({ block: 'start' }));
     await offPage.waitForFunction(() => {
-        const explorer = document.getElementById('bpb-route-explorer');
+        const explorer = (document.getElementById('bpb-route-explorer') as PageElement | null);
         const explorerRect = explorer?.getBoundingClientRect();
-        const mapRect = document.getElementById('bpb-map-viewport')?.getBoundingClientRect();
-        const chartRect = explorer?.querySelector('canvas')?.getBoundingClientRect();
+        const mapRect = (document.getElementById('bpb-map-viewport') as PageElement | null)?.getBoundingClientRect();
+        const chartRect = explorer?.querySelector<PageElement>('canvas')?.getBoundingClientRect();
         const viewportWidth = document.documentElement.clientWidth;
         const viewportHeight = document.documentElement.clientHeight;
         return Boolean(explorerRect)
-            && explorerRect.left >= -1
-            && explorerRect.right <= viewportWidth + 1
-            && mapRect?.top >= -1 && mapRect.bottom <= viewportHeight + 1
-            && chartRect?.top >= -1 && chartRect.bottom <= viewportHeight + 1;
+            && explorerRect!.left >= -1
+            && explorerRect!.right <= viewportWidth + 1
+            && (mapRect?.top as number) >= -1 && mapRect!.bottom <= viewportHeight + 1
+            && (chartRect?.top as number) >= -1 && chartRect!.bottom <= viewportHeight + 1;
     }, null, { timeout: 5000 }).catch(() => null);
-    const routeExplorerLayout = await offPage.evaluate(() => {
-        const explorer = document.getElementById('bpb-route-explorer');
-        const map = document.getElementById('bpb-map-viewport');
-        const mapFrame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
-        const resizeHandle = document.getElementById('bpb-map-resize-handle');
-        const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
-        const mapDetails = mapColumn?.querySelector('.bpb-route-explorer__map-details');
-        const analysis = document.getElementById('bpb-gpx-analysis');
-        const canvas = analysis?.querySelector('canvas');
-        const units = analysis?.querySelector('#bpb-gpx-units');
-        const routeStyle = analysis?.querySelector('.bpb-gpx-route-style-controls');
+    const routeExplorerLayout: PageResult = await offPage.evaluate(() => {
+        const explorer = (document.getElementById('bpb-route-explorer') as PageElement | null);
+        const map = (document.getElementById('bpb-map-viewport') as PageElement | null);
+        const mapFrame: PageResult = map?.querySelector<PageElement>('iframe[src*="MasterMap.aspx"]');
+        const resizeHandle = (document.getElementById('bpb-map-resize-handle') as PageElement | null);
+        const mapColumn = explorer?.querySelector<PageElement>('.bpb-route-explorer__map-column');
+        const mapDetails = mapColumn?.querySelector<PageElement>('.bpb-route-explorer__map-details');
+        const analysis = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
+        const canvas = analysis?.querySelector<PageElement>('canvas');
+        const units = analysis?.querySelector<PageElement>('#bpb-gpx-units');
+        const routeStyle = analysis?.querySelector<PageElement>('.bpb-gpx-route-style-controls');
         const explorerRect = explorer?.getBoundingClientRect();
         const mapRect = map?.getBoundingClientRect();
         const mapFrameRect = mapFrame?.getBoundingClientRect();
         const resizeHandleRect = resizeHandle?.getBoundingClientRect();
-        const resizeGripRect = resizeHandle?.querySelector('.bpb-map-resize-grip')
+        const resizeGripRect = resizeHandle?.querySelector<PageElement>('.bpb-map-resize-grip')
             ?.getBoundingClientRect();
-        const nativeZoomLocalRect = mapFrame?.contentDocument
-            ?.querySelector('.leaflet-control-zoom')?.getBoundingClientRect();
+        const nativeZoomLocalRect = (mapFrame?.contentDocument as Document | null | undefined)
+            ?.querySelector<PageElement>('.leaflet-control-zoom')?.getBoundingClientRect();
         const nativeZoomRect = mapFrameRect && nativeZoomLocalRect ? {
             left: mapFrameRect.left + nativeZoomLocalRect.left,
             right: mapFrameRect.left + nativeZoomLocalRect.right,
@@ -3588,10 +3631,10 @@ try {
             ? document.createTreeWalker(mapDetails, NodeFilter.SHOW_TEXT) : null;
         let firstDetailsText = null;
         while (textWalker && (firstDetailsText = textWalker.nextNode())) {
-            if (firstDetailsText.textContent.trim()) break;
+            if (firstDetailsText.textContent!.trim()) break;
         }
         const detailsTextRange = firstDetailsText ? document.createRange() : null;
-        detailsTextRange?.selectNodeContents(firstDetailsText);
+        detailsTextRange?.selectNodeContents(firstDetailsText!);
         const detailsTextRect = detailsTextRange?.getBoundingClientRect();
         const analysisRect = analysis?.getBoundingClientRect();
         const canvasRect = canvas?.getBoundingClientRect();
@@ -3599,7 +3642,7 @@ try {
         const routeStyleRect = routeStyle?.getBoundingClientRect();
         const viewportHeight = document.documentElement.clientHeight;
         const viewportWidth = document.documentElement.clientWidth;
-        const overflowDetails = [...document.querySelectorAll('body *')]
+        const overflowDetails = [...document.querySelectorAll<PageElement>('body *')]
             .map(element => {
                 const rect = element.getBoundingClientRect();
                 return {
@@ -3624,28 +3667,28 @@ try {
                 width: viewportWidth,
                 height: viewportHeight,
             },
-            display: explorer ? getComputedStyle(explorer).display : null,
+            display: explorer ? getComputedStyle(explorer!).display : null,
             layoutState: explorer?.dataset.layout || '',
-            mapPosition: mapColumn ? getComputedStyle(mapColumn).position : null,
-            sideBySide: Boolean(mapRect && analysisRect) && mapRect.right <= analysisRect.left + 1,
+            mapPosition: mapColumn ? getComputedStyle(mapColumn!).position : null,
+            sideBySide: Boolean(mapRect && analysisRect) && mapRect!.right <= analysisRect!.left + 1,
             controlsInline: Boolean(unitsRect && routeStyleRect)
-                && Math.abs(unitsRect.top - routeStyleRect.top) <= 1,
+                && Math.abs(unitsRect!.top - routeStyleRect!.top) <= 1,
             explorerInsideViewport: Boolean(explorerRect)
-                && explorerRect.left >= -1
-                && explorerRect.right <= document.documentElement.clientWidth + 1,
+                && explorerRect!.left >= -1
+                && explorerRect!.right <= document.documentElement.clientWidth + 1,
             analysisInsideViewport: Boolean(analysisRect)
-                && analysisRect.left >= -1
-                && analysisRect.right <= document.documentElement.clientWidth + 1,
-            explorerOverflow: Boolean(explorer) && explorer.scrollWidth > explorer.clientWidth,
-            mapVisible: Boolean(mapRect) && mapRect.top >= -1 && mapRect.bottom <= viewportHeight + 1,
+                && analysisRect!.left >= -1
+                && analysisRect!.right <= document.documentElement.clientWidth + 1,
+            explorerOverflow: Boolean(explorer) && explorer!.scrollWidth > explorer!.clientWidth,
+            mapVisible: Boolean(mapRect) && mapRect!.top >= -1 && mapRect!.bottom <= viewportHeight + 1,
             mapBounds: mapRect ? { top: mapRect.top, bottom: mapRect.bottom } : null,
             mapResizeTarget: resizeHandleRect && mapFrameRect ? {
                 width: resizeHandleRect.width,
                 height: resizeHandleRect.height,
-                railHeight: mapRect.bottom - mapFrameRect.bottom,
+                railHeight: mapRect!.bottom - mapFrameRect.bottom,
                 overlap: mapFrameRect.bottom - resizeHandleRect.top,
-                rightAligned: Math.abs(resizeHandleRect.right - mapRect.right) <= 1,
-                bottomAligned: Math.abs(resizeHandleRect.bottom - mapRect.bottom) <= 1,
+                rightAligned: Math.abs(resizeHandleRect.right - mapRect!.right) <= 1,
+                bottomAligned: Math.abs(resizeHandleRect.bottom - mapRect!.bottom) <= 1,
                 gripWidth: resizeGripRect?.width || 0,
                 gripHeight: resizeGripRect?.height || 0,
                 overlapsNativeZoom: nativeZoomRect ? !(
@@ -3654,16 +3697,16 @@ try {
                     || resizeHandleRect.bottom <= nativeZoomRect.top
                     || resizeHandleRect.top >= nativeZoomRect.bottom
                 ) : null,
-                background: getComputedStyle(resizeHandle).backgroundColor,
-                border: getComputedStyle(resizeHandle).borderWidth,
-                touchAction: getComputedStyle(resizeHandle).touchAction,
+                background: getComputedStyle(resizeHandle!).backgroundColor,
+                border: getComputedStyle(resizeHandle!).borderWidth,
+                touchAction: getComputedStyle(resizeHandle!).touchAction,
             } : null,
             mapDetails: mapDetails && mapFrameRect && detailsTextRect ? {
                 leadingBreak: mapDetails.firstChild?.nodeName === 'BR',
-                text: firstDetailsText.textContent.trim(),
+                text: firstDetailsText!.textContent!.trim(),
                 textGap: detailsTextRect.top - mapFrameRect.bottom,
             } : null,
-            chartVisible: Boolean(canvasRect) && canvasRect.top >= -1 && canvasRect.bottom <= viewportHeight + 1,
+            chartVisible: Boolean(canvasRect) && canvasRect!.top >= -1 && canvasRect!.bottom <= viewportHeight + 1,
             fullScreenWithMap: Boolean(document.querySelector(
                 '.bpb-route-explorer__map-details a[href*="BigMap.aspx"]'
             )),
@@ -3709,49 +3752,49 @@ try {
     await mapResizeHandle.focus();
     await offPage.keyboard.press('Shift+ArrowRight');
     const stackedExplorerLayout = await offPage.waitForFunction(() => {
-        const explorer = document.getElementById('bpb-route-explorer');
-        const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
-        const map = document.getElementById('bpb-map-viewport');
-        const analysis = document.getElementById('bpb-gpx-analysis');
+        const explorer = (document.getElementById('bpb-route-explorer') as PageElement | null);
+        const mapColumn = explorer?.querySelector<PageElement>('.bpb-route-explorer__map-column');
+        const map = (document.getElementById('bpb-map-viewport') as PageElement | null);
+        const analysis = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
         const mapRect = mapColumn?.getBoundingClientRect();
         const analysisRect = analysis?.getBoundingClientRect();
         if (explorer?.dataset.layout !== 'stacked' || !mapRect || !analysisRect) return false;
         return {
             mapWidth: map?.style.width || '',
-            mapPosition: getComputedStyle(mapColumn).position,
+            mapPosition: getComputedStyle(mapColumn!).position,
             analysisBelowMap: analysisRect.top >= mapRect.bottom - 1,
         };
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
     check(stackedExplorerLayout?.mapWidth === '500px'
         && stackedExplorerLayout.mapPosition === 'static'
         && stackedExplorerLayout.analysisBelowMap,
     `growing the map did not wrap the Analyzer below it: ${JSON.stringify(stackedExplorerLayout)}`);
     await offPage.keyboard.press('Shift+ArrowLeft');
     const restoredExplorerLayout = await offPage.waitForFunction(() => {
-        const explorer = document.getElementById('bpb-route-explorer');
-        const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
-        const map = document.getElementById('bpb-map-viewport');
-        const analysis = document.getElementById('bpb-gpx-analysis');
+        const explorer = (document.getElementById('bpb-route-explorer') as PageElement | null);
+        const mapColumn = explorer?.querySelector<PageElement>('.bpb-route-explorer__map-column');
+        const map = (document.getElementById('bpb-map-viewport') as PageElement | null);
+        const analysis = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
         const mapRect = mapColumn?.getBoundingClientRect();
         const analysisRect = analysis?.getBoundingClientRect();
         if (explorer?.dataset.layout !== 'side' || !mapRect || !analysisRect) return false;
         return {
             mapWidth: map?.style.width || '',
-            mapPosition: getComputedStyle(mapColumn).position,
+            mapPosition: getComputedStyle(mapColumn!).position,
             sideBySide: mapRect.right <= analysisRect.left + 1,
         };
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
     check(restoredExplorerLayout?.mapWidth === '450px'
         && restoredExplorerLayout.mapPosition === 'sticky'
         && restoredExplorerLayout.sideBySide,
     `shrinking the map did not restore the side-by-side Analyzer: ${JSON.stringify(restoredExplorerLayout)}`);
-    if (previousExplorerViewport) await offPage.setViewportSize(previousExplorerViewport);
+    if (previousExplorerViewport) await offPage.setViewportSize(previousExplorerViewport!);
     await offPage.locator('#bpb-gpx-copy-coordinates').click();
     const coordinateCopy = await offPage.waitForFunction(() => {
-        const status = document.getElementById('bpb-gpx-coordinate-status');
+        const status = (document.getElementById('bpb-gpx-coordinate-status') as PageElement | null);
         const text = status?.textContent || '';
         if (!/^Copied:|^Copy unavailable\./.test(text)) return false;
-        const fallback = document.querySelector('.bpb-gpx-coordinate-fallback');
+        const fallback = document.querySelector<PageElement>('.bpb-gpx-coordinate-fallback');
         return {
             text,
             state: status?.dataset.state,
@@ -3761,12 +3804,12 @@ try {
                 && fallback.selectionStart === 0
                 && fallback.selectionEnd === fallback.value.length
         };
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
     check(coordinateCopy?.state === 'success'
         || (coordinateCopy?.state === 'error' && coordinateCopy?.fallbackVisible && coordinateCopy?.fallbackSelected),
     `the analyzer coordinate copy gave neither confirmation nor a selected fallback: ${JSON.stringify(coordinateCopy)}`);
-    const settleAnalyzerChart = () => coordinateCanvas.evaluate(canvas => {
-        const chart = globalThis.Chart?.getChart?.(canvas);
+    const settleAnalyzerChart = () => coordinateCanvas.evaluate((canvas: HTMLCanvasElement) => {
+        const chart: PageResult = globalThis.Chart?.getChart?.(canvas);
         if (!chart) return false;
         chart.stop();
         chart.update('none');
@@ -3791,8 +3834,8 @@ try {
         const sunToggle = offPage.locator('.bpb-sun-calculator__toggle');
         if (await sunToggle.getAttribute('aria-expanded') !== 'true') await sunToggle.click();
         const narrowSunLayout = await offPage.evaluate(() => {
-            const panel = document.getElementById('bpb-gpx-analysis');
-            const calculator = panel?.querySelector('.bpb-sun-calculator');
+            const panel = (document.getElementById('bpb-gpx-analysis') as PageElement | null);
+            const calculator = panel?.querySelector<PageElement>('.bpb-sun-calculator');
             const panelRect = panel?.getBoundingClientRect();
             const calculatorRect = calculator?.getBoundingClientRect();
             return {
@@ -3800,7 +3843,7 @@ try {
                 documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
                 panelOverflow: panel ? panel.scrollWidth > panel.clientWidth : true,
                 calculatorInsidePanel: Boolean(panelRect && calculatorRect)
-                    && calculatorRect.left >= panelRect.left - 1 && calculatorRect.right <= panelRect.right + 1,
+                    && calculatorRect!.left >= panelRect!.left - 1 && calculatorRect!.right <= panelRect!.right + 1,
             };
         });
         check(narrowSunLayout.viewportWidth === 390 && !narrowSunLayout.documentOverflow
@@ -3809,14 +3852,14 @@ try {
         await offPage.locator('#bpb-gpx-analysis').screenshot({
             path: process.env.BPB_VERIFY_ANALYZER_NARROW_SCREENSHOT
         });
-        if (previousViewport) await offPage.setViewportSize(previousViewport);
+        if (previousViewport) await offPage.setViewportSize(previousViewport!);
     }
     if (extensionId) {
         const analyzerThemePage = await context.newPage();
         await analyzerThemePage.goto(`chrome-extension://${extensionId}/options/options.html`);
         await patchVerificationSettings(analyzerThemePage, { theme: 'dark' });
         await offPage.waitForFunction(() =>
-            document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
+            (document.getElementById('bpb-gpx-analysis') as PageElement | null)?.dataset.theme === 'dark',
         null, { timeout: 5000 });
         await coordinateCanvas.focus();
         await coordinateCanvas.press('ArrowRight');
@@ -3850,16 +3893,16 @@ try {
     // web-accessible extension URL must all be inert. This runs in the host
     // page realm against the packaged extension, not against a bridge stub.
     const disabledForgeryBaseline = terrainProviderRequests.length;
-    await offPage.evaluate(async extensionIdValue => {
-        const drained = new Promise(resolve => {
-            const receive = event => {
-                if (event.source !== window || event.data?.__bpbTerrainProbe !== 'drained') return;
-                window.removeEventListener('message', receive);
+    await offPage.evaluate(async (extensionIdValue: PageResult) => {
+        const drained = new Promise<void>(resolve => {
+            const receive = (event: MouseEvent) => {
+                if ((event as PageResult).source !== window || (event as PageResult).data?.__bpbTerrainProbe !== 'drained') return;
+                window.removeEventListener('message', receive as EventListener);
                 resolve();
             };
-            window.addEventListener('message', receive);
+            window.addEventListener('message', receive as EventListener);
         });
-        document.getElementById('bpb-terrain-toggle')?.click();
+        (document.getElementById('bpb-terrain-toggle') as PageElement | null)?.click();
         for (const type of ['requestConsent', 'init', 'prefetch']) {
             window.postMessage({
                 __bpbTerrain: true,
@@ -3886,7 +3929,7 @@ try {
         direct.id = 'bpb-forged-terrain-frame';
         direct.src = `chrome-extension://${extensionIdValue}/terrain/terrain.html`;
         direct.addEventListener('load', () => {
-            direct.contentWindow.postMessage({
+            direct.contentWindow!.postMessage({
                 __bpbTerrainFrame: true,
                 dir: 'toFrame',
                 type: 'init',
@@ -3912,8 +3955,8 @@ try {
         return { runtimeAvailable: true, rejected };
     });
     const disabledForgery = await offPage.evaluate(() => ({
-        consent: !!document.getElementById('bpb-terrain-consent'),
-        bridgeFrames: document.querySelectorAll('#bpb-terrain-frame').length,
+        consent: !!(document.getElementById('bpb-terrain-consent') as PageElement | null),
+        bridgeFrames: document.querySelectorAll<PageElement>('#bpb-terrain-frame').length,
     }));
     const disabledDirectMap = await offPage.locator('#bpb-forged-terrain-frame')
         .contentFrame().locator('#bpb-terrain-map').count().catch(() => -1);
@@ -3931,11 +3974,11 @@ try {
     await offPage.locator('#bpb-terrain-toggle').click();
     const consent = await offPage.locator('#bpb-terrain-consent').waitFor({ state: 'visible', timeout: 5000 })
         .then(async () => offPage.evaluate(() => {
-            const dialog = document.querySelector('#bpb-terrain-consent [role="dialog"]');
+            const dialog = document.querySelector<PageElement>('#bpb-terrain-consent [role="dialog"]');
             return {
                 text: dialog?.textContent || '',
                 modal: dialog?.getAttribute('aria-modal'),
-                links: Array.from(dialog?.querySelectorAll('a') || [], link => link.href)
+                links: Array.from(dialog?.querySelectorAll<PageElement>('a') || [], link => link.href)
             };
         })).catch(() => null);
     check(consent?.modal === 'true', `the first-use 3D confirmation did not render as a modal: ${JSON.stringify(consent)}`);
@@ -3966,7 +4009,7 @@ try {
         const consentCheckPage = await context.newPage();
         await consentCheckPage.goto(`chrome-extension://${extensionId}/options/options.html`);
         const enabledByConsent = await consentCheckPage.evaluate(async () =>
-            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.enable3dMap === true);
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.enable3dMap === true);
         check(enabledByConsent, 'trusted confirmation did not persist enable3dMap');
         await consentCheckPage.close();
     }
@@ -3976,7 +4019,7 @@ try {
         const optionsPage = await context.newPage();
         await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
         await optionsPage.evaluate(async () => {
-            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+            const current = (await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings || {};
             await chrome.storage.sync.set({ bpbSettings: { ...current, enable3dMap: true } });
         });
         await optionsPage.close();
@@ -3987,16 +4030,16 @@ try {
         check(on.disabled === false,
             `the toggle should enable once the route parses, but stayed greyed: title=${JSON.stringify(on.title)}`);
         const enabledForgeryBaseline = terrainProviderRequests.length;
-        await onPage.evaluate(async extensionIdValue => {
-            const drained = new Promise(resolve => {
-                const receive = event => {
-                    if (event.source !== window || event.data?.__bpbTerrainProbe !== 'drained') return;
-                    window.removeEventListener('message', receive);
+        await onPage.evaluate(async (extensionIdValue: PageResult) => {
+            const drained = new Promise<void>(resolve => {
+                const receive = (event: MouseEvent) => {
+                    if ((event as PageResult).source !== window || (event as PageResult).data?.__bpbTerrainProbe !== 'drained') return;
+                    window.removeEventListener('message', receive as EventListener);
                     resolve();
                 };
-                window.addEventListener('message', receive);
+                window.addEventListener('message', receive as EventListener);
             });
-            document.getElementById('bpb-terrain-toggle')?.click();
+            (document.getElementById('bpb-terrain-toggle') as PageElement | null)?.click();
             for (const type of ['requestConsent', 'init', 'prefetch']) {
                 window.postMessage({
                     __bpbTerrain: true,
@@ -4019,7 +4062,7 @@ try {
                     && event.data?.type === 'ready') window.__bpbForgedTerrainReady = true;
             });
             direct.addEventListener('load', () => {
-                direct.contentWindow.postMessage({
+                direct.contentWindow!.postMessage({
                     __bpbTerrainFrame: true,
                     dir: 'toFrame',
                     type: 'init',
@@ -4033,13 +4076,13 @@ try {
         await onPage.locator('#bpb-forged-terrain-frame').waitFor({ state: 'attached', timeout: 3000 });
         await onPage.waitForFunction(() => window.__bpbForgedTerrainReady === true, null, { timeout: 5000 });
         const directFrameElement = onPage.locator('#bpb-forged-terrain-frame');
-        const directFrame = await (await directFrameElement.elementHandle()).contentFrame();
+        const directFrame: PageResult = await (await directFrameElement.elementHandle()).contentFrame();
         await directFrame.evaluate(() => {
             const api = (globalThis.browser || globalThis.chrome).runtime;
             const original = api.sendMessage.bind(api);
             globalThis.__bpbForgedAuthorization = new Promise(resolve => {
-                api.sendMessage = (message, ...rest) => {
-                    const response = original(message, ...rest);
+                api.sendMessage = (message: PageResult, ...rest: PageResult[]) => {
+                    const response = (original as PageResult)(message, ...rest);
                     if (message?.type === 'TERRAIN_ACTIVATION_CONSUME') {
                         Promise.resolve(response).then(reply => {
                             api.sendMessage = original;
@@ -4053,9 +4096,9 @@ try {
                 };
             });
         });
-        await onPage.evaluate(extensionIdValue => {
-            const direct = document.getElementById('bpb-forged-terrain-frame');
-            direct.contentWindow.postMessage({
+        await onPage.evaluate((extensionIdValue: string) => {
+            const direct = (document.getElementById('bpb-forged-terrain-frame') as PageElement | null);
+            direct!.contentWindow.postMessage({
                 __bpbTerrainFrame: true,
                 dir: 'toFrame',
                 type: 'init',
@@ -4063,10 +4106,10 @@ try {
                 routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
             }, `chrome-extension://${extensionIdValue}`);
         }, extensionId);
-        const directAuthorization = await directFrame.evaluate(() => globalThis.__bpbForgedAuthorization);
+        const directAuthorization: PageResult = await directFrame.evaluate(() => globalThis.__bpbForgedAuthorization);
         const enabledForgery = await onPage.evaluate(() => ({
-            consent: !!document.getElementById('bpb-terrain-consent'),
-            bridgeFrames: document.querySelectorAll('#bpb-terrain-frame').length,
+            consent: !!(document.getElementById('bpb-terrain-consent') as PageElement | null),
+            bridgeFrames: document.querySelectorAll<PageElement>('#bpb-terrain-frame').length,
         }));
         const enabledDirectMap = await directFrame.locator('#bpb-terrain-map').count().catch(() => -1);
         check(directAuthorization?.ok === false
@@ -4081,7 +4124,7 @@ try {
         await onPage.close();
 
         const bigMapPage = await context.newPage();
-        const bigMapErrors = [];
+        const bigMapErrors: string[] = [];
         bigMapPage.on('pageerror', error => bigMapErrors.push(String(error)));
         const bigMapCdp = await context.newCDPSession(bigMapPage);
         await bigMapCdp.send('Runtime.enable');
@@ -4090,23 +4133,23 @@ try {
         });
         await bigMapPage.goto(`https://www.peakbagger.com:${port}/map/BigMap.aspx?t=A&d=2296`, { waitUntil: 'load' });
         const bigMapToggle = await bigMapPage.waitForFunction(() => {
-            const button = document.getElementById('bpb-terrain-toggle');
+            const button = (document.getElementById('bpb-terrain-toggle') as PageElement | null);
             if (!button) return false;
             const rect = button.getBoundingClientRect();
             const state = {
                 visible: rect.width > 0 && rect.height > 0,
                 disabled: button.disabled,
-                display: getComputedStyle(button).display
+                display: getComputedStyle(button!).display
             };
             return state.visible && !state.disabled ? state : false;
-        }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 10000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         const bigMapState = await bigMapPage.evaluate(() => {
-            const iframe = document.getElementById('if');
+            const iframe = (document.getElementById('if') as PageElement | null);
             return {
                 url: location.href,
                 // Bundle readiness is proven by the toggle (checked below); no
                 // module publishes a global anymore.
-                mountExists: !!document.getElementById('bpb-map-viewport'),
+                mountExists: !!(document.getElementById('bpb-map-viewport') as PageElement | null),
                 iframeMapReady: !!iframe?.contentWindow?.mapsPlaceholder,
                 iframeLeafletReady: !!iframe?.contentWindow?.L,
                 stylesheets: [...document.styleSheets].map(sheet => sheet.href)
@@ -4131,7 +4174,7 @@ try {
         await bigMapPage.close();
 
         const peakBigMapPage = await context.newPage();
-        const peakBigMapErrors = [];
+        const peakBigMapErrors: string[] = [];
         peakBigMapPage.on('pageerror', error => peakBigMapErrors.push(String(error)));
         await peakBigMapPage.goto(
             `https://www.peakbagger.com:${port}/map/BigMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300&cyn=0`,
@@ -4156,7 +4199,7 @@ try {
         await peakBigMapPage.locator('#bpb-terrain-toggle').click();
         const peakBigMapInit = await peakBigMapPage.waitForFunction(
             () => window.__bpbPeakBigMapTerrainInit, null, { timeout: 5000 }
-        ).then(handle => handle.jsonValue()).catch(() => null);
+        ).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(JSON.stringify(peakBigMapInit?.focus) === JSON.stringify([48.83115, -121.60214])
             && peakBigMapInit?.focusZoom === 13
             && peakBigMapInit?.focusPeak?.id === 2829
@@ -4171,16 +4214,16 @@ try {
         await peakBigMapPage.close();
 
         const peakPage = await context.newPage();
-        const peakErrors = [];
+        const peakErrors: string[] = [];
         peakPage.on('pageerror', error => peakErrors.push(String(error)));
         await peakPage.goto(`https://www.peakbagger.com:${port}/Peak.aspx?pid=2829`, { waitUntil: 'load' });
-        const peakSunPlacement = await peakPage.waitForFunction(readPeakSunPlacement).then(handle => handle.jsonValue());
+        const peakSunPlacement = await peakPage.waitForFunction(readPeakSunPlacement).then((handle: JSHandle) => handle.jsonValue());
         assertPeakMapLinks(await peakPage.evaluate(readPeakMapLinks));
         const peakState = await peakPage.waitForFunction(() => {
-            const button = document.getElementById('bpb-terrain-toggle');
-            const mount = document.getElementById('bpb-map-viewport');
-            const iframe = document.getElementById('Gmap');
-            const sun = document.querySelector('.bpb-sun-calculator');
+            const button = (document.getElementById('bpb-terrain-toggle') as PageElement | null);
+            const mount = (document.getElementById('bpb-map-viewport') as PageElement | null);
+            const iframe = (document.getElementById('Gmap') as PageElement | null);
+            const sun = document.querySelector<PageElement>('.bpb-sun-calculator');
             if (!button || !mount || !iframe || !sun?.matches('[data-bpb-peak-card="sun"]')) return false;
             const rect = button.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0 && !button.disabled ? {
@@ -4188,43 +4231,43 @@ try {
                 mountClass: mount.className,
                 mountHeight: mount.getBoundingClientRect().height,
                 nativeMapHeight: iframe.getBoundingClientRect().height,
-                resizeHandle: Boolean(mount.querySelector('#bpb-map-resize-handle')),
+                resizeHandle: Boolean(mount.querySelector<PageElement>('#bpb-map-resize-handle')),
                 iframePreserved: iframe.parentElement === mount,
-                sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
-                sunExpanded: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === false,
-                sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
-                sunBorderStyle: getComputedStyle(sun).borderStyle,
+                sunDateInput: Boolean(sun.querySelector<PageElement>('input[type="date"]')),
+                sunExpanded: sun.querySelector<PageElement>('.bpb-sun-calculator__panel')?.hidden === false,
+                sunSummary: sun.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '',
+                sunBorderStyle: getComputedStyle(sun!).borderStyle,
                 sunMockHierarchy: Boolean(
-                    sun.querySelector('.bpb-sun-calculator__icon')
-                    && /Sun direction\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__direction')?.textContent || '')
-                    && /Sun elevation\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__elevation')?.textContent || '')
-                    && /Moon phase/i.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
-                    && /\d+°\s+[NSEW]{1,3}/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
-                    && /(?:above|below) horizon/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    sun.querySelector<PageElement>('.bpb-sun-calculator__icon')
+                    && /Sun direction\s*\d+°/i.test(sun.querySelector<PageElement>('.bpb-sun-calculator__direction')?.textContent || '')
+                    && /Sun elevation\s*\d+°/i.test(sun.querySelector<PageElement>('.bpb-sun-calculator__elevation')?.textContent || '')
+                    && /Moon phase/i.test(sun.querySelector<PageElement>('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /\d+°\s+[NSEW]{1,3}/.test(sun.querySelector<PageElement>('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /(?:above|below) horizon/.test(sun.querySelector<PageElement>('.bpb-sun-calculator__moon')?.textContent || '')
                     && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
-                        .test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
-                    && /\d+% illuminated/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                        .test(sun.querySelector<PageElement>('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /\d+% illuminated/.test(sun.querySelector<PageElement>('.bpb-sun-calculator__moon')?.textContent || '')
                     && /Moon.*(?:gray band|level horizon)/i.test(
-                        sun.querySelector('.bpb-sun-calculator__moon-events-text')?.textContent || '')
+                        sun.querySelector<PageElement>('.bpb-sun-calculator__moon-events-text')?.textContent || '')
                     && /^[0-7]$/.test(sun.dataset.moonPhase || '')
-                    && sun.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
-                    && sun.querySelector('.bpb-sun-calculator__moon-marker')?.hidden === false
-                    && /^rotate\(/.test(sun.querySelector('.bpb-sun-calculator__moon-marker')?.style.transform || '')
-                    && sun.querySelector('.bpb-sun-calculator__moon-visibility-range')?.hidden === false
-                    && / A 28 28 /.test(sun.querySelector('.bpb-sun-calculator__moon-visibility-path')
+                    && sun.querySelector<PageElement>('.bpb-sun-calculator__moon-icon')?.textContent
+                    && sun.querySelector<PageElement>('.bpb-sun-calculator__moon-marker')?.hidden === false
+                    && /^rotate\(/.test(sun.querySelector<PageElement>('.bpb-sun-calculator__moon-marker')?.style.transform || '')
+                    && sun.querySelector<PageElement>('.bpb-sun-calculator__moon-visibility-range')?.hidden === false
+                    && / A 28 28 /.test(sun.querySelector<PageElement>('.bpb-sun-calculator__moon-visibility-path')
                         ?.getAttribute('d') || '')
-                    && sun.querySelector('.bpb-sun-calculator__event-line')?.hidden === false
+                    && sun.querySelector<PageElement>('.bpb-sun-calculator__event-line')?.hidden === false
                 ),
                 // The MAIN-world coordinator bundle self-contains basemap,
                 // peak-markers, and schema via ES imports, so its toggle existing
                 // (this state being truthy) proves those loaded. The isolated
                 // theme bundle is confirmed separately by the theme attribute.
                 isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme') !== null,
-                planningLinks: Array.from(document.querySelectorAll('#bpb-peak-links a'), link => ({
+                planningLinks: Array.from(document.querySelectorAll<PageElement>('#bpb-peak-links a'), link => ({
                     label: link.textContent, href: link.href, rel: link.rel, target: link.target,
                 }))
             } : false;
-        }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 10000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(peakState?.text === '3D',
             `the Peak page must show an enabled 3D toggle (state=${JSON.stringify(peakState)}, errors=${JSON.stringify(peakErrors)})`);
         check(peakState?.mountClass === 'bpb-terrain-mount-peak' && peakState?.iframePreserved === true,
@@ -4243,21 +4286,20 @@ try {
             && peakState.planningLinks[2].label === 'AirNow fire & smoke'
             && peakState.planningLinks[3].label === 'Avalanche forecasts — Avalanche.org'
             && peakState.planningLinks[3].href === 'https://avalanche.org/'
-            && peakState.planningLinks.every(link => link.rel === 'noopener noreferrer' && link.target === '_blank'),
+            && peakState.planningLinks.every((link: PageResult) => link.rel === 'noopener noreferrer' && link.target === '_blank'),
         `the packaged Peak planning links are missing or unsafe (state=${JSON.stringify(peakState?.planningLinks)})`);
         const peakSunToggle = peakPage.locator('.bpb-sun-calculator__toggle');
         if (await peakSunToggle.getAttribute('aria-expanded') !== 'true') await peakSunToggle.click();
         const peakSunTarget = await peakPage.locator('.bpb-sun-calculator__time').evaluate(slider => ({
             height: slider.getBoundingClientRect().height,
             valueText: slider.getAttribute('aria-valuetext') || '',
-            horizon: slider.closest('.bpb-sun-calculator')?.dataset.horizon || '',
-            belowClass: slider.closest('.bpb-sun-calculator')
-                ?.querySelector('.bpb-sun-calculator__sun')
+            horizon: slider.closest<PageElement>('.bpb-sun-calculator')?.dataset.horizon || '',
+            belowClass: slider.closest<PageElement>('.bpb-sun-calculator')
+                ?.querySelector<PageElement>('.bpb-sun-calculator__sun')
                 ?.classList.contains('bpb-sun-calculator__sun--below-horizon') === true,
-            summary: slider.closest('.bpb-sun-calculator')
-                ?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
-            chevronTransform: getComputedStyle(slider.closest('.bpb-sun-calculator')
-                ?.querySelector('.bpb-sun-calculator__chevron')).transform,
+            summary: slider.closest<PageElement>('.bpb-sun-calculator')
+                ?.querySelector<PageElement>('.bpb-sun-calculator__summary')?.textContent || '',
+            chevronTransform: getComputedStyle(slider.closest<PageElement>('.bpb-sun-calculator')?.querySelector<PageElement>('.bpb-sun-calculator__chevron') as Element).transform,
         }));
         check(peakSunTarget.height >= 44 && /\d.*:\d/.test(peakSunTarget.valueText)
             && /^(above|below)$/.test(peakSunTarget.horizon)
@@ -4271,12 +4313,12 @@ try {
             const previousViewport = peakPage.viewportSize();
             await peakPage.setViewportSize({ width: 390, height: previousViewport?.height || 760 });
             const narrowPeakSun = await peakPage.evaluate(() => {
-                const calculator = document.querySelector('.bpb-sun-calculator');
+                const calculator = document.querySelector<PageElement>('.bpb-sun-calculator');
                 const rect = calculator?.getBoundingClientRect();
                 return {
                     viewportWidth: document.documentElement.clientWidth,
-                    insideViewport: Boolean(rect) && rect.left >= -1
-                        && rect.right <= document.documentElement.clientWidth + 1,
+                    insideViewport: Boolean(rect) && rect!.left >= -1
+                        && rect!.right <= document.documentElement.clientWidth + 1,
                     calculatorOverflow: calculator ? calculator.scrollWidth > calculator.clientWidth : true,
                 };
             });
@@ -4286,7 +4328,7 @@ try {
             await peakPage.locator('.bpb-sun-calculator').screenshot({
                 path: process.env.BPB_VERIFY_PEAK_NARROW_SCREENSHOT,
             });
-            if (previousViewport) await peakPage.setViewportSize(previousViewport);
+            if (previousViewport) await peakPage.setViewportSize(previousViewport!);
         }
         await peakPage.evaluate(() => {
             window.__bpbPeakTerrainInit = null;
@@ -4301,7 +4343,7 @@ try {
         await peakPage.locator('#bpb-terrain-toggle').focus();
         await peakPage.keyboard.press('Enter');
         const peakInit = await peakPage.waitForFunction(() => window.__bpbPeakTerrainInit, null, { timeout: 5000 })
-            .then(handle => handle.jsonValue()).catch(() => null);
+            .then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
         check(JSON.stringify(peakInit?.focus) === JSON.stringify([48.83115, -121.60214])
             && peakInit?.focusZoom === 13
             && peakInit?.focusPeak?.id === 2829
@@ -4320,35 +4362,35 @@ try {
         await manager.goto(`chrome-extension://${extensionId}/options/options.html`);
         const saved = await manager.evaluate(async () => {
             const keys = ['bpbIgnoredClimbers', 'bpbIgnoredSyncState'];
-            const previous = await chrome.storage.local.get(keys);
+            const previous = await chrome.storage.local.get<StoredRecords>(keys);
             await chrome.storage.local.remove('bpbIgnoredSyncState');
             await chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 1,
                 entries: [{ cid: 900002, name: 'Device climber', addedAt: 1 }] } });
             return { keys, previous };
         });
         await worker.evaluate(() => {
-            const entry = cid => ({ cid, name: `Example ${cid}`, addedAt: 1 });
-            const backup = entries => JSON.stringify({ kind: 'better-peakbagger-ignored-climbers', schemaVersion: 1,
+            const entry = (cid: number) => ({ cid, name: `Example ${cid}`, addedAt: 1 });
+            const backup = (entries: object[]) => JSON.stringify({ kind: 'better-peakbagger-ignored-climbers', schemaVersion: 1,
                 exportedAt: '2026-10-01T12:00:00.000Z', entries });
-            const mock = globalThis.__bpbIgnoredGithub = { head: 0, proposals: new Map(), commits: new Map(), writes: 0, race: false,
+            const mock: PageResult = (globalThis as PageResult).__bpbIgnoredGithub = { head: 0, proposals: new Map(), commits: new Map(), writes: 0, race: false,
                 files: { 'ignored-climbers.json': backup([entry(900003)]), 'unrelated.txt': 'preserve this file' }, backup, entry };
             globalThis.__bpbIgnoredOriginalFetch = globalThis.fetch;
             globalThis.fetch = async (raw, init = {}) => {
                 const url = new URL(String(raw));
                 if (url.hostname !== 'api.github.com') return globalThis.__bpbIgnoredOriginalFetch(raw, init);
                 const method = init.method || 'GET', endpoint = url.pathname.replace('/repos/fixture/backup', '');
-                const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+                const reply = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
                 if (method === 'GET' && endpoint === '') return reply({ default_branch: 'main', permissions: { push: true } });
                 if (method === 'GET' && endpoint === '/git/ref/heads/main') return reply({ object: { sha: `C${mock.head}` } });
                 if (method === 'GET' && endpoint.startsWith('/git/commits/')) return reply({ tree: { sha: `T${mock.head}` } });
                 if (method === 'GET' && endpoint.startsWith('/git/trees/')) return reply({ tree: Object.entries(mock.files).map(([path, text]) =>
-                    ({ path, type: 'blob', mode: '100644', sha: `B:${path}`, size: new TextEncoder().encode(text).length })) });
+                    ({ path, type: 'blob', mode: '100644', sha: `B:${path}`, size: new TextEncoder().encode(text as string).length })) });
                 if (method === 'GET' && endpoint.startsWith('/git/blobs/')) {
                     const text = mock.files[decodeURIComponent(endpoint.slice('/git/blobs/B:'.length))];
-                    return init.headers?.Accept?.includes('raw') || init.headers?.accept?.includes('raw')
+                    return (init.headers as PageResult)?.Accept?.includes('raw') || (init.headers as PageResult)?.accept?.includes('raw')
                         ? new Response(text, { status: 200 }) : reply({ encoding: 'base64', content: btoa(text) });
                 }
-                const body = init.body ? JSON.parse(init.body) : {};
+                const body = init.body ? JSON.parse(init.body as string) : {};
                 if (method === 'POST' && endpoint === '/git/trees') {
                     const sha = `proposal${mock.proposals.size}`; mock.proposals.set(sha, body.tree); return reply({ sha }, 201);
                 }
@@ -4368,7 +4410,7 @@ try {
                 throw new Error(`Unexpected synthetic GitHub request: ${method} ${endpoint}`);
             };
         });
-        const send = message => manager.evaluate(value => chrome.runtime.sendMessage({ type: 'GITHUB_IGNORED_LIST', ...value }), message);
+        const send = (message: object) => manager.evaluate(value => chrome.runtime.sendMessage({ type: 'GITHUB_IGNORED_LIST', ...value }), message);
         try {
             const prepared = await send({ action: 'setup' });
             check(prepared.ok && prepared.preview?.mergeCount === 2, `real worker sync setup failed: ${JSON.stringify(prepared)}`);
@@ -4376,20 +4418,20 @@ try {
             check(confirmed.ok && confirmed.state?.enabled && confirmed.list?.entries.length === 2,
                 `real worker sync confirmation failed: ${JSON.stringify(confirmed)}`);
             await manager.evaluate(() => chrome.runtime.sendMessage({ type: 'IGNORED_MUTATE', mutation: { kind: 'remove', cid: 900002 } }));
-            await worker.evaluate(() => { const mock = globalThis.__bpbIgnoredGithub;
+            await worker.evaluate(() => { const mock: PageResult = globalThis.__bpbIgnoredGithub;
                 mock.files['ignored-climbers.json'] = mock.backup([...JSON.parse(mock.files['ignored-climbers.json']).entries, mock.entry(900004)]); mock.head++; });
             const synced = await send({ action: 'sync' });
-            check(synced.ok && JSON.stringify(synced.list.entries.map(entry => entry.cid).sort()) === '[900003,900004]',
+            check(synced.ok && JSON.stringify(synced.list.entries.map((entry: { cid: number }) => entry.cid).sort()) === '[900003,900004]',
                 `real worker did not merge remote additions and local deletions: ${JSON.stringify(synced)}`);
             await manager.evaluate(() => chrome.runtime.sendMessage({ type: 'IGNORED_MUTATE', mutation: { kind: 'add', entry: { cid: 900006, name: 'New local', addedAt: 1 } } }));
             await worker.evaluate(() => { globalThis.__bpbIgnoredGithub.race = true; });
             const raced = await send({ action: 'sync' });
             const remote = await worker.evaluate(() => globalThis.__bpbIgnoredGithub.files);
-            check(raced.ok && JSON.stringify(JSON.parse(remote['ignored-climbers.json']).entries.map(entry => entry.cid).sort()) === '[900003,900004,900005,900006]'
+            check(raced.ok && JSON.stringify(JSON.parse(remote['ignored-climbers.json']).entries.map((entry: { cid: number }) => entry.cid).sort()) === '[900003,900004,900005,900006]'
                 && remote['unrelated.txt'] === 'preserve this file', `real worker ref retry lost membership or unrelated files: ${JSON.stringify(raced)}`);
         } finally {
             await send({ action: 'disable' });
-            await worker.evaluate(() => { globalThis.fetch = globalThis.__bpbIgnoredOriginalFetch; delete globalThis.__bpbIgnoredGithub; delete globalThis.__bpbIgnoredOriginalFetch; });
+            await worker.evaluate(() => { globalThis.fetch = globalThis.__bpbIgnoredOriginalFetch; delete (globalThis as PageResult).__bpbIgnoredGithub; delete (globalThis as PageResult).__bpbIgnoredOriginalFetch; });
             await manager.evaluate(async value => { await chrome.storage.local.remove(value.keys); await chrome.storage.local.set(value.previous); }, saved);
             await manager.close();
         }
@@ -4401,8 +4443,8 @@ try {
         await manager.goto(`chrome-extension://${extensionId}/options/favorites.html`);
         const saved = await manager.evaluate(async () => {
             const keys = ['bpbIgnoredClimbers', 'bpbPeakReportFilter', 'bpbFavoriteClimbers', 'bpbBuddyCache'];
-            const local = await chrome.storage.local.get(keys);
-            const sync = await chrome.storage.sync.get('bpbSettings');
+            const local = await chrome.storage.local.get<StoredRecords>(keys);
+            const sync = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
             await chrome.storage.sync.set({ bpbSettings: { ...sync.bpbSettings, favoritesSource: 'custom' } });
             await chrome.storage.local.set({
                 bpbIgnoredClimbers: { schemaVersion: 1, revision: 100, entries: [{ cid: 38769, name: 'Example', addedAt: 1 }] },
@@ -4416,26 +4458,26 @@ try {
             window.__bpbReportActivationProbe = [];
             for (const type of ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup']) {
                 window.addEventListener(type, event => {
-                    const button = document.querySelector('.bpb-report-favorites');
+                    const button = document.querySelector<PageElement>('.bpb-report-favorites');
                     const bounds = button?.getBoundingClientRect();
                     window.__bpbReportActivationProbe.push({
-                        type, target: event.target.tagName,
-                        favorites: !!button?.contains(event.target), trusted: event.isTrusted,
-                        point: { x: event.clientX, y: event.clientY },
+                        type, target: (event.target as Element).tagName,
+                        favorites: !!button?.contains(event.target as Node), trusted: event.isTrusted,
+                        point: { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY },
                         button: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
                     });
                     window.__bpbReportActivationProbe.splice(0, window.__bpbReportActivationProbe.length - 6);
                 }, true);
             }
         });
-        const captureReports = async name => {
+        const captureReports = async (name: string) => {
             if (!process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) return;
             for (const theme of ['light', 'dark']) {
                 await reports.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
                 for (const [width, height] of [[1440,1000], [390,844]]) {
                     await reports.setViewportSize({ width, height });
                     await reports.locator('#bpb-peak-report-tools').scrollIntoViewIfNeeded();
-                    await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${name}-${theme}-${width}.png`) });
+                    await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR!, `${name}-${theme}-${width}.png`) });
                 }
             }
         };
@@ -4445,10 +4487,10 @@ try {
             // Ignored climbers and the Favorites source load independently.
             // Wait for both before targeting a control whose label can change
             // as the source resolves, rather than racing that render.
-            await reports.waitForFunction(() => document.querySelector('#bpb-selected-reports')?.style.visibility !== 'hidden'
-                && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1')
-                && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorite climbers · 0'
-                && document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
+            await reports.waitForFunction(() => document.querySelector<PageElement>('#bpb-selected-reports')?.style.visibility !== 'hidden'
+                && document.querySelector<PageElement>('#bpb-peak-report-tools')!.textContent.includes('Show ignored · 1')
+                && document.querySelector<PageElement>('.bpb-report-favorites')?.textContent === '☆ Favorite climbers · 0'
+                && document.querySelector<PageElement>('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
             // The global dark theme paints site buttons with !important rules.
             // Exercise the packaged cascade and real input so the secondary
             // disclosure stays quiet, accessible and stationary in both states.
@@ -4457,16 +4499,16 @@ try {
             const reveal = reports.locator('#bpb-peak-report-tools .bpb-report-reveal');
             const revealAppearance = () => reveal.evaluate(button => {
                 const style = getComputedStyle(button);
-                const status = getComputedStyle(document.querySelector('#bpb-peak-report-tools .bpb-report-status[role="status"]'));
+                const status = getComputedStyle(document.querySelector<PageElement>('#bpb-peak-report-tools .bpb-report-status[role="status"]')!);
                 return { background: style.backgroundColor, border: style.borderWidth,
                     color: style.color, statusColor: status.color, height: button.getBoundingClientRect().height };
             });
             try {
                 for (const theme of ['light', 'dark']) {
-                    await reports.locator('html').evaluate((html, value) => html.dataset.bpbTheme = value, theme);
+                    await reports.locator('html').evaluate((html, value) => (html as HTMLElement).dataset.bpbTheme = value, theme);
                     for (const [width, height] of [[1440,1000], [390,844], [320,844]]) {
                         await reports.setViewportSize({ width, height });
-                        await reports.evaluate(() => document.activeElement?.blur());
+                        await reports.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
                         await reports.mouse.move(0, 0);
                         await reports.locator('#bpb-peak-report-tools').scrollIntoViewIfNeeded();
                         const hiddenAppearance = await revealAppearance();
@@ -4474,18 +4516,18 @@ try {
                             && hiddenAppearance.color === hiddenAppearance.statusColor && hiddenAppearance.height >= 32,
                         `${theme} ${width}px ignored report action competes with the primary filter or loses its click target: ${JSON.stringify(hiddenAppearance)}`);
                         if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
-                            await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                            await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR!,
                                 `peak-quiet-${theme}-${width}.png`) });
                         }
                         await reveal.hover();
-                        check(await reveal.evaluate(button => getComputedStyle(button).textDecorationLine.includes('underline')),
+                        check(await reveal.evaluate(button => getComputedStyle(button!).textDecorationLine.includes('underline')),
                             `${theme} ${width}px ignored report action offers no hover cue`);
-                        const before = await reveal.boundingBox();
+                        const before: PageResult = await reveal.boundingBox();
                         await reveal.click();
-                        await reports.waitForFunction(() => document.querySelector('.bpb-report-reveal')?.textContent === 'Hide ignored · 1'
-                            && document.querySelector('#bpb-peak-report-tools .bpb-report-status[role="status"]')?.textContent === '30 of 30 selected reports shown');
-                        const after = await reveal.boundingBox();
-                        check(['x', 'y', 'width', 'height'].every(key => Math.abs(before[key] - after[key]) < 0.5),
+                        await reports.waitForFunction(() => document.querySelector<PageElement>('.bpb-report-reveal')?.textContent === 'Hide ignored · 1'
+                            && document.querySelector<PageElement>('#bpb-peak-report-tools .bpb-report-status[role="status"]')?.textContent === '30 of 30 selected reports shown');
+                        const after: PageResult = await reveal.boundingBox();
+                        check(['x', 'y', 'width', 'height'].every(key => Math.abs(before![key] - after![key]) < 0.5),
                             `${theme} ${width}px ignored report action moved when revealed: ${JSON.stringify({ before, after })}`);
                         const revealedAppearance = await revealAppearance();
                         check(revealedAppearance.background === 'rgba(0, 0, 0, 0)' && revealedAppearance.border === '0px',
@@ -4494,39 +4536,39 @@ try {
                         await reports.keyboard.press('Tab');
                         await reports.keyboard.press('Shift+Tab');
                         check(await reveal.evaluate(button => document.activeElement === button && button.matches(':focus-visible')
-                            && getComputedStyle(button).outlineStyle === 'solid' && parseFloat(getComputedStyle(button).outlineWidth) >= 2),
+                            && getComputedStyle(button!).outlineStyle === 'solid' && parseFloat(getComputedStyle(button!).outlineWidth) >= 2),
                         `${theme} ${width}px ignored report action has no visible keyboard focus`);
                         await reports.keyboard.press('Space');
-                        await reports.waitForFunction(() => document.querySelector('.bpb-report-reveal')?.textContent === 'Show ignored · 1'
-                            && document.querySelector('#bpb-peak-report-tools .bpb-report-status[role="status"]')?.textContent === '29 of 30 selected reports shown');
+                        await reports.waitForFunction(() => document.querySelector<PageElement>('.bpb-report-reveal')?.textContent === 'Show ignored · 1'
+                            && document.querySelector<PageElement>('#bpb-peak-report-tools .bpb-report-status[role="status"]')?.textContent === '29 of 30 selected reports shown');
                     }
                 }
             } finally {
                 await reports.locator('html').evaluate((html, theme) => {
                     if (theme === null) html.removeAttribute('data-bpb-theme');
-                    else html.dataset.bpbTheme = theme;
+                    else (html as HTMLElement).dataset.bpbTheme = theme;
                 }, originalTheme);
-                await reports.setViewportSize(originalViewport);
+                await reports.setViewportSize(originalViewport!);
             }
             await reports.locator('.bpb-report-favorites').click();
             const activation = await reports.evaluate(() => window.__bpbReportActivationProbe);
-            check(activation.some(event => event.type === 'click' && event.favorites && event.trusted),
+            check(activation.some((event: PageResult) => event.type === 'click' && event.favorites && event.trusted),
                 `the ignored peak report fixture received no trusted Favorites click: ${JSON.stringify(activation)}`);
-            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === false);
+            await reports.waitForFunction(() => document.querySelector<PageElement>('.bpb-report-empty')?.hidden === false);
             await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).click();
-            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === true);
+            await reports.waitForFunction(() => document.querySelector<PageElement>('.bpb-report-empty')?.hidden === true);
             check(await reports.locator('.bpb-report-favorites').getAttribute('aria-pressed') === 'true',
                 'revealing peak reports cleared the favorites preference');
             await captureReports('peak');
             await reports.reload({ waitUntil: 'domcontentloaded' });
-            await reports.waitForFunction(() => document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'true'
-                && document.querySelector('.bpb-report-empty')?.hidden === false);
+            await reports.waitForFunction(() => document.querySelector<PageElement>('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'true'
+                && document.querySelector<PageElement>('.bpb-report-empty')?.hidden === false);
             await captureReports('peak-overlap');
             await manager.evaluate(() => chrome.storage.local.set({ bpbFavoriteClimbers: { schemaVersion: 1, entries: [] } }));
-            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.includes('No selected reports from your favorite climbers'));
+            await reports.waitForFunction(() => document.querySelector<PageElement>('.bpb-report-empty')?.textContent.includes('No selected reports from your favorite climbers'));
             await captureReports('peak-empty');
             const authorIds = await reports.locator('#bpb-selected-reports').evaluate(table => [...new Set(
-                [...table.querySelectorAll('a[href]')].flatMap(link => {
+                [...table.querySelectorAll<PageElement>('a[href]')].flatMap(link => {
                     const url = new URL(link.href);
                     return url.pathname.toLowerCase() === '/climber/climber.aspx' ? [Number(url.searchParams.get('cid'))] : [];
                 }))]);
@@ -4534,10 +4576,10 @@ try {
                 bpbIgnoredClimbers: { schemaVersion: 1, revision: 101, entries: ids.map(cid => ({ cid, name: 'Example', addedAt: 1 })) },
                 bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: false },
             }), authorIds);
-            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.startsWith('All '));
+            await reports.waitForFunction(() => document.querySelector<PageElement>('.bpb-report-empty')?.textContent.startsWith('All '));
             await captureReports('peak-all-hidden');
-            let releaseBuddy, buddyRequested = false;
-            const buddyGate = new Promise(resolve => { releaseBuddy = resolve; });
+            let releaseBuddy!: () => void, buddyRequested = false;
+            const buddyGate = new Promise<void>(resolve => { releaseBuddy = resolve; });
             resources.defer('ignored peak Buddy response', () => releaseBuddy());
             await reports.route('**/report/report.aspx?*', async route => {
                 buddyRequested = true; await buddyGate;
@@ -4546,35 +4588,35 @@ try {
             await manager.evaluate(async () => {
                 await chrome.storage.local.remove('bpbBuddyCache');
                 await chrome.storage.local.set({ bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: true } });
-                const { bpbSettings } = await chrome.storage.sync.get('bpbSettings');
+                const { bpbSettings } = await chrome.storage.sync.get<StoredRecords>('bpbSettings');
                 await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, favoritesSource: 'buddies' } });
             });
             await waitForCondition(() => buddyRequested, { description: 'ignored peak Buddy request' });
-            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes('Loading climbing buddies'));
+            await reports.waitForFunction(() => document.querySelector<PageElement>('#bpb-peak-report-tools')?.textContent.includes('Loading climbing buddies'));
             await captureReports('peak-loading');
-            releaseBuddy();
-            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes('Peakbagger is temporarily unavailable (HTTP 503)'));
+            releaseBuddy!();
+            await reports.waitForFunction(() => document.querySelector<PageElement>('#bpb-peak-report-tools')?.textContent.includes('Peakbagger is temporarily unavailable (HTTP 503)'));
             check(await reports.getByRole('button', { name: 'Retry', exact: true }).isVisible(), 'failed peak Buddy refresh offers no retry');
             await captureReports('peak-failed');
         } catch (error) {
             // The outer handler runs after this scope's finally closes the
             // fixture page. Capture its state here while it is still available.
             console.error('Ignored peak report failure state:', await reports.evaluate(() => ({
-                favorites: document.querySelector('.bpb-report-favorites')?.textContent,
-                pressed: document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed'),
-                busy: document.querySelector('.bpb-report-favorites')?.getAttribute('aria-busy'),
-                empty: document.querySelector('.bpb-report-empty')?.hidden,
-                status: document.querySelector('#bpb-peak-report-tools [role="status"]')?.textContent,
-                focused: document.activeElement === document.querySelector('.bpb-report-favorites'),
+                favorites: document.querySelector<PageElement>('.bpb-report-favorites')?.textContent,
+                pressed: document.querySelector<PageElement>('.bpb-report-favorites')?.getAttribute('aria-pressed'),
+                busy: document.querySelector<PageElement>('.bpb-report-favorites')?.getAttribute('aria-busy'),
+                empty: document.querySelector<PageElement>('.bpb-report-empty')?.hidden,
+                status: document.querySelector<PageElement>('#bpb-peak-report-tools [role="status"]')?.textContent,
+                focused: document.activeElement === document.querySelector<PageElement>('.bpb-report-favorites'),
                 activation: window.__bpbReportActivationProbe,
             })).catch(() => 'Page inaccessible'));
             console.error('Ignored report frame input:', await Promise.all(reports.frames().map(frame =>
                 frame.evaluate(() => window.__bpbReportActivationProbe).catch(() => 'Frame inaccessible'))));
-            await retainBrowserFailure({
+            await (retainBrowserFailure as PageResult)({
                 context, fixtureOrigin: `https://www.peakbagger.com:${port}`,
                 requests: requestEvidence,
                 directory: process.env.BPB_VERIFY_ARTIFACTS
-                    ? path.join(process.env.BPB_VERIFY_ARTIFACTS, 'ignored-peak-reports') : undefined,
+                    ? path.join(process.env.BPB_VERIFY_ARTIFACTS!, 'ignored-peak-reports') : undefined,
             });
             throw error;
         } finally {
@@ -4591,20 +4633,20 @@ try {
         const manager = await context.newPage();
         await manager.goto(`chrome-extension://${extensionId}/options/favorites.html`);
         const saved = await manager.evaluate(async () => {
-            const previous = await chrome.storage.local.get('bpbIgnoredClimbers');
+            const previous = await chrome.storage.local.get<StoredRecords>('bpbIgnoredClimbers');
             await chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 200,
                 entries: [6723, 38769, 900002].map(cid => ({ cid, name: 'Example', addedAt: 1 })) } });
             return previous;
         });
         const page = await context.newPage();
-        const verifyAscentToggleGeometry = async label => {
+        const verifyAscentToggleGeometry = async (label: string) => {
             await page.waitForLoadState('load');
             const toggle = page.locator('#pbaf-bar button[aria-controls]');
             const readGeometry = () => toggle.evaluate(node => {
                 const { x, y, width, height } = node.getBoundingClientRect();
                 return { x: x + scrollX, y: y + scrollY, width, height };
             });
-            const checkStable = (before, after, state) => check(
+            const checkStable = (before: PageResult, after: PageResult, state: string) => check(
                 ['x', 'y', 'width', 'height'].every(key => Math.abs(before[key] - after[key]) < 1),
                 `${label} ${state} moved the ascent toggle: ${JSON.stringify({ before, after })}`);
             for (const theme of ['light', 'dark']) {
@@ -4612,10 +4654,10 @@ try {
                 for (const [width, height] of [[1440, 1000], [1000, 760], [720, 900], [390, 844], [320, 760]]) {
                     await page.setViewportSize({ width, height });
                     await toggle.scrollIntoViewIfNeeded();
-                    const before = await readGeometry();
-                    const capture = async state => {
+                    const before: PageResult = await readGeometry();
+                    const capture = async (state: string) => {
                         if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) await page.locator('#pbaf-bar').screenshot({
-                            path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${label}-${state}-${theme}-${width}.png`),
+                            path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR!, `${label}-${state}-${theme}-${width}.png`),
                         });
                     };
                     await capture('hidden');
@@ -4628,7 +4670,7 @@ try {
                     await page.getByRole('button', { name: /^Show \d+ ignored ascents$/ }).waitFor({ state: 'visible' });
                     checkStable(before, await readGeometry(), `${theme} ${width}px hide`);
                     const bounds = await toggle.boundingBox();
-                    check(bounds.x >= 0 && bounds.x + bounds.width <= width, `${label} ${width}px toggle overflowed the viewport`);
+                    check(bounds!.x >= 0 && bounds!.x + bounds!.width <= width, `${label} ${width}px toggle overflowed the viewport`);
                 }
             }
         };
@@ -4646,22 +4688,22 @@ try {
                     check(await page.locator('#bpb-ascent-report-content iframe').count() === 0, 'ignored detail retained an unsafe player');
                     await page.locator('#bpb-ascent-table-split').waitFor({ state: 'visible' });
                     const readGeometry = () => page.evaluate(() => {
-                        const tools = document.getElementById('bpb-ascent-report-tools');
-                        const rect = element => {
+                        const tools = (document.getElementById('bpb-ascent-report-tools') as PageElement | null);
+                        const rect = (element: PageResult) => {
                             const { x, y, width, height } = element.getBoundingClientRect();
                             return { x: x + scrollX, y: y + scrollY, width, height };
                         };
-                        const table = tools.closest('table');
-                        return { button: rect(tools.querySelector('button[aria-controls]')),
-                            heading: rect(tools.parentElement.querySelector('h2')), header: rect(tools.parentElement),
-                            metadata: rect(table.rows[0]), tableWidth: table.getBoundingClientRect().width };
+                        const table = tools!.closest<PageElement>('table');
+                        return { button: rect(tools!.querySelector<PageElement>('button[aria-controls]')),
+                            heading: rect(tools!.parentElement!.querySelector<PageElement>('h2')), header: rect(tools!.parentElement),
+                            metadata: rect(table!.rows[0]), tableWidth: table!.getBoundingClientRect().width };
                     });
-                    const checkStable = (before, after, label) => {
+                    const checkStable = (before: PageResult, after: PageResult, label: string) => {
                         for (const name of ['button', 'heading', 'header', 'metadata']) {
-                            check(['x', 'y', 'width', 'height'].every(key => Math.abs(before[name][key] - after[name][key]) < 1),
-                                `${label} moved ${name}: ${JSON.stringify({ before: before[name], after: after[name] })}`);
+                            check(['x', 'y', 'width', 'height'].every(key => Math.abs((before as PageResult)[name][key] - (after as PageResult)[name][key]) < 1),
+                                `${label} moved ${name}: ${JSON.stringify({ before: (before as PageResult)[name], after: (after as PageResult)[name] })}`);
                         }
-                        check(Math.abs(before.tableWidth - after.tableWidth) < 1, `${label} changed report table width`);
+                        check(Math.abs((before as PageResult).tableWidth - (after as PageResult).tableWidth) < 1, `${label} changed report table width`);
                     };
                     for (const theme of ['light', 'dark']) {
                         await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
@@ -4669,9 +4711,9 @@ try {
                             await page.setViewportSize({ width, height });
                             await reveal.scrollIntoViewIfNeeded();
                             const before = await readGeometry();
-                            const capture = async state => {
+                            const capture = async (state: string) => {
                                 if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) await page.screenshot({
-                                    path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `detail-${state}-${theme}-${width}.png`),
+                                    path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR!, `detail-${state}-${theme}-${width}.png`),
                                 });
                             };
                             await capture('hidden');
@@ -4683,7 +4725,7 @@ try {
                                 'revealed detail duplicated its heading');
                             await capture('shown');
                             await page.locator('#bpb-ascent-report-content a').first().focus();
-                            await page.getByRole('button', { name: 'Hide 1 ignored report', exact: true }).evaluate(node => node.click());
+                            await page.getByRole('button', { name: 'Hide 1 ignored report', exact: true }).evaluate((node: HTMLElement) => node.click());
                             await page.locator('#bpb-ascent-report-content').waitFor({ state: 'hidden' });
                             checkStable(before, await readGeometry(), `${theme} ${width}px hide`);
                             check(await page.evaluate(() => document.activeElement?.textContent === 'Show ignored · 1'), 'detail hiding stranded focus');
@@ -4696,7 +4738,7 @@ try {
                         for (const [width, height] of [[1440, 1000], [390, 844]]) {
                             await page.setViewportSize({ width, height });
                             await reveal.scrollIntoViewIfNeeded();
-                            await page.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${surface}-${theme}-${width}.png`) });
+                            await page.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR!, `${surface}-${theme}-${width}.png`) });
                         }
                     }
                 }
@@ -4713,17 +4755,17 @@ try {
                     compact ? 'ascent-ignored-compact.html' : '1039-default-full-columns.html'), 'utf8');
                 const fixtureHtml = await manager.evaluate(({ html, count, allIgnored }) => {
                     const doc = new window.DOMParser().parseFromString(html, 'text/html');
-                    const table = doc.querySelector('table.gray');
-                    const rows = [...table.rows].filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD');
+                    const table = doc.querySelector<PageElement>('table.gray');
+                    const rows = [...table!.rows].filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD');
                     const template = (rows.find(row => row.cells[4]?.textContent.startsWith('TR-')) || rows[0]).cloneNode(true);
-                    for (const row of [...table.rows]) if (row.cells[0]?.tagName === 'TD') row.remove();
+                    for (const row of [...table!.rows]) if (row.cells[0]?.tagName === 'TD') row.remove();
                     const body = doc.createElement('tbody');
-                    for (let index = 0; index < count; index++) {
-                        const row = template.cloneNode(true), author = row.querySelector('a[href*="climber.aspx?cid="]');
-                        author.href = `climber.aspx?cid=${allIgnored || index === 0 ? 900002 : 900003}`;
-                        author.textContent = 'Example climber'; body.append(row);
+                    for (let index = 0; index < (count as number); index++) {
+                        const row = template.cloneNode(true) as Element, author = row.querySelector<PageElement>('a[href*="climber.aspx?cid="]');
+                        author!.href = `climber.aspx?cid=${allIgnored || index === 0 ? 900002 : 900003}`;
+                        author!.textContent = 'Example climber'; body.append(row);
                     }
-                    table.append(body); return `<!doctype html>${doc.documentElement.outerHTML}`;
+                    table!.append(body); return `<!doctype html>${doc.documentElement.outerHTML}`;
                 }, { html, count, allIgnored });
                 await manager.evaluate(async () => chrome.storage.local.set({ bpbIgnoredClimbers: {
                     schemaVersion: 1, revision: 201, entries: [{ cid: 900002, name: 'Example', addedAt: 1 }] } }));
@@ -4731,7 +4773,7 @@ try {
                 await page.route(url, route => route.fulfill({ contentType: 'text/html', body: fixtureHtml }));
                 await page.goto(url, { waitUntil: 'domcontentloaded' });
                 await page.getByRole('button', { name: /^Show \d+ ignored ascents$/ }).waitFor({ state: 'visible' });
-                await verifyAscentToggleGeometry(label);
+                await verifyAscentToggleGeometry(label as string);
                 await page.unroute(url);
             }
         } finally {
@@ -4745,9 +4787,9 @@ try {
         const filterPage = await context.newPage();
         // Filtering starts at DOMContentLoaded, independently of page images.
         // Hold the legend through navigation and reload to exercise that boundary.
-        let releaseLegend;
+        let releaseLegend!: () => void;
         let pendingLegendLoads = 0;
-        const legendGate = new Promise(resolve => { releaseLegend = resolve; });
+        const legendGate = new Promise<void>(resolve => { releaseLegend = resolve; });
         resources.defer('ascent-filter pending legend', () => releaseLegend());
         await filterPage.route('**/image/RouteGear/iconlegend.gif', async route => {
             pendingLegendLoads++;
@@ -4768,22 +4810,22 @@ try {
             'the ascent-filter startup check did not retain its pending page image');
         if (mounted) {
             const before = await filterPage.evaluate(() => ({
-                visible: [...document.querySelectorAll('table.gray tr')]
+                visible: [...document.querySelectorAll<PageElement>('table.gray tr')]
                     .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
-                        && getComputedStyle(row).display !== 'none').length,
-                total: [...document.querySelectorAll('table.gray tr')]
+                        && getComputedStyle(row!).display !== 'none').length,
+                total: [...document.querySelectorAll<PageElement>('table.gray tr')]
                     .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD').length,
-                first: document.querySelector('table.gray tr td')?.textContent.trim(),
-                controls: document.querySelectorAll('.pbaf-table-sort').length,
-                resetHidden: document.querySelector('.pbaf-reset')?.hidden,
-                labels: [...document.querySelectorAll('.pbaf-chip-label')].map(label => label.textContent),
-                settingsControl: document.querySelector('.pbaf-settings-link')?.tagName
+                first: document.querySelector<PageElement>('table.gray tr td')?.textContent.trim(),
+                controls: document.querySelectorAll<PageElement>('.pbaf-table-sort').length,
+                resetHidden: document.querySelector<PageElement>('.pbaf-reset')?.hidden,
+                labels: [...document.querySelectorAll<PageElement>('.pbaf-chip-label')].map(label => label.textContent),
+                settingsControl: document.querySelector<PageElement>('.pbaf-settings-link')?.tagName
             }));
             let hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
             await hasBeta.focus();
             await filterPage.keyboard.press('Alt+ArrowLeft');
             const keyboardOrder = await filterPage.locator('.pbaf-chip-label').allTextContents();
-            await filterPage.waitForFunction(() => [...document.querySelectorAll('.pbaf-filter-item')]
+            await filterPage.waitForFunction(() => [...document.querySelectorAll<PageElement>('.pbaf-filter-item')]
                 .every(item => item.getAnimations().length === 0));
             const favorite = filterPage.locator('.pbaf-chip').filter({ hasText: 'Climbing buddies' });
             const [betaBox, favoriteBox] = await Promise.all([hasBeta.boundingBox(), favorite.boundingBox()]);
@@ -4798,20 +4840,20 @@ try {
                 await filterPage.mouse.move(betaBox.x + betaBox.width / 2 - 10, betaBox.y + betaBox.height / 2);
                 await filterPage.mouse.move(dropPoint.x, dropPoint.y, { steps: 4 });
                 liftedDragState = await filterPage.evaluate(({ x, y }) => {
-                    const chip = [...document.querySelectorAll('.pbaf-chip')]
-                        .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'Has beta');
-                    const item = chip?.closest('.pbaf-filter-item');
+                    const chip = [...document.querySelectorAll<PageElement>('.pbaf-chip')]
+                        .find(control => control.querySelector<PageElement>('.pbaf-chip-label')?.textContent === 'Has beta');
+                    const item = chip?.closest<PageElement>('.pbaf-filter-item');
                     const rect = chip?.getBoundingClientRect();
                     return {
                         dragging: item?.hasAttribute('data-pbaf-dragging'),
-                        reordering: document.getElementById('pbaf-bar')?.hasAttribute('data-pbaf-reordering'),
-                        translate: chip ? getComputedStyle(chip).translate : null,
-                        chipTransform: chip ? getComputedStyle(chip).transform : null,
-                        chipShadow: chip ? getComputedStyle(chip).boxShadow : null,
-                        helperOpacity: item?.querySelector('.pbaf-beta-definition')
-                            ? getComputedStyle(item.querySelector('.pbaf-beta-definition')).opacity
+                        reordering: (document.getElementById('pbaf-bar') as PageElement | null)?.hasAttribute('data-pbaf-reordering'),
+                        translate: chip ? getComputedStyle(chip!).translate : null,
+                        chipTransform: chip ? getComputedStyle(chip!).transform : null,
+                        chipShadow: chip ? getComputedStyle(chip!).boxShadow : null,
+                        helperOpacity: item?.querySelector<PageElement>('.pbaf-beta-definition')
+                            ? getComputedStyle(item.querySelector<PageElement>('.pbaf-beta-definition')!).opacity
                             : null,
-                        movingNeighbors: [...document.querySelectorAll('.pbaf-filter-item')]
+                        movingNeighbors: [...document.querySelectorAll<PageElement>('.pbaf-filter-item')]
                             .filter(candidate => candidate !== item && candidate.getAnimations().length > 0).length,
                         pointerDelta: rect ? Math.hypot(rect.left + rect.width / 2 - x,
                             rect.top + rect.height / 2 - y) : null,
@@ -4822,14 +4864,14 @@ try {
                 }
                 await filterPage.mouse.up();
                 await filterPage.waitForFunction(() =>
-                    !document.querySelector('[data-pbaf-dragging], [data-pbaf-settling]'));
+                    !document.querySelector<PageElement>('[data-pbaf-dragging], [data-pbaf-settling]'));
             }
             const dragState = await filterPage.evaluate(() => ({
-                labels: [...document.querySelectorAll('.pbaf-chip-label')].map(label => label.textContent),
-                betaPressed: [...document.querySelectorAll('.pbaf-chip')]
-                    .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'Has beta')
+                labels: [...document.querySelectorAll<PageElement>('.pbaf-chip-label')].map(label => label.textContent),
+                betaPressed: [...document.querySelectorAll<PageElement>('.pbaf-chip')]
+                    .find(control => control.querySelector<PageElement>('.pbaf-chip-label')?.textContent === 'Has beta')
                     ?.getAttribute('aria-pressed'),
-                announcement: document.querySelector('.pbaf-order-status')?.textContent,
+                announcement: document.querySelector<PageElement>('.pbaf-order-status')?.textContent,
             }));
             await filterPage.reload({ waitUntil: 'domcontentloaded' });
             await filterPage.locator('#pbaf-bar').waitFor({ state: 'visible', timeout: 10000 });
@@ -4877,21 +4919,21 @@ try {
                 await filterPage.locator('html').evaluate(element => element.setAttribute('data-bpb-theme', 'dark'));
                 await filterPage.waitForFunction(() => {
                     if (document.documentElement.getAttribute('data-bpb-theme') !== 'dark') return false;
-                    const gps = [...document.querySelectorAll('.pbaf-chip')]
-                        .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'GPS track');
-                    return gps && getComputedStyle(gps).backgroundColor === 'rgb(43, 47, 52)';
+                    const gps = [...document.querySelectorAll<PageElement>('.pbaf-chip')]
+                        .find(control => control.querySelector<PageElement>('.pbaf-chip-label')?.textContent === 'GPS track');
+                    return gps && getComputedStyle(gps!).backgroundColor === 'rgb(43, 47, 52)';
                 });
                 const darkPalette = await filterPage.evaluate(() => {
-                    const gps = [...document.querySelectorAll('.pbaf-chip')]
-                        .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'GPS track');
-                    const input = document.querySelector('.pbaf-words input');
-                    const bar = document.getElementById('pbaf-bar');
+                    const gps = [...document.querySelectorAll<PageElement>('.pbaf-chip')]
+                        .find(control => control.querySelector<PageElement>('.pbaf-chip-label')?.textContent === 'GPS track');
+                    const input = document.querySelector<PageElement>('.pbaf-words input');
+                    const bar = (document.getElementById('pbaf-bar') as PageElement | null);
                     return {
-                        chipBackground: getComputedStyle(gps).backgroundColor,
-                        chipText: getComputedStyle(gps).color,
-                        inputBackground: getComputedStyle(input).backgroundColor,
-                        inputText: getComputedStyle(input).color,
-                        barBackground: getComputedStyle(bar).backgroundColor
+                        chipBackground: getComputedStyle(gps!).backgroundColor,
+                        chipText: getComputedStyle(gps!).color,
+                        inputBackground: getComputedStyle(input!).backgroundColor,
+                        inputText: getComputedStyle(input!).color,
+                        barBackground: getComputedStyle(bar!).backgroundColor
                     };
                 });
                 check(darkPalette.chipBackground === 'rgb(43, 47, 52)'
@@ -4901,7 +4943,7 @@ try {
                     && darkPalette.barBackground === 'rgb(35, 38, 42)',
                 `the ascent filter did not apply its owned dark palette: ${JSON.stringify(darkPalette)}`);
                 if (process.env.BPB_VERIFY_ASCENT_FILTER_DARK_SCREENSHOT) {
-                    await filterPage.setViewportSize(originalFilterViewport);
+                    await filterPage.setViewportSize(originalFilterViewport!);
                     await filterPage.screenshot({ path: process.env.BPB_VERIFY_ASCENT_FILTER_DARK_SCREENSHOT });
                 }
                 if (process.env.BPB_VERIFY_ASCENT_FILTER_DARK_NARROW_SCREENSHOT) {
@@ -4913,15 +4955,15 @@ try {
                     else element.removeAttribute('data-bpb-theme');
                 }, previousTheme);
             }
-            await filterPage.setViewportSize(originalFilterViewport);
+            await filterPage.setViewportSize(originalFilterViewport!);
             const firstSort = filterPage.locator('.pbaf-table-sort').first();
             await firstSort.focus();
             await filterPage.keyboard.press('Enter');
             const after = await filterPage.evaluate(() => ({
-                visible: [...document.querySelectorAll('table.gray tr')]
+                visible: [...document.querySelectorAll<PageElement>('table.gray tr')]
                     .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
-                        && getComputedStyle(row).display !== 'none').length,
-                first: document.querySelector('table.gray tr td')?.textContent.trim()
+                        && getComputedStyle(row!).display !== 'none').length,
+                first: document.querySelector<PageElement>('table.gray tr td')?.textContent.trim()
             }));
             const optionsPagePromise = context.waitForEvent('page');
             await filterPage.locator('.pbaf-settings-link').click();
@@ -4929,7 +4971,7 @@ try {
             await linkedOptionsPage.waitForLoadState('domcontentloaded');
             const linkedOptionsState = await linkedOptionsPage.evaluate(() => ({
                 href: location.href,
-                heading: document.querySelector('#beta-settings-heading')?.textContent
+                heading: document.querySelector<PageElement>('#beta-settings-heading')?.textContent
             }));
             const readSettingsTopology = () => linkedOptionsPage.evaluate(async () => {
                 const [tabs, windows, current] = await Promise.all([
@@ -4949,7 +4991,7 @@ try {
             await waitForCondition(() => linkedOptionsPage.evaluate(async () => {
                 const [current, stored] = await Promise.all([
                     chrome.tabs.getCurrent(),
-                    chrome.storage.session.get('bpbBetaSettingsTabs'),
+                    chrome.storage.session.get<StoredRecords>('bpbBetaSettingsTabs'),
                 ]);
                 return current?.id && stored.bpbBetaSettingsTabs?.[current.id]
                     ? current.id
@@ -4964,20 +5006,20 @@ try {
                     return topology.source?.active === true ? topology : null;
                 }, { description: 'the source tab to become active', timeoutMs: 5_000 });
             };
-            const activateSettings = async activate => {
+            const activateSettings = async (activate: () => Promise<unknown>) => {
                 let activationAttempts = 0;
                 const attemptActivation = async () => {
                     activationAttempts += 1;
                     await prepareSettingsActivation();
                     await activate();
                     return waitForCondition(async () => {
-                        const optionsPages = context.pages().filter(page =>
+                        const optionsPages = context.pages().filter((page: Page) =>
                             /\/options\/options\.html/.test(page.url()));
-                        const betaPages = optionsPages.filter(page => page.url().endsWith('#beta'));
+                        const betaPages = optionsPages.filter((page: Page) => page.url().endsWith('#beta'));
                         const controlText = await settingsControl.textContent();
                         return betaPages.length || /try again/i.test(controlText || '') ? {
                             betaPages,
-                            urls: optionsPages.map(page => page.url()),
+                            urls: optionsPages.map((page: Page) => page.url()),
                             controlText,
                         } : null;
                     }, { description: 'trusted Settings navigation', timeoutMs: 5_000 });
@@ -4993,13 +5035,13 @@ try {
                         readSettingsTopology().catch(readError => ({ error: readError.message })),
                         settingsControl.evaluate(element => ({
                             text: element.textContent,
-                            disabled: element.disabled,
-                            status: document.querySelector('.pbaf-settings-status')?.textContent || '',
+                            disabled: (element as HTMLButtonElement).disabled,
+                            status: document.querySelector<PageElement>('.pbaf-settings-status')?.textContent || '',
                         })).catch(readError => ({ error: readError.message })),
                         linkedOptionsPage.evaluate(async () => {
                             const [current, stored] = await Promise.all([
                                 chrome.tabs.getCurrent(),
-                                chrome.storage.session.get('bpbBetaSettingsTabs'),
+                                chrome.storage.session.get<StoredRecords>('bpbBetaSettingsTabs'),
                             ]);
                             return {
                                 currentId: current?.id || null,
@@ -5008,7 +5050,7 @@ try {
                         }).catch(readError => ({ error: readError.message })),
                     ]);
                     throw new Error(`Trusted Settings navigation did not settle: ${JSON.stringify({
-                        urls: context.pages().map(page => page.url()),
+                        urls: context.pages().map((page: Page) => page.url()),
                         topology,
                         control,
                         registration,
@@ -5077,7 +5119,7 @@ try {
                 && liftedDragState.chipShadow !== 'none'
                 && liftedDragState.helperOpacity === '0'
                 && liftedDragState.movingNeighbors > 0
-                && liftedDragState.pointerDelta <= 3
+                && liftedDragState.pointerDelta! <= 3
                 && dragState.betaPressed === 'false'
                 && /Has beta moved to position 1 of 5/.test(dragState.announcement || '')
                 && JSON.stringify(persistedOrder) === JSON.stringify(dragState.labels)
@@ -5101,7 +5143,7 @@ try {
                 newWindowTopology,
             })}`);
         }
-        releaseLegend();
+        releaseLegend!();
         await filterPage.close();
     }
 
@@ -5116,41 +5158,41 @@ try {
         // visible. The panel mounts before it is filled, so a visibility-only
         // wait samples a half-built surface and reports empty strings for a
         // surface that was about to be correct.
-        const state = await profilePage.waitForFunction(selector => {
-            const panel = document.querySelector(selector);
-            const primary = panel?.querySelector('.bpb-profile-primary')?.textContent || '';
+        const state: PageResult = await profilePage.waitForFunction(selector => {
+            const panel = document.querySelector<PageElement>(selector);
+            const primary = panel?.querySelector<PageElement>('.bpb-profile-primary')?.textContent || '';
             return primary
-                ? { copy: panel.textContent || '', primary }
+                ? { copy: panel!.textContent || '', primary }
                 : false;
         }, surfaceSelectors.profileBackup, { timeout: 10000 })
-            .then(handle => handle.jsonValue())
+            .then((handle: JSHandle) => handle.jsonValue())
             .catch(() => null);
         const diagnostics = state || await profilePage.evaluate(selector => ({
             url: location.href,
             readyState: document.readyState,
             title: document.title,
-            panel: document.querySelector(selector)?.textContent || null,
-            filterMounted: Boolean(document.getElementById('pbaf-bar')),
+            panel: document.querySelector<PageElement>(selector)?.textContent || null,
+            filterMounted: Boolean((document.getElementById('pbaf-bar') as PageElement | null)),
         }), surfaceSelectors.profileBackup);
         check(state?.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy),
             `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(diagnostics)}`);
-        fixture.holdProfileLists();
-        const readsBefore = fixture.requests.profileListReads, abortsBefore = fixture.requests.cancelledProfileReads;
+        fixture!.holdProfileLists();
+        const readsBefore = fixture!.requests.profileListReads, abortsBefore = fixture!.requests.cancelledProfileReads;
         try {
             await profilePage.goto(`https://www.peakbagger.com:${port}/climber/ClimbListC.aspx?cid=900001&y=2024`);
             if (process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR) await mkdir(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, { recursive: true });
             await verifyProfilePreparation({
-                evaluate: fn => profilePage.evaluate(fn), wait: fn => profilePage.waitForFunction(fn),
-                click: selector => profilePage.locator(selector).click(),
-                key: (selector, value) => profilePage.locator(selector).press(value),
-                resize: (width, height) => profilePage.setViewportSize({ width, height }),
-                screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? name => profilePage.locator(surfaceSelectors.profileBackup).screenshot({
-                    path: path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, `chrome-${name}.png`),
+                evaluate: (fn: () => unknown) => profilePage.evaluate(fn), wait: (fn: () => unknown) => profilePage.waitForFunction(fn),
+                click: (selector: string) => profilePage.locator(selector).click(),
+                key: (selector: string, value: string) => profilePage.locator(selector).press(value),
+                resize: (width: number, height: number) => profilePage.setViewportSize({ width, height }),
+                screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? (name: string) => profilePage.locator(surfaceSelectors.profileBackup).screenshot({
+                    path: path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR!, `chrome-${name}.png`),
                 }) : null,
                 readStarted: () => waitForCondition(() => fixture.requests.profileListReads > readsBefore, { description: 'held profile-list request' }),
                 readAborted: () => waitForCondition(() => fixture.requests.cancelledProfileReads > abortsBefore, { description: 'cancelled profile-list transport' }),
             });
-        } finally { fixture.releaseProfileLists(); }
+        } finally { fixture!.releaseProfileLists(); }
         await profilePage.close();
     }
 
@@ -5167,15 +5209,15 @@ try {
         check(mounted, 'the Chrome Buddy List sorter never mounted through the real manifest');
         if (mounted) {
             const before = await buddyPage.evaluate(() => ({
-                labels: [...document.querySelectorAll('#RGridView .pbaf-table-sort')]
-                    .map(control => control.firstChild.textContent.trim()),
-                betaBar: !!document.getElementById('pbaf-bar'),
-                firstPeak: document.querySelector('#RGridView tr:nth-child(2) td:nth-child(4)')?.textContent.trim()
+                labels: [...document.querySelectorAll<PageElement>('#RGridView .pbaf-table-sort')]
+                    .map(control => control.firstChild!.textContent!.trim()),
+                betaBar: !!(document.getElementById('pbaf-bar') as PageElement | null),
+                firstPeak: document.querySelector<PageElement>('#RGridView tr:nth-child(2) td:nth-child(4)')?.textContent.trim()
             }));
             await buddyPage.getByRole('button', { name: /^Peak or Point\./ }).click();
             const after = await buddyPage.evaluate(() => ({
-                firstPeak: document.querySelector('#RGridView tr:nth-child(2) td:nth-child(4)')?.textContent.trim(),
-                sort: document.querySelector('#RGridView th:nth-child(4)')?.getAttribute('aria-sort')
+                firstPeak: document.querySelector<PageElement>('#RGridView tr:nth-child(2) td:nth-child(4)')?.textContent.trim(),
+                sort: document.querySelector<PageElement>('#RGridView th:nth-child(4)')?.getAttribute('aria-sort')
             }));
             check(before.labels.length === 6 && before.betaBar === false
                 && after.sort === 'ascending' && after.firstPeak !== before.firstPeak,
@@ -5197,13 +5239,13 @@ try {
         check(mounted, 'the Chrome Peak List sorter never mounted through the real manifest');
         if (mounted) {
             const before = await listPage.evaluate(() => {
-                const table = document.querySelector('table.gray');
-                const rows = [...table.rows]
+                const table = document.querySelector<PageElement>('table.gray');
+                const rows = [...table!.rows]
                     .filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
                 return {
-                    labels: [...table.querySelectorAll('.pbaf-table-sort')]
-                        .map(control => control.firstChild.textContent.trim()),
-                    betaBar: !!document.getElementById('pbaf-bar'),
+                    labels: [...table!.querySelectorAll<PageElement>('.pbaf-table-sort')]
+                        .map(control => control.firstChild!.textContent!.trim()),
+                    betaBar: !!(document.getElementById('pbaf-bar') as PageElement | null),
                     firstPeak: rows[0]?.cells[1].textContent.trim(),
                     url: location.href,
                     horizontalOverflow: document.documentElement.scrollWidth
@@ -5212,12 +5254,12 @@ try {
             });
             await controls.nth(1).click();
             const after = await listPage.evaluate(() => {
-                const table = document.querySelector('table.gray');
-                const rows = [...table.rows]
+                const table = document.querySelector<PageElement>('table.gray');
+                const rows = [...table!.rows]
                     .filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
                 return {
                     firstPeak: rows[0]?.cells[1].textContent.trim(),
-                    sort: table.rows[0].cells[1].getAttribute('aria-sort'),
+                    sort: table!.rows[0].cells[1].getAttribute('aria-sort'),
                     url: location.href
                 };
             });
@@ -5242,19 +5284,19 @@ try {
             reportOptionsPage = await context.newPage();
             await reportOptionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
             await reportOptionsPage.evaluate(async theme => {
-                const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                const current = (await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings || {};
                 await chrome.storage.sync.set({
                     bpbSettings: {
                         ...current,
                         addReportCredit: true,
-                        ...(['light', 'dark'].includes(theme) && { theme })
+                        ...(['light', 'dark'].includes(theme!) && { theme })
                     }
                 });
             }, editorTheme || null);
         }
         const editorUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
         const editorPage = await context.newPage();
-        const editorErrors = [];
+        const editorErrors: string[] = [];
         editorPage.on('pageerror', error => editorErrors.push(String(error)));
         await editorPage.goto(editorUrl, { waitUntil: 'load' });
 
@@ -5272,7 +5314,7 @@ try {
                 ), {
                     description: 'the Chrome standalone drafts manager destination to finish loading',
                     timeoutMs: 5_000,
-                    isReady: state => state.ready,
+                    isReady: ((state: PageResult) => state!.ready) as PageResult,
                 }).catch(error => { check(false, error.message); return null; })
                 : null;
             const draftsManagerUrl = draftsManagerReady?.url || '';
@@ -5282,8 +5324,8 @@ try {
             // Seeding from the manager's own page proves two things at once: the
             // standalone page renders a draft, and it still picks up a write
             // made while it is open, which is how a second tab autosaving looks.
-            const draftsManagerState = draftsManagerReady
-                ? await draftsManagerPage.evaluate(async () => {
+            const draftsManagerState: PageResult = draftsManagerReady
+                ? await draftsManagerPage!.evaluate(async () => {
                     await chrome.storage.local.set({
                         'bpbReportDraft:900001:a4242': {
                             text: 'Standalone drafts page verification',
@@ -5294,19 +5336,19 @@ try {
                     });
                     const deadline = Date.now() + 5000;
                     while (Date.now() < deadline
-                        && !document.querySelector('.drafts-list li')) {
+                        && !document.querySelector<PageElement>('.drafts-list li')) {
                         await new Promise(resolve => setTimeout(resolve, 50));
                     }
                     return {
-                        heading: document.querySelector('h1')?.textContent,
-                        rows: document.querySelectorAll('.drafts-list li').length,
-                        title: document.querySelector('.drafts-list .draft-title')?.textContent,
+                        heading: document.querySelector<PageElement>('h1')?.textContent,
+                        rows: document.querySelectorAll<PageElement>('.drafts-list li').length,
+                        title: document.querySelector<PageElement>('.drafts-list .draft-title')?.textContent,
                         theme: document.documentElement.getAttribute('data-bpb-theme'),
-                        sidebar: !!document.querySelector('.side-nav'),
+                        sidebar: !!document.querySelector<PageElement>('.side-nav'),
                     };
                 }).catch(error => ({ error: String(error) }))
                 : null;
-            let draftsCopyState = null;
+            let draftsCopyState: PageResult = null;
             if (draftsManagerPage && draftsManagerState?.rows === 1) {
                 await draftsManagerPage.evaluate(() => {
                     Object.defineProperty(navigator, 'clipboard', {
@@ -5318,7 +5360,7 @@ try {
                 await copyControl.click();
                 await draftsManagerPage.locator('#drafts-copy-fallback').waitFor({ state: 'visible' });
                 draftsCopyState = await draftsManagerPage.evaluate(() => {
-                    const value = document.getElementById('drafts-copy-fallback-value');
+                    const value = (document.getElementById('drafts-copy-fallback-value') as PageElement | null);
                     return {
                         value: value?.value,
                         focused: document.activeElement === value,
@@ -5347,12 +5389,12 @@ try {
                 }
                 await draftsManagerPage.keyboard.press('Escape');
                 const dismissed = await draftsManagerPage.evaluate(() => ({
-                    hidden: document.getElementById('drafts-copy-fallback')?.hidden,
-                    focusReturned: document.activeElement?.dataset?.action === 'copy',
+                    hidden: (document.getElementById('drafts-copy-fallback') as PageElement | null)?.hidden,
+                    focusReturned: (document.activeElement as HTMLElement | null)?.dataset?.action === 'copy',
                 }));
                 draftsCopyState.narrowOverflow = narrowOverflow;
                 draftsCopyState.dismissed = dismissed;
-                if (previousViewport) await draftsManagerPage.setViewportSize(previousViewport);
+                if (previousViewport) await draftsManagerPage.setViewportSize(previousViewport!);
             }
             check(draftsManagerUrl === `chrome-extension://${extensionId}/options/drafts.html`
                 && draftsManagerState?.heading === 'Trip report drafts'
@@ -5383,25 +5425,25 @@ try {
                 await editorPage.locator('#bpb-report-editor').screenshot({
                     path: process.env.BPB_VERIFY_DRAFT_MANAGER_NARROW_SCREENSHOT,
                 });
-                if (previousViewport) await editorPage.setViewportSize(previousViewport);
+                if (previousViewport) await editorPage.setViewportSize(previousViewport!);
             }
 
-            await editorPage.locator('#GPXUpload').setInputFiles(fixture.gpxPath);
+            await editorPage.locator('#GPXUpload').setInputFiles(fixture!.gpxPath);
             const uploadState = await editorPage.waitForFunction(() => {
-                const process = document.querySelector('.bpb-process-button');
-                const date = document.getElementById('DateText')?.value || '';
+                const process = document.querySelector<PageElement>('.bpb-process-button');
+                const date = (document.getElementById('DateText') as PageElement | null)?.value || '';
                 const now = new Date();
-                const pad = value => String(value).padStart(2, '0');
+                const pad = (value: number) => String(value).padStart(2, '0');
                 const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
                 return process ? {
                     date,
                     today,
                     label: process.textContent,
                     ariaLabel: process.getAttribute('aria-label'),
-                    nativePreviewHidden: document.getElementById('GPXPreview')
+                    nativePreviewHidden: (document.getElementById('GPXPreview') as PageElement | null)
                         ?.classList.contains('bpb-native-preview-hidden') || false
                 } : false;
-            }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+            }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
             check(uploadState?.date === uploadState?.today
                 && /Process/.test(uploadState?.label || '')
                 && uploadState?.ariaLabel === 'Process the chosen GPX and fill this form'
@@ -5422,7 +5464,7 @@ try {
                 'https://www.peakbagger.com/Async/pllbb2.aspx?miny=1&maxy=2&minx=3&maxx=4';
             await context.unroute(localGpxLoginUrl);
             await context.unroute(localGpxSinglePeakUrl);
-            const localGpxRequestFrames = [];
+            const localGpxRequestFrames: { kind: string; frameUrl: string }[] = [];
             await context.route(localGpxEditorUrl, route => route.fulfill({
                 status: 200,
                 contentType: 'text/html',
@@ -5432,7 +5474,7 @@ try {
                 let frameUrl = null;
                 try { frameUrl = route.request().frame().url(); }
                 catch { /* A worker request has no frame. */ }
-                localGpxRequestFrames.push({ kind: 'html', frameUrl });
+                localGpxRequestFrames.push({ kind: 'html', frameUrl: frameUrl! });
                 return route.fulfill({
                     status: 200,
                     contentType: 'text/html',
@@ -5446,7 +5488,7 @@ try {
                 let frameUrl = null;
                 try { frameUrl = route.request().frame().url(); }
                 catch { /* A worker request has no frame. */ }
-                localGpxRequestFrames.push({ kind: 'peaks', frameUrl });
+                localGpxRequestFrames.push({ kind: 'peaks', frameUrl: frameUrl! });
                 return route.fulfill({
                     status: 200,
                     contentType: 'text/xml',
@@ -5455,18 +5497,18 @@ try {
             });
             const localGpxPage = await context.newPage();
             await localGpxPage.goto(localGpxEditorUrl);
-            await localGpxPage.locator('#GPXUpload').setInputFiles(fixture.gpxPath);
+            await localGpxPage.locator('#GPXUpload').setInputFiles(fixture!.gpxPath);
             await localGpxPage.locator('.bpb-process-button').click();
             const localGpxResult = await localGpxPage.waitForFunction(() => {
-                const status = document.querySelector('.bpb-upload-status-error');
+                const status = document.querySelector<PageElement>('.bpb-upload-status-error');
                 if (!status) return false;
                 return {
                     status: status.textContent,
-                    processPresent: !!document.querySelector('.bpb-process-button'),
-                    nativePreviewHidden: document.getElementById('GPXPreview')
+                    processPresent: !!document.querySelector<PageElement>('.bpb-process-button'),
+                    nativePreviewHidden: (document.getElementById('GPXPreview') as PageElement | null)
                         ?.classList.contains('bpb-native-preview-hidden') || false,
                 };
-            }, null, { timeout: 15000 }).then(handle => handle.jsonValue()).catch(() => null);
+            }, null, { timeout: 15000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
             const localGpxRequestKinds = localGpxRequestFrames.map(request => request.kind);
             check(/Summits were searched along the whole track/i.test(localGpxResult?.status || '')
                 && !localGpxResult?.processPresent
@@ -5480,13 +5522,13 @@ try {
             await localGpxPage.close();
 
             const creditState = await editorPage.waitForFunction(() => {
-                const link = document.querySelector('#bpb-report-editor a[href*="better-peakbagger"]');
-                const textarea = document.getElementById('JournalText');
+                const link = document.querySelector<PageElement>('#bpb-report-editor a[href*="better-peakbagger"]');
+                const textarea = (document.getElementById('JournalText') as PageElement | null);
                 return link && textarea?.value.includes(link.href) ? {
                     href: link.href,
                     serialized: textarea.value
                 } : false;
-            }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+            }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
             check(creditState?.href === storeUrls.chrome
                 && creditState.serialized.includes(storeUrls.chrome),
             `the Chrome report credit did not render and serialize its store URL: ${JSON.stringify(creditState)}`);
@@ -5500,26 +5542,26 @@ try {
             await editorPage.getByRole('button', { name: 'Plain', exact: true }).click();
             await editorPage.locator('#JournalText').fill(guardSource);
             const readConversionLayout = () => editorPage.evaluate(() => {
-                const editor = document.getElementById('bpb-report-editor');
-                const guard = editor?.querySelector('.bpb-re-conversion');
-                const copy = guard?.querySelector('.bpb-re-conversion-text');
-                const action = guard?.querySelector('.bpb-re-convert');
+                const editor = (document.getElementById('bpb-report-editor') as PageElement | null);
+                const guard = editor?.querySelector<PageElement>('.bpb-re-conversion');
+                const copy = guard?.querySelector<PageElement>('.bpb-re-conversion-text');
+                const action = guard?.querySelector<PageElement>('.bpb-re-convert');
                 const editorRect = editor?.getBoundingClientRect();
                 const guardRect = guard?.getBoundingClientRect();
                 const copyRect = copy?.getBoundingClientRect();
                 const actionRect = action?.getBoundingClientRect();
-                const modeButtons = [...(editor?.querySelectorAll('.bpb-re-mode') || [])];
+                const modeButtons = [...(editor?.querySelectorAll<PageElement>('.bpb-re-mode') || [])];
                 return editorRect && guardRect && copyRect && actionRect ? {
-                    mode: editor.dataset.mode,
-                    text: copy.textContent,
-                    action: action.textContent,
-                    visible: getComputedStyle(guard).display !== 'none',
+                    mode: editor!.dataset.mode,
+                    text: copy!.textContent,
+                    action: action!.textContent,
+                    visible: getComputedStyle(guard!).display !== 'none',
                     withinEditor: guardRect.left >= editorRect.left - 1
                         && guardRect.right <= editorRect.right + 1,
                     withinViewport: editorRect.left >= -1 && editorRect.right <= innerWidth + 1,
                     noOverlap: copyRect.right <= actionRect.left + 1
                         || copyRect.bottom <= actionRect.top + 1,
-                    noHorizontalOverflow: editor.scrollWidth <= editor.clientWidth + 1,
+                    noHorizontalOverflow: editor!.scrollWidth <= editor!.clientWidth + 1,
                     actionVisible: actionRect.width > 0 && actionRect.height > 0,
                     modeButtonsSingleLine: modeButtons.every(button => button.scrollHeight <= button.clientHeight + 1
                         && button.scrollWidth <= button.clientWidth + 1),
@@ -5558,7 +5600,7 @@ try {
                     path: process.env.BPB_VERIFY_EDITOR_CONVERSION_NARROW_SCREENSHOT,
                 });
             }
-            if (guardViewport) await editorPage.setViewportSize(guardViewport);
+            if (guardViewport) await editorPage.setViewportSize(guardViewport!);
             await editorPage.getByRole('button', { name: 'Markdown', exact: true }).click();
             check(await editorPage.locator('#bpb-report-editor').getAttribute('data-mode') === 'plain',
                 'a Markdown mode click bypassed the lossy-conversion action');
@@ -5577,8 +5619,8 @@ try {
             }).click();
 
             const nativeHidden = await editorPage.evaluate(() => {
-                const textarea = document.getElementById('JournalText');
-                return getComputedStyle(textarea).display === 'none' && !!textarea.form;
+                const textarea = (document.getElementById('JournalText') as PageElement | null);
+                return getComputedStyle(textarea!).display === 'none' && !!textarea!.form;
             });
             check(nativeHidden, 'the native textarea should be hidden but still inside the form');
 
@@ -5586,28 +5628,28 @@ try {
             // the page a pixel, and a viewport-relative reading would report
             // that as the writing surface having moved.
             const surfaceTopBeforePanel = await editorPage.evaluate(() =>
-                document.querySelector('#bpb-report-editor .bpb-re-surface')
-                    ?.getBoundingClientRect().top + scrollY);
+                (document.querySelector<PageElement>('#bpb-report-editor .bpb-re-surface')
+                    ?.getBoundingClientRect().top as number) + scrollY);
 
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Insert image', exact: true
             }).click();
             const imageHostingHelp = await editorPage.evaluate(() => {
-                const box = document.querySelector('#bpb-report-editor .bpb-re-imagebox');
+                const box = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-imagebox');
                 // The last help line is the one about pasted links; the first
                 // explains the upload action above it.
-                const hints = box ? [...box.querySelectorAll('.bpb-re-image-hosting')] : [];
+                const hints = box ? [...box.querySelectorAll<PageElement>('.bpb-re-image-hosting')] : [];
                 const hint = hints[hints.length - 1];
-                const controls = box ? [...box.querySelectorAll('input, button')]
+                const controls = box ? [...box.querySelectorAll<PageElement>('input, button')]
                     .filter(control => !hint?.contains(control)) : [];
                 const hintRect = hint?.getBoundingClientRect();
                 const controlRects = controls.map(control => control.getBoundingClientRect());
                 return box && hint && hintRect && controlRects.length ? {
-                    visible: getComputedStyle(box).display !== 'none',
+                    visible: getComputedStyle(box!).display !== 'none',
                     belowControls: hintRect.top >= Math.max(...controlRects.map(rect => rect.bottom)),
-                    photoActions: [...box.querySelectorAll('.bpb-re-photo-launch')]
+                    photoActions: [...box.querySelectorAll<PageElement>('.bpb-re-photo-launch')]
                         .map(button => button.textContent),
-                    links: [...hint.querySelectorAll('a')].map(link => ({
+                    links: [...hint.querySelectorAll<PageElement>('a')].map(link => ({
                         label: link.textContent,
                         href: link.href,
                         target: link.target,
@@ -5646,27 +5688,27 @@ try {
             ]), `image-hosting help links were incomplete or unsafe (state=${
                 JSON.stringify(imageHostingHelp)})`);
             const contextualPanelLayout = await editorPage.evaluate(before => {
-                const editor = document.getElementById('bpb-report-editor');
-                const toolbar = editor?.querySelector('.bpb-re-toolbar');
-                const surface = editor?.querySelector('.bpb-re-surface');
-                const box = editor?.querySelector('.bpb-re-imagebox');
+                const editor = (document.getElementById('bpb-report-editor') as PageElement | null);
+                const toolbar = editor?.querySelector<PageElement>('.bpb-re-toolbar');
+                const surface = editor?.querySelector<PageElement>('.bpb-re-surface');
+                const box = editor?.querySelector<PageElement>('.bpb-re-imagebox');
                 const toolbarRect = toolbar?.getBoundingClientRect();
                 const surfaceRect = surface?.getBoundingClientRect();
                 const boxRect = box?.getBoundingClientRect();
                 return toolbarRect && surfaceRect && boxRect ? {
                     surfaceDelta: surfaceRect.top + scrollY - before,
-                    overlay: getComputedStyle(box).position === 'static'
-                        ? getComputedStyle(editor.querySelector('.bpb-re-contextual')).position
-                        : getComputedStyle(box).position,
+                    overlay: getComputedStyle(box!).position === 'static'
+                        ? getComputedStyle(editor!.querySelector<PageElement>('.bpb-re-contextual')!).position
+                        : getComputedStyle(box!).position,
                     panelEndsAtToolbar: Math.abs(boxRect.bottom - toolbarRect.top) <= 1,
                     panelClearsSurface: boxRect.bottom <= toolbarRect.top
                         && toolbarRect.bottom <= surfaceRect.top
                 } : null;
             }, surfaceTopBeforePanel);
             check(Math.abs(contextualPanelLayout?.surfaceDelta ?? Infinity) <= 0.5
-                && contextualPanelLayout.overlay === 'absolute'
-                && contextualPanelLayout.panelEndsAtToolbar
-                && contextualPanelLayout.panelClearsSurface,
+                && contextualPanelLayout!.overlay === 'absolute'
+                && contextualPanelLayout!.panelEndsAtToolbar
+                && contextualPanelLayout!.panelClearsSurface,
             `opening the image panel moved or covered the writing surface (layout=${
                 JSON.stringify(contextualPanelLayout)})`);
             if (process.env.BPB_VERIFY_EDITOR_PANEL_SCREENSHOT) {
@@ -5688,8 +5730,8 @@ try {
             await editorPage.locator('.bpb-re-imagebox .bpb-re-linkapply').click();
             const imageErrorState = await editorPage.locator('[aria-label="Image URL (HTTPS)"]')
                 .evaluate(input => {
-                    const error = document.getElementById(input.getAttribute('aria-errormessage'));
-                    const box = input.closest('.bpb-re-imagebox');
+                    const error = document.getElementById(input.getAttribute('aria-errormessage')!);
+                    const box = input.closest<PageElement>('.bpb-re-imagebox');
                     const boxRect = box?.getBoundingClientRect();
                     const errorRect = error?.getBoundingClientRect();
                     const style = getComputedStyle(input);
@@ -5700,10 +5742,10 @@ try {
                         errorRole: error?.getAttribute('role'),
                         errorText: error?.textContent || '',
                         errorWrapsInside: Boolean(boxRect && errorRect)
-                            && errorRect.left >= boxRect.left - 1
-                            && errorRect.right <= boxRect.right + 1
-                            && errorRect.bottom <= boxRect.bottom + 1,
-                        panelOverflow: box.scrollWidth > box.clientWidth,
+                            && errorRect!.left >= boxRect!.left - 1
+                            && errorRect!.right <= boxRect!.right + 1
+                            && errorRect!.bottom <= boxRect!.bottom + 1,
+                        panelOverflow: box!.scrollWidth > box!.clientWidth,
                         outlineStyle: style.outlineStyle,
                         outlineWidth: style.outlineWidth,
                         outlineOffset: style.outlineOffset,
@@ -5723,17 +5765,17 @@ try {
                 .evaluate(input => ({
                     invalid: input.hasAttribute('aria-invalid'),
                     errorRelation: input.hasAttribute('aria-errormessage'),
-                    errorHidden: document.getElementById('bpb-re-image-error')?.hidden,
+                    errorHidden: (document.getElementById('bpb-re-image-error') as PageElement | null)?.hidden,
                 }));
             check(!correctedImageState.invalid && !correctedImageState.errorRelation
                 && correctedImageState.errorHidden,
             `the corrected image field retained stale error semantics: ${JSON.stringify(correctedImageState)}`);
             await editorPage.evaluate(() => { document.body.style.fontSize = ''; });
-            await editorPage.setViewportSize(verificationViewport);
+            await editorPage.setViewportSize(verificationViewport!);
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Insert image', exact: true
             }).click();
-            const imageDismissed = await editorPage.locator('.bpb-re-imagebox').evaluate(box => box.hidden);
+            const imageDismissed = await editorPage.locator('.bpb-re-imagebox').evaluate((box: HTMLElement) => box.hidden);
             check(imageDismissed, 'clicking Insert image again did not dismiss its panel');
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Link (Ctrl/Cmd+K)', exact: true
@@ -5741,7 +5783,7 @@ try {
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Link (Ctrl/Cmd+K)', exact: true
             }).click();
-            const linkDismissed = await editorPage.locator('.bpb-re-linkbox').evaluate(box => box.hidden);
+            const linkDismissed = await editorPage.locator('.bpb-re-linkbox').evaluate((box: HTMLElement) => box.hidden);
             check(linkDismissed, 'clicking Link again did not dismiss its panel');
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'More formats', exact: true
@@ -5749,7 +5791,7 @@ try {
             const paletteState = await editorPage.evaluate(() => {
                 const swatches = [...document.querySelectorAll(
                     '#bpb-report-editor .bpb-re-swatch[data-color]')];
-                const backgrounds = swatches.map(swatch => getComputedStyle(swatch).backgroundColor);
+                const backgrounds = swatches.map(swatch => getComputedStyle(swatch!).backgroundColor);
                 return {
                     theme: document.documentElement.getAttribute('data-bpb-theme'),
                     count: swatches.length,
@@ -5791,7 +5833,7 @@ try {
                 body: mountain
             }));
             const videoUrl = 'https://better-peakbagger.test/showcase-activity.mp4';
-            const video = await readFile(path.join(root, 'store-assets', 'showcase-activity-capture.mp4'));
+            const video: PageResult = await readFile(path.join(root, 'store-assets', 'showcase-activity-capture.mp4'));
             await editorPage.route(videoUrl, route => route.fulfill({
                 contentType: 'video/mp4',
                 body: video
@@ -5824,9 +5866,9 @@ try {
             `Plain did not naturalize server break tags without changing Rich structure: ${
                 JSON.stringify({ naturalBreakSource, naturalBreakRichHtml })}`);
             const plainBarLayout = await editorPage.evaluate(() => {
-                const bar = document.querySelector('#bpb-report-editor .bpb-re-bar');
-                const hint = document.querySelector('#bpb-report-editor .bpb-re-plain-hint');
-                const modes = document.querySelector('#bpb-report-editor .bpb-re-modes');
+                const bar = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-bar');
+                const hint = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-plain-hint');
+                const modes = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-modes');
                 const barRect = bar?.getBoundingClientRect();
                 const hintRect = hint?.getBoundingClientRect();
                 const modesRect = modes?.getBoundingClientRect();
@@ -5866,7 +5908,7 @@ try {
             const richImage = editorPage.locator(
                 '#bpb-report-editor .bpb-re-surface .bpb-re-image-resize img');
             const richImageLoaded = await editorPage.waitForFunction(() => {
-                const image = document.querySelector(
+                const image: PageResult = document.querySelector(
                     '#bpb-report-editor .bpb-re-surface .bpb-re-image-resize img');
                 return image?.complete && image.naturalWidth > 0;
             }, null, { timeout: 5000 }).then(() => true).catch(() => false);
@@ -5884,20 +5926,20 @@ try {
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich image did not reveal its resize handle');
                 if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
-                const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
-                    const media = document.querySelector('.bpb-re-image-resize img');
-                    const handle = document.querySelector('[aria-label="Resize image"]');
+                const resizeGeometry: PageResult = handleReady ? await editorPage.evaluate(() => {
+                    const media = document.querySelector<PageElement>('.bpb-re-image-resize img');
+                    const handle = document.querySelector<PageElement>('[aria-label="Resize image"]');
                     const mediaRect = media?.getBoundingClientRect();
                     const handleRect = handle?.getBoundingClientRect();
                     return mediaRect && handleRect ? {
                         width: handleRect.width,
                         height: handleRect.height,
                         belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
-                        touchAction: getComputedStyle(handle).touchAction,
+                        touchAction: getComputedStyle(handle!).touchAction,
                     } : null;
                 }) : null;
-                check(resizeGeometry?.width >= 43.5 && resizeGeometry?.height >= 43.5
-                    && resizeGeometry.belowNativeControls && resizeGeometry.touchAction === 'none',
+                check(resizeGeometry?.width >= 43.5 && (resizeGeometry?.height as number) >= 43.5
+                    && resizeGeometry!.belowNativeControls && resizeGeometry!.touchAction === 'none',
                 `the Rich image resize target was undersized or covered the image: ${JSON.stringify(resizeGeometry)}`);
 
                 if (handleReady && process.env.BPB_VERIFY_EDITOR_RESIZE_SCREENSHOT) {
@@ -5917,11 +5959,11 @@ try {
                 }
 
                 const pointerResize = await editorPage.waitForFunction(() => {
-                    const source = document.getElementById('JournalText').value;
+                    const source = (document.getElementById('JournalText') as PageElement | null)!.value;
                     const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
                     const height = Number(/\bheight="(\d+)"/.exec(source)?.[1]);
                     return width < 440 && width >= 64 && height >= 40 ? { width, height, source } : null;
-                }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
                 check(pointerResize && pointerResize.width >= 330 && pointerResize.width <= 350
                     && pointerResize.height >= 195 && pointerResize.height <= 215,
                 `dragging the Rich image did not persist a proportional resize (state=${JSON.stringify(pointerResize)})`);
@@ -5930,10 +5972,10 @@ try {
                     await resizeHandle.focus();
                     await editorPage.keyboard.press('ArrowRight');
                     const keyboardResize = await editorPage.waitForFunction(previous => {
-                        const source = document.getElementById('JournalText').value;
+                        const source = (document.getElementById('JournalText') as PageElement | null)!.value;
                         const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
                         return width === previous + 10 ? { width, source } : null;
-                    }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                    }, pointerResize.width, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
                     check(keyboardResize?.width === pointerResize.width + 10,
                         `the focused resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
                 }
@@ -5952,9 +5994,9 @@ try {
             const richVideo = editorPage.locator(
                 '#bpb-report-editor .bpb-re-surface .bpb-re-video-resize video');
             const richVideoLoaded = await editorPage.waitForFunction(() => {
-                const video = document.querySelector(
+                const video: PageResult = document.querySelector(
                     '#bpb-report-editor .bpb-re-surface .bpb-re-video-resize video');
-                return video?.readyState >= 1 && video.videoWidth > 0 && video.videoHeight > 0;
+                return video?.readyState >= 1 && video!.videoWidth > 0 && video!.videoHeight > 0;
             }, null, { timeout: 5000 }).then(() => true).catch(() => false);
             check(richVideoLoaded, 'the Rich video fixture did not load metadata');
             if (richVideoLoaded) {
@@ -5970,20 +6012,20 @@ try {
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich video did not reveal its resize handle');
                 if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
-                const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
-                    const media = document.querySelector('.bpb-re-video-resize video');
-                    const handle = document.querySelector('[aria-label="Resize video"]');
+                const resizeGeometry: PageResult = handleReady ? await editorPage.evaluate(() => {
+                    const media = document.querySelector<PageElement>('.bpb-re-video-resize video');
+                    const handle = document.querySelector<PageElement>('[aria-label="Resize video"]');
                     const mediaRect = media?.getBoundingClientRect();
                     const handleRect = handle?.getBoundingClientRect();
                     return mediaRect && handleRect ? {
                         width: handleRect.width,
                         height: handleRect.height,
                         belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
-                        touchAction: getComputedStyle(handle).touchAction,
+                        touchAction: getComputedStyle(handle!).touchAction,
                     } : null;
                 }) : null;
-                check(resizeGeometry?.width >= 43.5 && resizeGeometry?.height >= 43.5
-                    && resizeGeometry.belowNativeControls && resizeGeometry.touchAction === 'none',
+                check(resizeGeometry?.width >= 43.5 && (resizeGeometry?.height as number) >= 43.5
+                    && resizeGeometry!.belowNativeControls && resizeGeometry!.touchAction === 'none',
                 `the Rich video resize target was undersized or covered native controls: ${JSON.stringify(resizeGeometry)}`);
                 if (handleReady && process.env.BPB_VERIFY_EDITOR_VIDEO_SCREENSHOT) {
                     await editorPage.locator('#bpb-report-editor').screenshot({
@@ -6002,12 +6044,12 @@ try {
                 }
 
                 const pointerResize = await editorPage.waitForFunction(() => {
-                    const source = document.getElementById('JournalText').value;
+                    const source = (document.getElementById('JournalText') as PageElement | null)!.value;
                     const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
                     const height = Number(/\bheight="(\d+)"/.exec(source)?.[1]);
                     return width < 320 && width >= 230 && height >= 125
                         ? { width, height, source } : null;
-                }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
                 check(pointerResize && pointerResize.width >= 230 && pointerResize.width <= 250
                     && pointerResize.height >= 125 && pointerResize.height <= 145,
                 `dragging the Rich video did not persist a proportional resize (state=${JSON.stringify(pointerResize)})`);
@@ -6016,10 +6058,10 @@ try {
                     await resizeHandle.focus();
                     await editorPage.keyboard.press('ArrowRight');
                     const keyboardResize = await editorPage.waitForFunction(previous => {
-                        const source = document.getElementById('JournalText').value;
+                        const source = (document.getElementById('JournalText') as PageElement | null)!.value;
                         const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
                         return width === previous + 10 ? { width, source } : null;
-                    }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                    }, pointerResize.width, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
                     check(keyboardResize?.width === pointerResize.width + 10,
                         `the focused video resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
                 }
@@ -6037,14 +6079,14 @@ try {
                 name: 'Markdown', exact: true
             }).click();
             const markdownYouTube = await editorPage.waitForFunction(expected => {
-                const iframe = document.querySelector('#bpb-report-editor .bpb-re-preview iframe');
+                const iframe = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-preview iframe');
                 return iframe?.getAttribute('src') === expected ? {
                     src: iframe.getAttribute('src'),
                     title: iframe.getAttribute('title'),
                     referrerPolicy: iframe.getAttribute('referrerpolicy'),
                     allow: iframe.getAttribute('allow')
                 } : null;
-            }, youtubeUrl, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+            }, youtubeUrl, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
             check(markdownYouTube?.src === youtubeUrl
                 && markdownYouTube?.title === 'YouTube video'
                 && markdownYouTube?.referrerPolicy === 'strict-origin-when-cross-origin'
@@ -6077,20 +6119,20 @@ try {
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'the Rich YouTube iframe did not expose its resize handle');
                 if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
-                const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
-                    const media = document.querySelector('.bpb-re-youtube-resize iframe');
-                    const handle = document.querySelector('[aria-label="Resize YouTube video"]');
+                const resizeGeometry: PageResult = handleReady ? await editorPage.evaluate(() => {
+                    const media = document.querySelector<PageElement>('.bpb-re-youtube-resize iframe');
+                    const handle = document.querySelector<PageElement>('[aria-label="Resize YouTube video"]');
                     const mediaRect = media?.getBoundingClientRect();
                     const handleRect = handle?.getBoundingClientRect();
                     return mediaRect && handleRect ? {
                         width: handleRect.width,
                         height: handleRect.height,
                         belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
-                        touchAction: getComputedStyle(handle).touchAction,
+                        touchAction: getComputedStyle(handle!).touchAction,
                     } : null;
                 }) : null;
-                check(resizeGeometry?.width >= 43.5 && resizeGeometry?.height >= 43.5
-                    && resizeGeometry.belowNativeControls && resizeGeometry.touchAction === 'none',
+                check(resizeGeometry?.width >= 43.5 && (resizeGeometry?.height as number) >= 43.5
+                    && resizeGeometry!.belowNativeControls && resizeGeometry!.touchAction === 'none',
                 `the Rich YouTube resize target was undersized or covered player controls: ${JSON.stringify(resizeGeometry)}`);
                 if (handleReady && process.env.BPB_VERIFY_EDITOR_YOUTUBE_SCREENSHOT) {
                     await editorPage.locator('#bpb-report-editor').screenshot({
@@ -6109,16 +6151,16 @@ try {
                 }
 
                 const pointerResize = await editorPage.waitForFunction(() => {
-                    const source = document.getElementById('JournalText').value;
+                    const source = (document.getElementById('JournalText') as PageElement | null)!.value;
                     const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
                     const height = Number(/\bheight="(\d+)"/.exec(source)?.[1]);
                     return width < 320 && width >= 230 && height >= 125
                         ? { width, height, source } : null;
-                }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
                 const youtubeResizeState = pointerResize ? null : await editorPage.evaluate(() => {
-                    const iframe = document.querySelector('.bpb-re-youtube-resize iframe');
-                    const container = document.querySelector('.bpb-re-youtube-resize');
-                    return { source: document.getElementById('JournalText').value,
+                    const iframe = document.querySelector<PageElement>('.bpb-re-youtube-resize iframe');
+                    const container = document.querySelector<PageElement>('.bpb-re-youtube-resize');
+                    return { source: (document.getElementById('JournalText') as PageElement | null)!.value,
                         style: iframe && { width: iframe.style.width, height: iframe.style.height },
                         iframe: iframe?.getBoundingClientRect(),
                         resizeState: container?.dataset.resizeState };
@@ -6132,10 +6174,10 @@ try {
                     await resizeHandle.focus();
                     await editorPage.keyboard.press('ArrowRight');
                     const keyboardResize = await editorPage.waitForFunction(previous => {
-                        const source = document.getElementById('JournalText').value;
+                        const source = (document.getElementById('JournalText') as PageElement | null)!.value;
                         const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
                         return width === previous + 10 ? { width, source } : null;
-                    }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                    }, pointerResize.width, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
                     check(keyboardResize?.width === pointerResize.width + 10,
                         `the focused YouTube resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
                 }
@@ -6154,7 +6196,7 @@ try {
                 name: 'Rich text', exact: true
             }).click();
             const richHex = await editorPage.evaluate(() => {
-                const span = document.querySelector('.bpb-re-surface span[style]');
+                const span = document.querySelector<PageElement>('.bpb-re-surface span[style]');
                 return span && {
                     text: span.textContent,
                     style: span.getAttribute('style'),
@@ -6168,18 +6210,18 @@ try {
             await editorPage.keyboard.press('End');
             await editorPage.keyboard.type(' Clear weather.');
             const richHexSynced = await editorPage.waitForFunction(expected =>
-                document.getElementById('JournalText').value === `${expected} Clear weather.`,
+                (document.getElementById('JournalText') as PageElement | null)!.value === `${expected} Clear weather.`,
             hexSource, { timeout: 5000 }).then(() => true).catch(() => false);
             check(richHexSynced, `an unrelated Rich edit lost the hex color (value=${
-                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+                JSON.stringify(await editorPage.evaluate(() => (document.getElementById('JournalText') as PageElement | null)!.value))})`);
 
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Markdown', exact: true
             }).click();
             const markdownHex = await editorPage.evaluate(() => ({
-                source: [...document.querySelectorAll('.bpb-re-mdpane .cm-line')]
+                source: [...document.querySelectorAll<PageElement>('.bpb-re-mdpane .cm-line')]
                     .map(line => line.textContent).join('\n'),
-                previewStyle: document.querySelector('.bpb-re-preview span[style]')?.getAttribute('style')
+                previewStyle: document.querySelector<PageElement>('.bpb-re-preview span[style]')?.getAttribute('style')
             }));
             check(markdownHex.source === `${hexMarkdown} Clear weather.`
                 && /#2471a3/i.test(markdownHex.previewStyle || ''),
@@ -6199,14 +6241,14 @@ try {
             await editorPage.keyboard.press('End');
             await editorPage.keyboard.type(', next');
             const linkBoundary = await editorPage.waitForFunction(expected => {
-                const surface = document.querySelector('#bpb-report-editor .bpb-re-surface');
-                const link = surface?.querySelector('a');
-                return document.getElementById('JournalText').value === `${expected}, next`
+                const surface = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-surface');
+                const link = surface?.querySelector<PageElement>('a');
+                return (document.getElementById('JournalText') as PageElement | null)!.value === `${expected}, next`
                     && link?.textContent === 'route'
                     && link.nextSibling?.textContent === ', next';
             }, linkBoundarySource, { timeout: 5000 }).then(() => true).catch(() => false);
             check(linkBoundary, `typing after a Rich link extended the link boundary (value=${
-                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+                JSON.stringify(await editorPage.evaluate(() => (document.getElementById('JournalText') as PageElement | null)!.value))})`);
 
             // Leave the following real-typing scenario independent of the link
             // boundary assertion.
@@ -6232,27 +6274,27 @@ try {
             await editorPage.keyboard.type('1. rope');
 
             const synced = await editorPage.waitForFunction(() =>
-                document.getElementById('JournalText').value
+                (document.getElementById('JournalText') as PageElement | null)!.value
                 === 'Summit day was [b]windy[/b].\n\nSecond paragraph.\n\n[ol][li]rope[/li][/ol]',
             null, { timeout: 5000 })
                 .then(() => true).catch(() => false);
             check(synced, `real typing + Ctrl/Cmd+B + the "1. " input rule did not sync bracket markup into JournalText (value=${
-                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+                JSON.stringify(await editorPage.evaluate(() => (document.getElementById('JournalText') as PageElement | null)!.value))})`);
 
             const listActive = await editorPage.evaluate(() =>
-                document.querySelector('#bpb-report-editor [aria-label="Numbered list"]')
+                document.querySelector<PageElement>('#bpb-report-editor [aria-label="Numbered list"]')
                     ?.getAttribute('aria-pressed'));
             check(listActive === 'true',
                 `the toolbar did not track the caret's ordered list (aria-pressed=${JSON.stringify(listActive)})`);
 
             const savedStatus = await editorPage.waitForFunction(() =>
-                /Draft saved on this device/.test(document.querySelector('.bpb-re-status')?.textContent || ''),
+                /Draft saved on this device/.test(document.querySelector<PageElement>('.bpb-re-status')?.textContent || ''),
             null, { timeout: 5000 }).then(() => true).catch(() => false);
             check(savedStatus, 'the local-draft autosave status never appeared');
 
             await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Markdown', exact: true }).click();
             const markdownValue = await editorPage.evaluate(() =>
-                [...document.querySelectorAll('.bpb-re-mdpane .cm-line')]
+                [...document.querySelectorAll<PageElement>('.bpb-re-mdpane .cm-line')]
                     .map(line => line.textContent).join('\n'));
             check(markdownValue === 'Summit day was **windy**.\n\nSecond paragraph.\n\n1. rope',
                 `switching to markdown did not convert the content (value=${JSON.stringify(markdownValue)})`);
@@ -6260,8 +6302,8 @@ try {
             // The split pane: source and live preview visible together, no tab
             // to click, and the preview already shows the saved rendering.
             const split = await editorPage.evaluate(() => {
-                const source = document.querySelector('.bpb-re-mdpane .cm-editor');
-                const preview = document.querySelector('.bpb-re-mdsplit .bpb-re-preview');
+                const source = document.querySelector<PageElement>('.bpb-re-mdpane .cm-editor');
+                const preview = document.querySelector<PageElement>('.bpb-re-mdsplit .bpb-re-preview');
                 if (!source || !preview) return null;
                 const a = source.getBoundingClientRect();
                 const b = preview.getBoundingClientRect();
@@ -6280,8 +6322,8 @@ try {
             // save cannot prove that Markdown (including its source) is durable.
             // pagehide delivery is best-effort, so never race that write with reload.
             await editorPage.waitForFunction(() =>
-                document.getElementById('bpb-report-editor')?.dataset.mode === 'markdown'
-                && /^Draft saved on this device/.test(document.querySelector('.bpb-re-status')?.textContent || ''),
+                (document.getElementById('bpb-report-editor') as PageElement | null)?.dataset.mode === 'markdown'
+                && /^Draft saved on this device/.test(document.querySelector<PageElement>('.bpb-re-status')?.textContent || ''),
             null, { timeout: 10000 });
 
             // A reload serves the pristine form again; the draft must be
@@ -6298,8 +6340,8 @@ try {
                     name: 'Insert image', exact: true
                 }).click();
                 const draftPanelLayout = await editorPage.evaluate(() => {
-                    const draft = document.querySelector('#bpb-report-editor .bpb-re-draft');
-                    const panel = document.querySelector('#bpb-report-editor .bpb-re-imagebox');
+                    const draft = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-draft');
+                    const panel = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-imagebox');
                     const draftRect = draft?.getBoundingClientRect();
                     const panelRect = panel?.getBoundingClientRect();
                     return draftRect && panelRect ? {
@@ -6329,24 +6371,24 @@ try {
                 }).click();
                 await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Restore draft', exact: true }).click();
                 const restored = await editorPage.waitForFunction(() => {
-                    const editor = document.getElementById('bpb-report-editor');
-                    const content = editor?.querySelector('.bpb-re-mdpane .cm-content');
+                    const editor = (document.getElementById('bpb-report-editor') as PageElement | null);
+                    const content = editor?.querySelector<PageElement>('.bpb-re-mdpane .cm-content');
                     const rect = content?.getBoundingClientRect();
                     const state = {
                         mode: editor?.dataset.mode,
-                        value: document.getElementById('JournalText')?.value,
+                        value: (document.getElementById('JournalText') as PageElement | null)?.value,
                         markdownVisible: !!rect && rect.width > 0 && rect.height > 0,
                     };
                     return state.mode === 'markdown'
                         && state.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.\n\n[ol][li]rope[/li][/ol]'
                         && state.markdownVisible ? state : false;
-                }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+                }, null, { timeout: 10000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
                 if (!restored) {
                     const state = await editorPage.evaluate(() => ({
-                        mode: document.getElementById('bpb-report-editor')?.dataset.mode,
-                        value: document.getElementById('JournalText')?.value,
-                        status: document.querySelector('.bpb-re-status')?.textContent,
-                        draftOffered: !document.querySelector('.bpb-re-draft')?.hidden,
+                        mode: (document.getElementById('bpb-report-editor') as PageElement | null)?.dataset.mode,
+                        value: (document.getElementById('JournalText') as PageElement | null)?.value,
+                        status: document.querySelector<PageElement>('.bpb-re-status')?.textContent,
+                        draftOffered: !document.querySelector<PageElement>('.bpb-re-draft')?.hidden,
                     }));
                     throw new Error(`restoring the draft did not reach a visible Markdown editor: ${JSON.stringify(state)}`);
                 }
@@ -6375,7 +6417,7 @@ try {
                 '---'
             ].join('\n'));
             const expandedSync = await editorPage.waitForFunction(imageUrl => {
-                const value = document.getElementById('JournalText').value;
+                const value = (document.getElementById('JournalText') as PageElement | null)!.value;
                 return value.includes('[h2]Route notes[/h2]')
                     && value.includes('[blockquote]Windy [s]retreat[/s].[/blockquote]')
                     && value.includes('[table border="1"]')
@@ -6385,13 +6427,13 @@ try {
                     && value.endsWith('[hr]');
             }, mountainUrl, { timeout: 5000 }).then(() => true).catch(() => false);
             check(expandedSync, `expanded Markdown did not reach JournalText (value=${
-                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+                JSON.stringify(await editorPage.evaluate(() => (document.getElementById('JournalText') as PageElement | null)!.value))})`);
             const expandedPreview = await editorPage.waitForFunction(() => {
-                const preview = document.querySelector('.bpb-re-preview');
-                const image = preview?.querySelector('img');
-                const video = preview?.querySelector('video');
+                const preview = document.querySelector<PageElement>('.bpb-re-preview');
+                const image = preview?.querySelector<PageElement>('img');
+                const video = preview?.querySelector<PageElement>('video');
                 return ['H2', 'BLOCKQUOTE', 'TABLE', 'S', 'CODE', 'HR']
-                    .every(tag => preview && preview.querySelector(tag))
+                    .every(tag => preview && preview.querySelector<PageElement>(tag))
                     && image?.getAttribute('width') === '300'
                     && image?.getAttribute('height') === '180'
                     && video?.hasAttribute('controls')
@@ -6407,7 +6449,7 @@ try {
                 await editorPage.setViewportSize({ width: 1280, height: 800 });
                 await editorPage.locator('#bpb-report-editor').scrollIntoViewIfNeeded();
                 await editorPage.evaluate(() => {
-                    const top = document.getElementById('bpb-report-editor').getBoundingClientRect().top;
+                    const top = (document.getElementById('bpb-report-editor') as PageElement | null)!.getBoundingClientRect().top;
                     window.scrollBy(0, Math.max(0, top - 110));
                 });
                 await editorPage.screenshot({ path: process.env.BPB_VERIFY_EDITOR_PAGE_SCREENSHOT });
@@ -6417,19 +6459,19 @@ try {
             // table from the toolbar, then grow it by one row.
             await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Rich text', exact: true }).click();
             const rowsBefore = await editorPage.evaluate(() =>
-                (document.getElementById('JournalText').value.match(/\[tr\]/g) || []).length);
+                ((document.getElementById('JournalText') as PageElement | null)!.value.match(/\[tr\]/g) || []).length);
             await editorPage.locator('#bpb-report-editor [aria-label="Insert table"]').click();
             const tableBarShown = await editorPage.locator('.bpb-re-tablebar').waitFor({ state: 'visible', timeout: 5000 })
                 .then(() => true).catch(() => false);
             check(tableBarShown, 'inserting a table did not reveal the contextual table controls');
             const inserted = await editorPage.waitForFunction(before =>
-                (document.getElementById('JournalText').value.match(/\[tr\]/g) || []).length === before + 3,
+                ((document.getElementById('JournalText') as PageElement | null)!.value.match(/\[tr\]/g) || []).length === before + 3,
             rowsBefore, { timeout: 5000 }).then(() => true).catch(() => false);
             check(inserted, `the toolbar table insert did not produce a 3-row table (value=${
-                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value.slice(0, 400)))})`);
+                JSON.stringify(await editorPage.evaluate(() => (document.getElementById('JournalText') as PageElement | null)!.value.slice(0, 400)))})`);
             await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Add row below', exact: true }).click();
             const grew = await editorPage.waitForFunction(before =>
-                (document.getElementById('JournalText').value.match(/\[tr\]/g) || []).length === before + 4,
+                ((document.getElementById('JournalText') as PageElement | null)!.value.match(/\[tr\]/g) || []).length === before + 4,
             rowsBefore, { timeout: 5000 }).then(() => true).catch(() => false);
             check(grew, 'Add row below did not grow the table by one row');
             if (process.env.BPB_VERIFY_EDITOR_RICH_SCREENSHOT) {
@@ -6443,7 +6485,7 @@ try {
             // Lists typed inside cells must survive the saved-value boundary,
             // Markdown edits, and reconstruction of the Rich document.
             const editorModes = editorPage.locator('#bpb-report-editor');
-            const reportTabId = await reportOptionsPage.evaluate(async url => {
+            const reportTabId = await reportOptionsPage!.evaluate(async url => {
                 const tabs = (await chrome.tabs.query({})).filter(tab => tab.url === url);
                 if (tabs.length !== 1) throw new Error('The report fixture tab is ambiguous');
                 return tabs[0].id;
@@ -6474,11 +6516,11 @@ try {
             ] });
             await editorModes.getByRole('button', { name: 'Markdown', exact: true }).click();
             const tableListsState = await editorPage.evaluate(() => ({
-                saved: document.getElementById('JournalText').value,
-                source: [...document.querySelectorAll('.bpb-re-mdpane .cm-line')]
+                saved: (document.getElementById('JournalText') as PageElement | null)!.value,
+                source: [...document.querySelectorAll<PageElement>('.bpb-re-mdpane .cm-line')]
                     .map(line => line.textContent).join('\n'),
-                bullets: document.querySelectorAll('.bpb-re-preview td > ul > li').length,
-                numbers: document.querySelectorAll('.bpb-re-preview td > ol > li').length,
+                bullets: document.querySelectorAll<PageElement>('.bpb-re-preview td > ul > li').length,
+                numbers: document.querySelectorAll<PageElement>('.bpb-re-preview td > ol > li').length,
             }));
             assert.ok(tableListsState.saved === tableLists && tableListsState.bullets === 2
                 && tableListsState.numbers === 2 && tableListsState.source.startsWith('<table'),
@@ -6489,7 +6531,7 @@ try {
             if (process.env.BPB_VERIFY_EDITOR_TABLE_LIST_NARROW_SCREENSHOT) {
                 await editorPage.setViewportSize({ width: 720, height: 900 });
                 await editorModes.screenshot({ path: process.env.BPB_VERIFY_EDITOR_TABLE_LIST_NARROW_SCREENSHOT });
-                await editorPage.setViewportSize(verificationViewport);
+                await editorPage.setViewportSize(verificationViewport!);
             }
             await editorPage.locator('.bpb-re-mdpane .cm-content').click();
             await editorPage.keyboard.press(`${modifier}+a`);
@@ -6528,7 +6570,7 @@ try {
                     name: 'Rich text', exact: true
                 }).click();
                 const richImageLoaded = await editorPage.waitForFunction(() => {
-                    const image = document.querySelector('#bpb-report-editor .bpb-re-surface img');
+                    const image = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-surface img');
                     return image?.complete && image.naturalWidth > 0;
                 }, null, { timeout: 5000 }).then(() => true).catch(() => false);
                 check(richImageLoaded, 'the rich-text showcase image did not load');
@@ -6553,7 +6595,7 @@ try {
                     '**Route notes:** Dry rock, shaded snow, and a calm descent.'
                 ].join('\n'));
                 const markdownImageLoaded = await editorPage.waitForFunction(() => {
-                    const image = document.querySelector('#bpb-report-editor .bpb-re-preview img');
+                    const image = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-preview img');
                     return image?.complete && image.naturalWidth > 0;
                 }, null, { timeout: 5000 }).then(() => true).catch(() => false);
                 check(markdownImageLoaded, 'the Markdown showcase image preview did not load');
@@ -6588,9 +6630,9 @@ try {
         if (Number.isInteger(seeded.sourceTabId)) {
             const job = createSyntheticCaptureJob(seeded.sourceTabId);
             const payload = createSyntheticCapturePayload(job);
-            const opened = await controlPage.evaluate(async ({ sourceTabId, job, payload }) => {
+            const opened: PageResult = await controlPage.evaluate(async ({ sourceTabId, job, payload }) => {
                 await chrome.storage.session.set({
-                    bpbCaptureJobs: { [sourceTabId]: job },
+                    bpbCaptureJobs: { [sourceTabId as number]: job },
                     bpbDraftTabs: {},
                     [payload.key]: payload.value,
                 });
@@ -6619,7 +6661,7 @@ try {
                         timeoutMs: 15_000,
                     });
                 } catch (error) {
-                    opened.waitError = error.message;
+                    opened.waitError = (error as Error).message;
                     opened.tab = await controlPage.evaluate(async tabId =>
                         chrome.tabs.get(tabId), draftTabId).catch(readError => ({ error: String(readError) }));
                 }
@@ -6636,15 +6678,15 @@ try {
                 await controlPage.evaluate(({ draftTabId, wrongUrl }) =>
                     chrome.tabs.update(draftTabId, { url: wrongUrl }), { draftTabId, wrongUrl });
                 const draftPage = await waitForCondition(() =>
-                    context.pages().find(page => page.url() === wrongUrl), {
+                    context.pages().find((page: Page) => page.url() === wrongUrl), {
                     description: 'the Chrome draft tab to reach the wrong-identity fixture'
                 });
                 const mismatch = await draftPage.locator('#bpb-draft-banner').waitFor({
                     state: 'visible', timeout: 10000
                 }).then(() => draftPage.locator('#bpb-draft-banner').textContent()).catch(() => null);
                 check(/does not match its prepared ascent draft/.test(mismatch || '')
-                    && fixture.requests.previewPosts === 0,
-                `the Chrome worker accepted the wrong peak identity: ${JSON.stringify({ mismatch, requests: fixture.requests })}`);
+                    && fixture!.requests.previewPosts === 0,
+                `the Chrome worker accepted the wrong peak identity: ${JSON.stringify({ mismatch, requests: fixture!.requests })}`);
 
                 const correctUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?pid=2829&cid=900001`;
                 await draftPage.goto(correctUrl, { waitUntil: 'load' });
@@ -6656,39 +6698,39 @@ try {
                 } catch (error) {
                     const pageState = await draftPage.evaluate(() => ({
                         url: location.href,
-                        banner: document.getElementById('bpb-draft-banner')?.textContent || null,
-                        date: document.getElementById('DateText')?.value || null,
-                        files: document.getElementById('GPXUpload')?.files?.length ?? null,
-                        preview: document.getElementById('GPXPreview')?.value || null
-                    })).catch(readError => ({ error: String(readError) }));
-                    const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId }) => {
-                        const values = await chrome.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs']);
+                        banner: (document.getElementById('bpb-draft-banner') as PageElement | null)?.textContent || null,
+                        date: (document.getElementById('DateText') as PageElement | null)?.value || null,
+                        files: (document.getElementById('GPXUpload') as PageElement | null)?.files?.length ?? null,
+                        preview: (document.getElementById('GPXPreview') as PageElement | null)?.value || null
+                    })).catch((readError: unknown) => ({ error: String(readError) }));
+                    const privateState: PageResult = await controlPage.evaluate(async ({ sourceTabId, draftTabId }) => {
+                        const values = await chrome.storage.session.get<StoredRecords>(['bpbCaptureJobs', 'bpbDraftTabs']);
                         return {
-                            job: values.bpbCaptureJobs?.[sourceTabId] || null,
-                            draft: values.bpbDraftTabs?.[draftTabId] || null
+                            job: values.bpbCaptureJobs?.[sourceTabId as number] || null,
+                            draft: values.bpbDraftTabs?.[draftTabId as number] || null
                         };
                     }, { sourceTabId: seeded.sourceTabId, draftTabId });
                     throw new Error(`Chrome draft Preview did not submit: ${JSON.stringify({
-                        requests: fixture.requests, pageState, privateState
+                        requests: fixture!.requests, pageState, privateState
                     })}`, { cause: error });
                 }
                 await draftPage.waitForFunction(() =>
-                    /Preview is ready/.test(document.getElementById('bpb-draft-banner')?.textContent || ''),
+                    /Preview is ready/.test((document.getElementById('bpb-draft-banner') as PageElement | null)?.textContent || ''),
                 null, { timeout: 10000 });
-                check(fixture.requests.previewPosts === 1
-                    && fixture.requests.savePosts === 0
-                    && fixture.requests.lastPreview?.attachedGpx
-                    && fixture.requests.lastPreview?.dateFilled
-                    && fixture.requests.lastPreview?.suffixBlank,
-                `the Chrome draft handoff did not attach/fill/Preview exactly once: ${JSON.stringify(fixture.requests)}`);
+                check(fixture!.requests.previewPosts === 1
+                    && fixture!.requests.savePosts === 0
+                    && (fixture!.requests as PageResult).lastPreview?.attachedGpx
+                    && (fixture!.requests as PageResult).lastPreview?.dateFilled
+                    && (fixture!.requests as PageResult).lastPreview?.suffixBlank,
+                `the Chrome draft handoff did not attach/fill/Preview exactly once: ${JSON.stringify(fixture!.requests)}`);
 
-                const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId, payloadKey }) => {
-                    const values = await chrome.storage.session.get([
+                const privateState: PageResult = await controlPage.evaluate(async ({ sourceTabId, draftTabId, payloadKey }) => {
+                    const values = await chrome.storage.session.get<StoredRecords>([
                         'bpbCaptureJobs', 'bpbDraftTabs', payloadKey,
                     ]);
                     return {
-                        job: values.bpbCaptureJobs?.[sourceTabId] || null,
-                        draft: values.bpbDraftTabs?.[draftTabId] || null,
+                        job: values.bpbCaptureJobs?.[sourceTabId as number] || null,
+                        draft: values.bpbDraftTabs?.[draftTabId as number] || null,
                         payload: values[payloadKey],
                     };
                 }, { sourceTabId: seeded.sourceTabId, draftTabId, payloadKey: payload.key });
@@ -6709,13 +6751,13 @@ try {
     await signedOutOptions.goto(`chrome-extension://${extensionId}/options/options.html`);
     const signedOutPage = await context.newPage();
     await verifySignedOutExtension({
-        configure: source => signedOutOptions.evaluate(prepareSignedOut, source),
+        configure: (source: string) => signedOutOptions.evaluate(prepareSignedOut, source),
         navigate: () => signedOutPage.goto(`https://www.peakbagger.com:${port}/Peak.aspx?pid=2296&signed-out=1`),
-        evaluate: fn => signedOutPage.evaluate(fn),
-        wait: fn => signedOutPage.waitForFunction(fn),
-        press: (selector, key) => signedOutPage.locator(selector).press(key),
-        readFavorites: () => signedOutOptions.evaluate(async () => (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers.entries),
-        requests: fixture.requests,
+        evaluate: (fn: () => unknown) => signedOutPage.evaluate(fn),
+        wait: (fn: () => unknown) => signedOutPage.waitForFunction(fn),
+        press: (selector: string, key: string) => signedOutPage.locator(selector).press(key),
+        readFavorites: () => signedOutOptions.evaluate(async () => (await chrome.storage.local.get<StoredRecords>('bpbFavoriteClimbers')).bpbFavoriteClimbers.entries),
+        requests: fixture!.requests,
     });
     await signedOutPage.close();
     await signedOutOptions.close();
@@ -6726,10 +6768,10 @@ if (primaryError && failures.length) {
     console.error('Checks that failed before the terminal error:');
     for (const failure of failures) console.error(`  - ${failure}`);
 }
-if (primaryError || failures.length) await retainBrowserFailure({
+if (primaryError || failures.length) await (retainBrowserFailure as PageResult)({
     context, fixtureOrigin: `https://www.peakbagger.com:${port}`, requests: requestEvidence,
 });
-await resources.dispose(primaryError);
+await resources.dispose(primaryError as never);
 
 if (failures.length) {
     console.error('Real-extension verification FAILED:');
@@ -6737,7 +6779,7 @@ if (failures.length) {
     process.exit(1);
 }
 console.log(JSON.stringify({
-    verification: 'extension', browser: 'chromium', version: context.browser()?.version() || 'unknown',
+    verification: 'extension', browser: 'chromium', version: context!.browser()?.version() || 'unknown',
     hidden: true, viewport: verificationViewport, bfcache: chromeBfcacheResult,
     teardown: 'passed',
 }));

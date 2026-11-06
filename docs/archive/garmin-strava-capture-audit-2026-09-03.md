@@ -483,7 +483,7 @@ The provider tests use small hand-authored DOM strings and mocked responses in
 `test/capture/provider-page.test.mjs`. The hidden extension verifier exercises
 the Peakbagger page bridge and seeded post-capture state, but explicitly leaves
 the native toolbar `activeTab` grant and live provider behavior manual in
-`scripts/verify-extension.mjs` (lines 5405–5409) and
+`scripts/verify-extension.mts` (lines 5405–5409) and
 `docs/development.md` (lines 598–611).
 
 **Remediation.** Add local diagnostic timing hooks—not telemetry—for admission,

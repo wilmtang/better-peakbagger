@@ -587,7 +587,7 @@ test('release publication waits for packaged declared-browser-floor verification
 
 test('Chrome verifier accepts an exact externally installed floor binary', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-extension.mjs', import.meta.url),
+        new URL('../../scripts/verify-extension.mts', import.meta.url),
         'utf8',
     );
     assert.match(verifier, /process\.env\.CHROME_BIN/);

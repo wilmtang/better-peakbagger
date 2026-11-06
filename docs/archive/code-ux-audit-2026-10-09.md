@@ -85,7 +85,7 @@ In hidden Chrome with the real unpacked extension, Favorites, Drafts, and Photos
 were opened in light mode. Updating the stored preference to dark changed
 Settings to dark while all three remained light. A bundled Drafts probe produced
 the same result. The optional dark-Favorites screenshot branch of
-`scripts/verify-extension.mjs` timed out at its actual theme postcondition
+`scripts/verify-extension.mts` timed out at its actual theme postcondition
 (line 1524); the normal verifier subsequently passed without that optional
 branch. The failure is retained as product evidence, not dismissed as a flake.
 
@@ -246,7 +246,7 @@ recorded in the closure ledger below.
 | `npm run lint` | Passed ESLint, build, and web-ext policy; six existing owned web-ext warnings remain. |
 | Fresh `npm audit --json` | Exit 1: three high findings on the existing development-tool path; see disposition below. |
 | Evaluation of that fresh JSON with the repository audit policy | Strict policy rejected; the explicit reviewed-advisory policy accepted the exact existing path/version/expiry. |
-| Normal Chrome path in `scripts/verify-extension.mjs` | Passed with real unpacked `dist/`, masked HTTPS Peakbagger fixtures, Chrome for Testing 153.0.8010.12, hidden new headless mode. Base viewport 1000 × 760 plus verifier responsive cases. |
+| Normal Chrome path in `scripts/verify-extension.mts` | Passed with real unpacked `dist/`, masked HTTPS Peakbagger fixtures, Chrome for Testing 153.0.8010.12, hidden new headless mode. Base viewport 1000 × 760 plus verifier responsive cases. |
 | Optional dark-Favorites screenshot branch | Failed its theme wait; retained as F2 evidence. Passing the normal branch does not close F2. |
 | Targeted bundled UI/IndexedDB probes | Reproduced F1, F3, F4, F5, and the Drafts instance of F2. Deferred reads/replies and injected errors were fixture controls. |
 | Targeted real-extension Chrome checks | Reproduced F2 across three panels and F6; inspected the optional O1 layout. |
@@ -322,14 +322,14 @@ Final acceptance after all runtime changes:
   audit baseline.
 - `npm run lint`: ESLint, build, and web-ext policy passed. The six existing
   owned warnings for the paired manifest and upstream libraries remain.
-- `node scripts/verify-extension.mjs`: passed after the final build, including
+- `node scripts/verify-extension.mts`: passed after the final build, including
   the dark-Favorites branch that failed during the audit. Hidden Chrome for
   Testing **153.0.8010.12**, real unpacked `dist/`, masked HTTPS Peakbagger
   fixtures, base viewport **1000 × 760** plus responsive verifier cases.
 - `node scripts/verify-firefox-extension.mts`: passed with real derived
   extension loading, hidden Firefox **157.0.1**, masked HTTPS fixtures, base
   **1000 × 760** plus responsive/text-size cases. Owned-process teardown passed.
-- `node scripts/verify-photo-editor.mjs`: passed with hidden Chrome 153 and
+- `node scripts/verify-photo-editor.mts`: passed with hidden Chrome 153 and
   **ANGLE Metal on Apple M3 Pro**. Native keyboard placement and multiline
   typing keep the label and input visible above the sticky header in both
   themes at **390 × 760, 520 × 800, and 1000 × 760**. Visibility checks

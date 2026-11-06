@@ -1,3 +1,6 @@
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+/* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged-editor checks. Synthetic pixels stay on the extension page;
@@ -9,13 +12,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import type { BrowserContext } from 'playwright';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+
+type PageElement = HTMLElement & HTMLInputElement & HTMLImageElement & HTMLCanvasElement;
+interface PhotoProbes { photoClipboardBackup: ClipboardItems; photoClipboardWritten: string; photoVerificationExport: Blob | null }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const screenshots = process.env.BPB_PHOTO_SCREENSHOTS;
 const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-photo-verification-'));
-let context;
+let context: BrowserContext | undefined;
 try {
     assertChromeLaunchAllowed();
     context = await chromium.launchPersistentContext(profile, {
@@ -25,36 +32,36 @@ try {
         args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
     });
     const page = await context.newPage();
-    const errors = [];
+    const errors: string[] = [];
     context.on('page', opened => opened.on('pageerror', error => errors.push(String(error))));
     page.on('pageerror', error => errors.push(String(error)));
     await page.goto('chrome://extensions-internals/');
     const id = await page.waitForFunction(() => {
         try {
-            return JSON.parse(document.body.innerText).find(record =>
+            return JSON.parse(document.body.innerText).find((record: { name: string; location: string; id: string }) =>
                 record.name === 'Better Peakbagger' && record.location === 'COMMAND_LINE')?.id;
         } catch { return false; }
     }).then(handle => handle.jsonValue());
     const url = `chrome-extension://${id}/photos/photos.html`;
     await page.goto(url);
-    await page.waitForFunction(() => !document.getElementById('library-empty').hidden);
+    await page.waitForFunction(() => !(document.getElementById('library-empty') as PageElement).hidden);
     await page.evaluate(async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 1600; canvas.height = 1200;
         const ctx = canvas.getContext('2d');
-        const gradient = ctx.createLinearGradient(0, 0, 0, 1200);
+        const gradient = ctx!.createLinearGradient(0, 0, 0, 1200);
         gradient.addColorStop(0, '#819bb5'); gradient.addColorStop(1, '#263c32');
-        ctx.fillStyle = gradient; ctx.fillRect(0, 0, 1600, 1200);
-        ctx.fillStyle = '#4c5555'; ctx.beginPath();
-        ctx.moveTo(0, 1100); ctx.lineTo(760, 150); ctx.lineTo(1600, 1000); ctx.fill();
+        ctx!.fillStyle = gradient; ctx!.fillRect(0, 0, 1600, 1200);
+        ctx!.fillStyle = '#4c5555'; ctx!.beginPath();
+        ctx!.moveTo(0, 1100); ctx!.lineTo(760, 150); ctx!.lineTo(1600, 1000); ctx!.fill();
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
         const transfer = new DataTransfer();
-        transfer.items.add(new File([blob], 'mountain.png', { type: 'image/png' }));
-        const input = document.getElementById('photo-file');
+        transfer.items.add(new File([blob as Blob], 'mountain.png', { type: 'image/png' }));
+        const input = (document.getElementById('photo-file') as PageElement);
         input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await page.locator('#editor-workspace').waitFor({ state: 'visible' });
-    const capture = async name => {
+    const capture = async (name: string) => {
         if (!screenshots) return;
         await mkdir(screenshots, { recursive: true });
         await page.locator('#editor-workspace').screenshot({ path: path.join(screenshots, `${name}.png`) });
@@ -62,10 +69,10 @@ try {
     const geometry = () => page.evaluate(() => Object.fromEntries([
         '.tool-rail', '.view-controls', '.editor-sidebar', '.editor-footer', '#photo-viewport',
     ].map(selector => {
-        const rect = document.querySelector(selector).getBoundingClientRect();
+        const rect = document.querySelector<PageElement>(selector)!.getBoundingClientRect();
         return [selector, { x: rect.x, y: rect.y, width: rect.width, height: rect.height }];
     })));
-    const stroke = async (start, end) => {
+    const stroke = async (start: [number, number], end: [number, number]) => {
         await page.mouse.move(...start); await page.mouse.down();
         await page.mouse.move(...end, { steps: 20 }); await page.mouse.up();
     };
@@ -74,7 +81,7 @@ try {
     await page.locator('[data-tool="drawing"]').click();
     assert.equal(await page.locator('#route-arrow').isChecked(), false, 'Draw owns its own preferences');
     let overlay = await page.locator('#photo-overlay').boundingBox();
-    await stroke([overlay.x + 120, overlay.y + 100], [overlay.x + 220, overlay.y + 240]);
+    await stroke([overlay!.x + 120, overlay!.y + 100], [overlay!.x + 220, overlay!.y + 240]);
     const strokes = page.locator('#annotation-list button').filter({ hasText: 'Freehand stroke' });
     assert.equal(await strokes.count(), 1);
     await page.locator('#undo').click(); assert.equal(await strokes.count(), 0);
@@ -83,28 +90,28 @@ try {
     const before = await geometry();
     await page.locator('#photo-zoom').selectOption('2');
     assert.deepEqual(await geometry(), before, 'zoom must not move any controls');
-    assert.equal((await page.locator('#photo-stage').boundingBox()).width, 3200);
+    assert.equal((await page.locator('#photo-stage').boundingBox())!.width, 3200);
     await page.locator('#pan-photo').click();
     const viewport = await page.locator('#photo-viewport').boundingBox();
-    const startX = (await page.locator('#photo-stage').boundingBox()).x;
-    await stroke([viewport.x + 300, viewport.y + 250], [viewport.x + 380, viewport.y + 290]);
-    assert.equal((await page.locator('#photo-stage').boundingBox()).x - startX, 80);
+    const startX = (await page.locator('#photo-stage').boundingBox())!.x;
+    await stroke([viewport!.x + 300, viewport!.y + 250], [viewport!.x + 380, viewport!.y + 290]);
+    assert.equal((await page.locator('#photo-stage').boundingBox())!.x - startX, 80);
     assert.equal(await strokes.count(), 1, 'Hand cannot create annotations');
     await page.locator('[data-tool="drawing"]').click();
     overlay = await page.locator('#photo-overlay').boundingBox();
-    const start = [viewport.x + 100, viewport.y + 100];
+    const start: [number, number] = [viewport!.x + 100, viewport!.y + 100];
     await stroke(start, [start[0] + 100, start[1] + 80]);
     assert.equal(await strokes.count(), 2);
     const pathData = await page.locator('#photo-overlay g.selected path').first().getAttribute('d');
-    const numbers = pathData.match(/-?\d+(?:\.\d+)?/g).map(Number);
-    assert.ok(Math.abs(numbers[0] - (start[0] - overlay.x) / 2) < 0.01);
-    assert.ok(Math.abs(numbers[1] - (start[1] - overlay.y) / 2) < 0.01);
+    const numbers = pathData!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    assert.ok(Math.abs(numbers[0] - (start[0] - overlay!.x) / 2) < 0.01);
+    assert.ok(Math.abs(numbers[1] - (start[1] - overlay!.y) / 2) < 0.01);
     await capture('zoom');
     await page.locator('.viewport-size-control summary').click();
     await page.locator('#viewport-height').fill('480'); await page.locator('#viewport-height').press('Tab');
     await page.locator('#viewport-width').fill('620'); await page.locator('#viewport-width').press('Tab');
     await page.waitForFunction(() => {
-        const view = document.getElementById('photo-viewport');
+        const view = (document.getElementById('photo-viewport') as PageElement);
         return view.clientHeight === 480 && view.clientWidth === 620;
     });
     await page.locator('.viewport-size-control summary').click();
@@ -112,18 +119,19 @@ try {
     await capture('resized');
     await page.locator('.viewport-size-control summary').click();
     await page.locator('#viewport-width').fill('280'); await page.locator('#viewport-width').press('Tab');
-    await page.waitForFunction(() => document.getElementById('photo-viewport').clientWidth === 280);
+    await page.waitForFunction(() => (document.getElementById('photo-viewport') as PageElement).clientWidth === 280);
     await capture('minimum-width');
     assert.equal(await page.locator('.editor-footer').evaluate(el => el.scrollWidth > el.clientWidth), false);
     assert.equal(await page.locator('.view-controls').evaluate(el => el.scrollWidth > el.clientWidth), false);
     await page.locator('.viewport-size-control summary').click();
     // Confirm the accepted preference write before testing a separate page.
-    await page.waitForFunction(async () => (await chrome.storage.local.get('bpbPhotoViewport'))
+    await page.waitForFunction(async () => (await chrome.storage.local.get<{ bpbPhotoViewport?: { width: number } }>('bpbPhotoViewport'))
         .bpbPhotoViewport?.width === 280);
     const reopened = await context.newPage();
     await reopened.goto(url);
-    await reopened.waitForFunction(() => document.getElementById('viewport-width').value === '280');
-    const preferences = await reopened.evaluate(async () => chrome.storage.local.get('bpbPhotoTool:route'));
+    await reopened.waitForFunction(() => (document.getElementById('viewport-width') as PageElement).value === '280');
+    // Tool preferences live in synced settings since they became portable.
+    const preferences = await reopened.evaluate(async () => (await chrome.storage.sync.get('bpbSettings')).bpbSettings as Record<string, { style: { end: string; smooth: boolean } }>);
     assert.equal(preferences['bpbPhotoTool:route'].style.end, 'arrow');
     assert.equal(preferences['bpbPhotoTool:route'].style.smooth, true);
     await reopened.close();
@@ -136,7 +144,7 @@ try {
         const encode = HTMLCanvasElement.prototype.toBlob;
         HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
             return encode.call(this, blob => {
-                if (this.width === 1600 && this.height === 1200) globalThis.photoVerificationExport = blob;
+                if (this.width === 1600 && this.height === 1200) (globalThis as unknown as PhotoProbes).photoVerificationExport = blob;
                 callback(blob);
             }, ...args);
         };
@@ -147,9 +155,9 @@ try {
     assert.equal(await page.locator('#object-text').evaluate(input => document.activeElement === input), true);
     await page.locator('#undo').click();
     overlay = await page.locator('#photo-overlay').boundingBox();
-    await page.mouse.click(overlay.x + 100, overlay.y + 100);
+    await page.mouse.click(overlay!.x + 100, overlay!.y + 100);
     assert.equal(await page.locator('#object-text').evaluate(input => document.activeElement === input
-        && input.selectionStart === 0 && input.selectionEnd === input.value.length), true,
+        && (input as HTMLInputElement).selectionStart === 0 && (input as HTMLInputElement).selectionEnd === (input as HTMLInputElement).value.length), true,
     'pointer placement keeps the placeholder selected in the text field');
     const labelText = 'North ridge traverse\nKeep left above the gully';
     await page.keyboard.type('North ridge traverse');
@@ -161,7 +169,7 @@ try {
     // Exercise actual browser copy/paste commands. Preserve the clipboard's
     // supported formats for the duration of this synthetic-data check.
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await page.evaluate(async () => { globalThis.photoClipboardBackup = await navigator.clipboard.read(); });
+    await page.evaluate(async () => { (globalThis as unknown as PhotoProbes).photoClipboardBackup = await navigator.clipboard.read(); });
     await context.clearPermissions();
     try {
         await page.locator('[data-tool="select"]').click();
@@ -174,14 +182,14 @@ try {
             try {
                 const text = await navigator.clipboard.readText();
                 if (JSON.parse(text).kind !== 'better-peakbagger-annotation') return false;
-                globalThis.photoClipboardWritten = text;
+                (globalThis as unknown as PhotoProbes).photoClipboardWritten = text;
                 return true;
             }
             catch { return false; }
         });
         await context.clearPermissions();
         await page.keyboard.press(`${clipboardModifier}+v`);
-        await page.waitForFunction(count => document.querySelectorAll('#annotation-list button').length === count + 1,
+        await page.waitForFunction(count => document.querySelectorAll<PageElement>('#annotation-list button').length === count + 1,
             countBeforePaste);
         assert.equal(await page.locator('#object-text').inputValue(), labelText);
         assert.equal(await page.locator('#text-width').inputValue(), '');
@@ -197,12 +205,12 @@ try {
         await context.grantPermissions(['clipboard-read', 'clipboard-write']);
         await page.evaluate(async () => {
             // Do not overwrite a clipboard change from the user's own work.
-            if (globalThis.photoClipboardWritten === await navigator.clipboard.readText()) {
-                if (globalThis.photoClipboardBackup.length) await navigator.clipboard.write(globalThis.photoClipboardBackup);
+            if ((globalThis as unknown as PhotoProbes).photoClipboardWritten === await navigator.clipboard.readText()) {
+                if ((globalThis as unknown as PhotoProbes).photoClipboardBackup!.length) await navigator.clipboard.write((globalThis as unknown as PhotoProbes).photoClipboardBackup);
                 else await navigator.clipboard.writeText('');
             }
-            delete globalThis.photoClipboardBackup;
-            delete globalThis.photoClipboardWritten;
+            delete (globalThis as unknown as Partial<PhotoProbes>).photoClipboardBackup;
+            delete (globalThis as unknown as Partial<PhotoProbes>).photoClipboardWritten;
         });
         await context.clearPermissions();
     }
@@ -218,7 +226,7 @@ try {
     const labelBefore = await page.locator('#photo-overlay g.selected').getAttribute('transform');
     const fontBefore = await page.locator('#photo-overlay g.selected text').getAttribute('font-size');
     const handle = await page.locator('[data-text-resize="right"]').boundingBox();
-    const center = [handle.x + handle.width / 2, handle.y + handle.height / 2];
+    const center: [number, number] = [handle!.x + handle!.width / 2, handle!.y + handle!.height / 2];
     await stroke(center, [center[0] - 40, center[1]]);
     assert.ok(Number(await page.locator('#text-width').inputValue()) < 300);
     assert.equal(await page.locator('#photo-overlay g.selected text').getAttribute('font-size'), fontBefore);
@@ -237,11 +245,11 @@ try {
     await page.locator('#undo').click();
     assert.equal(await page.locator('#text-width').inputValue(), '300');
     await page.locator('#object-rotation').evaluate(input => {
-        input.value = '35'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        (input as HTMLInputElement).value = '35'; input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
     });
     const rotated = await page.locator('[data-text-resize="right"]').boundingBox();
-    const rotatedCenter = [rotated.x + rotated.width / 2, rotated.y + rotated.height / 2];
+    const rotatedCenter: [number, number] = [rotated!.x + rotated!.width / 2, rotated!.y + rotated!.height / 2];
     await stroke(rotatedCenter, [rotatedCenter[0] + 25 * Math.cos(35 * Math.PI / 180),
         rotatedCenter[1] + 25 * Math.sin(35 * Math.PI / 180)]);
     assert.ok(Number(await page.locator('#text-width').inputValue()) > 300);
@@ -249,17 +257,17 @@ try {
     await page.locator('#undo').click();
     await page.locator('#undo').click();
     // Wait for the user-visible estimate after the final undo, not a stale blob.
-    await page.waitForFunction(() => document.getElementById('upload-estimate').textContent.startsWith('Estimated upload')
-        && globalThis.photoVerificationExport);
+    await page.waitForFunction(() => (document.getElementById('upload-estimate') as PageElement).textContent.startsWith('Estimated upload')
+        && (globalThis as unknown as PhotoProbes).photoVerificationExport);
     if (screenshots) {
         const base64 = await page.evaluate(async () => {
             const reader = new FileReader();
             return new Promise(resolve => {
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.readAsDataURL(globalThis.photoVerificationExport);
+                reader.onload = () => resolve((reader.result as string).split(',')[1]);
+                reader.readAsDataURL((globalThis as unknown as PhotoProbes).photoVerificationExport!);
             });
         });
-        await writeFile(path.join(screenshots, 'text-export.png'), Buffer.from(base64, 'base64'));
+        await writeFile(path.join(screenshots, 'text-export.png'), Buffer.from(base64 as string, 'base64'));
     }
     for (const [width, height] of [[720, 900], [390, 844], [320, 800]]) {
         await page.setViewportSize({ width, height });
@@ -276,7 +284,7 @@ try {
     for (const theme of ['light', 'dark']) {
         await page.evaluate(async value => {
             const { bpbSettings } = await chrome.storage.sync.get('bpbSettings');
-            await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
+            await chrome.storage.sync.set({ bpbSettings: { ...(bpbSettings as object), theme: value } });
         }, theme);
         await page.waitForFunction(value => document.documentElement.dataset.bpbTheme === value, theme);
         for (const [width, height] of [[390, 760], [520, 800], [1000, 760]]) {
@@ -296,12 +304,12 @@ try {
             await page.keyboard.press('Enter');
             await page.keyboard.type('Upper gully');
             const state = await page.waitForFunction(() => {
-                const header = document.querySelector('.app-header').getBoundingClientRect();
-                const input = document.getElementById('object-text');
-                const label = document.querySelector('#photo-overlay .selected text');
-                const dock = document.getElementById('photo-text-editor');
+                const header = document.querySelector<PageElement>('.app-header')!.getBoundingClientRect();
+                const input = (document.getElementById('object-text') as PageElement);
+                const label = document.querySelector<PageElement>('#photo-overlay .selected text');
+                const dock = (document.getElementById('photo-text-editor') as PageElement);
                 if (!label?.textContent.includes('Upper gully')) return false;
-                const visible = element => {
+                const visible = (element: Element) => {
                     const rect = element.getBoundingClientRect();
                     // scrollTop rounds to CSS pixels at viewport and ancestor edges.
                     if (!(rect.width > 0 && rect.height > 0 && rect.top >= header.bottom
@@ -320,21 +328,21 @@ try {
                     docked: !dock.hidden,
                     dockHidden: !dock.hidden || getComputedStyle(dock).display === 'none',
                     value: input.value,
-                    width: document.getElementById('text-width').value,
-                    tool: document.querySelector('[data-tool][aria-pressed="true"]').dataset.tool,
+                    width: (document.getElementById('text-width') as PageElement).value,
+                    tool: document.querySelector<PageElement>('[data-tool][aria-pressed="true"]')!.dataset.tool,
                 };
             }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(async error => {
                 console.error(JSON.stringify(await page.evaluate(() => ({
                     width: innerWidth, scrollY,
-                    nodes: [document.getElementById('object-text'), document.querySelector('#photo-overlay .selected text')].map(element => {
+                    nodes: [(document.getElementById('object-text') as PageElement), document.querySelector<PageElement>('#photo-overlay .selected text')].map(element => {
                         const clips = [];
-                        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+                        for (let parent = element!.parentElement; parent; parent = parent.parentElement) {
                             if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(parent).overflowY)) {
                                 clips.push({ name: parent.id || parent.className,
                                     rect: parent.getBoundingClientRect().toJSON(), scroll: parent.scrollTop });
                             }
                         }
-                        return { rect: element.getBoundingClientRect().toJSON(), clips };
+                        return { rect: element!.getBoundingClientRect().toJSON(), clips };
                     }),
                 })), null, 2));
                 throw error;
@@ -347,13 +355,13 @@ try {
     await page.setViewportSize({ width: 1440, height: 1100 });
     // A real IndexedDB round trip also verifies original Blob retention, which
     // the jsdom/fake-indexeddb file-picking harness cannot faithfully clone.
-    await page.waitForFunction(() => document.getElementById('save-status').textContent === 'Saved on this device');
+    await page.waitForFunction(() => (document.getElementById('save-status') as PageElement).textContent === 'Saved on this device');
     const savedEditor = await context.newPage();
     await savedEditor.goto(`${url}?mode=library`);
     await savedEditor.getByRole('button', { name: 'Edit', exact: true }).click();
     await savedEditor.locator('#editor-workspace').waitFor({ state: 'visible' });
     await savedEditor.locator('#show-library').click();
-    await savedEditor.waitForFunction(() => document.querySelectorAll('.photo-card').length === 1);
+    await savedEditor.waitForFunction(() => document.querySelectorAll<PageElement>('.photo-card').length === 1);
     if (screenshots) {
         for (const theme of ['light', 'dark']) {
             await savedEditor.locator('html').evaluate((html, value) => { html.dataset.bpbTheme = value; }, theme);
@@ -401,7 +409,7 @@ try {
     const routeBox = await savedEditor.locator('#photo-overlay').boundingBox();
     const markCount = await savedEditor.locator('#annotation-list button').count();
     for (const offset of [100, 180, 260]) {
-        await savedEditor.mouse.click(routeBox.x + offset, routeBox.y + offset);
+        await savedEditor.mouse.click(routeBox!.x + offset, routeBox!.y + offset);
     }
     const routePath = () => savedEditor.locator('#photo-overlay g.selected path').first().getAttribute('d');
     const fullRoute = await routePath();
@@ -427,7 +435,7 @@ try {
     for (const theme of ['light', 'dark']) {
         await page.evaluate(async value => {
             const { bpbSettings } = await chrome.storage.sync.get('bpbSettings');
-            await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
+            await chrome.storage.sync.set({ bpbSettings: { ...(bpbSettings as object), theme: value } });
         }, theme);
         await page.waitForFunction(value => document.documentElement.dataset.bpbTheme === value, theme);
         for (const [width, height, zoom] of [[1440, 1100, 1], [720, 900, 1.25]]) {
@@ -455,7 +463,7 @@ try {
                         actions: await page.locator('#object-actions').boundingBox(),
                         heading: await page.locator('#inspector-heading').boundingBox(),
                         scroll: await page.evaluate(() => ({ x: scrollX, y: scrollY,
-                            sidebar: document.querySelector('.editor-sidebar').scrollTop })),
+                            sidebar: document.querySelector<PageElement>('.editor-sidebar')!.scrollTop })),
                     });
                     const beforeStyle = await stableGeometry();
                     for (let tick = 0; tick < 3; tick++) await opacity.press('ArrowLeft');
@@ -471,12 +479,12 @@ try {
     const renderer = await page.evaluate(() => {
         const gl = document.createElement('canvas').getContext('webgl');
         const extension = gl?.getExtension('WEBGL_debug_renderer_info');
-        return extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : 'unavailable';
+        return extension ? gl!.getParameter(extension.UNMASKED_RENDERER_WEBGL) : 'unavailable';
     });
     assert.notEqual(renderer, 'unavailable');
     assert.doesNotMatch(renderer, /swiftshader|llvmpipe|software/i);
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ browser: context.browser().version(), renderer, hidden: true,
+    console.log(JSON.stringify({ browser: context.browser()!.version(), renderer, hidden: true,
         viewports: ['1440×1100', '720×900', '390×844', '320×800', '390×760', '520×800', '1000×760'], profile, passed: true }));
 } finally {
     await context?.close();

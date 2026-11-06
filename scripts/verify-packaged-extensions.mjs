@@ -62,7 +62,7 @@ export async function verifyPackageRepetitions({ chromeArchive, firefoxArchive, 
     };
     await repeatVerification(async () => {
         await requireUnchanged();
-        await execute('verify-extension.mjs', chromeSource);
+        await execute('verify-extension.mts', chromeSource);
         await requireUnchanged();
         await execute('verify-firefox-extension.mts', firefoxArchive);
         await requireUnchanged();

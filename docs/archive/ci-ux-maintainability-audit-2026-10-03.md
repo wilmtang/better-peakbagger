@@ -34,7 +34,7 @@ and original verification below remain point-in-time records.
   pending-drape probe sampled the wrong asynchronous event. Current source
   already waits for authoritative Fetch interception; do not redo this repair.
 - Current Firefox recovery is in `.github/workflows/retry-firefox-release.yml`.
-  The storage timing assumption is in `scripts/verify-extension.mjs`.
+  The storage timing assumption is in `scripts/verify-extension.mts`.
 - Hidden full Chrome for Testing 153.0.8010.12 successfully loaded current
   `dist/`. At 390×844 the Favorites toolbar began at y=785; at 1024×900,
   y=579. Existing neutral palette is coherent; prioritize hierarchy and density.

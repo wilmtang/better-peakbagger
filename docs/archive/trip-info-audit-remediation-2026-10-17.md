@@ -71,7 +71,7 @@ was already intentional and is unchanged.
   local GPX processing, ascent draft/upload, and saved-ascent verification.
   The 45 draft tests above are included in this count.
 - Options UI/settings: 68 tests passed.
-- `node scripts/verify-extension.mjs`: passed with the real unpacked extension
+- `node scripts/verify-extension.mts`: passed with the real unpacked extension
   in hidden Chrome 153.0.8010.12 at 1000 × 760; teardown passed.
 - `node scripts/verify-multi-summit.mjs`: passed for Strava and local-upload
   fixtures, each manually saving three ascents into one date-named trip with

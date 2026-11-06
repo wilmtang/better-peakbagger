@@ -75,7 +75,7 @@ found no remaining task-owned Chrome/Firefox, profile or fixture processes.
 
 ## Changed but not fully proven
 
-- **Chrome full smoke check remains red:** `scripts/verify-extension.mjs`
+- **Chrome full smoke check remains red:** `scripts/verify-extension.mts`
   timed out waiting for durable helper adoption. The probe injects helper leases
   directly into `storage.session` while the worker handles tab events, so a
   fixture/worker ordering race is a hypothesis, not a confirmed root cause.

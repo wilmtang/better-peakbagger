@@ -424,7 +424,7 @@ from presentation failure alone.
 **Evidence.** Browser profiles, certificate directories, servers, and child
 processes are acquired before outer cleanup scopes in several verifier scripts;
 sequential finalizers let one cleanup rejection skip later cleanup. Raw terrain
-children lack an immediate error boundary. `scripts/verify-extension.mjs` also
+children lack an immediate error boundary. `scripts/verify-extension.mts` also
 uses a fixed two-second delay before an analyzer readiness snapshot.
 
 **Remediation.** Introduce a shared LIFO resource stack. Register cleanup

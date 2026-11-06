@@ -31,7 +31,7 @@ Verification actually run:
 
 - `npm test`: all **2,249 tests passed**, including a rebuilt `dist/`.
 - Changed JavaScript and tests passed ESLint; `git diff --check` passed.
-- `node scripts/verify-extension.mjs`: full packaged extension passed in hidden
+- `node scripts/verify-extension.mts`: full packaged extension passed in hidden
   Chrome for Testing **153.0.8010.12**, new headless.
 - `node scripts/verify-firefox-extension.mts`: full derived extension passed in
   hidden Firefox **157.0**.

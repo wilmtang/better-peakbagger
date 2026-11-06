@@ -45,8 +45,8 @@ test('Chrome fixture verifiers use shared launch trust instead of late or broad 
         'verify-map-handoffs', 'verify-report-photos', 'verify-ascent-backup-lifecycle',
         'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase', 'verify-map-controls',
     ]) {
-        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${name === 'verify-terrain-visual' ? '.mts' : '.mjs'}`), 'utf8');
-        assert.match(source, /\.\.\.(?:fixture|certificate|cert)\.chromeTrustArgs/, name);
+        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${['verify-terrain-visual', 'verify-extension'].includes(name) ? '.mts' : '.mjs'}`), 'utf8');
+        assert.match(source, /\.\.\.(?:fixture|certificate|cert)!?\.chromeTrustArgs/, name);
         assert.doesNotMatch(source, /['"]--ignore-certificate-errors['"]/, name);
         assert.doesNotMatch(source, /ignoreHTTPSErrors:\s*true/, name);
         assert.doesNotMatch(source, /X509Certificate/, name);
@@ -217,7 +217,7 @@ test('a listen failure is observable and the failed server remains cleanable', a
 
 test('browser verifiers use the shared resource stack and condition-based analyzer readiness', async () => {
     const verifierPaths = [
-        'scripts/verify-extension.mjs',
+        'scripts/verify-extension.mts',
         'scripts/verify-firefox-extension.mts',
         'scripts/verify-firefox-terrain.mjs',
         'scripts/verify-terrain-lod.mjs',
@@ -232,12 +232,12 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         assert.match(source, /createResourceStack\(/, `${verifierPath} must own resources through the shared stack`);
     }
 
-    const chromeVerifier = sources.find(entry => entry.verifierPath === 'scripts/verify-extension.mjs')!.source;
+    const chromeVerifier = sources.find(entry => entry.verifierPath === 'scripts/verify-extension.mts')!.source;
     assert.doesNotMatch(chromeVerifier, /waitForTimeout\(/,
         'Chrome verification must await postconditions instead of sleeping before a one-shot assertion');
     const heightPersistence = chromeVerifier.slice(
-        chromeVerifier.indexOf('let persistedEffectiveHeight;'),
-        chromeVerifier.indexOf('const grownInteractedHeight ='),
+        chromeVerifier.indexOf('let persistedEffectiveHeight'),
+        chromeVerifier.indexOf('const grownInteractedHeight'),
     );
     assert.match(heightPersistence,
         /waitForCondition\(async[\s\S]*await chrome\.storage\.local\.get[\s\S]*persistedEffectiveHeight === firstPointerHeight\.contentHeight/,
@@ -264,14 +264,14 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         /disabledFrameElement\.contentFrame\(\)\.locator\('body'\)[\s\S]{0,200}waitFor\(/,
         'the disabled terrain forgery must follow its live frame and accept a browser-level API denial');
     const helperLeaseProbe = chromeVerifier.slice(
-        chromeVerifier.indexOf('const helperLeaseState ='),
+        chromeVerifier.indexOf('const helperLeaseState'),
         chromeVerifier.indexOf('await captureTransportPage.close();'),
     );
     assert.match(helperLeaseProbe,
         /const adoptedHelper = await chrome\.tabs\.create\(\{[\s\S]*?active: false,[\s\S]*?windowId: optionsTab\.windowId/,
         'the helper lease probe must create an inactive tab in the options tab window');
     const adoptionFlow = helperLeaseProbe.slice(
-        helperLeaseProbe.indexOf('await chrome.tabs.update(adoptedHelper.id, { active: true });'),
+        helperLeaseProbe.indexOf('await chrome.tabs.update(adoptedHelper.id!, { active: true });'),
         helperLeaseProbe.indexOf('const expireAdoptedLease ='),
     );
     assert.match(adoptionFlow,
@@ -283,15 +283,15 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         'both helper tabs must load before direct lease injection can race queued tab-event mutations');
     assert.ok(helperLeaseProbe.indexOf("'scratch helper load'") < firstLeaseInjection,
         'scratch navigation must settle before the durable worker adoption/release barriers');
-    assert.ok(helperLeaseProbe.indexOf('await chrome.tabs.remove(adoptedHelper.id);')
+    assert.ok(helperLeaseProbe.indexOf('await chrome.tabs.remove(adoptedHelper.id!);')
         > helperLeaseProbe.indexOf("'unadopted helper removal'"),
     'removing the adopted tab must not enqueue a map write across scratch lease injection');
     assert.match(helperLeaseProbe,
         /'unadopted helper removal', async \(\) => \(\{[\s\S]*lease:[\s\S]*alarm:/,
         'cleanup timeouts must report the current tab, lease, and alarm');
     const buddyRemovalProbe = chromeVerifier.slice(
-        chromeVerifier.indexOf('const syncedAdditionUi ='),
-        chromeVerifier.indexOf('const buddyMutationsStayedInPlace ='),
+        chromeVerifier.indexOf('const syncedAdditionUi'),
+        chromeVerifier.indexOf('const buddyMutationsStayedInPlace'),
     );
     assert.match(buddyRemovalProbe,
         /syncedAdditionUi[\s\S]*syncedAdditionStorage[\s\S]*syncedAdditionRequests[\s\S]*BuddyButton'\)\.click\(\)[\s\S]*syncedRemovalRequests/,
@@ -327,7 +327,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(scaleResizeProbe,
         /waitForFunction[\s\S]*timeout: 5_000[\s\S]*maxFrameGapMs < 1_000/,
         'the scale resize must retain bounded completion and in-page responsiveness checks');
-    const retryProbeStart = chromeVerifier.indexOf('const unavailableCases =');
+    const retryProbeStart = chromeVerifier.indexOf('const unavailableCases');
     const retryProbeEnd = chromeVerifier.indexOf('const offPage = await openAscent();');
     assert.notEqual(retryProbeStart, -1);
     assert.notEqual(retryProbeEnd, -1);

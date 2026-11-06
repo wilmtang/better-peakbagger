@@ -145,7 +145,7 @@ rate limits. All 16 related source/filter/fixture tests passed, followed by all
 allowances: the cross-browser worker manifest and reviewed MapLibre/ProseMirror
 vendor paths. No network permissions or execution worlds were changed.
 
-`node scripts/verify-extension.mjs` passed with the real unpacked extension in
+`node scripts/verify-extension.mts` passed with the real unpacked extension in
 hidden Chrome for Testing 153.0.8010.12 at 1000 × 760, including BFCache restore
 and teardown. The typed Buddy failure expectation was corrected before this
 successful run. Both Firefox 157.0.1 weather runs also reported clean teardown.

@@ -149,7 +149,7 @@ and immediately follow the full-screen link:
 `src/ui/peak-card-layout.js` (lines 157–163) intentionally moves it into an
 independent row. Chrome already verifies that new contract while preserving
 the native map and link:
-`scripts/verify-extension.mjs` (lines 4138–4143).
+`scripts/verify-extension.mts` (lines 4138–4143).
 
 **Smallest safe direction and acceptance.** Update the Firefox assertion to
 the independent-card contract, retaining the native map/legend/link ownership

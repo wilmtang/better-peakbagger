@@ -77,7 +77,7 @@ about terrain or a WebGL renderer. Provider JSON was intercepted; production
   scroll within one pixel. They require opacity 1, available/focused Refresh
   and retained readings. Screenshots were visually inspected in all three
   browsers. The existing deliberate-layout-shift negative control also passed.
-- `node scripts/verify-extension.mjs`: passed in hidden Chromium 156.0.8078.4
+- `node scripts/verify-extension.mts`: passed in hidden Chromium 156.0.8078.4
   at 1000 by 760 pixels, including a restored BFCache page and clean teardown.
 - Documentation link checks passed. Disposable profiles and screenshots were
   removed after inspection; owned browser process command lines were checked.
