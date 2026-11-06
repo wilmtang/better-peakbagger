@@ -1,9 +1,10 @@
 # Active plans
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
-  — investigated; enable checked TypeScript and Svelte for new features through
-  the existing build before optional legacy conversion or WXT/Vite cutover.
-  Includes concrete enabling commits, interoperability rules and proof gates.
+  — TypeScript tooling, policy scans and bounded map adoption implemented;
+  remaining milestones run from small helper conversions through watch/boundary
+  support, Svelte compilation and a Units panel pilot to broader conversion and
+  optional WXT/Vite cutover. Includes exit gates and retained proof gaps.
 
 - [2D vector map audit remediation — October 31](vector-map-audit-2026-10-31.md)
   — implemented geographic alignment, post-load failure recovery, stale
