@@ -556,7 +556,7 @@ backup status. On a large or busy catalog, the toast can therefore say that the
 GitHub copy is safe while the persistent status still says “Backing up photo
 metadata…”.
 
-`test/photos/photo-editor.test.mjs` (lines 239–280) waits only for text in that
+`test/photos/photo-editor.test.mts` (lines 239–280) waits only for text in that
 early toast and immediately asserts the later status. The first full audit run
 passed; the same-runtime post-documentation run failed with the live status
 still equal to “Backing up photo metadata…”. The source ordering explains both

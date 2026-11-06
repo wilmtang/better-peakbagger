@@ -167,7 +167,7 @@ keyboard access through the annotation list. End any coalesced gesture when
 leaving the editor.
 
 **Acceptance.** Add event-driven regressions in
-`test/photos/photo-editor.test.mjs`: Library navigation/card focus must not
+`test/photos/photo-editor.test.mts`: Library navigation/card focus must not
 change the hidden project, its history, selected tool, or persisted draft.
 Verify intended shortcuts still work in the editor. Use a hidden browser to
 check the rendered Library → Editor transition and keyboard behavior; separately
