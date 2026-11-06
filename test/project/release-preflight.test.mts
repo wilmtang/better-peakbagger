@@ -8,7 +8,8 @@ import test from 'node:test';
 import {
     preflightArguments, releasePreflight, selectRehearsalArtifact, validateConsecutivePasses,
     validatePublicationSafeguards, validateVerificationJobs, validateVerificationRun,
-} from '../../scripts/release-preflight.mjs';
+    type VerificationRun,
+} from '../../scripts/release-preflight.mts';
 import { writePackageIdentity } from '../../scripts/release-package-identity.mjs';
 
 const commit = 'a'.repeat(40);
@@ -17,13 +18,13 @@ const run = { id: 123, run_attempt: 1, repository: repo, head_repository: repo,
     path: '.github/workflows/release.yml', event: 'workflow_dispatch', head_branch: 'main',
     head_sha: commit, status: 'completed', conclusion: 'success' };
 const expectation = { commit, workflow: 'release.yml', event: 'workflow_dispatch' };
-const job = (name, conclusion = 'success') => ({ name, status: 'completed', conclusion });
+const job = (name: string, conclusion = 'success') => ({ name, status: 'completed', conclusion });
 const ciJobs = () => ['Node tests and lint', 'Scale tests', 'Chrome extension smoke', 'Firefox extension smoke'].map(name => job(name));
 const rehearsalJobs = () => ['Release scale tests', 'Verify release', 'Packaged chrome 128 floor',
     'Packaged firefox 152.0 floor'].map(name => job(name)).concat([
     job('Submit Chrome Web Store', 'skipped'), job('Submit Firefox Add-ons', 'skipped'),
 ]);
-const log = count => Array.from({ length: count }, (_, index) => [
+const log = (count: number) => Array.from({ length: count }, (_, index) => [
     `job\tstep\t2026-10-15T00:00:00Z Verification repetition ${index + 1}/${count} started.`,
     `job\tstep\t2026-10-15T00:00:01Z Verification repetition ${index + 1}/${count} passed, including teardown.`,
 ].join('\n')).join('\n');
@@ -46,7 +47,7 @@ test('only a terminal successful run of the exact workflow, repository, event, m
         { head_branch: 'codex/other' }, { event: 'push' }, { path: '.github/workflows/other.yml' },
         { repository: { full_name: 'other/repo' } }, { head_repository: { full_name: 'fork/repo' } },
         { id: undefined }, { run_attempt: 0 }]) {
-        assert.throws(() => validateVerificationRun({ ...run, ...change }, expectation));
+        assert.throws(() => validateVerificationRun({ ...run, ...change } as unknown as VerificationRun, expectation));
     }
 });
 
@@ -108,18 +109,18 @@ test('preflight requires active strict main checks, immutable tags, and owner-co
         rulesets: [1, 2], environment: 3, reviewers: [{ type: 'User', id: 4 }],
     });
     const changes = [
-        state => { state.rulesets[0].rules.pop(); },
-        state => { state.rulesets[0].rules[2].parameters.strict_required_status_checks_policy = false; },
-        state => { state.rulesets[0].rules[2].parameters.required_status_checks.pop(); },
-        state => { state.rulesets[1].enforcement = 'evaluate'; },
-        state => { state.rulesets[1].bypass_actors.push({ actor_id: 5 }); },
-        state => { state.rulesets[1].rules.pop(); },
-        state => { state.rulesets[1].conditions.ref_name.exclude.push('refs/tags/v4*'); },
-        state => { state.environment.protection_rules = []; },
-        state => { state.environment.protection_rules[0].reviewers = []; },
-        state => { state.environment.deployment_branch_policy.protected_branches = true; },
-        state => { state.policies.push({ name: 'main', type: 'branch' }); },
-        state => { state.policies[0].type = 'branch'; },
+        (state: ReturnType<typeof safeguards>) => { state.rulesets[0].rules.pop(); },
+        (state: ReturnType<typeof safeguards>) => { state.rulesets[0].rules[2].parameters!.strict_required_status_checks_policy = false; },
+        (state: ReturnType<typeof safeguards>) => { state.rulesets[0].rules[2].parameters!.required_status_checks.pop(); },
+        (state: ReturnType<typeof safeguards>) => { state.rulesets[1].enforcement = 'evaluate'; },
+        (state: ReturnType<typeof safeguards>) => { (state.rulesets[1].bypass_actors as unknown[]).push({ actor_id: 5 }); },
+        (state: ReturnType<typeof safeguards>) => { state.rulesets[1].rules.pop(); },
+        (state: ReturnType<typeof safeguards>) => { (state.rulesets[1].conditions.ref_name.exclude as string[]).push('refs/tags/v4*'); },
+        (state: ReturnType<typeof safeguards>) => { state.environment.protection_rules = []; },
+        (state: ReturnType<typeof safeguards>) => { state.environment.protection_rules[0].reviewers = []; },
+        (state: ReturnType<typeof safeguards>) => { state.environment.deployment_branch_policy.protected_branches = true; },
+        (state: ReturnType<typeof safeguards>) => { state.policies.push({ name: 'main', type: 'branch' }); },
+        (state: ReturnType<typeof safeguards>) => { state.policies[0].type = 'branch'; },
     ];
     for (const change of changes) {
         const state = safeguards(); change(state);
@@ -158,16 +159,16 @@ test('preflight pins a complete receipt, rejects changed candidates, and removes
             const artifact = { id: 42, name: 'browser-extension-v4.0.2-1', expired: false,
                 workflow_run: { id: 123, head_sha: commit } };
             const options = {
-                inspect: async tag => {
+                inspect: async (tag: string) => {
                     assert.equal(tag, 'v4.0.2');
                     return ++inspections === 2 && failure === 'changed' ? 'b'.repeat(40) : commit;
                 },
-                read: async name => {
+                read: async (name: string) => {
                     if (name === 'CHANGELOG.md') return '# Changelog\n\n## 4.0.2 — 2026-10-16\n\n- Changes.\n';
                     return JSON.stringify({ version: '4.0.2', packages: { '': { version: '4.0.2' } },
                         browser_specific_settings: { gecko: { id: 'test@example.test' } } });
                 },
-                request: async endpoint => {
+                request: async (endpoint: string) => {
                     requests.push(endpoint);
                     if (!endpoint) return { default_branch: 'main' };
                     if (endpoint === 'actions/runs/456') return { ...run, id: 456, path: '.github/workflows/test.yml', event: 'push' };
@@ -176,7 +177,7 @@ test('preflight pins a complete receipt, rejects changed candidates, and removes
                     if (endpoint.startsWith('rulesets/')) return state.rulesets.find(rule => rule.id === Number(endpoint.split('/')[1]));
                     assert.fail(`Unexpected request: ${endpoint}`);
                 },
-                paginate: async endpoint => {
+                paginate: async (endpoint: string) => {
                     requests.push(endpoint);
                     if (endpoint.includes('/456/attempts/1/jobs')) return ciJobs();
                     if (endpoint.includes('/123/attempts/1/jobs')) return rehearsalJobs().map((entry, id) => ({ ...entry, id }));
@@ -185,13 +186,13 @@ test('preflight pins a complete receipt, rejects changed candidates, and removes
                     if (endpoint.includes('deployment-branch-policies')) return state.policies;
                     assert.fail(`Unexpected pagination: ${endpoint}`);
                 },
-                runCommand: async (program, args) => {
+                runCommand: async (program: string, args: string[]) => {
                     commands++;
                     if (program === process.execPath) {
                         assert.ok([
                             'scripts/check-changelog-history.mjs', 'scripts/check-npm-audit.mts',
                         ].includes(args[0]));
-                        if (args[0] === 'scripts/check-npm-audit.mts') assert.deepEqual(args.slice(1), ['--allow-reviewed-development-advisory']);
+                        if (args[0] === 'scripts/check-npm-audit.mts') assert.deepEqual(args.slice(1), []);
                         return '';
                     }
                     assert.equal(program, 'gh');
@@ -206,7 +207,7 @@ test('preflight pins a complete receipt, rejects changed candidates, and removes
                     return '';
                 },
             };
-            const pending = releasePreflight({ tag: 'v4.0.2', ciRunId: '456', rehearsalRunId: '123' }, options);
+            const pending = releasePreflight({ tag: 'v4.0.2', ciRunId: '456', rehearsalRunId: '123' }, options as unknown as Parameters<typeof releasePreflight>[1]);
             if (failure) await assert.rejects(pending, /Candidate changed|Package identity|fresh successful rehearsal|consecutive passes|same repetition count/);
             else {
                 const receipt = await pending;

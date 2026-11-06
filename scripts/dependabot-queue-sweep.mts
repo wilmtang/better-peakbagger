@@ -12,7 +12,6 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEVELOPMENT_ADVISORY } from './check-npm-audit.mts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -20,7 +19,6 @@ const REBASE_COMMAND = '@dependabot rebase';
 // A rebase restarts about an hour of checks, so one at a time is enough.
 const REBASE_RETRY_AFTER = 3 * HOUR;
 const STUCK_AFTER = 3 * DAY;
-const ADVISORY_WARNING = 14 * DAY;
 export const ISSUE_TITLE = 'Dependabot auto-merge needs attention';
 
 type Check = { name?: string; context?: string; status?: string; state?: string; conclusion?: string };
@@ -48,7 +46,7 @@ const requestedRebaseRecently = (pull: QueuedPullRequest, now: number) => pull.c
     comment.body.trim() === REBASE_COMMAND
     && now - Date.parse(comment.createdAt) < REBASE_RETRY_AFTER);
 
-export function planSweep(pulls: QueuedPullRequest[], now: number, advisoryExpiresAt: string = DEVELOPMENT_ADVISORY.expiresAt): Sweep {
+export function planSweep(pulls: QueuedPullRequest[], now: number): Sweep {
     // Hand-managed updates, such as the GitHub Actions group, are not queued.
     const queued = pulls
         .filter(pull => pull.author.login === 'app/dependabot' && pull.autoMergeRequest)
@@ -66,10 +64,6 @@ export function planSweep(pulls: QueuedPullRequest[], now: number, advisoryExpir
                     : `merge state ${pull.mergeStateStatus}`;
             return `#${pull.number} ${pull.title} (${reason})`;
         });
-    const advisoryLeft = Date.parse(advisoryExpiresAt) - now;
-    if (advisoryLeft < ADVISORY_WARNING) {
-        problems.push(`Advisory review ${DEVELOPMENT_ADVISORY.url} ${advisoryLeft <= 0 ? 'expired' : 'expires'} at ${advisoryExpiresAt}. Pull requests still run, but releases fail once it has expired until scripts/check-npm-audit.mts is renewed or the advisory is gone.`);
-    }
     return { rebase: !busy && behind ? behind.number : null, problems };
 }
 

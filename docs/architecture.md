@@ -1837,18 +1837,12 @@ No single green command proves the extension works:
   notice fails. Generated line and column numbers are not pinned, because every
   vendored warning's position is a byte offset into a bundle. Both lint stages
   run in CI and in release CI. Neither establishes runtime behavior.
-- `npm run audit:ci` requires zero advisories by default. The development-only
+- `npm run audit:ci` requires zero advisories in shipped code and reports tooling advisories without failing. The development-only
   `web-ext` 10.7.0 / `addons-linter` 10.13.0 path uses patched `image-size` 2.0.4;
   the former time-limited exception has been removed. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
   `minimatch@^3` path on patched 1.1.21 through a scoped override.
-  Forge now resolves patched 1.4.2. Ordinary Test CI and releases opt into one
-  reviewed development-only deepmerge advisory on the exact deepmerge 4.3.1 /
-  addons-linter 10.14.0 / web-ext 10.8.0 graph through October 30, 2026.
-  The default remains strict; changed versions, dependency edges, advisory
-  identity/severity, production resolutions and expiry fail closed. See
-  [releasing](releasing.md) and the original
-  [integration ledger](archive/mainline-dependency-integration-2026-10-03.md).
+  Forge now resolves patched 1.4.2. The unpatched deepmerge advisory stays in tooling only.
 - `npm run verify -- browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,

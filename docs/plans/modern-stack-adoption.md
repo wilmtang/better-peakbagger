@@ -394,8 +394,8 @@ declining WXT as an explicit supported outcome if parity or benefit is absent.
 - Recheck the locked dependency peers when adding Svelte, not a moving
   `latest` tag or the report's minimum versions. Preserve the compiler-major
   hold until its consumers admit the next major. Each dependency addition must
-  pass `npm run audit:ci -- --allow-reviewed-development-advisory` under the
-  existing policy; expired exceptions and extra advisories still fail closed.
+  pass `npm run audit:ci` under the
+  existing policy; advisories in shipped code still fail closed.
 
 ### Source guards that must retain coverage
 
@@ -554,7 +554,7 @@ compiler behavior without shipping a demonstration UI.
   [release verification job](../../.github/workflows/release.yml) checks to cover
   Svelte; adding a local command alone does not enforce it. Keep checks inside
   the existing checked jobs, or update the required-check names in
-  [release-preflight.mjs](../../scripts/release-preflight.mjs) and its test if
+  [release-preflight.mts](../../scripts/release-preflight.mts) and its test if
   introducing a new job. Document it in
   [development.md](../development.md); the development test requires every
   `package.json` script to appear there exactly once.

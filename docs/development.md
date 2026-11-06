@@ -308,7 +308,7 @@ script is added or removed without updating it.
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
-| `npm run audit:ci` | Requires zero advisories by default, including development dependencies. Ordinary Test CI and store releases explicitly opt into one reviewed, exact-version/path development-only deepmerge exception through October 30, 2026; all other advisories remain rejected. After that date Test CI only warns about the unchanged graph, while releases fail until the review is renewed. See [releasing](releasing.md) for the policy and the [integration ledger](archive/mainline-dependency-integration-2026-10-03.md) for the original review. |
+| `npm run audit:ci` | Requires zero advisories in shipped code, and reports but accepts advisories in build and test tooling at any severity. `DEVELOPMENT_TOOLS` in `scripts/check-npm-audit.mts` names the tools; every other direct dependency and everything it depends on counts as shipped, because `package.json` lists shipped libraries under `devDependencies`. See [releasing](releasing.md). |
 | `node scripts/verify-layout-stability.mts --surface=timestamps` | After a build, checks local-file timestamp removal, per-file keyboard exceptions, busy/failure recovery, capture exceptions and Options presentation in hidden Chrome/Firefox at 390×900 and 1280×900, light/dark, 100% and simulated 150% zoom using a scaled CSS viewport and device pixel ratio. APIs and summit lookup are stubbed; no live Save or account sync. `BPB_JITTER_ARTIFACTS` retains screenshots. To prove pre-feature failure without changing the worktree, set `BPB_TIMESTAMP_BASELINE` to a full earlier commit SHA; the expected failure is timestamps still attached to the native upload. |
 | `node scripts/verify-layout-stability.mts --surface=ascent-columns` | After a build, checks content-sized native summary labels/values containing the route map, with a saved 900px map preference, against the shipped layout/analyzer/weather bundles. Hidden Chrome/Firefox cover 390×900 and 1280×900, light/dark, and simulated 150% zoom at 260×600 and 853×600. Asserts unequal metadata widths, aligned table/GPS/weather edges, no horizontal overflow, keyboard divider extremes, and stable geometry/scroll during held weather refresh and retry; error details may deliberately expand. Only the full-width map host is contained. Storage, Leaflet and provider responses are stubbed; no manifest/worker or native window-focus proof. `BPB_JITTER_ARTIFACTS` retains screenshots. The width assertion failed on the former fixed-layout summary. |
 | `node scripts/verify-layout-stability.mts --surface=ascent-filters` | After a build, checks repeated climber/GPS/link/beta toggles, Clear filters and ignored-ascent disclosure against the native full-column list and shipped filter/theme bundles. Hidden Chrome/Firefox cover 390×900 and 1280×900, light/dark, simulated 150% zoom at 260×600 and 853×600, plus pointer toggles at 2048×900. Asserts stable toolbar/chips/header columns, keyboard focus and scroll, with and without ignored ascents. Following content may move only by the deliberate change in list height. Storage and image bytes are stubbed; no live account, manifest/worker or native window-focus proof. Trip-report threshold disclosure and remote Buddy List recovery are outside this check. `BPB_JITTER_ARTIFACTS` retains screenshots. The unfixed toolbar failed with a 40px height jump when favorites were enabled. |
@@ -552,7 +552,7 @@ physical-device release check. Each job installs its own runtime and reports
 failures separately. The Node job runs both lint stages through `npm run lint`:
 ESLint reads source, while web-ext reads the built package, and neither
 substitutes for the other. It also runs
-`audit:ci`, so any new advisory fails CI. Release CI runs the same two linters, adds the
+`audit:ci`, so any new advisory in shipped code fails CI. Release CI runs the same two linters, adds the
 scale test, and executes both generated store archives before either
 publication job can start.
 
@@ -866,8 +866,8 @@ in either catch-all require tracing the package through its parent dependency.
 Dependabot assigns a version update to the first matching group. The
 `remaining-npm` wildcard therefore stays after the three release-path groups
 and combines only otherwise unmatched direct and transitive updates. This
-prevents separate incomplete lockfile repairs from deadlocking the global
-zero-advisory check. `security-fixes` applies the same all-npm grouping to
+prevents separate incomplete lockfile repairs from deadlocking the
+shipped-code advisory check. `security-fixes` applies the same all-npm grouping to
 security updates, which GitHub does not combine with ordinary version updates.
 
 ### What gates a release after an npm update
@@ -949,8 +949,7 @@ that keeps the single signed commit the provenance check requires. An
 update-branch merge would not, and a `GITHUB_TOKEN` push would not run the checks.
 
 A single open issue, **Dependabot auto-merge needs attention**, lists every queued
-update older than three days with its failing checks or merge state, plus an advisory
-review expiring within two weeks. It closes itself once that list is empty, so
+update older than three days with its failing checks or merge state. It closes itself once that list is empty, so
 it is the place to look rather than the green auto-merge job. The sweep holds no
 merge authority and does not bypass the required checks.
 

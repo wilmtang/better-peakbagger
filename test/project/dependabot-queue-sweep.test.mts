@@ -12,7 +12,6 @@ import {
 } from '../../scripts/dependabot-queue-sweep.mts';
 
 const now = Date.parse('2026-11-10T00:00:00Z');
-const farAway = '2027-06-01T00:00:00Z';
 const pull = (number: number, extra: Partial<QueuedPullRequest> = {}): QueuedPullRequest => ({
     number,
     title: `bump ${number}`,
@@ -29,21 +28,21 @@ const pull = (number: number, extra: Partial<QueuedPullRequest> = {}): QueuedPul
 
 test('asks for the oldest behind update only', () => {
     const pulls = [pull(9, { mergeStateStatus: 'BEHIND' }), pull(7, { mergeStateStatus: 'BEHIND' })];
-    assert.equal(planSweep(pulls, now, farAway).rebase, 7);
+    assert.equal(planSweep(pulls, now).rebase, 7);
 });
 
 test('waits while any queued update is still running checks', () => {
     for (const check of [{ status: 'IN_PROGRESS' }, { status: 'QUEUED' }, { state: 'PENDING' }]) {
         const pulls = [pull(7, { mergeStateStatus: 'BEHIND' }), pull(8, { statusCheckRollup: [check] })];
-        assert.equal(planSweep(pulls, now, farAway).rebase, null);
+        assert.equal(planSweep(pulls, now).rebase, null);
     }
 });
 
 test('does not repeat a recent rebase request, but retries an ignored one', () => {
     const asked = (createdAt: string) => pull(7, { mergeStateStatus: 'BEHIND',
         comments: [{ body: '@dependabot rebase', createdAt }] });
-    assert.equal(planSweep([asked('2026-11-09T23:00:00Z')], now, farAway).rebase, null);
-    assert.equal(planSweep([asked('2026-11-09T20:00:00Z')], now, farAway).rebase, 7);
+    assert.equal(planSweep([asked('2026-11-09T23:00:00Z')], now).rebase, null);
+    assert.equal(planSweep([asked('2026-11-09T20:00:00Z')], now).rebase, 7);
 });
 
 test('leaves hand-managed updates and other authors alone', () => {
@@ -51,7 +50,7 @@ test('leaves hand-managed updates and other authors alone', () => {
         pull(7, { mergeStateStatus: 'BEHIND', autoMergeRequest: null, createdAt: '2026-10-01T00:00:00Z' }),
         pull(8, { mergeStateStatus: 'BEHIND', author: { login: 'someone' }, createdAt: '2026-10-01T00:00:00Z' }),
     ];
-    assert.deepEqual(planSweep(pulls, now, farAway), { rebase: null, problems: [] });
+    assert.deepEqual(planSweep(pulls, now), { rebase: null, problems: [] });
 });
 
 test('does not rebase a current update whose checks really failed, and reports it once stuck', () => {
@@ -59,22 +58,16 @@ test('does not rebase a current update whose checks really failed, and reports i
         createdAt: '2026-11-01T00:00:00Z',
         statusCheckRollup: [{ name: 'Scale tests', status: 'COMPLETED', conclusion: 'FAILURE' }],
     });
-    const { rebase, problems } = planSweep([failed], now, farAway);
+    const { rebase, problems } = planSweep([failed], now);
     assert.equal(rebase, null);
     assert.deepEqual(problems, ['#7 bump 7 (failing: Scale tests)']);
-    assert.deepEqual(planSweep([pull(7, { statusCheckRollup: failed.statusCheckRollup })], now, farAway).problems, []);
+    assert.deepEqual(planSweep([pull(7, { statusCheckRollup: failed.statusCheckRollup })], now).problems, []);
 });
 
 test('reports conflicts and an unmoving merge state after three days', () => {
     const old = '2026-11-06T00:00:00Z';
-    assert.match(planSweep([pull(7, { createdAt: old, mergeable: 'CONFLICTING' })], now, farAway).problems[0], /merge conflict/);
-    assert.match(planSweep([pull(7, { createdAt: old, mergeStateStatus: 'BEHIND' })], now, farAway).problems[0], /merge state BEHIND/);
-});
-
-test('warns two weeks before and after the advisory review expires', () => {
-    assert.deepEqual(planSweep([], now, '2026-12-01T00:00:00Z').problems, []);
-    assert.match(planSweep([], now, '2026-11-20T00:00:00Z').problems[0], /expires at/);
-    assert.match(planSweep([], now, '2026-10-31T07:00:00Z').problems[0], /expired at/);
+    assert.match(planSweep([pull(7, { createdAt: old, mergeable: 'CONFLICTING' })], now).problems[0], /merge conflict/);
+    assert.match(planSweep([pull(7, { createdAt: old, mergeStateStatus: 'BEHIND' })], now).problems[0], /merge state BEHIND/);
 });
 
 const stub = (pulls: QueuedPullRequest[], issues: { number: number; title: string }[]) => {
@@ -90,29 +83,27 @@ const stub = (pulls: QueuedPullRequest[], issues: { number: number; title: strin
     };
 };
 const writes = (calls: string[][]) => calls.filter(call => call[1] !== 'list').map(call => call.slice(0, 3).join(' '));
-// The real advisory review expiry applies here, so run before its warning window.
-const beforeWarning = Date.parse('2026-10-01T00:00:00Z');
 
 test('keeps one tracking issue: create, update, then close', () => {
     const stuck = pull(7, { createdAt: '2026-09-01T00:00:00Z' });
     const open = [{ number: 5, title: ISSUE_TITLE }];
     let { calls, run } = stub([stuck], []);
-    sweep(run, beforeWarning);
+    sweep(run, now);
     assert.deepEqual(writes(calls), ['issue create --title']);
     ({ calls, run } = stub([stuck], open));
-    sweep(run, beforeWarning);
+    sweep(run, now);
     assert.deepEqual(writes(calls), ['issue edit 5']);
     ({ calls, run } = stub([], open));
-    sweep(run, beforeWarning);
+    sweep(run, now);
     assert.deepEqual(writes(calls), ['issue close 5']);
     ({ calls, run } = stub([], [{ number: 6, title: 'unrelated' }]));
-    sweep(run, beforeWarning);
+    sweep(run, now);
     assert.deepEqual(writes(calls), []);
 });
 
 test('comments the exact Dependabot command on the chosen pull request', () => {
     const { calls, run } = stub([pull(7, { mergeStateStatus: 'BEHIND' })], []);
-    sweep(run, beforeWarning);
+    sweep(run, now);
     assert.deepEqual(calls.find(call => call[1] === 'comment'), ['pr', 'comment', '7', '--body', '@dependabot rebase']);
 });
 

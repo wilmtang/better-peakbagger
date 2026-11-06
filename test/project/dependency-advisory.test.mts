@@ -4,141 +4,100 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { evaluateAudit, type Lockfile } from '../../scripts/check-npm-audit.mts';
+import {
+    DEVELOPMENT_TOOLS,
+    evaluateAudit,
+    shippedPackagePaths,
+    type AuditReport,
+    type Lockfile,
+    type PackageManifest,
+} from '../../scripts/check-npm-audit.mts';
+import { runtimeSources } from '../helpers/runtime-sources.mts';
 
-type Via = { source: number };
-const baseline = {
-    metadata: { vulnerabilities: { info: 0, low: 3, moderate: 0, high: 0, critical: 0, total: 3 } },
-    vulnerabilities: {
-        'addons-linter': {
-            name: 'addons-linter', severity: 'low', isDirect: false,
-            via: ['deepmerge'], effects: ['web-ext'], nodes: ['node_modules/addons-linter'],
-        },
-        'deepmerge': {
-            name: 'deepmerge', severity: 'low', isDirect: false,
-            via: [{ source: 1243505, name: 'deepmerge', dependency: 'deepmerge',
-                url: 'https://github.com/advisories/GHSA-gcqx-w48m-w2h4',
-                severity: 'low', range: '>=4.2.0 <=4.3.1' }],
-            effects: ['addons-linter'], nodes: ['node_modules/deepmerge'],
-        },
-        'web-ext': {
-            name: 'web-ext', severity: 'low', isDirect: true,
-            via: ['addons-linter'], effects: [], nodes: ['node_modules/web-ext'],
-        },
-    },
-};
-const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import.meta.url), 'utf8')) as Lockfile & {
-    packages: Record<string, { version?: string; dev?: boolean; dependencies: Record<string, string> }>;
-};
-type Mutable = {
-    metadata: { vulnerabilities: Record<string, number> };
-    vulnerabilities: Record<string, { severity?: string; via: unknown[]; nodes: string[]; effects: string[] }>;
-};
-const options = () => ({ allowReviewedDevelopmentAdvisory: true,
-    lockfile: structuredClone(lock), now: Date.parse('2026-10-28T00:00:00Z') });
-
-test('ordinary CI and releases opt into the reviewed advisory; the default stays strict', async () => {
-    const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
-    assert.equal(pkg.scripts['audit:ci'], 'node scripts/check-npm-audit.mts');
-    const ci = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
-    assert.match(ci, /run: npm run audit:ci -- --allow-reviewed-development-advisory/);
-    const release = await readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8');
-    assert.match(release, /- name: Check dependency advisories\n\s+run: npm run audit:ci -- --allow-reviewed-development-advisory\n/);
-    const recovery = await readFile(new URL('../../.github/workflows/retry-firefox-release.yml', import.meta.url), 'utf8');
-    assert.doesNotMatch(recovery, /allow-reviewed-development-advisory/);
+const read = (file: string) => readFile(new URL(`../../${file}`, import.meta.url), 'utf8');
+const lockfile = JSON.parse(await read('package-lock.json')) as Lockfile & { packages: Record<string, PackageManifest> };
+const packageJson = JSON.parse(await read('package.json')) as PackageManifest & { scripts: Record<string, string> };
+const graph = { lockfile, packageJson };
+const auditOf = (...nodes: string[]): AuditReport => ({
+    metadata: { vulnerabilities: { total: nodes.length } },
+    vulnerabilities: Object.fromEntries(nodes.map(node => [node.split('node_modules/').at(-1)!, { severity: 'critical', nodes: [node] }])),
 });
 
-test('only Test CI tolerates an expired review; releases enforce it', async () => {
-    const ci = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
-    assert.match(ci, /--allow-reviewed-development-advisory --tolerate-expired-review/);
-    const release = await readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8');
-    assert.doesNotMatch(release, /tolerate-expired-review/);
-    const preflight = await readFile(new URL('../../scripts/release-preflight.mjs', import.meta.url), 'utf8');
-    assert.doesNotMatch(preflight, /tolerate-expired-review/);
+test('advisories confined to development tooling pass at any severity and stay reported', () => {
+    assert.deepEqual(evaluateAudit(auditOf('node_modules/deepmerge', 'node_modules/addons-linter', 'node_modules/web-ext'), graph),
+        { status: 'development-only', names: ['addons-linter', 'deepmerge', 'web-ext'] });
 });
 
-test('strict default rejects the advisory and explicit review accepts only the recorded development path', () => {
-    assert.throws(() => evaluateAudit(baseline), /Unowned/);
-    assert.equal(evaluateAudit(baseline, options()).status, 'accepted-development-advisory');
-});
-
-test('the review is pinned to the installed tool versions', () => {
-    for (const version of ['10.7.0', '10.8.1', '10.99.0', '11.0.0', '10.8.0-beta.1', 'invalid']) {
-        const opts = options();
-        opts.lockfile.packages['node_modules/web-ext'].version = version;
-        assert.throws(() => evaluateAudit(baseline, opts), /Unowned/);
+test('advisories in shipped libraries fail even though npm files them under devDependencies', () => {
+    for (const node of ['node_modules/maplibre-gl', 'node_modules/@tiptap/core', 'node_modules/marked', 'node_modules/suncalc']) {
+        assert.ok(packageJson.devDependencies?.[node.slice('node_modules/'.length)] || packageJson.dependencies?.[node.slice('node_modules/'.length)]);
+        assert.throws(() => evaluateAudit(auditOf(node), graph), /Unowned npm audit findings/, node);
     }
 });
 
-test('clean output remains clean with or without the review option', () => {
-    const clean = { vulnerabilities: {}, metadata: { vulnerabilities: { total: 0 } } };
-    assert.deepEqual(evaluateAudit(clean), { status: 'clean' });
-    assert.deepEqual(evaluateAudit(clean, options()), { status: 'clean' });
+test('advisories in transitive dependencies of shipped libraries fail', () => {
+    const transitive = lockfile.packages['node_modules/@tiptap/pm'].dependencies ?? {};
+    const name = Object.keys(transitive)[0];
+    assert.ok(name);
+    assert.throws(() => evaluateAudit(auditOf(`node_modules/${name}`), graph), /Unowned/);
 });
 
-test('the low-severity development exception expires after October 30 in Los Angeles', () => {
-    for (const now of [Date.parse('2026-10-24T07:00:00Z'), Date.parse('2026-10-31T06:59:59.999Z')]) {
-        assert.equal(evaluateAudit(baseline, { ...options(), now }).status, 'accepted-development-advisory');
+test('a tooling package that shipped code also depends on counts as shipped', () => {
+    const shared = structuredClone(lockfile);
+    shared.packages['node_modules/maplibre-gl'].dependencies = { deepmerge: '4.3.1' };
+    assert.throws(() => evaluateAudit(auditOf('node_modules/deepmerge'), { lockfile: shared, packageJson }), /Unowned/);
+});
+
+test('one shipped copy fails a finding even when another copy is tooling', () => {
+    const audit = auditOf('node_modules/deepmerge');
+    audit.vulnerabilities!.deepmerge.nodes!.push('node_modules/maplibre-gl');
+    assert.throws(() => evaluateAudit(audit, graph), /Unowned/);
+});
+
+test('nested installs resolve to the copy their parent actually loads', () => {
+    const nested = structuredClone(lockfile);
+    nested.packages['node_modules/maplibre-gl'].dependencies = { deepmerge: '1.0.0' };
+    nested.packages['node_modules/maplibre-gl/node_modules/deepmerge'] = {};
+    const shipped = shippedPackagePaths({ lockfile: nested, packageJson })!;
+    assert.ok(shipped.has('node_modules/maplibre-gl/node_modules/deepmerge'));
+    assert.ok(!shipped.has('node_modules/deepmerge'));
+});
+
+test('a new direct dependency counts as shipped until it is named as a tool', () => {
+    const added = structuredClone(lockfile);
+    added.packages['node_modules/brand-new'] = {};
+    const manifest = { ...packageJson, devDependencies: { ...packageJson.devDependencies, 'brand-new': '1.0.0' } };
+    assert.throws(() => evaluateAudit(auditOf('node_modules/brand-new'), { lockfile: added, packageJson: manifest }), /Unowned/);
+});
+
+test('findings that cannot be located fail closed', () => {
+    const report = (finding: object): AuditReport => ({ metadata: { vulnerabilities: { total: 1 } }, vulnerabilities: { deepmerge: finding } });
+    for (const finding of [{}, { nodes: [] }, { nodes: ['node_modules/not-installed'] }]) {
+        assert.throws(() => evaluateAudit(report(finding), graph), /Unowned/);
     }
+    assert.throws(() => evaluateAudit(auditOf('node_modules/deepmerge')), /Unowned/);
+    assert.throws(() => evaluateAudit(auditOf('node_modules/deepmerge'), { lockfile }), /Unowned/);
+    assert.throws(() => evaluateAudit({ metadata: { vulnerabilities: { total: 2 } }, vulnerabilities: {} }, graph), /missing vulnerability detail/);
 });
 
-test('the exception expires exactly at midnight October 31 in Los Angeles', () => {
-    assert.throws(() => evaluateAudit(baseline, { ...options(), now: Date.parse('2026-10-31T07:00:00Z') }),
-        /Reviewed development advisory expired at 2026-10-31T07:00:00Z/);
-    assert.equal(evaluateAudit(baseline, { ...options(), tolerateExpiredReview: true,
-        now: Date.parse('2026-10-31T07:00:00Z') }).status, 'expired-development-advisory');
-    assert.equal(evaluateAudit(baseline, { ...options(), tolerateExpiredReview: true }).status,
-        'accepted-development-advisory');
-    for (const now of [NaN, Infinity]) {
-        assert.throws(() => evaluateAudit(baseline, { ...options(), now }), /Unowned/);
-    }
+test('clean output stays clean', () => {
+    assert.deepEqual(evaluateAudit({ metadata: { vulnerabilities: { total: 0 } }, vulnerabilities: {} }, graph), { status: 'clean' });
 });
 
-test('tolerating an expired review never admits a changed graph or a strict run', () => {
-    const now = Date.parse('2026-12-01T00:00:00Z');
-    assert.throws(() => evaluateAudit(baseline, { tolerateExpiredReview: true, now }), /Unowned/);
-    const changed = structuredClone(baseline);
-    changed.vulnerabilities['deepmerge'].severity = 'critical';
-    assert.throws(() => evaluateAudit(changed, { ...options(), tolerateExpiredReview: true, now }), /Unowned/);
-    const moved = options();
-    moved.lockfile.packages['node_modules/web-ext'].version = '10.9.0';
-    assert.throws(() => evaluateAudit(baseline, { ...moved, tolerateExpiredReview: true, now }), /Unowned/);
-});
-
-const mutations: [string, (audit: Mutable) => unknown][] = [
-    ['new advisory', a => a.vulnerabilities['deepmerge'].via.push({ source: 99 })],
-    ['different identity', a => (a.vulnerabilities['deepmerge'].via[0] as Via).source++],
-    ['different severity', a => a.vulnerabilities['deepmerge'].severity = 'critical'],
-    ['different location', a => a.vulnerabilities['deepmerge'].nodes.push('node_modules/other/node_modules/deepmerge')],
-    ['different parent', a => a.vulnerabilities['addons-linter'].via.push('other')],
-    ['different effects', a => a.vulnerabilities['deepmerge'].effects.push('other')],
-    ['extra package', a => a.vulnerabilities.other = { via: [], nodes: [], effects: [] }],
-    ['retired forge advisory', a => a.vulnerabilities['node-forge'] = { severity: 'high', via: [], nodes: [], effects: [] }],
-    ['inconsistent counts', a => a.metadata.vulnerabilities.total++],
-];
-for (const [label, mutate] of mutations) {
-    test(`review still rejects ${label}`, () => {
-        const audit = structuredClone(baseline) as unknown as Mutable;
-        mutate(audit);
-        assert.throws(() => evaluateAudit(audit, options()), /Unowned/);
-    });
-}
-
-for (const name of ['web-ext', 'addons-linter', 'deepmerge']) {
-    test(`review rejects changed or production ${name} resolutions`, () => {
-        for (const change of [{ dev: false }, { version: '99.0.0' }]) {
-            const opts = options();
-            Object.assign(opts.lockfile.packages[`node_modules/${name}`], change);
-            assert.throws(() => evaluateAudit(baseline, opts), /Unowned/);
+test('every named tool is a real direct dependency that runtime source never imports', async () => {
+    const direct = { ...packageJson.dependencies, ...packageJson.devDependencies };
+    for (const tool of DEVELOPMENT_TOOLS) assert.ok(direct[tool], `${tool} is no longer a direct dependency`);
+    for (const { file, text } of await runtimeSources()) {
+        for (const tool of DEVELOPMENT_TOOLS) {
+            assert.ok(!text.includes(`from '${tool}'`) && !text.includes(`from '${tool}/`), `${file} imports ${tool}`);
         }
-    });
-}
+    }
+});
 
-test('review rejects duplicated or rerouted dependency edges', () => {
-    const duplicate = options();
-    duplicate.lockfile.packages['node_modules/other/node_modules/deepmerge'] = { version: '4.3.1', dev: true, dependencies: {} };
-    assert.throws(() => evaluateAudit(baseline, duplicate), /Unowned/);
-    const rerouted = options();
-    rerouted.lockfile.packages['node_modules/web-ext'].dependencies['addons-linter'] = '4.0.0';
-    assert.throws(() => evaluateAudit(baseline, rerouted), /Unowned/);
+test('CI and releases run one gate with no exception flags', async () => {
+    assert.equal(packageJson.scripts['audit:ci'], 'node scripts/check-npm-audit.mts');
+    for (const file of ['.github/workflows/test.yml', '.github/workflows/release.yml']) {
+        const workflow = await read(file);
+        assert.match(workflow, /- name: Check dependency advisories\n(?:\s+#.*\n)*\s+run: npm run audit:ci\n/, file);
+    }
 });

@@ -227,7 +227,7 @@ visible in the AMO Developer Hub.
 
    ```sh
    npm ci
-   npm run audit:ci -- --allow-reviewed-development-advisory # exact development exception through Oct 30
+   npm run audit:ci
    npm test
    npm run test:scale
    npm run lint
@@ -246,28 +246,17 @@ visible in the AMO Developer Hub.
    store credit, before publication. If a new root-level development file is copied
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
-   `audit:ci` requires zero advisories by default, including development dependencies.
+   `audit:ci` requires zero advisories in shipped code. Advisories confined to the
+   build and test tools named by `DEVELOPMENT_TOOLS` are reported and accepted at any severity.
    The minimatch 10 paths used by ESLint and TypeScript ESLint resolve the scoped
    upstream 11.0.1 override for
    [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
    The CommonJS matcher APIs and typed-file discovery are checked on Node 24;
    the legacy minimatch 3 / brace-expansion override remains separate. Remove
    this override when upstream owners adopt a patched range, after revalidation.
-   Forge now resolves patched 1.4.2. One reviewed low-severity deepmerge advisory
-   remains in development tooling only: deepmerge 4.3.1 → addons-linter 10.14.0
-   → web-ext 10.8.0. Upstream deepmerge has no patched release; neither a forced
-   old web-ext downgrade nor an unmaintained local fork is used. The audit plan's
-   approved implementation retains this exact advisory/path/version exception
-   through October 30, 2026. Pass `--allow-reviewed-development-advisory` for the
-   local check; CI and releases use the same evaluator. It expires at 00:00
-   October 31 in Los Angeles (07:00 UTC), rejects any changed package version,
-   dependency edge, advisory identity/severity, production resolution or new
-   advisory, and does not reset its expiry. Only ordinary Test CI adds
-   `--tolerate-expired-review`, which turns an expired review of this unchanged
-   graph into a warning; releases and rehearsals still fail until it is renewed.
-   Raw npm audit reports three low
-   affected packages for this one advisory; the production graph is clean.
-   This is accepted tooling risk, not a patched deepmerge or clean full audit.
+   Forge now resolves patched 1.4.2. The low-severity deepmerge advisory has no
+   upstream patch and stays in tooling only (deepmerge 4.3.1 → addons-linter →
+   web-ext), so raw `npm audit` still reports those three packages.
    The patched `web-ext`/`addons-linter` toolchain no longer needs the former
    `image-size` exception. Rehearsals use the same policy as publication.
    `npm run lint`
@@ -313,7 +302,7 @@ visible in the AMO Developer Hub.
    the checkout; an existing output file is never overwritten.
 
    It also reruns the dependency audit with the release workflow's exact policy,
-   so a green run cannot carry an advisory exception past its expiry.
+   so a green run cannot cover an advisory disclosed since.
 
    The command also requires active strict main checks, deletion/non-fast-forward
    protections for main and v* tags, no tag-rule bypass, and a required reviewer

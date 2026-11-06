@@ -18,15 +18,46 @@ const rehearsalChecks = ['Release scale tests', 'Verify release',
     'Packaged chrome 128 floor', 'Packaged firefox 152.0 floor'];
 const storeChecks = ['Submit Chrome Web Store', 'Submit Firefox Add-ons'];
 
-function requireEvidence(condition, message) {
+// The GitHub API fields these validators read. Every one is untrusted until the
+// validator has checked it, so each stays optional.
+type Repository = { full_name?: string };
+export type VerificationRun = {
+    id: number; run_attempt: number; html_url?: string; path?: string; event?: string; head_branch?: string;
+    head_sha?: string; status?: string; conclusion?: string; repository?: Repository; head_repository?: Repository;
+};
+export type VerificationJob = { id?: number; name: string; status?: string; conclusion?: string | null };
+type RulesetRule = { type: string; parameters?: {
+    strict_required_status_checks_policy?: boolean; required_status_checks: { context: string }[];
+} };
+export type Ruleset = {
+    id?: number; target?: string; enforcement?: string; bypass_actors?: unknown[];
+    conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules?: RulesetRule[];
+};
+type Reviewer = { type: string; reviewer: { id: number } };
+export type Environment = {
+    id?: number; protection_rules?: { type: string; reviewers?: Reviewer[] }[];
+    deployment_branch_policy?: { protected_branches?: boolean; custom_branch_policies?: boolean };
+};
+type Safeguards = { rulesets: Ruleset[]; environment?: Environment; policies?: { type?: string; name?: string }[] };
+type Artifact = { id?: number; name: string; expired?: boolean; workflow_run?: { id?: number; head_sha?: string } };
+type ApiRecord = Record<string, unknown>;
+type PreflightDependencies = {
+    inspect?: (tag: string) => Promise<string>;
+    read?: (file: string, encoding: 'utf8') => Promise<string>;
+    request?: (endpoint: string) => Promise<ApiRecord>;
+    paginate?: (endpoint: string, key?: string) => Promise<ApiRecord[]>;
+    runCommand?: (program: string, args: string[]) => Promise<string>;
+};
+
+function requireEvidence(condition: unknown, message: string): asserts condition {
     if (!condition) throw new Error(message);
 }
 
-export function preflightArguments(args) {
+export function preflightArguments(args: string[]) {
     const [tag, ...options] = args;
     requireEvidence(/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag),
-        'Usage: release-preflight.mjs vX.Y.Z --ci-run ID --rehearsal-run ID [--output FILE]');
-    const values = {};
+        'Usage: release-preflight.mts vX.Y.Z --ci-run ID --rehearsal-run ID [--output FILE]');
+    const values: Record<string, string> = {};
     for (let index = 0; index < options.length; index += 2) {
         const key = options[index], value = options[index + 1];
         requireEvidence(['--ci-run', '--rehearsal-run', '--output'].includes(key)
@@ -39,10 +70,10 @@ export function preflightArguments(args) {
     return { tag, ciRunId: values['--ci-run'], rehearsalRunId: values['--rehearsal-run'], output: values['--output'] };
 }
 
-export function validateVerificationRun(run, { commit, workflow, event }) {
+export function validateVerificationRun(run: VerificationRun | null | undefined, { commit, workflow, event }: { commit: string; workflow: string; event: string }) {
     requireEvidence(run?.repository?.full_name === repository && run.head_repository?.full_name === repository,
         'Verification must belong to this repository, not a fork');
-    requireEvidence(run.path === `.github/workflows/${workflow}` && run.event === event && run.head_branch === 'main',
+    requireEvidence(run!.path === `.github/workflows/${workflow}` && run.event === event && run.head_branch === 'main',
         `Expected ${workflow} ${event} on main`);
     requireEvidence(run.head_sha === commit, `${workflow} verified a different commit; rerun CI and rehearsal after changes`);
     requireEvidence(run.status === 'completed' && run.conclusion === 'success', `${workflow} must be terminally successful`);
@@ -50,13 +81,13 @@ export function validateVerificationRun(run, { commit, workflow, event }) {
         'Verification run identity is missing');
 }
 
-export function validateVerificationJobs(jobs, rehearsal = false) {
+export function validateVerificationJobs(jobs: VerificationJob[], rehearsal = false) {
     requireEvidence(Array.isArray(jobs) && jobs.length > 0, 'Verification jobs are missing');
     for (const job of jobs) {
-        requireEvidence(job.status === 'completed' && ['success', 'skipped'].includes(job.conclusion),
+        requireEvidence(job.status === 'completed' && ['success', 'skipped'].includes(job.conclusion ?? ''),
             `Verification job did not succeed: ${job.name}`);
     }
-    const named = (name, conclusion) => {
+    const named = (name: string, conclusion: string) => {
         const matches = jobs.filter(job => job.name === name);
         requireEvidence(matches.length === 1 && matches[0].conclusion === conclusion,
             `Expected exactly one ${name} job with conclusion ${conclusion}`);
@@ -67,7 +98,7 @@ export function validateVerificationJobs(jobs, rehearsal = false) {
     return rehearsal ? rehearsalChecks.slice(1).map(name => named(name, 'success')) : [];
 }
 
-export function validateConsecutivePasses(log, label) {
+export function validateConsecutivePasses(log: string, label: string) {
     if (label === 'Verify release') {
         // Unit tests exercise repeatVerification too. Their synthetic passes
         // must never count as archive execution, nor obscure the real proof.
@@ -88,17 +119,17 @@ export function validateConsecutivePasses(log, label) {
     return count;
 }
 
-export function validatePublicationSafeguards({ rulesets, environment, policies }) {
-    const rules = type => rulesets.filter(rule => rule.target === type && rule.enforcement === 'active');
-    const covers = (rule, ref) => rule.conditions?.ref_name?.include?.includes(ref)
-        && rule.conditions.ref_name.exclude?.length === 0;
+export function validatePublicationSafeguards({ rulesets, environment, policies }: Safeguards) {
+    const rules = (type: string) => rulesets.filter(rule => rule.target === type && rule.enforcement === 'active');
+    const covers = (rule: Ruleset, ref: string) => rule.conditions?.ref_name?.include?.includes(ref)
+        && rule.conditions.ref_name?.exclude?.length === 0;
     const main = rules('branch').find(rule => (covers(rule, '~DEFAULT_BRANCH') || covers(rule, 'refs/heads/main'))
         && rule.rules?.some(entry => entry.type === 'required_status_checks'));
     const tags = rules('tag').find(rule => covers(rule, 'refs/tags/v*') && rule.bypass_actors?.length === 0);
-    const hasRule = (rule, type) => rule?.rules?.some(entry => entry.type === type);
+    const hasRule = (rule: Ruleset, type: string) => rule?.rules?.some(entry => entry.type === type);
     requireEvidence(main && tags && [main, tags].every(rule => hasRule(rule, 'deletion') && hasRule(rule, 'non_fast_forward')),
         'Active main and immutable v* tag rulesets are required; tag bypasses are forbidden');
-    const checks = main.rules.find(rule => rule.type === 'required_status_checks')?.parameters;
+    const checks = main.rules?.find(rule => rule.type === 'required_status_checks')?.parameters;
     requireEvidence(checks?.strict_required_status_checks_policy === true
         && requiredChecks.every(name => checks.required_status_checks.some(check => check.context === name)),
     'Main must strictly require the Node, scale, Chrome, and Firefox checks');
@@ -106,13 +137,13 @@ export function validatePublicationSafeguards({ rulesets, environment, policies 
     requireEvidence(environment?.deployment_branch_policy?.protected_branches === false
         && environment.deployment_branch_policy.custom_branch_policies === true
         && policies?.length === 1 && policies[0].type === 'tag' && policies[0].name === 'v*'
-        && reviewer?.reviewers?.length > 0,
+        && reviewer?.reviewers?.length,
     'browser-stores must allow only v* tags and require a reviewer');
     return { rulesets: [main.id, tags.id], environment: environment.id,
         reviewers: reviewer.reviewers.map(entry => ({ type: entry.type, id: entry.reviewer.id })) };
 }
 
-export function selectRehearsalArtifact(artifacts, run, version) {
+export function selectRehearsalArtifact(artifacts: Artifact[], run: VerificationRun, version: string) {
     const matches = artifacts.filter(artifact => artifact.name === `browser-extension-v${version}-${run.run_attempt}`);
     requireEvidence(matches.length === 1 && matches[0].expired === false
         && matches[0].workflow_run?.id === run.id && matches[0].workflow_run.head_sha === run.head_sha,
@@ -120,17 +151,17 @@ export function selectRehearsalArtifact(artifacts, run, version) {
     return matches[0];
 }
 
-async function command(program, args) {
+async function command(program: string, args: string[]) {
     const result = await execute(program, args, { encoding: 'utf8', timeout: 60_000, maxBuffer: 64 * 1024 * 1024 });
     return result.stdout.trim();
 }
-const git = args => command('git', ['-c', 'core.fsmonitor=false', ...args]);
-const api = async endpoint => JSON.parse(await command('gh', ['api', '--hostname', 'github.com',
+const git = (args: string[]) => command('git', ['-c', 'core.fsmonitor=false', ...args]);
+const api = async (endpoint: string): Promise<ApiRecord> => JSON.parse(await command('gh', ['api', '--hostname', 'github.com',
     `repos/${repository}${endpoint ? `/${endpoint}` : ''}`]));
-const pages = async (endpoint, key) => JSON.parse(await command('gh', ['api', '--hostname', 'github.com',
-    '--paginate', '--slurp', `repos/${repository}/${endpoint}`])).flatMap(page => key ? page[key] : page);
+const pages = async (endpoint: string, key?: string): Promise<ApiRecord[]> => JSON.parse(await command('gh', ['api', '--hostname', 'github.com',
+    '--paginate', '--slurp', `repos/${repository}/${endpoint}`])).flatMap((page: ApiRecord) => key ? page[key] : page);
 
-async function inspectCandidate(tag) {
+async function inspectCandidate(tag: string) {
     const remote = await git(['remote', 'get-url', 'origin']);
     requireEvidence([`https://github.com/${repository}.git`, `https://github.com/${repository}`,
         `git@github.com:${repository}.git`].includes(remote), 'origin must be the canonical GitHub repository');
@@ -147,9 +178,9 @@ async function inspectCandidate(tag) {
     return commit;
 }
 
-export async function releasePreflight({ tag, ciRunId, rehearsalRunId }, {
+export async function releasePreflight({ tag, ciRunId, rehearsalRunId }: { tag: string; ciRunId: string; rehearsalRunId: string }, {
     inspect = inspectCandidate, read = readFile, request = api, paginate = pages, runCommand = command,
-} = {}) {
+}: PreflightDependencies = {}) {
     const commit = await inspect(tag);
     const [manifest, packageJson, packageLock, changelog] = await Promise.all([
         ...['manifest.json', 'package.json', 'package-lock.json'].map(async name => JSON.parse(await read(name, 'utf8'))),
@@ -157,11 +188,11 @@ export async function releasePreflight({ tag, ciRunId, rehearsalRunId }, {
     ]);
     const version = validateRelease({ tag, manifest, packageJson, packageLock, changelog });
     await runCommand(process.execPath, ['scripts/check-changelog-history.mjs']);
-    // A green run from yesterday cannot extend an advisory exception today.
-    await runCommand(process.execPath, ['scripts/check-npm-audit.mts', '--allow-reviewed-development-advisory']);
+    // A green run from yesterday cannot cover an advisory disclosed today.
+    await runCommand(process.execPath, ['scripts/check-npm-audit.mts']);
     const [ci, rehearsal, repositoryInfo] = await Promise.all([
         request(`actions/runs/${ciRunId}`), request(`actions/runs/${rehearsalRunId}`), request(''),
-    ]);
+    ]) as [VerificationRun, VerificationRun, ApiRecord];
     requireEvidence(repositoryInfo.default_branch === 'main', 'The protected default branch must remain main');
     validateVerificationRun(ci, { commit, workflow: 'test.yml', event: 'push' });
     validateVerificationRun(rehearsal, { commit, workflow: 'release.yml', event: 'workflow_dispatch' });
@@ -169,10 +200,10 @@ export async function releasePreflight({ tag, ciRunId, rehearsalRunId }, {
     // them with a green retry. Every component must pass in that fresh run.
     requireEvidence(rehearsal.run_attempt === 1, 'Use a fresh successful rehearsal, not a rerun of a failed rehearsal');
     const [ciJobs, rehearsalJobs] = await Promise.all([ci, rehearsal].map(run =>
-        paginate(`actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`, 'jobs')));
+        paginate(`actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`, 'jobs'))) as [VerificationJob[], VerificationJob[]];
     validateVerificationJobs(ciJobs);
     const browserJobs = validateVerificationJobs(rehearsalJobs, true);
-    const repetitions = {};
+    const repetitions: Record<string, number> = {};
     for (const job of browserJobs) {
         const log = await runCommand('gh', ['run', 'view', String(rehearsal.id), '--repo', repository,
             '--attempt', String(rehearsal.run_attempt), '--job', String(job.id), '--log']);
@@ -183,9 +214,9 @@ export async function releasePreflight({ tag, ciRunId, rehearsalRunId }, {
         paginate(`actions/runs/${rehearsal.id}/artifacts?per_page=100`, 'artifacts'),
         paginate('rulesets?per_page=100'), request('environments/browser-stores'),
         paginate('environments/browser-stores/deployment-branch-policies?per_page=100', 'branch_policies'),
-    ]);
+    ]) as [Artifact[], Ruleset[], Environment, Safeguards['policies']];
     const artifact = selectRehearsalArtifact(artifacts, rehearsal, version);
-    const rulesets = await Promise.all(ruleListings.map(rule => request(`rulesets/${rule.id}`)));
+    const rulesets = await Promise.all(ruleListings.map(rule => request(`rulesets/${rule.id}`))) as Ruleset[];
     const safeguards = validatePublicationSafeguards({ rulesets, environment, policies: policyPages });
     const directory = await mkdtemp(path.join(os.tmpdir(), 'bpb-release-preflight-'));
     let identity;
@@ -209,7 +240,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         if (options.output) await writeFile(options.output, receipt, { flag: 'wx' });
         else process.stdout.write(receipt);
     } catch (error) {
-        console.error(error.message);
+        console.error((error as Error).message);
         process.exitCode = 1;
     }
 }
