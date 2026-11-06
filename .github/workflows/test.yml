@@ -127,7 +127,7 @@ jobs:
     # Required in the final aggregate, independent of suite startup so an OS
     # package mirror cannot serialize every browser matrix.
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:

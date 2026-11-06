@@ -8,23 +8,26 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+// @ts-expect-error js-yaml ships no declarations; parsed workflows are typed below.
 import yaml from 'js-yaml';
 
-const load = async name => yaml.load(await readFile(new URL(`../../.github/${name}`, import.meta.url), 'utf8'));
+type WorkflowStep = { id?: string; name?: string; uses?: string; run?: string; if?: string; with?: Record<string, unknown>; env?: Record<string, string> };
+
+const load = async (name: string) => yaml.load(await readFile(new URL(`../../.github/${name}`, import.meta.url), 'utf8'));
 
 test('ordinary and release package gates share setup, browsers, and their execution command', async () => {
     const ordinary = await load('workflows/test.yml');
     const release = await load('workflows/release.yml');
     for (const job of [ordinary.jobs.chrome, release.jobs.verify]) {
-        const setup = job.steps.find(step => step.uses === './.github/actions/setup-verification');
+        const setup = job.steps.find((step: WorkflowStep) => step.uses === './.github/actions/setup-verification');
         assert.equal(setup.with['chrome-version'], 'current');
         assert.equal(setup.with['firefox-version'], 'latest');
         assert.equal(setup.with['popup-firefox'], 'true');
-        assert.equal(job.steps.filter(step => step.uses === './.github/actions/verify-package').length, 1);
+        assert.equal(job.steps.filter((step: WorkflowStep) => step.uses === './.github/actions/verify-package').length, 1);
         assert.equal(job['runs-on'], 'macos-15-intel');
     }
     for (const job of [ordinary.jobs.node, ordinary.jobs.scale, release.jobs.scale]) {
-        assert.ok(job.steps.some(step => step.uses === './.github/actions/setup-verification'));
+        assert.ok(job.steps.some((step: WorkflowStep) => step.uses === './.github/actions/setup-verification'));
     }
 });
 
@@ -32,9 +35,9 @@ test('shared package gate builds once and exercises capture against the producti
     const gate = await load('actions/verify-package/action.yml');
     const steps = gate.runs.steps;
     assert.match(steps[0].run, /npm run release:verify-packages/);
-    assert.equal(steps.filter(step => step.run.includes('npm run')).length, 1);
+    assert.equal(steps.filter((step: WorkflowStep) => step.run.includes('npm run')).length, 1);
     for (const script of ['capture-popup', 'capture-readiness', 'capture-flow', 'multi-summit']) {
-        assert.ok(steps.slice(1).some(step => step.run.includes(`node scripts/verify-${script}.mjs`)), script);
+        assert.ok(steps.slice(1).some((step: WorkflowStep) => step.run.includes(`node scripts/verify-${script}.mjs`)), script);
     }
     for (const step of steps) {
         assert.equal(step.shell, 'bash', 'tee must not conceal a failed verifier');
@@ -56,12 +59,12 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.ok(job.strategy?.matrix, 'each complete browser matrix needs its own job budget');
     assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.equal(job.strategy['fail-fast'], false, 'retain independent evidence from both browser matrices');
-    assert.equal(ordinary.jobs.chrome.steps.some(step => step.run?.includes('verify -- layout-stability')), false);
+    assert.equal(ordinary.jobs.chrome.steps.some((step: WorkflowStep) => step.run?.includes('verify -- layout-stability')), false);
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('layout'), 'the existing required check must await layout results');
     const required = ordinary.jobs['chrome-required'].steps[0];
     assert.equal(required.env.LAYOUT_RESULT, '${{ needs.layout.result }}');
     assert.match(required.run, /test "\$LAYOUT_RESULT" = success/, 'failed or skipped layout checks must block the release');
-    const geometry = job.steps.find(step => step.run?.includes('npm run verify -- layout-stability'));
+    const geometry = job.steps.find((step: WorkflowStep) => step.run?.includes('npm run verify -- layout-stability'));
     assert.ok(geometry, 'state transitions must be checked beyond static manifest smoke');
     assert.equal(geometry.if, undefined);
     assert.equal(geometry['continue-on-error'], undefined);
@@ -75,11 +78,11 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.equal(backups['runs-on'], 'macos-15-intel');
     assert.deepEqual(backups.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.equal(backups.needs, undefined);
-    assert.ok(backups.steps.some(step => step.run?.includes('--suite=backups')));
+    assert.ok(backups.steps.some((step: WorkflowStep) => step.run?.includes('--suite=backups')));
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('backup-layout'));
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$BACKUP_LAYOUT_RESULT" = success/);
     assert.equal(job.env.BPB_VERIFY_SCREENSHOTS, 'references');
-    assert.ok(job.steps.find(step => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
+    assert.ok(job.steps.find((step: WorkflowStep) => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(packageJson.scripts.verify, 'node scripts/verify.mjs');
     const verifier = await readFile(new URL('../../scripts/verify-layout-stability.mts', import.meta.url), 'utf8');
@@ -93,7 +96,7 @@ test('layout browser selections reject conflicting engines and unknown selection
         [['--chrome-only', '--firefox-only'], /Choose only one layout browser/],
         [['--firefoxx-only'], /Unknown layout argument/],
         [['--firefox-only', '--surface=missing'], /Unknown layout surface/],
-    ]) {
+    ] as [string[], RegExp][]) {
         const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, expected);
@@ -110,7 +113,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.equal(surfaceJob.strategy['fail-fast'], false);
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('peak-surfaces'));
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$SURFACE_RESULT" = success/);
-    const surfaces = surfaceJob.steps.find(step => step.name === 'Verify independent peak surface');
+    const surfaces = surfaceJob.steps.find((step: WorkflowStep) => step.name === 'Verify independent peak surface');
     assert.ok(surfaces, 'the required layout path must execute the newer surface matrices');
     assert.equal(surfaces.if, undefined);
     assert.equal(surfaces['continue-on-error'], undefined);
@@ -123,18 +126,18 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.equal(gpu.if, undefined, 'snow-map coverage must not wait for a dependency change');
     assert.deepEqual(gpu.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.equal(gpu.strategy['fail-fast'], false);
-    assert.ok(gpu.steps.some(step => /verify-ascent-weather\.mjs --snow-map /.test(step.run || '')));
-    const setup = gpu.steps.find(step => step.uses === './.github/actions/setup-verification');
+    assert.ok(gpu.steps.some((step: WorkflowStep) => /verify-ascent-weather\.mjs --snow-map /.test(step.run || '')));
+    const setup = gpu.steps.find((step: WorkflowStep) => step.uses === './.github/actions/setup-verification');
     assert.equal(setup.with['chrome-version'], 'current');
     assert.equal(setup.with['firefox-version'], 'latest');
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('snow-map'));
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$SNOW_MAP_RESULT" = success/);
-    assert.ok(gpu.steps.some(step => step.if === 'failure()' && step.with?.path === 'browser-evidence/'));
+    assert.ok(gpu.steps.some((step: WorkflowStep) => step.if === 'failure()' && step.with?.path === 'browser-evidence/'));
 });
 
 test('the CI surface step selects the requested engine and preserves each verifier failure', async () => {
     const ordinary = await load('workflows/test.yml');
-    const step = ordinary.jobs['peak-surfaces'].steps.find(step => step.name === 'Verify independent peak surface');
+    const step = ordinary.jobs['peak-surfaces'].steps.find((step: WorkflowStep) => step.name === 'Verify independent peak surface');
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-surface-ci-'));
     const executable = path.join(directory, 'node'), commands = path.join(directory, 'commands');
     try {
@@ -159,20 +162,20 @@ test('the CI surface step selects the requested engine and preserves each verifi
 test('shared setup exports the installed paths and versions and keeps exact toolchain pins', async () => {
     const setup = await load('actions/setup-verification/action.yml');
     const steps = setup.runs.steps;
-    assert.equal(steps.find(step => step.uses?.startsWith('actions/setup-node@')).with['node-version'], 24);
-    assert.ok(steps.some(step => step.run === 'npm ci'));
-    const firefox = steps.find(step => step.id === 'firefox');
-    const chrome = steps.find(step => step.id === 'chrome');
+    assert.equal(steps.find((step: WorkflowStep) => step.uses?.startsWith('actions/setup-node@')).with['node-version'], 24);
+    assert.ok(steps.some((step: WorkflowStep) => step.run === 'npm ci'));
+    const firefox = steps.find((step: WorkflowStep) => step.id === 'firefox');
+    const chrome = steps.find((step: WorkflowStep) => step.id === 'chrome');
     assert.equal(firefox.with['firefox-version'], '${{ inputs.firefox-version }}');
     assert.equal(chrome.with['chrome-version'], '${{ inputs.chrome-version }}');
-    const contract = steps.find(step => step.name === 'Export installed browser contracts');
+    const contract = steps.find((step: WorkflowStep) => step.name === 'Export installed browser contracts');
     for (const browser of ['CHROME','FIREFOX']) {
         assert.equal(contract.env[`${browser}_VERSION`], '${{ steps.' + browser.toLowerCase() + '.outputs.' + browser.toLowerCase() + '-version }}');
         assert.match(contract.run, new RegExp(`BPB_EXPECT_${browser}_VERSION=`));
         assert.match(contract.run, new RegExp(`${browser}_BIN=`));
     }
-    assert.ok(steps.some(step => step.run?.includes('verification-browser-identity.mjs --playwright-chromium')));
-    assert.ok(steps.filter(step => step.uses).every(step => /@[a-f0-9]{40}$/.test(step.uses)));
+    assert.ok(steps.some((step: WorkflowStep) => step.run?.includes('verification-browser-identity.mjs --playwright-chromium')));
+    assert.ok(steps.filter((step: WorkflowStep) => step.uses).every((step: WorkflowStep) => /@[a-f0-9]{40}$/.test(step.uses)));
 });
 
 test('fast fixture preflight is independently required and installs only its selected engine', async () => {
@@ -180,9 +183,9 @@ test('fast fixture preflight is independently required and installs only its sel
     const job = ordinary.jobs['fixture-preflight'];
     assert.equal(job['runs-on'], 'ubuntu-24.04');
     assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
-    assert.ok(job.steps.some(step => step.run?.includes('fixture-preflight --${{ matrix.browser }}-only')));
+    assert.ok(job.steps.some((step: WorkflowStep) => step.run?.includes('fixture-preflight --${{ matrix.browser }}-only')));
     for (const name of ['fixture-preflight', 'layout']) {
-        const setup = ordinary.jobs[name].steps.find(step => step.uses === './.github/actions/setup-verification');
+        const setup = ordinary.jobs[name].steps.find((step: WorkflowStep) => step.uses === './.github/actions/setup-verification');
         assert.equal(setup.with['fixture-browser'], '${{ matrix.browser }}');
         assert.equal(setup.with['firefox-version'], undefined);
         assert.equal(setup.with['chrome-version'], undefined);
@@ -191,9 +194,11 @@ test('fast fixture preflight is independently required and installs only its sel
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$PREFLIGHT_RESULT" = success/);
 });
 
+const actionPath = fileURLToPath(new URL('../../.github/actions/setup-verification', import.meta.url));
+
 test('fixture setup rejects unknown engines and downloads only the selected browser', async () => {
     const setup = await load('actions/setup-verification/action.yml');
-    const step = setup.runs.steps.find(value => value.name === 'Install fixture browser');
+    const step = setup.runs.steps.find((value: WorkflowStep) => value.name === 'Install fixture browser');
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-fixture-setup-'));
     try {
         const calls = path.join(directory, 'calls');
@@ -202,7 +207,7 @@ test('fixture setup rejects unknown engines and downloads only the selected brow
         for (const browser of ['chrome', 'firefox', 'typo']) {
             await rm(calls, { force: true });
             const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', step.run], { cwd: directory,
-                env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, FIXTURE_BROWSER: browser, BPB_FIXTURE_CALLS: calls }, encoding: 'utf8' });
+                env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, GITHUB_ACTION_PATH: actionPath, FIXTURE_BROWSER: browser, BPB_FIXTURE_CALLS: calls }, encoding: 'utf8' });
             assert.equal(result.status === 0, browser !== 'typo');
             assert.equal(await readFile(calls, 'utf8').catch(() => ''), browser === 'typo' ? ''
                 : `playwright install --with-deps ${browser === 'chrome' ? 'chromium' : 'firefox'}\n`);

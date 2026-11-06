@@ -35,15 +35,15 @@ runs:
           firefox) engine=firefox ;;
           *) echo "Unknown fixture browser: $FIXTURE_BROWSER" >&2; exit 1 ;;
         esac
-        npx playwright install --with-deps "$engine"
+        "$GITHUB_ACTION_PATH/install-playwright-browser.sh" "$engine"
     - name: Install current Chrome for Testing
       if: inputs.chrome-version == 'current'
       shell: bash
       env:
         POPUP_FIREFOX: ${{ inputs.popup-firefox }}
       run: |
-        npx playwright install --with-deps chromium
-        if [ "$POPUP_FIREFOX" = true ]; then npx playwright install --with-deps firefox; fi
+        "$GITHUB_ACTION_PATH/install-playwright-browser.sh" chromium
+        if [ "$POPUP_FIREFOX" = true ]; then "$GITHUB_ACTION_PATH/install-playwright-browser.sh" firefox; fi
         node scripts/verification-browser-identity.mjs --playwright-chromium >> "$GITHUB_ENV"
     - name: Install Chrome floor
       if: inputs.chrome-version != 'none' && inputs.chrome-version != 'current'
