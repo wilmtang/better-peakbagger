@@ -1514,6 +1514,56 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     dom.window.close();
 });
 
+test('re-entering 3D drapes the raster layer chosen in 2D, without rebuilding an unchanged one', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only', pretendToBeVisual: true,
+    });
+    const { window } = dom;
+    let map, added = 0;
+    class MapStub {
+        constructor(options) { this.options = options; this.sources = new Map(); this.layers = []; this.handlers = new Map(); map = this; }
+        addControl() {}
+        once(type, callback) { if (type === 'load') this.loadCallback = callback; }
+        on(type, callback) { this.handlers.set(type, callback); }
+        addSource(id, source) { if (id === 'basemap') added++; this.sources.set(id, { ...source, setData() {} }); }
+        addLayer(layer) { this.layers.push(layer); }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id) { return this.sources.get(id); }
+        removeSource(id) { this.sources.delete(id); }
+        setPaintProperty() {} fitBounds() {} resize() {} remove() {}
+    }
+    const dispatch = bootTerrainFrame(window, MapStub);
+    try {
+        const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
+        const layer = (name, host) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
+        const basemaps = [layer('CalTopo', 'ct.example.com'), layer('MyTopo', 'mt.example.com')];
+        const tiles = () => JSON.parse(JSON.stringify(map.getSource('basemap').tiles))[0];
+        dispatch({ type: 'init', routeSegments, basemap: basemaps[0], basemaps });
+        map.loadCallback();
+        await new Promise(resolve => window.queueMicrotask(resolve));
+        assert.equal(tiles(), 'https://ct.example.com/{z}/{x}/{y}.png');
+        assert.equal(added, 1);
+        map.handlers.get('data')({ sourceId: 'basemap', dataType: 'source', tile: {} });
+
+        dispatch({ type: 'suspend' });
+        dispatch({ type: 'resume', routeSegments, basemap: basemaps[0], basemaps });
+        assert.equal(added, 1, 'an unchanged layer keeps its loaded source across a mode switch');
+        map.handlers.get('error')({ sourceId: 'basemap' }); map.handlers.get('idle')();
+        assert.equal(framePicker(window).options[framePicker(window).selectedIndex].textContent, 'CalTopo',
+            'a tile gap after resume does not discard a layer that already rendered');
+
+        dispatch({ type: 'suspend' });
+        dispatch({ type: 'resume', routeSegments, basemap: basemaps[1], basemaps });
+        assert.equal(tiles(), 'https://mt.example.com/{z}/{x}/{y}.png', 'the layer chosen in 2D replaces the previous drape');
+        assert.equal(framePicker(window).options[framePicker(window).selectedIndex].textContent, 'MyTopo');
+
+        dispatch({ type: 'suspend' });
+        dispatch({ type: 'resume', routeSegments, basemap: layer('OpenTopo', 'ot.example.com'), basemaps: [layer('OpenTopo', 'ot.example.com')] });
+        assert.equal(tiles(), 'https://ot.example.com/{z}/{x}/{y}.png', 'an index that stays the same across lists is not the same layer');
+    } finally { dom.window.close(); }
+});
+
 test('the extension-provided vector entry grafts the provider style under the extension layers', async () => {
     const dom = new JSDOM('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',

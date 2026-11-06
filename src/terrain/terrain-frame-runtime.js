@@ -203,6 +203,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let authorizationRevision = 0;
     let activeTheme = 'light';
     let activeBasemap = null;
+    let drapedBasemapTiles = null;
     let availableBasemaps = [];
     let activeBasemapIndex = -1;
     let initialVectorBasemap = null;
@@ -461,6 +462,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         vectorSwapToken++;
         vectorLayerIds = [];
         vectorSourceIds = [];
+        drapedBasemapTiles = null;
         vectorChoice = null; attributionControl = null; attributionProvider = null; maptoolkitLogo = null;
         basemapErrored = false;
         basemapContentLoaded = false;
@@ -915,6 +917,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const addBasemapLayer = basemap => {
+        drapedBasemapTiles = basemap.tiles[0];
         map.addSource('basemap', {
             type: 'raster',
             tiles: basemap.tiles,
@@ -933,6 +936,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const removeBasemapLayer = () => {
+        drapedBasemapTiles = null;
         try {
             if (typeof map.getLayer === 'function' && map.getLayer('basemap')) map.removeLayer('basemap');
             if (map.getSource('basemap') && typeof map.removeSource === 'function') map.removeSource('basemap');
@@ -1071,7 +1075,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (!map || !loaded) return false;
         // Repeated selection and mode-resume must not rebuild the same graph.
         if ((vectorActive || vectorLoading) && vectorBasemap(selection) === vectorChoice
-            || !vectorChoice && selection === activeBasemapIndex && map.getSource('basemap')) return true;
+            || !vectorChoice && availableBasemaps[selection]?.tiles[0] === drapedBasemapTiles && map.getSource('basemap')) return true;
         removeBasemapLayer();
         removeVectorBasemap();
         vectorSwapToken++;
@@ -2318,6 +2322,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (!map || !loaded) return false;
         suspended = false;
         elevationChecked = false;
+        const drapeBefore = drapedBasemapTiles, drapeProven = basemapContentLoaded;
         basemapChecked = basemapErrored = basemapContentLoaded = false;
         snowStations = readSnotelMapStations(data.snowStations) || [];
         snowConditions = new Set(Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : []);
@@ -2366,6 +2371,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             resolveBasemaps(data);
             swapBasemap(initialVectorBasemap ? initialVectorBasemap.id : activeBasemapIndex);
         }
+        // A retained drape loads no new tile to prove itself; one later gap must
+        // not read as a layer that never worked.
+        if (drapeBefore && drapedBasemapTiles === drapeBefore) basemapContentLoaded = drapeProven;
 
         // Camera: the live 2D camera wins; else frame the route; else center the
         // focus. Pitch/bearing reset to the fresh-boot defaults either way.
