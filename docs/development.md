@@ -804,6 +804,7 @@ Four pieces carry that:
 | --- | --- |
 | Schedule, grouping, cooldown | `.github/dependabot.yml` |
 | npm auto-merge trigger and provenance gate | `.github/workflows/dependabot-auto-merge.yml` |
+| Rebasing behind updates and reporting stuck ones | `.github/workflows/dependabot-queue-sweep.yml` |
 | Checks that must pass first | `.github/workflows/test.yml` |
 | Enforcement of those checks | the `main` ruleset, in repository settings |
 
@@ -936,6 +937,22 @@ straight to `main`. Dependabot goes through a pull request because that is the
 only way it proposes changes, and the required checks apply to its merge either
 way. Merge commits are enforced in repository settings rather than by the
 ruleset—squash and rebase merges are disabled.
+
+### Keeping the queue moving
+
+Queueing never tells anyone when a merge stalls, and GitHub does not rebase a
+branch that fell behind. `dependabot-queue-sweep.yml` runs on every push to
+`main` and every six hours, because merges made with `GITHUB_TOKEN` emit no push
+event. When no queued update is running checks and no rebase was requested in the
+last three hours, it comments `@dependabot rebase` on the oldest behind update;
+that keeps the single signed commit the provenance check requires. An
+update-branch merge would not, and a `GITHUB_TOKEN` push would not run the checks.
+
+A single open issue, **Dependabot auto-merge needs attention**, lists every queued
+update older than three days with its failing checks or merge state, plus an advisory
+review expiring within two weeks. It closes itself once that list is empty, so
+it is the place to look rather than the green auto-merge job. The sweep holds no
+merge authority and does not bypass the required checks.
 
 ### What still stops a bad merge
 

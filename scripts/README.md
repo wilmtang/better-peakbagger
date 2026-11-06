@@ -39,6 +39,7 @@ independent of the existing targets.
 - [check-amo-version.mjs](check-amo-version.mjs)
 - [check-changelog-history.mjs](check-changelog-history.mjs)
 - [check-npm-audit.mts](check-npm-audit.mts)
+- [dependabot-queue-sweep.mts](dependabot-queue-sweep.mts)
 - [check-web-ext-lint.mjs](check-web-ext-lint.mjs)
 - [copied-runtime-impact.mjs](copied-runtime-impact.mjs)
 - [create-amo-metadata.mts](create-amo-metadata.mts)
