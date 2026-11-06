@@ -101,6 +101,16 @@ test('keeps one tracking issue: create, update, then close', () => {
     assert.deepEqual(writes(calls), []);
 });
 
+test('finds its own issue by the author filter GitHub accepts, and closes duplicates', () => {
+    const open = [{ number: 66, title: ISSUE_TITLE }, { number: 65, title: ISSUE_TITLE }];
+    const { calls, run } = stub([], open);
+    sweep(run, now);
+    const list = calls.find(call => call[0] === 'issue' && call[1] === 'list');
+    assert.ok(list);
+    assert.equal(list[list.indexOf('--author') + 1], 'github-actions[bot]');
+    assert.deepEqual(writes(calls), ['issue close 66', 'issue close 65']);
+});
+
 test('comments the exact Dependabot command on the chosen pull request', () => {
     const { calls, run } = stub([pull(7, { mergeStateStatus: 'BEHIND' })], []);
     sweep(run, now);

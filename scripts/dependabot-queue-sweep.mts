@@ -80,9 +80,14 @@ export function sweep(run: Gh = gh, now = Date.now()): Sweep {
     const plan = planSweep(pulls, now);
     if (plan.rebase !== null) run(['pr', 'comment', String(plan.rebase), '--body', REBASE_COMMAND]);
 
-    const issues = JSON.parse(run(['issue', 'list', '--state', 'open', '--limit', '100', '--author', 'app/github-actions',
+    // The search filter takes the bot's account name, though `author.login` reads app/github-actions.
+    const issues = JSON.parse(run(['issue', 'list', '--state', 'open', '--limit', '100', '--author', 'github-actions[bot]',
         '--json', 'number,title'])) as { number: number; title: string }[];
-    const issue = issues.find(candidate => candidate.title === ISSUE_TITLE);
+    const [issue, ...duplicates] = issues.filter(candidate => candidate.title === ISSUE_TITLE)
+        .sort((a, b) => a.number - b.number);
+    for (const duplicate of duplicates) {
+        run(['issue', 'close', String(duplicate.number), '--comment', `Duplicate of #${issue.number}.`]);
+    }
     if (plan.problems.length) {
         const body = issueBody(plan.problems);
         if (issue) run(['issue', 'edit', String(issue.number), '--body', body]);
