@@ -5,13 +5,13 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { build } from 'esbuild';
-import { ENTRIES, entrySources, root } from './build-config.mjs';
+import { ENTRIES, entrySources, root } from './build-config.mts';
 
 export async function auditedClimberAssets() {
     const revision = execFileSync('git', ['-c', 'core.fsmonitor=false', 'rev-parse', 'fdee876e^{commit}'], { cwd: root, encoding: 'utf8' }).trim();
     assert.match(revision, /^[0-9a-f]{40}$/);
     const blob = file => execFileSync('git', ['-c', 'core.fsmonitor=false', 'show', `${revision}:${file}`], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
-    const configuration = blob('scripts/build-config.mjs'), assets = new Map();
+    const configuration = blob('scripts/build-config.mts'), assets = new Map();
     for (const output of ['content/climber-favorite.js', 'content/climber-hover-card.js']) {
         const entry = ENTRIES.find(entry => entry.out === output);
         assert.ok(configuration.includes(`out: '${output}', sources: [${entry.sources.map(source => `'${source}'`).join(', ')}]`),

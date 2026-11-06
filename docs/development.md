@@ -271,7 +271,7 @@ unpacked extension, and reload it yourself after a rebuild:
 Standalone `npm run watch` still writes the completed-build signal, but a
 manually loaded browser does not subscribe to it; use the browser's extension
 reload control, then refresh the target page. Restart any watcher after changing
-`scripts/build-config.mjs`, the build scripts, or installed dependencies—the
+`scripts/build-config.mts`, the build scripts, or installed dependencies—the
 running Node process has already loaded those inputs.
 
 Do **not** load the repo root — `manifest.json` there names bundle files that
@@ -590,7 +590,7 @@ token unchanged.
 
 ## How the build works
 
-`scripts/build-config.mjs` is the **single source of truth** for how the
+`scripts/build-config.mts` is the **single source of truth** for how the
 extension is assembled—which source roots belong to each bundle and which
 assets/vendor distributions are copied. `scripts/build.mjs` turns that config
 into esbuild calls. The manifest names only generated bundle paths; tests
@@ -637,7 +637,7 @@ build config.
    - Modules that only run for side effects and need an early `return` (e.g. "no
      matching DOM, do nothing") may keep a small `(() => { … })()` IIFE for
      control flow. That is fine as long as they publish no globals.
-2. Add the module to the relevant bundle(s) in `scripts/build-config.mjs`
+2. Add the module to the relevant bundle(s) in `scripts/build-config.mts`
    `ENTRIES` as an explicit root. A module can appear in several bundles;
    esbuild follows and deduplicates imports within each bundle.
 3. If it's a brand-new entry point (a new content script, page, or worker), add
@@ -751,7 +751,7 @@ To add or update a runtime dependency:
    global.
 3. Update `ACKNOWLEDGEMENTS.md` and Firefox review metadata when distributed
    third-party code or its version changes. Authored source roots in the AMO
-   instructions are derived from `scripts/build-config.mjs`; do not maintain a
+   instructions are derived from `scripts/build-config.mts`; do not maintain a
    second directory list when adding a page-local bundle root.
 4. Run `npm test`, the relevant real-browser check, and `npm run package` when
    packaging paths or vendor outputs changed.
@@ -838,7 +838,7 @@ attributed:
 | Group | Reaches `dist/` via | Ships? |
 | --- | --- | --- |
 | `bundled-runtime` | bundled by esbuild | yes |
-| `copied-runtime` | copied by `scripts/build-config.mjs` | yes |
+| `copied-runtime` | copied by `scripts/build-config.mts` | yes |
 | `tooling` | nothing; build and test only | no |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
@@ -1204,7 +1204,7 @@ npm run verify -- packages web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext
 ```
 
 The archive verifier derives required runtime files from
-`scripts/build-config.mjs`; it rejects stale raw-source layouts and missing
+`scripts/build-config.mts`; it rejects stale raw-source layouts and missing
 bundles/vendor licenses. See [Browser store releases](releasing.md) for version,
 tag, credential, and live-verification requirements.
 

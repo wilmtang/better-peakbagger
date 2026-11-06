@@ -25,7 +25,7 @@ independent of the existing targets.
 
 ## Build and local development
 
-- [build-config.mjs](build-config.mjs)
+- [build-config.mts](build-config.mts)
 - [build.mjs](build.mjs)
 - [generate-map-overlay-regions.mjs](generate-map-overlay-regions.mjs)
 - [install-git-hooks.mjs](install-git-hooks.mjs)

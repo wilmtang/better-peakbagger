@@ -50,7 +50,7 @@ test('GPU gates cover browser upgrades and source or fixture changes before the 
     }
     for (const file of ['src/settings/bridge.js', 'src/terrain/terrain-frame-runtime.ts',
         'scripts/showcase/terrain.html', 'scripts/verify-firefox-terrain.mjs',
-        'scripts/build-config.mjs', 'manifest.json', '.github/workflows/test.yml']) {
+        'scripts/build-config.mts', 'manifest.json', '.github/workflows/test.yml']) {
         assert.equal(terrainVerificationRequired(lock(), lock(), [file]), true, file);
     }
     assert.equal(terrainVerificationRequired(lock(), lock(), ['docs/development.md']), false);

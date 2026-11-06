@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { searchSentinel, sentinelCaptures, sentinelTileUrl, sentinelView } from '../../src/maps/sentinel-core.js';
-import { ENTRIES, COPY_FILES } from '../../scripts/build-config.mjs';
+import { ENTRIES, COPY_FILES } from '../../scripts/build-config.mts';
 
 const view = { west: -122, east: -121, south: 46, north: 47 };
 const bounds = { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 };

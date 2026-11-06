@@ -132,7 +132,7 @@ Three files divide assembly responsibility:
 
 - `manifest.json` owns permissions, URL matches, execution worlds, separately
   loaded vendor order, and browser entry points.
-- `scripts/build-config.mjs` owns bundle composition, entry-point roots, copied
+- `scripts/build-config.mts` owns bundle composition, entry-point roots, copied
   files, and packaged vendor assets.
 - `scripts/build.mjs` performs the build. Generated files under `dist/` are
   never edited directly.
@@ -1330,7 +1330,7 @@ MAIN world. They can read the rendered DOM and extension storage without exposin
 privileged APIs through a page global or `postMessage` bridge. The manifest
 loads the ascent-filter bundle on `PeakAscents.aspx`, `ClimbListC.aspx`, and the
 Buddy report endpoint; the smaller climber-favorite bundle loads only on public
-`climber.aspx` pages. `scripts/build-config.mjs` composes both bundles with the
+`climber.aspx` pages. `scripts/build-config.mts` composes both bundles with the
 single settings schema and favorite-climbers contract.
 
 ### Persisted state and schemas

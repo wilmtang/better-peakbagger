@@ -198,7 +198,7 @@ always have been making, since severity is now part of the contract.
 summit"`, `"${…} m elevation difference"`, and the track summary line reports
 `max deviation ${…} m`. The popup bundle's sources are
 `['capture/capture-phases.js', 'popup-main.js']`
-([build-config.mjs:66](../../scripts/build-config.mjs)) — it has no settings
+([build-config.mjs:66](../../scripts/build-config.mts)) — it has no settings
 module and literally cannot read the preference today.
 
 Meanwhile `ascent-upload.js` resolves display units

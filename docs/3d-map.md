@@ -966,7 +966,7 @@ When changing 3D behavior:
 5. If a new network request is introduced, update consent copy, privacy docs,
    sender/origin checks, rate/cap behavior, and this request table.
 6. If bundle composition or execution worlds change, update
-   `scripts/build-config.mjs`, its pinned tests, and run a real unpacked
+   `scripts/build-config.mts`, its pinned tests, and run a real unpacked
    extension check.
 7. Add a focused state/protocol regression test beside the affected owner.
 8. Run the hardware-GPU terrain harness for frame, drape, canvas, compass, or

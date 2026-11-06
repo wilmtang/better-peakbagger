@@ -721,7 +721,7 @@ map coverage checklist are part of this design's requested scope.
    inventories, dependency acknowledgements and packaging where actually changed.
    Archive this proposal with its completed/intentional/unproven ledger intact.
 
-The [build configuration](../../scripts/build-config.mjs) owns all new bundles,
+The [build configuration](../../scripts/build-config.mts) owns all new bundles,
 decoder workers and copied assets; the [manifest](../../manifest.json) owns
 execution worlds and any narrowly necessary packaged web-accessible resources.
 Do not add wildcard remote host access. Keep the MAIN bundle free of extension

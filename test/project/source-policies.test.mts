@@ -5,7 +5,7 @@ import test from 'node:test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { AUTHORED_SOURCE_ROOTS } from '../../scripts/build-config.mjs';
+import { AUTHORED_SOURCE_ROOTS } from '../../scripts/build-config.mts';
 import { runtimeSources, sourceVariants } from '../helpers/runtime-sources.mts';
 import type { RuntimeSource } from '../helpers/runtime-sources.mts';
 import { unitConstantFindings, settingsDefaultFindings, uploadLimitFindings, cloudflareFindings, originFindings,

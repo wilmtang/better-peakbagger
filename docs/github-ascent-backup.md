@@ -135,7 +135,7 @@ link, which automatically tracks endpoint query changes.
 | `src/github/github-client.js` | Repository inspection, atomic Git Data writes, owned-file pruning, conflict retry | Peakbagger data acquisition or UI |
 | `src/github/github-auth.js` | Device-flow protocol, paginated installation/repository discovery through the shared REST transport, and local token/repository storage | Synced settings or content-script exposure |
 
-The bundle composition in `scripts/build-config.mjs` pins
+The bundle composition in `scripts/build-config.mts` pins
 `ascent-backup-source.js` into both individual and profile bundles. Tests pin
 that composition so a future refactor cannot silently give the surfaces
 different source readers again.

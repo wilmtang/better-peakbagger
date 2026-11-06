@@ -10,7 +10,7 @@ import {
     GENERATED_FILES,
     VENDOR_COPY,
     root,
-} from './build-config.mjs';
+} from './build-config.mts';
 
 const OPTIONS_PRESENTATION = {
     firefox: false,

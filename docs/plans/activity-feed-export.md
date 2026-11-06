@@ -260,7 +260,7 @@ scripts/verify-feed-capture.mjs          proposed integrated browser verifier
   request permission directly from its native activation handler before an
   awaited preflight can consume browser user activation.
 - Wire all new bundles/copied assets through
-  [build configuration](../../scripts/build-config.mjs). Keep live registration
+  [build configuration](../../scripts/build-config.mts). Keep live registration
   and the advertised enablement controls off until step 4 is complete.
 - Suggested subject: `feat: add activity feed export controls and review panel`.
 

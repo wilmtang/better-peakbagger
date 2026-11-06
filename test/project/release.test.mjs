@@ -56,7 +56,7 @@ import {
     ENTRIES,
     entrySources,
     root,
-} from '../../scripts/build-config.mjs';
+} from '../../scripts/build-config.mts';
 import {
     expectedReleaseFiles,
     requireArchiveArguments,

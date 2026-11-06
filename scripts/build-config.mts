@@ -21,11 +21,11 @@ import { fileURLToPath } from 'node:url';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const distDir = path.join(root, 'dist');
-export const srcFile = f => path.join(root, 'src', f);
+export const srcFile = (f: string) => path.join(root, 'src', f);
 
 // Page bundles (options, popup) mix shared src/ modules with page-local files.
 // Page-local names resolve here; every other name falls back to src/.
-const PAGE_LOCAL = {
+const PAGE_LOCAL: Record<string, string> = {
     'options-main.js': path.join(root, 'options', 'options.js'),
     'garmin-settings-page.js': path.join(root, 'options', 'garmin.js'),
     'garmin-inbox-page.js': path.join(root, 'options', 'inbox.js'),
@@ -41,13 +41,13 @@ const PAGE_LOCAL = {
     'photos-main.js': path.join(root, 'photos', 'photos.js'),
     'photos-guide.js': path.join(root, 'photos', 'guide.js'),
 };
-export function resolvePageSource(name) {
+export function resolvePageSource(name: string) {
     return PAGE_LOCAL[name] || srcFile(name);
 }
 
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
-export const ENTRIES = [
+export const ENTRIES: BundleEntry[] = [
     { out: 'reports/instagram-frame.js', sources: ['reports/instagram-frame.js'] },
     { out: 'content/instagram-provider.js', sources: ['reports/instagram-provider.js'] },
     { out: 'content/report-protection.js', sources: ['reports/report-protection.js'] },
@@ -131,7 +131,11 @@ export const ENTRIES = [
 ];
 
 // Absolute source paths for one entry's bundle, in order.
-export function entrySources(entry) {
+export interface BundleEntry {
+    out: string; sources: string[]; page?: boolean; format?: string; browserImports?: Record<string, string>; [field: string]: unknown;
+}
+
+export function entrySources(entry: Pick<BundleEntry, 'page' | 'sources'>) {
     const resolve = entry.page ? resolvePageSource : srcFile;
     return entry.sources.map(resolve);
 }
@@ -251,7 +255,7 @@ export const NON_PACKAGE_NOTICES = [
     },
 ];
 
-export const nodeModule = f => path.join(root, 'node_modules', f);
+export const nodeModule = (f: string) => path.join(root, 'node_modules', f);
 
 // Vendor browser builds sourced from npm into dist/vendor. marked and Chart.js
 // ship browser-ready UMD/global builds. MapLibre 6's main module, module worker,

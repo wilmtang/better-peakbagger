@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { COPY_FILES } from '../../scripts/build-config.mjs';
+import { COPY_FILES } from '../../scripts/build-config.mts';
 
 test('access pages share Gaia packaged theme tokens rather than defining another palette', async () => {
     assert.ok(COPY_FILES.some(entry => entry[1] === 'css/gaia-access.css'));

@@ -44,7 +44,7 @@ import {
     entrySources,
     root,
     distDir
-} from './build-config.mjs';
+} from './build-config.mts';
 import { writeThirdPartyNotices } from './third-party-notices.mjs';
 
 const args = new Set(process.argv.slice(2));

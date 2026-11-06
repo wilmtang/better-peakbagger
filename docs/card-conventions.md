@@ -317,7 +317,7 @@ live regions containing all hidden alternatives.
 
 ## Integration and verification
 
-1. Register bundles/copied assets in `scripts/build-config.mjs` and their real
+1. Register bundles/copied assets in `scripts/build-config.mts` and their real
    manifest references/order. Keep execution worlds unchanged unless required.
 2. Update feature/privacy documentation, settings UI and export/sync behavior as
    appropriate. Keep domain-specific limitations explicit.

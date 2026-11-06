@@ -11,7 +11,7 @@ import {
     ENTRIES,
     entrySources,
     VENDOR_COPY,
-} from '../../scripts/build-config.mjs';
+} from '../../scripts/build-config.mts';
 
 const workflow = await readFile(
     new URL('../../.github/workflows/dependabot-auto-merge.yml', import.meta.url),

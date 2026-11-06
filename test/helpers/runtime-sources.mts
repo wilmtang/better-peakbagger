@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
-import { AUTHORED_SOURCE_ROOTS, root } from '../../scripts/build-config.mjs';
+import { AUTHORED_SOURCE_ROOTS, root } from '../../scripts/build-config.mts';
 import { walkFiles } from './walk-files.mts';
 
 const excludedDirectories = new Set(['node_modules', 'dist', 'web-ext-artifacts', 'browser-evidence', 'third_party', 'vendor', '.git']);

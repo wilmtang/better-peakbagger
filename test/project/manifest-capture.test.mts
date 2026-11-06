@@ -11,7 +11,7 @@ import {
     COPY_FILES,
     ENTRIES,
     VENDOR_COPY
-} from '../../scripts/build-config.mjs';
+} from '../../scripts/build-config.mts';
 
 interface ContentScript { js: string[]; css?: string[]; matches: string[]; world?: string; run_at?: string; all_frames?: boolean; [field: string]: unknown; }
 interface ExtensionManifest {

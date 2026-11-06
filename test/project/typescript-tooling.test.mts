@@ -9,7 +9,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
-import { AUTHORED_SOURCE_ROOTS } from '../../scripts/build-config.mjs';
+import { AUTHORED_SOURCE_ROOTS } from '../../scripts/build-config.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const compiler = path.join(root, 'node_modules/typescript/bin/tsc');
