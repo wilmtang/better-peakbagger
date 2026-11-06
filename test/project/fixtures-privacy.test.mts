@@ -14,13 +14,13 @@ import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { JSDOM } from '../helpers/test-dom.mts';
 import { containsFixtureBannedIdentifier } from '../../scripts/privacy-guard.mjs';
 import { decideHookInstall, HOOKS_PATH } from '../../scripts/install-git-hooks.mjs';
 import {
     decodeFixtureForPrivacy,
     FIXTURE_PRIVACY_MANIFEST,
-} from '../helpers/fixture-privacy-manifest.mjs';
+} from '../helpers/fixture-privacy-manifest.mts';
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures');
 const REPO_ROOT = path.resolve(FIXTURES, '../..');
@@ -55,7 +55,7 @@ const fixtureFiles = () => execFileSync('git', [
     .filter(Boolean)
     .map(relative => path.join(REPO_ROOT, relative));
 
-const liveCaptures = files =>
+const liveCaptures = (files: string[]) =>
     files.filter(f => f.endsWith('.html') && !WAYBACK.has(path.basename(f)));
 
 test('no fixture or fixture doc contains a banned identifier', async () => {
@@ -81,6 +81,7 @@ test('every fixture format is registered and encoded XML is structurally sanitiz
         { suffix: '.gpx', format: 'gpx+xml', decoder: 'utf8' },
         { suffix: '.xml', format: 'xml', decoder: 'utf8' },
         { suffix: '.md', format: 'markdown', decoder: 'utf8' },
+        { suffix: '.json', format: 'json', decoder: 'json+utf8' },
     ]);
     assert.throws(() => decodeFixtureForPrivacy('fixture.zip', Buffer.from('not a fixture')),
         /Unregistered fixture extension/);
@@ -119,6 +120,16 @@ test('every fixture format is registered and encoded XML is structurally sanitiz
                 `${relative} retains forbidden <${tag}> data`);
         }
     }
+});
+
+test('JSON fixtures are validated and decoded before their text is privacy-scanned', () => {
+    const decoded = decodeFixtureForPrivacy('synthetic.json',
+        Buffer.from('{"\\u006eame":"fixture\\u002dperson","nested":{"id":"710001"}}'));
+    assert.equal(decoded.format, 'json');
+    assert.match(decoded.text, /"name":"fixture-person"/);
+    assert.match(decoded.text, /"id":"710001"/);
+    assert.throws(() => decodeFixtureForPrivacy('invalid.json', Buffer.from('{"name":}')), SyntaxError);
+    assert.throws(() => decodeFixtureForPrivacy('invalid.json', Buffer.from([0xff])), TypeError);
 });
 
 test('masked live captures carry no external social/identity links', async () => {
@@ -164,10 +175,10 @@ test('masking actually ran: live captures carry the masked climber id, and only 
 test('the Buddy List fixture contains only the reviewed synthetic row data', async () => {
     const html = await readFile(path.join(FIXTURES, 'pages', 'report-buddy-list.html'), 'utf8');
     const document = new JSDOM(html).window.document;
-    const rows = [...document.querySelectorAll('#RGridView tr')].slice(1);
+    const rows = [...document.querySelectorAll<HTMLTableRowElement>('#RGridView tr')].slice(1);
     assert.equal(rows.length, 6);
 
-    const values = column => rows.map(row => row.cells[column].textContent.trim());
+    const values = (column: number) => rows.map(row => row.cells[column].textContent!.trim());
     assert.deepEqual(values(0), [
         'Alpine, Casey', 'Example, Rowan', 'Fixture, Sol',
         'Mock, Quinn', 'Sample, Juniper', 'Synthetic, Arden'
@@ -186,21 +197,22 @@ test('the Buddy List fixture contains only the reviewed synthetic row data', asy
     ]);
 
     for (const row of rows) {
-        assert.match(row.cells[0].querySelector('a').href, /[?&]cid=710\d{3}$/);
-        assert.match(row.cells[1].querySelector('a').href, /[?&]cid=710\d{3}&sort=AscentDateD$/);
-        assert.match(row.cells[2].querySelector('a').href, /[?&]aid=810\d{3}$/);
-        assert.match(row.cells[3].querySelector('a').href, /[?&]pid=610\d{3}$/);
+        assert.match(row.cells[0].querySelector<HTMLAnchorElement>('a')!.href, /[?&]cid=710\d{3}$/);
+        assert.match(row.cells[1].querySelector<HTMLAnchorElement>('a')!.href, /[?&]cid=710\d{3}&sort=AscentDateD$/);
+        assert.match(row.cells[2].querySelector<HTMLAnchorElement>('a')!.href, /[?&]aid=810\d{3}$/);
+        assert.match(row.cells[3].querySelector<HTMLAnchorElement>('a')!.href, /[?&]pid=610\d{3}$/);
     }
 });
 
 test('the Peak List fixture contains only the reviewed synthetic row data', async () => {
     const html = await readFile(path.join(FIXTURES, 'pages', 'list-peak-list.html'), 'utf8');
     const document = new JSDOM(html).window.document;
-    const table = document.querySelector('table.gray');
+    const table = document.querySelector<HTMLTableElement>('table.gray');
+    assert.ok(table);
     const rows = [...table.rows].filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
     assert.equal(rows.length, 5);
 
-    const values = column => rows.map(row => row.cells[column].textContent.trim());
+    const values = (column: number) => rows.map(row => row.cells[column].textContent!.trim());
     assert.deepEqual(values(1), [
         'Juniper Dome', 'Alpine Point', 'Placeholder Butte', 'Echo Ridge', 'Fiction Peak'
     ]);
@@ -216,8 +228,8 @@ test('the Peak List fixture contains only the reviewed synthetic row data', asyn
 
     const expectedPeakIds = ['610104', '610101', '610105', '610102', '610103'];
     for (const [index, row] of rows.entries()) {
-        assert.match(row.cells[1].querySelector('a').href, new RegExp(`[?&]pid=${expectedPeakIds[index]}$`));
-        assert.match(row.cells[7].querySelector('a').href, /[?&]aid=81010\d$/);
+        assert.match(row.cells[1].querySelector<HTMLAnchorElement>('a')!.href, new RegExp(`[?&]pid=${expectedPeakIds[index]}$`));
+        assert.match(row.cells[7].querySelector<HTMLAnchorElement>('a')!.href, /[?&]aid=81010\d$/);
     }
     const climberIds = [...html.matchAll(/[?&]cid=(\d+)/g)].map(match => match[1]);
     assert.ok(climberIds.length > 0);
@@ -242,7 +254,7 @@ test('the staged privacy scan is wired into every clone, not just a configured o
     // Installing must never break an install, and must never overwrite a
     // hooksPath the user chose for this repository.
     assert.equal(HOOKS_PATH, '.githooks');
-    const decide = (configuredPath, insideWorkTree = true) =>
+    const decide = (configuredPath: string | null, insideWorkTree = true) =>
         decideHookInstall({ insideWorkTree, configuredPath, root: repoRoot });
 
     // A fresh clone. The caller must read the *local* config: `git config

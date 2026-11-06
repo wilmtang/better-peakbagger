@@ -70,7 +70,7 @@ another. This document update queues the work; it does not implement it.
 ### M1 — Repair baseline bookkeeping
 
 1. Register the existing snow-depth legend JSON fixture in the
-   [privacy manifest](../../test/helpers/fixture-privacy-manifest.mjs), with
+   [privacy manifest](../../test/helpers/fixture-privacy-manifest.mts), with
    decoding/validation coverage. Convert substantively changed modules/tests to
    `.mts`; do not bypass privacy checks for JSON or the fixture directory.
 2. Register the missing ascent-filter verifier in [the script inventory](../../scripts/README.md).

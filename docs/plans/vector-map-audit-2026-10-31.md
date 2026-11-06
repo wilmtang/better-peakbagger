@@ -89,7 +89,7 @@ readiness race.
   packaging/vendor warnings); 26 focused boundary/documentation tests passed.
 - Full Node suite: 3,845 tests, 3,843 passed, two failed. Both failures are the
   pre-existing unregistered `test/fixtures/maps/snow-depth-legend.json` format in
-  `test/project/fixtures-privacy.test.mjs`; no vector test failed.
+  `test/project/fixtures-privacy.test.mts`; no vector test failed.
 - The broader real-extension Chrome gate was run and still stopped at the
   existing Garmin Settings visibility assertion in
   `scripts/verify-settings-navigation.mjs` (line 308). The focused vector Chrome

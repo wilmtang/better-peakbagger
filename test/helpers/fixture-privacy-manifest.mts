@@ -3,10 +3,10 @@
 
 import { gunzipSync } from 'node:zlib';
 
-const decodeUtf8 = input =>
+const decodeUtf8 = (input: Uint8Array) =>
     new TextDecoder('utf-8', { fatal: true }).decode(input);
 
-const decodeBase64GzipUtf8 = input => {
+const decodeBase64GzipUtf8 = (input: Uint8Array) => {
     const encoded = decodeUtf8(input).replaceAll(/\s/g, '');
     if (encoded.length === 0 || encoded.length % 4 !== 0 ||
         !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
@@ -14,6 +14,11 @@ const decodeBase64GzipUtf8 = input => {
     }
     return decodeUtf8(gunzipSync(Buffer.from(encoded, 'base64')));
 };
+
+// Parse JSON before scanning so escaped names, keys and identifiers cannot
+// evade the same privacy checks applied to literal fixture text.
+const decodeJsonUtf8 = (input: Uint8Array) =>
+    JSON.stringify(JSON.parse(decodeUtf8(input)));
 
 // Match longest suffix first: an encoded GPX must never fall back to a generic
 // text decoder merely because its final extension is also registered.
@@ -23,14 +28,16 @@ export const FIXTURE_PRIVACY_MANIFEST = Object.freeze([
     Object.freeze({ suffix: '.gpx', format: 'gpx+xml', decoder: 'utf8' }),
     Object.freeze({ suffix: '.xml', format: 'xml', decoder: 'utf8' }),
     Object.freeze({ suffix: '.md', format: 'markdown', decoder: 'utf8' }),
-]);
+    Object.freeze({ suffix: '.json', format: 'json', decoder: 'json+utf8' }),
+] as const);
 
 const DECODERS = Object.freeze({
     utf8: decodeUtf8,
     'base64+gzip+utf8': decodeBase64GzipUtf8,
+    'json+utf8': decodeJsonUtf8,
 });
 
-export function decodeFixtureForPrivacy(relativePath, input) {
+export function decodeFixtureForPrivacy(relativePath: string, input: Uint8Array) {
     const registration = FIXTURE_PRIVACY_MANIFEST.find(({ suffix }) =>
         relativePath.endsWith(suffix));
     if (!registration) {
