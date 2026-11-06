@@ -5,7 +5,7 @@ import zlib from 'node:zlib';
 
 // Minimal decoder for the 8-bit non-interlaced RGB(A) PNGs Chrome emits, so
 // WebGL output (which DOM queries cannot see) can be asserted by pixel color.
-export const decodePng = buffer => {
+export const decodePng = (buffer: Buffer) => {
     let offset = 8;
     const idat = [];
     let width = 0, height = 0, bitDepth = 8, colorType = 6, interlace = 0;

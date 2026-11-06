@@ -63,7 +63,7 @@ independent of the existing targets.
 
 - [browser-verification-evidence.mjs](browser-verification-evidence.mjs)
 - [browser-verification-fixtures.mjs](browser-verification-fixtures.mjs)
-- [browser-verification-png.mjs](browser-verification-png.mjs)
+- [browser-verification-png.mts](browser-verification-png.mts)
 - [chrome-launch-guard.mjs](chrome-launch-guard.mjs)
 - [firefox-content-viewport.mjs](firefox-content-viewport.mjs)
 - [firefox-verifier-processes.mjs](firefox-verifier-processes.mjs)

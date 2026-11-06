@@ -12,7 +12,7 @@ import { createBrowserFixtureServer, waitForCondition, resolveFixtureFile } from
 import { snowMapDocument } from './verify-snow-map-fixture.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { decodePng } from './browser-verification-png.mjs';
+import { decodePng } from './browser-verification-png.mts';
 import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.js';
 
 const args = process.argv.slice(2);

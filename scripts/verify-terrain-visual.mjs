@@ -7,7 +7,7 @@ import { createServer } from 'node:https';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { decodePng } from './browser-verification-png.mjs';
+import { decodePng } from './browser-verification-png.mts';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 import { readSentinelCooldown, verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
 
