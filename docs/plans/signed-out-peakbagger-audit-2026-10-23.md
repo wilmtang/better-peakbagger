@@ -203,7 +203,7 @@ the card exposed the refresh instruction.
 protects every saved Buddy member from Ignore, even when cache ownership cannot
 be presented as current membership. `src/background/climber-list-policy.js`
 (lines 48–78) enforces the same policy in the worker. Card painting in
-`src/favorites/climber-hover-card.js` (lines 162–173) lets the prior success
+`src/favorites/climber-hover-card.ts` (lines 162–173) lets the prior success
 notice hide the current availability reason.
 
 **Smallest safe fix.** Preserve conservative protection, but prioritize the

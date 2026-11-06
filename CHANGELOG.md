@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Keep the next climber's card closed.** When a climber row disappears from an
+  open card, keyboard focus still moves to the next person, without opening their
+  card uninvited.
+
 - **Keep 2D vector maps aligned.** World zooms and polar views preserve the
   native map's camera so basemap features stay under the correct routes and peaks.
   Returning from 3D preserves a resumed vector map when an older load fails.

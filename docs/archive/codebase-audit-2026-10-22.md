@@ -189,7 +189,7 @@ To avoid false positives or re-reporting closed items, the following areas were 
    - Verified that raw GPX never leaves the provider page, ownership fails closed when signals are missing or ambiguous, waypoints share the 3,000-point budget and strip elevation/time/description/extensions, and draft filling never triggers Peakbagger Save.
 3. **3D Terrain LOD, Cancellation & Cache Bounds (`src/terrain/terrain-coordinator.js`, `src/terrain/terrain-frame-runtime.js`, `src/terrain/terrain-cache.js`):**
    - Verified recent commits (`c73be873`, `ff365fa2`, `5149d2eb`, `685b1163`): `AbortController` propagation cancels superseded DEM/satellite work cleanly, `ImageBitmap.close()` is called on replaced/cleared overlay textures, and `terrain-cache.js` enforces byte/entry eviction in memory and IndexedDB.
-4. **Content-Script Page Features (`src/gpx/gpx-analyzer.js`, `src/ascent/ascent-filter.js`, `src/ascent/ascent-weather.js`, `src/weather/peak-weather.js`, `src/reports/report-editor.js`, `src/favorites/climber-hover-card.js`):**
+4. **Content-Script Page Features (`src/gpx/gpx-analyzer.js`, `src/ascent/ascent-filter.js`, `src/ascent/ascent-weather.js`, `src/weather/peak-weather.js`, `src/reports/report-editor.js`, `src/favorites/climber-hover-card.ts`):**
    - Verified generation guards on async weather/ERA5/sun/hover fetches, offline mountain-local timezone fallback (`src/time/mountain-tz.js`), and HTML escaping (`esc()`) across tooltip and summary templates.
 5. **Prior Audit Items Reconciled (`docs/archive/codebase-audit-2026-10-21.md`, `docs/archive/map-overlays-audit-2026-10-21.md`, `docs/plans/codebase-audit-2026-10-19.md`):**
    - All fixed items from the 2026-10-21 codebase and map-overlays audits remain intact in `HEAD`.

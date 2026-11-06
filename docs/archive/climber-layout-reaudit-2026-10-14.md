@@ -27,7 +27,7 @@ regressions remain explicitly carried below.
 
 - `node --test test/favorites/climber-favorite.test.mjs
   test/favorites/climber-ignore.test.mjs
-  test/favorites/climber-hover-card.test.mjs
+  test/favorites/climber-hover-card.test.mts
   test/favorites/climber-membership.test.mjs
   test/favorites/climber-card-state.test.mjs`: **42 passed**.
 - The unchanged `node scripts/verify-layout-stability.mjs --surface=climbers`
@@ -192,7 +192,7 @@ visible feedback without hover, announce once, and let the user retry explicitly
 
 ### C06 — P1: card geometry is stable by making the error entirely invisible
 
-Evidence: `src/favorites/climber-hover-card.js` (lines 108–115, 183–193),
+Evidence: `src/favorites/climber-hover-card.ts` (lines 108–115, 183–193),
 `src/favorites/climber-hover-card.css` (lines 13–17, 42–48).
 An above-anchor card caps maximum height to its *initial* content height. Paint
 does not reposition or allocate feedback room when new status arrives. In the
@@ -215,7 +215,7 @@ enlarged text and native zoom retain usable action and recovery geometry.
 
 ### C07 — P2: card Retry is enabled while its handler refuses to act
 
-Evidence: `src/favorites/climber-hover-card.js` (lines 111–115, 373–376).
+Evidence: `src/favorites/climber-hover-card.ts` (lines 111–115, 373–376).
 The layout change retains Retry during an operation to reserve its position,
 but never disables it. The handler immediately returns when `operation` exists.
 After an error, starting another Favorite save leaves `aria-busy=true` with

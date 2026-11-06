@@ -58,7 +58,7 @@ explicit manual-auth continuation, and durable uncertainty without replay.
 - The preceding full `npm test` run passed all 3,703 tests. The final run
   passed 3,703 of 3,704 and failed the existing climber-card test “own profile
   links stay undecorated in headings, lists, report rows, and late content”
-  (`test/favorites/climber-hover-card.test.mjs`, line 147), waiting for a changed
+  (`test/favorites/climber-hover-card.test.mts`, line 147), waiting for a changed
   self-profile link to close its card. An isolated run reproduced the timeout
   (18/19 passed). None of this task's changed files are among that bundle's
   31 inputs; the failure is left unchanged rather than bundled into this fix.

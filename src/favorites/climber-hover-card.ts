@@ -19,22 +19,30 @@ import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 const OPEN_DELAY = 1000, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
 const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textarea, [data-bpb-climber-ui], #bpb-report-editor';
 
+type ClimberTarget = NonNullable<ReturnType<typeof climberCardTarget>>;
+interface ClimberRecord { anchor: HTMLAnchorElement; target: ClimberTarget; trigger: HTMLElement; host: HTMLElement;
+    lists?: ReturnType<typeof climberProfileLists>; focusContext?: { row: Element; parent: Element; index: number }; }
+interface CardOperation { kind: string; cid: ClimberTarget['cid']; removing?: boolean; checkOnly?: boolean; recovery?: boolean }
+// The JS-inferred signature of this helper reflects its default values, not its contract.
+const fetchDocument = fetchPeakbaggerDocument as unknown as (url: string, options: { kind: string; signal: AbortSignal }) =>
+    Promise<{ kind: string; error?: Parameters<typeof peakbaggerError.exception>[0]; document: Document }>;
+
 const mount = () => {
     if (window !== window.top || document.getElementById('bpb-climber-card')) return;
-    const records = new Map();
+    const records = new Map<Element, ClimberRecord>();
     const profileLists = new Map();
-    let current = null, membership = null, settings = null, settingsError = '';
-    let observer = null, unsubscribe = null, settingsGeneration = 0;
-    let openTimer = null, closeTimer = null, positionFrame = null, mutationFrame = null;
-    let hovered = null, suppressed = null, operation = null, readController = null;
+    let current: ClimberRecord | null = null, membership: { error?: string; ignored?: unknown } | null = null, settings: unknown = null, settingsError = '';
+    let observer: ReturnType<typeof observeClimberMembership> | null = null, unsubscribe: (() => void) | null = null, settingsGeneration = 0;
+    let openTimer: ReturnType<typeof setTimeout> | undefined, closeTimer: ReturnType<typeof setTimeout> | undefined, positionFrame: number | null = null, mutationFrame: number | null = null;
+    let hovered: ClimberRecord | null = null, suppressed: ClimberRecord | null = null, operation: CardOperation | null = null, readController: AbortController | null = null;
     let error = '', notice = '', fullFailure = '', noticeNeedsCheck = false, active = true, explicitOpen = false;
-    let focusedRecord = null;
-    const listen = (node, type, handler, options) => {
-        node.addEventListener(type, handler, options);
-        listeners.push(() => node.removeEventListener(type, handler, options));
+    let focusedRecord: ClimberRecord | null = null;
+    const listen = <E extends Event = Event>(node: EventTarget, type: string, handler: (event: E) => void, options?: AddEventListenerOptions) => {
+        node.addEventListener(type, handler as EventListener, options);
+        listeners.push(() => node.removeEventListener(type, handler as EventListener, options));
     };
-    const listeners = [];
-    const button = (text, props = {}) => D.element('button', { type: 'button', text, 'data-bpb-climber-ui': '', ...props });
+    const listeners: (() => void)[] = [];
+    const button = (text: string, props: Record<string, string> = {}) => D.element('button', { type: 'button', text, 'data-bpb-climber-ui': '', ...props });
     const title = D.element('div', { id: 'bpb-climber-card-name', class: 'bpb-climber-card-name' });
     const profile = D.element('a', { text: 'View profile ↗', class: 'bpb-climber-card-profile' });
     const ascents = D.element('a', { text: 'All ascents ↗', class: 'bpb-climber-card-profile' });
@@ -102,14 +110,14 @@ const mount = () => {
         'aria-live': 'polite', 'data-bpb-climber-ui': '' });
     document.body.append(card, announcement);
 
-    const isVisible = node => node?.isConnected && !node.closest('[hidden], [inert], [aria-hidden="true"]')
+    const isVisible = (node: Element | null | undefined) => node?.isConnected && !node.closest('[hidden], [inert], [aria-hidden="true"]')
         && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
-    const targetFor = (anchor, ownerCid = ownerClimberId(document)) => {
+    const targetFor = (anchor: Element | null | undefined, ownerCid = ownerClimberId(document)) => {
         const target = anchor?.matches?.('a[href]') && !anchor.closest(EXCLUDED)
             ? climberCardTarget(anchor.getAttribute('href'), anchor.textContent, document.baseURI) : null;
         return target?.cid === ownerCid ? null : target;
     };
-    const pageBuddy = cid => {
+    const pageBuddy = (cid: ClimberTarget['cid'] | undefined) => {
         const target = climberCardTarget(location.href, 'Viewed climber', document.baseURI);
         if (target?.cid !== cid) return { nativeBuddy: false, buddyPending: false };
         return {
@@ -119,9 +127,12 @@ const mount = () => {
                 || document.getElementById('bpb-climber-favorite')?.getAttribute('aria-busy') === 'true',
         };
     };
-    const viewState = () => climberCardState({ cid: current?.target.cid, ownerCid: ownerClimberId(document),
-        settings: settingsError ? null : settings, membership, busy: !!operation, ...pageBuddy(current?.target.cid) });
-    const unavailable = (control, disabled, ownsOperation = false) => {
+    const viewState = () => {
+        const input = { cid: current?.target.cid, ownerCid: ownerClimberId(document),
+            settings: settingsError ? null : settings, membership, busy: !!operation, ...pageBuddy(current?.target.cid) };
+        return climberCardState(input);
+    };
+    const unavailable = (control: HTMLButtonElement, disabled: boolean, ownsOperation: boolean | undefined = false) => {
         // Firefox blurs a physically disabled active button. Its explicit
         // operation guard plus aria-disabled preserves focus without permitting
         // another activation; unrelated unavailable controls still leave Tab order.
@@ -136,8 +147,8 @@ const mount = () => {
         ascents.href = `${location.origin}/climber/ClimbListC.aspx?cid=${current.target.cid}&sort=ascentdated&j=-1&y=9999`;
         buddyList.href = F.buddyListUrl(current.target.cid, location.origin);
         reverseList.href = `${location.origin}/report/report.aspx?r=rb&cid=${current.target.cid}`;
-        buddyList.hidden = current.lists.buddy === false;
-        reverseList.hidden = current.lists.reverse === false;
+        buddyList.hidden = current.lists?.buddy === false;
+        reverseList.hidden = current.lists?.reverse === false;
         const signedOut = ownerClimberId(document) == null;
         buddy.hidden = view.self || signedOut;
         signIn.hidden = view.self || !signedOut;
@@ -193,41 +204,47 @@ const mount = () => {
         // pointer. Scrolling/resizing still repositions it against its anchor.
         if (card.hidden || !card.style.top) schedulePosition();
     };
-    const clearTimers = () => { clearTimeout(openTimer); clearTimeout(closeTimer); openTimer = closeTimer = null; };
-    const rememberFocusContext = record => {
+    const clearTimers = () => { clearTimeout(openTimer); clearTimeout(closeTimer); openTimer = closeTimer = undefined; };
+    const rememberFocusContext = (record: ClimberRecord) => {
         const row = record.host.closest('tr, article, li') || record.host;
         const parent = row.parentElement;
         if (parent) record.focusContext = { row, parent, index: [...parent.children].indexOf(row) };
     };
-    const replacementFocus = record => {
+    const replacementFocus = (record: ClimberRecord) => {
         const context = record.focusContext;
         if (!context) return null;
         const { row, parent } = context;
-        const siblings = [...parent.children];
-        const liveIndex = siblings.indexOf(row);
+        const siblings = [...parent.children] as HTMLElement[];
+        const liveIndex = siblings.indexOf(row as HTMLElement);
         const next = liveIndex < 0 ? context.index : liveIndex + 1;
         const controls = 'a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex]';
-        const eligible = node => node.tabIndex >= 0 && !record.host.contains(node)
+        const eligible = (node: HTMLElement) => node.tabIndex >= 0 && !record.host.contains(node)
             && !card.contains(node) && isVisible(node);
         for (const sibling of [...siblings.slice(next), ...siblings.slice(0, next).reverse()]) {
-            const candidates = [...(sibling.matches(controls) ? [sibling] : []), ...sibling.querySelectorAll(controls)];
+            const candidates = [...(sibling.matches(controls) ? [sibling] : []), ...sibling.querySelectorAll<HTMLElement>(controls)];
             const candidate = candidates.find(eligible);
             if (candidate) return candidate;
         }
-        const scope = parent.isConnected ? parent : document.querySelector('main');
-        const control = [...(scope?.querySelectorAll(controls) || [])].find(eligible);
+        const scope = (parent.isConnected ? parent : document.querySelector('main')) as HTMLElement | null;
+        const control = [...(scope?.querySelectorAll<HTMLElement>(controls) || [])].find(eligible);
         if (control) return control;
-        if (isVisible(scope)) {
+        if (scope && isVisible(scope)) {
             if (!scope.hasAttribute('tabindex')) scope.tabIndex = -1;
             return scope;
         }
         return null;
     };
-    const retireFocus = record => {
+    const retireFocus = (record: ClimberRecord) => {
         const focused = card.contains(document.activeElement) && current === record
             || document.activeElement === record.trigger
             || (focusedRecord === record && document.activeElement === document.body);
         return focused ? replacementFocus(record) : null;
+    };
+    // Replacement focus keeps the keyboard's place; it is not a request for that climber's card.
+    const moveFocus = (target: HTMLElement | null) => {
+        if (!target) return;
+        suppressed = recordAt(target) ?? suppressed;
+        target.focus({ preventScroll: true });
     };
     const close = ({ restore = false, suppress = false } = {}) => {
         clearTimers();
@@ -248,7 +265,7 @@ const mount = () => {
         if (!isVisible(current.anchor) || !targetFor(current.anchor)) {
             const fallback = retireFocus(current);
             close();
-            fallback?.focus({ preventScroll: true });
+            moveFocus(fallback);
             return;
         }
         rememberFocusContext(current);
@@ -264,7 +281,7 @@ const mount = () => {
         const styles = getComputedStyle(card);
         const spacing = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom)
             + parseFloat(styles.borderTopWidth) + parseFloat(styles.borderBottomWidth);
-        const block = node => node.hidden ? 0 : node.getBoundingClientRect().height
+        const block = (node: HTMLElement) => node.hidden ? 0 : node.getBoundingClientRect().height
             + parseFloat(getComputedStyle(node).marginTop) + parseFloat(getComputedStyle(node).marginBottom);
         const primaryRoom = main.hidden ? 0 : Math.min(main.scrollHeight,
             Math.max(buddy.getBoundingClientRect().height, favoriteSlot.getBoundingClientRect().height, ignore.getBoundingClientRect().height));
@@ -299,7 +316,7 @@ const mount = () => {
     function schedulePosition() {
         if (positionFrame == null) positionFrame = requestAnimationFrame(position);
     }
-    const open = (record, explicit = false) => {
+    const open = (record: ClimberRecord, explicit = false) => {
         if (!active || !isVisible(record.anchor) || !targetFor(record.anchor)
             || (!explicit && suppressed === record) || (operation && operation.cid !== record.target.cid)) return;
         clearTimers();
@@ -308,7 +325,7 @@ const mount = () => {
             close(); current = record; error = ''; notice = ''; noticeNeedsCheck = false;
             failureDetails.open = false; fullFailure = ''; failureText.textContent = '';
             rememberFocusContext(record);
-            record.target = targetFor(record.anchor);
+            record.target = targetFor(record.anchor)!;
             // Freeze navigation for this opening so a completed buddy request
             // cannot move the actions or remove a focused link. Reuse its
             // profile evidence on the next opening, without another request.
@@ -335,7 +352,7 @@ const mount = () => {
             }
         }
     };
-    const requestOpen = (record, delay = OPEN_DELAY) => {
+    const requestOpen = (record: ClimberRecord, delay = OPEN_DELAY) => {
         clearTimeout(openTimer); clearTimeout(closeTimer);
         if (suppressed !== record) openTimer = setTimeout(() => open(record), delay);
     };
@@ -347,7 +364,7 @@ const mount = () => {
             close();
         }, CLOSE_DELAY);
     };
-    const removeRecord = record => {
+    const removeRecord = (record: ClimberRecord) => {
         const fallback = retireFocus(record);
         if (current === record) close();
         if (hovered === record) hovered = null;
@@ -359,35 +376,36 @@ const mount = () => {
         }
         records.delete(record.anchor);
         if (focusedRecord === record) focusedRecord = null;
-        fallback?.focus({ preventScroll: true });
+        moveFocus(fallback);
     };
-    const decorate = (root, ownerCid = ownerClimberId(document)) => {
-        const anchors = root.matches?.('a[href]') ? [root] : [];
-        anchors.push(...(root.querySelectorAll?.('a[href]') || []));
+    const decorate = (root: Element, ownerCid = ownerClimberId(document)) => {
+        const anchors = root.matches?.('a[href]') ? [root as HTMLAnchorElement] : [];
+        anchors.push(...(root.querySelectorAll?.<HTMLAnchorElement>('a[href]') || []));
         // Reading geometry between wrapper insertions repeatedly lays out an
         // entire ascent table. Measure the batch before changing its DOM.
         const visible = anchors.filter(anchor => !records.has(anchor) && targetFor(anchor, ownerCid) && isVisible(anchor));
         for (const anchor of visible) {
-            const target = targetFor(anchor, ownerCid);
+            const target = targetFor(anchor, ownerCid)!;
             const trigger = button('⋯', { class: 'bpb-climber-actions-trigger',
                 'aria-label': `Climber actions for ${target.name}`, 'aria-haspopup': 'dialog',
                 'aria-expanded': 'false', 'aria-controls': card.id, 'data-bpb-climber-ui': '' });
             const host = D.element('span', { class: 'bpb-climber-link' });
             anchor.replaceWith(host); host.append(anchor, trigger);
-            const record = { anchor, target, trigger, host };
+            const record: ClimberRecord = { anchor, target, trigger, host };
             records.set(anchor, record);
-            trigger.addEventListener('click', event => {
+            trigger.addEventListener('click', (event: Event) => {
                 if (event.isTrusted !== true) return;
                 if (current === record && explicitOpen && !card.hidden) close({ restore: true, suppress: true });
                 else open(record, true);
             });
         }
     };
-    const recordAt = node => {
+    const recordAt = (eventTarget: EventTarget | null) => {
+        const node = eventTarget as Element | null;
         const anchor = node?.closest?.('a[href]');
         if (anchor && !records.has(anchor)) decorate(anchor);
         const trigger = node?.closest?.('.bpb-climber-actions-trigger');
-        return records.get(anchor) || records.get(trigger?.previousElementSibling);
+        return records.get(anchor as Element) || records.get(trigger?.previousElementSibling as Element);
     };
     const refreshSettings = async () => {
         const token = ++settingsGeneration;
@@ -399,15 +417,15 @@ const mount = () => {
         }
     };
     const subscribe = () => {
-        observer = observeClimberMembership(chrome, value => { if (active) { membership = value; paint(); } });
-        unsubscribe = S.subscribe(value => { settingsGeneration++; settings = value; settingsError = ''; paint(); });
+        observer = observeClimberMembership(chrome, (value: typeof membership) => { if (active) { membership = value; paint(); } });
+        unsubscribe = S.subscribe((value: unknown) => { settingsGeneration++; settings = value; settingsError = ''; paint(); });
         void refreshSettings();
     };
     const stopReads = () => {
         settingsGeneration++; observer?.stop(); unsubscribe?.(); readController?.abort();
         observer = unsubscribe = null;
     };
-    const mutate = async (kind, event) => {
+    const mutate = async (kind: string, event: Event) => {
         if (event.isTrusted !== true || !current || operation || !active) return;
         const view = viewState();
         if ((kind === 'favorite' && (view.custom !== true || view.favoriteDisabled))
@@ -421,7 +439,7 @@ const mount = () => {
             if (kind === 'ignore' && !removing && owner != null) {
                 readController = new AbortController();
                 const snapshot = await beginBuddyCacheRead(chrome);
-                const result = await fetchPeakbaggerDocument(F.buddyListUrl(owner, location.origin),
+                const result = await fetchDocument(F.buddyListUrl(owner, location.origin) as string,
                     { kind: 'buddies', signal: readController.signal });
                 if (active && result.kind !== 'ok') throw peakbaggerError.exception(result.error);
                 if (!active || ownerClimberId(document) !== owner
@@ -444,7 +462,7 @@ const mount = () => {
             announcement.textContent = notice;
             await observer?.refresh();
         } catch (failure) {
-            const message = failure.message || 'This change could not be saved. Try again.';
+            const message = (failure as Error).message || 'This change could not be saved. Try again.';
             announcement.textContent = message;
             if (current?.target.cid === target.cid) error = message;
         } finally {
@@ -454,7 +472,7 @@ const mount = () => {
     };
     listen(favorite, 'click', event => { void mutate('favorite', event); });
     listen(ignore, 'click', event => { void mutate('ignore', event); });
-    const mutateBuddy = async (event, checkOnly = false) => {
+    const mutateBuddy = async (event: Event, checkOnly = false) => {
         if (event.isTrusted !== true || !current || operation || !active || buddy.disabled) return;
         const view = viewState(), target = { ...current.target }, owner = ownerClimberId(document);
         if (owner == null || view.self) return;
@@ -474,8 +492,8 @@ const mount = () => {
             announcement.textContent = notice;
             await observer?.refresh();
         } catch (failure) {
-            announcement.textContent = failure.message;
-            if (current?.target.cid === target.cid) error = failure.message;
+            announcement.textContent = (failure as Error).message;
+            if (current?.target.cid === target.cid) error = (failure as Error).message;
             await observer?.refresh();
         } finally {
             operation = null;
@@ -502,26 +520,26 @@ const mount = () => {
     });
     listen(closeButton, 'click', () => close({ restore: true, suppress: true }));
     listen(failureDetails, 'toggle', schedulePosition);
-    listen(document, 'pointerover', event => {
+    listen<PointerEvent>(document, 'pointerover', event => {
         if (!active || event.pointerType === 'touch') return;
         const record = recordAt(event.target);
-        if (record && !record.host.contains(event.relatedTarget)) { hovered = record; requestOpen(record); }
-        if (card.contains(event.target)) clearTimeout(closeTimer);
+        if (record && !record.host.contains(event.relatedTarget as Node | null)) { hovered = record; requestOpen(record); }
+        if (card.contains(event.target as Node | null)) clearTimeout(closeTimer);
     });
-    listen(document, 'pointerout', event => {
+    listen<PointerEvent>(document, 'pointerout', event => {
         const record = recordAt(event.target);
-        if (record && !record.host.contains(event.relatedTarget)) {
+        if (record && !record.host.contains(event.relatedTarget as Node | null)) {
             hovered = null;
             if (suppressed === record && !record.host.contains(document.activeElement)) suppressed = null;
             requestClose();
         }
-        if (card.contains(event.target) && !card.contains(event.relatedTarget)) requestClose();
+        if (card.contains(event.target as Node | null) && !card.contains(event.relatedTarget as Node | null)) requestClose();
     });
     listen(document, 'focusin', event => {
         if (!active) return;
-        focusedRecord = card.contains(event.target) ? current : recordAt(event.target);
+        focusedRecord = card.contains(event.target as Node | null) ? current : recordAt(event.target) ?? null;
         if (focusedRecord) rememberFocusContext(focusedRecord);
-        if (card.contains(event.target)) return;
+        if (card.contains(event.target as Node | null)) return;
         const record = recordAt(event.target);
         if (record) requestOpen(record, FOCUS_DELAY);
     });
@@ -531,15 +549,15 @@ const mount = () => {
             if (current && !current.host.contains(document.activeElement)) requestClose();
         });
     });
-    listen(document, 'keydown', event => {
+    listen<KeyboardEvent>(document, 'keydown', event => {
         if (event.key === 'Escape' && current) { event.preventDefault(); close({ restore: true, suppress: true }); }
     });
     listen(document, 'pointerdown', event => {
-        if (current && !current.host.contains(event.target)) close({ suppress: true });
+        if (current && !current.host.contains(event.target as Node | null)) close({ suppress: true });
     });
-    listen(window, 'scroll', event => { if (!card.contains(event.target)) schedulePosition(); }, true);
-    listen(card, 'wheel', event => {
-        const scroller = event.target.closest?.('.bpb-climber-card-main, .bpb-climber-card-name, .bpb-climber-card-feedback-details p');
+    listen(window, 'scroll', event => { if (!card.contains(event.target as Node | null)) schedulePosition(); }, { capture: true });
+    listen<WheelEvent>(card, 'wheel', event => {
+        const scroller = (event.target as Element).closest?.('.bpb-climber-card-main, .bpb-climber-card-name, .bpb-climber-card-feedback-details p');
         if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return;
         // Firefox can chain wheel events from controls inside a popover despite
         // CSS containment. Consume only boundary gestures, not normal scrolling.
@@ -553,13 +571,13 @@ const mount = () => {
     }
     const mutations = new MutationObserver(changes => {
         if (!active) return;
-        const relevant = changes.filter(change => !change.target.closest?.('[data-bpb-climber-ui]'));
+        const relevant = changes.filter(change => !(change.target as Element).closest?.('[data-bpb-climber-ui]'));
         if (!relevant.length) return;
         const ownerCid = ownerClimberId(document);
         for (const change of relevant) {
-            if (change.type === 'attributes') decorate(change.target, ownerCid);
+            if (change.type === 'attributes') decorate(change.target as Element, ownerCid);
             for (const node of change.addedNodes) {
-                if (node.nodeType === 1 && !node.closest?.('[data-bpb-climber-ui]')) decorate(node, ownerCid);
+                if (node.nodeType === 1 && !(node as Element).closest?.('[data-bpb-climber-ui]')) decorate(node as Element, ownerCid);
             }
         }
         if (mutationFrame == null) mutationFrame = requestAnimationFrame(() => {
@@ -571,14 +589,14 @@ const mount = () => {
                     if (record.anchor.isConnected) decorate(record.anchor, currentOwnerCid);
                 }
                 else {
-                    const target = targetFor(record.anchor, currentOwnerCid);
+                    const target = targetFor(record.anchor, currentOwnerCid)!;
                     if (target.cid !== record.target.cid && current === record) close({ restore: true, suppress: true });
                     record.target = target;
                     record.trigger.setAttribute('aria-label', `Climber actions for ${target.name}`);
                     if (!isVisible(record.anchor) && focusedRecord === record) {
                         const fallback = retireFocus(record);
                         if (current === record) close();
-                        fallback?.focus({ preventScroll: true });
+                        moveFocus(fallback);
                     }
                 }
             }
@@ -589,7 +607,7 @@ const mount = () => {
         attributes: true, attributeFilter: ['href', 'hidden', 'style', 'class', 'value', 'data-bpb-buddy-pending', 'aria-busy'] });
     const suspend = () => {
         active = false; close(); clearTimers(); stopReads(); mutations.disconnect();
-        cancelAnimationFrame(positionFrame); cancelAnimationFrame(mutationFrame); positionFrame = mutationFrame = null;
+        cancelAnimationFrame(positionFrame ?? 0); cancelAnimationFrame(mutationFrame ?? 0); positionFrame = mutationFrame = null;
     };
     createPageLifecycle({ onSuspend: suspend, onResume: () => {
         active = true; membership = settings = null; suppressed = null; subscribe(); decorate(document.body); watch();

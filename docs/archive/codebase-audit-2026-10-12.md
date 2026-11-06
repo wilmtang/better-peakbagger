@@ -71,7 +71,7 @@ identified the raw fixture, added that same extension-owned button, and received
 `null` from the adapter.
 
 **Root cause.** `src/favorites/report-adapters.js` (lines 43–59) rejects any
-report cell containing a button. `src/favorites/climber-hover-card.js`
+report cell containing a button. `src/favorites/climber-hover-card.ts`
 (lines 196–206) intentionally inserts buttons beside eligible report links.
 `src/ascent/ascent-report-visibility.js` (lines 25–28) permanently stops its
 observer when that adapter returns no target. Correctness therefore depends
@@ -291,7 +291,7 @@ P2 findings, now fixed in independent commits with its acceptance ledger retaine
   Resume can reapply the inherited 2D capture. This is distinct from F4.
 - Climber-card cleanup searched only the immediate next row and closed
   without replacement/removal focus recovery:
-  `src/favorites/climber-hover-card.js` (lines 123–132 and 185–194).
+  `src/favorites/climber-hover-card.ts` (lines 123–132 and 185–194).
   The earlier audit owns the consecutive-hidden-row and replacement evidence.
 
 These are carried findings, not eight additional new defects or fresh full

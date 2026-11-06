@@ -197,7 +197,7 @@ new write. Never automatically replay an ambiguous server mutation.
 ## Implementation boundaries
 
 The local card is implemented in `src/favorites/climber-card-state.js` and
-`src/favorites/climber-hover-card.js`, with its own bundled stylesheet. The
+`src/favorites/climber-hover-card.ts`, with its own bundled stylesheet. The
 following boundaries guide the delivered card and Buddy adapter;
 the inline Buddy adapter now implements items 3–5 with the inspected form contract.
 
