@@ -1065,7 +1065,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         vectorActive = false;
         vectorLoading = false;
         vectorInstalling = false;
-        vectorChoice = null; updateVectorAttribution();
+        if (vectorChoice) { vectorChoice = null; updateVectorAttribution(); }
     };
 
     // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
@@ -1073,9 +1073,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // one-shot tile check so the new layer is judged on its own.
     const swapBasemap = selection => {
         if (!map || !loaded) return false;
-        // Repeated selection and mode-resume must not rebuild the same graph.
-        if ((vectorActive || vectorLoading) && vectorBasemap(selection) === vectorChoice
-            || !vectorChoice && availableBasemaps[selection]?.tiles[0] === drapedBasemapTiles && map.getSource('basemap')) return true;
+        // Repeated selection and mode-resume must not rebuild the same vector graph.
+        if ((vectorActive || vectorLoading) && vectorBasemap(selection) === vectorChoice) return true;
         removeBasemapLayer();
         removeVectorBasemap();
         vectorSwapToken++;
@@ -2369,7 +2368,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // so a 2D layer change made while in 2D is reflected.
         if (!userPickedBasemap) {
             resolveBasemaps(data);
-            swapBasemap(initialVectorBasemap ? initialVectorBasemap.id : activeBasemapIndex);
+            // An unchanged raster drape keeps its loaded source across the mode switch.
+            if (activeBasemap?.tiles[0] !== drapedBasemapTiles || !map.getSource('basemap')) {
+                swapBasemap(initialVectorBasemap ? initialVectorBasemap.id : activeBasemapIndex);
+            }
         }
         // A retained drape loads no new tile to prove itself; one later gap must
         // not read as a layer that never worked.

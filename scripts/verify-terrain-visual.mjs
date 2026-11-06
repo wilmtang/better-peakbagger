@@ -2009,6 +2009,11 @@ try {
     }
     console.log('Peak names: split Key Col legend preserved the exact summit name in light/dark 820/375px hardware-rendered popups.');
     // Provider warnings use the real rendered controls on the hardware map.
+    const releaseVectorStyles = async () => {
+        for (const requestId of pendingVectorStyles.splice(0)) await cdp.call('Fetch.fulfillRequest', { requestId, responseCode: 200,
+            responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'application/json' }],
+            body: Buffer.from(JSON.stringify({ version: 8, sources: { fixture: { type: 'vector', tiles: ['https://tiles.openfreemap.org/fixture/{z}/{x}/{y}.pbf'] } }, layers: [] })).toString('base64') });
+    };
     // Engine status events are injected; transport classification is covered
     // separately. The catalog uses the runtime's fetch path with a 429 stub.
     const savedPicker = await evaluate(cdp, 'document.getElementById(\'bpb-terrain-frame\').contentDocument.querySelector(\'[aria-label="Base map"]\').value');
@@ -2027,8 +2032,19 @@ try {
                 return { ready: !notice.hidden && notice.textContent.includes('Mapterhorn request limit reached') };
             })()`);
             await capture(cdp, path.join(outputDir, `mapterhorn-rate-limit-${theme}-${width}.png`));
+            // Errors from a source that is no longer installed are deliberately
+            // ignored, so this limit needs a real installed vector source.
+            await evaluate(cdp, `(() => {
+                const picker = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('[aria-label="Base map"]');
+                picker.value = 'vector'; picker.dispatchEvent(new Event('change'));
+            })()`);
+            await waitForCondition(async () => {
+                await releaseVectorStyles();
+                return evaluate(cdp, 'Object.keys(document.getElementById(\'bpb-terrain-frame\').contentWindow.__bpbTerrainTestMap.getStyle().sources).some(id => id.startsWith(\'bpb-vector:\'))');
+            }, () => 'The OSM Vector source was never installed');
             await evaluate(cdp, `void document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap.fire('error', {
-                sourceId: 'bpb-vector:fixture', error: Object.assign(new Error('fixture refusal'), { status: 429 }) })`);
+                sourceId: Object.keys(document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap.getStyle().sources).find(id => id.startsWith('bpb-vector:')),
+                error: Object.assign(new Error('fixture refusal'), { status: 429 }) })`);
             await waitForPageState(cdp, `(() => {
                 const notice = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('.bpb-terrain-notice');
                 return { ready: !notice.hidden && notice.textContent.includes('OpenFreeMap request limit reached') };
