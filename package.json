@@ -21,7 +21,7 @@
     "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.mjs\"",
     "verify": "node scripts/verify.mjs",
     "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs",
-    "audit:ci": "node scripts/check-npm-audit.mjs",
+    "audit:ci": "node scripts/check-npm-audit.mts",
     "release:verify-packages": "node scripts/verify-store-packages.mjs",
     "showcase:render": "npm run build && node scripts/render-showcase.mjs",
     "package": "npm run build:release && web-ext build --source-dir dist --overwrite-dest",

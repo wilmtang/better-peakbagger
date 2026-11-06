@@ -189,9 +189,9 @@ test('preflight pins a complete receipt, rejects changed candidates, and removes
                     commands++;
                     if (program === process.execPath) {
                         assert.ok([
-                            'scripts/check-changelog-history.mjs', 'scripts/check-npm-audit.mjs',
+                            'scripts/check-changelog-history.mjs', 'scripts/check-npm-audit.mts',
                         ].includes(args[0]));
-                        if (args[0] === 'scripts/check-npm-audit.mjs') assert.deepEqual(args.slice(1), ['--allow-reviewed-development-advisory']);
+                        if (args[0] === 'scripts/check-npm-audit.mts') assert.deepEqual(args.slice(1), ['--allow-reviewed-development-advisory']);
                         return '';
                     }
                     assert.equal(program, 'gh');

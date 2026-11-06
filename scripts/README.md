@@ -38,7 +38,7 @@ independent of the existing targets.
 - [build-firefox-package.mjs](build-firefox-package.mjs)
 - [check-amo-version.mjs](check-amo-version.mjs)
 - [check-changelog-history.mjs](check-changelog-history.mjs)
-- [check-npm-audit.mjs](check-npm-audit.mjs)
+- [check-npm-audit.mts](check-npm-audit.mts)
 - [check-web-ext-lint.mjs](check-web-ext-lint.mjs)
 - [copied-runtime-impact.mjs](copied-runtime-impact.mjs)
 - [create-amo-metadata.mjs](create-amo-metadata.mjs)

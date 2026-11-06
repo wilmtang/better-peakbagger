@@ -9,7 +9,7 @@ import { satisfies } from 'semver';
 
 import {
     evaluateAudit,
-} from '../../scripts/check-npm-audit.mjs';
+} from '../../scripts/check-npm-audit.mts';
 
 const auditWith = (vulnerabilities, counts = {}) => ({
     metadata: {

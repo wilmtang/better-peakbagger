@@ -262,7 +262,10 @@ visible in the AMO Developer Hub.
    local check; CI and releases use the same evaluator. It expires at 00:00
    October 31 in Los Angeles (07:00 UTC), rejects any changed package version,
    dependency edge, advisory identity/severity, production resolution or new
-   advisory, and does not reset its expiry. Raw npm audit reports three low
+   advisory, and does not reset its expiry. Only ordinary Test CI adds
+   `--tolerate-expired-review`, which turns an expired review of this unchanged
+   graph into a warning; releases and rehearsals still fail until it is renewed.
+   Raw npm audit reports three low
    affected packages for this one advisory; the production graph is clean.
    This is accepted tooling risk, not a patched deepmerge or clean full audit.
    The patched `web-ext`/`addons-linter` toolchain no longer needs the former

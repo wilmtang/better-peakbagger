@@ -158,7 +158,7 @@ export async function releasePreflight({ tag, ciRunId, rehearsalRunId }, {
     const version = validateRelease({ tag, manifest, packageJson, packageLock, changelog });
     await runCommand(process.execPath, ['scripts/check-changelog-history.mjs']);
     // A green run from yesterday cannot extend an advisory exception today.
-    await runCommand(process.execPath, ['scripts/check-npm-audit.mjs', '--allow-reviewed-development-advisory']);
+    await runCommand(process.execPath, ['scripts/check-npm-audit.mts', '--allow-reviewed-development-advisory']);
     const [ci, rehearsal, repositoryInfo] = await Promise.all([
         request(`actions/runs/${ciRunId}`), request(`actions/runs/${rehearsalRunId}`), request(''),
     ]);

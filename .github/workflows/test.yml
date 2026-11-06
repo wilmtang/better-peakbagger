@@ -56,9 +56,11 @@ jobs:
 
       - name: Check dependency advisories
         # Reviewed exact dev-only deepmerge chain; the enforced expiry
-        # is defined by DEVELOPMENT_ADVISORY in scripts/check-npm-audit.mjs.
-        # Release verification selects the same exact reviewed exception.
-        run: npm run audit:ci -- --allow-reviewed-development-advisory
+        # is defined by DEVELOPMENT_ADVISORY in scripts/check-npm-audit.mts.
+        # Release verification selects the same exact reviewed exception, and
+        # alone enforces its expiry. Here an expired review of the unchanged
+        # graph only warns, so it cannot block unrelated pull requests.
+        run: npm run audit:ci -- --allow-reviewed-development-advisory --tolerate-expired-review
 
       - name: Check immutable release history
         run: npm run release:check-history

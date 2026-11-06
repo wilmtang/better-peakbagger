@@ -4,9 +4,9 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import yaml from 'js-yaml';
-import { evaluateAudit } from '../../scripts/check-npm-audit.mjs';
+import { evaluateAudit, type Lockfile } from '../../scripts/check-npm-audit.mts';
 
+type Via = { source: number };
 const baseline = {
     metadata: { vulnerabilities: { info: 0, low: 3, moderate: 0, high: 0, critical: 0, total: 3 } },
     vulnerabilities: {
@@ -27,21 +27,34 @@ const baseline = {
         },
     },
 };
-const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import.meta.url), 'utf8'));
+const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import.meta.url), 'utf8')) as Lockfile & {
+    packages: Record<string, { version?: string; dev?: boolean; dependencies: Record<string, string> }>;
+};
+type Mutable = {
+    metadata: { vulnerabilities: Record<string, number> };
+    vulnerabilities: Record<string, { severity?: string; via: unknown[]; nodes: string[]; effects: string[] }>;
+};
 const options = () => ({ allowReviewedDevelopmentAdvisory: true,
     lockfile: structuredClone(lock), now: Date.parse('2026-10-28T00:00:00Z') });
 
 test('ordinary CI and releases opt into the reviewed advisory; the default stays strict', async () => {
     const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
-    assert.equal(pkg.scripts['audit:ci'], 'node scripts/check-npm-audit.mjs');
+    assert.equal(pkg.scripts['audit:ci'], 'node scripts/check-npm-audit.mts');
     const ci = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
     assert.match(ci, /run: npm run audit:ci -- --allow-reviewed-development-advisory/);
-    const release = yaml.load(await readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8'));
-    const auditStep = release.jobs.verify.steps.find(step => step.name === 'Check dependency advisories');
-    assert.equal(auditStep.run, 'npm run audit:ci -- --allow-reviewed-development-advisory');
-    assert.equal(auditStep.env, undefined);
+    const release = await readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8');
+    assert.match(release, /- name: Check dependency advisories\n\s+run: npm run audit:ci -- --allow-reviewed-development-advisory\n/);
     const recovery = await readFile(new URL('../../.github/workflows/retry-firefox-release.yml', import.meta.url), 'utf8');
     assert.doesNotMatch(recovery, /allow-reviewed-development-advisory/);
+});
+
+test('only Test CI tolerates an expired review; releases enforce it', async () => {
+    const ci = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
+    assert.match(ci, /--allow-reviewed-development-advisory --tolerate-expired-review/);
+    const release = await readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8');
+    assert.doesNotMatch(release, /tolerate-expired-review/);
+    const preflight = await readFile(new URL('../../scripts/release-preflight.mjs', import.meta.url), 'utf8');
+    assert.doesNotMatch(preflight, /tolerate-expired-review/);
 });
 
 test('strict default rejects the advisory and explicit review accepts only the recorded development path', () => {
@@ -72,24 +85,40 @@ test('the low-severity development exception expires after October 30 in Los Ang
 test('the exception expires exactly at midnight October 31 in Los Angeles', () => {
     assert.throws(() => evaluateAudit(baseline, { ...options(), now: Date.parse('2026-10-31T07:00:00Z') }),
         /Reviewed development advisory expired at 2026-10-31T07:00:00Z/);
+    assert.equal(evaluateAudit(baseline, { ...options(), tolerateExpiredReview: true,
+        now: Date.parse('2026-10-31T07:00:00Z') }).status, 'expired-development-advisory');
+    assert.equal(evaluateAudit(baseline, { ...options(), tolerateExpiredReview: true }).status,
+        'accepted-development-advisory');
     for (const now of [NaN, Infinity]) {
         assert.throws(() => evaluateAudit(baseline, { ...options(), now }), /Unowned/);
     }
 });
 
-for (const [label, mutate] of [
+test('tolerating an expired review never admits a changed graph or a strict run', () => {
+    const now = Date.parse('2026-12-01T00:00:00Z');
+    assert.throws(() => evaluateAudit(baseline, { tolerateExpiredReview: true, now }), /Unowned/);
+    const changed = structuredClone(baseline);
+    changed.vulnerabilities['deepmerge'].severity = 'critical';
+    assert.throws(() => evaluateAudit(changed, { ...options(), tolerateExpiredReview: true, now }), /Unowned/);
+    const moved = options();
+    moved.lockfile.packages['node_modules/web-ext'].version = '10.9.0';
+    assert.throws(() => evaluateAudit(baseline, { ...moved, tolerateExpiredReview: true, now }), /Unowned/);
+});
+
+const mutations: [string, (audit: Mutable) => unknown][] = [
     ['new advisory', a => a.vulnerabilities['deepmerge'].via.push({ source: 99 })],
-    ['different identity', a => a.vulnerabilities['deepmerge'].via[0].source++],
+    ['different identity', a => (a.vulnerabilities['deepmerge'].via[0] as Via).source++],
     ['different severity', a => a.vulnerabilities['deepmerge'].severity = 'critical'],
     ['different location', a => a.vulnerabilities['deepmerge'].nodes.push('node_modules/other/node_modules/deepmerge')],
     ['different parent', a => a.vulnerabilities['addons-linter'].via.push('other')],
     ['different effects', a => a.vulnerabilities['deepmerge'].effects.push('other')],
-    ['extra package', a => a.vulnerabilities.other = {}],
-    ['retired forge advisory', a => a.vulnerabilities['node-forge'] = { severity: 'high' }],
+    ['extra package', a => a.vulnerabilities.other = { via: [], nodes: [], effects: [] }],
+    ['retired forge advisory', a => a.vulnerabilities['node-forge'] = { severity: 'high', via: [], nodes: [], effects: [] }],
     ['inconsistent counts', a => a.metadata.vulnerabilities.total++],
-]) {
+];
+for (const [label, mutate] of mutations) {
     test(`review still rejects ${label}`, () => {
-        const audit = structuredClone(baseline);
+        const audit = structuredClone(baseline) as unknown as Mutable;
         mutate(audit);
         assert.throws(() => evaluateAudit(audit, options()), /Unowned/);
     });
@@ -97,9 +126,9 @@ for (const [label, mutate] of [
 
 for (const name of ['web-ext', 'addons-linter', 'deepmerge']) {
     test(`review rejects changed or production ${name} resolutions`, () => {
-        for (const [key, value] of [['dev', false], ['version', '99.0.0']]) {
+        for (const change of [{ dev: false }, { version: '99.0.0' }]) {
             const opts = options();
-            opts.lockfile.packages[`node_modules/${name}`][key] = value;
+            Object.assign(opts.lockfile.packages[`node_modules/${name}`], change);
             assert.throws(() => evaluateAudit(baseline, opts), /Unowned/);
         }
     });
@@ -107,7 +136,7 @@ for (const name of ['web-ext', 'addons-linter', 'deepmerge']) {
 
 test('review rejects duplicated or rerouted dependency edges', () => {
     const duplicate = options();
-    duplicate.lockfile.packages['node_modules/other/node_modules/deepmerge'] = { version: '4.3.1', dev: true };
+    duplicate.lockfile.packages['node_modules/other/node_modules/deepmerge'] = { version: '4.3.1', dev: true, dependencies: {} };
     assert.throws(() => evaluateAudit(baseline, duplicate), /Unowned/);
     const rerouted = options();
     rerouted.lockfile.packages['node_modules/web-ext'].dependencies['addons-linter'] = '4.0.0';
