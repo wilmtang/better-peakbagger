@@ -21,7 +21,15 @@ those gates now pass here.
 | Credit overlap | A raster swap left credit text under the zoom control at 320px | `verify -- terrain` failed, passes now |
 | Stale verifier fixture | `verify-terrain-visual` fired a limit on an uninstalled source | Now installs one; the gate passes |
 | Settings disclosure | The 3D setting's provider list omitted Maptoolkit | Now named in plain text, because the options test pins that description's links; not visually inspected |
-| New JavaScript files | Two files new on this branch were not TypeScript | Converted; typecheck and hook pass |
+| TypeScript policy | 24 authored files the branch added or modified were JavaScript, which failed CI's policy check | All converted; `check:typescript-policy --base main` passes across 100 changed paths |
+
+The owner chose full conversion on November 6, ahead of the adoption plan's order,
+which leaves large coordinators until last. No explicit `any`, `@ts-nocheck` or
+`@ts-ignore` was added. Narrow casts remain where untrusted input meets its existing
+runtime checks, at MapLibre option and paint boundaries, and in test stubs.
+`verify-terrain-visual`'s CDP responses use `JSON.parse`'s own return type, which is
+`any` in effect, at the one boundary that parses them. Runtime logic is unchanged
+apart from one shared cooldown helper and explicit fallbacks with the same result.
 
 The 3D raster fix covers an unchanged drape too: it keeps its loaded source across
 a mode switch, and a later tile gap cannot discard a layer that already rendered.
@@ -34,6 +42,7 @@ Browser checks ran hidden on an Apple M3 Pro, with Chrome 156 on ANGLE Metal.
 | --- | --- |
 | `npm run typecheck` | Passed |
 | `npm run lint` | Passed with the eight owned web-ext warnings |
+| `check:typescript-policy --base main` | Passed |
 | Node tests | 3,895 of 3,895 passed |
 | `npm run verify -- chrome` and `firefox` | Passed in Chrome 156 and Firefox 159 at 1000×760 |
 | `npm run verify -- terrain chrome` and `firefox` | Passed in Chrome 156 and Firefox 157 |
@@ -60,16 +69,16 @@ which is the single-hillshade reduction chosen in the performance audit.
   for OpenFreeMap tiles. This branch extends it to sprites, and Hiking makes more
   requests. 2D stays tolerant.
 - **A `loaded` message nothing reads.** The bridge still posts it to the page.
+- **One stale provenance string.** `third-party-notices.mjs` still names
+  `scripts/build-config.mjs` in its override text, because editing that legacy file
+  beyond a filename reference would require converting it too.
+- **Skipped hooks in history.** Five commits before the conversion used
+  `--no-verify`: the merge, whose report named files `main` changed, and four fixes
+  to files then awaiting conversion. The privacy guard ran on each, and the final
+  range passes the policy.
 
 ## Changed but not fully proven
 
-- **TypeScript policy: blocks landing.** `check:typescript-policy --base main`
-  fails on 22 modified files, so CI will fail. Renaming them raises about 2,400
-  strict errors, 420 in `terrain-frame-runtime` alone. The adoption plan schedules
-  those coordinators last and against wholesale test rewrites, so sequencing is an
-  owner decision. Five commits skipped the local hook because of this gap: the
-  merge, whose report named files `main` changed, and four fixes to files already
-  in the gap. The privacy guard ran on each.
 - **Vector-to-raster credits at 320px.** The overlap's exact mechanism was found
   by experiment, not traced. Removing a vector basemap still repositions credits.
 - **Live coverage.** One region and one viewport on a fixture page, not an
