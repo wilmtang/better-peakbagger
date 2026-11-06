@@ -20,7 +20,7 @@ import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { verifyCustomEditor, verifyCustomHelp, readEditorFit } from './custom-overlay-editor-verification.mjs';
 import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
-import { readCustomLayerNavigation, assertCustomLayerNavigation } from './verify-settings-navigation.mjs';
+import { readCustomLayerNavigation, assertCustomLayerNavigation } from './verify-settings-navigation.mts';
 
 interface PageMap { _layers: Record<string, { options?: { pane?: string }; _tiles?: Record<string, { el: HTMLCanvasElement }> }>;
     getPane(name: string): { children: Iterable<HTMLElement>; lastElementChild: HTMLElement }; getContainer(): HTMLElement; invalidateSize(): void; remove(): void; }

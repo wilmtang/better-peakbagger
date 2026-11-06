@@ -12,7 +12,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mjs';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
 import { initSectionNav } from '../src/ui/section-nav.js';
-import { assertSettingsHierarchy, readSettingsHierarchy } from './verify-settings-navigation.mjs';
+import { assertSettingsHierarchy, readSettingsHierarchy } from './verify-settings-navigation.mts';
 const args = process.argv.slice(2);
 assert(args.length === 0 || (args.length === 1 && ['--popup', '--navigation'].includes(args[0])), 'Only --popup or --navigation is supported');
 const popupOnly = args.includes('--popup');

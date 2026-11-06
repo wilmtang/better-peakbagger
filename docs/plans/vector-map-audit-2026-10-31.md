@@ -92,7 +92,7 @@ readiness race.
   `test/project/fixtures-privacy.test.mts`; no vector test failed.
 - The broader real-extension Chrome gate was run and still stopped at the
   existing Garmin Settings visibility assertion in
-  `scripts/verify-settings-navigation.mjs` (line 308). The focused vector Chrome
+  `scripts/verify-settings-navigation.mts` (line 308). The focused vector Chrome
   matrix loads the real manifest/extension but does not close that unrelated gate.
 - Teardown inspection found no remaining verification browser processes or
   disposable vector/extension test profiles.
