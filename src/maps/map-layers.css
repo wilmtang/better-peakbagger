@@ -92,9 +92,9 @@
 .bpb-layers-detail input[type='range'] { display: block; width: 100%; margin: 3px 0 7px; min-height: 24px; }
 .bpb-layers-opacity-ends { display: flex; justify-content: space-between; margin: -5px 0 7px; color: var(--bpb-layer-muted); font-size: .85em; }
 .bpb-layers-detail select { display: block; width: 100%; margin: 3px 0 7px; }
-.bpb-layers-legend { font-size: .85em; color: var(--bpb-layer-muted); overflow-wrap: anywhere; }
-.bpb-layers-legend-item { display: inline-flex; align-items: center; gap: 4px; margin: 0 7px 4px 0; }
-.bpb-layers-legend-item i { width: 10px; height: 10px; border: 1px solid #0003; border-radius: 2px; }
+.bpb-layers-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 8px; font-size: .85em; color: var(--bpb-layer-muted); overflow-wrap: anywhere; }
+.bpb-layers-legend-item { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; }
+.bpb-layers-legend-item i { display: block; box-sizing: border-box; width: 100%; height: 18px; border: 1px solid #0003; border-radius: 2px; }
 .bpb-map-layers .bpb-layers-guidance { display: inline-block; margin: 4px 7px 0 0; color: var(--bpb-layer-accent); font-size: .85em; text-decoration: underline; }
 .bpb-layers-feedback { display: grid; grid-template-columns: minmax(0, 1fr) max(38px, 3.3em); gap: 6px; min-height: 4.2em; margin-top: 7px; color: var(--bpb-layer-muted); overflow-wrap: anywhere; }
 .bpb-layers-detail[data-overlay='land'] .bpb-layers-opacity-line { display: flex; align-items: center; gap: 8px; }
@@ -141,7 +141,7 @@
     --bpb-location-text: #202832;
     --bpb-location-muted: #5c6875;
     position: fixed; z-index: 2147483647; box-sizing: border-box;
-    width: 244px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto;
+    width: 18.77em; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto;
     padding: 10px 12px; border: 1px solid #d0d7df; border-radius: 10px;
     background: var(--bpb-location-bg); color: var(--bpb-location-text);
     box-shadow: 0 8px 28px #172b4530, 0 2px 6px #172b4512;
@@ -151,10 +151,10 @@
 #bpb-peak-weather-menu[hidden], #bpb-peak-weather-menu [hidden] { display: none !important; }
 #bpb-peak-weather-menu:focus { outline: none; }
 #bpb-peak-weather-menu[data-keyboard="true"]:focus-visible { outline: 2px solid #1769aa; outline-offset: 2px; }
-#bpb-peak-weather-menu .bpb-map-location-reading { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 8px; align-items: baseline; }
-#bpb-peak-weather-menu .bpb-map-location-label { grid-column: 1 / -1; color: var(--bpb-location-muted); font-size: 12px; font-weight: 500; }
-#bpb-peak-weather-menu .bpb-map-location-value { min-height: 1.4em; font-size: 18px; line-height: 1.4; font-weight: 600; letter-spacing: -.025em; overflow-wrap: anywhere; }
-#bpb-peak-weather-menu .bpb-map-location-alternative { min-height: 1.5em; color: var(--bpb-location-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+#bpb-peak-weather-menu .bpb-map-location-reading { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+#bpb-peak-weather-menu .bpb-map-location-label { flex: 0 0 100%; color: var(--bpb-location-muted); font-size: 12px; font-weight: 500; }
+#bpb-peak-weather-menu .bpb-map-location-value { flex: 0 1 auto; min-width: 0; max-width: 100%; min-height: 1.4em; font-size: 18px; line-height: 1.4; font-weight: 600; letter-spacing: -.025em; overflow-wrap: anywhere; }
+#bpb-peak-weather-menu .bpb-map-location-alternative { flex: 1 1 6em; min-width: 0; min-height: 1.5em; color: var(--bpb-location-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 #bpb-peak-weather-menu .bpb-weather-menu-coordinates { margin: 6px 0 0; font-size: 12px; user-select: text; overflow-wrap: anywhere; }
 #bpb-peak-weather-menu .bpb-map-location-source { margin-top: 2px; color: var(--bpb-location-muted); font-size: 11px; }
 #bpb-peak-weather-menu .bpb-map-location-weather {
@@ -170,10 +170,6 @@ html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu {
 }
 html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu .bpb-map-location-weather:not(:disabled):is(:hover, :focus-visible) { background: #34485f; color: #c2deff; }
 html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu:focus-visible { outline-color: #83bbff; }
-/* At high browser zoom, keep whole readings legible rather than splitting units. */
-@media (max-width: 260px) {
-    #bpb-peak-weather-menu .bpb-map-location-reading { grid-template-columns: minmax(0, 1fr); }
-}
 @media (forced-colors: active) {
     #bpb-peak-weather-menu { border-color: CanvasText; }
     #bpb-peak-weather-menu .bpb-map-location-weather:focus-visible { outline: 2px solid Highlight; }
@@ -215,4 +211,11 @@ html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu:foc
 
 .bpb-snow-depth-time { min-block-size: 2.8em; margin: 8px 0; color: var(--bpb-layer-muted); font-size: .85em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .bpb-layers-detail[data-overlay='snow'] .bpb-layers-feedback { grid-template-columns: minmax(0, 1fr) 4em; min-height: 2.8em; font-size: .85em; }
-.bpb-layers-detail[data-overlay='snow'] .bpb-layers-legend-item i { background-size: 100% 100%; flex: 0 0 10px; }
+/* NOAA's padded legend icons need their solid center to fill the color bar. */
+.bpb-layers-detail[data-overlay='snow'] .bpb-layers-legend-item i { background-size: 200% 200%; background-position: center; background-repeat: no-repeat; }
+
+.bpb-layers-legend-caption, .bpb-layers-legend > a { grid-column: 1 / -1; }
+#bpb-peak-weather-menu .bpb-map-location-layers { margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid #8895a333; }
+#bpb-peak-weather-menu .bpb-map-location-layer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12px; }
+#bpb-peak-weather-menu .bpb-map-location-layer dt { color: var(--bpb-location-muted); overflow-wrap: anywhere; }
+#bpb-peak-weather-menu .bpb-map-location-layer dd { margin: 0; text-align: right; font-weight: 500; overflow-wrap: anywhere; }

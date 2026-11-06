@@ -52,7 +52,7 @@ import {
 } from './browser-verification-fixtures.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
-import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
+import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mts';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
 import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mjs';

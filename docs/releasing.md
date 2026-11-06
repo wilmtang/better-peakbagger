@@ -247,6 +247,12 @@ visible in the AMO Developer Hub.
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
    `audit:ci` requires zero advisories by default, including development dependencies.
+   The minimatch 10 paths used by ESLint and TypeScript ESLint resolve the scoped
+   upstream 11.0.1 override for
+   [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+   The CommonJS matcher APIs and typed-file discovery are checked on Node 24;
+   the legacy minimatch 3 / brace-expansion override remains separate. Remove
+   this override when upstream owners adopt a patched range, after revalidation.
    Forge now resolves patched 1.4.2. One reviewed low-severity deepmerge advisory
    remains in development tooling only: deepmerge 4.3.1 → addons-linter 10.14.0
    → web-ext 10.8.0. Upstream deepmerge has no patched release; neither a forced

@@ -37,7 +37,7 @@ separate follow-up, rather than a hidden limitation that only appears in 2D.
 
 | Current evidence | Design consequence |
 | --- | --- |
-| [Map-layer schema](../../src/settings/settings-schema.js) enumerates five built-in IDs. [The control](../../src/maps/map-layer-control.js) also has built-in labels and feature-specific branches. | Add a typed custom-source collection beside the built-in IDs. Do not turn every unknown page-supplied ID into an accepted provider. |
+| [Map-layer schema](../../src/settings/settings-schema.js) enumerates five built-in IDs. [The control](../../src/maps/map-layer-control.ts) also has built-in labels and feature-specific branches. | Add a typed custom-source collection beside the built-in IDs. Do not turn every unknown page-supplied ID into an accepted provider. |
 | [Native raster overlays](../../src/maps/map-overlay-leaflet.js) use Leaflet canvas grid layers; [terrain overlays](../../src/terrain/terrain-overlays.js) use MapLibre raster sources and a packaged protocol. | Reuse their lifecycle and layer-order owners, with separate custom adapters. A URL field alone is insufficient. |
 | [Wildfire 2D](../../src/maps/wildfire-leaflet.js) and [wildfire 3D](../../src/terrain/terrain-wildfires.js) already render GeoJSON geometry in both engines. | GeoJSON can use the existing libraries. Keep provider-specific wildfire validation and semantics out of the generic source feature. |
 | Leaflet itself does not decode MVT. MapLibre does, and the installed dependency tree includes `@mapbox/vector-tile` and `pbf` transitively. | MVT needs a packaged native-map decoder/render adapter. Declare any directly imported packages explicitly; do not depend on incidental transitive installation. |

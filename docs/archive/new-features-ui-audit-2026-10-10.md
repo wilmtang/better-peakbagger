@@ -68,7 +68,7 @@ it does not claim to have clicked Ignore on a live Peakbagger report. Existing
 coverage exercises a single hidden container followed immediately by a visible
 one, so the consecutive-hidden case is different.
 
-**Root cause.** `src/favorites/climber-hover-card.js` (lines 124–130) considers
+**Root cause.** `src/favorites/climber-hover-card.ts` (lines 124–130) considers
 only `nextElementSibling` as a fallback and stops if that row is also hidden.
 For removal/replacement, `removeRecord` (lines 184–193) calls `close()` without
 fallback handling before the mutation cleanup loop (lines 378–382) can preserve
@@ -84,7 +84,7 @@ previous visible row or stable list control/empty state. Preserve the ordinary
 link and only restore focus when it belonged to the disappearing card/trigger;
 an asynchronous update must not steal focus from another surface.
 
-**Acceptance.** Extend `test/favorites/climber-hover-card.test.mjs` for consecutive
+**Acceptance.** Extend `test/favorites/climber-hover-card.test.mts` for consecutive
 hidden rows, same-identity replacement, removal, the last row, and focus moved
 outside the card before cleanup. Add real-browser DOM focus assertions beside
 `scripts/verify-climber-hover-card.mjs`. Preserve existing single-row hiding,

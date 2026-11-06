@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Keep the next climber's card closed.** When a climber row disappears from an
+  open card, keyboard focus still moves to the next person, without opening their
+  card uninvited.
+
 - **Stable 2D vector zooms.** Maptoolkit and OSM Vector keep cartography aligned
   with native peaks and routes through animated zooms and delayed rendering.
   Late images after a camera reversal cannot replace better current coverage.

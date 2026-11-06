@@ -1,0 +1,778 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JSDOM } from '../helpers/test-dom.mts';
+
+import { captureCore as Core } from '../../src/capture/capture-core.js';
+import { gpxParse as Parse } from '../../src/gpx/gpx-parse.js';
+import { gpxMetrics as Metrics } from '../../src/gpx/gpx-metrics.js';
+import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
+
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { uploadLimitFindings } from '../helpers/source-policies.mts';
+
+const point = (lat: number, lon: number, ele: number | null = 100, time: number | null = null) => ({ lat, lon, ele, time });
+
+function readQualityScore(quality: object): number {
+    assert.ok('score' in quality && typeof quality.score === 'number', 'sanitized quality must include its score');
+    return quality.score;
+}
+type TrackPoint = ReturnType<typeof point>;
+interface Match {
+    id: number; name: string; confidence: number; classification: string;
+    encounter: TrackPoint & {segmentIndex: number; edgeIndex: number; fraction: number};
+    evidence: {distanceM: number; elevationDeltaM: number | null; ambiguous: boolean};
+    draftFields: {suffix?: string};
+}
+// The JS implementation accepts a numeric reference time; its null default
+// alone is too narrow for the inferred signature.
+const formatEncounterDateTime = Core.formatEncounterDateTime as (time: number, metadata: Record<string, unknown>, referenceTime?: number | null) => {date: string; time: string};
+
+test('sanitization breaks, rather than bridges, invalid and impossible edges', () => {
+    const start = Date.UTC(2026, 0, 1);
+    const raw = [[
+        point(0, 0, 100, start),
+        point(0, 0.0001, 101, start + 10000),
+        point(95, 0, 102, start + 20000),
+        point(0, 0.0002, 103, start + 30000),
+        point(0, 0.05, 104, start + 31000),
+        point(0, 0.0501, 105, start + 20000),
+        point(0, 0.055, 106, start + 20 * 60 * 1000)
+    ]];
+
+    const result = Core.sanitizeTrack(raw);
+    assert.equal(result.quality.invalidCoordinates, 1);
+    assert.equal(result.quality.extremeSpeeds, 1);
+    assert.equal(result.quality.reversedTimes, 1);
+    assert.equal(result.quality.longGaps, 1);
+    assert.equal(result.segments.length, 5);
+    assert.equal(result.quality.retainedPoints, 6);
+});
+
+test('a nonexistent GPX date cannot become a capture date or duration', () => {
+    const document = new JSDOM(`<gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"><ele>100</ele><time>2026-02-28T12:00:00Z</time></trkpt>
+      <trkpt lat="47.0001" lon="-121"><ele>110</ele><time>2026-02-30T12:01:00Z</time></trkpt>
+      <trkpt lat="47.0002" lon="-121"><ele>100</ele><time>2026-02-28T12:02:00Z</time></trkpt>
+    </trkseg></trk></gpx>`, { contentType: 'text/xml' }).window.document;
+    const raw = [[...document.querySelectorAll('trkpt')].map(pointNode =>
+        Parse.parseTrackPoint(pointNode))];
+    const { segments, quality } = Core.sanitizeTrack(raw);
+
+    assert.equal(quality.invalidTimes, 1);
+    assert.equal(segments.flat()[1].time, null);
+    assert.deepEqual(Core.calculateDayStats(segments, { utcOffsetMinutes: 0 }), []);
+    const fields = Core.calculateDraftFields(segments, {
+        encounter: {
+            segmentIndex: 1,
+            edgeIndex: 0,
+            fraction: 1,
+            lat: 47.0002,
+            lon: -121,
+            ele: 100,
+            time: Date.UTC(2026, 1, 28, 12, 2),
+        },
+    });
+    assert.equal(fields.upDuration, null);
+    assert.equal(fields.downDuration, null);
+});
+
+test('sanitization excludes impossible elevations from matching and serialized GPX', async () => {
+    const { segments, quality } = Core.sanitizeTrack([[
+        point(0, -0.001, 100),
+        point(0, 0, 1_000_000_000),
+        point(0, 0.001, 100),
+    ]]);
+
+    assert.equal(quality.suspectElevation, 1);
+    assert.equal(segments[0][1].ele, null);
+    const [match] = await Core.detectPeaksAsync(
+        segments,
+        [{ id: 99, name: 'Peak', location: '', lat: 0, lon: 0, elevationM: 1_000_000_000 }],
+        readQualityScore(quality),
+    );
+    assert.notEqual(match.classification, 'strong');
+    assert.equal(match.evidence.elevationDeltaM, null);
+    assert.doesNotMatch(Core.serializeUploadGpx(segments), /1000000000/);
+
+    const boundaries = Core.sanitizeTrack([[
+        point(0, 0, -1000),
+        point(0, 0.0001, 10000),
+        point(0, 0.0002, -1000.1),
+        point(0, 0.0003, 10000.1),
+    ]]);
+    assert.deepEqual(boundaries.segments[0].map((candidate: TrackPoint) => candidate.ele), [
+        -1000, 10000, null, null,
+    ]);
+});
+
+test('kilometre-scale edges without usable time are treated as gaps', () => {
+    const result = Core.sanitizeTrack([[
+        point(0, 0, 100, null),
+        point(0, 0.02, 100, null)
+    ]]);
+    assert.equal(result.quality.untimedGaps, 1);
+    assert.equal(result.segments.length, 2);
+});
+
+test('single edges can never exceed the summit-query spatial limit', () => {
+    const start = Date.UTC(2026, 0, 1);
+    const result = Core.sanitizeTrack([[
+        point(0, 0, 100, start),
+        point(0, 0.2, 100, start + 5 * 60000)
+    ]]);
+    assert.equal(result.quality.spatialGaps, 1);
+    assert.equal(result.segments.length, 2);
+});
+
+test('Peakbagger XML parsing decodes metadata and ignores malformed peaks', () => {
+    const peaks = Core.parsePeakbaggerPeaks('<p><t i="12" n="A &amp; B" a="47.1" o="-121.2" e="5000" r="800" l="WA"/><t i="x" a="0" o="0"/></p>');
+    assert.equal(peaks.length, 1);
+    assert.equal(peaks[0].id, 12);
+    assert.equal(peaks[0].name, 'A & B');
+    assert.equal(Math.round(peaks[0].elevationM! * Core.FEET_PER_METER), 5000);
+});
+
+test('Peakbagger XML parsing decodes each entity only once', () => {
+    const [peak] = Core.parsePeakbaggerPeaks(
+        '<t i="13" n="A &#38;lt; B &amp;gt; C &#x110000;" a="47.1" o="-121.2"/>'
+    );
+
+    assert.equal(peak.name, 'A &lt; B &gt; C &#x110000;');
+});
+
+test('Peakbagger peak parsing validates coordinates and enforces its structure cap', () => {
+    const xml = '<p>'
+        + '<t i="1" n=" First   Peak " a="40" o="-105"/>'
+        + '<t i="2" n="Bad latitude" a="91" o="0"/>'
+        + '<t i="3" n="Bad longitude" a="0" o="181"/>'
+        + '<t i="4" n="Second Peak" a="40.1" o="-105.1"/>'
+        + '<t i="5" n="Third Peak" a="40.2" o="-105.2"/>'
+        + '</p>';
+    assert.deepEqual(Core.parsePeakbaggerPeaks(xml, { maxPeaks: 3 }).map(peak => peak.name), [
+        'First Peak',
+        'Second Peak',
+        'Third Peak',
+    ]);
+    assert.throws(
+        () => Core.parsePeakbaggerPeaks(xml, { maxPeaks: 2 }),
+        error => error instanceof Error && 'code' in error && error.code === 'too-many-peaks',
+    );
+});
+
+test('full-resolution segment projection detects a sparse summit crossing', async () => {
+    const segments = [[point(0, -0.001, 100), point(0, 0.001, 100)]];
+    const matches: Match[] = await Core.detectPeaksAsync(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].classification, 'strong');
+    assert.ok(matches[0].evidence.distanceM < 0.01);
+    assert.ok(Math.abs(matches[0].encounter.fraction - 0.5) < 0.001);
+});
+
+test('missing elevation can be probable but is capped below strong', async () => {
+    const segments = [[point(0, -0.001, null), point(0, 0.001, null)]];
+    const [match] = await Core.detectPeaksAsync(segments, [{ id: 2, name: 'Horizontal Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    assert.equal(match.confidence, 69);
+    assert.equal(match.classification, 'probable');
+    assert.equal(Core.publicMatch(match).selected, false);
+});
+
+test('separate GPX segments are never bridged through a summit', async () => {
+    const segments = [
+        [point(0, -0.002, 100)],
+        [point(0, 0.002, 100)]
+    ];
+    const [match] = await Core.detectPeaksAsync(segments, [{ id: 3, name: 'Gap Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    assert.notEqual(match.classification, 'strong');
+    assert.ok(match.evidence.distanceM > 200);
+});
+
+test('nearby peaks sharing one encounter are capped unless one clearly leads', async () => {
+    const segments = [[
+        point(0, -0.001, 80),
+        point(0, 0, 100),
+        point(0, 0.001, 80)
+    ]];
+    const matches: Match[] = await Core.detectPeaksAsync(segments, [
+        { id: 4, name: 'Main', location: '', lat: 0, lon: 0, elevationM: 100 },
+        { id: 5, name: 'Subpeak', location: '', lat: 0, lon: 0.00001, elevationM: 100 }
+    ], 1);
+    assert.equal(matches.length, 2);
+    assert.ok(matches.every(match => match.classification === 'probable'));
+    assert.ok(matches.every(match => match.confidence <= 79 && match.evidence.ambiguous));
+});
+
+// A chain A–B–C where only the neighbours overlap: whichever peak seeds the
+// group must pull in the whole chain, or the escapee keeps an uncapped Strong
+// score and arrives at the popup pre-selected for drafting.
+test('chained ambiguity caps every peak regardless of the order Peakbagger returns them', async () => {
+    const bump = (index: number, centre: number) => Math.max(0, 60 - Math.abs(index - centre));
+    const segment = Array.from({ length: 801 }, (_value, index) => point(
+        47 + index * 0.000009,
+        -121,
+        1000 + bump(index, 140) + bump(index, 420) + bump(index, 700),
+        Date.UTC(2026, 0, 1) + index * 1000
+    ));
+    const peakAt = (id: number, name: string, index: number) => ({
+        id,
+        name,
+        location: '',
+        lat: segment[index].lat,
+        lon: segment[index].lon,
+        elevationM: segment[index].ele
+    });
+    const a = peakAt(1, 'A', 140);
+    const b = peakAt(2, 'B', 420);
+    const c = peakAt(3, 'C', 700);
+    // A–B and B–C share an encounter window; A–C do not.
+    for (const order of [[a, b, c], [c, a, b], [b, c, a], [c, b, a]]) {
+        const matches: Match[] = await Core.detectPeaksAsync([segment], order, 1);
+        assert.equal(matches.length, 3, `order ${order.map(peak => peak.name).join('')}`);
+        for (const match of matches) {
+            assert.ok(
+                match.confidence <= 79 && match.evidence.ambiguous
+                    && !Core.publicMatch(match).selected,
+                `${match.name} escaped the cap for order ${order.map(peak => peak.name).join('')}`
+            );
+        }
+    }
+});
+
+test('cooperative peak detection caps crowded summits and checks cancellation for every peak', async () => {
+    const segment = Array.from({ length: 1_000 }, (_, index) => ({
+        lat: 40 + Math.sin(index / 17) * 0.0002,
+        lon: -105 + index * 0.02 / 999,
+        ele: 2_000 + Math.sin(index / 23) * 40,
+        time: Date.UTC(2026, 6, 1) + index * 1_000,
+    }));
+    const peaks = Array.from({ length: 80 }, (_, index) => ({
+        id: index + 1,
+        name: `Peak ${index + 1}`,
+        location: 'Test Range',
+        lat: 40,
+        lon: -105 + index * 0.02 / 79,
+        elevationM: 2_000,
+        prominenceFt: 100,
+    }));
+    let checkpoints = 0;
+    const cooperative: Match[] = await Core.detectPeaksAsync([segment], peaks, 0.91, {
+        checkpoint: async () => { checkpoints++; },
+    });
+    assert.deepEqual(cooperative.map((match: Match) => match.id).sort((a: number, b: number) => a - b), peaks.map(peak => peak.id));
+    assert.ok(cooperative.every(match => match.classification === 'probable' && match.evidence.ambiguous));
+    assert.ok(checkpoints >= peaks.length, 'every peak offers cancellation a checkpoint');
+});
+
+test('cooperative peak detection preserves encounter-policy boundary results', async () => {
+    const start = Date.UTC(2026, 6, 1);
+    const cases = [];
+
+    cases.push({
+        label: 'singleton segments',
+        segments: [
+            [point(47, -121, 900, start)],
+            [point(47.001, -121.001, 950, start + 60_000)]
+        ],
+        expectedMatches: 2,
+        peaks: [
+            { id: 1, name: 'First singleton', location: '', lat: 47, lon: -121, elevationM: 900 },
+            { id: 2, name: 'Second singleton', location: '', lat: 47.001, lon: -121.001, elevationM: 950 }
+        ]
+    });
+
+    const sanitized = Core.sanitizeTrack([[
+        point(40, -105, 2_000, start),
+        point(40, -104.9999, 2_010, null),
+        point(40, -104.9998, 2_020, start + 20_000),
+        point(40, -104.9997, 2_015, start + 10_000),
+        point(40, -104.9996, 2_000, start + 30_000)
+    ]]);
+    cases.push({
+        label: 'missing and reversed times after sanitization',
+        segments: sanitized.segments,
+        qualityScore: readQualityScore(sanitized.quality),
+        expectedMatches: 2,
+        peaks: [
+            { id: 3, name: 'Untimed', location: '', lat: 40, lon: -104.9999, elevationM: 2_010 },
+            { id: 4, name: 'After reversal', location: '', lat: 40, lon: -104.9996, elevationM: 2_000 }
+        ]
+    });
+
+    cases.push({
+        label: 'antimeridian and polar edges',
+        segments: [
+            [point(10, 179.999, 500, start), point(10, -179.999, 510, start + 60_000)],
+            [point(89.999, 30, 700, start), point(89.999, -150, 710, start + 60_000)]
+        ],
+        expectedMatches: 2,
+        peaks: [
+            { id: 5, name: 'Dateline', location: '', lat: 10, lon: 180, elevationM: 505 },
+            { id: 6, name: 'Pole', location: '', lat: 89.999, lon: 120, elevationM: 705 }
+        ]
+    });
+
+    const bump = (index: number, centre: number) => Math.max(0, 60 - Math.abs(index - centre));
+    const ambiguitySegment = Array.from({ length: 801 }, (_value, index) => point(
+        47 + index * 0.000009,
+        -121,
+        1_000 + bump(index, 140) + bump(index, 420) + bump(index, 700),
+        start + index * 1_000
+    ));
+    const ambiguityPeak = (id: number, name: string, index: number) => ({
+        id, name, location: '',
+        lat: ambiguitySegment[index].lat,
+        lon: ambiguitySegment[index].lon,
+        elevationM: ambiguitySegment[index].ele
+    });
+    cases.push({
+        label: 'transitive ambiguity',
+        segments: [ambiguitySegment],
+        expectedMatches: 3,
+        peaks: [
+            ambiguityPeak(7, 'A', 140),
+            ambiguityPeak(8, 'B', 420),
+            ambiguityPeak(9, 'C', 700)
+        ]
+    });
+
+    // Explicit encounter fixtures replace a second implementation as the oracle.
+    const expected = [
+        [[1, 0, 0, 0, 0, 900, start], [2, 1, 0, 0, 0, 950, start + 60_000]],
+        [[4, 0, 1, 1, 17.036, 2020, null], [3, 1, 0, 0, 17.036, 2015, start + 10_000]],
+        [[5, 0, 0, 0.5, 0, 505, start + 30_000], [6, 1, 0, 0.5, 0, 705, start + 30_000]],
+        [[7, 0, 139, 1, 0, 1060, start + 140_000], [8, 0, 419, 1, 0, 1060, start + 420_000],
+            [9, 0, 699, 1, 0, 1060, start + 700_000]],
+    ];
+    for (const [index, scenario] of cases.entries()) {
+        const qualityScore = scenario.qualityScore ?? 1;
+        let checkpoints = 0;
+        const cooperative: Match[] = await Core.detectPeaksAsync(
+            scenario.segments,
+            scenario.peaks,
+            qualityScore,
+            { checkpoint: async () => { checkpoints++; } }
+        );
+        assert.equal(cooperative.length, scenario.expectedMatches, scenario.label);
+        assert.ok(cooperative.every(match => match.confidence === 79
+            && match.classification === 'probable' && match.evidence.ambiguous), scenario.label);
+        assert.deepEqual(cooperative.map(match => [match.id, match.encounter.segmentIndex, match.encounter.edgeIndex,
+            +match.encounter.fraction.toFixed(6), +match.evidence.distanceM.toFixed(3),
+            +match.encounter.ele!.toFixed(3), match.encounter.time]), expected[index], scenario.label);
+        assert.ok(checkpoints >= scenario.peaks.length, `${scenario.label} must remain cancellable`);
+    }
+});
+
+test('query boxes stay short, padded, and split at the antimeridian', () => {
+    const many = Array.from({ length: 220 }, (_value, index) => point(0, index * 0.0005));
+    assert.ok(Core.buildQueryBoxes([many]).length > 1);
+    const dateline = Core.buildQueryBoxes([[point(10, 179.999), point(10, -179.999)]]);
+    assert.equal(dateline.length, 2);
+    assert.ok(dateline.every(box => box.minx >= -180 && box.maxx <= 180));
+
+    // sanitizeTrack's flush() keeps a single-point segment, so the chunk
+    // emitted after the edge loop can have no edges at all. That is not a case
+    // to guard against: the degenerate bbox is the fix itself, and it must
+    // still become the padded corridor box around it — findEncounters looks for
+    // summits near lone points too.
+    const lone = Core.buildQueryBoxes([[point(47.5, -121.5)]]);
+    assert.equal(lone.length, 1);
+    const [box] = lone;
+    assert.ok(box.miny < 47.5 && box.maxy > 47.5 && box.minx < -121.5 && box.maxx > -121.5,
+        'a lone fix must be padded on every side, not collapsed to a zero-area box');
+    assert.ok(Core.buildQueryBoxes([[]]).length === 0, 'an empty segment contributes no box');
+});
+
+test('priority reduction retains original objects, summit brackets, and an exact 3,000-point cap', async () => {
+    const segment = Array.from({ length: 4000 }, (_value, index) =>
+        point(47 + index * 0.00001, -121 + Math.sin(index / 20) * 0.00003, 100 + Math.sin(index / 50) * 10));
+    const matches = [{ encounter: { segmentIndex: 0, edgeIndex: 1999 } }];
+    const result = await Core.reduceTrackAsync([segment], matches);
+    assert.equal(result.originalPointCount, 4000);
+    assert.equal(result.retainedPointCount, 3000);
+    assert.equal(result.segments[0].length, 3000);
+    assert.ok(result.segments[0].includes(segment[1999]));
+    assert.ok(result.segments[0].includes(segment[2000]));
+    assert.ok(result.segments[0].every((retained: TrackPoint) => segment.includes(retained)));
+    assert.ok(result.maxDeviationM >= 0);
+});
+
+test('cooperative reduction preserves the exact priority simplifier result', async () => {
+    const segment = Array.from({ length: 4_000 }, (_, index) => ({
+        lat: 40 + Math.sin(index / 9) * 0.001,
+        lon: -105 + index * 0.02 / 3_999,
+        ele: 2_000 + Math.cos(index / 11) * 100,
+        time: Date.UTC(2026, 6, 1) + index * 1_000,
+    }));
+    const matches = [{ encounter: { segmentIndex: 0, edgeIndex: 1_999 } }];
+    let checkpoints = 0;
+    const cooperative = await Core.reduceTrackAsync([segment], matches, 700, {
+        checkpoint: async () => { checkpoints++; },
+    });
+    assert.equal(cooperative.retainedPointCount, 700);
+    assert.ok(cooperative.segments[0].includes(segment[1999]) && cooperative.segments[0].includes(segment[2000]));
+    assert.ok(Math.abs(cooperative.maxDeviationM - 0.592043061) < 0.000001);
+    assert.ok(checkpoints > 10, 'long interval scans remain cooperatively interruptible');
+});
+
+test('tracks at the limit are unchanged and mandatory overflow fails closed', async () => {
+    const exact = Array.from({ length: 3000 }, (_value, index) => point(0, index * 0.000001));
+    const unchanged = await Core.reduceTrackAsync([exact], []);
+    assert.equal(unchanged.retainedPointCount, 3000);
+    assert.equal(unchanged.segments[0][1500], exact[1500]);
+
+    const small = [[point(0, 0), point(0, 1), point(0, 2), point(0, 3)]];
+    await assert.rejects(
+        () => Core.reduceTrackAsync(small, [
+            { encounter: { segmentIndex: 0, edgeIndex: 0 } },
+            { encounter: { segmentIndex: 0, edgeIndex: 2 } }
+        ], 3),
+        error => error instanceof Error && 'code' in error && error.code === 'mandatory-point-overflow'
+    );
+});
+
+test('privacy upload retains reduced track elevation and time without unrelated source fields', () => {
+    const start = Date.UTC(2026, 6, 1, 15, 0);
+    const gpx = Core.serializeUploadGpx([
+        [point(1, 2, 300, start), point(3, 4, 400, start + 1000)],
+        [point(5, 6, null, null)]
+    ]);
+    assert.match(gpx, /<trkseg><trkpt lat="1" lon="2"><ele>300<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
+    assert.match(gpx, /<trkpt lat="5" lon="6"><\/trkpt>/);
+    assert.equal((gpx.match(/<trkseg>/g) || []).length, 2);
+    assert.equal((gpx.match(/<ele>/g) || []).length, 2);
+    assert.equal((gpx.match(/<time>/g) || []).length, 2);
+    assert.doesNotMatch(gpx, /<(?:extensions|wpt|rte|name)(?:\s|>)/i);
+});
+
+test('retained waypoints are validated, bounded, escaped, and limited to coordinates plus name', () => {
+    const waypoints = Core.sanitizeWaypoints([
+        { lat: '47.1', lon: '-121.2', name: ' Camp & <Water> ', ele: 999, desc: 'private' },
+        { lat: 95, lon: 1, name: 'invalid' }
+    ]);
+    assert.deepEqual(waypoints, [{ lat: 47.1, lon: -121.2, name: 'Camp & <Water>' }]);
+
+    const gpx = Core.serializeUploadGpx([[point(1, 2), point(3, 4)]], waypoints);
+    assert.match(gpx, /<wpt lat="47\.1" lon="-121\.2"><name>Camp &amp; &lt;Water&gt;<\/name><\/wpt>/);
+    assert.doesNotMatch(gpx, /999|private|<(?:desc|sym|extensions)(?:\s|>)/i);
+    assert.doesNotMatch(gpx.match(/<wpt[\s\S]*?<\/wpt>/i)![0], /<(?:ele|time)>/i);
+});
+
+test('draft fields use full-resolution distance, gains, durations, and activity offset', () => {
+    const start = Date.UTC(2026, 6, 1, 15, 0);
+    const segments = [[
+        point(0, 0, 100, start),
+        point(0, 0.001, 130, start + 30 * 60000),
+        point(0, 0.002, 110, start + 60 * 60000)
+    ]];
+    const match = {
+        encounter: {
+            segmentIndex: 0,
+            edgeIndex: 0,
+            fraction: 1,
+            ele: 130,
+            time: start + 30 * 60000,
+            globalDistanceM: Core.distanceM(segments[0][0], segments[0][1])
+        }
+    };
+    const fields = Core.calculateDraftFields(segments, match, { utcOffsetMinutes: -420 });
+    assert.equal(fields.date, '2026-07-01');
+    assert.equal(fields.time, '08:30');
+    assert.deepEqual(fields.upDuration, { days: 0, hours: 0, minutes: 30 });
+    assert.deepEqual(fields.downDuration, { days: 0, hours: 0, minutes: 30 });
+    const shared = Metrics.computeMetricsForSegments(segments);
+    assert.equal(fields.upGainM! + fields.downGainM!, shared.gainM);
+    assert.equal(fields.startElevationM, 100);
+    assert.equal(fields.endElevationM, 110);
+});
+
+test('draft metrics expose gaps instead of bridging or substituting zero', () => {
+    const start = Date.UTC(2026, 6, 1, 15);
+    const segments = [[
+        point(0, 0, 100, start),
+        point(0, 0.0001, null, null),
+        point(0, 0.0002, 200, start + 120_000),
+        point(0, 0.0003, 210, start + 180_000),
+    ]];
+    const fields = Core.calculateDraftFields(segments, {
+        encounter: {
+            segmentIndex: 0,
+            edgeIndex: 1,
+            fraction: 1,
+            lat: 0,
+            lon: 0.0002,
+            ele: 200,
+            time: start + 120_000,
+        },
+    }, { utcOffsetMinutes: 0 });
+
+    assert.equal(fields.upGainM, null, 'missing elevation must split the ascent gain');
+    assert.equal(fields.downGainM, 0, 'the complete flat/down half may report its recorded gain');
+    assert.equal(fields.upDuration, null, 'missing time must not become a zero duration');
+    assert.deepEqual(fields.downDuration, { days: 0, hours: 0, minutes: 1 });
+    assert.equal(fields.quality!.elevation.status, 'partial');
+    assert.equal(fields.quality!.time.status, 'partial');
+});
+
+test('draft duration requires complete, progressing, ordered timestamps', () => {
+    const start = Date.UTC(2026, 6, 1, 15);
+    const encounter = {
+        segmentIndex: 0, edgeIndex: 0, fraction: 1,
+        lat: 0, lon: 0.0001, ele: 110, time: start,
+    };
+    const equal = Core.calculateDraftFields([[
+        point(0, 0, 100, start),
+        point(0, 0.0001, 110, start),
+        point(0, 0.0002, 100, start),
+    ]], { encounter });
+    assert.equal(equal.upDuration, null);
+    assert.equal(equal.downDuration, null);
+
+    const reversed = Core.calculateDraftFields([[
+        point(0, 0, 100, start + 60_000),
+        point(0, 0.0001, 110, start),
+        point(0, 0.0002, 100, start + 120_000),
+    ]], { encounter: { ...encounter, time: start } });
+    assert.equal(reversed.upDuration, null);
+});
+
+test('Capitol draft totals match shared analyzer metrics without reordering serialized GPX', async () => {
+    const source = await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+    const document = new JSDOM(source, { contentType: 'text/xml' }).window.document;
+    const rawSegments = [...document.querySelectorAll('trkseg')].map(segment =>
+        [...segment.querySelectorAll(':scope > trkpt')].map(pointNode =>
+            Parse.parseTrackPoint(pointNode)));
+    const { segments } = Core.sanitizeTrack(rawSegments);
+    let summit: TrackPoint & {segmentIndex: number; pointIndex: number} = { lat: NaN, lon: NaN, ele: -Infinity, time: null, segmentIndex: 0, pointIndex: 0 };
+    segments.forEach((segment: TrackPoint[], segmentIndex: number) => segment.forEach((candidate: TrackPoint, pointIndex: number) => {
+        if (candidate.ele !== null && candidate.ele > (summit.ele ?? -Infinity)) summit = { ...candidate, segmentIndex, pointIndex };
+    }));
+    const encounter = {
+        segmentIndex: summit.segmentIndex,
+        edgeIndex: Math.max(0, summit.pointIndex - 1),
+        fraction: summit.pointIndex === 0 ? 0 : 1,
+        lat: summit.lat,
+        lon: summit.lon,
+        ele: summit.ele,
+        time: summit.time,
+    };
+    const fields = Core.calculateDraftFields(segments, { encounter }, { utcOffsetMinutes: -360 });
+    const metrics = Metrics.computeMetricsForSegments(segments);
+
+    assert.ok(Math.abs(fields.upGainM! + fields.downGainM! - metrics.gainM) < 1e-9);
+    assert.ok(Math.abs(fields.upDistanceM + fields.downDistanceM - metrics.distanceM) < 1e-9);
+    assert.equal(Math.round(metrics.gainM * 100) / 100, 1747.89);
+
+    const serialized = new JSDOM(Core.serializeUploadGpx(segments), {
+        contentType: 'text/xml',
+    }).window.document;
+    assert.deepEqual([...serialized.querySelectorAll('trkseg')].map(segment =>
+        segment.querySelector('time')?.textContent), [
+        '2021-07-26T14:52:00Z',
+        '2021-07-27T22:32:00Z',
+        '2021-07-27T11:08:00Z',
+        '2021-07-27T17:10:00Z',
+    ], 'serialized route geometry must retain GPX source segment order');
+});
+
+test('Strava displayed wall-clock time derives the activity timezone from GPX UTC', () => {
+    const start = Date.UTC(2026, 6, 11, 23, 13);
+    const formatted = formatEncounterDateTime(start + 60 * 60000, {
+        displayedLocalStart: '2026-07-11T16:13:00'
+    }, start);
+    assert.equal(formatted.date, '2026-07-11');
+    assert.equal(formatted.time, '17:13');
+});
+
+test('an unusable displayed wall clock falls back to UTC without claiming a timezone', () => {
+    const start = Date.UTC(2026, 6, 11, 23, 13);
+    const formatted = formatEncounterDateTime(start, { displayedLocalStart: 'not a timestamp' }, start);
+    assert.equal(formatted.date, '2026-07-11');
+    assert.equal(formatted.time, '23:13');
+    // The shape carries no timezone-confidence field to be wrong about.
+    assert.deepEqual(Object.keys(formatted).sort(), ['date', 'time']);
+});
+
+test('explicit and timestamp-suffix offsets stay inside civil-time bounds', () => {
+    const instant = Date.UTC(2026, 0, 2, 0, 0);
+    const format = (metadata: Record<string, unknown>) => formatEncounterDateTime(instant, metadata, instant);
+
+    assert.deepEqual(format({ utcOffsetMinutes: 14 * 60 }), { date: '2026-01-02', time: '14:00' });
+    assert.deepEqual(format({ utcOffsetMinutes: -14 * 60 }), { date: '2026-01-01', time: '10:00' });
+    assert.deepEqual(format({ utcOffsetMinutes: 14 * 60 + 1 }), { date: '2026-01-02', time: '00:00' });
+    assert.deepEqual(format({ utcOffsetMinutes: -14 * 60 - 1 }), { date: '2026-01-02', time: '00:00' });
+
+    assert.deepEqual(format({ localStart: '2026-01-02T14:00:00+14:00' }),
+        { date: '2026-01-02', time: '14:00' });
+    assert.deepEqual(format({ localStart: '2026-01-01T10:00:00-14:00' }),
+        { date: '2026-01-01', time: '10:00' });
+    for (const localStart of [
+        '2026-01-02T14:01:00+14:01',
+        '2026-01-01T09:59:00-14:01',
+        '2026-01-02T13:60:00+13:60',
+    ]) {
+        assert.deepEqual(format({ localStart }), { date: '2026-01-02', time: '00:00' });
+    }
+
+    assert.equal(Core.cleanUtcOffsetMinutes(840), 840);
+    assert.equal(Core.cleanUtcOffsetMinutes(-840), -840);
+    assert.equal(Core.cleanUtcOffsetMinutes(841), null);
+    assert.equal(Core.cleanUtcOffsetMinutes('-420'), null,
+        'the worker boundary accepts only the numeric contract the page sends');
+});
+
+test('nights out uses the activity-local calendar span and stays unknown without timestamps', () => {
+    const start = Date.UTC(2026, 6, 1, 23, 30);
+    const segments = [[
+        point(0, 0, 100, start),
+        point(0, 0.001, 100, Date.UTC(2026, 6, 3, 1, 0))
+    ]];
+    assert.equal(Core.calculateNightsOut(segments, { utcOffsetMinutes: 0 }), 2);
+    assert.equal(Core.calculateNightsOut([[point(0, 0), point(0, 1)]], {}), null);
+});
+
+test('day statistics use activity-local dates and preserve the cross-midnight edge once', () => {
+    const start = Date.UTC(2026, 6, 1, 6, 0);
+    const segments = [[
+        point(0, 0, 100, start),
+        point(0, 0.001, 130, start + 30 * 60000),
+        point(0, 0.002, 120, start + 90 * 60000),
+        point(0, 0.003, 160, start + 120 * 60000)
+    ]];
+
+    const stats = Core.calculateDayStats(segments, { utcOffsetMinutes: -420 });
+
+    assert.deepEqual(stats.map(row => row.date), ['2026-06-30', '2026-07-01']);
+    assert.equal(stats[0].gainM, 0);
+    assert.equal(stats[0].lossM, 0);
+    assert.equal(stats[0].maxElevationM, 115);
+    assert.equal(stats[0].campElevationM, 130);
+    assert.equal(stats[1].gainM, 0);
+    assert.equal(stats[1].lossM, 0);
+    assert.equal(stats[1].maxElevationM, 130);
+    assert.equal(stats[1].campElevationM, null);
+    assert.ok(Math.abs(stats.reduce((sum, row) => sum + row.distanceM!, 0)
+        - Core.distanceM(segments[0][0], segments[0][1])
+        - Core.distanceM(segments[0][1], segments[0][2])
+        - Core.distanceM(segments[0][2], segments[0][3])) < 0.001);
+});
+
+test('day statistics stay unavailable when any retained point lacks a timestamp', () => {
+    const start = Date.UTC(2026, 6, 1);
+    assert.deepEqual(Core.calculateDayStats([[
+        point(0, 0, 100, start),
+        point(0, 0.001, 110, null),
+        point(0, 0.002, 120, start + 60000)
+    ]], { utcOffsetMinutes: 0 }), []);
+});
+
+test('day statistics leave elevation fields unknown when the track has no elevation', () => {
+    const start = Date.UTC(2026, 6, 1);
+    const [stats] = Core.calculateDayStats([[
+        point(0, 0, null, start),
+        point(0, 0.001, null, start + 60000)
+    ]], { utcOffsetMinutes: 0 });
+    assert.equal(stats.gainM, null);
+    assert.equal(stats.lossM, null);
+    assert.equal(stats.maxElevationM, null);
+    assert.equal(stats.campElevationM, null);
+    assert.ok(stats.distanceM! > 0);
+});
+
+test('day statistics reject spans beyond Peakbagger’s supported row count', () => {
+    assert.deepEqual(Core.calculateDayStats([[
+        point(0, 0, 100, Date.UTC(2026, 0, 1)),
+        point(0, 0.001, 100, Date.UTC(2026, 4, 1))
+    ]], { utcOffsetMinutes: 0 }), []);
+});
+
+test('trip names use the activity-local start date rather than the provider title', () => {
+    const segments = [[point(0, 0, 100, Date.UTC(2026, 6, 2, 2)), point(0, 0.001, 130, Date.UTC(2026, 6, 3, 2))]];
+    assert.equal(Core.calculateTripDate(segments, { utcOffsetMinutes: -420, title: 'Afternoon Hike' }), '2026-07-01');
+    assert.equal(Core.calculateTripDate(segments, { utcOffsetMinutes: 0 }), '2026-07-02');
+    assert.equal(Core.calculateTripDate([[point(0, 0)]], { displayedLocalStart: '2026-07-01T08:00:00' }), '2026-07-01');
+    assert.equal(Core.calculateTripDate([[point(0, 0)]], { title: 'Afternoon Hike' }), '');
+});
+
+test('same-day draft suffixes follow encounter order without mutating matches', () => {
+    const matches = [
+        { id: 1, draftFields: { date: '2026-07-01', upDistanceM: 300 } },
+        { id: 2, draftFields: { date: '2026-07-02', upDistanceM: 50 } },
+        { id: 3, draftFields: { date: '2026-07-01', upDistanceM: 100 } },
+        { id: 4, draftFields: { date: '2026-07-01', upDistanceM: 200 } }
+    ];
+
+    const assigned = Core.assignDraftSuffixes(matches);
+
+    assert.deepEqual(assigned.map((match: Match) => match.draftFields.suffix), ['c', '', 'a', 'b']);
+    assert.equal(Reflect.get(matches[0].draftFields, 'suffix'), undefined);
+});
+
+test('draft selection prepares one track order, confidence order, and fallback trip name', () => {
+    const matches = [
+        { id: 7, name: 'Later', confidence: 80, draftFields: { date: '2026-07-01', upDistanceM: 300 } },
+        { id: 8, name: 'Earlier', confidence: 95, draftFields: { date: '2026-07-01', upDistanceM: 100 } },
+    ];
+
+    const prepared = Core.prepareDraftSelection(matches);
+
+    assert.deepEqual(prepared.trackOrdered.map((match: Match) => match.id), [8, 7]);
+    assert.deepEqual(prepared.confidenceOrdered.map((match: Match) => match.id), [8, 7]);
+    assert.deepEqual(Array.from(prepared.sequenceById), [['8', 1], ['7', 2]]);
+    assert.equal(prepared.fallbackTripName, 'Earlier / Later');
+    assert.deepEqual(prepared.matches.map((match: Match) => match.draftFields.suffix), ['b', 'a']);
+    assert.equal(Reflect.get(matches[0].draftFields, 'suffix'), undefined);
+});
+
+// The same regression the settings-schema guard prevents, in the other pure
+// module pair: capture-core serializes a GPX to fit Peakbagger's limits and
+// ascent-draft re-validates it against them from a different bundle, so a
+// literal in either one is free to drift out of agreement with the other.
+test('no surface keeps its own copy of a Peakbagger upload limit', async () => {
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15, 'expected the authored runtime module set');
+    assert.deepEqual(sources.flatMap(uploadLimitFindings), []);
+});
+
+test('priority reduction preserves midpoint ties and elevation extrema', async () => {
+    for (const [elevations, indices] of [
+        [Array(9).fill(100), [0, 2, 4, 6, 8]],
+        [[100, 100, 50, 100, 100, 150, 100, 100, 100], [0, 2, 3, 5, 8]],
+    ]) {
+        const segment = elevations.map((ele, index) => point(0, index * 0.0001, ele));
+        const result = await Core.reduceTrackAsync([segment], [], 5);
+        assert.deepEqual(result.segments[0].map((retained: TrackPoint) => segment.indexOf(retained)), indices);
+        assert.ok(result.maxDeviationM < 0.000001);
+    }
+});
+
+test('upload serialization can omit timestamps without changing analysis or geometry', () => {
+    const segments = [[point(49, -123, 100, Date.UTC(2026, 0, 1)), point(49.001, -123, 200, Date.UTC(2026, 0, 1, 1))]];
+    const snapshot = structuredClone(segments);
+    const timed = Core.serializeUploadGpx(segments);
+    const timeless = Core.serializeUploadGpx(segments, [{ lat: 49, lon: -123, name: 'Camp' }], { includeTimestamps: false });
+    assert.match(timed, /<time>/);
+    assert.doesNotMatch(timeless, /<time>/);
+    assert.match(timeless, /<ele>100<\/ele>/);
+    assert.match(timeless, /<wpt lat="49" lon="-123"><name>Camp<\/name>/);
+    assert.deepEqual(segments, snapshot);
+});
+
+test('draft ordering never treats an unavailable encounter distance as zero', () => {
+    for (const date of ['', '2026-07-01']) {
+        const prepared = Core.prepareDraftSelection([
+            { id: 7, name: 'First', confidence: 80, draftFields: { date, upDistanceM: 500 } },
+            { id: 8, name: 'Unknown', confidence: 90, draftFields: { date, upDistanceM: null } },
+        ]);
+        assert.deepEqual(prepared.trackOrdered.map((match: Match) => match.id), [7, 8]);
+        assert.equal(prepared.sequenceById.get('7'), 1);
+        assert.equal(prepared.fallbackTripName, 'First / Unknown');
+        if (date) assert.deepEqual(prepared.matches.map((match: Match) => match.draftFields.suffix), ['a', 'b']);
+    }
+    const measured = Core.prepareDraftSelection([
+        { id: 7, name: 'Later', draftFields: { upDistanceM: 500 } },
+        { id: 8, name: 'Start', draftFields: { upDistanceM: 0 } },
+    ]);
+    assert.deepEqual(measured.trackOrdered.map((match: Match) => match.id), [8, 7], 'a measured zero remains valid');
+});

@@ -105,7 +105,7 @@ Combined final checks are recorded below.
   at 00:00 Los Angeles (07:00 UTC); its expiry and scope were not extended.
   `npm audit --omit=dev` reports zero, but shipped libraries also live in
   devDependencies, so that subset does not establish a clean shipped graph.
-  The [October 3 plan](../plans/ci-ux-maintainability-audit-2026-10-03.md)
+  The [October 3 plan](ci-ux-maintainability-audit-2026-10-03.md)
   continues to own the advisory and historical-tag recovery limitation.
 - Preserve minimum permissions, raw-provider-GPX privacy, sender and draft
   identity checks, exactly-once Preview, manual Save, and existing cache and
@@ -129,7 +129,7 @@ Combined final checks are recorded below.
   window placement, screen-reader speech, native menus or permission prompts,
   physical touch, Android, or other operating systems.
 - The [October 19 terrain warming/LOD measurement and native Firefox BFCache
-  limits](../plans/codebase-audit-2026-10-19.md#changed-but-not-fully-proven)
+  limits](codebase-audit-2026-10-19.md#changed-but-not-fully-proven)
   remain open. Passing overlay hardware tests below must not be substituted
   for that private framebuffer/LOD probe or native cache delivery evidence.
 

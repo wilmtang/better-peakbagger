@@ -130,7 +130,7 @@ should permanently exclude Canada or the rest of the world.
 | Existing owner | What to extend |
 | --- | --- |
 | [map-layers.js](../../src/maps/map-layers.js), especially `apply`, `onToggle`, `onRetry` and renderer lifecycle | One page-owned selection; start/cancel the active renderer's wildfire session, forward bounded status and retain menu state. Do not couple fire requests to weather/SNOTEL settings. |
-| [map-layer-control.js](../../src/maps/map-layer-control.js) | Reuse row, disclosure, status, accessible busy feedback and anchored Retry. Currently every non-SNOTEL layer receives raster opacity controls; wildfire needs an explicit fixed-style/count presentation. |
+| [map-layer-control.ts](../../src/maps/map-layer-control.ts) | Reuse row, disclosure, status, accessible busy feedback and anchored Retry. Currently every non-SNOTEL layer receives raster opacity controls; wildfire needs an explicit fixed-style/count presentation. |
 | [settings-schema.js](../../src/settings/settings-schema.js), especially `MAP_OVERLAY_IDS` and its readers | Add the allowlisted wildfire state once. First release uses fixed styling, so normalize its opacity field to 100 and omit an opacity slider; do not introduce a second schema. |
 | [map-overlay-providers.js](../../src/maps/map-overlay-providers.js) | Add reviewed wildfire availability and a separate zoom policy. Existing `OVERLAY_MIN_ZOOM = 8` belongs to rasters and must not silently govern incidents. |
 | [map-overlay-leaflet.js](../../src/maps/map-overlay-leaflet.js) | Add extension-owned polygon/point groups independently of raster tiles. Existing native raster panes are at 250/260/270. Preserve host routes, markers and layers. |

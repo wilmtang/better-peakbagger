@@ -1,6 +1,6 @@
 # Garmin upload ordering: supporting evidence
 
-Checked October 23, 2026. The [implementation plan](../garmin-personal-api-draft-inbox.md)
+Checked October 23, 2026. The [implementation plan](../../archive/garmin-personal-api-draft-inbox.md)
 keeps a 30-day activity-date scan every four hours and a weekly scan of the
 user's full chosen history. Upload-time sorting was not established.
 

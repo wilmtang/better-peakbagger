@@ -93,7 +93,7 @@ test('climber cards stay in the isolated top-level Peakbagger surface', () => {
     assert.equal(entry.all_frames, false);
     assert.equal(entry.run_at, 'document_end');
     assert.deepEqual(entry.css, ['css/climber-hover-card.css']);
-    assert.deepEqual(bundleSources('content/climber-hover-card.js'), ['favorites/climber-hover-card.js']);
+    assert.deepEqual(bundleSources('content/climber-hover-card.js'), ['favorites/climber-hover-card.ts']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/favorites/climber-hover-card.css'
         && output === 'css/climber-hover-card.css'));
 });

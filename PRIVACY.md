@@ -20,8 +20,10 @@ Data leaves the browser only when a feature requires it:
   no summit coordinates or GPX are sent to NRCS.
 - **NOAA NOHRSC** receives viewed-area tile bounds for an enabled Snow depth
   overlay, plus credential-free reads of its public analysis time and legend.
+  An explicit map right-click also sends that point when Snow depth is visible.
 - **USGS** receives viewed-area tile bounds when slope or public-land overlays
-  are enabled, without GPX, account credentials or referrers.
+  are enabled, without GPX, account credentials or referrers. An explicit map
+  right-click sends the selected point for applicable visible slope/land readings.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
 - **Microsoft Planetary Computer** receives viewed-area bounds, a capture search
@@ -74,7 +76,8 @@ permission to read device location. It covers:
 - viewed-area tile coordinates sent to Mapterhorn, OpenFreeMap, or a selected
   compatible map provider when 3D is used;
 - clicked-area tile coordinates sent to Mapterhorn after an explicit map
-  right-click for the approximate elevation readout;
+  right-click for the approximate elevation readout, plus that selected point
+  sent to applicable visible snow/slope/land providers for their readings;
 - a Peakbagger-stored GPS track written to the user's GitHub repository when
   the user backs up an ascent; and
 - a Peakbagger-stored GPS track sent to Gaia, onX, AllTrails, or CalTopo when the user clicks that destination's **Send** button.
@@ -622,6 +625,14 @@ images. Turning it off cancels pending requests. Opacity follows the existing
 synced overlay preferences; enablement is temporary map state. See
 [Snow depth](docs/map-layers.md#snow-depth) for coverage and freshness limits.
 
+An explicit map right-click additionally sends the selected latitude/longitude
+only to the services for applicable visible overlays: NOAA for modeled snow
+depth, USGS for slope or US fee ownership, and the regional Alberta service for
+ownership class. BC parcel point inspection is unavailable. These bounded,
+credential-free queries request no parcel owner names or addresses. Their
+readings and cooldowns stay in page memory; dismissal and changed layer settings
+cancel pending requests. Opening the location menu makes no weather request.
+
 The SNOTEL layer filters the public national catalog locally for the active
 viewport. NRCS receives no viewport bounds. More than 50 visible stations asks
 the user to zoom in. Only bounded public metadata reaches the renderer; nearby
@@ -834,8 +845,9 @@ backup or sync may later transfer the imported change.
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled; elevation shading when Maptoolkit Hiking is selected in 2D; or a bounded elevation lookup after an explicit map right-click, independently of 3D/weather settings. No credentials or referrer. |
 | OpenFreeMap or selected map provider | OpenFreeMap style and vector tiles when OSM Vector is selected in 2D or 3D; selected compatible raster-provider tiles in 3D. |
 | Maptoolkit | Style, vector/raster tile, glyph and sprite requests only when Maptoolkit Hiking is selected in 2D or 3D. No cookies, referrers, source GPX or Peakbagger identity. |
-| USGS 3DEP / PAD-US | Viewed-area tile bounds when the slope/public-land overlay is enabled, without credentials or referrers. |
-| ParcelMap BC / Alberta Environment and Protected Areas | Viewed-area tile bounds when public lands is enabled in supported Canadian areas. BC images require explicit optional host access and pass transiently through the extension worker. Alberta returns only geometry, object IDs and ownership classes. No credentials or referrers; no extension-managed persistent parcel cache. |
+| NOAA NOHRSC | Viewed-area snow tiles when enabled, public analysis time and legend; an explicitly right-clicked point for visible snow-depth readings. No credentials or referrers. |
+| USGS 3DEP / PAD-US | Viewed-area tile bounds when enabled; an explicitly right-clicked point for visible slope/land readings. No credentials or referrers. |
+| ParcelMap BC / Alberta Environment and Protected Areas | Viewed-area tile bounds when public lands is enabled in supported Canadian areas. BC images require explicit optional host access and pass transiently through the extension worker. Alberta returns only geometry, object IDs and ownership classes; explicit right-click point queries request ownership class only. No credentials or referrers; no extension-managed persistent parcel cache. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | AllTrails, CalTopo, Gaia GPS, and onX Backcountry | The saved Peakbagger GPX after the matching **Send** click, including CalTopo's server-side parsing; review and final Upload, Import, and Save actions remain manual. |

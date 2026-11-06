@@ -168,7 +168,7 @@ Proposed modules below are names to create, not files already in the tree:
 
 ```text
 src/maps/map-layer-core.js       normalized state, identifiers, bounds, revisions
-src/maps/map-layer-control.js    reusable Layers UI, no provider/storage access
+src/maps/map-layer-control.ts    reusable Layers UI, no provider/storage access
 src/maps/map-layer-controller.js one map session and active-renderer ownership
 src/maps/map-layer-leaflet.js    extension-owned native panes and layers
 src/maps/map-layer-bridge.js     narrow isolated-world preferences/catalog service

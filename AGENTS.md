@@ -6,6 +6,54 @@ When making code changes, commit each completed independent unit of work before 
 
 For audit-remediation work, keep an explicit closure ledger with three categories: fixed and verified, intentionally not changed, and changed but not fully proven. Do not summarize the audit as completely fixed while owner-choice items or verification gaps remain. Preserve that ledger when archiving the completed plan so the handoff distinguishes product risk from optional cleanup and missing evidence.
 
+## TypeScript on creation and modification
+
+All new authored JavaScript-family code must be TypeScript: use `.ts` for browser
+modules and `.mts` for Node ESM scripts, tests and configuration. This includes
+code under documentation, fixtures and store-asset tooling. HTML, CSS, JSON,
+Markdown and other non-JavaScript formats keep their normal extensions.
+
+When modifying an existing authored `.js`, `.mjs`, `.cjs` or `.jsx` file, convert
+that module to TypeScript in the same focused change. Untouched legacy files
+can stay JavaScript. Pure filename-reference updates from `.js` to `.ts`, `.mjs`
+to `.mts`, or `.cjs` to `.cts` may remain in legacy callers: the policy guard
+requires every other byte to remain unchanged. This avoids cascading unrelated
+conversions while keeping substantive code edits in TypeScript. New
+TypeScript may import untouched legacy JavaScript without converting it.
+Update imports, entry aliases, command/workflow references,
+literal source readers, test discovery and documentation together. Preserve
+manifest output filenames and script order: generated extension bundles remain
+`.js`. Do not leave a JavaScript forwarding stub, rename unrelated callers, or
+use `@ts-nocheck`/blanket `any` to make a conversion appear complete. Preserve the
+owning module's behavior and run its relevant regression checks.
+
+Generated output and upstream third-party code retain their required formats;
+the exact excluded roots are in `scripts/typescript-policy.mts`. An authored
+tool-required JavaScript exception needs a narrow documented policy change,
+not a general exclusion of scripts or tests. Follow the compatibility checklist
+in `docs/plans/modern-stack-adoption.md` for runtime conversions. Repository-wide
+runtime source checks must use `test/helpers/runtime-sources.mts` so authored
+TypeScript and Svelte files cannot disappear from policy scans. Keep owner
+exceptions explicit. Build-watcher coverage and Svelte compilation/UI integration
+remain tracked separately in the adoption plan. Svelte
+is not enabled by this policy; when enabled, component scripts must use TypeScript.
+
+Run `npm run typecheck`, `npm run lint`, and the appropriate tests. Before
+committing, `npm run check:typescript-policy` checks staged additions and changes;
+the pre-commit hook runs it after the privacy scan. CI independently checks the
+complete PR/push diff, so an intermediate commit or skipped local hook cannot
+retain modified JavaScript in the final change.
+
+For every new or changed map layer, evaluate point inspection. Applicable enabled
+layers must implement `InspectableMapLayer.rightClick()` in
+`src/maps/map-layer-inspection.ts`. Register each built-in layer in
+`POINT_INSPECTION_DECISIONS` and its query factory, or record why it is not
+applicable; the registry test must cover every schema layer. Queries must
+respect selected subtypes, provider coverage, cancellation, cooldowns and privacy permissions. Use compact labelled
+readings, distinguish no data from zero, and keep popup geometry stable while
+asynchronous results arrive. Legends must match the renderer/service actually
+used, with readable swatches and source/date attribution.
+
 ## Repository skills
 
 Before adding or changing a peak-page card, saved-ascent card, or embedded ascent-form panel, read [card implementation conventions](docs/card-conventions.md). Follow the owning surface: peak cards use the shared peak layout owner; ascent cards use their existing column/drag or embedded-feature owners. Keep this guide current when the common contract changes.
@@ -22,7 +70,7 @@ For interactive browser work, `npm run start -- chromium` and `npm run start -- 
 - The worker ships as one `dist/background.js` bundle. Chrome's `background.service_worker` and Firefox's `background.scripts` must both name that same output; its ES-module composition belongs only in the `background.js` entry in `scripts/build-config.mjs`. Do not reintroduce `importScripts` or raw source arrays. `test/project/manifest-capture.test.mjs` pins the two manifest references, bundle composition, and a real bundled-worker boot.
 - Peakbagger content scripts normally run in the isolated extension world, where extension APIs are available. `src/gpx/gpx-analyzer.js` and the on-demand `src/capture/provider-page.js` run in the page's MAIN world because they need page-owned globals or authenticated same-origin page state; MAIN-world code cannot call extension APIs. Do not move code across this boundary without re-evaluating its data access and browser compatibility.
 - `src/settings/bridge.js` is the narrow settings bridge from the isolated world to the MAIN-world GPX Analyzer via `window.postMessage`. `src/settings/settings.js` owns portable `chrome.storage.sync` preferences and the separate `storage.local.bpbDeviceSettings` record; the schema itself — defaults, bounds, validators — lives in the pure `src/settings/settings-schema.js`, which has no DOM or extension-API dependency and is imported into the MAIN-world and terrain-frame bundles too (the same arrangement `src/gpx/gpx-metrics.js` uses for shared math). Page-world writes are allowlisted to the analyzer-owned keys only; feature gates, capture privacy options, and theme stay writable solely from extension surfaces. Do not widen the allowlist, create a second settings schema, or expose privileged extension messaging directly to page-world code.
-- Every surface that reads settings off `postMessage` — the GPX Analyzer, the BigMap enhancer, the terrain frame — must re-validate, because that message crosses a trust boundary. Re-validate *through `src/settings/settings-schema.js`*, never with a local copy of a bound or a default: those copies are what "do not create a second settings schema" forbids, and a drifting bound is invisible until it ships. Validation is idempotent by design, so whatever `clean()` writes the readers accept unchanged. `test/settings/settings-schema.test.mjs` pins the shared validation semantics and scans for the route, viewport, and theme literals that previously drifted; extend that structural guard whenever a new shared default or bound is added.
+- Every surface that reads settings off `postMessage` — the GPX Analyzer, the BigMap enhancer, the terrain frame — must re-validate, because that message crosses a trust boundary. Re-validate *through `src/settings/settings-schema.js`*, never with a local copy of a bound or a default: those copies are what "do not create a second settings schema" forbids, and a drifting bound is invisible until it ships. Validation is idempotent by design, so whatever `clean()` writes the readers accept unchanged. `test/settings/settings-schema.test.mts` pins the shared validation semantics and scans for the route, viewport, and theme literals that previously drifted; extend that structural guard whenever a new shared default or bound is added.
 - Provider-page capture is an explicit, short-lived transaction started by **Capture this activity** and scoped by `activeTab`; it has no persistent Garmin or Strava website permission. Opening the popup reads existing work only. `src/capture/provider-page.js` verifies ownership before fetching provider GPX and fails closed when ownership signals or provider DOM are ambiguous. The separate opt-in Garmin API inbox lives under `src/garmin/`, requests only optional `personal.connectapi.garmin.com` access, and stores credentials and reduced pending drafts in extension-origin IndexedDB. Scheduled imports never create provider/Peakbagger tabs or save ascents. Durable inbox retention does not extend the 30-minute form-delivery lifetime.
 - Raw provider GPX is parsed on the activity page and must never leave that page or be persisted. Analysis fields may reach the background worker; capture settings may additionally allowlist the activity/track name for multi-peak Trip Info and waypoint latitude/longitude/name. The later Peakbagger Preview payload must be newly serialized from these narrow fields—never forward or redact the source XML in place. Waypoints are on by default, consume the same 3,000-point budget as trackpoints, and must not carry elevation, time, description, symbols, or extensions.
 - Summit lookup must be complete before results are presented: partial corridor responses are not equivalent to "no peaks." Privacy or correctness gates—including Peakbagger login, ownership, track validation, draft identity, and expected form structure—must remain fail closed.

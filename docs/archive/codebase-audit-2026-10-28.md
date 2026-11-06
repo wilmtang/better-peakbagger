@@ -181,7 +181,7 @@ failing geometry remains unproven in this audit.
 ### R06 — restore meaningful full editor verification
 
 **Sources:** `scripts/custom-overlay-editor-verification.mjs` (lines 6–13,
-47–57); `scripts/verify-custom-overlays.mjs` (lines 255–282, 417–423); and
+47–57); `scripts/verify-custom-overlays.mts` (lines 255–282, 417–423); and
 `src/maps/custom-overlay-editor.css` (the intentional negative field margins).
 
 Four related verifier problems undermine the complete editor matrix:

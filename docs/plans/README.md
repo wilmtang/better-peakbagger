@@ -1,113 +1,59 @@
 # Active plans
 
+- [Repository follow-up ledger](follow-ups.md)
+  — the single list of what completed audits left open: the deepmerge release
+  blocker, terrain warming timing, Linux backup widths, hosted CI and manual
+  release checks. Includes the latest full acceptance run.
+
 - [2D vector zoom audit — November 1](vector-zoom-audit-2026-11-01.md)
   — implemented camera/image handoff and parent-clock rendering; repeated
   animation proof and explicit unrelated repository gates in the closure ledger.
 
 - [Maptoolkit performance and picker audit — October 31](maptoolkit-performance-audit-2026-10-31.md)
   — five findings implemented: picker containment, progressive loading, reduced
-  shading, bounded renderer reuse and 3D request ownership; verified closure
-  ledger retains unrelated repository gates and native/live proof limits.
+  shading, bounded renderer reuse and 3D request ownership.
 
 - [Maptoolkit basemap integration — October 31](maptoolkit-basemap-2026-10-31.md)
-  — implemented Hiking in native 2D and 3D in an isolated worktree; provider
-  boundaries, attribution, live checks and explicit repository verification gaps.
+  — implemented Hiking in native 2D and 3D; provider boundaries, attribution,
+  live checks and explicit verification gaps.
 
-- [2D vector map audit remediation — October 31](vector-map-audit-2026-10-31.md)
-  — implemented geographic alignment, post-load failure recovery, stale
-  authorization rejection and provider cooldowns in independent commits. The
-  ledger records hidden hardware browser proof and unrelated repository gates.
-
-- [Connected-service disconnect audit — October 31](service-disconnect-audit-2026-10-31.md)
-  — implemented Garmin, ImgBB and GitHub cleanup; self-review fixes protect
-  deletion counts, cancel stale setup and reconcile cross-window connections.
-  The ledger records focused/browser proof and remaining repository-wide gates.
-
-- [Private custom-layer relay — October 26](custom-layer-private-relay-2026-10-26.md)
-  — implemented private query parameters, constrained worker requests and bounded
-  user grants; full tests/lint and Chrome/Firefox private 2D/3D passed. Native
-  permission prompts and provider-specific policies remain explicit proof gaps.
-
-- [Instagram embed display audit — October 26](instagram-embed-audit-2026-10-26.md)
-  — reproduced the initialization race: BPB widened the player by 2px after
-  loading, and overlapping Instagram resize updates could retain visible width
-  zero. Corrected the width and removed navigation interception; optional access
-  now controls theme only. Verification and proof limits are in the ledger.
-
-- [Peak and ascent card reuse audit — October 24](card-reuse-audit-2026-10-24.md)
-  — implemented in focused commits: collapsed-read/calm-axis fixes, shared
-  eligibility, chart math, card styles, pointer gestures and latest-read ownership.
-  Full suite and hidden Chrome/Firefox matrices passed; external proof limits
-  and intentionally separate policies remain in the closure ledger.
+- [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
+  — TypeScript tooling, policy scans and bounded map adoption implemented;
+  baseline repair is done, and the remaining milestones run from small helper
+  conversions through watch/boundary support, Svelte compilation and a Units
+  panel pilot to broader conversion and optional WXT/Vite cutover.
 
 - [Weather guide and open API optimizations](../weather.md)
-  — consolidated feature/request documentation and historical weather audits;
-  cloud usage and cross-card/page cache work remain open in its ledger.
+  — cloud-request cost and cross-card/page caching remain open in its ledger.
 
 - [Cell coverage storage and Cloudflare hosting](cell-coverage-cloudflare-hosting.md)
-  — extension integration requirements and the
-  [independent server repository](../server-repository.md), which owns conversion,
-  compaction, measured sizes, the complete research report and rendered comparison.
-  Full US size, production rendering and live Cloudflare behavior remain unverified.
-
-- [FCC tooling migration pointer](experiments/fcc-browser-coverage/README.md)
-  — executable experiments and their evidence moved to map-server;
-  this directory retains a pointer to the maintained server checkout.
+  — extension integration and delivery/rendering verification. Conversion and
+  measurement belong to the [independent server repository](../server-repository.md).
 
 - [Wildfire map overlay](wildfire-map-overlay.md)
-  — US implementation verified locally; opt-in reported locations and perimeters in the
-  shared native/3D Overlays menu, followed by Canadian locations after proving
-  the new service's current-record queries. Includes source probes, bounded
-  request design, lifecycle/UX checks and explicit live/browser proof gaps.
-
-- [Repository bugs, performance, engineering, and UX audit — October 24](codebase-audit-2026-10-24.md)
-  — confirmed runtime fixes implemented in focused commits after independent
-  verification and local checks. The closure ledger retains intentional
-  behavior, the reviewed dependency exception and browser/live proof gaps.
-
-- [Signed-out Peakbagger feature gates and remediation](signed-out-peakbagger-audit-2026-10-23.md)
-  — all four findings implemented and locally verified: Buddy-filter recovery,
-  shared account parsing, cached Buddy feedback and My Ascents session checks.
-  Includes the feature inventory, live reproduction, Chrome/Firefox evidence
-  and closure ledger; live cookie isolation and native-UI proof gaps remain.
-
-- [Garmin Personal API and automatic draft inbox](garmin-personal-api-draft-inbox.md)
-  — researched and proposed; live token, activity and deep-history FIT reads
-  verified, with a four-hour editable schedule, opt-in key export, persistent
-  inbox snapshots, incremental discovery rules and decoder-license comparison.
-  Includes visual workflow mocks and an interactive documentation prototype.
-  Business terms, production decoding and runtime/UX verification remain open.
-
-- [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md)
-  — four runtime findings fixed and verified locally in focused commits:
-  capture cooldown, keyboard focus, metadata stability and chart efficiency.
-  The upstream dependency advisory remains open with its existing October 24
-  expiry; regression evidence and native/live proof gaps are retained.
-
-- [Owned activity export from Garmin and Strava feeds](activity-feed-export.md)
-  — proposed; optional per-service access, owner-only activity buttons, an
-  anchored review panel, and leased extraction tabs with explicit privacy,
-  lifecycle, layout-stability, and live-provider verification gates.
-
-- [Repository bugs, engineering, and UX audit — October 19](codebase-audit-2026-10-19.md)
-  — all seven fixes and both engineering improvements implemented; local
-  verification and independent commits recorded, with terrain warming,
-  native Firefox BFCache and hosted CI proof gaps retained.
+  — US implementation verified locally; Canadian locations are deferred until the
+  new service's current-record queries are proven.
 
 - [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
-  — proposed; worldwide issuing-service links first, then opt-in regional
-  overlays with verified provider contracts, coverage, and expiry handling.
-- [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
-  in progress; release recovery, verifier timing, focused UI simplification,
-  and removal of duplicated runtime code, with an explicit closure ledger.
-- [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
-  host dropdown, user-owned Imgur Client IDs with guided account connection,
-  and a dedicated MP4 upload path.
+  — source links implemented; exact zone links and regional overlays remain proposed.
+
+- [Owned activity export from Garmin and Strava feeds](activity-feed-export.md)
+  — proposed; implementation has not started.
+
+- [Imgur uploads and media-host selection](imgur-media-hosting.md)
+  — proposed; implementation has not started.
+
+The [FCC tooling pointer](experiments/fcc-browser-coverage/README.md) records that
+executable experiments and their evidence moved to map-server.
 
 Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [November 6 archive pass](follow-ups.md) moved 18 completed audit and
+implementation records to the archive. Their ledgers stay intact, and everything
+they left open is now in the follow-up ledger.
 
 The [October 28 code/performance/UX re-audit](../archive/codebase-audit-2026-10-28.md)
 is implemented in seven focused fix commits covering six findings and a

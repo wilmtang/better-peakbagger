@@ -63,8 +63,16 @@ jobs:
       - name: Check immutable release history
         run: npm run release:check-history
 
+      - name: Require TypeScript for new and modified authored code
+        env:
+          TYPESCRIPT_POLICY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run check:typescript-policy -- --base "$TYPESCRIPT_POLICY_BASE"
+
       - name: Run tests
         run: npm test
+
+      - name: Check TypeScript
+        run: npm run typecheck
 
       - name: Lint source and extension
         run: npm run lint

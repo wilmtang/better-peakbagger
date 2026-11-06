@@ -1,0 +1,68 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { JSDOM } from '../helpers/test-dom.mts';
+
+import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.js';
+import { runtimeSources } from '../helpers/runtime-sources.mts';
+import { cloudflareFindings } from '../helpers/source-policies.mts';
+
+test('managed-challenge detection matches peakbagger-cli response evidence', () => {
+    assert.equal(Cloudflare.isManagedChallenge(403, { 'cf-mitigated': 'challenge' }, '<html/>'), true);
+    assert.equal(Cloudflare.isManagedChallenge(
+        403, {}, '<html><title>Just a moment...</title></html>'
+    ), true);
+
+    assert.equal(Cloudflare.isManagedChallenge(
+        200,
+        { 'cf-mitigated': 'challenge' },
+        '<html><title>Just a moment...</title><script>window._cf_chl_opt={}</script></html>'
+    ), false, 'Cloudflare metadata cannot turn a successful response into a challenge');
+    assert.equal(Cloudflare.isManagedChallenge(403, {}, '<html><h1>Forbidden</h1></html>'), false,
+        'a bare 403 remains an ordinary HTTP failure');
+    assert.equal(Cloudflare.isManagedChallenge(
+        403, {}, `${'x'.repeat(Cloudflare.BODY_PROBE_LENGTH)}Just a moment`
+    ), false, 'the body fallback is deliberately bounded like peakbagger-cli');
+});
+
+test('human-check copy and recovery action have one owner', () => {
+    assert.match(Cloudflare.copy.message, /asking for a human check/i);
+    assert.deepEqual(Cloudflare.recovery({ url: 'https://www.peakbagger.com/peak.aspx?pid=1' }), {
+        label: 'Complete check on Peakbagger',
+        href: 'https://www.peakbagger.com/peak.aspx?pid=1',
+    });
+});
+
+test('document challenge detection uses page evidence, not report prose or background Cloudflare scripts', () => {
+    for (const [html, expected] of [
+        ['<title>Just a moment...</title>', true],
+        ['<title>  just a moment…  </title>', true],
+        ['<title>Peakbagger</title><form id="challenge-form"></form>', true],
+        ['<title>Peakbagger</title><div id="cf-challenge-running"></div>', true],
+        ['<title>Ascent of Mount Rainier</title><p>Just a moment... Cloudflare verified the browser.</p>', false],
+        ['<title>Ascent of Mount Rainier</title><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script>', false],
+        ['<title>Just a moment on the summit</title>', false],
+    ] as const) {
+        const env = new JSDOM(html);
+        try { assert.equal(Cloudflare.isChallengeDocument(env.window.document), expected, html); }
+        finally { env.window.close(); }
+    }
+});
+
+test('runtime Cloudflare signatures and Peakbagger human-check copy remain centralized', async () => {
+    const sources = await runtimeSources();
+    assert.ok(sources.length >= 15);
+    assert.deepEqual(sources.flatMap(cloudflareFindings), []);
+
+    const providerClassifier = await readFile(
+        fileURLToPath(new URL('../../src/capture/provider-response.js', import.meta.url)),
+        'utf8',
+    );
+    assert.match(providerClassifier, /cf-mitigated/,
+        'the provider boundary owns its separate documented response marker');
+    assert.doesNotMatch(providerClassifier, /Peakbagger is asking for a human check|Complete check on Peakbagger/);
+});

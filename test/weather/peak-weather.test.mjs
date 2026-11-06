@@ -13,7 +13,7 @@ const [peak, bundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
     readFile(new URL('../../dist/content/peak-weather.js', import.meta.url), 'utf8'),
 ]);
-const menuBundle = (await build({ entryPoints: ['src/maps/map-location-menu.js'], bundle: true, write: false, format: 'iife', globalName: 'testMapMenu' })).outputFiles[0].text;
+const menuBundle = (await build({ entryPoints: ['src/maps/map-location-menu.ts'], bundle: true, write: false, format: 'iife', globalName: 'testMapMenu' })).outputFiles[0].text;
 const pause = () => new Promise(resolve => setImmediate(resolve));
 const waitFor = async predicate => {
     const deadline = Date.now() + 2000;

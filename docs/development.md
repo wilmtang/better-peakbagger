@@ -14,7 +14,9 @@ Better Peakbagger module uses a global as an internal dependency.
 
 ## Prerequisites
 
-- Node.js 22 or newer (CI uses Node.js 24) and npm.
+- Node.js 24 or newer (CI uses Node.js 24) and npm. Node strips erasable
+  TypeScript from authored `.ts`/`.mts` tooling and tests; type checking remains
+  a separate required command.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
   (esbuild, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
   Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
@@ -27,6 +29,8 @@ Better Peakbagger module uses a global as an internal dependency.
   invisible until something has already been committed. If you already set
   `core.hooksPath` yourself the install leaves it alone and says so; enable the
   scan by hand with `git config core.hooksPath .githooks`.
+  The pre-commit hook also enforces the TypeScript creation/modification rule
+  below, after the privacy scan.
 - For Chrome verification: `npx playwright install chromium` (Chrome for
   Testing — stable Chrome refuses `--load-extension`).
   On macOS, run browser checks outside Codex's Seatbelt sandbox through its
@@ -46,6 +50,58 @@ Better Peakbagger module uses a global as an internal dependency.
   fixture is served over HTTPS on a real Peakbagger hostname. That is required
   by the product, not a formality: `src/peakbagger/peakbagger-request.js`
   refuses any other origin.
+
+## TypeScript creation and modification policy
+
+New authored JavaScript-family modules use TypeScript: `.ts` for browser code,
+`.mts` for Node ESM scripts, tests and configuration. Modifying an existing
+`.js`, `.mjs`, `.cjs` or `.jsx` module requires converting it in the same change;
+untouched legacy modules remain supported. This includes authored fixtures,
+documentation probes and store-asset tooling. HTML, CSS, JSON and prose keep
+their existing formats. Generated bundles and reviewed upstream code retain
+their required JavaScript formats; exclusions are limited to the output/vendor
+roots recorded in [the guard](../scripts/typescript-policy.mts).
+Exact filename-reference upgrades to TypeScript may remain in legacy callers
+when every other byte is unchanged; the guard verifies this exception. Substantive
+edits still require conversion. Importing untouched JS from TS remains supported.
+
+Convert the actual implementation, update exact import extensions, build entry
+aliases, scripts/workflows, source readers and test discovery, and preserve the
+generated `.js` filenames consumed by the manifest and pages. New Node tests use
+`.test.mts`; run converted scale tests explicitly until their owning runner is
+updated. Do not add forwarding JavaScript stubs or disable checking. Runtime
+conversion must also update the relevant source guards and watch coverage from
+[the adoption plan](plans/modern-stack-adoption.md). This setup does not install
+Svelte or replace existing runtime owners.
+
+Repository-wide runtime policy checks use
+[test/helpers/runtime-sources.mts](../test/helpers/runtime-sources.mts), which
+recursively discovers the build's `AUTHORED_SOURCE_ROOTS` rather than maintaining
+another directory list. It includes JavaScript, TypeScript and Svelte source,
+excludes declaration files and generated/vendor directories, and keeps test
+fixtures outside production discovery. TypeScript syntax is erased alongside
+raw text for policy matching; Svelte script blocks receive the same treatment
+while template handlers remain visible in the raw scan. The actual policy
+functions live in [source-policies.mts](../test/helpers/source-policies.mts),
+shared by the repository checks and failing fixture tests. Reviewed settings
+read counts and module-specific exceptions must be updated explicitly when an
+owner changes. Svelte compilation and the build-watcher work remain separate.
+
+`npm run typecheck` checks separate browser/Node projects without emitting files.
+The current Chrome definitions include the cross-browser `browser` alias; do not
+install conflicting global definitions or assume these types prove Firefox API
+support. ESLint loads [its TypeScript config](../eslint.config.mts) through the
+locked Jiti loader. Existing JS retains its rules; TS uses compiler name checking
+and the TypeScript-aware unused/shadow rules. The checking projects deliberately
+are not named `tsconfig.json`, so esbuild cannot silently change legacy output
+through automatic configuration discovery.
+
+`npm run check:typescript-policy` examines the staged Git index, including partial
+staging. CI independently checks the full committed PR/push diff with `--base`;
+release verification compares with the policy-adoption baseline. Deletions and
+JS-to-TS renames are allowed. Moving code to another JavaScript path is rejected.
+The pre-commit hook runs this guard after privacy scanning, and an unknown option
+or unavailable base revision fails rather than skipping enforcement.
 
 ## Shared UI/UX skill
 
@@ -236,7 +292,7 @@ use this only with the isolated fixture verifiers.
 ## Commands
 
 `package.json` is strict JSON and cannot carry comments. This table is the
-complete command reference; `test/project/development.test.mjs` fails when a
+complete command reference; `test/project/development.test.mts` fails when a
 script is added or removed without updating it.
 
 | Command | What it does |
@@ -246,13 +302,16 @@ script is added or removed without updating it.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
-| `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
+| `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. |
+| `npm run typecheck` | Strict, no-emit TypeScript checks using separate browser and Node checking projects; runs in Test CI and release verification. |
+| `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
 | `npm run audit:ci` | Requires zero advisories by default, including development dependencies. Ordinary Test CI and store releases explicitly opt into one reviewed, exact-version/path development-only deepmerge exception through October 30, 2026; all other advisories remain rejected. See [releasing](releasing.md) for the policy and the [integration ledger](archive/mainline-dependency-integration-2026-10-03.md) for the original review. |
 | `node scripts/verify-layout-stability.mjs --surface=timestamps` | After a build, checks local-file timestamp removal, per-file keyboard exceptions, busy/failure recovery, capture exceptions and Options presentation in hidden Chrome/Firefox at 390×900 and 1280×900, light/dark, 100% and simulated 150% zoom using a scaled CSS viewport and device pixel ratio. APIs and summit lookup are stubbed; no live Save or account sync. `BPB_JITTER_ARTIFACTS` retains screenshots. To prove pre-feature failure without changing the worktree, set `BPB_TIMESTAMP_BASELINE` to a full earlier commit SHA; the expected failure is timestamps still attached to the native upload. |
 | `node scripts/verify-layout-stability.mjs --surface=ascent-columns` | After a build, checks content-sized native summary labels/values containing the route map, with a saved 900px map preference, against the shipped layout/analyzer/weather bundles. Hidden Chrome/Firefox cover 390×900 and 1280×900, light/dark, and simulated 150% zoom at 260×600 and 853×600. Asserts unequal metadata widths, aligned table/GPS/weather edges, no horizontal overflow, keyboard divider extremes, and stable geometry/scroll during held weather refresh and retry; error details may deliberately expand. Only the full-width map host is contained. Storage, Leaflet and provider responses are stubbed; no manifest/worker or native window-focus proof. `BPB_JITTER_ARTIFACTS` retains screenshots. The width assertion failed on the former fixed-layout summary. |
+| `node scripts/verify-layout-stability.mjs --surface=ascent-filters` | After a build, checks repeated climber/GPS/link/beta toggles, Clear filters and ignored-ascent disclosure against the native full-column list and shipped filter/theme bundles. Hidden Chrome/Firefox cover 390×900 and 1280×900, light/dark, simulated 150% zoom at 260×600 and 853×600, plus pointer toggles at 2048×900. Asserts stable toolbar/chips/header columns, keyboard focus and scroll, with and without ignored ascents. Following content may move only by the deliberate change in list height. Storage and image bytes are stubbed; no live account, manifest/worker or native window-focus proof. Trip-report threshold disclosure and remote Buddy List recovery are outside this check. `BPB_JITTER_ARTIFACTS` retains screenshots. The unfixed toolbar failed with a 40px height jump when favorites were enabled. |
 | `node scripts/verify-layout-stability.mjs --surface=peak-columns` | After a build, checks both native peak metadata tables against shipped column/map owners with a saved 900px map preference. Same hidden Chrome/Firefox themes, widths and zoom matrix as `ascent-columns`; asserts unequal label/value widths, table/map containment and keyboard divider extremes. Storage, frame content and unrelated external images are stubbed; BPB-created data tables are outside this check. `BPB_JITTER_ARTIFACTS` retains screenshots. Historical fixed-layout CSS fails the new metadata-width assertion. |
 | `node scripts/verify-report-draft-ownership.mjs` | After a build, exercises two editors against one real worker in hidden Chrome: untouched exits and conflicting edits preserve the newest draft. `BPB_DRAFT_OUTPUT` retains desktop/light and narrow/dark conflict screenshots. |
 | `node scripts/verify-report-photos.mjs` | After a build, checks paste, local editing, fixture-owned ImgBB upload, native form resumption, and the acknowledged In report library badge in hidden Chrome. No live upload or server Save proof. |
@@ -467,7 +526,7 @@ unchecked during an ordinary-use capture. Cache bypass reproduced the reported
 block, and disabling that option restored the user's 3D map. The raster path
 leaves HTTP caching and request identity with the browser; changing the tile
 transport or spoofing headers is not an established fix. See the
-[policy/recovery closure ledger](plans/2026-10-24-osm-terrain-policy.md).
+[policy/recovery closure ledger](archive/2026-10-24-osm-terrain-policy.md).
 
 Ordinary Test CI runs `snow`, `peak-cards`, `peak-card-placement` and `weather-interactions` per browser after the generic
 layout matrix, reusing its completed `dist/` build. A separate always-run
@@ -596,7 +655,7 @@ build config does not ship.
 ### Testing a module
 
 - **Pure logic** (no DOM/chrome/vendor globals): `import` it directly in a
-  `test/<domain>/*.test.mjs` and call it. Set any ambient browser global the
+  `test/<domain>/*.test.mts` and call it. Set any ambient browser global the
   module reads (`DOMParser`, `location`, …) from a throwaway jsdom.
 - **Content-script behaviour**: evaluate the *built bundle* into a jsdom page
   with `evalBundle` from `test/helpers/load-page.mjs`. This runs exactly what

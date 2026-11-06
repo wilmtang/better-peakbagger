@@ -807,7 +807,7 @@ MAIN-world analyzer bundles. The three pinned composition assertions in
 `test/project/manifest-capture.test.mjs` failed until updated, which is that
 guard working as intended.
 
-`test/ui/units.test.mjs` covers exact constants, explicit preference beating
+`test/ui/units.test.mts` covers exact constants, explicit preference beating
 the probe, `auto` deferring to the probe, and the imperial fallback for a
 surface with no page (the popup) or an inconclusive probe. Two structural
 guards make the duplication unable to return: one walks every `src/` and page

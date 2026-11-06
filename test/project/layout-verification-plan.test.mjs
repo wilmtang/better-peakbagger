@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { layoutVerificationPlan } from '../../scripts/layout-verification-plan.mjs';
 
-const surfaces = ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter', 'ascent-backup', 'profile-backup', ...Array.from({ length: 18 }, (_, i) => `surface-${i}`)];
+const surfaces = ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter', 'ascent-filters', 'ascent-backup', 'profile-backup', ...Array.from({ length: 17 }, (_, i) => `surface-${i}`)];
 const identity = value => JSON.stringify(value);
 
 test('four balanced shards preserve every browser, surface, theme and viewport exactly once', () => {
@@ -23,7 +23,7 @@ test('four balanced shards preserve every browser, surface, theme and viewport e
 });
 
 test('focused selections preserve their enlarged-text cases and browser selections', () => {
-    for (const surface of surfaces.slice(0, 4)) {
+    for (const surface of surfaces.slice(0, 5)) {
         const cases = layoutVerificationPlan(['--firefox-only', `--surface=${surface}`], surfaces).cases;
         assert.equal(cases.length, 8);
         assert.deepEqual([...new Set(cases.map(c => c.zoom))], [1, 1.5]);

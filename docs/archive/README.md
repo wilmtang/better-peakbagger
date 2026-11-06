@@ -8,6 +8,28 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+Items these records left open now live in the
+[follow-up ledger](../plans/follow-ups.md).
+
+- [2D vector map audit remediation — 2026-10-31](vector-map-audit-2026-10-31.md) — geographic alignment, post-load failure recovery, stale authorization rejection and provider cooldowns.
+- [Connected-service disconnect audit — 2026-10-31](service-disconnect-audit-2026-10-31.md) — Garmin, ImgBB and GitHub cleanup, protected deletion counts and cross-window reconciliation.
+- [Private custom-layer relay — 2026-10-26](custom-layer-private-relay-2026-10-26.md) — private query parameters, constrained worker requests and bounded user grants.
+- [Instagram embed display audit — 2026-10-26](instagram-embed-audit-2026-10-26.md) — the width initialization race and theme-only optional access.
+- [onX export reliability — 2026-10-27](onx-export-reliability-2026-10-27.md) — bounded handoff when cold authentication hides the tab URL.
+- [Peak and ascent card reuse audit — 2026-10-24](card-reuse-audit-2026-10-24.md) — collapsed reads, shared eligibility, chart math, styles and gestures.
+- [Repository audit and remediation — 2026-10-24](codebase-audit-2026-10-24.md) — confirmed runtime fixes and retained browser/live proof gaps.
+- [OSM terrain policy and recovery — 2026-10-24](2026-10-24-osm-terrain-policy.md) — warning-image tile recovery in 3D.
+- [Dependency verification latency — 2026-10-25](ci-latency-2026-10-25.md) — surface-sharded CI and the Linux backup width finding.
+- [Dependabot auto-merge investigation — 2026-10-25](dependabot-auto-merge-2026-10-25.md) — queue behavior and the privileged workflow.
+- [Signed-out Peakbagger feature gates — 2026-10-23](signed-out-peakbagger-audit-2026-10-23.md) — Buddy-filter recovery, account parsing, cached feedback and session checks.
+- [Garmin Personal API and draft inbox — 2026-10-23](garmin-personal-api-draft-inbox.md) — the implemented design and API evidence. The [setup guide](../garmin-inbox.md) owns current behavior.
+- [Garmin inbox implementation audit — 2026-10-23](garmin-inbox-audit.md) — the closure ledger for the inbox.
+- [Panel button audit — 2026-10-23](panel-button-audit.md) — consistent action heights in Settings panels.
+- [Repository audit — October 22 follow-up](codebase-audit-2026-10-22-followup.md) — capture cooldown, keyboard focus, metadata stability and chart efficiency.
+- [Repository bugs, engineering, and UX audit — 2026-10-19](codebase-audit-2026-10-19.md) — seven fixes and two engineering improvements.
+- [External API rate-limit feedback audit — 2026-10-11](2026-10-11-external-api-rate-limit-audit.md) — actionable warnings when a service limits requests.
+- [CI, UX, and maintainability audit — 2026-10-03](ci-ux-maintainability-audit-2026-10-03.md) — release recovery, verifier timing, UI simplification and duplicate removal.
+
 - [Settings portability remediation — 2026-10-23](settings-portability-remediation.md) —
   guarded shared root backups, portable personal preferences, device-local
   transfer consent and standalone climber files. Includes focused commits,

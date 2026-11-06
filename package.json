@@ -17,7 +17,7 @@
     "build:release": "node scripts/build.mjs --minify",
     "watch": "node scripts/build.mjs --watch",
     "start": "node scripts/run-development.mjs",
-    "test": "npm run build && node --test \"test/**/*.test.mjs\"",
+    "test": "npm run build && node --test \"test/**/*.test.mjs\" \"test/**/*.test.mts\"",
     "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.mjs\"",
     "verify": "node scripts/verify.mjs",
     "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs",
@@ -34,7 +34,9 @@
     "release:metadata:firefox": "node scripts/create-amo-metadata.mjs web-ext-artifacts/amo-metadata.json",
     "release:sign:firefox": "web-ext sign --source-dir=web-ext-artifacts/firefox-source --channel=listed --amo-metadata=web-ext-artifacts/amo-metadata.json --approval-timeout=0 --timeout=600000 --no-input",
     "release:verify-archive": "node scripts/verify-release-archive.mjs",
-    "store:description:chrome": "node scripts/create-chrome-description.mjs"
+    "store:description:chrome": "node scripts/create-chrome-description.mjs",
+    "typecheck": "tsc --project tsconfig.check.json && tsc --project tsconfig.node.check.json",
+    "check:typescript-policy": "node scripts/typescript-policy.mts"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -56,11 +58,15 @@
     "@tiptap/extensions": "3.32.0",
     "@tiptap/pm": "3.32.0",
     "@tiptap/starter-kit": "3.32.0",
+    "@types/chrome": "0.3.7",
+    "@types/node": "24.19.2",
+    "@types/selenium-webdriver": "^4.35.7",
     "chart.js": "^4.5.1",
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
     "fake-indexeddb": "^6.2.6",
     "globals": "^17.13.0",
+    "jiti": "2.7.0",
     "jsdom": "^30.1.3",
     "jszip": "^3.10.2",
     "maplibre-gl": "^6.14.0",
@@ -69,6 +75,8 @@
     "playwright": "^1.64.1",
     "selenium-webdriver": "^4.51.0",
     "semver": "^7.8.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
     "tz-lookup": "^6.1.25",
     "web-ext": "^10.8.0"
   },
@@ -78,7 +86,8 @@
     },
     "minimatch@^3.0.0": {
       "brace-expansion": "1.1.21"
-    }
+    },
+    "minimatch@^10.0.0": "11.0.1"
   },
   "webExt": {
     "sourceDir": "dist",
@@ -86,5 +95,8 @@
   },
   "dependencies": {
     "suncalc": "2.0.1"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

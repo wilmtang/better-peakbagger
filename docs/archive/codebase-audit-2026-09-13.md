@@ -284,7 +284,7 @@ caption pair/undo invariant. Do not add a report truncation limit as a shortcut.
 encounter implementations (lines 454–583) and ambiguity propagation/capping
 (lines 671–732). These duplicate scoring-adjacent decisions, not just loop
 syntax. The existing equivalence test at
-`test/capture/capture-core.test.mjs` (lines 202–225) passed; no divergence was
+`test/capture/capture-core.test.mts` (lines 202–225) passed; no divergence was
 found in this audit.
 
 If changing these algorithms, first expand equivalence coverage to singleton

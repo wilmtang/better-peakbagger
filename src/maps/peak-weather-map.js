@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { readMapPoint } from './map-location-menu.js';
+import { readMapPoint } from './map-location-menu.ts';
 
 // MAIN-world native projection, shared by every Leaflet map. The map-layer
 // lifecycle owns this binding so replaced frames cannot retain old listeners.

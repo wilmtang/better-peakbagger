@@ -176,7 +176,7 @@ unchanged, but a rejected sync-storage read never reaches that catch because
 `src/settings/settings.js` converts the rejection into defaults at lines 45–56.
 The same settings module explicitly reserves `requireCurrent()` for privacy and
 preservation decisions at lines 30–35. The structural test currently allowlists
-this call as a safe gate in `test/settings/settings-read-policy.test.mjs` (lines
+this call as a safe gate in `test/settings/settings-read-policy.test.mts` (lines
 4–25).
 
 A deterministic rejected-read probe produced one allowed native Delete
@@ -564,7 +564,7 @@ lines 256–280), then calls the Firefox sync from
 entries and copies new ones into the live directory one by one before
 transforming the manifest and advancing the token in `scripts/run-firefox.mjs`
 (lines 32–76). Current fault-injection tests protect primary `dist/`; Firefox
-coverage proves only successful mirrors in `test/project/development.test.mjs`
+coverage proves only successful mirrors in `test/project/development.test.mts`
 (lines 122–169 and 214–270).
 
 A deterministic copy failure left a newly copied file and removed stale content

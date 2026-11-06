@@ -167,7 +167,7 @@ were stale; the closure ledger records what was actually changed.
   - `src/maps/sentinel-layer.js:32-245` (`createSentinelLayer`, 214 lines)
   - `docs/mountain-local-time.md:28`
 - **Root Cause:**
-  Commit `b900d73b` unified the 2D and 3D map overlays into `src/maps/map-layers.js`, `src/maps/map-layer-control.js`, `src/maps/map-overlay-leaflet.js`, `src/maps/sentinel-session.js`, and `src/maps/snotel-map-leaflet.js`. An `esbuild` metafile trace across all 50 `ENTRIES` and `COPY_FILES` in `scripts/build-config.mjs` confirms:
+  Commit `b900d73b` unified the 2D and 3D map overlays into `src/maps/map-layers.js`, `src/maps/map-layer-control.ts`, `src/maps/map-overlay-leaflet.js`, `src/maps/sentinel-session.js`, and `src/maps/snotel-map-leaflet.js`. An `esbuild` metafile trace across all 50 `ENTRIES` and `COPY_FILES` in `scripts/build-config.mjs` confirms:
   - `src/maps/sentinel-map.js`, `src/maps/sentinel.css`, and `src/maps/peak-snow-map.js` are never bundled or copied into `dist/`.
   - `src/maps/sentinel-layer.js` is imported by `src/maps/sentinel-session.js` solely for the 17-line `sentinelCaptureChoice` helper; its 214-line `createSentinelLayer` export is tree-shaken out of every `dist/` bundle and is only exercised by `test/maps/sentinel.test.mjs`.
   - Leaving these dead modules in `src/maps/` masked **F1** during code search and creates maintenance traps where fixes can be applied to unshipped files.
@@ -189,9 +189,9 @@ To avoid false positives or re-reporting closed items, the following areas were 
    - Verified that raw GPX never leaves the provider page, ownership fails closed when signals are missing or ambiguous, waypoints share the 3,000-point budget and strip elevation/time/description/extensions, and draft filling never triggers Peakbagger Save.
 3. **3D Terrain LOD, Cancellation & Cache Bounds (`src/terrain/terrain-coordinator.js`, `src/terrain/terrain-frame-runtime.js`, `src/terrain/terrain-cache.js`):**
    - Verified recent commits (`c73be873`, `ff365fa2`, `5149d2eb`, `685b1163`): `AbortController` propagation cancels superseded DEM/satellite work cleanly, `ImageBitmap.close()` is called on replaced/cleared overlay textures, and `terrain-cache.js` enforces byte/entry eviction in memory and IndexedDB.
-4. **Content-Script Page Features (`src/gpx/gpx-analyzer.js`, `src/ascent/ascent-filter.js`, `src/ascent/ascent-weather.js`, `src/weather/peak-weather.js`, `src/reports/report-editor.js`, `src/favorites/climber-hover-card.js`):**
+4. **Content-Script Page Features (`src/gpx/gpx-analyzer.js`, `src/ascent/ascent-filter.js`, `src/ascent/ascent-weather.js`, `src/weather/peak-weather.js`, `src/reports/report-editor.js`, `src/favorites/climber-hover-card.ts`):**
    - Verified generation guards on async weather/ERA5/sun/hover fetches, offline mountain-local timezone fallback (`src/time/mountain-tz.js`), and HTML escaping (`esc()`) across tooltip and summary templates.
-5. **Prior Audit Items Reconciled (`docs/archive/codebase-audit-2026-10-21.md`, `docs/archive/map-overlays-audit-2026-10-21.md`, `docs/plans/codebase-audit-2026-10-19.md`):**
+5. **Prior Audit Items Reconciled (`docs/archive/codebase-audit-2026-10-21.md`, `docs/archive/map-overlays-audit-2026-10-21.md`, `docs/archive/codebase-audit-2026-10-19.md`):**
    - All fixed items from the 2026-10-21 codebase and map-overlays audits remain intact in `HEAD`.
    - The `npm run audit:ci` `web-ext -> @devicefarmer/adbkit -> node-forge` advisory remains an unowned dev-only transitive dependency tracked in prior closure ledgers.
 

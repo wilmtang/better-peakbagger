@@ -225,7 +225,7 @@ this TypeError rather than a fixture setup failure.
 
 ## A07 — a prose line reference is treated as a nonexistent repository file
 
-**Evidence.** [The onX reliability record](../plans/onx-export-reliability-2026-10-27.md)
+**Evidence.** [The onX reliability record](onx-export-reliability-2026-10-27.md)
 (line 61) puts a colon-suffixed line number inside a backticked repository path.
 The maintained-document [path validator](../../test/project/documentation.test.mjs)
 (lines 192–205) correctly rejects the resulting nonexistent filename. The full

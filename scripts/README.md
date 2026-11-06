@@ -45,6 +45,7 @@ independent of the existing targets.
 - [create-chrome-description.mjs](create-chrome-description.mjs)
 - [dependency-metadata.mjs](dependency-metadata.mjs)
 - [privacy-guard.mjs](privacy-guard.mjs)
+- [typescript-policy.mts](typescript-policy.mts) — Rejects new or modified authored JavaScript in the staged index or a committed comparison; preserves generated/vendor formats.
 - [publish-chrome.mjs](publish-chrome.mjs)
 - [release-bump.mjs](release-bump.mjs)
 - [release-changelog.mjs](release-changelog.mjs)
@@ -137,7 +138,7 @@ independent of the existing targets.
 - [verify-air-quality.mjs](verify-air-quality.mjs) — lazy AQI requests and refresh stability through the weather browser harness.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
-- [verify-custom-overlays.mjs](verify-custom-overlays.mjs) — real unpacked editor, 18 transition and 24 keyboard-help cases at asserted content widths/zoom, negative geometry checks, direct HTTPS/CORS tiles, packaged workers and hardware 2D/3D rendering. `--loading-only` explicitly excludes editor/help matrices; unknown or duplicate selections fail before launch.
+- [verify-custom-overlays.mts](verify-custom-overlays.mts) — real unpacked editor, 18 transition and 24 keyboard-help cases at asserted content widths/zoom, negative geometry checks, direct HTTPS/CORS tiles, packaged workers and hardware 2D/3D rendering. `--loading-only` explicitly excludes editor/help matrices; unknown or duplicate selections fail before launch.
 - [verify-custom-overlay-lifecycle.mjs](verify-custom-overlay-lifecycle.mjs) — `chrome|firefox startup|lifetime|cache`: real Leaflet and bundled renderer, fresh asynchronous startup, bounded canvas/listener ownership and real HTTP-cache revalidation with changed pixels, conditional responses and ordinary reuse at desktop/narrow widths; controlled providers, without the Settings editor or worker.
 - [verify-custom-overlay-replacement.mjs](verify-custom-overlay-replacement.mjs) — hidden hardware Chrome at 1000×760: real MapLibre raster pixels through held replacement, viewport cancellation, rendered acceptance and source/listener teardown; controlled HTTPS provider, without the Settings editor or worker.
 - [verify-custom-layer-settings.mjs](verify-custom-layer-settings.mjs) — `chrome|firefox` checks saved-source actions, alignment, long names, light/dark narrow layouts, enlarged text, guarded reorder/error/retry and delete cancellation. Twelve disclosure cases at 900/540 px heights check matching compact headers, Space/Enter expansion, retained focus, a pinned footer, reachable final content and scroll-aware keyboard tooltips. Opacity remains a map-only control.
@@ -173,6 +174,7 @@ independent of the existing targets.
 - [verify-firefox-terrain.mjs](verify-firefox-terrain.mjs)
 - [verify-layout-stability.mjs](verify-layout-stability.mjs)
 - [verify-ascent-column-widths.mjs](verify-ascent-column-widths.mjs) — native peak/ascent metadata widths, nested map containment and card edge alignment, run by `layout-stability`.
+- [verify-ascent-filters.mjs](verify-ascent-filters.mjs) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.
 - [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
 - [verify-photo-editor.mjs](verify-photo-editor.mjs)
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
@@ -186,7 +188,16 @@ independent of the existing targets.
 - [verify-climber-files.mjs](verify-climber-files.mjs) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
 - [verify-settings-actions.mjs](verify-settings-actions.mjs) — held Settings actions and restore focus, run by `layout-stability`.
 - [settings-fragment-verification.mjs](settings-fragment-verification.mjs) — shared assertions for the packaged Settings anchor verifier.
-- [verify-settings-navigation.mjs](verify-settings-navigation.mjs)
+- [verify-settings-navigation.mts](verify-settings-navigation.mts)
 - [verify-settings-fragments.mjs](verify-settings-fragments.mjs) — real packaged Chrome/Firefox Settings anchors, refresh, keyboard navigation, Back/Forward and manual reading positions; run `npm run verify -- settings-navigation`.
 - [verify-signed-out.mjs](verify-signed-out.mjs) — signed-out recovery and held filter retries in Chrome/Firefox; run with `npm run verify -- signed-out`.
 
+
+- [verify-layer-inspection.mts](verify-layer-inspection.mts) — hidden Chrome/Firefox
+  HTTPS fixtures for compact right-click overlay readings, pending/success/error
+  geometry, keyboard retry, layer invalidation and full-width legend swatches.
+  Run with exactly `chrome` or `firefox`; `BPB_INSPECTION_SCREENSHOT_DIR` retains
+  the desktop/narrow, light/dark and enlarged-text renders.
+
+  `BPB_INSPECTION_CSS` can select a read-only historical stylesheet to prove that
+  the swatch regression assertion rejects the previous small samples.

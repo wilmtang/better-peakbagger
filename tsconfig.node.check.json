@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "*.mts",
+    "scripts/**/*.ts", "scripts/**/*.mts",
+    "test/**/*.ts", "test/**/*.mts",
+    "docs/**/*.ts", "docs/**/*.mts",
+    "store-assets/**/*.ts", "store-assets/**/*.mts"
+  ],
+  "exclude": ["test/fixtures", "node_modules", "dist"]
+}
