@@ -146,7 +146,7 @@ Restoring a library turns off existing selections. Public URLs and any public
 keys in them travel with the backup. The extension does not persist
 custom geometry, tile data or probe locations. See [privacy](../PRIVACY.md).
 
-Implementation verification: `node scripts/verify-custom-overlays.mjs` (Chrome)
+Implementation verification: `node scripts/verify-custom-overlays.mts` (Chrome)
 and the same command with `--firefox`, after `npm run build`. They use the real
 unpacked extension, HTTPS fixtures, actual CORS enforcement, packaged parser
 workers and hardware-rendered 3D. Fixture map types exercise the shared adapter;

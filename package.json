@@ -60,6 +60,7 @@
     "@tiptap/starter-kit": "3.32.0",
     "@types/chrome": "0.3.7",
     "@types/node": "24.19.2",
+    "@types/selenium-webdriver": "^4.35.7",
     "chart.js": "^4.5.1",
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",

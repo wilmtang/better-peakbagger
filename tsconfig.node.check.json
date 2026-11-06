@@ -12,7 +12,8 @@
     "isolatedModules": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true
   },
   "include": [
     "*.mts",
