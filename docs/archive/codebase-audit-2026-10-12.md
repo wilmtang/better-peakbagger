@@ -333,7 +333,7 @@ manually proved every branch in every file.
 | `npm run audit:ci -- --allow-reviewed-development-advisory` | Passed with the existing exact expiring exception; graph still has three high findings. |
 | `npm audit --omit=dev --json` | Zero production-dependency findings, with the bundled-dev-dependency limitation above. |
 | `node scripts/verify-extension.mjs` | Passed, real unpacked Chrome 153.0.8010.12, hidden, base 1000 × 760, including BFCache and teardown. |
-| `node scripts/verify-firefox-extension.mjs` | **Failed**, Firefox 157.0.1, hidden, timeout on ignored detail; investigated as F2, not discarded. |
+| `node scripts/verify-firefox-extension.mts` | **Failed**, Firefox 157.0.1, hidden, timeout on ignored detail; investigated as F2, not discarded. |
 | Focused Firefox detail probe | Three navigations, one concealed and two incorrectly visible; real derived manifest, requested outer size 1000 × 760, measured content viewport 1000 × 675; teardown passed. |
 | Focused Sentinel browser probe | Chrome 153.0.8010.12, actual Leaflet 1.9.4, hidden HTTPS fixture at 1000 × 700; F4/F5 reproduced and screenshots inspected; teardown passed. |
 | Temporary bundle/pure/IndexedDB probes | F1/F3/F6/F7 and the F2 adapter/F4 scene-reuse paths reproduced; these are audit probes, not checked-in regression tests. |

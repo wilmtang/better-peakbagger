@@ -310,7 +310,7 @@ Final local verification:
 - `node scripts/verify-extension.mjs`: passed with the real unpacked extension
   in hidden Chrome for Testing **153.0.8010.12**, base viewport **1000×760**
   plus the verifier's narrow states.
-- `node scripts/verify-firefox-extension.mjs`: passed in hidden Firefox
+- `node scripts/verify-firefox-extension.mts`: passed in hidden Firefox
   **156.0.1**, base viewport **1000×760**. The first WebDriver startup exited
   cleanly; the existing bounded startup-recovery path cleaned up and succeeded
   on its second attempt. This is a tooling qualification, not evidence that a

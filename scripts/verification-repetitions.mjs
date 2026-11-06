@@ -26,7 +26,7 @@ async function main() {
         throw new Error('Usage: verification-repetitions.mjs chrome|firefox');
     }
     if (browser === 'chrome') assertChromeLaunchAllowed();
-    const script = browser === 'chrome' ? 'verify-extension.mjs' : 'verify-firefox-extension.mjs';
+    const script = browser === 'chrome' ? 'verify-extension.mjs' : 'verify-firefox-extension.mts';
     await repeatVerification(() => runChildProcess(process.execPath,
         [path.join(path.dirname(fileURLToPath(import.meta.url)), script)], { label: script }));
 }

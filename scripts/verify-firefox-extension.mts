@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Builder, By, Key, until } from 'selenium-webdriver';
+import type { WebElement } from 'selenium-webdriver';
 import { Button } from 'selenium-webdriver/lib/input.js';
 import firefox from 'selenium-webdriver/firefox.js';
 
@@ -58,10 +59,28 @@ import { retainBrowserFailure } from './browser-verification-evidence.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { setFirefoxContentViewport as setContentViewport, withFirefoxContentViewport } from './firefox-content-viewport.mjs';
 
+// Fixture types. Node strips these annotations in place, so page-world callback
+// source is unchanged when Selenium serializes it.
+type FixtureElement = HTMLInputElement & HTMLDetailsElement & HTMLImageElement & HTMLAnchorElement;
+type FixtureRecord = Record<string, unknown>;
+type WebDriver = firefox.Driver;
+type FixtureEvent = KeyboardEvent & MouseEvent;
+type FixtureRow = { localId: string; objects: { style: { opacity: number } }[]; blob: Blob };
+type SettingsTopology = { options: { id: number; windowId: number; active?: boolean }[]; source: { id: number; windowId: number; active?: boolean }; windowCount: number };
+type ScriptState = { ready?: unknown; moonMarker?: string; moonBand?: unknown } | undefined;
+declare global {
+    interface Window {
+        __bpbTerrainForgeryDrained: boolean;
+        __bpbForgedTerrainReady: boolean;
+        __bpbSettingsActivationEvents: FixtureRecord[];
+        __bpbSettingsActivationListening: boolean;
+    }
+}
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxSunTheme = process.env.BPB_VERIFY_FIREFOX_SUN_THEME === 'light' ? 'light' : 'dark';
 
-async function startFirefoxDriver(options, profileRoot) {
+async function startFirefoxDriver(options: firefox.Options, profileRoot: string) {
     for (let attempt = 1; attempt <= 2; attempt++) {
         const service = new firefox.ServiceBuilder().addArguments(
             '--allow-system-access',
@@ -85,7 +104,7 @@ async function startFirefoxDriver(options, profileRoot) {
     throw new Error('Firefox WebDriver startup exhausted its retry');
 }
 
-async function extensionBaseUrl(driver, addonId) {
+async function extensionBaseUrl(driver: WebDriver, addonId: string) {
     await driver.setContext(firefox.Context.CHROME);
     try {
         return await driver.executeScript(`
@@ -97,31 +116,31 @@ async function extensionBaseUrl(driver, addonId) {
     }
 }
 
-function assertState(condition, message, state) {
+function assertState(condition: unknown, message: string, state?: unknown) {
     if (!condition) {
         throw new Error(state === undefined ? message : `${message}: ${JSON.stringify(state)}`);
     }
 }
 
-async function writeElementScreenshot(driver, selector, outputPath) {
+async function writeElementScreenshot(driver: WebDriver, selector: string, outputPath: string) {
     if (!outputPath) return;
     const screenshot = await driver.findElement(By.css(selector)).takeScreenshot(true);
     await writeFile(outputPath, screenshot, 'base64');
 }
 
 async function waitForScript(
-    driver,
-    script,
-    description,
+    driver: WebDriver,
+    script: string,
+    description: string,
     timeout = 15_000,
-    isReady = Boolean,
+    isReady: (state: ScriptState) => unknown = Boolean,
 ) {
     return waitForCondition(() => driver.executeScript(script), {
-        description, timeoutMs: timeout, isReady,
+        description, timeoutMs: timeout, isReady: isReady as unknown as BooleanConstructor,
     });
 }
 
-async function evaluatePageRealm(driver, expression) {
+async function evaluatePageRealm(driver: WebDriver, expression: string) {
     const bidi = await driver.getBidi();
     const context = await driver.getWindowHandle();
     const response = await bidi.send({
@@ -132,7 +151,7 @@ async function evaluatePageRealm(driver, expression) {
             awaitPromise: true,
             resultOwnership: 'none',
         },
-    });
+    }) as { type: string; error: unknown; message: unknown; result: { type: string; exceptionDetails: { text: string } } };
     if (response.type === 'error') {
         throw new Error(`${response.error}: ${response.message}`);
     }
@@ -146,8 +165,8 @@ async function main() {
     const resources = createResourceStack();
     let primaryError = null;
     let extensionEvidenceBaseUrl;
-    let driver;
-    let fixture;
+    let driver!: WebDriver;
+    let fixture!: Awaited<ReturnType<typeof createBrowserFixtureServer>>;
     let firefoxBfcacheResult = null;
     let verificationSummary;
     try {
@@ -168,23 +187,23 @@ async function main() {
             : null;
         const prepared = suppliedSource ? null : await prepareFirefoxSource({ temporaryRoot });
         if (prepared) resources.defer('prepared Firefox extension', () => prepared.cleanup());
-        const extensionSource = suppliedSource || prepared.sourceDir;
+        const extensionSource = suppliedSource || prepared!.sourceDir;
         const capitolRegressionGpx =
             await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
         fixture = await createBrowserFixtureServer({
             temporaryRoot,
             analyzerGpx: capitolRegressionGpx,
             analyzerGpxByCase: { scale: createScaleAnalyzerGpx(), suspect: segmentsGpx(suspectSegments()) },
-        });
+        } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
         resources.defer('Firefox browser fixture', () => fixture.close());
         const buddyListFixture = await readFile(
             path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'),
             'utf8',
         );
 
-        const options = new firefox.Options()
+        const options = (new firefox.Options()
             .addArguments('-headless')
-            .enableBidi()
+            .enableBidi() as firefox.Options)
             .setProfile(profileTemplate)
             .setPreference('network.dns.localDomains', [
                 fixtureHost,
@@ -202,7 +221,7 @@ async function main() {
         options.setAcceptInsecureCerts(true);
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
-        driver = await startFirefoxDriver(options, temporaryRoot);
+        driver = await startFirefoxDriver(options, temporaryRoot) as WebDriver;
         resources.defer('Firefox WebDriver', () => quitFirefoxDriver(driver, temporaryRoot));
         const capabilities = await driver.getCapabilities();
         console.log(`Verification browser: ${assertVerificationBrowser({
@@ -215,7 +234,7 @@ async function main() {
         // This add-on exists only in the owned disposable profile. Closing the
         // session and removing that profile releases it; a separate uninstall
         // adds a needless Marionette round trip during shutdown.
-        const baseUrl = await extensionBaseUrl(driver, addonId);
+        const baseUrl = await extensionBaseUrl(driver, addonId) as string;
         if (!baseUrl?.startsWith('moz-extension://')) {
             throw new Error(`Firefox reported an invalid extension origin: ${JSON.stringify(baseUrl)}`);
         }
@@ -238,7 +257,7 @@ async function main() {
                     await driver.executeScript(
                         'arguments[0].scrollIntoView({ block: "nearest", inline: "center" });', link,
                     );
-                    const point = await driver.executeScript(element => {
+                    const point = await driver.executeScript((element: FixtureElement) => {
                         const rect = element.getBoundingClientRect();
                         const x = rect.left + rect.width / 2;
                         const y = rect.top + rect.height / 4;
@@ -247,13 +266,13 @@ async function main() {
                         }
                         return { x: Math.round(x), y: Math.round(y) };
                     }, link);
-                    await driver.actions({ async: true }).move({ origin: 'viewport', ...point }).click().perform();
+                    await driver.actions({ async: true }).move({ origin: 'viewport' as never, ...(point as { x: number; y: number }) }).click().perform();
                 },
                 back: () => driver.navigate().back(),
                 forward: () => driver.navigate().forward(),
                 wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox settings navigation'),
                 screenshot: process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR ? async name => {
-                    await writeFile(path.join(process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR,
+                    await writeFile(path.join(process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR as string,
                         `firefox-${name}.png`), await driver.takeScreenshot(), 'base64');
                 } : null,
             });
@@ -261,19 +280,19 @@ async function main() {
             await driver.manage().window().setRect(verificationViewport);
             await driver.get(optionsUrl);
         }
-        const runtimeProbe = await driver.executeAsyncScript(done => {
+        const runtimeProbe = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             api.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: -1 })
                 .then(value => done({ ok: true, value: value ?? null }))
                 .catch(error => done({ ok: false, error: String(error) }));
-        });
+        }) as { ok: unknown; error: unknown };
         if (!runtimeProbe?.ok) {
             throw new Error(`Firefox background did not answer CAPTURE_STATUS: ${runtimeProbe?.error || 'no reply'}`);
         }
         await waitForScript(driver, webdriverScript(readDisconnectedGithubControls),
             'opt-in GitHub climber sync disabled before setup', 5000, state => state?.ready);
 
-        const extensionState = await driver.executeAsyncScript(done => {
+        const extensionState = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             const keys = {
                 sync: 'bpbBrowserVerifySync',
@@ -281,7 +300,7 @@ async function main() {
                 session: 'bpbBrowserVerifySession',
             };
             const changed = new Promise(resolve => {
-                const listener = (changes, area) => {
+                const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
                     if (area === 'local' && changes[keys.local]?.newValue === 'local') {
                         api.storage.onChanged.removeListener(listener);
                         resolve(true);
@@ -313,7 +332,7 @@ async function main() {
                     onChanged,
                 });
             }).catch(error => done({ error: String(error) }));
-        });
+        }) as { origin: string; version: unknown; optionsOpenInTab: boolean; onChanged: unknown; values: unknown[] };
         assertState(
             extensionState.origin.startsWith('moz-extension://'),
             'Firefox options did not use a moz-extension origin',
@@ -330,7 +349,7 @@ async function main() {
             'Firefox storage areas or storage.onChanged did not round-trip',
             extensionState,
         );
-        const imgbbSaved = await driver.executeAsyncScript(done => {
+        const imgbbSaved = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             api.runtime.sendMessage({
                 type: 'PHOTO_IMGBB_SAVE_KEY',
@@ -339,7 +358,7 @@ async function main() {
                 globalThis.dispatchEvent(new Event('focus'));
                 done(response);
             }).catch(error => done({ error: String(error) }));
-        });
+        }) as { ok: unknown };
         assertState(
             imgbbSaved?.ok,
             'Firefox Settings could not save the ImgBB verifier key',
@@ -392,28 +411,28 @@ async function main() {
             firefoxPhotoLibrary,
         );
         await driver.findElement(By.id('show-editor')).click();
-        await driver.executeAsyncScript(done => {
+        await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const canvas = globalThis.document.createElement('canvas');
             canvas.width = 900;
             canvas.height = 600;
             const drawing = canvas.getContext('2d');
-            drawing.fillStyle = '#8fc7e8';
-            drawing.fillRect(0, 0, 900, 600);
-            drawing.fillStyle = '#566b60';
-            drawing.beginPath();
-            drawing.moveTo(0, 600);
-            drawing.lineTo(300, 220);
-            drawing.lineTo(500, 430);
-            drawing.lineTo(700, 150);
-            drawing.lineTo(900, 600);
-            drawing.closePath();
-            drawing.fill();
+            drawing!.fillStyle = '#8fc7e8';
+            drawing!.fillRect(0, 0, 900, 600);
+            drawing!.fillStyle = '#566b60';
+            drawing!.beginPath();
+            drawing!.moveTo(0, 600);
+            drawing!.lineTo(300, 220);
+            drawing!.lineTo(500, 430);
+            drawing!.lineTo(700, 150);
+            drawing!.lineTo(900, 600);
+            drawing!.closePath();
+            drawing!.fill();
             canvas.toBlob(blob => {
                 const transfer = new globalThis.DataTransfer();
-                transfer.items.add(new File([blob], 'firefox-verification-topo.png', { type: 'image/png' }));
+                transfer.items.add(new File([blob!], 'firefox-verification-topo.png', { type: 'image/png' }));
                 const input = globalThis.document.getElementById('photo-file');
                 Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
-                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input!.dispatchEvent(new Event('change', { bubbles: true }));
                 done(true);
             }, 'image/png');
         });
@@ -447,7 +466,7 @@ async function main() {
         // assertion here is a behaviour a user reported broken, so a regression
         // must not be able to reach Firefox unnoticed.
         const overlay = await driver.findElement(By.id('photo-overlay'));
-        const clickOverlay = async (x, y) => {
+        const clickOverlay = async (x: number, y: number) => {
             // Firefox's requested window height includes browser chrome on Linux, so
             // the content viewport can be shorter than it is on macOS. Re-center the
             // drawing surface before every pointer action rather than relying on a
@@ -459,6 +478,7 @@ async function main() {
             await driver.actions({ bridge: true })
                 .move({ origin: overlay, x, y }).click().perform();
         };
+        // @ts-expect-error release.test.mjs pins this signature; the argument is a WebElement.
         const clickEditorControl = async element => {
             await driver.executeScript(
                 "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' });",
@@ -531,9 +551,9 @@ async function main() {
         // the result stays readable rather than tainting the canvas. Only a browser
         // can answer this, and a silent failure here would surface as an upload
         // that never produces bytes.
-        const firefoxExport = await driver.executeAsyncScript(done => {
-            const source = globalThis.document.getElementById('photo-overlay').cloneNode(true);
-            for (const node of source.querySelectorAll('.route-preview, .vertex-handle')) node.remove();
+        const firefoxExport = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
+            const source = globalThis.document.getElementById('photo-overlay')!.cloneNode(true) as FixtureElement;
+            for (const node of source.querySelectorAll<FixtureElement>('.route-preview, .vertex-handle')) node.remove();
             const width = Number(source.getAttribute('width'));
             const height = Number(source.getAttribute('height'));
             const markup = new globalThis.XMLSerializer().serializeToString(source);
@@ -545,10 +565,10 @@ async function main() {
                 canvas.width = width;
                 canvas.height = height;
                 const context = canvas.getContext('2d');
-                context.drawImage(image, 0, 0, width, height);
+                context!.drawImage(image, 0, 0, width, height);
                 let readable = false;
                 try {
-                    context.getImageData(0, 0, 1, 1);
+                    context!.getImageData(0, 0, 1, 1);
                     readable = true;
                 } catch { readable = false; }
                 canvas.toBlob(blob => done({
@@ -562,7 +582,7 @@ async function main() {
                 done({ readable: false, bytes: 0, naturalWidth: 0 });
             };
             image.src = url;
-        });
+        }) as { readable: unknown; bytes: number; naturalWidth: number };
         assertState(
             firefoxExport.readable && firefoxExport.bytes > 0 && firefoxExport.naturalWidth > 0,
             'Firefox could not rasterize the topo overlay into an untainted canvas',
@@ -573,12 +593,12 @@ async function main() {
         // image after a profile is cleared.
         // Autosave is debounced, so poll the store the editor actually writes
         // rather than sampling it once and calling a slow tick a lost drawing.
-        const readPhotoStore = () => driver.executeAsyncScript(done => {
-            const open = () => new Promise(resolve => {
+        const readPhotoStore = () => driver.executeAsyncScript((done: (result?: unknown) => void) => {
+            const open = () => new Promise<IDBDatabase>(resolve => {
                 const request = globalThis.indexedDB.open('betterPeakbaggerPhotos');
                 request.onsuccess = () => resolve(request.result);
             });
-            const all = (database, store) => new Promise(resolve => {
+            const all = (database: IDBDatabase, store: string) => new Promise<FixtureRow[]>(resolve => {
                 const request = database.transaction(store).objectStore(store).getAll();
                 request.onsuccess = () => resolve(request.result);
             });
@@ -591,25 +611,25 @@ async function main() {
                     localId: photos[0] ? photos[0].localId : null,
                     objects: projects[0] ? projects[0].objects.length : 0,
                     opacity: projects[0]
-                        ? projects[0].objects.map(object => object.style.opacity).sort()[0]
+                        ? projects[0].objects.map((object: FixtureRow['objects'][number]) => object.style.opacity).sort()[0]
                         : null,
                     originalBytes: originals[0] && originals[0].blob ? originals[0].blob.size : 0
                 });
             });
         });
-        let firefoxRoundTrip = null;
+        let firefoxRoundTrip: { objects: number; originalBytes: number; opacity: number } | null = null;
         try {
             await driver.wait(async () => {
-                firefoxRoundTrip = await readPhotoStore();
-                return firefoxRoundTrip.objects === 3 && firefoxRoundTrip.originalBytes > 0;
+                firefoxRoundTrip = await readPhotoStore() as typeof firefoxRoundTrip;
+                return firefoxRoundTrip!.objects === 3 && firefoxRoundTrip!.originalBytes > 0;
             }, 10_000);
         } catch (error) {
             assertState(false,
-                `Firefox did not autosave the drawn project and its original (${error.message})`,
+                `Firefox did not autosave the drawn project and its original (${(error as Error).message})`,
                 firefoxRoundTrip);
         }
         assertState(
-            firefoxRoundTrip.opacity === 0.4,
+            firefoxRoundTrip!.opacity === 0.4,
             'Firefox persisted the drawn marks without the opacity the user set',
             firefoxRoundTrip,
         );
@@ -617,18 +637,18 @@ async function main() {
         await driver.findElement(By.id('show-library')).click();
         // One script end to end: a Marionette sandbox is not guaranteed to carry a
         // global between calls, and splitting this made it look like a page bug.
-        const firefoxImport = await driver.executeAsyncScript(done => {
-            const open = () => new Promise(resolve => {
+        const firefoxImport = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
+            const open = () => new Promise<IDBDatabase>(resolve => {
                 const request = globalThis.indexedDB.open('betterPeakbaggerPhotos');
                 request.onsuccess = () => resolve(request.result);
             });
-            const one = (database, store, key) => new Promise(resolve => {
+            const one = (database: IDBDatabase, store: string, key: string) => new Promise<FixtureRow>(resolve => {
                 const request = database.transaction(store).objectStore(store).get(key);
                 request.onsuccess = () => resolve(request.result);
             });
-            const allKeys = database => new Promise(resolve => {
+            const allKeys = (database: IDBDatabase) => new Promise<string[]>(resolve => {
                 const request = database.transaction('photos').objectStore('photos').getAllKeys();
-                request.onsuccess = () => resolve(request.result);
+                request.onsuccess = () => resolve(request.result as string[]);
             });
             const encoder = new TextEncoder();
             const table = new Uint32Array(256);
@@ -639,14 +659,14 @@ async function main() {
                 }
                 table[index] = value >>> 0;
             }
-            const crc32 = bytes => {
+            const crc32 = (bytes: Uint8Array) => {
                 let value = 0xffffffff;
                 for (const byte of bytes) value = table[(value ^ byte) & 0xff] ^ (value >>> 8);
                 return (value ^ 0xffffffff) >>> 0;
             };
             // The same stored ZIP32 container photo-archive.js writes; the download
             // itself would need a file dialog this profile has no way to answer.
-            const storedZip = files => {
+            const storedZip = (files: [string, Uint8Array][]) => {
                 const locals = [];
                 const centrals = [];
                 let offset = 0;
@@ -682,7 +702,7 @@ async function main() {
                 end.setUint16(10, files.length, true);
                 end.setUint32(12, centralSize, true);
                 end.setUint32(16, offset, true);
-                return new Blob([...locals, ...centrals, new Uint8Array(end.buffer)],
+                return new Blob([...locals, ...centrals, new Uint8Array(end.buffer)] as BlobPart[],
                     { type: 'application/zip' });
             };
 
@@ -704,7 +724,7 @@ async function main() {
                 // that is the new-device case, not the duplicate case.
                 const wipe = await open();
                 await Promise.all(['photos', 'projects', 'originals', 'thumbnails'].map(store =>
-                    new Promise(resolve => {
+                    new Promise<void>(resolve => {
                         const request = wipe.transaction(store, 'readwrite').objectStore(store).clear();
                         request.onsuccess = () => resolve();
                     })));
@@ -713,10 +733,10 @@ async function main() {
                 transfer.items.add(new File([archive], 'topo.bpb-photo', { type: 'application/zip' }));
                 const input = globalThis.document.getElementById('import-project');
                 Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
-                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input!.dispatchEvent(new Event('change', { bubbles: true }));
                 done({ localId, archiveBytes: archive.size });
             });
-        });
+        }) as { archiveBytes: number };
         assertState(
             firefoxImport.archiveBytes > 0,
             'Firefox could not stage a project bundle',
@@ -737,8 +757,8 @@ async function main() {
             firefoxImported,
         );
 
-        await driver.executeAsyncScript(done => {
-            const open = () => new Promise((resolve, reject) => {
+        await driver.executeAsyncScript((done: (result?: unknown) => void) => {
+            const open = () => new Promise<IDBDatabase>((resolve, reject) => {
                 const request = globalThis.indexedDB.open('betterPeakbaggerPhotos');
                 request.onsuccess = () => resolve(request.result);
                 request.onerror = () => reject(request.error);
@@ -831,7 +851,7 @@ async function main() {
         viewportWidth: document.documentElement.clientWidth,
         horizontalOverflow:
           document.documentElement.scrollWidth > document.documentElement.clientWidth
-      };`);
+      };`) as { cards: number; pageStatus: string; paginationLeft: number; paginationRight: number; viewportWidth: number; horizontalOverflow: unknown };
         assertState(
             firefoxNarrowLibrary.cards === 48
         && firefoxNarrowLibrary.pageStatus === 'Page 1 of 2 · 49 photos'
@@ -897,7 +917,7 @@ async function main() {
 
         await driver.get(optionsUrl);
 
-        await driver.executeAsyncScript((theme, done) => {
+        await driver.executeAsyncScript((theme: string, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             const entries = Array.from({ length: 1500 }, (_, index) => ({
                 cid: 100000 + index,
@@ -1011,8 +1031,8 @@ async function main() {
     })()`);
         await driver.findElement(By.css('.favorites-buddy-options summary')).click();
         await driver.findElement(By.id('favorites-mirror-buddies')).click();
-        const addButtonHeight = await driver.executeScript("return document.getElementById('favorites-add-button').getBoundingClientRect().height;");
-        assertState(addButtonHeight >= 32 && addButtonHeight <= 36,
+        const addButtonHeight = await driver.executeScript("return document.getElementById('favorites-add-button').getBoundingClientRect().height;") as FixtureRecord;
+        assertState((addButtonHeight as unknown as number) >= 32 && (addButtonHeight as unknown as number) <= 36,
             'Firefox Add action must stay compact on one line instead of wrapping each letter', { addButtonHeight });
         const mirrorPreview = await waitForScript(driver, `
       const dialog = document.getElementById("favorites-mirror-confirmation");
@@ -1164,7 +1184,7 @@ async function main() {
         distance: distance(),
         viewportHeight: content.clientHeight,
       };
-    `);
+    `) as { distance: unknown; viewportHeight: unknown };
         await driver.findElement(By.css('.side-nav a[href="#drafts"]')).click();
         const longDistanceAfter = await waitForScript(driver, `
       const content = document.querySelector(".content");
@@ -1192,7 +1212,7 @@ async function main() {
             hash: longDistanceAfter.hash,
         };
         assertState(
-            longDistanceNavigation.before > Math.min(longDistanceNavigation.viewportHeight * 2, 1200)
+            (longDistanceNavigation.before as number) > Math.min((longDistanceNavigation.viewportHeight as number) * 2, 1200)
         && Math.abs(longDistanceNavigation.after) <= 2
         && longDistanceNavigation.scrollTop > 0
         && longDistanceNavigation.hash === '#drafts',
@@ -1201,7 +1221,7 @@ async function main() {
         );
 
         const favoriteSettingsUrl = await driver.getCurrentUrl();
-        const favoritePreparation = await driver.executeAsyncScript(done => {
+        const favoritePreparation = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             Promise.all([
                 api.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: {
@@ -1238,7 +1258,7 @@ async function main() {
                         .map(a => ({ label: a.textContent, href: a.href })),
                     styleLoaded: !!document.getElementById('bpb-climber-favorite-style'),
                     body: document.body.innerText.slice(0, 1500),
-                };`);
+                };`) as { console: unknown; settings: unknown };
             await driver.setContext(firefox.Context.CHROME);
             try {
                 state.console = await driver.executeScript(`return Services.console.getMessageArray()
@@ -1246,7 +1266,7 @@ async function main() {
             } finally { await driver.setContext(firefox.Context.CONTENT); }
             try {
                 await driver.get(favoriteSettingsUrl);
-                state.settings = await driver.executeAsyncScript(done => {
+                state.settings = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
                     const api = globalThis.browser || globalThis.chrome;
                     if (!api?.storage) return done({ error: 'Extension settings API unavailable', url: location.href });
                     api.storage.sync.get('bpbSettings').then(result => done(result.bpbSettings), failure => done({ error: String(failure) }));
@@ -1278,17 +1298,20 @@ async function main() {
 
         // The "Keep Buddy removals in sync" toggle lives on the favorites page.
         await driver.get(favoritesUrl);
+        // The custom panel holding this control stays hidden until settings load.
+        const buddyOptionsSummary = await driver.findElement(By.css('.favorites-buddy-options summary'));
+        await driver.wait(until.elementIsVisible(buddyOptionsSummary), 10_000);
         if (!await driver.executeScript("return document.querySelector('.favorites-buddy-options').open")) {
-            await driver.findElement(By.css('.favorites-buddy-options summary')).click();
+            await buddyOptionsSummary.click();
         }
         const removeWithBuddy = await driver.findElement(By.id('favorites-remove-with-buddy'));
         assertState(!(await removeWithBuddy.isSelected()),
             'Firefox rendered destructive Buddy removal sync on by default');
         await removeWithBuddy.click();
-        const removalPreferenceSaved = await driver.wait(() => driver.executeAsyncScript(done => {
+        const removalPreferenceSaved = await driver.wait(() => driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             api.storage.sync.get('bpbSettings')
-                .then(({ bpbSettings }) => done(bpbSettings?.removeFavoriteWhenBuddyRemoved === true));
+                .then(({ bpbSettings }: { bpbSettings?: FixtureRecord }) => done(bpbSettings?.removeFavoriteWhenBuddyRemoved === true));
         }), 5_000, 'Firefox Buddy-removal preference to persist');
         assertState(removalPreferenceSaved, 'Firefox did not persist the Buddy removal preference');
         await driver.get(otherClimberUrl);
@@ -1313,14 +1336,14 @@ async function main() {
         );
 
         await verifyClimberMembership({
-            evaluate: fn => driver.executeScript(webdriverScript(fn)),
-            wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox climber membership'),
-            click: async selector => driver.findElement(By.css(selector)).click(),
-            key: async selector => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
-            resize: (width, height) => driver.manage().window().setRect({ width, height }),
+            evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
+            wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox climber membership'),
+            click: async (selector: string) => driver.findElement(By.css(selector)).click(),
+            key: async (selector: string) => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
+            resize: (width: number, height: number) => driver.manage().window().setRect({ width, height }),
             mutations: () => fixture.requests.buddyMutations,
-            screenshot: process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR ? async name => writeFile(
-                path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR, `firefox-${name}.png`),
+            screenshot: process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR ? async (name: string) => writeFile(
+                path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR as string, `firefox-${name}.png`),
                 await driver.takeScreenshot(), 'base64') : null,
         });
         await driver.get(`${otherClimberUrl}&hover=1`);
@@ -1342,7 +1365,7 @@ async function main() {
                             func: (${installClimberCardCloseProbe.toString()}) });
                         done({ ok: result[0]?.result === true });
                     }).catch(error => done({ error: String(error) }));
-                `, hoverUrl);
+                `, hoverUrl) as { ok: unknown };
                 assertState(injected.ok, 'Firefox close diagnostics did not install', injected);
             } finally {
                 await driver.close();
@@ -1351,24 +1374,24 @@ async function main() {
         }
         await withFirefoxContentViewport(driver, async () => {
             await verifyClimberHoverCard({
-                evaluate: fn => driver.executeScript(webdriverScript(fn)),
-                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox climber hover card'),
-                click: selector => driver.findElement(By.css(selector)).click(),
-                hover: async selector => driver.actions().move({ origin: await driver.findElement(By.css(selector)) }).perform(),
-                key: (selector, value) => driver.findElement(By.css(selector)).sendKeys(
+                evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
+                wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox climber hover card'),
+                click: (selector: string) => driver.findElement(By.css(selector)).click(),
+                hover: async (selector: string) => driver.actions().move({ origin: await driver.findElement(By.css(selector)) }).perform(),
+                key: (selector: string, value: 'Escape' | 'Tab' | 'Enter') => driver.findElement(By.css(selector)).sendKeys(
                     { Escape: Key.ESCAPE, Tab: Key.TAB, Enter: Key.ENTER }[value]),
                 // Firefox's window-size floor cannot establish a 320px viewport.
-                resize: (width, height) => setContentViewport(driver, { width, height }),
-                screenshot: process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR ? async name => writeFile(
-                    path.join(process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR, `firefox-${name}.png`),
+                resize: (width: number, height: number) => setContentViewport(driver, { width, height }),
+                screenshot: process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR ? async (name: string) => writeFile(
+                    path.join(process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR as string, `firefox-${name}.png`),
                     await driver.takeScreenshot(), 'base64') : null,
             });
         });
 
         await driver.get(optionsUrl);
-        await driver.executeAsyncScript(done => {
+        await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) => Promise.all([
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }: { bpbSettings?: Record<string, string> }) => Promise.all([
                 api.storage.sync.set({
                     bpbSettings: {
                         ...bpbSettings,
@@ -1440,7 +1463,7 @@ async function main() {
         outlineWidth: style?.outlineWidth,
         outlineOffset: style?.outlineOffset,
       };
-    `);
+    `) as { focused: unknown; outlineStyle: string; outlineWidth: string; outlineOffset: string };
         assertState(unitFocusState.focused && unitFocusState.outlineStyle === 'solid'
             && unitFocusState.outlineWidth === '3px' && unitFocusState.outlineOffset === '2px',
         'Firefox unit selector lacks a non-color focus indicator', unitFocusState);
@@ -1449,16 +1472,16 @@ async function main() {
         try {
             await verifyGpxSegments({
                 navigate: () => driver.get(`https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=analyzer-suspect`),
-                evaluate: fn => driver.executeScript(webdriverScript(fn)),
-                resize: (width, height) => setContentViewport(driver, { width, height }),
-                click: selector => driver.findElement(By.css(selector)).click(),
-                press: async (selector, key) => {
+                evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
+                resize: (width: number, height: number) => setContentViewport(driver, { width, height }),
+                click: (selector: string) => driver.findElement(By.css(selector)).click(),
+                press: async (selector: string, key: string) => {
                     const element = await driver.findElement(By.css(selector));
                     await driver.executeScript('arguments[0].focus()', element);
                     await element.sendKeys(key === 'Enter' ? Key.ENTER : Key.ARROW_RIGHT);
                 },
-                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox segment interpretation'),
-                screenshot: process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT ? name => writeElementScreenshot(
+                wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox segment interpretation'),
+                screenshot: process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT ? (name: string) => writeElementScreenshot(
                     driver, '#bpb-gpx-analysis', `${process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT}.${name}.png`,
                 ) : null,
             });
@@ -1508,7 +1531,7 @@ async function main() {
         selected: document.getElementById('bpb-gpx-coordinate-status')?.textContent || '',
         sun: document.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
       };
-    `);
+    `) as { selected: unknown; sun: unknown };
         const resizeStarted = Date.now();
         await driver.manage().window().setRect({ width: 1100, height: 760 });
         const wideScaleState = await waitForScript(driver, `
@@ -1524,8 +1547,8 @@ async function main() {
       };
     `, 'the wider Firefox scale chart', 5_000);
         const resizeLatencyMs = Date.now() - resizeStarted;
-        assertState(/Selected point 1 of /.test(narrowScaleSelection.selected)
-            && /°/.test(narrowScaleSelection.sun)
+        assertState(/Selected point 1 of /.test(narrowScaleSelection.selected as string)
+            && /°/.test(narrowScaleSelection.sun as string)
             && wideScaleState.sameChart
             && /Selected point 1 of /.test(wideScaleState.selected)
             && resizeLatencyMs < 1_000
@@ -1548,16 +1571,16 @@ async function main() {
         await driver.switchTo().newWindow('tab');
         const settingsProbeHandle = await driver.getWindowHandle();
         await driver.get(optionsUrl);
-        const crossTabSettings = await driver.executeAsyncScript(done => {
+        const crossTabSettings = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) => {
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }: { bpbSettings?: Record<string, string> }) => {
                 const original = bpbSettings.mapRouteColor || '#2457a7';
                 const changed = original.toLowerCase() === '#347a3f' ? '#7a3f34' : '#347a3f';
                 return api.storage.sync.set({
                     bpbSettings: { ...bpbSettings, mapRouteColor: changed },
                 }).then(() => done({ original, changed }));
             }).catch(error => done({ error: String(error) }));
-        });
+        }) as { error: unknown; changed: unknown; original: unknown };
         assertState(!crossTabSettings?.error,
             'Firefox could not issue the cross-tab settings update', crossTabSettings);
         await driver.switchTo().window(analyzerHandle);
@@ -1580,9 +1603,9 @@ async function main() {
             && !crossTabBridgeState.metadataInSettings,
         'Firefox leaked or omitted settings transport ordering metadata', crossTabBridgeState);
         await driver.switchTo().window(settingsProbeHandle);
-        await driver.executeAsyncScript((original, done) => {
+        await driver.executeAsyncScript((original: unknown, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }: { bpbSettings?: Record<string, string> }) =>
                 api.storage.sync.set({
                     bpbSettings: { ...bpbSettings, mapRouteColor: original },
                 })).then(() => done(true), error => done(String(error)));
@@ -1598,9 +1621,9 @@ async function main() {
         const awayHandle = await driver.getWindowHandle();
         await driver.switchTo().newWindow('tab');
         await driver.get(optionsUrl);
-        await driver.executeAsyncScript((changed, done) => {
+        await driver.executeAsyncScript((changed: unknown, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }: { bpbSettings?: Record<string, string> }) =>
                 api.storage.sync.set({
                     bpbSettings: { ...bpbSettings, mapRouteColor: changed },
                 })).then(() => done(true), error => done(String(error)));
@@ -1636,9 +1659,9 @@ async function main() {
             firefoxBfcacheResult);
         await driver.switchTo().newWindow('tab');
         await driver.get(optionsUrl);
-        await driver.executeAsyncScript((original, done) => {
+        await driver.executeAsyncScript((original: unknown, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }: { bpbSettings?: Record<string, string> }) =>
                 api.storage.sync.set({
                     bpbSettings: { ...bpbSettings, mapRouteColor: original },
                 })).then(() => done(true), error => done(String(error)));
@@ -1665,7 +1688,7 @@ async function main() {
       const layoutState = calculator.dataset.layoutState || '';
       toggle.click();
       return { belowHorizon, aboveHorizon, prompt, layoutState };
-    `);
+    `) as { belowHorizon: unknown; aboveHorizon: unknown; prompt: unknown; layoutState: string };
         assertState(firefoxSunHeaderHeights?.belowHorizon === firefoxSunHeaderHeights?.aboveHorizon
             && firefoxSunHeaderHeights?.aboveHorizon === firefoxSunHeaderHeights?.prompt
             && firefoxSunHeaderHeights?.layoutState === '',
@@ -1729,8 +1752,8 @@ async function main() {
         const originalSunMinute = await driver.executeScript(
             'return { minute: Number(arguments[0].value), clock: document.querySelector(".bpb-sun-calculator__clock")?.textContent || "" };',
             analyzerSunSlider,
-        );
-        const readFirefoxGeometryAtMinute = async (minute, expectedClock) => {
+        ) as { minute: unknown; clock: unknown };
+        const readFirefoxGeometryAtMinute = async (minute: number, expectedClock: string) => {
             await driver.executeScript(`
         const slider = arguments[0];
         slider.value = String(arguments[1]);
@@ -1747,19 +1770,19 @@ async function main() {
       `);
             return readFirefoxSunGeometry();
         };
-        const morningSunGeometry = await readFirefoxGeometryAtMinute(634, '10:34 AM');
-        const afternoonSunGeometry = await readFirefoxGeometryAtMinute(843, '02:03 PM');
+        const morningSunGeometry = await readFirefoxGeometryAtMinute(634, '10:34 AM') as { overflowingText: { length: number }; overflowingContainers: { length: number } };
+        const afternoonSunGeometry = await readFirefoxGeometryAtMinute(843, '02:03 PM') as { overflowingText: { length: number }; overflowingContainers: { length: number } };
         const restoredSunGeometry = await readFirefoxGeometryAtMinute(
-            originalSunMinute.minute,
-            originalSunMinute.clock,
+            originalSunMinute.minute as number,
+            originalSunMinute.clock as string,
         );
         const stableSunGeometryKeys = [
             'calculatorHeight', 'toggleHeight', 'panelHeight', 'layoutHeight', 'controlsHeight',
             'dateFieldHeight', 'timeFieldHeight', 'readingHeight', 'compassHeight', 'factsHeight',
             'directionHeight', 'elevationHeight', 'moonHeight', 'eventsHeight', 'limitationHeight',
         ];
-        const firefoxSunGeometryMatches = (left, right) => stableSunGeometryKeys.every(key =>
-            Math.abs(left[key] - right[key]) <= 0.5);
+        const firefoxSunGeometryMatches = (left: unknown, right: unknown) => stableSunGeometryKeys.every(key =>
+            Math.abs((left as Record<string, number>)[key] - (right as Record<string, number>)[key]) <= 0.5);
         assertState(firefoxSunGeometryMatches(morningSunGeometry, afternoonSunGeometry)
             && firefoxSunGeometryMatches(morningSunGeometry, restoredSunGeometry)
             && morningSunGeometry.overflowingText.length === 0
@@ -1773,18 +1796,18 @@ async function main() {
         await driver.switchTo().newWindow('tab');
         const effectiveHeightSettingsHandle = await driver.getWindowHandle();
         await driver.get(optionsUrl);
-        const originalHeightSettings = await driver.executeAsyncScript(done => {
+        const originalHeightSettings = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.local.get('bpbDeviceSettings').then(({ bpbDeviceSettings }) =>
+            (api.storage.local.get('bpbDeviceSettings') as Promise<Record<string, FixtureRecord>>).then(({ bpbDeviceSettings }) =>
                 api.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: 720 } }).then(() => done(bpbDeviceSettings.settings))).catch(error => done({ error: String(error) }));
-        });
+        }) as { error: unknown; mapViewportHeight: unknown };
         assertState(!originalHeightSettings?.error,
             'Firefox could not stage the maximum route-explorer height', originalHeightSettings);
         await driver.switchTo().window(effectiveHeightAnalyzerHandle);
         const mapResizeGeometry = await driver.executeScript(`
       const coarse = matchMedia('(pointer: coarse)').matches;
       return { coarse, railHeight: coarse ? 44 : 16, targetSize: coarse ? 44 : 24 };
-    `);
+    `) as { railHeight: number; targetSize: number };
         await driver.manage().window().setRect({ width: 1200, height: 600 });
         const shortPreferredHeight = await waitForScript(driver, `
       const map = document.getElementById('bpb-map-viewport');
@@ -1870,10 +1893,10 @@ async function main() {
       return contentHeight === ${firstPointerHeight.contentHeight} ? contentHeight : false;
     `, 'the grown interacted Firefox map preference');
         await driver.switchTo().window(effectiveHeightSettingsHandle);
-        const persistedEffectiveHeight = await driver.executeAsyncScript((expected, done) => {
+        const persistedEffectiveHeight = await driver.executeAsyncScript((expected: unknown, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             const deadline = Date.now() + 5000;
-            const read = () => api.storage.local.get('bpbDeviceSettings').then(({ bpbDeviceSettings: { settings: bpbSettings } }) => {
+            const read = () => (api.storage.local.get('bpbDeviceSettings') as Promise<Record<string, { settings: FixtureRecord }>>).then(({ bpbDeviceSettings: { settings: bpbSettings } }) => {
                 if (bpbSettings.mapViewportHeight === expected) done(bpbSettings.mapViewportHeight);
                 else if (Date.now() >= deadline) done({ value: bpbSettings.mapViewportHeight });
                 else setTimeout(read, 25);
@@ -1894,7 +1917,7 @@ async function main() {
             firstPointerHeight, pointerMovePrevented, persistedEffectiveHeight,
             grownInteractedHeight,
         });
-        await driver.executeAsyncScript((original, done) => {
+        await driver.executeAsyncScript((original: FixtureRecord, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             api.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { mapViewportHeight: original.mapViewportHeight } })
                 .then(() => done(true), error => done({ error: String(error) }));
@@ -1904,7 +1927,7 @@ async function main() {
         await driver.manage().window().setRect(effectiveHeightWindowRect);
         await waitForScript(driver, `
       return document.getElementById('bpb-map-viewport')?.style.height
-        === '${(originalHeightSettings.mapViewportHeight || 450) + mapResizeGeometry.railHeight}px';
+        === '${((originalHeightSettings.mapViewportHeight as number) || 450) + (mapResizeGeometry.railHeight as number)}px';
     `, 'the restored Firefox preferred map height');
         await driver.executeScript(
             'arguments[0].scrollIntoView({ block: "center", inline: "nearest" });',
@@ -2021,7 +2044,7 @@ async function main() {
         splitTouchAction: splitHandle ? getComputedStyle(splitHandle).touchAction : null,
         summary: rect(summary),
       };
-    `);
+    `) as { mapHandle: { width: number; height: number }; mapRailHeight: number; mapOverlap: number; mapRightAligned: unknown; mapBottomAligned: unknown; mapGrip: { width: number; height: number }; mapOverlapsNativeZoom: boolean; mapBackground: string; mapBorder: string; mapTouchAction: string; mapDetailsLeadingBreak: boolean; mapDetailsText: string; mapDetailsTextGap: number; splitHandle: { width: number; height: number; left: number; right: number }; report: { right: number }; summary: { left: number }; splitTouchAction: string };
         assertState(
             Math.abs(firefoxResizeTargets.mapHandle?.width - mapResizeGeometry.targetSize) <= 0.5
         && Math.abs(firefoxResizeTargets.mapHandle?.height - mapResizeGeometry.targetSize) <= 0.5
@@ -2051,7 +2074,7 @@ async function main() {
         const analyzerSunBefore = await driver.executeScript(
             'const slider = arguments[0]; return { value: Number(slider.value), valueText: slider.getAttribute("aria-valuetext") || "" };',
             analyzerSunSlider,
-        );
+        ) as { value: number; valueText: unknown };
         await driver.executeScript('arguments[0].focus();', analyzerSunToggle);
         await driver.actions().sendKeys(Key.TAB, Key.ARROW_RIGHT).perform();
         const analyzerSunAccessibility = await waitForScript(driver, `
@@ -2087,7 +2110,7 @@ async function main() {
           ? getComputedStyle(calculator.querySelector('.bpb-sun-calculator__layout')).gridTemplateColumns
           : '',
       };
-    `);
+    `) as { panelOverflow: unknown; calculatorOverflow: unknown; documentOverflow: unknown; calculatorColumns: string };
         assertState(
             analyzerSunAccessibility.height >= 44 && analyzerSunAccessibility.focusVisible
             && analyzerSunAccessibility.outlineWidth === '3px'
@@ -2106,7 +2129,7 @@ async function main() {
         await writeElementScreenshot(
             driver,
             '#bpb-gpx-analysis',
-            process.env.BPB_VERIFY_FIREFOX_ANALYZER_SCREENSHOT,
+            process.env.BPB_VERIFY_FIREFOX_ANALYZER_SCREENSHOT as string,
         );
         if (process.env.BPB_VERIFY_FIREFOX_ANALYZER_NARROW_SCREENSHOT) {
             const previousRect = await driver.manage().window().getRect();
@@ -2122,15 +2145,15 @@ async function main() {
         }
 
         const terrainToggle = await driver.findElement(By.css(surfaceSelectors.terrainToggle));
-        await driver.executeScript((extensionRoot, selector) => {
+        await driver.executeScript((extensionRoot: string, selector: string) => {
             window.__bpbTerrainForgeryDrained = false;
-            const receiveDrain = event => {
+            const receiveDrain = (event: MessageEvent) => {
                 if (event.source !== window || event.data?.__bpbTerrainProbe !== 'drained') return;
-                window.removeEventListener('message', receiveDrain);
+                window.removeEventListener('message', receiveDrain as unknown as EventListener);
                 window.__bpbTerrainForgeryDrained = true;
             };
-            window.addEventListener('message', receiveDrain);
-            document.querySelector(selector)?.click();
+            window.addEventListener('message', receiveDrain as unknown as EventListener);
+            document.querySelector<FixtureElement>(selector)?.click();
             for (const type of ['requestConsent', 'init', 'prefetch']) {
                 window.postMessage({
                     __bpbTerrain: true,
@@ -2152,7 +2175,7 @@ async function main() {
                     && event.data?.type === 'ready') window.__bpbForgedTerrainReady = true;
             });
             direct.addEventListener('load', () => {
-                direct.contentWindow.postMessage({
+                direct.contentWindow!.postMessage({
                     __bpbTerrainFrame: true,
                     dir: 'toFrame',
                     type: 'init',
@@ -2184,11 +2207,11 @@ async function main() {
         // so one real keypress plus the visible idle postcondition avoids
         // turning an unconditional second click into an accidental close.
         await terrainToggle.sendKeys(Key.ESCAPE);
-        await driver.wait(async () => driver.executeScript(selector => {
-            const toggle = document.querySelector(selector);
+        await driver.wait(async () => driver.executeScript((selector: string) => {
+            const toggle = document.querySelector<FixtureElement>(selector);
             return toggle?.getAttribute('aria-busy') !== 'true'
                 && toggle?.getAttribute('aria-pressed') === 'false'
-                && document.querySelectorAll('#bpb-terrain-frame').length === 0;
+                && document.querySelectorAll<FixtureElement>('#bpb-terrain-frame').length === 0;
         }, surfaceSelectors.terrainToggle), 5_000, 'Firefox terrain toggle to finish stopping');
         await terrainToggle.click();
         const activeTerrainState = await waitForScript(driver, `
@@ -2212,14 +2235,14 @@ async function main() {
           providerRequests: performance.getEntriesByType("resource")
             .map(entry => entry.name)
             .filter(name => /mapterhorn|openfreemap|opentopomap|arcgisonline|trimbleoutdoors|caltopo/i.test(name))
-        };`);
+        };`) as { providerRequests: { length: number } };
         await driver.switchTo().defaultContent();
         const forgedHostState = await driver.executeScript(`return {
           consent: Boolean(document.getElementById("bpb-terrain-consent")),
           bridgeFrames: document.querySelectorAll("#bpb-terrain-frame").length
-        };`);
+        };`) as { consent: unknown };
         assertState(
-            !forgedFrameState.map
+            !(forgedFrameState as { map?: unknown }).map
             && forgedFrameState.providerRequests.length === 0
             && !forgedHostState.consent,
             'Firefox host forgeries started terrain work',
@@ -2300,11 +2323,11 @@ async function main() {
         chevronTransform: getComputedStyle(slider.closest('.bpb-sun-calculator')
           ?.querySelector('.bpb-sun-calculator__chevron')).transform,
       } : null;
-    `);
+    `) as { height: number; valueText: unknown; horizon: unknown; belowClass: unknown; summary: unknown; chevronTransform: string };
         assertState(
-            peakSunTarget?.height >= 44 && /\d.*:\d/.test(peakSunTarget?.valueText || '')
-            && /^(above|below)$/.test(peakSunTarget?.horizon || '')
-            && peakSunTarget?.belowClass === /below horizon/.test(peakSunTarget?.summary || '')
+            peakSunTarget?.height >= 44 && /\d.*:\d/.test((peakSunTarget?.valueText as string) || '')
+            && /^(above|below)$/.test((peakSunTarget?.horizon as string) || '')
+            && peakSunTarget?.belowClass === /below horizon/.test((peakSunTarget?.summary as string) || '')
             && peakSunTarget?.chevronTransform !== 'none',
             'Firefox Peak Sun slider lacks clock semantics or target geometry',
             peakSunTarget,
@@ -2312,7 +2335,7 @@ async function main() {
         await writeElementScreenshot(
             driver,
             '.bpb-sun-calculator',
-            process.env.BPB_VERIFY_FIREFOX_PEAK_SCREENSHOT,
+            process.env.BPB_VERIFY_FIREFOX_PEAK_SCREENSHOT as string,
         );
         if (process.env.BPB_VERIFY_FIREFOX_PEAK_NARROW_SCREENSHOT) {
             const previousRect = await driver.manage().window().getRect();
@@ -2328,7 +2351,7 @@ async function main() {
           && rect.right <= document.documentElement.clientWidth + 1,
         calculatorOverflow: calculator ? calculator.scrollWidth > calculator.clientWidth : true,
       };
-    `);
+    `) as { insideViewport: unknown; calculatorOverflow: unknown };
             assertState(
                 narrowPeakSun?.insideViewport && !narrowPeakSun?.calculatorOverflow,
                 'Firefox Peak Sun calculator overflowed its narrow viewport',
@@ -2387,30 +2410,30 @@ async function main() {
                     bpbFavoriteClimbers: { schemaVersion: 1, entries: [{ cid: 38769, name: 'Example', addedAt: 1, source: 'manual' }] } });
                 done({ keys, local, sync });
             })().catch(error => done({ error: error.message }));
-        `);
+        `) as { error: unknown };
         assertState(!ignoredSaved.error, 'Firefox ignored fixture seeding failed', ignoredSaved);
-        const captureIgnored = async (surface, selector) => {
+        const captureIgnored = async (surface: string, selector: string) => {
             if (!process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) return;
             for (const theme of ['light', 'dark']) {
                 await driver.executeScript('document.documentElement.dataset.bpbTheme = arguments[0];', theme);
                 for (const [width, height] of [[surface === 'manager' ? 1024 : 1440, surface === 'manager' ? 900 : 1000], [390,844]]) {
                     await driver.manage().window().setRect({ width, height });
-                    const actual = await driver.executeScript('return { width: window.innerWidth, height: window.innerHeight, outerHeight: window.outerHeight };');
+                    const actual = await driver.executeScript('return { width: window.innerWidth, height: window.innerHeight, outerHeight: window.outerHeight };') as { width: number; outerHeight: number; height: number };
                     const zoom = actual.width / width;
                     if (zoom !== 1) {
-                        await driver.setContext('chrome');
+                        await driver.setContext(firefox.Context.CHROME);
                         try { await driver.executeScript('window.gBrowser.selectedBrowser.fullZoom = arguments[0];', zoom); }
-                        finally { await driver.setContext('content'); }
+                        finally { await driver.setContext(firefox.Context.CONTENT); }
                     }
                     await driver.manage().window().setRect({ width, height: Math.round(height * zoom + actual.outerHeight - actual.height) });
-                    const viewport = await driver.executeScript('return { width: window.innerWidth, height: window.innerHeight };');
+                    const viewport = await driver.executeScript('return { width: window.innerWidth, height: window.innerHeight };') as { width: unknown; height: unknown };
                     await driver.executeScript('document.querySelector(arguments[0]).scrollIntoView({block:"center"});', selector);
                     await writeFile(path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
                         `firefox-${surface}-${theme}-${width}.png`), await driver.takeScreenshot(), 'base64');
                     console.log(`  Firefox ignored ${surface} ${theme}: hidden CSS viewport ${viewport.width}x${viewport.height}`);
-                    await driver.setContext('chrome');
+                    await driver.setContext(firefox.Context.CHROME);
                     try { await driver.executeScript('window.gBrowser.selectedBrowser.fullZoom = 1;'); }
-                    finally { await driver.setContext('content'); }
+                    finally { await driver.setContext(firefox.Context.CONTENT); }
                 }
             }
         };
@@ -2439,8 +2462,8 @@ async function main() {
                 if (surface === 'detail') {
                     const boundary = await driver.executeScript(`return {
                         hidden: document.getElementById('bpb-ascent-report-content').parentElement.style.display === 'none',
-                        map: Boolean(document.getElementById('Gmap')), srcdoc: document.querySelector('#bpb-ascent-report-content iframe')?.getAttribute('srcdoc') ?? null };`);
-                    assertState(boundary.hidden && boundary.map && boundary.srcdoc === null, 'Firefox detail boundary failed', boundary);
+                        map: Boolean(document.getElementById('Gmap')), srcdoc: document.querySelector('#bpb-ascent-report-content iframe')?.getAttribute('srcdoc') ?? null };`) as { hidden: unknown; srcdoc: unknown };
+                    assertState(boundary.hidden && (boundary as { map?: unknown }).map && boundary.srcdoc === null, 'Firefox detail boundary failed', boundary);
                 }
                 await captureIgnored(surface, surface === 'detail' ? '#bpb-ascent-report-tools' : '#pbaf-bar');
                 await driver.findElement(By.css('button[aria-label^="Show"][aria-label*="ignored"]')).sendKeys(Key.ENTER);
@@ -2472,7 +2495,7 @@ async function main() {
       resetHidden: document.querySelector(".pbaf-reset")?.hidden,
       labels: [...document.querySelectorAll(".pbaf-chip-label")].map(label => label.textContent),
       settingsControl: document.querySelector(".pbaf-settings-link")?.tagName,
-    };`);
+    };`) as { controls: number; visible: number; total: unknown; resetHidden: boolean; labels: unknown; settingsControl: string; first: unknown };
         const hasBeta = await driver.findElement(By.xpath(
             '//button[contains(@class,"pbaf-chip")][.//span[normalize-space()="Has beta"]]',
         ));
@@ -2487,7 +2510,7 @@ async function main() {
       visible: [...document.querySelectorAll("table.gray tr")]
         .filter(row => row.cells.length > 1 && row.cells[0].tagName === "TD" && getComputedStyle(row).display !== "none").length,
       first: document.querySelector("table.gray tr td")?.textContent.trim(),
-    };`);
+    };`) as { visible: number; first: unknown };
         const initialHandles = await driver.getAllWindowHandles();
         const settingsControl = await driver.findElement(By.css('.pbaf-settings-link'));
         // Firefox 152 can report the button's own count child as intercepting an
@@ -2498,15 +2521,16 @@ async function main() {
             const handles = await driver.getAllWindowHandles();
             return handles.length === initialHandles.length + 1 ? handles : false;
         }, 10_000, 'Firefox Settings window to appear');
-        let settingsHandle = openedHandles.find(handle => !initialHandles.includes(handle));
-        await driver.switchTo().window(settingsHandle);
+        let settingsHandle = (openedHandles as unknown as string[]).find((handle: string) => !initialHandles.includes(handle));
+        await driver.switchTo().window(settingsHandle as string);
         await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/options/options.html#beta'), 10_000,
             'Firefox Settings destination to reach beta');
-        const linkedSettingsState = await driver.executeScript(`return {
-      href: location.href,
-      heading: document.querySelector('#beta-settings-heading')?.textContent,
-    };`);
-        const readSettingsTopology = () => driver.executeAsyncScript(done => {
+        // Settings builds its panels after load, so wait for the linked heading.
+        const linkedSettingsState = await waitForScript(driver, `
+      const heading = document.querySelector('#beta-settings-heading')?.textContent;
+      return heading ? { href: location.href, heading } : null;
+    `, 'the linked Firefox settings heading') as { href: string; heading: string };
+        const readSettingsTopology = () => driver.executeAsyncScript<SettingsTopology>((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             Promise.all([api.tabs.query({}), api.windows.getAll(), api.tabs.getCurrent()])
                 .then(([tabs, windows, current]) => {
@@ -2520,8 +2544,8 @@ async function main() {
                     });
                 }, error => done({ error: String(error) }));
         });
-        const activateSettings = async (activate, description) => {
-            await driver.switchTo().window(settingsHandle);
+        const activateSettings = async (activate: (control: WebElement) => Promise<unknown>, description: string) => {
+            await driver.switchTo().window(settingsHandle as string);
             await driver.executeScript('location.hash = "github";');
             await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000,
                 `Firefox Settings reset before ${description}`);
@@ -2538,29 +2562,29 @@ async function main() {
                 window.__bpbSettingsActivationListening = true;
                 for (const type of ['keydown', 'keyup', 'click', 'auxclick']) {
                     window.addEventListener(type, event => {
-                        if (!event.target?.closest?.('.pbaf-settings-link')) return;
+                        if (!(event.target as Element | null)?.closest?.('.pbaf-settings-link')) return;
                         const events = window.__bpbSettingsActivationEvents;
-                        events.push({ at: Date.now(), type, key: event.key, button: event.button,
-                            isTrusted: event.isTrusted, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
-                            shiftKey: event.shiftKey, focused: document.hasFocus() });
+                        events.push({ at: Date.now(), type, key: (event as FixtureEvent).key, button: (event as FixtureEvent).button,
+                            isTrusted: event.isTrusted, ctrlKey: (event as FixtureEvent).ctrlKey, metaKey: (event as FixtureEvent).metaKey,
+                            shiftKey: (event as FixtureEvent).shiftKey, focused: document.hasFocus() });
                         if (events.length > 16) events.shift();
                     }, true);
                 }
             });
             const control = await driver.findElement(By.css('.pbaf-settings-link'));
             await activate(control);
-            await driver.switchTo().window(settingsHandle);
+            await driver.switchTo().window(settingsHandle as string);
             const readActivation = async () => {
                 const destination = await driver.getCurrentUrl();
                 await driver.switchTo().window(filterHandle);
                 const source = await driver.executeScript(() => ({
                     events: window.__bpbSettingsActivationEvents,
-                    text: document.querySelector('.pbaf-settings-link')?.textContent,
-                    title: document.querySelector('.pbaf-settings-link')?.title,
+                    text: document.querySelector<FixtureElement>('.pbaf-settings-link')?.textContent,
+                    title: document.querySelector<FixtureElement>('.pbaf-settings-link')?.title,
                     focused: document.hasFocus(), visibility: document.visibilityState,
                     active: document.activeElement?.className,
                 }));
-                await driver.switchTo().window(settingsHandle);
+                await driver.switchTo().window(settingsHandle as string);
                 return { destination, source };
             };
             try {
@@ -2569,11 +2593,11 @@ async function main() {
             } catch (error) {
                 throw new Error(`Firefox Settings beta destination after ${description}: ${JSON.stringify({
                     ...await readActivation().catch(diagnosticError => ({ diagnosticError: diagnosticError.message })),
-                    cause: error.message,
+                    cause: (error as Error).message,
                 })}`, { cause: error });
             }
             const activation = await readActivation();
-            const click = activation.source.events.find(event => event.type === 'click' && event.isTrusted);
+            const click = (activation.source as { events: FixtureEvent[] }).events.find((event: FixtureEvent) => event.type === 'click' && event.isTrusted);
             if (description === 'modifier click') {
                 assertState(click && (click.ctrlKey || click.metaKey),
                     'Firefox Settings modifier was released before its native click', activation);
@@ -2583,7 +2607,7 @@ async function main() {
                     'Firefox Settings plain Enter did not produce an unmodified native click', activation);
             }
             if (description === 'middle click') {
-                assertState(activation.source.events.some(event => event.type === 'auxclick'
+                assertState((activation.source as { events: FixtureEvent[] }).events.some((event: FixtureEvent) => event.type === 'auxclick'
                     && event.isTrusted && event.button === 1),
                 'Firefox Settings middle click did not produce a native auxiliary activation', activation);
             }
@@ -2595,12 +2619,12 @@ async function main() {
         const settingsModifier = process.platform === 'darwin' ? Key.COMMAND : Key.CONTROL;
         // Synchronize keyboard and pointer sources: async actions can release
         // Command/Control before the pointer's click is dispatched.
-        const shortcutTopology = await activateSettings(control => driver.actions()
+        const shortcutTopology = await activateSettings((control: WebElement) => driver.actions()
             .keyDown(settingsModifier).click(control).keyUp(settingsModifier).perform(), 'modifier click');
-        const middleTopology = await activateSettings(control => driver.actions({ async: true })
+        const middleTopology = await activateSettings((control: WebElement) => driver.actions({ async: true })
             .move({ origin: control }).press(Button.MIDDLE).release(Button.MIDDLE).perform(), 'middle click');
-        const keyboardTopology = await activateSettings(control => control.sendKeys(Key.ENTER), 'Enter');
-        await driver.switchTo().window(settingsHandle);
+        const keyboardTopology = await activateSettings((control: WebElement) => control.sendKeys(Key.ENTER), 'Enter');
+        await driver.switchTo().window(settingsHandle as string);
         await driver.executeScript('location.hash = "github";');
         await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000,
             'Firefox Settings reset before Shift Enter');
@@ -2630,7 +2654,7 @@ async function main() {
       text: document.querySelector('.pbaf-settings-link')?.textContent,
     };`);
         settingsHandle = await waitForWindowUrl(driver, `${baseUrl}options/options.html#beta`);
-        let newWindowTopology;
+        let newWindowTopology!: SettingsTopology;
         try {
             newWindowTopology = await driver.wait(async () => {
                 const topology = await readSettingsTopology();
@@ -2638,14 +2662,14 @@ async function main() {
                     && topology.windowCount === beforeNewWindow.windowCount + 1
                     ? topology
                     : false;
-            }, 5_000);
+            }, 5_000) as SettingsTopology;
         } catch (error) {
             const topology = await readSettingsTopology();
             throw new Error(`Firefox Shift Settings activation did not create a window: ${JSON.stringify({
                 shiftEvent,
                 topology,
                 beforeNewWindow,
-                cause: error.message,
+                cause: (error as Error).message,
             })}`);
         }
         const reusedSettingsTab = [shortcutTopology, middleTopology, keyboardTopology, newWindowTopology]
@@ -2697,13 +2721,13 @@ async function main() {
         .map(control => control.firstChild.textContent.trim()),
       betaBar: Boolean(document.getElementById("pbaf-bar")),
       firstPeak: document.querySelector("#RGridView tr:nth-child(2) td:nth-child(4)")?.textContent.trim(),
-    };`);
+    };`) as { labels: { length: number }; betaBar: boolean; firstPeak: unknown };
         const buddyControls = await driver.findElements(By.css('#RGridView .pbaf-table-sort'));
         await buddyControls[3].click();
         const buddyStateAfter = await driver.executeScript(`return {
       firstPeak: document.querySelector("#RGridView tr:nth-child(2) td:nth-child(4)")?.textContent.trim(),
       sort: document.querySelector("#RGridView th:nth-child(4)")?.getAttribute("aria-sort"),
-    };`);
+    };`) as { sort: string; firstPeak: unknown };
         assertState(
             buddyStateBefore.labels.length === 6
         && buddyStateBefore.betaBar === false
@@ -2726,7 +2750,7 @@ async function main() {
       firstPeak: rows[0]?.cells[1].textContent.trim(),
       url: location.href,
       horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-    };`);
+    };`) as { labels: { length: number }; betaBar: boolean; horizontalOverflow: boolean; firstPeak: unknown; url: unknown };
         const listControls = await driver.findElements(By.css('table.gray .pbaf-table-sort'));
         await listControls[1].click();
         const listStateAfter = await driver.executeScript(`const table = document.querySelector("table.gray");
@@ -2736,7 +2760,7 @@ async function main() {
       firstPeak: rows[0]?.cells[1].textContent.trim(),
       sort: table.rows[0].cells[1].getAttribute("aria-sort"),
       url: location.href,
-    };`);
+    };`) as { sort: string; firstPeak: unknown; url: unknown };
         assertState(
             listStateBefore.labels.length === 8
         && listStateBefore.betaBar === false
@@ -2759,14 +2783,14 @@ async function main() {
       };
     `);
         const profileBackupState = await driver.wait(async () => {
-            const state = await readProfileBackupState();
-            return state.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy)
+            const state = await readProfileBackupState() as { primary: string; copy: unknown };
+            return state.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy as string)
                 ? state
                 : false;
-        }, 10_000).catch(readProfileBackupState);
+        }, 10_000).catch(readProfileBackupState) as { primary: string; copy: unknown };
         assertState(
             profileBackupState.primary === 'Back up all ascents and TRs'
-        && /fixture\/backup/.test(profileBackupState.copy),
+        && /fixture\/backup/.test(profileBackupState.copy as string),
             'Firefox full-profile backup surface did not mount for its verified owner',
             profileBackupState,
         );
@@ -2777,13 +2801,13 @@ async function main() {
                 await driver.get(`https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&y=2024`);
                 if (process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR) await mkdir(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, { recursive: true });
                 await verifyProfilePreparation({
-                    evaluate: fn => driver.executeScript(webdriverScript(fn)),
-                    wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox profile preparation'),
-                    click: selector => driver.findElement(By.css(selector)).click(),
-                    key: selector => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
-                    resize: (width, height) => setContentViewport(driver, { width, height }),
-                    screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? name => writeElementScreenshot(driver, surfaceSelectors.profileBackup,
-                        path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, `firefox-${name}.png`)) : null,
+                    evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
+                    wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox profile preparation'),
+                    click: (selector: string) => driver.findElement(By.css(selector)).click(),
+                    key: (selector: string) => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
+                    resize: (width: number, height: number) => setContentViewport(driver, { width, height }),
+                    screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? (name: string) => writeElementScreenshot(driver, surfaceSelectors.profileBackup,
+                        path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR as string, `firefox-${name}.png`)) : null,
                     readStarted: () => waitForCondition(() => fixture.requests.profileListReads > profileReadsBefore, { description: 'Firefox held profile-list request' }),
                     readAborted: () => waitForCondition(() => fixture.requests.cancelledProfileReads > profileAbortsBefore, { description: 'Firefox cancelled profile-list transport' }),
                 });
@@ -2807,7 +2831,7 @@ async function main() {
             const handles = await driver.getAllWindowHandles();
             return handles.find(handle => !handlesBeforeDraftManager.has(handle)) || false;
         }, 5_000, 'Firefox report-drafts manager window to appear');
-        await driver.switchTo().window(draftsManagerHandle);
+        await driver.switchTo().window(draftsManagerHandle as string);
         // A new window handle can still point at about:blank. Wait for the
         // requested extension document and its deferred bundle before seeding.
         const draftsManagerReady = await waitForCondition(() => driver.executeScript(
@@ -2815,7 +2839,7 @@ async function main() {
         ), {
             description: 'the Firefox standalone drafts manager destination to finish loading',
             timeoutMs: 5_000,
-            isReady: state => state.ready,
+            isReady: ((state: ScriptState) => state!.ready) as unknown as BooleanConstructor,
         });
         const draftsManagerUrl = draftsManagerReady.url;
         // The manager is its own page, so this also proves the standalone page
@@ -2843,12 +2867,12 @@ async function main() {
           title: document.querySelector(".drafts-list .draft-title")?.textContent,
           sidebar: !!document.querySelector(".side-nav")
         });
-      });`);
+      });`) as { heading: string; rows: number; title: unknown; sidebar: boolean };
         assertState(
             draftsManagerUrl === `${baseUrl}options/drafts.html`
         && draftsManagerState.heading === 'Trip report drafts'
         && draftsManagerState.rows === 1
-        && /Verification Peak/.test(draftsManagerState.title || '')
+        && /Verification Peak/.test((draftsManagerState.title as string) || '')
         && draftsManagerState.sidebar === false,
             'Firefox report editor did not open a working standalone drafts manager',
             { draftsManagerUrl, draftsManagerState },
@@ -2924,7 +2948,7 @@ async function main() {
         outlineWidth: style?.outlineWidth,
         outlineOffset: style?.outlineOffset,
       };
-    `);
+    `) as { invalid: string; focused: unknown; errorRole: string; errorText: string; errorWrapsInside: unknown; panelOverflow: unknown; outlineStyle: string; outlineWidth: string; outlineOffset: string };
         assertState(editorErrorState.invalid === 'true' && editorErrorState.focused
             && editorErrorState.errorRole === 'alert'
             && editorErrorState.errorText === 'Enter an image URL.'
@@ -2943,7 +2967,7 @@ async function main() {
         errorRelation: input.hasAttribute('aria-errormessage'),
         errorHidden: document.getElementById('bpb-re-image-error')?.hidden,
       };
-    `);
+    `) as { invalid: unknown; errorRelation: unknown; errorHidden: unknown };
         assertState(!correctedEditorErrorState.invalid
             && !correctedEditorErrorState.errorRelation && correctedEditorErrorState.errorHidden,
         'Firefox corrected image field retained stale error semantics', correctedEditorErrorState);
@@ -2997,10 +3021,10 @@ async function main() {
       }
       scrollTo(0, startY);
       return result;
-    `);
+    `) as unknown[];
         // Firefox rectangle subtraction can differ by 1/65536 CSS pixel after scrolling.
         assertState(captionScrollGaps.length > 0
-            && captionScrollGaps.every(({ gap }) => Number.isFinite(gap) && gap >= -0.01),
+            && (captionScrollGaps as unknown as { gap: number }[]).every(({ gap }: { gap: number }) => Number.isFinite(gap) && gap >= -0.01),
         'Firefox caption overlaps its image after scrolling', captionScrollGaps);
         const captionState = await waitForScript(driver, `
       const figure = document.querySelector('.bpb-re-surface figure');
@@ -3025,19 +3049,19 @@ async function main() {
             && captionState.imageWidth >= 319 && /\[figcaption\]North ridge caption/.test(captionState.source)
             && captionState.source.includes('After the photo'), 'Firefox caption lost text, image association or geometry', captionState);
         await writeElementScreenshot(driver, '#bpb-report-editor', captionScreenshot);
-        const mediaResizeState = await driver.executeAsyncScript(done => {
-            const mode = label => [...document.querySelectorAll('.bpb-re-mode')]
+        const mediaResizeState = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
+            const mode = (label: string) => [...document.querySelectorAll<FixtureElement>('.bpb-re-mode')]
                 .find(button => button.textContent === label);
             mode('Plain')?.click();
             const textarea = document.getElementById('JournalText');
             const source = '[video src="https://media.example.com/verify.mp4" width="320" height="180"][/video]';
-            textarea.value = source;
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            (textarea as HTMLTextAreaElement).value = source;
+            textarea!.dispatchEvent(new Event('input', { bubbles: true }));
             mode('Rich text')?.click();
             const deadline = Date.now() + 5000;
             const start = () => {
-                const media = document.querySelector('.bpb-re-video-resize video');
-                const handle = document.querySelector('[aria-label="Resize video"]');
+                const media = document.querySelector<FixtureElement>('.bpb-re-video-resize video');
+                const handle = document.querySelector<FixtureElement>('[aria-label="Resize video"]');
                 if ((!media || !handle) && Date.now() < deadline) {
                     setTimeout(start, 25);
                     return;
@@ -3047,7 +3071,7 @@ async function main() {
                     return;
                 }
                 const rect = media.getBoundingClientRect();
-                const pointer = (type, x, y) => new globalThis.PointerEvent(type, {
+                const pointer = (type: string, x: number, y: number) => new globalThis.PointerEvent(type, {
                     bubbles: true,
                     cancelable: true,
                     pointerId: 17,
@@ -3064,7 +3088,7 @@ async function main() {
                 handle.dispatchEvent(pointer('lostpointercapture', rect.right - 80, rect.bottom - 45));
                 document.dispatchEvent(pointer('pointerup', rect.right - 80, rect.bottom - 45));
                 const finish = () => {
-                    const serialized = textarea.value;
+                    const serialized = (textarea as HTMLTextAreaElement).value;
                     if (!/width="240" height="135"/.test(serialized) && Date.now() < deadline) {
                         setTimeout(finish, 25);
                         return;
@@ -3073,7 +3097,7 @@ async function main() {
                     const handleRect = handle.getBoundingClientRect();
                     const result = {
                         serialized,
-                        resizeState: handle.closest('[data-resize-container]')?.dataset.resizeState,
+                        resizeState: handle.closest<FixtureElement>('[data-resize-container]')?.dataset.resizeState,
                         handleWidth: handleRect.width,
                         handleHeight: handleRect.height,
                         belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
@@ -3085,9 +3109,9 @@ async function main() {
                 finish();
             };
             start();
-        });
+        }) as { serialized: unknown; resizeState: string; handleWidth: number; handleHeight: number; belowNativeControls: unknown; touchAction: string; movePrevented: unknown };
         assertState(
-            /width="240" height="135"/.test(mediaResizeState.serialized || '')
+            /width="240" height="135"/.test((mediaResizeState.serialized as string) || '')
         && mediaResizeState.resizeState === 'false'
         && mediaResizeState.handleWidth >= 43.5
         && mediaResizeState.handleHeight >= 43.5
@@ -3150,7 +3174,7 @@ async function main() {
         );
 
         const controlHandle = await driver.getWindowHandle();
-        const sourceTabId = await driver.executeAsyncScript(done => {
+        const sourceTabId = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             api.tabs.query({ active: true, currentWindow: true })
                 .then(([tab]) => done(tab?.id ?? null), error => done({ error: String(error) }));
@@ -3158,12 +3182,12 @@ async function main() {
         assertState(Number.isInteger(sourceTabId), 'Firefox draft source tab identity was unavailable', sourceTabId);
         const seededJob = createSyntheticCaptureJob(sourceTabId);
         const seededPayload = createSyntheticCapturePayload(seededJob);
-        const opened = await driver.executeAsyncScript((job, payload, done) => {
+        const opened = await driver.executeAsyncScript((job: FixtureRecord, payload: FixtureRecord, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             api.storage.session.set({
-                bpbCaptureJobs: { [job.sourceTabId]: job },
+                bpbCaptureJobs: { [job.sourceTabId as number]: job },
                 bpbDraftTabs: {},
-                [payload.key]: payload.value,
+                [payload.key as string]: payload.value,
             }).then(() => api.runtime.sendMessage({
                 type: 'CAPTURE_OPEN_DRAFTS',
                 tabId: job.sourceTabId,
@@ -3172,8 +3196,8 @@ async function main() {
                 const tab = reply?.tabIds?.length ? await api.tabs.get(reply.tabIds[0]) : null;
                 done({ reply, tab });
             }).catch(error => done({ error: String(error) }));
-        }, seededJob, seededPayload);
-        const draftTabId = opened.reply?.tabIds?.[0];
+        }, seededJob, seededPayload) as { reply: { tabIds: unknown; groupWarning: unknown }; tab: { groupId: unknown } };
+        const draftTabId = (opened.reply as { tabIds?: number[] } | undefined)?.tabIds?.[0];
         assertState(
             Number.isInteger(draftTabId),
             'Firefox worker did not create a draft tab',
@@ -3189,7 +3213,7 @@ async function main() {
             const handles = await driver.getAllWindowHandles();
             return handles.find(handle => handle !== controlHandle) || false;
         }, 10_000);
-        await driver.switchTo().window(draftHandle);
+        await driver.switchTo().window(draftHandle as string);
         const workerDraftUrl = await driver.wait(async () => {
             const current = await driver.getCurrentUrl();
             return /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(current)
@@ -3197,18 +3221,18 @@ async function main() {
                 : false;
         }, 10_000);
         assertState(
-            /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(workerDraftUrl),
+            /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(workerDraftUrl as string),
             'Firefox worker did not navigate the draft tab to its bound peak and climber',
             workerDraftUrl,
         );
         await driver.switchTo().window(controlHandle);
 
         const wrongDraftUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?pid=999&cid=900001`;
-        await driver.executeAsyncScript((tabId, url, done) => {
+        await driver.executeAsyncScript((tabId: number, url: string, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
             api.tabs.update(tabId, { url }).then(() => done(true), error => done({ error: String(error) }));
         }, draftTabId, wrongDraftUrl);
-        await driver.switchTo().window(draftHandle);
+        await driver.switchTo().window(draftHandle as string);
         await driver.wait(async () => (await driver.getCurrentUrl()) === wrongDraftUrl, 10_000);
         const mismatch = await driver.wait(until.elementLocated(By.id('bpb-draft-banner')), 10_000).then(
             element => element.getText(),
@@ -3247,22 +3271,22 @@ async function main() {
         assertState(
             fixture.requests.previewPosts === 1
         && fixture.requests.savePosts === 0
-        && fixture.requests.lastPreview?.attachedGpx
-        && fixture.requests.lastPreview?.dateFilled
-        && fixture.requests.lastPreview?.suffixBlank,
+        && (fixture.requests.lastPreview as FixtureRecord | null)?.attachedGpx
+        && (fixture.requests.lastPreview as FixtureRecord | null)?.dateFilled
+        && (fixture.requests.lastPreview as FixtureRecord | null)?.suffixBlank,
             'Firefox draft handoff did not attach/fill/Preview exactly once',
             fixture.requests,
         );
 
         await driver.switchTo().window(controlHandle);
-        const privateState = await driver.executeAsyncScript((sourceId, draftId, payloadKey, done) => {
+        const privateState = await driver.executeAsyncScript((sourceId: number, draftId: string, payloadKey: string, done: (result?: unknown) => void) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs', payloadKey]).then(values => done({
+            (api.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs', payloadKey]) as Promise<Record<string, Record<string, unknown>>>).then(values => done({
                 job: values.bpbCaptureJobs?.[sourceId] || null,
                 draft: values.bpbDraftTabs?.[draftId] || null,
                 payload: values[payloadKey],
             }), error => done({ error: String(error) }));
-        }, sourceTabId, draftTabId, seededPayload.key);
+        }, sourceTabId, draftTabId, seededPayload.key) as { job: { phase: string; payloadKey: unknown }; payload: unknown; draft: { complete: boolean; previewStarted: boolean } };
         assertState(
             privateState.job?.phase === 'previewed'
         && privateState.job?.payloadKey === undefined
@@ -3272,19 +3296,19 @@ async function main() {
             'Firefox worker did not complete the exactly-once handoff',
             privateState,
         );
-        await driver.switchTo().window(draftHandle);
+        await driver.switchTo().window(draftHandle as string);
         await driver.close();
         await driver.switchTo().window(controlHandle);
 
         await verifySignedOutExtension({
-            configure: async source => {
+            configure: async (source: string) => {
                 await driver.get(optionsUrl);
                 await driver.executeScript(webdriverScript(prepareSignedOut, source));
             },
             navigate: () => driver.get(`https://${fixtureHost}:${fixture.port}/Peak.aspx?pid=2296&signed-out=1`),
-            evaluate: fn => driver.executeScript(webdriverScript(fn)),
-            wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox signed-out smoke'),
-            press: (selector, key) => driver.findElement(By.css(selector)).sendKeys(key === 'Enter' ? Key.ENTER : key),
+            evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
+            wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox signed-out smoke'),
+            press: (selector: string, key: string) => driver.findElement(By.css(selector)).sendKeys(key === 'Enter' ? Key.ENTER : key),
             readFavorites: async () => {
                 await driver.get(optionsUrl);
                 return driver.executeScript('return browser.storage.local.get("bpbFavoriteClimbers").then(values => values.bpbFavoriteClimbers.entries);');
@@ -3296,16 +3320,16 @@ async function main() {
             hidden: true, viewport: verificationViewport, bfcache: firefoxBfcacheResult,
         };
     } catch (error) {
-        primaryError = error;
+        primaryError = error as null;
     }
     if (primaryError && fixture) await retainBrowserFailure({
         driver, fixtureOrigin: `https://${fixtureHost}:${fixture.port}`, extensionBaseUrl: extensionEvidenceBaseUrl,
-    });
+    } as unknown as Parameters<typeof retainBrowserFailure>[0]);
     await resources.dispose(primaryError);
     console.log(JSON.stringify({ ...verificationSummary, teardown: 'passed' }));
 }
 
 main().catch(error => {
-    console.error(`Firefox extension verification failed: ${error.stack || error.message}`);
+    console.error(`Firefox extension verification failed: ${error.stack || (error as Error).message}`);
     process.exitCode = 1;
 });

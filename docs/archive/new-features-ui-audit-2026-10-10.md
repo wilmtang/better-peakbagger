@@ -103,7 +103,7 @@ used for cleanup.
 | `npm test` | 2,432 passed, zero failed; rebuilt shipped bundles. |
 | `npx eslint src options popup photos scripts test` | Passed. This is ESLint, not a claim that the complete web-ext/package lint gate ran. |
 | `scripts/verify-extension.mjs` | Chrome for Testing 153.0.8010.12; real manifest, worker/bridges, settings/navigation, reports, drafts, membership/card actions and BFCache; teardown passed. Base 1000×760; card states at 1000, 480, 360 and 320px widths, light/dark. |
-| `scripts/verify-firefox-extension.mjs` | Firefox 157.0.1; real Firefox manifest, worker/bridges and corresponding UI checks; BFCache and teardown passed. Same base/card sizes and themes. |
+| `scripts/verify-firefox-extension.mts` | Firefox 157.0.1; real Firefox manifest, worker/bridges and corresponding UI checks; BFCache and teardown passed. Same base/card sizes and themes. |
 | `scripts/verify-inline-buddies.mjs` | Hidden Chrome; inline/native add and remove, confirmed favorites reconciliation and cross-tab race protection; six synthetic Buddy POSTs, teardown passed. 1000×760 light and 320×760 dark. |
 | Additional Firefox Buddy probe | Firefox 157.0.1 at 1000×760; supported inline and native form add/remove, shared worker and favorites reconciliation; four synthetic POSTs, teardown passed. |
 | `scripts/verify-capture-popup.mjs` | Real Chrome action sizing at source-tab zoom 100%/200%; shipped-asset layouts in Chrome 153.0.8010.12 and Playwright Firefox 155.0 at 390×600, DPR 1/2, explicit and OS themes, dense/long-name ready/opening/opened and error states. Passed. |

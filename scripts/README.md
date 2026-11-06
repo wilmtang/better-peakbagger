@@ -79,7 +79,7 @@ independent of the existing targets.
 ## Complete extension and package verification
 
 - [verify-extension.mjs](verify-extension.mjs)
-- [verify-firefox-extension.mjs](verify-firefox-extension.mjs)
+- [verify-firefox-extension.mts](verify-firefox-extension.mts)
 - [verify-packaged-extensions.mjs](verify-packaged-extensions.mjs)
 
 ## Capture and providers

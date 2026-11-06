@@ -603,7 +603,7 @@ test('Chrome verifier accepts an exact externally installed floor binary', async
 
 test('Firefox verification waits for rendered postconditions instead of fixed frames', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-firefox-extension.mjs', import.meta.url),
+        new URL('../../scripts/verify-firefox-extension.mts', import.meta.url),
         'utf8',
     );
     const start = verifier.indexOf('const surfaceState =');
@@ -657,7 +657,7 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
 
 test('Firefox topo actions re-center overlay and controls before interaction', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-firefox-extension.mjs', import.meta.url),
+        new URL('../../scripts/verify-firefox-extension.mts', import.meta.url),
         'utf8',
     );
     const helperStart = verifier.indexOf('const clickOverlay =');
@@ -698,7 +698,7 @@ test('Firefox startup retry targets only a clean exit and verifier-owned profile
     );
 
     const verifier = await readFile(
-        new URL('../../scripts/verify-firefox-extension.mjs', import.meta.url),
+        new URL('../../scripts/verify-firefox-extension.mts', import.meta.url),
         'utf8',
     );
     assert.match(verifier, /`--profile-root=\$\{profileRoot\}`/);

@@ -29,7 +29,7 @@ test('repeated package verification uses the same archives and rejects changed b
     };
     await verifyPackageRepetitions(options);
     assert.deepEqual(calls, Array.from({ length: 3 }, () => [
-        ['verify-extension.mjs','extracted'], ['verify-firefox-extension.mjs','firefox.zip'],
+        ['verify-extension.mjs','extracted'], ['verify-firefox-extension.mts','firefox.zip'],
     ]).flat());
     calls.length = 0;
     await assert.rejects(verifyPackageRepetitions({ ...options, execute: async script => {

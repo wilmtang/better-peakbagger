@@ -218,7 +218,7 @@ test('a listen failure is observable and the failed server remains cleanable', a
 test('browser verifiers use the shared resource stack and condition-based analyzer readiness', async () => {
     const verifierPaths = [
         'scripts/verify-extension.mjs',
-        'scripts/verify-firefox-extension.mjs',
+        'scripts/verify-firefox-extension.mts',
         'scripts/verify-firefox-terrain.mjs',
         'scripts/verify-terrain-lod.mjs',
         'scripts/verify-terrain-visual.mts',
@@ -359,7 +359,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         /waitForFunction\([\s\S]*settings-backup-confirmation[\s\S]*settings and saved API keys/,
     );
     const firefoxVerifier = sources.find(
-        entry => entry.verifierPath === 'scripts/verify-firefox-extension.mjs'
+        entry => entry.verifierPath === 'scripts/verify-firefox-extension.mts'
     )!.source;
     assert.match(firefoxVerifier,
         /const profileBackupState = await driver\.wait\(async \(\) => \{[\s\S]*primary === 'Back up all ascents and TRs'/,

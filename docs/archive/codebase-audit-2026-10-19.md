@@ -136,7 +136,7 @@ commit the test repair separately from F1.
 
 ### F4 — The Firefox smoke gate asserts a layout the product deliberately replaced
 
-**Evidence.** `node scripts/verify-firefox-extension.mjs` fails on the Peak
+**Evidence.** `node scripts/verify-firefox-extension.mts` fails on the Peak
 surface in hidden installed Firefox 158.0. It reports native frame preservation,
 the four expected links, a working Sun/Moon panel and valid Moon state, but
 `sunAfterLegend:false`. The preceding full Chrome 156.0.8078.4 verifier passes.
@@ -145,7 +145,7 @@ including reorder, collapse, reload, pending/error/retry and 200% CSS zoom.
 
 **Root cause.** Firefox requires the calculator to be the map cell's last child
 and immediately follow the full-screen link:
-`scripts/verify-firefox-extension.mjs` (lines 2223–2224 and 2240–2247).
+`scripts/verify-firefox-extension.mts` (lines 2223–2224 and 2240–2247).
 `src/ui/peak-card-layout.js` (lines 157–163) intentionally moves it into an
 independent row. Chrome already verifies that new contract while preserving
 the native map and link:

@@ -12,7 +12,7 @@ const rules: Linter.RulesRecord = {
     eqeqeq: ['error', 'smart'],
     // src/ was already uniformly single-quoted and 4-space indented; the
     // release and Firefox-verification scripts had drifted to double quotes
-    // (verify-firefox-extension.mjs alone: 437 double to 24 single). Nothing
+    // (verify-firefox-extension.mts alone: 437 double to 24 single). Nothing
     // enforced either convention, so the split was invisible in review.
     quotes: ['error', 'single', { avoidEscape: true, allowTemplateLiterals: false }],
     indent: ['error', 4, { SwitchCase: 0 }],

@@ -159,7 +159,7 @@ Commit: `test: define browser verification tiers`
 
 ### Step 2 — Prove the smallest Firefox vertical slice
 
-Create `scripts/verify-firefox-extension.mjs`:
+Create `scripts/verify-firefox-extension.mts`:
 
 1. Build `dist/` and call the existing `prepareFirefoxSource()` so the check
    uses the same derived Firefox manifest as development and release.
@@ -373,7 +373,7 @@ The plan is complete when:
 
 - [`scripts/verify-extension.mjs`](../../scripts/verify-extension.mjs) — real
   Chrome fixture server, isolated profile, manifest load, and assertions.
-- [`scripts/verify-firefox-extension.mjs`](../../scripts/verify-firefox-extension.mjs)
+- [`scripts/verify-firefox-extension.mts`](../../scripts/verify-firefox-extension.mts)
   — real Firefox manifest, background, surface, storage, and draft-handoff
   assertions.
 - [`scripts/browser-verification-fixtures.mjs`](../../scripts/browser-verification-fixtures.mjs)

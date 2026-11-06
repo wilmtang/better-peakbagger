@@ -31,7 +31,7 @@ The review traced the complete Sun path through:
 - focused unit/integration coverage under `test/sun/`, `test/time/`,
   `test/maps/peak-map.test.mjs`, and `test/gpx/gpx-analyzer.test.mjs`; and
 - packaged-browser and GPU checks in `scripts/verify-extension.mjs`,
-  `scripts/verify-firefox-extension.mjs`, and
+  `scripts/verify-firefox-extension.mts`, and
   `scripts/verify-terrain-visual.mjs`.
 
 Current-turn verification established this baseline:

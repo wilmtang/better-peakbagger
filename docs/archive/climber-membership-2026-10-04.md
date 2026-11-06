@@ -33,7 +33,7 @@ Verification actually run:
 - Changed JavaScript and tests passed ESLint; `git diff --check` passed.
 - `node scripts/verify-extension.mjs`: full packaged extension passed in hidden
   Chrome for Testing **153.0.8010.12**, new headless.
-- `node scripts/verify-firefox-extension.mjs`: full derived extension passed in
+- `node scripts/verify-firefox-extension.mts`: full derived extension passed in
   hidden Firefox **157.0**.
 - Shared browser coverage exercises favorite, ignored, and Buddy membership,
   suppression of native requests, removal recovery, and guidance geometry.

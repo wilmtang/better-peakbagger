@@ -14,8 +14,8 @@ const script = name => path.join(root, 'scripts', name);
 test('verification targets preserve the existing checks and browser order with one build', async t => {
     const cases = [
         [['chrome'], [['verify-extension.mjs']]],
-        [['firefox'], [['verify-firefox-extension.mjs']]],
-        [['browsers'], [['verify-extension.mjs'], ['verify-firefox-extension.mjs']]],
+        [['firefox'], [['verify-firefox-extension.mts']]],
+        [['browsers'], [['verify-extension.mjs'], ['verify-firefox-extension.mts']]],
         [['capture-popup'], [['verify-capture-popup.mjs']]],
         [['gpx-header'], [['verify-gpx-header.mjs']]],
         [['layout-stability', '--firefox-only', '--surface=maps'],

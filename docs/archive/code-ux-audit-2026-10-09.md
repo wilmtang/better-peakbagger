@@ -326,7 +326,7 @@ Final acceptance after all runtime changes:
   the dark-Favorites branch that failed during the audit. Hidden Chrome for
   Testing **153.0.8010.12**, real unpacked `dist/`, masked HTTPS Peakbagger
   fixtures, base viewport **1000 × 760** plus responsive verifier cases.
-- `node scripts/verify-firefox-extension.mjs`: passed with real derived
+- `node scripts/verify-firefox-extension.mts`: passed with real derived
   extension loading, hidden Firefox **157.0.1**, masked HTTPS fixtures, base
   **1000 × 760** plus responsive/text-size cases. Owned-process teardown passed.
 - `node scripts/verify-photo-editor.mjs`: passed with hidden Chrome 153 and
