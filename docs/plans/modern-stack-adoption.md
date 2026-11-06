@@ -12,12 +12,13 @@ packaging.
 - **Production adoption is done at M6:** one real settings panel ships through
   checked TS/Svelte beside unchanged legacy code and passes the browser and
   package gates.
-- **Conversion continues in M7:** existing domains move in small batches. Svelte
-  conversion is per surface. Whether to convert all runtime code to TS is not
-  decided yet.
+- **The end state is no authored JavaScript (M7):** all remaining runtime code,
+  scripts and tests move to TypeScript in small batches. Generated output and
+  upstream third-party code keep their required formats. Svelte conversion stays
+  per surface and is not required for every UI.
 - **WXT/Vite is optional (M8):** declining it is a supported outcome.
 
-Out of scope: rewriting working features for uniformity, adding a demonstration
+Out of scope: rewriting working features in Svelte for uniformity, adding a demonstration
 feature to exercise the stack, and requiring WXT/Vite or replacement messaging,
 storage or chart libraries first. The supplied
 `ts_svelte_vite_migration_and_stack_report.md` proposes WXT/Vite for a greenfield
@@ -41,7 +42,7 @@ of effort.
 | M4 — Type the pilot's boundaries | Medium; narrow adapters and serialization tests | M2; M3 before adding a new domain | Typed settings/UI and runtime contracts without changing wire/storage formats. |
 | M5 — Enable and prove Svelte compilation | Medium–large; dependency, build and fixture work | M3 and M4 | Checked components and runes compile, mount, update, dispose and recover in watch mode. No production UI conversion yet. |
 | M6 — Ship one bounded Svelte island | Large; UI integration plus release/browser evidence | M1–M5 and dependency-audit gate | The existing Units settings panel works through checked TS/Svelte beside unchanged legacy sections. |
-| M7 — Convert the remaining domains in batches | Very large in aggregate; small modules first | M3; M6 before more production Svelte | A tracked sequence from pure TS domains to owned pages, host islands and high-risk coordinators. |
+| M7 — Convert all remaining JavaScript in batches | Very large in aggregate; small modules first | M3; M6 before more production Svelte | No authored JavaScript remains, from pure TS domains through owned pages, high-risk coordinators, scripts and tests. |
 | M8 — Evaluate and optionally cut over WXT/Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | A separately built parity candidate, then a dedicated cutover only if all contracts survive. |
 
 ## Current progress
@@ -61,13 +62,14 @@ Svelte, and Svelte is not installed.
 | M7 | Started out of order | 13 more map, terrain and hover-card modules became TS during other work, ahead of the batch order. The first planned batch, starting with `src/storage/storage-value.js`, has not begun. |
 | M8 | Not started | Depends on M6. |
 
-Conversion scope, which is not a target to rewrite everything:
+Remaining conversion scope, all of which M7 must finish:
 
 | Area | TypeScript | JavaScript |
 | --- | --- | --- |
 | Runtime (`src`, `options`, `popup`, `photos`) | 16 | 294 |
 | `scripts/` | 8 | 133 |
 | `test/` | 32 | 295 |
+| Other (root config, `docs/plans/`, `store-assets/`) | 1 | 16 |
 
 Runtime TS is all in `src/maps/` and `src/terrain/`, plus
 `src/favorites/climber-hover-card.ts`. There are no Svelte components. The build
@@ -249,7 +251,7 @@ bounded owned-page feature may replace this pilot only with a recorded owner,
 integration contract and equivalent gates; no unspecified future feature keeps
 the milestone permanently open.
 
-### M7 — Convert the remaining domains in increasing-cost batches
+### M7 — Convert all remaining JavaScript in increasing-cost batches
 
 Keep a per-owner checklist with source, callers/entries, tests, measured output
 changes and proof limits. Separate behavior-preserving TS conversion from any
@@ -284,11 +286,18 @@ production Svelte surfaces depend on the proven M6 contract.
 
 Convert touched Node tooling/tests alongside their owner; update `.mts` command,
 inventory and test-discovery references, including scale-test discovery when
-applicable. Do not schedule wholesale test or script rewrites as a prerequisite.
-If complete runtime TS conversion is chosen, M7 closes only when no authored
-legacy JS remains in build-owned runtime roots (generated/vendor exclusions stay
-explicit) and the affected gates pass. Svelte conversion remains per-surface,
-based on a useful ownership boundary rather than a percentage target.
+applicable. Test and script conversion is not a prerequisite for runtime batches,
+but it is required to close M7: convert whatever remains in owner-sized batches
+once its runtime owners are done.
+
+Exit: no authored JavaScript remains anywhere in the repository, including
+`scripts/`, `test/`, `docs/plans/` and `store-assets/`, and the affected gates
+pass. The exclusions in `scripts/typescript-policy.mts` stay explicit for generated
+and upstream code; a file a tool requires in JavaScript needs its own narrow
+documented exception. To keep the result, make the policy reject any authored
+JavaScript file rather than only changed ones, and remove `allowJs` from the
+checking projects. Svelte conversion remains per-surface, based on a useful
+ownership boundary rather than a percentage target.
 
 ### M8 — Evaluate and optionally cut over WXT/Vite
 
@@ -369,8 +378,8 @@ declining WXT as an explicit supported outcome if parity or benefit is absent.
   adapters free of extension APIs; compiler globals alone cannot enforce the
   execution world. Add declarations for existing `Chart`/`marked` globals only
   where consumed, preserving their manifest preload order.
-- Keep the Node runner and untouched `.mjs` tests; new/substantively changed
-  Node tests use `.mts`. Plain erasable `.ts` domain modules can be tested
+- Keep the Node runner, and untouched `.mjs` tests until M7 converts them;
+  new/substantively changed Node tests use `.mts`. Plain erasable `.ts` domain modules can be tested
   directly. Components and rune modules must be compiled
   first and exercised through client bundles. Do not let a Node-imported
   controller transitively import `.svelte` or `.svelte.ts`.
