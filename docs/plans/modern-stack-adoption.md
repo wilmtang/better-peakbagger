@@ -1,59 +1,40 @@
 # Modern stack adoption with legacy compatibility
 
-Status: TypeScript tooling, adoption policy, source-policy coverage and bounded
-map runtime adoption are implemented. Build-watcher coverage, shared typed
-boundaries and Svelte adoption remain open.
-Replanned November 5, 2026 against `fe151c5a`. Earlier investigation and
-implementation evidence is retained below with its original dates and limits.
+Last updated November 6, 2026 against `b6cb5a6b`.
 
-## Recommendation
+## Goal
 
-Finish a **checked TypeScript/Svelte path through the existing esbuild build**,
-then convert existing domains in small batches. WXT/Vite and replacement
-messaging, storage or chart libraries remain separate decisions. They are not
-prerequisites for this transformation.
+Write new and changed extension code in checked TypeScript and, where a UI owner
+benefits, Svelte. Do this through the existing esbuild build, beside legacy
+JavaScript, without changing behavior, storage or wire formats, permissions or
+packaging.
 
-The supplied report makes two different recommendations: an incremental
-TypeScript/Svelte/esbuild path for this repository, and a WXT/Vite-based stack for
-a greenfield extension. The second is a useful candidate destination, not an
-established optimum for this codebase. In particular, the report's runtime-size
-estimates and proposed chart replacement need measurements before they become
-acceptance criteria.
+- **Production adoption is done at M6:** one real settings panel ships through
+  checked TS/Svelte beside unchanged legacy code and passes the browser and
+  package gates.
+- **Conversion continues in M7:** existing domains move in small batches. Svelte
+  conversion is per surface. Whether to convert all runtime code to TS is not
+  decided yet.
+- **WXT/Vite is optional (M8):** declining it is a supported outcome.
 
-The original plan bundled completed prerequisites and substantial unfinished
-work into one milestone. The sequence below separates those costs, gives each
-step an observable exit condition and uses an existing bounded UI owner for the
-first production pilot. Do not add a demonstration feature merely to exercise
-the stack.
+Out of scope: rewriting working features for uniformity, adding a demonstration
+feature to exercise the stack, and requiring WXT/Vite or replacement messaging,
+storage or chart libraries first. The supplied
+`ts_svelte_vite_migration_and_stack_report.md` proposes WXT/Vite for a greenfield
+extension; treat that as a candidate, and measure its size estimates and chart
+replacement before they become acceptance criteria.
 
-## Current baseline — do not redo completed work
+## Milestones
 
-| Area | Implemented state | Remaining boundary |
-| --- | --- | --- |
-| Checking and lint | Strict browser and Node checking projects, TS ESLint scopes, intentional-failure tests, CI/release enforcement and Node 24 floor. Locked TypeScript is 6.0.3. | Svelte compiler/checker/lint integration is absent; legacy JS is intentionally not strictly checked. |
-| Adoption policy | New and substantively changed authored JS-family modules must use TS; staged and committed-diff guards enforce this. Exact filename-reference changes may remain in legacy callers. | Every planned substantive edit to a legacy build script, test or controller includes its conversion cost. |
-| Runtime source policies | All seven guards use shared discovery across `AUTHORED_SOURCE_ROOTS`, including typed and Svelte source-text fixtures. | This proves scan coverage, not Svelte compilation or browser execution. |
-| Runtime TS | Three authored modules: map-layer control, point inspection and location menu. Existing JS imports them. | The broader shared boundaries and most runtime modules remain JS. |
-| Production build | 66 outputs: 64 IIFEs and two ESM frames. Existing generation publication/reload machinery is retained. | Watching is derived from entry/asset directories and misses `src/storage/`; unseen future domains have the same risk. |
-| Shipping dependencies | Notices use esbuild metafile inputs. | The Dependabot shipping-graph test still scans source imports and cannot reliably classify compiled Svelte or type-only imports. |
-
-The runtime-root inventory currently contains **307 JavaScript modules, three
-TypeScript modules and no Svelte components**. These counts describe migration
-scope, not a requirement to rewrite every working feature before adoption.
-Recompute them from the build-owned roots when starting a conversion batch.
-
-## Milestones ordered from least to most effort
-
-Effort is relative implementation **plus verification** cost, not a calendar
-promise. M0 records completed work. Follow M1–M6 for production adoption; M7 is
-the longer conversion backlog and M8 is an optional build-system project. Cheap
-work within a later milestone may be prepared early, but its prerequisites and
-exit gates still apply. External advisory fixes and native/browser availability
-can delay verification independently of implementation effort.
+Ordered from least to most effort, counting implementation **plus verification**.
+This is not a calendar. Follow M1–M6 for production adoption. Cheap work in a later
+milestone may be prepared early, but its prerequisites and exit gates still apply.
+Advisory fixes and native/browser availability can delay verification regardless
+of effort.
 
 | Milestone | Effort / scope | Prerequisite | Concrete result |
 | --- | --- | --- | --- |
-| M0 — Existing foundation | Complete; retain evidence limits | None | Checked mixed JS/TS, enforced adoption policy, shared source guards and three runtime TS modules. |
+| M0 — Existing foundation | Complete; retain evidence limits | None | Checked mixed JS/TS, enforced adoption policy, shared source guards and bounded runtime TS. |
 | M1 — Repair baseline bookkeeping | Small; two focused repairs plus baseline recording | M0 | Fixture and script inventories agree with the tree; current gate failures have owners. |
 | M2 — Convert small UI lifetime helpers | Small; one owner per commit | M0; existing `src/ui/` watch coverage | Typed latest-read and page-lifecycle contracts with unchanged behavior. |
 | M3 — Complete build/watch support | Medium; build-script conversion, then watcher repair | M1 for affected test gates | Any authored source edit triggers a complete successful generation; failed generations keep the last usable build. |
@@ -63,9 +44,56 @@ can delay verification independently of implementation effort.
 | M7 — Convert the remaining domains in batches | Very large in aggregate; small modules first | M3; M6 before more production Svelte | A tracked sequence from pure TS domains to owned pages, host islands and high-risk coordinators. |
 | M8 — Evaluate and optionally cut over WXT/Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | A separately built parity candidate, then a dedicated cutover only if all contracts survive. |
 
-Each numbered step below is a focused commit or, where necessary, a small set of
+## Current progress
+
+**Next: M2, then M3.** Production adoption has not started: nothing ships through
+Svelte, and Svelte is not installed.
+
+| Milestone | Status | Where it stands |
+| --- | --- | --- |
+| M0 | Done | Strict browser and Node checking, TS lint scopes, adoption policy in hooks/CI/release, and shared discovery for all seven source guards. |
+| M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`. Results are in the [follow-up ledger](follow-ups.md). |
+| M2 | Not started | `src/ui/latest-read.js` and `src/ui/page-lifecycle.js` are still JavaScript. |
+| M3 | Not started | `scripts/build-config.mts` is converted (`bc5fa3b3`), but `scripts/build.mjs` is not. The watcher still derives directories from entries and misses `src/storage/`. |
+| M4 | Not started | `src/ui/runtime-message.js` is still JavaScript. No Units panel contract exists. |
+| M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
+| M6 | Not started, **blocked for release** | `options/unit-settings.js` is unchanged. `npm run audit:ci` fails on addons-linter, deepmerge and web-ext (run November 6). The deepmerge chain has no patched release and its exception has expired. |
+| M7 | Started out of order | 13 more map, terrain and hover-card modules became TS during other work, ahead of the batch order. The first planned batch, starting with `src/storage/storage-value.js`, has not begun. |
+| M8 | Not started | Depends on M6. |
+
+Conversion scope, which is not a target to rewrite everything:
+
+| Area | TypeScript | JavaScript |
+| --- | --- | --- |
+| Runtime (`src`, `options`, `popup`, `photos`) | 16 | 294 |
+| `scripts/` | 8 | 133 |
+| `test/` | 32 | 295 |
+
+Runtime TS is all in `src/maps/` and `src/terrain/`, plus
+`src/favorites/climber-hover-card.ts`. There are no Svelte components. The build
+produces 66 outputs: 64 IIFEs and two ESM frames. Recompute the runtime counts with
+[`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts) when starting a batch.
+
+Limits of what is proven:
+
+- **Verified:** the last recorded full-suite runs are 3,874/3,874 on Node 24 at
+  `69c7a321` ([ledger](follow-ups.md)) and 3,895/3,895 at `e35ed8cd`. Neither was
+  re-run for this update, which changes documents only.
+- **Known gap in a guard:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mjs)
+  scans source imports and cannot classify compiled Svelte or type-only imports.
+  M6 replaces it before the first component ships.
+- **Not established:** locked Svelte/plugin compatibility, Svelte at the Chrome 128
+  and Firefox 152.0 floors, production CSP and AMO behavior, bundle size,
+  BFCache and geometry behavior, and WXT parity.
+
+Earlier dated evidence is in the
+[adoption evidence archive](../archive/modern-stack-adoption-evidence-2026-11-06.md).
+
+## Milestone details
+
+Each numbered step is a focused commit or, where necessary, a small set of
 independently passing commits. Finish, check and commit one unit before starting
-another. This document update queues the work; it does not implement it.
+another. Update **Current progress** in the same change that finishes a milestone.
 
 ### M1 — Repair baseline bookkeeping
 
@@ -111,8 +139,7 @@ watcher. Run real-extension checks for changed content-script load dependencies.
 
 1. Convert [build.mjs](../../scripts/build.mjs) to `.mts` without changing build
    behavior. Update command/workflow references, imports, literal source readers,
-   inventories and docs together. Keep build configuration in its current owner;
-   convert it only if it also needs a substantive edit. Compare the development
+   inventories and docs together. Compare the development
    output inventory and hashes against the pre-conversion build.
 2. Watch all `AUTHORED_SOURCE_ROOTS` recursively, plus the retained copied asset
    roots and root files; deduplicate overlapping watches. Document restart
@@ -250,7 +277,7 @@ production Svelte surfaces depend on the proven M6 contract.
    collapse/reparenting, BFCache and geometry in Chrome/Firefox before widening.
    Existing typed map controls do not need a Svelte rewrite merely for uniformity.
 5. **Large coordinators and cross-world graphics:** convert the background
-   worker, MAIN-world GPX analyzer and map/frame coordinators last, one boundary
+   worker, MAIN-world GPX analyzer and remaining coordinators last, one boundary
    at a time. Keep bundle order, sender/privacy/Save gates and shared math.
    Require real-manifest/worker/bridge checks and hardware-rendered terrain
    verification for affected graphics paths; pure unit tests cannot close these.
@@ -262,6 +289,48 @@ If complete runtime TS conversion is chosen, M7 closes only when no authored
 legacy JS remains in build-owned runtime roots (generated/vendor exclusions stay
 explicit) and the affected gates pass. Svelte conversion remains per-surface,
 based on a useful ownership boundary rather than a percentage target.
+
+### M8 — Evaluate and optionally cut over WXT/Vite
+
+This is feasible to investigate alongside legacy sources, but it is not just a
+bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)
+changes entrypoint discovery and manifest generation. Its
+[entrypoint guide](https://wxt.dev/guide/essentials/entrypoints) also warns that
+unlisted entries are evaluated during build, which matters for existing
+top-level side effects.
+
+1. Create an experimental build into a **separate output directory**, keeping
+   esbuild the only publisher of production `dist/`. Start with one owned HTML
+   page and one classic content-script entry importing the same domain modules.
+   Do not switch package/release commands yet.
+2. Add a thin generated adapter layer from the existing manifest and `ENTRIES`
+   rather than hand-maintaining two extension definitions. Preserve ordered
+   multi-source side effects. Determine how WXT's build-time entry discovery can
+   avoid executing legacy runtime initialization; do not assume a static import
+   inside a new wrapper defers the imported module's side effects.
+3. Derive the complete inventory from `ENTRIES` (66 outputs at this checkpoint),
+   including both ESM frames,
+   on-demand injected scripts, the overlay worker, vendor preloads, synchronous
+   head scripts, CSS and web-accessible assets. Preserve the paired Chrome worker
+   and Firefox background references. Confirm current browser targets explicitly.
+4. Prove manifest parity: permissions and optional grants, matches/exclusions,
+   execution worlds, frame targeting, `run_at`, script/CSS order, resource
+   exposure, CSP and update identity. Preserve JSZip/MapLibre patches and the
+   audit/notice/source-package pipeline. A dynamic loader is not an acceptable
+   substitute for an early synchronous script.
+5. Recreate successful-generation reloads and publication with failure rollback.
+   Integrate both Chrome and Firefox dev paths and the existing verifiers against
+   the candidate tree, without two concurrent writers or browser launchers.
+6. Switch the build in one dedicated cutover only after full parity, real
+   extension/browser checks and packaged upgrade verification. If required
+   ordering or synchronous startup cannot be preserved, keep the hybrid
+   TS/Svelte/esbuild architecture and record the blocker.
+
+Exit: the candidate passes the same manifest, runtime, reload, package and
+upgrade checks as production, with reviewed size/startup differences and a
+rollback path. A successful one-page spike alone cannot close M8. Do not combine
+the cutover with new messaging/storage libraries or a visual redesign. Keep
+declining WXT as an explicit supported outcome if parity or benefit is absent.
 
 ## Compatibility checklist for every implementation milestone
 
@@ -442,7 +511,7 @@ working shared owner; broad protocol/storage migration has the greatest cost.
 
 | Report layer | Incremental decision | Later conversion gate |
 | --- | --- | --- |
-| WXT / Vite | Defer build ownership replacement; new TS/Svelte does not depend on it. | Separate compatibility build and manifest/output parity proof described below. |
+| WXT / Vite | Defer build ownership replacement; new TS/Svelte does not depend on it. | Separate compatibility build and manifest/output parity proof in M8. |
 | Valibot | Optional for a new protocol/schema in its existing owning domain. Keep `settings-schema.js` authoritative. | Replacing a validator requires parity for coercion, defaults, bounds, unknown keys and failure behavior; no second settings schema. |
 | `@webext-core/messaging` | Use typed wrappers over the current wire protocol first. | A new RPC library needs an explicit adapter or new protocol on both ends, sender validation and compatibility tests; it is not a transparent replacement for raw envelopes. |
 | WXT storage | Keep the existing settings owner, sync/device split, subscriptions, write queue and theme mirror. | Demonstrate identical keys, migrations, authorization, error behavior and update/rollback behavior before replacement. |
@@ -459,48 +528,6 @@ application-specific validation. WXT's own
 [storage migration guidance](https://wxt.dev/guide/essentials/storage) supports
 retaining a working existing wrapper. None of these library substitutions is
 required to unlock new TS/Svelte development.
-
-## M8 — Evaluate WXT/Vite only after the mixed build is proven
-
-This is feasible to investigate alongside legacy sources, but it is not just a
-bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)
-changes entrypoint discovery and manifest generation. Its
-[entrypoint guide](https://wxt.dev/guide/essentials/entrypoints) also warns that
-unlisted entries are evaluated during build, which matters for existing
-top-level side effects.
-
-1. Create an experimental build into a **separate output directory**, keeping
-   esbuild the only publisher of production `dist/`. Start with one owned HTML
-   page and one classic content-script entry importing the same domain modules.
-   Do not switch package/release commands yet.
-2. Add a thin generated adapter layer from the existing manifest and `ENTRIES`
-   rather than hand-maintaining two extension definitions. Preserve ordered
-   multi-source side effects. Determine how WXT's build-time entry discovery can
-   avoid executing legacy runtime initialization; do not assume a static import
-   inside a new wrapper defers the imported module's side effects.
-3. Derive the complete inventory from `ENTRIES` (66 outputs at this checkpoint),
-   including both ESM frames,
-   on-demand injected scripts, the overlay worker, vendor preloads, synchronous
-   head scripts, CSS and web-accessible assets. Preserve the paired Chrome worker
-   and Firefox background references. Confirm current browser targets explicitly.
-4. Prove manifest parity: permissions and optional grants, matches/exclusions,
-   execution worlds, frame targeting, `run_at`, script/CSS order, resource
-   exposure, CSP and update identity. Preserve JSZip/MapLibre patches and the
-   audit/notice/source-package pipeline. A dynamic loader is not an acceptable
-   substitute for an early synchronous script.
-5. Recreate successful-generation reloads and publication with failure rollback.
-   Integrate both Chrome and Firefox dev paths and the existing verifiers against
-   the candidate tree, without two concurrent writers or browser launchers.
-6. Switch the build in one dedicated cutover only after full parity, real
-   extension/browser checks and packaged upgrade verification. If required
-   ordering or synchronous startup cannot be preserved, keep the hybrid
-   TS/Svelte/esbuild architecture and record the blocker.
-
-Exit: the candidate passes the same manifest, runtime, reload, package and
-upgrade checks as production, with reviewed size/startup differences and a
-rollback path. A successful one-page spike alone cannot close M8. Do not combine
-the cutover with new messaging/storage libraries or a visual redesign. Keep
-declining WXT as an explicit supported outcome if parity or benefit is absent.
 
 ## Acceptance and verification
 
@@ -547,148 +574,7 @@ compiler behavior without shipping a demonstration UI.
   legacy-only consumer has not acquired the runtime through a shared UI import.
   Give each new feature a dependency budget based on its measured contribution.
 
-Keep the three closure categories below at every milestone and when archiving.
-A passing fixture or implementation commit cannot close an unrun production,
-browser, package or native-behavior gate.
-
-## Current closure ledger — November 5, 2026
-
-- **Fixed and verified:** the implemented M0 foundation remains present on
-  `fe151c5a`: two strict checking projects, TS-aware lint and policy enforcement,
-  shared typed source discovery, and bounded map runtime TS. During replanning,
-  `npm run typecheck` and `npm run lint` passed; lint rebuilt all 66 bundles and
-  retained eight owned web-ext warnings. The 29 focused documentation,
-  development, TS-tooling, runtime-source and source-policy checks passed. This does not
-  re-establish every historical runtime/browser result.
-- **Intentionally not changed:** this update changes the plan and its index,
-  not runtime/build/test behavior, dependencies, permissions, storage or wire
-  formats. Existing esbuild, Node tests, MapLibre and editor owners remain the
-  default architecture. WXT and library substitutions are conditional choices.
-- **Changed but not fully proven:** the effort ordering and Units pilot are
-  implementation recommendations, not an executed migration. Baseline probes
-  reproduced the three existing failures: two fixture privacy checks reject
-  the unregistered snow-depth legend JSON, and the script inventory omits the
-  ascent-filter verifier. The audit exception is expired in source; no fresh
-  network audit was run for this document update. Node 24, the full suite,
-  browser/visual checks, Svelte, production CSP and packaged upgrades were not
-  re-run or established here. These remain explicit milestone gates.
-
-## Historical implementation evidence
-
-The old 1A–1F labels below refer to the original plan: 1A is in M0; 1B's source
-scans are in M0 and its watcher work is M3; 1C maps to M2/M4; 1D/1E to M5 and
-the applicable M6/M7 integration gates; 1F to M6. Dated test counts describe
-those runs, not the current repository baseline.
-
-- **TypeScript-on-change policy:** `AGENTS.md` now requires new authored code and
-  modified JavaScript modules to use TypeScript, including scripts and tests.
-  The staged Git guard and committed CI/release comparisons enforce the rule;
-  untouched legacy modules and the documented generated/vendor roots remain
-  compatible. The guard itself and its regression tests are authored as `.mts`.
-  Focused policy/tooling/development/documentation/privacy checks passed 37/37;
-  type checking and lint passed. The final full suite passed 3,853 of 3,856,
-  retaining the same three existing fixture/inventory failures listed below.
-  The pre-commit guard inspects staged content; CI checks the whole PR/push diff,
-  and release verification compares against the tooling/adoption baseline.
-  The initial policy counted import-only edits as modifications. Its map-layer
-  follow-up permits exact filename-reference upgrades with every other byte
-  unchanged, avoiding unrelated caller conversion cascades.
-- **November 2 implementation checkpoint:** strict browser and Node checking
-  projects, typed ESLint configuration, `.test.mts` discovery, the Node 24 floor,
-  CI/release type checks and the compiler-major Dependabot hold are implemented.
-  The selected Chrome definitions already declare the `browser` alias; a second
-  global Firefox definitions package conflicts and is not installed. The full
-  development build remains byte-for-byte identical to the pre-tooling build.
-  Source-walker/watch changes, typed runtime adapters, Svelte compilation and
-  the production UI milestone remain open; do not treat tooling as UI readiness.
-  Type checking and lint passed; 36 focused checks passed. All `dist/` files
-  matched the pre-tooling build by SHA-256. The full suite passed 3,846 of 3,849
-  checks: two unchanged fixture-registration checks reject the existing snow-depth
-  JSON fixture, and the unchanged script inventory lacks its ascent-filter entry.
-  The dependency audit fails on the existing deepmerge and minimatch advisories;
-  an isolated audit of the committed pre-tooling lockfile confirmed both IDs.
-  The new ESLint toolchain adds six affected packages to that existing chain.
-  Audit policy is unchanged; release readiness and local Node 24 execution remain
-  unproven (these checks ran on Node 26.13.0).
-- **Verified during investigation:** inventory derived from current `ENTRIES`;
-  watcher-root coverage; six disposable Node/esbuild assertions covering mixed
-  JS/TS, browser bundling, stale specifiers, missing type checking and uncompiled
-  runes; `node --test test/project/development.test.mts` passed **17/17**.
-  Local probes ran on **Node v26.13.0**, not CI's Node 24; Node 24 behavior was
-  cross-checked against its official docs, not executed locally.
-- **Review corrections:** qualify the generated frame path with `dist/`;
-  separate checker configuration from esbuild transformation; require validated
-  plain-data serialization of reactive state; and defer executable Svelte watch
-  proof until 1D installs its compiler. Review probes reproduced the strictness
-  change and nested-proxy clone failures using disposable fixtures and existing
-  helpers; those probes do not establish real browser or compiled-Svelte behavior.
-  After these documentation corrections,
-  `node --test test/project/documentation.test.mjs test/project/development.test.mts`
-  passed **20/20**, including the previously failing document-path assertion.
-- **November 2 re-audit (verified):** against `32cfc8ed`, the 66-bundle
-  inventory (64 IIFE, ESM `dist/terrain/vector-map-frame.js` and
-  `dist/terrain/terrain-frame.js`), the `src/storage/` watcher gap, the seven `.js`-only
-  walkers, the `no-undef` lint assertion, the worker's prefix routes and the
-  `sendResult` distinction all still hold. A disposable esbuild probe reconfirmed
-  that a discovered `tsconfig.json` with `strict: true` prepends `"use strict"` to
-  a plain `.js` IIFE. New evidence: ESLint's `calculateConfigForFile` returns no
-  config for `.ts`/`.svelte` paths under authored roots; npm registry metadata
-  for `typescript`, `typescript-eslint`, `svelte-check`, `esbuild-svelte`
-  (0.9.5, peers `esbuild >=0.17.0`, `svelte >=4.2.1 <6`) and `eslint-plugin-svelte`
-  (3.23.1, peers ESLint 10); and the Dependabot group test's source-text walk.
-  No package was installed, and the TS 6 option defaults were not executed.
-- **Intentionally not changed:** runtime source, manifest, storage formats and
-  existing features. Investigation originally left dependencies and check
-  configuration untouched; the implementation checkpoint above records their
-  subsequent changes. The external report was read without editing it.
-- **Not yet proven:** locked Svelte/plugin/ESLint compatibility, compiled Svelte
-  output under the actual AMO baseline, production CSP/style injection,
-  browser/BFCache/geometry behavior, size estimates, native permissions and a
-  WXT parity build. Svelte tooling is not installed in this checkout. Whether
-  Svelte 5's client runtime runs unchanged at the Chrome 128 and Firefox 152.0
-  floors is unverified. No full
-  suite, full build, lint or real-browser run was performed for this docs-only
-  investigation; those are implementation gates, not claimed results.
-
-Source report: the externally supplied
-`ts_svelte_vite_migration_and_stack_report.md`. The pasted attachment was its
-review summary; the complete report was also read during this investigation.
-
-### Bounded map-layer TypeScript adoption
-
-The map-layer control and location popup are now authored as TypeScript, with a
-new typed layer point-inspection interface and validated provider readers.
-Their legacy callers change only filename references. This establishes a
-bounded plain-DOM runtime use of TypeScript; it does not complete the general
-source-walker/watch prerequisites or enable Svelte. The affected map directory
-is already watched. The source-walker follow-up has now migrated all seven
-policy scans to shared runtime coverage. Focused point-reader tests continue to cover the new requests,
-permissions, bounds and cancellation. The broader watcher portion of 1B remains
-open.
-
-### Source-walker migration closure ledger (November 3, 2026)
-
-- **Fixed and verified:** all seven structural guards use one typed discovery
-  helper rooted at `AUTHORED_SOURCE_ROOTS`; the three private walkers and units'
-  manually enumerated page list are removed. The guards, development checks and
-  shared test helpers are TypeScript. Loose-source and test organization checks
-  recognize TypeScript, and page-local lint coverage checks transitive sources
-  plus typed probes. The fixture suite injects forbidden values/calls into every
-  authored root as TypeScript and Svelte, exercises template handlers, verifies
-  reviewed owner boundaries, and proves the old `.js` filter would skip them.
-  Strict type checking, repository ESLint and 121 focused checks passed.
-- **Intentionally not changed:** runtime modules, wire/storage formats, build
-  entry composition, the single deadline exception and existing settings-read
-  ownership counts. The newly covered `photos/photos.js` read controls only
-  export-size warning/report-width presentation and is registered as display-only.
-  The source-walker scope does not include the build watcher or Svelte compiler.
-- **Changed but not fully proven:** the full suite passed **3,868/3,871**,
-  retaining the same two unregistered snow-legend fixture failures and missing
-  script-inventory entry documented above. No extension runtime or build inputs
-  changed, so no additional browser verification was run for this test-tooling
-  migration.
-
-Separate prerequisites: the `src/storage/` build-watcher gap and watch
-generation/recovery proof remain in 1B. Svelte compilation and executable
-component integration remain in 1D/1E. Source-policy fixtures establish text
-coverage, not Svelte compiler or browser execution behavior.
+Record fixed-and-verified, intentionally-not-changed and changed-but-not-proven
+outcomes when closing each milestone and when archiving. A passing fixture or
+implementation commit cannot close an unrun production, browser, package or
+native-behavior gate.

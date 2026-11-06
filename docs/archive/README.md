@@ -11,6 +11,7 @@ living docs in [`docs/`](../).
 Items these records left open now live in the
 [follow-up ledger](../plans/follow-ups.md).
 
+- [Modern stack adoption evidence — 2026-11-06](modern-stack-adoption-evidence-2026-11-06.md) — dated tooling, policy and source-walker results and their limits, moved from the active plan.
 - [Maptoolkit branch audit — 2026-11-06](maptoolkit-branch-audit-2026-11-06.md) — outage recovery, 3D layer resume, renderer failure and full TypeScript conversion of the branch's files.
 - [2D vector zoom audit — 2026-11-01](vector-zoom-audit-2026-11-01.md) — camera and image handoff, parent-clock rendering.
 - [Maptoolkit performance and picker audit — 2026-10-31](maptoolkit-performance-audit-2026-10-31.md) — picker containment, progressive loading, reduced shading, renderer reuse and 3D request ownership.
