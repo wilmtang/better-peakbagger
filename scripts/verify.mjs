@@ -32,7 +32,7 @@ const targets = {
     onx: [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']],
     'map-controls': [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']],
     'map-layers': [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']],
-    'vector-map': [['verify-vector-map.mjs'], ['verify-vector-map.mjs', '--firefox']],
+    'vector-map': [['verify-vector-map.mts'], ['verify-vector-map.mts', '--firefox']],
     'custom-overlays': [['verify-custom-overlays.mts'], ['verify-custom-overlays.mts', '--firefox']],
     'private-layers': [['verify-private-layers.mjs', 'chrome'], ['verify-private-layers.mjs', 'firefox']],
     'settings-navigation': [['verify-settings-fragments.mjs', 'chrome'], ['verify-settings-fragments.mjs', 'firefox']],
@@ -53,7 +53,7 @@ const targets = {
     packages: [['verify-packaged-extensions.mjs']],
 };
 const terrainTargets = {
-    chrome: [['verify-terrain-visual.mjs']],
+    chrome: [['verify-terrain-visual.mts']],
     firefox: [['verify-firefox-terrain.mjs']],
     'cache-owners': [['verify-terrain-cache-owners.mjs']],
     lod: [['verify-terrain-lod.mjs']],

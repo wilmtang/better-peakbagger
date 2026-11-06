@@ -2,33 +2,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
 import test from 'node:test';
 import vm from 'node:vm';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from '../../scripts/terrain-readiness-diagnostics.mjs';
 
 const pendingDrapeProbe = async ({ intercept = true } = {}) => {
-    const source = await readFile(new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url), 'utf8');
+    const source = await readFile(new URL('../../scripts/verify-terrain-visual.mts', import.meta.url), 'utf8');
     const start = source.indexOf('// Regression: a configured raster drape');
     const end = source.indexOf('// The pending-drape probe is the only reason', start);
     assert.ok(start >= 0 && end > start, 'the pending-drape probe boundaries are missing');
-    const calls = [];
+    const calls: unknown[] = [];
     const context = {
         baseUrl: 'https://www.peakbagger.com:1234/climber/ascent.aspx',
         basemapRequests: [], // Network delivery can lag Fetch interception.
-        pendingBasemapRequestIds: [],
+        pendingBasemapRequestIds: [] as string[],
         holdBasemapRequests: false,
         navigate: async () => { calls.push('navigate'); },
         openTerrainWithTrustedClick: async () => {
             calls.push('open');
             if (intercept) context.pendingBasemapRequestIds.push('paused-raster');
         },
-        waitForCondition: async (predicate, describe) => {
+        waitForCondition: async (predicate: () => unknown, describe: () => string | Promise<string>) => {
             if (!await predicate()) throw new Error(await describe());
         },
         waitForPageState: async () => { calls.push('active terrain'); },
-        cdp: { call: async (method, args) => { calls.push([method, args.requestId]); } },
+        cdp: { call: async (method: string, args: { requestId: string }) => { calls.push([method, args.requestId]); } },
     };
-    await vm.runInNewContext(`(async () => { ${source.slice(start, end)} })()`, context);
+    await vm.runInNewContext(ts.transpile(`(async () => { ${source.slice(start, end)} })()`, { target: ts.ScriptTarget.ES2023 }), context);
     return { context, calls };
 };
 
@@ -48,23 +49,23 @@ test('lifecycle diagnostics retain bounded reasons without capturing terrain pay
     let receive;
     const context = vm.createContext({
         performance: { now: () => 123 },
-        addEventListener: (_type, listener) => { receive = listener; },
+        addEventListener: (_type: string, listener: (event: unknown) => void) => { receive = listener; },
     });
     vm.runInContext(`(${installTerrainLifecycleProbe.toString()})()`, context);
-    receive({ data: { __bpbTerrain: true, type: 'view' } });
+    receive!({ data: { __bpbTerrain: true, type: 'view' } });
     assert.equal(context.__bpbTerrainLifecycle.length, 0);
     for (let index = 0; index < 45; index++) {
-        receive({ data: { __bpbTerrainFrame: true, type: 'error', reason: 'timeout', route: 'excluded' } });
+        receive!({ data: { __bpbTerrainFrame: true, type: 'error', reason: 'timeout', route: 'excluded' } });
     }
     assert.equal(context.__bpbTerrainLifecycle.length, 40);
     assert.equal(context.__bpbTerrainLifecycle[0].reason, 'timeout');
     assert.equal(context.__bpbTerrainLifecycle[0].route, undefined);
 });
 
-const probe = elements => JSON.parse(JSON.stringify(vm.runInNewContext(
+const probe = (elements: Record<string, unknown>) => JSON.parse(JSON.stringify(vm.runInNewContext(
     `(${readTerrainReadiness.toString()})()`, {
         document: { URL: 'https://www.peakbagger.com/climber/ascent.aspx',
-            visibilityState: 'visible', getElementById: id => elements[id] },
+            visibilityState: 'visible', getElementById: (id: string) => elements[id] },
     },
 )));
 
@@ -89,9 +90,9 @@ test('timeout evidence distinguishes loaded layers from pending tiles and lost G
             getCanvas: () => ({ width: 448, height: 448, getContext: () => gl }),
             loaded: () => false, isStyleLoaded: () => true, isMoving: () => false,
             areTilesLoaded: () => false, getZoom: () => 12,
-            getLayer: id => id === 'bpb-route',
+            getLayer: (id: string) => id === 'bpb-route',
             getStyle: () => ({ sources: { terrain: {}, basemap: {} } }),
-            isSourceLoaded: id => id === 'terrain',
+            isSourceLoaded: (id: string) => id === 'terrain',
         } },
     } });
     assert.equal(result.surface.renderer, 'test hardware');
@@ -105,12 +106,12 @@ test('timeout evidence distinguishes loaded layers from pending tiles and lost G
 // Exercise the actual driver probe with a frame whose hit-test surface becomes
 // ready after its initial DOM appears. A wheel sent to the old surface is lost.
 test('scroll verification targets a settled canvas and accepts a quantized label when the scale width changes', async () => {
-    const source = await readFile(new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url), 'utf8');
+    const source = await readFile(new URL('../../scripts/verify-terrain-visual.mts', import.meta.url), 'utf8');
     const start = source.indexOf('const assertPlainScrollZooms =');
     const end = source.indexOf('\nconst navigate =', start);
     assert.ok(start >= 0 && end > start);
     const state = { loaded: false, pointerReady: false, zoom: 14, scale: '500 m', scaleWidth: 60 };
-    const inputs = [];
+    const inputs: string[] = [];
     let gesture = { zoom: true, scale: true };
     const rect = { left: 0, top: 0, width: 1000, height: 760, toJSON: () => ({ width: 1000, height: 760 }) };
     const canvas = { getBoundingClientRect: () => rect };
@@ -119,11 +120,11 @@ test('scroll verification targets a settled canvas and accepts a quantized label
     const map = { loaded: () => state.loaded, isMoving: () => false,
         getZoom: () => state.zoom, getCanvas: () => canvas };
     const frame = { getBoundingClientRect: () => rect, contentWindow: { __bpbTerrainTestMap: map },
-        contentDocument: { querySelector: selector => selector === '.maplibregl-ctrl-scale' ? scale : null,
+        contentDocument: { querySelector: (selector: string) => selector === '.maplibregl-ctrl-scale' ? scale : null,
             elementFromPoint: () => state.loaded ? canvas : null } };
     const context = vm.createContext({
         document: { getElementById: () => frame, elementFromPoint: () => state.loaded ? frame : null },
-        cdp: { call: async method => {
+        cdp: { call: async (method: string) => {
             assert.equal(method, 'Input.dispatchMouseEvent');
             inputs.push('wheel');
             if (state.loaded && state.pointerReady) {
@@ -134,8 +135,8 @@ test('scroll verification targets a settled canvas and accepts a quantized label
         moveTo: async () => { assert.equal(state.loaded, true); inputs.push('move'); state.pointerReady = true; },
         delay: async () => {},
     });
-    context.evaluate = async (_cdp, expression) => vm.runInContext(expression, context);
-    context.waitForPageState = async (_cdp, expression) => {
+    context.evaluate = async (_cdp: unknown, expression: string) => vm.runInContext(expression, context);
+    context.waitForPageState = async (_cdp: unknown, expression: string) => {
         for (let attempt = 0; attempt < 4; attempt++) {
             state.loaded = attempt > 0;
             const result = vm.runInContext(expression, context);
@@ -143,13 +144,13 @@ test('scroll verification targets a settled canvas and accepts a quantized label
         }
         throw new Error('wheel did not zoom the current canvas');
     };
-    await vm.runInContext(`(async () => { ${source.slice(start, end)} await assertPlainScrollZooms(cdp, 'test map'); })()`, context);
+    await vm.runInContext(ts.transpile(`(async () => { ${source.slice(start, end)} await assertPlainScrollZooms(cdp, 'test map'); })()`, { target: ts.ScriptTarget.ES2023 }), context);
     assert.deepEqual(inputs, ['move', 'wheel', 'wheel', 'wheel', 'wheel']);
     assert.equal(state.scale, '500 m', 'the human-readable distance remains in the same quantized bucket');
     assert.equal(state.scaleWidth, 95);
     for (gesture of [{ zoom: false, scale: false }, { zoom: true, scale: false }, { zoom: false, scale: true }]) {
         Object.assign(state, { loaded: false, pointerReady: false, zoom: 14, scaleWidth: 60 });
-        await assert.rejects(vm.runInContext(`(async () => { ${source.slice(start, end)} await assertPlainScrollZooms(cdp, 'test map'); })()`, context),
+        await assert.rejects(vm.runInContext(ts.transpile(`(async () => { ${source.slice(start, end)} await assertPlainScrollZooms(cdp, 'test map'); })()`, { target: ts.ScriptTarget.ES2023 }), context),
             /plain scroll did not settle/);
     }
 });

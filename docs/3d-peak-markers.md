@@ -220,7 +220,7 @@ behavior and the rise leash below.
   screen-space hit testing; summit snapping and held-verdict behavior; bridge
   forwarding; and coordinator behavior for ascent and group maps. The current
   suite result belongs in CI, not this design note.
-- Hidden real-browser check (`scripts/verify-terrain-visual.mjs`, headless
+- Hidden real-browser check (`scripts/verify-terrain-visual.mts`, headless
   Chrome on the real GPU — the renderer is asserted and a software fallback
   refused — synthetic Peakbagger + synthetic PLLBB feed): feed queried with
   native parameters only after entering 3D, climbed ring found on the

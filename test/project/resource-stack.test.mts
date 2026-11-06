@@ -25,14 +25,14 @@ import {
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('fixture launch trust identifies only the disposable certificate key and cleans up', async () => {
-    const certificate = await createFixtureCertificate({ label: 'trust-test' });
+    const certificate = (await createFixtureCertificate({ label: 'trust-test' }))!;
     const ownedRoot = certificate.root;
     try {
         const spki = createHash('sha256').update(createPublicKey(certificate.key)
             .export({ type: 'spki', format: 'der' })).digest('base64');
         assert.deepEqual(certificate.chromeTrustArgs, [`--ignore-certificate-errors-spki-list=${spki}`]);
         assert.ok(Object.isFrozen(certificate.chromeTrustArgs));
-        assert.throws(() => certificate.chromeTrustArgs.push('--ignore-certificate-errors'), TypeError);
+        assert.throws(() => (certificate.chromeTrustArgs as string[]).push('--ignore-certificate-errors'), TypeError);
     } finally {
         await certificate.remove();
     }
@@ -45,7 +45,7 @@ test('Chrome fixture verifiers use shared launch trust instead of late or broad 
         'verify-map-handoffs', 'verify-report-photos', 'verify-ascent-backup-lifecycle',
         'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase', 'verify-map-controls',
     ]) {
-        const source = await readFile(path.join(projectRoot, 'scripts', `${name}.mjs`), 'utf8');
+        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${name === 'verify-terrain-visual' ? '.mts' : '.mjs'}`), 'utf8');
         assert.match(source, /\.\.\.(?:fixture|certificate|cert)\.chromeTrustArgs/, name);
         assert.doesNotMatch(source, /['"]--ignore-certificate-errors['"]/, name);
         assert.doesNotMatch(source, /ignoreHTTPSErrors:\s*true/, name);
@@ -54,7 +54,7 @@ test('Chrome fixture verifiers use shared launch trust instead of late or broad 
 });
 
 test('verifier resources clean up LIFO and one rejection cannot skip the rest', async () => {
-    const order = [];
+    const order: string[] = [];
     const resources = createResourceStack();
     resources.defer('first', () => { order.push('first'); });
     resources.defer('rejecting', () => {
@@ -65,7 +65,7 @@ test('verifier resources clean up LIFO and one rejection cannot skip the rest', 
 
     await assert.rejects(resources.dispose(), error => {
         assert.ok(error instanceof AggregateError);
-        assert.match(error.errors[0].message, /rejecting/);
+        assert.match((error as AggregateError).errors[0].message, /rejecting/);
         assert.match(
             error.message,
             /One or more verifier resources failed to clean up:\n- Cleanup failed for rejecting: blocked/,
@@ -80,7 +80,7 @@ test('cleanup failures annotate but never replace the primary verifier failure',
     const resources = createResourceStack();
     resources.defer('broken finalizer', async () => { throw new Error('cleanup failed'); });
 
-    await assert.rejects(resources.dispose(primary), error => {
+    await assert.rejects(resources.dispose(primary as never), (error: Error & { cleanupErrors: unknown[] }) => {
         assert.equal(error, primary);
         assert.match(error.message, /^assertion failed/);
         assert.equal(error.cleanupErrors.length, 1);
@@ -89,14 +89,14 @@ test('cleanup failures annotate but never replace the primary verifier failure',
 });
 
 test('a hanging finalizer times out without blocking later cleanup', async () => {
-    const order = [];
+    const order: string[] = [];
     const resources = createResourceStack({ finalizerTimeoutMs: 20 });
     resources.defer('later', () => { order.push('later'); });
     resources.defer('hung', () => new Promise(() => {}));
     resources.defer('earlier', () => { order.push('earlier'); });
 
     await assert.rejects(resources.dispose(), error => {
-        assert.match(error.errors[0].message, /hung cleanup did not finish/);
+        assert.match((error as AggregateError).errors[0].message, /hung cleanup did not finish/);
         return true;
     });
     assert.deepEqual(order, ['earlier', 'later']);
@@ -104,13 +104,13 @@ test('a hanging finalizer times out without blocking later cleanup', async () =>
 
 test('an invalid child path is contained and leaves other resources cleanable', async () => {
     const resources = createResourceStack();
-    const order = [];
+    const order: string[] = [];
     resources.defer('outer', () => { order.push('outer'); });
     const child = spawn('/definitely-not-a-better-peakbagger-browser');
     const childState = manageChildProcess(resources, child, 'invalid browser');
     await new Promise(resolve => child.once('close', resolve));
 
-    assert.match(childState.error?.message || '', /ENOENT/);
+    assert.match((childState.error as Error | null)?.message || '', /ENOENT/);
     await resources.dispose();
     assert.deepEqual(order, ['outer']);
 });
@@ -127,20 +127,20 @@ test('shared command runner requires a closed successful child and preserves spa
 
 test('a child that ignores termination cannot skip later cleanup', async () => {
     const resources = createResourceStack();
-    const order = [];
+    const order: string[] = [];
     resources.defer('outer', () => { order.push('outer'); });
-    const child = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & { exitCode: number | null; signalCode: string | null; pid: number; kill(signal: string): boolean };
     child.exitCode = null;
     child.signalCode = null;
     child.pid = 12345;
-    child.kill = signal => {
+    child.kill = (signal: string) => {
         order.push(signal);
         return true;
     };
     manageChildProcess(resources, child, 'hung browser', { graceMs: 5 });
 
     await assert.rejects(resources.dispose(), error => {
-        assert.match(error.errors[0].message, /did not exit after SIGKILL/);
+        assert.match((error as AggregateError).errors[0].message, /did not exit after SIGKILL/);
         return true;
     });
     assert.deepEqual(order, ['SIGTERM', 'SIGKILL', 'outer']);
@@ -173,7 +173,7 @@ test('invalid OpenSSL and certificate reads leave no key material behind', async
         const directory = await mkdtemp(path.join(tmpdir(), 'bpb-cert-open-'));
         try {
             await assert.rejects(createFixtureCertificate({
-                directory,
+                directory: directory as never,
                 opensslPath: '/definitely-not-openssl',
             }), /Could not create/);
             assert.deepEqual(await readdir(directory), []);
@@ -186,7 +186,7 @@ test('invalid OpenSSL and certificate reads leave no key material behind', async
         const directory = await mkdtemp(path.join(tmpdir(), 'bpb-cert-read-'));
         try {
             await assert.rejects(createFixtureCertificate({
-                directory,
+                directory: directory as never,
                 readCertificate: async () => { throw new Error('injected read failure'); },
             }), /injected read failure/);
             assert.deepEqual(await readdir(directory), []);
@@ -198,8 +198,8 @@ test('invalid OpenSSL and certificate reads leave no key material behind', async
         const directory = await mkdtemp(path.join(tmpdir(), 'bpb-cert-fingerprint-'));
         try {
             await assert.rejects(createFixtureCertificate({
-                directory,
-                readCertificate: async () => Buffer.from('invalid certificate'),
+                directory: directory as never,
+                readCertificate: (async () => Buffer.from('invalid certificate')) as never,
             }), /Could not create/);
             assert.deepEqual(await readdir(directory), []);
         } finally {
@@ -221,7 +221,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         'scripts/verify-firefox-extension.mjs',
         'scripts/verify-firefox-terrain.mjs',
         'scripts/verify-terrain-lod.mjs',
-        'scripts/verify-terrain-visual.mjs',
+        'scripts/verify-terrain-visual.mts',
         'scripts/render-showcase.mjs',
     ];
     const sources = await Promise.all(verifierPaths.map(async verifierPath => ({
@@ -232,7 +232,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         assert.match(source, /createResourceStack\(/, `${verifierPath} must own resources through the shared stack`);
     }
 
-    const chromeVerifier = sources.find(entry => entry.verifierPath === 'scripts/verify-extension.mjs').source;
+    const chromeVerifier = sources.find(entry => entry.verifierPath === 'scripts/verify-extension.mjs')!.source;
     assert.doesNotMatch(chromeVerifier, /waitForTimeout\(/,
         'Chrome verification must await postconditions instead of sleeping before a one-shot assertion');
     const heightPersistence = chromeVerifier.slice(
@@ -360,7 +360,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     );
     const firefoxVerifier = sources.find(
         entry => entry.verifierPath === 'scripts/verify-firefox-extension.mjs'
-    ).source;
+    )!.source;
     assert.match(firefoxVerifier,
         /const profileBackupState = await driver\.wait\(async \(\) => \{[\s\S]*primary === 'Back up all ascents and TRs'/,
         'the Firefox profile-backup check must wait for asserted content, not merely its container');
@@ -376,8 +376,8 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(firefoxVerifier,
         /'Firefox ascent 3D extension frame',[\s\S]{0,120}TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS \+ 5_000/,
         'the Firefox frame check must allow the product transaction to reach a terminal state');
-    for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mjs']) {
-        const source = sources.find(entry => entry.verifierPath === verifierPath).source;
+    for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mts']) {
+        const source = sources.find(entry => entry.verifierPath === verifierPath)!.source;
         assert.match(source, /manageChildProcess\(resources, chrome/,
             `${verifierPath} must attach a child error boundary before awaiting startup`);
     }

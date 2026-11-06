@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { createServer } from 'node:https';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -30,10 +31,18 @@ import {
 } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
-const chromePath = process.env.CHROME_BIN || ({
+
+// CDP responses are arbitrary protocol JSON, parsed at one boundary below.
+type CdpResult = ReturnType<typeof JSON.parse>;
+type RequestListener = NonNullable<Parameters<typeof createServer>[1]>;
+type IncomingMessage = Parameters<RequestListener>[0];
+type ServerResponse = Parameters<RequestListener>[1];
+interface Cdp { call(method: string, params?: object): Promise<CdpResult>; on(method: string, listener: (params: CdpResult) => void): void; close(): void; }
+
+const chromePath = process.env.CHROME_BIN || (({
     darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
-}[process.platform] || 'google-chrome');
+} as Record<string, string>)[process.platform] || 'google-chrome');
 const args = process.argv.slice(2);
 const providerUiOnly = args.includes('--provider-ui');
 const positional = args.filter(value => value !== '--provider-ui');
@@ -47,7 +56,7 @@ const TERRAIN_FIXTURE_HEADER = 'synthetic-terrarium-v1';
 // requested coordinate keeps this visual test deterministic and offline while
 // still making MapLibre decode an actual WebP DEM and build a non-flat mesh.
 const SYNTHETIC_TERRARIUM_WEBP = 'UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef';
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // The showcase must be served over HTTPS, not HTTP. src/peakbagger/peakbagger-request.js
 // refuses any URL whose protocol is not https: — a deliberate security property
@@ -58,21 +67,21 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // scripts/browser-verification-fixtures.mjs does; Chrome is launched with
 // trust scoped to this disposable certificate at launch below.
 const resources = createResourceStack();
-let primaryError = null;
+let primaryError: unknown = null;
 const certificate = await resources.guard(() =>
     createFixtureCertificate({ host: FIXTURE_HOST, label: 'terrain' }));
 resources.defer('terrain fixture certificate', () => certificate.remove());
 const { key: fixtureKey, cert: fixtureCert } = certificate;
 let providerRasterMode = 'normal';
-const providerHeldResponses = [];
-const rejectProviderRaster = response => {
+const providerHeldResponses: { request: IncomingMessage; response: ServerResponse }[] = [];
+const rejectProviderRaster = (response: ServerResponse) => {
     response.setHeader('Cache-Control', 'no-store');
     sendFixtureText(response, 403, 'Synthetic provider policy block');
 };
 
-const handleRequest = async (request, response) => {
+const handleRequest = async (request: IncomingMessage, response: ServerResponse) => {
     try {
-        const url = new URL(request.url, `https://${FIXTURE_HOST}`);
+        const url = new URL(request.url!, `https://${FIXTURE_HOST}`);
         if (url.pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             if (providerRasterMode === 'hold') { providerHeldResponses.push({ request, response }); return; }
             if (providerRasterMode === 'blocked') { rejectProviderRaster(response); return; }
@@ -109,7 +118,7 @@ const handleRequest = async (request, response) => {
                 ? '/scripts/showcase/big-map-native.html'
                 : '/scripts/showcase/terrain-native-map.html'
         };
-        let pathname = showcaseRoutes[url.pathname.toLowerCase()] || decodeURIComponent(url.pathname);
+        let pathname = (showcaseRoutes as Record<string, string>)[url.pathname.toLowerCase()] || decodeURIComponent(url.pathname);
         if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             pathname = '/scripts/showcase/terrain-basemap-tile.png';
         }
@@ -123,9 +132,9 @@ const handleRequest = async (request, response) => {
             : (url.pathname === '/dist/terrain/terrain-frame.js'
                 ? instrumentTerrainFrameModule
                 : (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1'
-                    ? html => html.replace('    <script src="options.js"></script>\n', '')
+                    ? (html: string) => html.replace('    <script src="options.js"></script>\n', '')
                     : null));
-        await sendFixtureFile(response, file, { transform });
+        await sendFixtureFile(response, file, { transform } as unknown as Parameters<typeof sendFixtureFile>[2]);
     } catch (error) {
         sendFixtureError(response, error);
     }
@@ -134,7 +143,7 @@ const server = await resources.guard(() =>
     createServer({ key: fixtureKey, cert: fixtureCert }, handleRequest));
 resources.defer('terrain fixture server', () => closeServer(server));
 
-const waitForDebugPort = async (profile, child, childState, timeoutMs = 10000) => {
+const waitForDebugPort = async (profile: string, child: ChildProcess, childState: { error?: Error | null; [field: string]: unknown }, timeoutMs = 10000) => {
     const activePortFile = path.join(profile, 'DevToolsActivePort');
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -151,7 +160,7 @@ const waitForDebugPort = async (profile, child, childState, timeoutMs = 10000) =
     throw new Error('Timed out waiting for Chrome DevToolsActivePort');
 };
 
-const connectCdp = async url => {
+const connectCdp = async (url: string): Promise<Cdp> => {
     if (typeof WebSocket !== 'function') throw new Error('This verification script requires a Node.js runtime with global WebSocket support');
     const socket = new WebSocket(url);
     await new Promise((resolve, reject) => {
@@ -160,8 +169,8 @@ const connectCdp = async url => {
     });
 
     let nextId = 1;
-    const pending = new Map();
-    const listeners = new Map();
+    const pending = new Map<number, { method: string; resolve(value: CdpResult): void; reject(reason: Error): void }>();
+    const listeners = new Map<string, ((params: CdpResult) => void)[]>();
     socket.addEventListener('message', event => {
         const message = JSON.parse(String(event.data));
         if (message.id) {
@@ -183,13 +192,13 @@ const connectCdp = async url => {
         },
         on(method, listener) {
             if (!listeners.has(method)) listeners.set(method, []);
-            listeners.get(method).push(listener);
+            listeners.get(method)!.push(listener);
         },
         close() { socket.close(); }
     };
 };
 
-const evaluate = async (cdp, expression) => {
+const evaluate = async (cdp: Cdp, expression: string) => {
     const result = await cdp.call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Runtime evaluation failed');
     return result.result.value;
@@ -199,7 +208,7 @@ const evaluate = async (cdp, expression) => {
 // of sleeping a fixed span and hoping. A sleep that is long enough on an idle
 // machine is not long enough on a loaded one, and the failure reads as a
 // product bug rather than a slow tick.
-const waitForCondition = async (predicate, describe, timeoutMs = 15000) => {
+const waitForCondition = async (predicate: () => unknown, describe: () => string | Promise<string>, timeoutMs = 15000) => {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
         // await: an async predicate returns a Promise, which is always truthy.
@@ -209,7 +218,7 @@ const waitForCondition = async (predicate, describe, timeoutMs = 15000) => {
     }
 };
 
-const waitForPageState = async (cdp, expression, timeoutMs = 30000) => {
+const waitForPageState = async (cdp: Cdp, expression: string, timeoutMs = 30000) => {
     const deadline = Date.now() + timeoutMs;
     let lastValue;
     while (Date.now() < deadline) {
@@ -224,7 +233,7 @@ const waitForPageState = async (cdp, expression, timeoutMs = 30000) => {
     throw new Error(`Timed out waiting for page state: ${JSON.stringify({ lastValue, terrain })}`);
 };
 
-const isBoundedMapterhornTile = value => {
+const isBoundedMapterhornTile = (value: string) => {
     try {
         const url = new URL(value);
         if (url.origin !== MAPTERHORN_TILE_ORIGIN) return false;
@@ -238,7 +247,7 @@ const isBoundedMapterhornTile = value => {
     }
 };
 
-const terrainMeshState = cdp => evaluate(cdp, `(() => {
+const terrainMeshState = (cdp: Cdp) => evaluate(cdp, `(() => {
     const frame = document.getElementById('bpb-terrain-frame');
     const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
     if (!map || typeof map.isSourceLoaded !== 'function' || !map.isSourceLoaded('terrain')) {
@@ -268,7 +277,7 @@ const terrainMeshState = cdp => evaluate(cdp, `(() => {
     };
 })()`);
 
-const captureBuffer = async cdp => {
+const captureBuffer = async (cdp: Cdp) => {
     const { data } = await cdp.call('Page.captureScreenshot', {
         format: 'png',
         fromSurface: true,
@@ -277,13 +286,13 @@ const captureBuffer = async cdp => {
     return Buffer.from(data, 'base64');
 };
 
-const capture = async (cdp, file) => {
+const capture = async (cdp: Cdp, file: string) => {
     await writeFile(file, await captureBuffer(cdp));
 };
 
 // Centroid of the pixels matching a color predicate — used to find a rendered
 // peak ring on the composited screenshot and to prove it disappears.
-const findColorCluster = (png, matches) => {
+const findColorCluster = (png: { width: number; height: number; bpp: number; pixels: Uint8Array }, matches: (r: number, g: number, b: number) => boolean) => {
     let count = 0, sumX = 0, sumY = 0;
     for (let y = 0; y < png.height; y++) {
         for (let x = 0; x < png.width; x++) {
@@ -300,11 +309,11 @@ const findColorCluster = (png, matches) => {
 
 // The climbed ring paints pure #00ff00 at 0.95 opacity — nothing in the
 // terrain palette, drape fixture, or controls comes near this.
-const isClimbedRingGreen = (r, g, b) => g > 220 && r < 110 && b < 110;
+const isClimbedRingGreen = (r: number, g: number, b: number) => g > 220 && r < 110 && b < 110;
 
-const findClimbedRing = async cdp => findColorCluster(decodePng(await captureBuffer(cdp)), isClimbedRingGreen);
+const findClimbedRing = async (cdp: Cdp) => findColorCluster(decodePng(await captureBuffer(cdp)), isClimbedRingGreen);
 
-const waitForClimbedRing = async (cdp, { present, label, timeoutMs = 12000 }) => {
+const waitForClimbedRing = async (cdp: Cdp, { present, label, timeoutMs = 12000 }: { present: boolean; label: string; timeoutMs?: number }) => {
     const deadline = Date.now() + timeoutMs;
     let cluster = { count: 0 };
     while (Date.now() < deadline) {
@@ -318,7 +327,7 @@ const waitForClimbedRing = async (cdp, { present, label, timeoutMs = 12000 }) =>
 // Wait until the climbed ring is not just present but resting: two successive
 // screenshots agreeing on its centroid, so a click aimed at it cannot race a
 // dots refresh that moves the synthetic peaks.
-const waitForStableClimbedRing = async (cdp, label, timeoutMs = 20000) => {
+const waitForStableClimbedRing = async (cdp: Cdp, label: string, timeoutMs = 20000) => {
     const deadline = Date.now() + timeoutMs;
     let previous = null;
     for (;;) {
@@ -333,14 +342,14 @@ const waitForStableClimbedRing = async (cdp, label, timeoutMs = 20000) => {
     }
 };
 
-const clickAt = async (cdp, x, y) => {
+const clickAt = async (cdp: Cdp, x: number, y: number) => {
     await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
 };
 
-const moveTo = (cdp, x, y) => cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+const moveTo = (cdp: Cdp, x: number, y: number) => cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
 
-const pressEscape = async cdp => {
+const pressEscape = async (cdp: Cdp) => {
     for (const type of ['rawKeyDown', 'keyUp']) {
         await cdp.call('Input.dispatchKeyEvent', {
             type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27
@@ -353,7 +362,7 @@ const pressEscape = async cdp => {
 // silently leaves it inside a parked terrain frame — and a key pressed there
 // is answered by the frame's relay, never by the page's own handler. Only a
 // real gesture can tell those two paths apart.
-const clickTerrainToggle = async cdp => {
+const clickTerrainToggle = async (cdp: Cdp) => {
     const spot = await evaluate(cdp, `(() => {
         const rect = document.getElementById('bpb-terrain-toggle')?.getBoundingClientRect();
         return rect && rect.width > 0 && rect.height > 0
@@ -365,7 +374,7 @@ const clickTerrainToggle = async cdp => {
     return evaluate(cdp, 'document.activeElement && document.activeElement.id');
 };
 
-const openTerrainWithTrustedClick = async cdp => {
+const openTerrainWithTrustedClick = async (cdp: Cdp) => {
     const before = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const nativeMap = document.querySelector('iframe[src*="MasterMap.aspx" i]');
@@ -390,7 +399,7 @@ const openTerrainWithTrustedClick = async cdp => {
     return focused;
 };
 
-const exerciseSolarBearing = async (cdp, label) => {
+const exerciseSolarBearing = async (cdp: Cdp, label: string) => {
     const initial = await waitForPageState(cdp, `(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
@@ -490,7 +499,7 @@ const exerciseSolarBearing = async (cdp, label) => {
     return { initial, rotated };
 };
 
-const assertSolarNorthUp = async (cdp, label, absolute) => {
+const assertSolarNorthUp = async (cdp: Cdp, label: string, absolute: CdpResult) => {
     const reset = await waitForPageState(cdp, `(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const compass = calculator?.querySelector('.bpb-sun-calculator__compass-ring');
@@ -524,7 +533,7 @@ const assertSolarNorthUp = async (cdp, label, absolute) => {
     if (!reset.ready) throw new Error(`${label}: Sun and Moon compass did not reset north-up in 2D: ${JSON.stringify(reset)}`);
 };
 
-const selectVisibleMoon = async (cdp, label) => {
+const selectVisibleMoon = async (cdp: Cdp, label: string) => {
     const state = await evaluate(cdp, `(async () => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const slider = calculator?.querySelector('.bpb-sun-calculator__time');
@@ -561,7 +570,7 @@ const selectVisibleMoon = async (cdp, label) => {
 // The paint the group route is currently drawn with, as the frame's live
 // MapLibre reports it. A hovered track turns the flat/data-driven paint into a
 // 'case' expression that singles that track out.
-const readRoutePaint = cdp => evaluate(cdp, `(() => {
+const readRoutePaint = (cdp: Cdp) => evaluate(cdp, `(() => {
     const frame = document.getElementById('bpb-terrain-frame');
     const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
     if (!map || typeof map.getPaintProperty !== 'function') return null;
@@ -575,7 +584,7 @@ const readRoutePaint = cdp => evaluate(cdp, `(() => {
 // The frame pixel furthest from every drawn group track, so the pointer can be
 // parked somewhere provably off-route. Returns null when nothing is far enough
 // to be a trustworthy "not hovering" position.
-const findOffRoutePoint = cdp => evaluate(cdp, `(() => {
+const findOffRoutePoint = (cdp: Cdp) => evaluate(cdp, `(() => {
     const frame = document.getElementById('bpb-terrain-frame');
     const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
     const source = map && map.getSource('bpb-route');
@@ -614,7 +623,7 @@ const findOffRoutePoint = cdp => evaluate(cdp, `(() => {
 
 // The vertical gap between the floating toggle's bottom and the 3D zoom stack's
 // top, in page pixels. Negative means the toggle overlaps (covers) the zoom.
-const measureToggleGap = cdp => evaluate(cdp, `(() => {
+const measureToggleGap = (cdp: Cdp) => evaluate(cdp, `(() => {
     const toggle = document.getElementById('bpb-terrain-toggle');
     const frame = document.getElementById('bpb-terrain-frame');
     const nav = frame && frame.contentDocument && frame.contentDocument.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group');
@@ -628,7 +637,7 @@ const measureToggleGap = cdp => evaluate(cdp, `(() => {
 // The gesture hint is transient, but attribution is mandatory for the whole
 // frame lifetime. Keep them in separate rows even during the hint's brief
 // teaching window; a negative gap means their boxes overlap vertically.
-const measureGestureHintGap = cdp => evaluate(cdp, `(() => {
+const measureGestureHintGap = (cdp: Cdp) => evaluate(cdp, `(() => {
     const frame = document.getElementById('bpb-terrain-frame');
     const doc = frame && frame.contentDocument;
     const hint = doc && doc.querySelector('.bpb-terrain-hint');
@@ -647,7 +656,7 @@ const measureGestureHintGap = cdp => evaluate(cdp, `(() => {
 // Same, for the 2D state: the toggle's bottom against the native Leaflet zoom
 // (inside the same-origin MasterMap iframe). This exercises the same live
 // measurement the extension uses to anchor the toggle in 2D.
-const measureNative2dGap = cdp => evaluate(cdp, `(() => {
+const measureNative2dGap = (cdp: Cdp) => evaluate(cdp, `(() => {
     const toggle = document.getElementById('bpb-terrain-toggle');
     const iframe = document.querySelector('iframe[src*="MasterMap.aspx" i]');
     const zoom = iframe && iframe.contentDocument && iframe.contentDocument.querySelector('.leaflet-control-zoom');
@@ -661,7 +670,7 @@ const measureNative2dGap = cdp => evaluate(cdp, `(() => {
 // Full Screen keeps its Leaflet map (and zoom) in the same-origin #if MasterMap
 // iframe, so the native zoom is measured through the iframe (offset included),
 // exercising the iframe branch of the extension's toggle placement.
-const measureBigMap2dGap = cdp => evaluate(cdp, `(() => {
+const measureBigMap2dGap = (cdp: Cdp) => evaluate(cdp, `(() => {
     const toggle = document.getElementById('bpb-terrain-toggle');
     const iframe = document.querySelector('iframe#if, iframe[src*="MasterMap.aspx" i]');
     const zoom = iframe && iframe.contentDocument && iframe.contentDocument.querySelector('.leaflet-control-zoom');
@@ -672,7 +681,7 @@ const measureBigMap2dGap = cdp => evaluate(cdp, `(() => {
     return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(ir.top + zr.top), gap: Math.round((ir.top + zr.top) - tr.bottom) };
 })()`);
 
-const showTerrainFailure = async (cdp, label, expectedTheme) => {
+const showTerrainFailure = async (cdp: Cdp, label: string, expectedTheme: string) => {
     const started = await evaluate(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         if (!toggle || toggle.disabled) return false;
@@ -712,7 +721,7 @@ const showTerrainFailure = async (cdp, label, expectedTheme) => {
 // map answers, with no ⌘/Ctrl modifier. The MapLibre scale control is the
 // observable: its distance or rendered width changes with zoom. The distance
 // label is quantized and can legitimately remain in the same 500 m bucket.
-const assertPlainScrollZooms = async (cdp, label) => {
+const assertPlainScrollZooms = async (cdp: Cdp, label: string) => {
     const target = await waitForPageState(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');
         const doc = frame?.contentDocument;
@@ -764,7 +773,7 @@ const assertPlainScrollZooms = async (cdp, label) => {
     });
 };
 
-const navigate = async (cdp, url, width, height) => {
+const navigate = async (cdp: Cdp, url: string, width: number, height: number) => {
     await cdp.call('Emulation.setDeviceMetricsOverride', {
         width, height, deviceScaleFactor: 1, mobile: false
     });
@@ -806,10 +815,10 @@ const chromeState = manageChildProcess(resources, chrome, 'terrain Chrome');
 let chromeStderr = '';
 chrome.stderr.on('data', chunk => { chromeStderr = `${chromeStderr}${chunk}`.slice(-20000); });
 
-let cdp;
+let cdp!: Cdp;
 try {
     const debugPort = await waitForDebugPort(profile, chrome, chromeState);
-    const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+    const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json() as { type: string; webSocketDebuggerUrl: string }[];
     const page = pages.find(candidate => candidate.type === 'page');
     if (!page) throw new Error('Chrome opened no debuggable page');
     cdp = await connectCdp(page.webSocketDebuggerUrl);
@@ -840,22 +849,22 @@ try {
     }
     console.log(`Renderer: ${renderer} (headless, GPU)`);
 
-    const terrainRequests = [];
-    const mockedTerrainResponses = [];
-    const missingTerrainResponses = [];
-    const terrainMockFailures = [];
+    const terrainRequests: string[] = [];
+    const mockedTerrainResponses: string[] = [];
+    const missingTerrainResponses: string[] = [];
+    const terrainMockFailures: string[] = [];
     // The deepest level the mocked provider covers. Mapterhorn's archives stop
     // at different levels in different regions — most of the world runs out
     // around zoom 11-13 while a few areas are served deeper — so a summit view
     // routinely asks for tiles that do not exist. Lowering this replays that.
     let terrainCoverageMaxZoom = Infinity;
-    const basemapRequests = [];
-    const pendingBasemapRequestIds = [];
-    const pendingVectorStyles = [];
+    const basemapRequests: string[] = [];
+    const pendingBasemapRequestIds: string[] = [];
+    const pendingVectorStyles: string[] = [];
     let holdBasemapRequests = false;
-    const peakFeedRequests = [];
-    const runtimeErrors = [];
-    cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
+    const peakFeedRequests: string[] = [];
+    const runtimeErrors: string[] = [];
+    cdp.on('Fetch.requestPaused', ({ requestId, request }: CdpResult) => {
         const isBasemapRequest = /\/scripts\/showcase\/terrain-tiles\//.test(request.url);
         const fulfill = async () => {
             if (request.url === 'https://tiles.openfreemap.org/styles/liberty') {
@@ -913,14 +922,14 @@ try {
             } catch { /* The request may already have been resolved by CDP. */ }
         });
     });
-    cdp.on('Network.requestWillBeSent', ({ request }) => {
+    cdp.on('Network.requestWillBeSent', ({ request }: CdpResult) => {
         if (/\.mapterhorn\.com\//.test(request.url)) terrainRequests.push(request.url);
         if (/\/scripts\/showcase\/terrain-tiles\//.test(request.url)) basemapRequests.push(request.url);
         if (/\/Async\/PLLBB\.aspx\?/i.test(request.url)) peakFeedRequests.push(request.url);
     });
-    cdp.on('Network.responseReceived', ({ response }) => {
+    cdp.on('Network.responseReceived', ({ response }: CdpResult) => {
         if (!/\.mapterhorn\.com\//.test(response.url)) return;
-        const header = name => Object.entries(response.headers || {})
+        const header = (name: string) => Object.entries(response.headers || {})
             .find(([candidate]) => candidate.toLowerCase() === name)?.[1];
         // A 404 is a mocked outcome too, but only for a tile this run decided to
         // withhold — anything else 404ing means a real request escaped.
@@ -931,7 +940,7 @@ try {
             terrainMockFailures.push(`Unexpected Mapterhorn response escaped the mock: ${response.status} ${response.url}`);
         }
     });
-    cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
+    cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }: CdpResult) => {
         runtimeErrors.push(exceptionDetails.exception?.description || exceptionDetails.text || 'Unknown runtime exception');
     });
     await cdp.call('Fetch.enable', {
@@ -1090,7 +1099,7 @@ try {
     // The gap has to have actually happened, or this proves nothing.
     await waitForCondition(() => missingTerrainResponses.length > missingBefore,
         () => 'The coverage-gap regression withheld no tiles');
-    let gapMesh;
+    let gapMesh: CdpResult;
     await waitForCondition(async () => {
         gapMesh = await terrainMeshState(cdp);
         return gapMesh.ready;
@@ -1131,7 +1140,7 @@ try {
             // already become active. CDP then expires the paused id before this
             // release loop reaches it; the active-frame assertion above is the
             // postcondition this probe owns.
-            if (!/Invalid InterceptionId|Fetch domain is not enabled/.test(error.message)) throw error;
+            if (!/Invalid InterceptionId|Fetch domain is not enabled/.test((error as Error).message)) throw error;
         }
     }));
     // The pending-drape probe is the only reason to intercept local rasters.
@@ -1203,7 +1212,7 @@ try {
         if (terrainMockFailures.length) throw new Error(`DEM mock failed: ${terrainMockFailures.join('\n')}`);
         return mockedTerrainResponses.length > 0;
     }, () => 'The 3D view did not load a mocked terrain tile');
-    let terrainMesh;
+    let terrainMesh: CdpResult;
     await waitForCondition(async () => {
         terrainMesh = await terrainMeshState(cdp);
         return terrainMesh.ready;
@@ -1215,11 +1224,11 @@ try {
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     const ascentMetrics = await measureToggleGap(cdp);
     await verifyTerrainCredits({
-        evaluate: expression => evaluate(cdp, expression),
-        screenshot: name => capture(cdp, path.join(outputDir, `${name}.png`)),
+        evaluate: (expression: string) => evaluate(cdp, expression),
+        screenshot: (name: string) => capture(cdp, path.join(outputDir, `${name}.png`)),
     });
     await verifyTerrainProviderRecovery({
-        evaluate: expression => evaluate(cdp, expression),
+        evaluate: (expression: string) => evaluate(cdp, expression),
         retryWithKeyboard: async () => {
             // Native select type-ahead works with macOS's closed menu, where
             // Home may scroll instead of selecting the first option.
@@ -1227,18 +1236,18 @@ try {
             await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 });
         },
         blockRaster: () => { providerRasterMode = 'hold'; },
-        releaseRaster: async status => {
+        releaseRaster: async (status: number) => {
             if (status === 403) await waitForCondition(() => providerHeldResponses.some(({ response }) => !response.destroyed),
                 () => `No live raster responses held; recent requests: ${JSON.stringify(basemapRequests.slice(-3))}`);
             providerRasterMode = status === 403 ? 'blocked' : 'normal';
             await Promise.all(providerHeldResponses.splice(0).filter(({ response }) => !response.destroyed)
                 .map(({ request, response }) => status === 403 ? rejectProviderRaster(response) : handleRequest(request, response)));
         },
-        screenshot: name => capture(cdp, path.join(outputDir, `${name}.png`)),
+        screenshot: (name: string) => capture(cdp, path.join(outputDir, `${name}.png`)),
     });
     await verifyTerrainVectorPending({
-        evaluate: expression => evaluate(cdp, expression),
-        screenshot: name => capture(cdp, path.join(outputDir, `${name}.png`)),
+        evaluate: (expression: string) => evaluate(cdp, expression),
+        screenshot: (name: string) => capture(cdp, path.join(outputDir, `${name}.png`)),
         waitForStyle: () => waitForCondition(() => pendingVectorStyles.length > 0, () => 'No vector style request was held'),
         releaseStyle: () => Promise.all(pendingVectorStyles.splice(0).map(requestId => cdp.call('Fetch.fulfillRequest', {
             requestId, responseCode: 200,
@@ -2116,7 +2125,7 @@ try {
     console.log(`Hidden Chrome visual verification passed (${ready.canvas.width}x${ready.canvas.height} wide, ${darkReady.canvas.width}x${darkReady.canvas.height} default).`);
     console.log(`Screenshots: ${outputDir}`);
 } catch (error) {
-    if (chromeStderr) error.message += `\nChrome stderr (tail):\n${chromeStderr}`;
+    if (chromeStderr) (error as Error).message += `\nChrome stderr (tail):\n${chromeStderr}`;
     primaryError = error;
 }
-await resources.dispose(primaryError);
+await resources.dispose(primaryError as Parameters<typeof resources.dispose>[0]);

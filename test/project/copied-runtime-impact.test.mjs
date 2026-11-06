@@ -96,7 +96,7 @@ test('Firefox GPU gestures target exposed canvas pixels and settle between drags
 
 test('Chrome solar bearing verification targets exposed settled canvas pixels', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        new URL('../../scripts/verify-terrain-visual.mts', import.meta.url),
         'utf8',
     );
     const bearingStart = verifier.indexOf('const exerciseSolarBearing =');
@@ -115,7 +115,7 @@ test('Chrome solar bearing verification targets exposed settled canvas pixels', 
 
 test('Chrome terrain verification waits out cancelled requests and moving peak rings', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        new URL('../../scripts/verify-terrain-visual.mts', import.meta.url),
         'utf8',
     );
     const requestHandlerStart = verifier.indexOf('cdp.on(\'Fetch.requestPaused\'');
@@ -135,7 +135,7 @@ test('Chrome terrain verification waits out cancelled requests and moving peak r
 
 test('Chrome tilted-peak verification targets the live canvas and proves the pitch', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        new URL('../../scripts/verify-terrain-visual.mts', import.meta.url),
         'utf8',
     );
     const tiltedPeakStart = verifier.indexOf('const peakFeedBeforeTilt =');
