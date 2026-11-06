@@ -441,7 +441,7 @@ report both stores live from a green release workflow alone.
 
 `store-assets/description.md` is the single source of truth for the "About this
 extension" text on both stores. The Firefox workflow reads the Markdown
-automatically via `scripts/create-amo-metadata.mjs`. After editing it, run
+automatically via `scripts/create-amo-metadata.mts`. After editing it, run
 `npm run store:description:chrome` to regenerate
 `store-assets/description-chrome.txt`. The Chrome Web Store API does not support
 updating listing metadata, so paste that generated plain text into the Chrome

@@ -457,7 +457,7 @@ the first production component ships.
   change; do not silently accept an unstyled widget.
 - When Svelte is first shipped, update
   [reviewed dependency metadata](../../scripts/dependency-metadata.mjs),
-  [AMO notes](../../scripts/create-amo-metadata.mjs) and
+  [AMO notes](../../scripts/create-amo-metadata.mts) and
   [acknowledgements](../../ACKNOWLEDGEMENTS.md). Notices are generated into
   `dist/THIRD_PARTY_NOTICES.txt` from bundled inputs, including shipped transitive
   packages. Do not mark an unused compiler-only dependency as `shipped: true`:

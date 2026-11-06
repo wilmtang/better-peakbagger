@@ -14,7 +14,7 @@ import {
 import {
     AMO_APPROVAL_NOTES_MAX_LENGTH,
     buildAmoMetadata,
-} from '../../scripts/create-amo-metadata.mjs';
+} from '../../scripts/create-amo-metadata.mts';
 import { createAmoJwt, inspectAmoVersion } from '../../scripts/check-amo-version.mjs';
 import {
     dependencyVersionsFromLock,

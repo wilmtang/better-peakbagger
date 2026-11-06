@@ -29,7 +29,7 @@ independent of the existing targets.
 - [build.mjs](build.mjs)
 - [generate-map-overlay-regions.mjs](generate-map-overlay-regions.mjs)
 - [install-git-hooks.mjs](install-git-hooks.mjs)
-- [maplibre-terrain-lod-patch.mjs](maplibre-terrain-lod-patch.mjs)
+- [maplibre-terrain-lod-patch.mts](maplibre-terrain-lod-patch.mts)
 - [run-development.mjs](run-development.mjs)
 - [run-firefox.mjs](run-firefox.mjs)
 
@@ -41,7 +41,7 @@ independent of the existing targets.
 - [check-npm-audit.mts](check-npm-audit.mts)
 - [check-web-ext-lint.mjs](check-web-ext-lint.mjs)
 - [copied-runtime-impact.mjs](copied-runtime-impact.mjs)
-- [create-amo-metadata.mjs](create-amo-metadata.mjs)
+- [create-amo-metadata.mts](create-amo-metadata.mts)
 - [create-chrome-description.mjs](create-chrome-description.mjs)
 - [dependency-metadata.mjs](dependency-metadata.mjs)
 - [privacy-guard.mjs](privacy-guard.mjs)

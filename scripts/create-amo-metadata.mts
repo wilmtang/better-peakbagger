@@ -13,7 +13,13 @@ if (!Number.isInteger(terrainKeepAliveMinutes) || terrainKeepAliveMinutes < 1) {
     throw new Error('Terrain frame keep-alive must be a positive whole number of minutes');
 }
 
-export function buildAmoMetadata({ licenseText, description, dependencyVersions }) {
+type AmoMetadataInput = {
+    licenseText: string;
+    description: string;
+    dependencyVersions: Record<string, string>;
+};
+
+export function buildAmoMetadata({ licenseText, description, dependencyVersions }: AmoMetadataInput) {
     if (typeof licenseText !== 'string' || licenseText.trim() === '') {
         throw new Error('LICENSE must contain the full project license text');
     }
@@ -46,7 +52,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
         '',
         `vendor/marked.umd.js is unmodified Marked ${versions.marked} (MIT). Package: https://www.npmjs.com/package/marked/v/${versions.marked} ; source: https://github.com/markedjs/marked/tree/v${versions.marked}`,
         '',
-        `vendor/maplibre-gl.mjs gets the guarded terrain LOD correction in scripts/maplibre-terrain-lod-patch.mjs and is imported directly by the native terrain-frame module. vendor/maplibre-gl-worker.mjs, shared module and CSS are unmodified MapLibre GL JS ${versions.maplibre} (BSD-3-Clause). Package: https://www.npmjs.com/package/maplibre-gl/v/${versions.maplibre} ; source: https://github.com/maplibre/maplibre-gl-js/tree/v${versions.maplibre}`,
+        `vendor/maplibre-gl.mjs gets the guarded terrain LOD correction in scripts/maplibre-terrain-lod-patch.mts and is imported directly by the native terrain-frame module. vendor/maplibre-gl-worker.mjs, shared module and CSS are unmodified MapLibre GL JS ${versions.maplibre} (BSD-3-Clause). Package: https://www.npmjs.com/package/maplibre-gl/v/${versions.maplibre} ; source: https://github.com/maplibre/maplibre-gl-js/tree/v${versions.maplibre}`,
         '',
         `tz-lookup ${versions.tzLookup} (CC0-1.0) is bundled unchanged into content/gpx-analyzer.js and content/ascent-editor.js for offline coordinate-to-IANA-timezone lookup. Package: https://www.npmjs.com/package/tz-lookup/v/${versions.tzLookup} ; source: https://github.com/darkskyapp/tz-lookup`,
         '',
@@ -98,7 +104,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
 async function main() {
     const outputPath = process.argv[2];
     if (!outputPath) {
-        throw new Error('Usage: node scripts/create-amo-metadata.mjs OUTPUT_PATH');
+        throw new Error('Usage: node scripts/create-amo-metadata.mts OUTPUT_PATH');
     }
 
     const [licenseText, description, packageLock] = await Promise.all([

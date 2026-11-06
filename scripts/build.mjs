@@ -21,7 +21,7 @@
 
 import { build, context } from 'esbuild';
 import { jsZipCspPlugin } from './jszip-csp-patch.mjs';
-import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mjs';
+import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mts';
 import {
     access,
     copyFile,
