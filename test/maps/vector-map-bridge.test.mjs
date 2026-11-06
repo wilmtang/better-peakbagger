@@ -269,3 +269,38 @@ test('each provider keeps its own bounded warm renderer and a parked limit canno
         env.send('dispose'); assert.equal(env.win.document.querySelectorAll('iframe').length, 0);
     } finally { env.close(); }
 });
+
+test('a parked renderer that fails is replaced on reselection rather than awaited', async () => {
+    const env = setup();
+    try {
+        env.choose(); env.send('view'); env.fromFrame('ready'); await settle();
+        const parked = env.frame();
+        env.fromFrame('painted', undefined, undefined, { bitmap: new env.win.ImageBitmap(), width: 640, height: 480 });
+        env.send('stop');
+        assert.equal(parked.dataset.bpbVectorParked, 'true');
+        const generation = env.calls.length;
+        env.send('error', { dir: 'fromFrame', generation }, parked.contentWindow, 'chrome-extension://test');
+        assert.equal(parked.isConnected, false, 'A renderer that disposed itself while parked is not retained');
+        env.choose(); env.send('view');
+        assert.notEqual(env.frame(), parked, 'Reselection boots a live renderer instead of waiting 20 seconds on a dead one');
+    } finally { env.close(); }
+});
+
+test('a renderer failing during 3D suspension leaves the selection able to resume', async () => {
+    const env = setup();
+    try {
+        env.choose(); env.send('view'); env.fromFrame('ready'); await settle();
+        const paused = env.frame();
+        env.fromFrame('painted', undefined, undefined, { bitmap: new env.win.ImageBitmap(), width: 640, height: 480 });
+        env.send('pause');
+        const generation = env.calls.length;
+        env.send('error', { dir: 'fromFrame', generation, retryAt: Date.now() + 1 }, paused.contentWindow, 'chrome-extension://test');
+        env.send('error', { dir: 'fromFrame', generation }, paused.contentWindow, 'chrome-extension://test');
+        assert.equal(paused.isConnected, false);
+        assert.equal(env.messages.some(message => message.type === 'error'), false, 'A suspended page ignores errors, so none is spent on it');
+        await new Promise(resolve => setTimeout(resolve, 5));
+        env.send('resume');
+        assert.ok(env.frame(), 'Returning from 3D starts a new renderer for the retained selection');
+        assert.notEqual(env.frame(), paused);
+    } finally { env.close(); }
+});

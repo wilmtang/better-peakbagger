@@ -21,7 +21,9 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
         if (parked.get(key(entry)) === entry) parked.delete(key(entry));
     };
     const stop = id => { const entry = entries.get(id); if (entry) remove(entry); entries.delete(id); };
-    const fail = entry => { if (entries.get(entry.id) !== entry) { remove(entry); return; } stop(entry.id); post(entry.id, 'error', { retryAt: retryAt(entry.basemap), basemap: entry.basemap.id }); };
+    // A suspended page ignores errors and later resumes this same selection, so
+    // only its renderer is discarded; resuming then boots or reports afresh.
+    const fail = entry => { if (entries.get(entry.id) !== entry || entry.paused) { remove(entry); return; } stop(entry.id); post(entry.id, 'error', { retryAt: retryAt(entry.basemap), basemap: entry.basemap.id }); };
     const send = (entry, type, detail = {}) => entry.frame?.contentWindow?.postMessage({
         [VECTOR_MESSAGE]: true, dir: 'toFrame', type, ...detail,
     }, origin);
@@ -132,7 +134,9 @@ export function installVectorMapBridge(win = window, ext = globalThis.browser ||
                     // re-selection and 2D/3D suspension cannot reset this limit.
                     cooldowns.set(entry.basemap.id, Math.max(cooldowns.get(entry.basemap.id) || 0, until));
                     for (const affected of [...entries.values(), ...parked.values()]) if (affected.basemap === entry.basemap) fail(affected);
-                } else if (data.generation === entry.generation) fail(entry);
+                // A released renderer has no generation to match, but it disposed itself
+                // and cannot answer a later warm start.
+                } else if (entry.released || data.generation === entry.generation) fail(entry);
             }
             return;
         }
