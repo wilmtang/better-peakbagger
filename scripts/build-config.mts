@@ -38,7 +38,7 @@ const PAGE_LOCAL: Record<string, string> = {
     'options-favorites-backup.js': path.join(root, 'options', 'favorites-backup.js'),
     'options-utils.js': path.join(root, 'options', 'options-utils.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
-    'photos-main.js': path.join(root, 'photos', 'photos.js'),
+    'photos-main.js': path.join(root, 'photos', 'photos.ts'),
     'photos-guide.js': path.join(root, 'photos', 'guide.js'),
 };
 export function resolvePageSource(name: string) {

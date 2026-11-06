@@ -85,7 +85,7 @@ documentation debt that should be corrected before it compounds.
 
 ### Evidence
 
-[`photos/photos.js`](../../photos/photos.js) correctly treats the ImgBB response
+[`photos/photos.js`](../../photos/photos.ts) correctly treats the ImgBB response
 and local catalog commit as separate transaction stages:
 
 1. It receives and journals the provider response.
@@ -163,7 +163,7 @@ Split the transaction at the irreversible boundary:
 
 ### Evidence
 
-`setBusy()` in [`photos/photos.js`](../../photos/photos.js) disables only:
+`setBusy()` in [`photos/photos.js`](../../photos/photos.ts) disables only:
 
 - Upload;
 - file selection;

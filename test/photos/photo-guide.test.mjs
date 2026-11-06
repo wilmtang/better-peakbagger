@@ -14,7 +14,7 @@ const doc = new JSDOM(html).window.document;
 const manifest = JSON.parse(await fs.readFile(new URL('../../manifest.json', import.meta.url), 'utf8'));
 const photosHtml = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
 const photosDoc = new JSDOM(photosHtml).window.document;
-const photosSource = await fs.readFile(new URL('../../photos/photos.js', import.meta.url), 'utf8');
+const photosSource = await fs.readFile(new URL('../../photos/photos.ts', import.meta.url), 'utf8');
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
 const reportEditor = await fs.readFile(
     new URL('../../src/reports/report-editor.js', import.meta.url), 'utf8');

@@ -160,7 +160,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
-| Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
+| Photo topo editor and library | `photos/photos.ts`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | 2D vector basemap | `src/maps/vector-map.ts`, `src/maps/vector-map-bridge.ts`, `src/maps/vector-map-frame.ts`, `src/maps/vector-map-request.ts`, `src/maps/vector-map-availability.ts`, `src/maps/vector-basemap.ts` | Native Leaflet pane/camera ownership with packaged MapLibre in an extension-origin frame; trusted selection, isolated bridge and separate one-use worker authorization before direct OpenFreeMap or Maptoolkit requests. Camera-coupled cartography bitmaps are committed atomically to a page canvas below native overlays, with one capture in flight and parent-clock redraws. Suspension clears page pixels. A provider-scoped MapLibre protocol retains rate-limit headers; the isolated document owns the bounded cooldown. A narrow MapLibre 6 tile-manager adapter checks settled viewport availability. |
 | Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.js`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
@@ -852,7 +852,7 @@ its single-use return context to the source document, report identity, editor
 tab, and expiry; only a validated HTTPS image result may return. A failed
 insertion does not undo a successful upload.
 
-`photos/photos.js` owns UI orchestration; the pure project and renderer modules
+`photos/photos.ts` owns UI orchestration; the pure project and renderer modules
 own annotation validation and metadata-free export; `src/photos/photo-store.js`
 owns IndexedDB pixels, projects, revisions, upload journals, and tombstones.
 The pure `src/photos/photo-url.js` owns bounded HTTPS URL validation, reused

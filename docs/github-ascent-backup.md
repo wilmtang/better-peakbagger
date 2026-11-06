@@ -123,7 +123,7 @@ link, which automatically tracks endpoint query changes.
 | `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
 | `src/photos/photo-backup.js` | Pure bounded `photo-library.json` serialization, signatures, semantic merge, tombstones, and metadata-only reconstruction | IndexedDB, pixels, credentials, network |
 | `src/photos/photo-store.js` | Authoritative photo IndexedDB transactions and backup-snapshot reads | GitHub token, network, backup merge policy |
-| `photos/photos.js` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
+| `photos/photos.ts` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
 | `options/favorites-backup.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
 | `options/settings-backup.js` | File transfer, the explicit sensitive-connection opt-in, GitHub transfer controls, auto toggle, and confirmed settings replacement | Repository mutation or exposing a credential outside the selected manual file operation |
 | `src/background/background.js` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |

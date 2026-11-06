@@ -12,7 +12,7 @@ import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { settingsReadCounts } from '../helpers/source-policies.mts';
 
 const FAIL_SOFT = Object.freeze({
-    'photos/photos.js': [{ count: 1, kind: 'display', reason: 'render the passive export-size warning and inherited report image width; no transport is gated by this value' }],
+    'photos/photos.ts': [{ count: 1, kind: 'display', reason: 'render the passive export-size warning and inherited report image width; no transport is gated by this value' }],
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],

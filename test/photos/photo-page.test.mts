@@ -4,13 +4,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+// @ts-expect-error jsdom ships no type declarations.
 import { JSDOM } from 'jsdom';
 import { marked } from 'marked';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
 import { photoProject as Project } from '../../src/photos/photo-project.js';
 
 const html = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
-const source = await fs.readFile(new URL('../../photos/photos.js', import.meta.url), 'utf8');
+const source = await fs.readFile(new URL('../../photos/photos.ts', import.meta.url), 'utf8');
 const styles = await fs.readFile(new URL('../../photos/photos.css', import.meta.url), 'utf8');
 const panelStyles = await fs.readFile(new URL('../../src/theme/panel.css', import.meta.url), 'utf8');
 const dom = new JSDOM(html);
@@ -31,7 +32,7 @@ const detailedPhotoDocs = Object.fromEntries(await Promise.all([
     await fs.readFile(new URL(relative, import.meta.url), 'utf8'),
 ])));
 
-const assertReadmePhotoOverview = contents => {
+const assertReadmePhotoOverview = (contents: string) => {
     const base = 'https://readme.invalid/', targets = new Set();
     marked.walkTokens(marked.lexer(contents), token => {
         if (token.type !== 'link') return;
@@ -173,8 +174,8 @@ test('report sizing is contextual, synchronized, and explicit about full-resolut
     assert.ok(controls.every(control => control.hidden),
         'the choice stays out of Photo Topos unless a report is waiting');
     assert.ok(controls.every(control => /upload stays full resolution/i.test(control.textContent)));
-    assert.match(source, /ReportSize\.displayWidth\(inserting\.export\.width, reportImageWidth\)/);
-    assert.match(source, /ReportSize\.displayWidth\(item\.export\.width, reportImageWidth\)/);
+    assert.match(source, /ReportSize\.displayWidth\(inserting\.export!\.width, reportImageWidth\)/);
+    assert.match(source, /ReportSize\.displayWidth\(item\.export!?\.width, reportImageWidth\)/);
     assert.match(source, /\{ displayWidth \}/);
 });
 
@@ -288,10 +289,10 @@ test('placing a symbol leaves its tool armed and the route shows its first point
     // handles of the route the user just drew, which is exactly where the
     // belays and bolts go.
     assert.match(source, /activeTool === 'select' && selected\?\.type === 'route'/);
-    assert.match(source, /activeTool === 'select' \? event\.target\.closest\?\.\('\[data-vertex\]'\) : null/);
+    assert.match(source, /activeTool === 'select' \? \(event\.target as Element\)\.closest\?\.<HTMLElement>\('\[data-vertex\]'\) : null/);
     // The curve is an intent on the style, not handles the editor has to
     // rebuild, so adding a point cannot silently drop it.
-    assert.match(source, /const style = object \? object\.style : toolPreferences\[type\]\.style/);
+    assert.match(source, /const style = \(object \? object\.style : toolPreferences\[type\]!\.style\)/);
     assert.match(source, /ui\.routeSmooth\.checked = style\.smooth/);
     assert.doesNotMatch(source, /routeHasCurves/);
 });
@@ -346,7 +347,7 @@ test('README overview checks still reject missing guides and known false claims'
 });
 
 test('detailed photo documentation separates decode, upload, and project-archive bounds', () => {
-    for (const [name, contents] of Object.entries(detailedPhotoDocs)) {
+    for (const [name, contents] of Object.entries(detailedPhotoDocs) as [string, string][]) {
         assert.match(contents, /128 MiB/i, `${name} must state the encoded-source budget`);
         assert.match(contents, /64 megapixels/i, `${name} must state the decoded-pixel budget`);
         assert.match(contents, /16,384 pixels/i, `${name} must state the per-axis budget`);
@@ -365,7 +366,7 @@ test('every detailed photo surface states the exact saved-key disclosure boundar
         'photos/photos.html': html,
         'photos/guide.html': guideHtml,
     };
-    for (const [name, contents] of Object.entries(surfaces)) {
+    for (const [name, contents] of Object.entries(surfaces) as [string, string][]) {
         const normalized = contents.replace(/\s+/g, ' ');
         assert.match(normalized, /saved key remains in device-local extension storage/i,
             `${name} must say where the saved key remains`);
