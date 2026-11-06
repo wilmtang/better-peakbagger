@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { installVectorMapBridge } from '../../src/maps/vector-map-bridge.js';
-import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView, readVectorPaint } from '../../src/maps/vector-basemap.js';
+import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView, readVectorPaint } from '../../src/maps/vector-basemap.ts';
 import { terrainBasemap } from '../../src/terrain/terrain-basemap.js';
 
 const view = { center: [46.85, -121.76], zoom: 9 };

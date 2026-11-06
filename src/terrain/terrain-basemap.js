@@ -8,7 +8,7 @@
 // the extension: it only reads the same-origin page/frame that owns Leaflet.
 
 import { SENTINEL_CODE, SENTINEL_NAME, sentinelTarget } from '../maps/sentinel-core.js';
-import { VECTOR_BASEMAP, vectorBasemap } from '../maps/vector-basemap.js';
+import { VECTOR_BASEMAP, vectorBasemap } from '../maps/vector-basemap.ts';
 
 
 // Peakbagger builds each 2D basemap on demand inside its MasterMap

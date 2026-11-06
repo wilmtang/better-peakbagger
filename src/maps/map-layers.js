@@ -10,7 +10,7 @@ import { createSnowDepthMetadata, SNOW_DEPTH_LEGEND } from './snow-depth.js';
 import { WILDFIRE_LEGEND } from './wildfire-core.js';
 import { sentinelTarget } from './sentinel-core.js';
 import { OVERLAY_MIN_ZOOM, SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
-import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns, readAttributionInset } from './map-layer-protocol.js';
+import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns, readAttributionInset } from './map-layer-protocol.ts';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';

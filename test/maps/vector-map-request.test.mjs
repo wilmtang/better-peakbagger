@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createVectorMapRequest, vectorRequestUrl } from '../../src/maps/vector-map-request.js';
+import { createVectorMapRequest, vectorRequestUrl } from '../../src/maps/vector-map-request.ts';
 import { readRetryAt } from '../../src/net/rate-limit.js';
 
 const url = 'https://tiles.openfreemap.org/fixture/1/0/0.pbf';

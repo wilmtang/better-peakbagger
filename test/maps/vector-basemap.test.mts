@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, vectorBasemap, vectorProviderUrl } from '../../src/maps/vector-basemap.js';
+import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, vectorBasemap, vectorProviderUrl } from '../../src/maps/vector-basemap.ts';
 import { terrainStyle } from '../../src/terrain/terrain-style.js';
 
 // These untyped modules infer their default provider as the only accepted value.

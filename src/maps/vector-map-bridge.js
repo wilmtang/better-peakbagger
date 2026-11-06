@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.js';
+import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { readRetryAt } from '../net/rate-limit.js';
 

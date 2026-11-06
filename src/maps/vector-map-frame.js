@@ -4,9 +4,9 @@
 import * as maplibre from 'maplibre-gl';
 import { terrainStyle } from '../terrain/terrain-style.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
-import { VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.js';
-import { vectorMapAvailability, vectorMapReadyToPublish } from './vector-map-availability.js';
-import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.js';
+import { VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
+import { vectorMapAvailability, vectorMapReadyToPublish } from './vector-map-availability.ts';
+import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.ts';
 import { readRetryAt } from '../net/rate-limit.js';
 
 let map = null, parentOrigin = null, attempted = false, disposed = false, timer = null, view = null, settledView = null, lastSize = '', lastCamera = '';

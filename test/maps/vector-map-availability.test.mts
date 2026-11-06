@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { vectorMapAvailability, vectorMapReadyToPublish } from '../../src/maps/vector-map-availability.js';
+import { vectorMapAvailability, vectorMapReadyToPublish } from '../../src/maps/vector-map-availability.ts';
 
-const manager = (ids, renderable) => ({ getIds: () => ids, getRenderableIds: () => renderable });
-const map = tileManagers => ({ style: { tileManagers } });
+type Center = readonly [number, number];
+const manager = (ids: unknown, renderable: unknown[]) => ({ getIds: () => ids, getRenderableIds: () => renderable });
+const map = (tileManagers: unknown) => ({ style: { tileManagers } });
 test('settled failures have requested tiles but no usable viewport data', () => {
     assert.deepEqual(vectorMapAvailability(map({ base: manager(['failed-a', 'failed-b'], []) })), { requested: true, usable: false });
     assert.deepEqual(vectorMapAvailability(map({ base: { ...manager([], []), _sourceErrored: true, _sourceLoaded: false, used: true } })),
@@ -29,9 +30,9 @@ test('any usable source preserves partial output and unsupported adapters fail e
 });
 
 test('progressive output requires vector data at the center, rather than only overscan or elevation tiles', () => {
-    const tile = (z, x, y, type = 'vector') => ({ ...manager(['tile'], ['tile']), getSource: () => ({ type }),
+    const tile = (z: number, x: number, y: number, type = 'vector') => ({ ...manager(['tile'], ['tile']), getSource: () => ({ type }),
         getTileByID: () => ({ tileID: { canonical: { z, x, y } } }) });
-    const center = [5, 5];
+    const center: Center = [5, 5];
     assert.equal(vectorMapAvailability(map({ outer: tile(3, 5, 3), dem: tile(0, 0, 0, 'raster-dem') }), { center }).usable, false);
     assert.equal(vectorMapAvailability(map({ emptyOrParent: tile(1, 1, 0) }), { center }).usable, true);
     assert.equal(vectorMapAvailability(map({ wrapped: tile(1, 0, 1) }), { center: [0, 180] }).usable, true);
@@ -39,7 +40,7 @@ test('progressive output requires vector data at the center, rather than only ov
 });
 
 test('elevation tiles alone never count as usable cartography', () => {
-    const typed = (type, ids, renderable) => ({ ...manager(ids, renderable), getSource: () => ({ type }) });
+    const typed = (type: string, ids: unknown, renderable: unknown[]) => ({ ...manager(ids, renderable), getSource: () => ({ type }) });
     assert.deepEqual(vectorMapAvailability(map({ vector: typed('vector', ['failed'], []), dem: typed('raster-dem', ['dem'], ['dem']) })),
         { requested: true, usable: false }, 'A cartography outage stays an outage while the elevation provider is healthy');
     assert.deepEqual(vectorMapAvailability(map({ vector: typed('vector', [], []), dem: typed('raster-dem', ['failed'], []) })),
@@ -48,10 +49,10 @@ test('elevation tiles alone never count as usable cartography', () => {
 });
 
 test('a settled view publishes partial cartography even when its center tile failed', () => {
-    const tile = (z, x, y, flags = {}) => ({ ...manager(['tile', 'failed-center'], ['tile']), getSource: () => ({ type: 'vector' }),
+    const tile = (z: number, x: number, y: number, flags = {}) => ({ ...manager(['tile', 'failed-center'], ['tile']), getSource: () => ({ type: 'vector' }),
         getTileByID: () => ({ tileID: { canonical: { z, x, y } } }), ...flags });
-    const outer = { base: tile(3, 5, 3) }, center = [5, 5];
-    const state = (tileManagers, tilesLoaded, styleLoaded = true) => ({ ...map(tileManagers), areTilesLoaded: () => tilesLoaded, isStyleLoaded: () => styleLoaded });
+    const outer = { base: tile(3, 5, 3) }, center: Center = [5, 5];
+    const state = (tileManagers: unknown, tilesLoaded: boolean, styleLoaded = true) => ({ ...map(tileManagers), areTilesLoaded: () => tilesLoaded, isStyleLoaded: () => styleLoaded });
     assert.equal(vectorMapReadyToPublish(state(outer, false), center), false, 'Overscan alone cannot hide the native map while the center is loading');
     assert.equal(vectorMapReadyToPublish(state(outer, true, false), center), false);
     assert.equal(vectorMapReadyToPublish(state(outer, true), center), true, 'Once settled, a failed center tile must not withhold its usable neighbors');

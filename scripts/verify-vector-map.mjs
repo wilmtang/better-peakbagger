@@ -13,7 +13,7 @@ import { snowMapDocument } from './verify-snow-map-fixture.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { decodePng } from './browser-verification-png.mts';
-import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.js';
+import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.ts';
 
 const args = process.argv.slice(2);
 assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg))

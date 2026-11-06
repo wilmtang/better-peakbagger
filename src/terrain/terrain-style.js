@@ -6,7 +6,7 @@
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
-import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, vectorProviderUrl } from '../maps/vector-basemap.js';
+import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, vectorProviderUrl } from '../maps/vector-basemap.ts';
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const STYLE_MAX_BYTES = 2 * 1024 * 1024;

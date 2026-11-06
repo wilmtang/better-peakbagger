@@ -7,13 +7,13 @@ import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-l
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../settings/settings-schema.js';
 import { terrainStyle as TerrainStyle } from './terrain-style.js';
-import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, vectorBasemap } from '../maps/vector-basemap.js';
-import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.js';
+import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, vectorBasemap } from '../maps/vector-basemap.ts';
+import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.ts';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { createTerrainOverlays } from './terrain-overlays.js';
-import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
+import { readLayerSnapshot } from '../maps/map-layer-protocol.ts';
 import { rateLimitMessage, readRetryAt } from '../net/rate-limit.js';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
 import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';

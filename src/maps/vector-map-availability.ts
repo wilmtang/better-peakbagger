@@ -4,11 +4,18 @@
 // Compatibility boundary for the packaged MapLibre 6 tile managers. Inspect
 // live viewport membership, not feature counts: a loaded empty tile is usable,
 // as is a cached parent. Offscreen cached tiles must not hide a complete outage.
-export function vectorMapAvailability(map, { center } = {}) {
+interface TileManager {
+    getIds(): unknown[]; getRenderableIds(): unknown[]; getSource?(): { type?: string } | undefined;
+    getTileByID?(id: unknown): { tileID?: { canonical?: { z: number; x: number; y: number } } } | undefined;
+    used?: boolean; _sourceErrored?: boolean; _sourceLoaded?: boolean;
+}
+export interface AvailabilityMap { style?: { tileManagers?: unknown }; areTilesLoaded(): boolean; isStyleLoaded(): boolean | void; }
+
+export function vectorMapAvailability(map: Pick<AvailabilityMap, 'style'> | null | undefined, { center }: { center?: readonly [number, number] } = {}) {
     const managers = map?.style?.tileManagers;
     if (!managers || typeof managers !== 'object' || Array.isArray(managers)) throw new Error('Vector tile availability is unsupported.');
     let requested = false, usable = false;
-    for (const manager of Object.values(managers)) {
+    for (const manager of Object.values(managers) as (TileManager | null | undefined)[]) {
         if (typeof manager?.getIds !== 'function' || typeof manager.getRenderableIds !== 'function') throw new Error('Vector tile availability is unsupported.');
         // Elevation only shades cartography. A healthy DEM provider cannot make a
         // vector outage look usable, and a failed DEM tile is not an outage.
@@ -27,7 +34,7 @@ export function vectorMapAvailability(map, { center } = {}) {
             // cartography at the actual camera center is ready. Empty vector
             // tiles are still valid, including loaded parent fallbacks.
             usable ||= renderable.some(id => {
-                const tile = manager.getTileByID(id)?.tileID?.canonical;
+                const tile = manager.getTileByID!(id)?.tileID?.canonical;
                 if (!tile) return false;
                 const scale = 2 ** tile.z;
                 const x = ((center[1] + 180) / 360 * scale) % scale;
@@ -42,7 +49,7 @@ export function vectorMapAvailability(map, { center } = {}) {
 // Before settling, only cartography at the camera center may replace the native
 // map. Once settled, a failed center tile must not withhold its usable
 // neighbors, and a view with no requested tiles is valid out-of-coverage output.
-export function vectorMapReadyToPublish(map, center) {
+export function vectorMapReadyToPublish(map: AvailabilityMap, center: readonly [number, number]) {
     if (vectorMapAvailability(map, { center }).usable) return true;
     if (!map.areTilesLoaded() || !map.isStyleLoaded()) return false;
     const { requested, usable } = vectorMapAvailability(map);
