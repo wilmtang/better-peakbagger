@@ -1,0 +1,16 @@
+Maptoolkit attribution logo
+Source: https://docs.maptoolkit.org/images/maptoolkit-attribution.png
+Retrieved: 2026-10-31
+Copyright Toursprung GmbH / Maptoolkit.
+
+This unmodified logo is included solely for the required attribution of the
+Maptoolkit Community Service within Better Peakbagger. It is not relicensed
+under the extension's AGPL license.
+
+Community Terms: https://www.maptoolkit.org/tos
+Attribution: https://docs.maptoolkit.org/attribution/
+
+The terms require a visible logo of at least 24 CSS pixels in height and
+clickable Maptoolkit / OpenStreetMap copyright links on each map. The service
+is proprietary and subject to eligibility, fair-use and usage restrictions.
+This asset grants no rights to rebrand or redistribute the service itself.

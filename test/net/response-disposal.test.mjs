@@ -11,7 +11,7 @@ import { searchSentinel } from '../../src/maps/sentinel-core.js';
 import { drawAlbertaLand } from '../../src/maps/canadian-land.js';
 import { createOverlayTiles } from '../../src/maps/map-overlay-tiles.js';
 import { createBCLandRoutes } from '../../src/background/bc-land-routes.js';
-import { terrainStyle } from '../../src/terrain/terrain-style.js';
+import { terrainStyle } from '../../src/terrain/terrain-style.ts';
 import { terrainCache } from '../../src/terrain/terrain-cache.js';
 
 const readers = {

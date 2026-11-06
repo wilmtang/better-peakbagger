@@ -2,6 +2,23 @@
 
 ## Vector basemap in 2D
 
+**Maptoolkit Hiking** is available alongside **OSM Vector (experimental)** in
+the native basemap picker. It uses Maptoolkit's keyless Hiking style, including
+its contour lines, relief, labels and icons. Maptoolkit requests go directly to
+its style, tile, font and icon hosts; the style's elevation shading also uses
+Mapterhorn. Cookies and referrers are omitted. Selecting it does not require
+enabling 3D, and it preserves native routes, markers and interactions.
+It is also offered by the 3D basemap picker. Entering 3D from this 2D choice
+honors the provider; the existing terrain mesh and route stay in place. See
+the [3D map guide](3d-map.md) for mode-specific behavior.
+
+The official Maptoolkit logo and clickable copyright links stay visible while
+that basemap is displayed. The logo is packaged locally; no remote branding
+script is loaded. The Community Service is proprietary and subject to its
+[eligibility, attribution and usage terms](https://www.maptoolkit.org/tos).
+It is used for interactive maps, with normal browser caching and no offline
+tile archives or extension-managed tile storage.
+
 The native basemap picker also offers **OSM Vector (experimental)**, using the
 same OpenFreeMap Liberty style as 3D. Selecting it starts direct, cookie-free
 OpenFreeMap style and tile requests; the provider receives the viewed area and
@@ -9,29 +26,47 @@ request metadata. No 3D setting, terrain tiles, API key or extra host permission
 is needed. Native routes, markers, popups, zoom and overlays keep their Leaflet
 owners above the vector basemap.
 
+Hiking uses one detailed elevation hillshade in 2D, omitting its three soft
+shading passes to reduce downloads and rendering work. In 3D it uses the
+existing terrain hillshade. Contours, water colors, labels and icons are kept.
+
 The current native basemap remains visible while the vector map loads. Once
-ready, its raster layers are removed to stop hidden requests; switching back
-restores them. Failure restores the previous native selection and offers
+usable cartography is painted, its raster layers are removed while remaining
+vector tiles continue loading; switching back restores them. Failure restores
+the previous native selection and offers
 **Retry**. Selecting another basemap cancels a pending load. Selection is local
-to the current map and is cleared on back/forward-cache suspension. The renderer
-is removed on deselection, map unload and navigation. A 3D switch pauses the 2D
+to the current map and is cleared on back/forward-cache suspension. Deselection
+clears provider sources and aborts requests. Up to one initialized renderer per
+provider may remain parked for 60 seconds, retaining only renderer/worker setup
+and the accepted style for faster reselection. A fresh capability is required
+to reactivate it; page messages cannot revive a deselected provider. Unload,
+navigation and back/forward-cache suspension discard it. A 3D switch pauses the 2D
 renderer and carries the vector choice into 3D; returning resumes the 2D layer.
 An entirely failed viewport restores the native map even after a successful
 load. Valid empty tiles and usable partial/cached output remain visible. The
 availability adapter is tied to the packaged MapLibre 6 tile-manager API;
 hardware browser coverage checks that compatibility boundary.
 
-OpenFreeMap rate limits restore the native map and keep **Retry** unavailable
+Provider rate limits restore the native map and keep **Retry** unavailable
 until the provider's deadline. Missing, unreadable or invalid `Retry-After`
 uses five minutes; accepted deadlines are bounded to one day. The isolated
 document retains that cooldown across renderer replacement, re-selection and
 2D/3D suspension, and stops its other vector renderers too. Expiry enables
 Retry without fetching automatically. Separate documents/tabs do not share
-this in-memory cooldown.
+this in-memory cooldown. Each provider has its own cooldown; a limited provider
+does not prevent selecting the other vector basemap.
 
 MapLibre and its module worker remain packaged in an extension-origin frame.
 The MAIN-world Leaflet adapter owns camera/pane placement; the isolated bridge
 requires a trusted picker choice or Retry before authorizing provider work.
+The frame transfers rendered cartography as an in-memory image paired with
+its camera. Leaflet replaces that image and its transform together, keeping
+the previous view geographically aligned during animated zooms and delayed
+renders. Native routes and markers are drawn separately and never enter these
+images. Only one image capture can be in flight; suspension and deselection
+clear the displayed pixel buffer. The rendering frame stays in the viewport,
+and its redraw requests follow the parent page's paint clock so browser
+throttling of a visually hidden frame cannot stall camera updates.
 The worker issues a separate tab-bound, short-lived, one-use vector capability,
 which the frame consumes before fetching its style. Native basemap handlers
 never receive the extension's private layer code.
@@ -428,7 +463,7 @@ loading, partial/empty results, refresh recovery, keyboard details and geometry.
 
 ## Implementation boundaries
 
-`src/maps/map-layers.js` owns the page session and outer control. Embedded
+`src/maps/map-layers.ts` owns the page session and outer control. Embedded
 MasterMap documents defer to a recognized parent, so one map has one menu.
 The native basemap selector retains its existing options and handler. The
 2D vector adapter adds one private option and intercepts only that choice. The

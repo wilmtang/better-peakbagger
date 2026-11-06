@@ -21,11 +21,11 @@ import { fileURLToPath } from 'node:url';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const distDir = path.join(root, 'dist');
-export const srcFile = f => path.join(root, 'src', f);
+export const srcFile = (f: string) => path.join(root, 'src', f);
 
 // Page bundles (options, popup) mix shared src/ modules with page-local files.
 // Page-local names resolve here; every other name falls back to src/.
-const PAGE_LOCAL = {
+const PAGE_LOCAL: Record<string, string> = {
     'options-main.js': path.join(root, 'options', 'options.js'),
     'garmin-settings-page.js': path.join(root, 'options', 'garmin.js'),
     'garmin-inbox-page.js': path.join(root, 'options', 'inbox.js'),
@@ -41,13 +41,13 @@ const PAGE_LOCAL = {
     'photos-main.js': path.join(root, 'photos', 'photos.js'),
     'photos-guide.js': path.join(root, 'photos', 'guide.js'),
 };
-export function resolvePageSource(name) {
+export function resolvePageSource(name: string) {
     return PAGE_LOCAL[name] || srcFile(name);
 }
 
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
-export const ENTRIES = [
+export const ENTRIES: BundleEntry[] = [
     { out: 'reports/instagram-frame.js', sources: ['reports/instagram-frame.js'] },
     { out: 'content/instagram-provider.js', sources: ['reports/instagram-provider.js'] },
     { out: 'content/report-protection.js', sources: ['reports/report-protection.js'] },
@@ -79,22 +79,22 @@ export const ENTRIES = [
     { out: 'content/theme-early.js', sources: ['theme/theme-resolve.js', 'theme/theme-bootstrap.js', 'theme/theme-early.js'] },
     { out: 'content/theme.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/theme-bootstrap.js', 'theme/dynamic-inline-colors.js', 'theme/site-dark-css.js', 'theme/theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'settings/bridge.js'] },
-    { out: 'content/gpx-analyzer.js', sources: ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.js', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.js', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js'] },
-    { out: 'content/terrain-map.js', sources: ['terrain/terrain-camera.js', 'terrain/terrain-failure.js', 'terrain/terrain-lifecycle.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-map.js'] },
+    { out: 'content/gpx-analyzer.js', sources: ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.js', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.js', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js'] },
+    { out: 'content/terrain-map.js', sources: ['terrain/terrain-camera.js', 'terrain/terrain-failure.js', 'terrain/terrain-lifecycle.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-map.ts'] },
     { out: 'content/ascent-filter.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/trusted-action.js', 'ascent/ascent-filter.js'] },
     { out: 'content/climber-favorite.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'favorites/climber-favorite.js', 'favorites/climber-ignore.js'] },
     { out: 'content/profile-backup.js', sources: ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-snapshot.js', 'reports/report-markup.js', 'ascent/ascent-backup-source.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'profile/profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'maps/peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'avalanche/avalanche-location.js', 'avalanche/avalanche-links.js', 'maps/peak-link-order.js', 'maps/peak-links.js'] },
-    { out: 'content/map-layers.js', sources: ['maps/map-layers.js'] },
-    { out: 'content/vector-map.js', sources: ['maps/vector-map.js'] },
-    { out: 'content/vector-map-bridge.js', sources: ['maps/vector-map-bridge.js'] },
-    { out: 'terrain/vector-map-frame.js', sources: ['maps/vector-map-frame.js'], format: 'esm',
+    { out: 'content/map-layers.js', sources: ['maps/map-layers.ts'] },
+    { out: 'content/vector-map.js', sources: ['maps/vector-map.ts'] },
+    { out: 'content/vector-map-bridge.js', sources: ['maps/vector-map-bridge.ts'] },
+    { out: 'terrain/vector-map-frame.js', sources: ['maps/vector-map-frame.ts'], format: 'esm',
         browserImports: { 'maplibre-gl': '../vendor/maplibre-gl.mjs' } },
     { out: 'content/peak-report-filter.js', sources: ['favorites/peak-report-filter.js'] },
-    { out: 'content/peak-map.js', sources: ['ui/page-lifecycle.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'maps/peak-map.js'] },
+    { out: 'content/peak-map.js', sources: ['ui/page-lifecycle.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'maps/peak-map.js'] },
     { out: 'content/big-map-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'maps/big-map-bridge.js'] },
-    { out: 'content/big-map.js', sources: ['ui/page-lifecycle.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'maps/big-map.js'] },
+    { out: 'content/big-map.js', sources: ['ui/page-lifecycle.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'maps/big-map.js'] },
     { out: 'gaia/access-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'] },
     { out: 'bc-land/access-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'] },
     { out: 'bc-land/access.js', sources: ['maps/bc-land-access.js'] },
@@ -108,7 +108,7 @@ export const ENTRIES = [
 
     {
         out: 'terrain/terrain-frame.js',
-        sources: ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.js', 'terrain/terrain-frame.js'],
+        sources: ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.ts', 'terrain/terrain-frame.js'],
         format: 'esm',
         browserImports: { 'maplibre-gl': '../vendor/maplibre-gl.mjs' }
     },
@@ -131,7 +131,11 @@ export const ENTRIES = [
 ];
 
 // Absolute source paths for one entry's bundle, in order.
-export function entrySources(entry) {
+export interface BundleEntry {
+    out: string; sources: string[]; page?: boolean; format?: string; browserImports?: Record<string, string>; [field: string]: unknown;
+}
+
+export function entrySources(entry: Pick<BundleEntry, 'page' | 'sources'>) {
     const resolve = entry.page ? resolvePageSource : srcFile;
     return entry.sources.map(resolve);
 }
@@ -205,6 +209,7 @@ export const COPY_FILES = [
     ['terrain/terrain.html', 'terrain/terrain.html'],
     ['terrain/vector.html', 'terrain/vector.html'],
     ['src/maps/vector-map.css', 'css/vector-map.css'],
+    ['src/maps/maptoolkit-attribution.png', 'images/maptoolkit-attribution.png'],
     ['options/options.html', 'options/options.html'],
     ['options/drafts.html', 'options/drafts.html'],
     ['options/favorites.html', 'options/favorites.html'],
@@ -230,6 +235,8 @@ export const GENERATED_FILES = [
 // Reviewed overrides are reserved for shipped material that has no npm package
 // root for the metafile inventory to discover.
 export const NON_PACKAGE_NOTICES = [
+    { key: 'maptoolkit-attribution-logo', name: 'Maptoolkit attribution logo', version: '2026-10-31',
+        license: 'LicenseRef-Maptoolkit-Community-Attribution', noticeFile: 'third_party/maptoolkit-attribution-NOTICE.txt' },
     { key: 'fit-file-parser-raw', name: 'fit-file-parser raw reader (locally modified)', version: '6.2.3',
         license: 'MIT', noticeFile: 'third_party/fit-file-parser-LICENSE.txt' },
     {
@@ -248,7 +255,7 @@ export const NON_PACKAGE_NOTICES = [
     },
 ];
 
-export const nodeModule = f => path.join(root, 'node_modules', f);
+export const nodeModule = (f: string) => path.join(root, 'node_modules', f);
 
 // Vendor browser builds sourced from npm into dist/vendor. marked and Chart.js
 // ship browser-ready UMD/global builds. MapLibre 6's main module, module worker,

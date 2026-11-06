@@ -7,7 +7,7 @@ import { createWeatherClient } from '../../src/weather/open-meteo-client.js';
 import { WEATHER_MODELS } from '../../src/weather/weather-models.js';
 import { createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.js';
 import { createSnotelClient } from '../../src/snow/snotel-client.js';
-import { terrainStyle } from '../../src/terrain/terrain-style.js';
+import { terrainStyle } from '../../src/terrain/terrain-style.ts';
 import { terrainCache } from '../../src/terrain/terrain-cache.js';
 
 const create = (name, fetchFn, now) => {

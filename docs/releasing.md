@@ -240,7 +240,7 @@ visible in the AMO Developer Hub.
    `package` creates a minified, sourcemap-free `dist/` and the canonical Chrome
    ZIP; the Firefox command derives its ZIP from those exact bytes and changes
    only the options-page presentation. The archive verifier derives required
-   runtime files from `scripts/build-config.mjs` and rejects missing bundles,
+   runtime files from `scripts/build-config.mts` and rejects missing bundles,
    assets, or packaged licenses. The package verifier then launches both
    minified archives, including the browser-specific options presentation and
    store credit, before publication. If a new root-level development file is copied

@@ -22,7 +22,7 @@ import {
     publishBuildTree as publishBuildTreeJS,
     RELOAD_SIGNAL,
 } from '../../scripts/build.mjs';
-import { AUTHORED_SOURCE_ROOTS, root as projectRoot } from '../../scripts/build-config.mjs';
+import { AUTHORED_SOURCE_ROOTS, root as projectRoot } from '../../scripts/build-config.mts';
 import { webExtArguments } from '../../scripts/run-development.mjs';
 import {
     createFirefoxSource,

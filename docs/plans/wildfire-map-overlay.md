@@ -129,15 +129,15 @@ should permanently exclude Canada or the rest of the world.
 
 | Existing owner | What to extend |
 | --- | --- |
-| [map-layers.js](../../src/maps/map-layers.js), especially `apply`, `onToggle`, `onRetry` and renderer lifecycle | One page-owned selection; start/cancel the active renderer's wildfire session, forward bounded status and retain menu state. Do not couple fire requests to weather/SNOTEL settings. |
+| [map-layers.ts](../../src/maps/map-layers.ts), especially `apply`, `onToggle`, `onRetry` and renderer lifecycle | One page-owned selection; start/cancel the active renderer's wildfire session, forward bounded status and retain menu state. Do not couple fire requests to weather/SNOTEL settings. |
 | [map-layer-control.ts](../../src/maps/map-layer-control.ts) | Reuse row, disclosure, status, accessible busy feedback and anchored Retry. Currently every non-SNOTEL layer receives raster opacity controls; wildfire needs an explicit fixed-style/count presentation. |
 | [settings-schema.js](../../src/settings/settings-schema.js), especially `MAP_OVERLAY_IDS` and its readers | Add the allowlisted wildfire state once. First release uses fixed styling, so normalize its opacity field to 100 and omit an opacity slider; do not introduce a second schema. |
 | [map-overlay-providers.js](../../src/maps/map-overlay-providers.js) | Add reviewed wildfire availability and a separate zoom policy. Existing `OVERLAY_MIN_ZOOM = 8` belongs to rasters and must not silently govern incidents. |
 | [map-overlay-leaflet.js](../../src/maps/map-overlay-leaflet.js) | Add extension-owned polygon/point groups independently of raster tiles. Existing native raster panes are at 250/260/270. Preserve host routes, markers and layers. |
 | [terrain-overlays.js](../../src/terrain/terrain-overlays.js) | Add bounded GeoJSON source(s), fill/outline/point layers and popup lifecycle. Existing terrain sources/protocol are raster-only. Keep terrain style and camera intact. |
-| [map-layer-protocol.js](../../src/maps/map-layer-protocol.js), [map-layer bridge](../../src/maps/map-layer-bridge.js), [terrain runtime](../../src/terrain/terrain-frame-runtime.js) | Revalidate the new ID and typed counts, freshness and component outcomes, with the existing source/origin/generation/revision checks. No arbitrary service URL, filter expression, remote style or provider HTML crosses the bridge. |
+| [map-layer-protocol.ts](../../src/maps/map-layer-protocol.ts), [map-layer bridge](../../src/maps/map-layer-bridge.js), [terrain runtime](../../src/terrain/terrain-frame-runtime.ts) | Revalidate the new ID and typed counts, freshness and component outcomes, with the existing source/origin/generation/revision checks. No arbitrary service URL, filter expression, remote style or provider HTML crosses the bridge. |
 | [Full Screen handoff](../../src/background/map-layer-handoff.js) | Carry only validated selection and bounded provider cooldowns under the existing one-use, 30-second contract. Refetch in the destination; never hand off feature collections, bounds or route data. |
-| [build configuration](../../scripts/build-config.mjs), [manifest](../../manifest.json), [privacy contract](../../PRIVACY.md) | Bundle shared imports into native and terrain entries; declare any genuinely necessary new packaged assets. Document viewed-area disclosure before shipping. Keep MAIN-world code free of extension APIs. |
+| [build configuration](../../scripts/build-config.mts), [manifest](../../manifest.json), [privacy contract](../../PRIVACY.md) | Bundle shared imports into native and terrain entries; declare any genuinely necessary new packaged assets. Document viewed-area disclosure before shipping. Keep MAIN-world code free of extension APIs. |
 
 ## Data-source decision
 

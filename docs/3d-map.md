@@ -8,7 +8,7 @@ not runtime specifications.
 
 The shared [Layers menu](map-layers.md) at the upper-left owns independent
 Sentinel, slope, public-land and SNOTEL overlays across native and 3D maps.
-`src/maps/map-layers.js` owns the outer session; `sentinel-session.js` owns each
+`src/maps/map-layers.ts` owns the outer session; `sentinel-session.js` owns each
 active renderer's capture catalog and status. The frame's basemap picker stays
 at the upper-right, matching the native map's separate basemap selector.
 Both engines use `src/maps/sentinel-core.js` for bounded capture validation.
@@ -144,10 +144,10 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
 | `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
-| `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
+| `src/terrain/terrain-map.ts` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
 | `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
-| `src/terrain/terrain-frame-runtime.js` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
-| `src/terrain/terrain-basemap.js` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
+| `src/terrain/terrain-frame-runtime.ts` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
+| `src/terrain/terrain-basemap.ts` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
 | `src/terrain/terrain-cache.js` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
@@ -402,7 +402,7 @@ during boot and applies it once the renderer's base style is ready.
 
 ### Drape sources
 
-`src/terrain/terrain-basemap.js` exposes only Leaflet sources MapLibre can sample as a
+`src/terrain/terrain-basemap.ts` exposes only Leaflet sources MapLibre can sample as a
 single raster `{z}/{x}/{y}` template. It omits WMS, dynamic image exports,
 unsupported projections, Google/Bing integrations, non-zero zoom offsets, and
 other shapes that do not map safely to a raster source.
@@ -411,12 +411,25 @@ The upper-right 3D basemap selector contains:
 
 - terrain relief with no imagery;
 - the extension-provided experimental OpenFreeMap vector style;
+- Maptoolkit Hiking, with its contours, labels, relief and named icon sheets;
 - compatible known choices from Peakbagger's current layer menu;
 - the active live Leaflet layer when it can be converted safely.
 
-The same OSM Vector style is available in the native 2D basemap picker. Entering
-3D with that choice carries it into the terrain view. The 2D renderer pauses
+Both vector styles are available in the native 2D basemap picker. Entering
+3D with either choice carries that provider into the terrain view unless the
+user has already made an explicit in-3D choice. Each mode retains its own choice
+when returning. The 2D renderer pauses
 while 3D owns the map; see [2D vector basemap](map-layers.md#vector-basemap-in-2d).
+
+Maptoolkit's style is grafted into the existing terrain graph; it does not
+replace the elevation mesh, route or overlays.
+The provider's hillshade passes are omitted in 3D because the existing terrain
+mesh already supplies hillshade; unused provider DEM sources are not loaded.
+Its official logo and copyright links remain visible, including narrow layouts
+and enlarged text. The shared
+overlay menu reserves their area. Both vector providers omit cookies/referrers
+and retain provider-specific rate-limit deadlines for the frame lifetime.
+Cooldown expiry re-enables the picker option without replaying a request.
 
 Sentinel, slope, public lands and SNOTEL remain separate overlay rows.
 
@@ -497,8 +510,9 @@ view and returns to native 2D.
 ## Consent, privacy, and network requests
 
 The first-use dialog is extension-owned and identifies the providers that may
-receive tile coordinates: Mapterhorn for elevation, OpenFreeMap when its vector
-style is selected, and the provider behind a selected compatible 2D layer.
+receive tile coordinates: Mapterhorn for elevation, OpenFreeMap or Maptoolkit
+when their vector style is selected, and the provider behind a selected
+compatible 2D layer.
 Choosing “Not now” leaves the feature disabled. Page script cannot synthesize
 the trusted acceptance click. The user may alternatively enable the same gate
 in Better Peakbagger Settings, where the provider and viewed-area disclosure is
@@ -511,6 +525,7 @@ shown beside the checkbox.
 | Mapterhorn DEM tilt warming | 3D open, non-zero cache budget, camera at rest | Same cache loader, from the frame | Optional bounded DEM cache |
 | Selected raster drape | That drape is active in an open 3D frame | Browser/MapLibre public tile behavior | Provider/browser policy only |
 | OpenFreeMap vector | User selects vector in an open frame | Public style/tile requests | Provider/browser policy only |
+| Maptoolkit Hiking | User selects Hiking in an open frame | Public style/tile/glyph/sprite requests, no cookies/referrers | Browser caching only |
 | Peakbagger PLLBB feed | 3D open and camera settles above marker zoom cutoff | Page's same-origin session | Never persisted |
 
 There is no analytics or extension-developer map service. Route coordinates
@@ -951,7 +966,7 @@ When changing 3D behavior:
 5. If a new network request is introduced, update consent copy, privacy docs,
    sender/origin checks, rate/cap behavior, and this request table.
 6. If bundle composition or execution worlds change, update
-   `scripts/build-config.mjs`, its pinned tests, and run a real unpacked
+   `scripts/build-config.mts`, its pinned tests, and run a real unpacked
    extension check.
 7. Add a focused state/protocol regression test beside the affected owner.
 8. Run the hardware-GPU terrain harness for frame, drape, canvas, compass, or

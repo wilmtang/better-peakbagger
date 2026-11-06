@@ -48,9 +48,9 @@ test('GPU gates cover browser upgrades and source or fixture changes before the 
         assert.equal(terrainVerificationRequired(before, after), true);
         assert.equal(terrainVerificationRequired(after, before), true);
     }
-    for (const file of ['src/settings/bridge.js', 'src/terrain/terrain-frame-runtime.js',
+    for (const file of ['src/settings/bridge.js', 'src/terrain/terrain-frame-runtime.ts',
         'scripts/showcase/terrain.html', 'scripts/verify-firefox-terrain.mjs',
-        'scripts/build-config.mjs', 'manifest.json', '.github/workflows/test.yml']) {
+        'scripts/build-config.mts', 'manifest.json', '.github/workflows/test.yml']) {
         assert.equal(terrainVerificationRequired(lock(), lock(), [file]), true, file);
     }
     assert.equal(terrainVerificationRequired(lock(), lock(), ['docs/development.md']), false);
@@ -96,7 +96,7 @@ test('Firefox GPU gestures target exposed canvas pixels and settle between drags
 
 test('Chrome solar bearing verification targets exposed settled canvas pixels', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        new URL('../../scripts/verify-terrain-visual.mts', import.meta.url),
         'utf8',
     );
     const bearingStart = verifier.indexOf('const exerciseSolarBearing =');
@@ -115,7 +115,7 @@ test('Chrome solar bearing verification targets exposed settled canvas pixels', 
 
 test('Chrome terrain verification waits out cancelled requests and moving peak rings', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        new URL('../../scripts/verify-terrain-visual.mts', import.meta.url),
         'utf8',
     );
     const requestHandlerStart = verifier.indexOf('cdp.on(\'Fetch.requestPaused\'');
@@ -135,7 +135,7 @@ test('Chrome terrain verification waits out cancelled requests and moving peak r
 
 test('Chrome tilted-peak verification targets the live canvas and proves the pitch', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        new URL('../../scripts/verify-terrain-visual.mts', import.meta.url),
         'utf8',
     );
     const tiltedPeakStart = verifier.indexOf('const peakFeedBeforeTilt =');

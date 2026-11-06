@@ -5,6 +5,7 @@
   blocker, terrain warming timing, Linux backup widths, hosted CI and manual
   release checks. Includes the latest full acceptance run.
 
+
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
   — TypeScript tooling, policy scans and bounded map adoption implemented;
   baseline repair is done, and the remaining milestones run from small helper

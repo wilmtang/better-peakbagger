@@ -271,7 +271,7 @@ unpacked extension, and reload it yourself after a rebuild:
 Standalone `npm run watch` still writes the completed-build signal, but a
 manually loaded browser does not subscribe to it; use the browser's extension
 reload control, then refresh the target page. Restart any watcher after changing
-`scripts/build-config.mjs`, the build scripts, or installed dependencies—the
+`scripts/build-config.mts`, the build scripts, or installed dependencies—the
 running Node process has already loaded those inputs.
 
 Do **not** load the repo root — `manifest.json` there names bundle files that
@@ -466,7 +466,7 @@ uses them.
 | `browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
 | `packages CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
 | `terrain` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
-| `vector-map` | Hidden hardware Chrome and Firefox, real Leaflet and packaged MapLibre, synthetic OpenFreeMap replies. Exercises 2D loading/success/failure, keyboard retry and cancellation, native marker interaction, raster restoration and anchored page/picker geometry at 1280/375 × 800 and 200% CSS zoom. Geographic pixel assertions compare vector points with native markers at world zoom 0/1 and polar edges; `node scripts/verify-vector-map.mjs --camera-only` isolates them. Chrome loads the real extension; Firefox stubs only extension runtime/capability transport. `BPB_VECTOR_SCREENSHOTS` retains target-page screenshots. No live provider/style survey or native window-focus proof. |
+| `vector-map` | Hidden hardware Chrome and Firefox, real Leaflet and packaged MapLibre, synthetic OpenFreeMap replies. Exercises 2D loading/success/failure, keyboard retry and cancellation, native marker interaction, raster restoration and anchored page/picker geometry at 1280/375 × 800 and 200% CSS zoom. Geographic pixel assertions compare vector points with native markers at world zoom 0/1 and polar edges; `node scripts/verify-vector-map.mts --camera-only` isolates them. Chrome loads the real extension; Firefox stubs only extension runtime/capability transport. `BPB_VECTOR_SCREENSHOTS` retains target-page screenshots. No live provider/style survey or native window-focus proof. |
 | `terrain firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Includes inherited/explicit Sentinel capture resume, loaded source identity and desktop/narrow light/dark warning geometry. Uses instrumented fixture authorization/storage, distinct from the real-manifest check. Same HTTPS showcase host. |
 | `terrain cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
 | `terrain lod` | Measures painted elevation provenance across a cold-cache tilt sweep and 20 fixed-angle Rainier zoom cases, with local delayed DEM tiles and elevation/drape traffic counts. Same HTTPS showcase host and GPU rules as `verify -- terrain`. |
@@ -477,7 +477,42 @@ For a focused provider-feedback check, run
 real hidden GPU rendering with eight credit layouts and eight held-tile → HTTP
 403 → keyboard retry → rendered-map paths: 800/320px maps, both themes and
 normal/enlarged text. It checks focus, feedback visibility, control overlap,
-and action/map/following-content geometry within one CSS pixel. The vector
+and action/map/following-content geometry within one CSS pixel.
+
+Add `--maptoolkit` to `node scripts/verify-vector-map.mts` to run the vector
+matrix against Maptoolkit Hiking, including its packaged logo, clickable
+copyrights and overlay-menu clearance. `--maptoolkit --live` renders live
+provider tiles before and after one zoom-in/out sequence; ordinary
+matrix runs use synthetic responses.
+`--layout-only` checks the faithful fixed-width native picker surround in both
+themes at 1280/375 × 800 and 100/200% CSS zoom. `--performance-only` holds a
+secondary tile while checking progressive display, then reselects the provider
+and verifies renderer identity and a single style request. These modes accept
+`--firefox` but cannot be combined with `--terrain` or another mode selection.
+`--zoom-only` checks 36 repeated button/wheel zooms across desktop/narrow,
+light/dark and 100/200% CSS zoom, holding renderer view messages through native
+animation and checking the delayed handoff. Composited PNG pixel checks run
+outside the page to avoid blocking animation; an independent per-frame trace
+checks geographic alignment. A final case reverses a distant camera change
+before releasing its captured image and checks that it cannot replace better
+current coverage. Chrome exposes only the renderer constructor and test-only
+message/capture delays in a disposable extension copy; Firefox uses its usual
+extension-transport stubs. Every run snapshots built assets before launch.
+
+Add `--terrain` to exercise the actual BigMap 2D → 3D → 2D path. Its eight
+renderer cases cover desktop/narrow layouts, both themes, enlarged text,
+non-flat elevation, rendered vector features, named sprites, attribution and
+menu clearance, pending cancellation, failure/retry and style/tile cooldowns.
+Chrome additionally checks real first-use consent at 1280/375 × 800. Chrome
+loads a disposable copy of the real extension with only its Map constructor
+instrumented for inspection; settings and worker authorization remain real.
+Firefox uses explicit extension API/storage shims. Optional hover/focus warming
+is suppressed to keep synthetic elevation requests in the visible frame;
+warming has separate coverage. `--terrain --maptoolkit --live` renders one
+live 3D viewport. No native window/focus or long-term provider reliability is
+established by these checks.
+
+The vector
 `--recovery-only` selection isolates post-load tile outages, keyboard recovery,
 valid empty tiles and partial/cached availability. `--cooldown-only` covers
 style/tile 429 replies, a retained 120-second limit, pointer/keyboard/programmatic
@@ -555,7 +590,7 @@ token unchanged.
 
 ## How the build works
 
-`scripts/build-config.mjs` is the **single source of truth** for how the
+`scripts/build-config.mts` is the **single source of truth** for how the
 extension is assembled—which source roots belong to each bundle and which
 assets/vendor distributions are copied. `scripts/build.mjs` turns that config
 into esbuild calls. The manifest names only generated bundle paths; tests
@@ -602,13 +637,13 @@ build config.
    - Modules that only run for side effects and need an early `return` (e.g. "no
      matching DOM, do nothing") may keep a small `(() => { … })()` IIFE for
      control flow. That is fine as long as they publish no globals.
-2. Add the module to the relevant bundle(s) in `scripts/build-config.mjs`
+2. Add the module to the relevant bundle(s) in `scripts/build-config.mts`
    `ENTRIES` as an explicit root. A module can appear in several bundles;
    esbuild follows and deduplicates imports within each bundle.
 3. If it's a brand-new entry point (a new content script, page, or worker), add
    an `ENTRIES` record **and** wire it into `manifest.json` (or the page HTML).
 4. Add focused coverage and run `npm test`.
-   `test/project/manifest-capture.test.mjs` cross-checks that every manifest bundle
+   `test/project/manifest-capture.test.mts` cross-checks that every manifest bundle
    reference is a declared build output and pins security-sensitive bundle
    composition.
 
@@ -716,7 +751,7 @@ To add or update a runtime dependency:
    global.
 3. Update `ACKNOWLEDGEMENTS.md` and Firefox review metadata when distributed
    third-party code or its version changes. Authored source roots in the AMO
-   instructions are derived from `scripts/build-config.mjs`; do not maintain a
+   instructions are derived from `scripts/build-config.mts`; do not maintain a
    second directory list when adding a page-local bundle root.
 4. Run `npm test`, the relevant real-browser check, and `npm run package` when
    packaging paths or vendor outputs changed.
@@ -803,7 +838,7 @@ attributed:
 | Group | Reaches `dist/` via | Ships? |
 | --- | --- | --- |
 | `bundled-runtime` | bundled by esbuild | yes |
-| `copied-runtime` | copied by `scripts/build-config.mjs` | yes |
+| `copied-runtime` | copied by `scripts/build-config.mts` | yes |
 | `tooling` | nothing; build and test only | no |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
@@ -1169,7 +1204,7 @@ npm run verify -- packages web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext
 ```
 
 The archive verifier derives required runtime files from
-`scripts/build-config.mjs`; it rejects stale raw-source layouts and missing
+`scripts/build-config.mts`; it rejects stale raw-source layouts and missing
 bundles/vendor licenses. See [Browser store releases](releasing.md) for version,
 tag, credential, and live-verification requirements.
 

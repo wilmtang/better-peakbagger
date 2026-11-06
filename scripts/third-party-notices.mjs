@@ -8,7 +8,7 @@ import {
     distDir,
     nodeModule,
     root,
-} from './build-config.mjs';
+} from './build-config.mts';
 import { REVIEWED_PACKAGE_LICENSES } from './dependency-metadata.mjs';
 
 const NOTICE_FILE = /^(?:licen[cs]e|copying|notice)(?:[._-].*)?$/i;

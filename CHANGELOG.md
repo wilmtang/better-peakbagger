@@ -6,6 +6,19 @@
   open card, keyboard focus still moves to the next person, without opening their
   card uninvited.
 
+- **Stable 2D vector zooms.** Maptoolkit and OSM Vector keep cartography aligned
+  with native peaks and routes through animated zooms and delayed rendering.
+  Late images after a camera reversal cannot replace better current coverage.
+
+- **Maptoolkit Hiking in 2D and 3D.** Both basemap pickers offer a keyless hiking
+  map with contours, labels and relief alongside OSM Vector. Native routes and
+  markers remain interactive, provider limits retain their own cooldowns, and
+  the required logo and copyright links remain visible. The 3D view retains
+  its terrain, route and overlays while displaying the Hiking cartography.
+  Vector maps show usable tiles sooner and reuse initialized renderers on
+  reselection. The native picker stays inside its surround, and outgoing 3D
+  requests cannot discard a newly selected layer.
+
 - **Keep 2D vector maps aligned.** World zooms and polar views preserve the
   native map's camera so basemap features stay under the correct routes and peaks.
   Returning from 3D preserves a resumed vector map when an older load fails.

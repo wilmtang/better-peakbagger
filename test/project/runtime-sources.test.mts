@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { AUTHORED_SOURCE_ROOTS } from '../../scripts/build-config.mjs';
+import { AUTHORED_SOURCE_ROOTS } from '../../scripts/build-config.mts';
 import { isRuntimeSource, runtimeSourceFiles, runtimeSources, sourceVariants } from '../helpers/runtime-sources.mts';
 
 test('runtime discovery includes authored code and excludes declarations, generated and upstream files', () => {

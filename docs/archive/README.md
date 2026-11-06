@@ -11,6 +11,10 @@ living docs in [`docs/`](../).
 Items these records left open now live in the
 [follow-up ledger](../plans/follow-ups.md).
 
+- [Maptoolkit branch audit — 2026-11-06](maptoolkit-branch-audit-2026-11-06.md) — outage recovery, 3D layer resume, renderer failure and full TypeScript conversion of the branch's files.
+- [2D vector zoom audit — 2026-11-01](vector-zoom-audit-2026-11-01.md) — camera and image handoff, parent-clock rendering.
+- [Maptoolkit performance and picker audit — 2026-10-31](maptoolkit-performance-audit-2026-10-31.md) — picker containment, progressive loading, reduced shading, renderer reuse and 3D request ownership.
+- [Maptoolkit basemap integration — 2026-10-31](maptoolkit-basemap-2026-10-31.md) — Hiking in native 2D and 3D, provider boundaries and attribution.
 - [2D vector map audit remediation — 2026-10-31](vector-map-audit-2026-10-31.md) — geographic alignment, post-load failure recovery, stale authorization rejection and provider cooldowns.
 - [Connected-service disconnect audit — 2026-10-31](service-disconnect-audit-2026-10-31.md) — Garmin, ImgBB and GitHub cleanup, protected deletion counts and cross-window reconciliation.
 - [Private custom-layer relay — 2026-10-26](custom-layer-private-relay-2026-10-26.md) — private query parameters, constrained worker requests and bounded user grants.

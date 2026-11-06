@@ -41,10 +41,10 @@ separate follow-up, rather than a hidden limitation that only appears in 2D.
 | [Native raster overlays](../../src/maps/map-overlay-leaflet.js) use Leaflet canvas grid layers; [terrain overlays](../../src/terrain/terrain-overlays.js) use MapLibre raster sources and a packaged protocol. | Reuse their lifecycle and layer-order owners, with separate custom adapters. A URL field alone is insufficient. |
 | [Wildfire 2D](../../src/maps/wildfire-leaflet.js) and [wildfire 3D](../../src/terrain/terrain-wildfires.js) already render GeoJSON geometry in both engines. | GeoJSON can use the existing libraries. Keep provider-specific wildfire validation and semantics out of the generic source feature. |
 | Leaflet itself does not decode MVT. MapLibre does, and the installed dependency tree includes `@mapbox/vector-tile` and `pbf` transitively. | MVT needs a packaged native-map decoder/render adapter. Declare any directly imported packages explicitly; do not depend on incidental transitive installation. |
-| [Terrain style validation](../../src/terrain/terrain-style.js) deliberately trusts only OpenFreeMap resources. | Preserve that policy. Custom vector overlays need their own restricted schema; do not widen the trusted basemap style loader to arbitrary hosts/styles. |
+| [Terrain style validation](../../src/terrain/terrain-style.ts) deliberately trusts only OpenFreeMap resources. | Preserve that policy. Custom vector overlays need their own restricted schema; do not widen the trusted basemap style loader to arbitrary hosts/styles. |
 | [Camera conversion](../../src/terrain/terrain-camera.js) offsets Leaflet and MapLibre zoom by one. Raster and vector sources also have different logical tile-size conventions. | Derive canonical tile coordinates and style zoom consistently. Copying `map.getZoom()` into both adapters would request different detail levels at the same view. |
 | [Tile loading](../../src/maps/map-overlay-tiles.js) already omits credentials/referrers, limits bodies, cancels obsolete work and distinguishes rate limits. | Extract a small reusable transport boundary where necessary; preserve built-in provider behavior and avoid an unrelated loader rewrite. |
-| [Layer bridge](../../src/maps/map-layer-bridge.js), [typed protocol](../../src/maps/map-layer-protocol.js) and [Full Screen handoff](../../src/background/map-layer-handoff.js) reject unrecognized data. | Extend these contracts explicitly. Configuration, session selection and remote feature data are different payloads. |
+| [Layer bridge](../../src/maps/map-layer-bridge.js), [typed protocol](../../src/maps/map-layer-protocol.ts) and [Full Screen handoff](../../src/background/map-layer-handoff.js) reject unrecognized data. | Extend these contracts explicitly. Configuration, session selection and remote feature data are different payloads. |
 | [Map-type inventory](../peakbagger-map-types.md) includes recent/different-route groups and many non-route contexts. The current overlay bootstrap recognizes selected outer pages, while the manifest and browser fixtures cover specific path spellings. | Make coverage a map-instance contract. Audit injection and parent/frame ownership together; the current small page matrix does not establish every map context or URL variant. |
 | [Privacy policy](../../PRIVACY.md) promises no developer-operated data server. [Settings portability](../settings-storage-and-sync.md) uses explicit export/sync inventories. | Direct requests preserve the server boundary. Store source definitions locally in a separate registry and exclude them from existing generic settings exports/backups. |
 
@@ -721,7 +721,7 @@ map coverage checklist are part of this design's requested scope.
    inventories, dependency acknowledgements and packaging where actually changed.
    Archive this proposal with its completed/intentional/unproven ledger intact.
 
-The [build configuration](../../scripts/build-config.mjs) owns all new bundles,
+The [build configuration](../../scripts/build-config.mts) owns all new bundles,
 decoder workers and copied assets; the [manifest](../../manifest.json) owns
 execution worlds and any narrowly necessary packaged web-accessible resources.
 Do not add wildcard remote host access. Keep the MAIN bundle free of extension

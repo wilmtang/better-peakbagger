@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { searchSentinel, sentinelCaptures, sentinelTileUrl, sentinelView } from '../../src/maps/sentinel-core.js';
-import { ENTRIES, COPY_FILES } from '../../scripts/build-config.mjs';
+import { ENTRIES, COPY_FILES } from '../../scripts/build-config.mts';
 
 const view = { west: -122, east: -121, south: 46, north: 47 };
 const bounds = { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 };
@@ -25,7 +25,7 @@ test('the shipped Sentinel adapter runs in the native map MAIN world and carries
     assert.ok(entry.matches.every(pattern => pattern.startsWith('https:')));
     assert.ok(entry.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
     assert.deepEqual(entry.css, ['css/map-layers.css', 'css/vector-map.css']);
-    assert.deepEqual(ENTRIES.find(bundle => bundle.out === 'content/map-layers.js').sources, ['maps/map-layers.js']);
+    assert.deepEqual(ENTRIES.find(bundle => bundle.out === 'content/map-layers.js').sources, ['maps/map-layers.ts']);
     assert.ok(COPY_FILES.some(([source, destination]) => source === 'src/maps/map-layers.css' && destination === 'css/map-layers.css'));
     assert.equal(manifest.host_permissions.some(pattern => pattern.includes('planetarycomputer')), false, 'direct CORS needs no new persistent provider access');
 });

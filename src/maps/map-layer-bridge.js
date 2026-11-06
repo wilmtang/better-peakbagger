@@ -9,7 +9,7 @@ import { nearbySnotelStations } from '../snow/snotel-data.js';
 import { mountPeakSnow } from '../snow/peak-snow.js';
 import { overlayBounds, viewportStations } from './map-overlay-providers.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
-import { readLayerSnapshot } from './map-layer-protocol.js';
+import { readLayerSnapshot } from './map-layer-protocol.ts';
 import { readBCTileCoordinates } from './bc-land-client.js';
 
 export const OVERLAY_PREFERENCES_KEY = 'bpbMapOverlayOpacityV1';

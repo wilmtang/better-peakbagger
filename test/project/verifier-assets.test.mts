@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile, readdir } from 'node:fs/promises';
-import { ENTRIES, COPY_FILES, VENDOR_COPY, GENERATED_FILES } from '../../scripts/build-config.mjs';
+import { ENTRIES, COPY_FILES, VENDOR_COPY, GENERATED_FILES } from '../../scripts/build-config.mts';
 
 const inventoryEntries = (source: string) =>
     [...source.matchAll(/\[([^\]]+\.m[jt]s)\]\(([^)]+)\)/g)];

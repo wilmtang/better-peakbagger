@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.js';
-import { AUTHORED_SOURCE_ROOTS } from './build-config.mjs';
+import { AUTHORED_SOURCE_ROOTS } from './build-config.mts';
 import { dependencyVersionsFromLock } from './dependency-metadata.mjs';
 
 export const AMO_APPROVAL_NOTES_MAX_LENGTH = 3_000;

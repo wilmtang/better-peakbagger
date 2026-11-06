@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mjs';
+import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
 import { evalBundle, fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 
 for (const [id, name, origin] of [

@@ -5,7 +5,7 @@ import { wildfireBoxes, wildfireWorldCopy, readWildfireFeature, wildfireRecords,
 import { wildfireQuery, fetchWildfireComponent } from '../../src/maps/wildfire-client.js';
 import { createTerrainWildfires } from '../../src/terrain/terrain-wildfires.js';
 import { createWildfireSession } from '../../src/maps/wildfire-session.js';
-import { readLayerSnapshot, readLayerStatus } from '../../src/maps/map-layer-protocol.js';
+import { readLayerSnapshot, readLayerStatus } from '../../src/maps/map-layer-protocol.ts';
 import { wildfireFeature, wildfireFixture } from '../helpers/wildfire-fixture.mjs';
 const bounds = [-122, 46, -121, 47];
 const budget = () => ({ bytes: 0, vertices: 0 });

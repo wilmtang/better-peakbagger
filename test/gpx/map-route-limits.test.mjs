@@ -60,7 +60,7 @@ test('a route inside both bounds is passed through untouched', () => {
 test('both sides of the bridge read the bounds instead of restating them', async () => {
     const [producer, verifier] = await Promise.all([
         readFile(new URL('../../src/gpx/gpx-metrics.js', import.meta.url), 'utf8'),
-        readFile(new URL('../../src/terrain/terrain-frame-runtime.js', import.meta.url), 'utf8'),
+        readFile(new URL('../../src/terrain/terrain-frame-runtime.ts', import.meta.url), 'utf8'),
     ]);
     for (const [name, source] of [['gpx-metrics.js', producer], ['terrain-frame-runtime.js', verifier]]) {
         assert.match(source, /from '[^']*map-route-limits\.js'/,

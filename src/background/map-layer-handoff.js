@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
+import { readLayerSnapshot } from '../maps/map-layer-protocol.ts';
 
 const KEY = 'bpbMapLayerHandoffsV1';
 const contextKey = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))))

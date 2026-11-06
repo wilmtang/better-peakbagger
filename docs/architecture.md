@@ -34,7 +34,7 @@ flowchart TB
         isolated["Isolated-world bundles<br/>extension APIs, settings, DOM,<br/>draft fill, filters, backup UI"]
         main["MAIN-world coordinators<br/>GPX Analyzer, Peak map, BigMap<br/>offline Sun/Moon + page map state"]
         master["Peakbagger MasterMap iframe<br/>native Leaflet map and peak feed"]
-        terrainBridge["terrain-map.js<br/>isolated consent + frame bridge"]
+        terrainBridge["terrain-map.ts<br/>isolated consent + frame bridge"]
         terrainFrame["Extension-owned terrain frame<br/>packaged MapLibre + cache"]
     end
 
@@ -132,7 +132,7 @@ Three files divide assembly responsibility:
 
 - `manifest.json` owns permissions, URL matches, execution worlds, separately
   loaded vendor order, and browser entry points.
-- `scripts/build-config.mjs` owns bundle composition, entry-point roots, copied
+- `scripts/build-config.mts` owns bundle composition, entry-point roots, copied
   files, and packaged vendor assets.
 - `scripts/build.mjs` performs the build. Generated files under `dist/` are
   never edited directly.
@@ -162,17 +162,17 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
-| 2D vector basemap | `src/maps/vector-map.js`, `src/maps/vector-map-bridge.js`, `src/maps/vector-map-frame.js`, `src/maps/vector-map-request.js`, `src/maps/vector-map-availability.js`, `src/maps/vector-basemap.js` | Native Leaflet pane/camera ownership with packaged MapLibre in an extension-origin frame; trusted selection, isolated bridge and separate one-use worker authorization before direct OpenFreeMap requests; native overlays remain above the basemap. A provider-scoped MapLibre protocol retains rate-limit headers; the isolated document owns the bounded cooldown. A narrow MapLibre 6 tile-manager adapter checks settled viewport availability. |
+| 2D vector basemap | `src/maps/vector-map.ts`, `src/maps/vector-map-bridge.ts`, `src/maps/vector-map-frame.ts`, `src/maps/vector-map-request.ts`, `src/maps/vector-map-availability.ts`, `src/maps/vector-basemap.ts` | Native Leaflet pane/camera ownership with packaged MapLibre in an extension-origin frame; trusted selection, isolated bridge and separate one-use worker authorization before direct OpenFreeMap or Maptoolkit requests. Camera-coupled cartography bitmaps are committed atomically to a page canvas below native overlays, with one capture in flight and parent-clock redraws. Suspension clears page pixels. A provider-scoped MapLibre protocol retains rate-limit headers; the isolated document owns the bounded cooldown. A narrow MapLibre 6 tile-manager adapter checks settled viewport availability. |
 | Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.js`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
 | Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices saved in portable settings, bounded combined requests and tab-memory results |
 | Nearby snow | `src/snow/peak-snow.js`, `src/snow/snotel-client.js`, `src/snow/snotel-data.js`, `src/snow/snotel-map-source.js`, `src/maps/map-layer-bridge.js` | Independent isolated western-US/Alaska peak card, local station matching within 50 km, bounded credential-free NRCS requests with fixed station time offsets, seven-day public catalog cache and page-memory observations. Opt-in 2D/3D station overlay receives at most 50 public station records through a read-only bridge, revalidated in each renderer; the independent `showSnotel` gate controls all SNOTEL surfaces and requests, retaining legacy weather opt-outs |
-| Map Layers menu | `src/maps/map-layers.js`, `src/maps/map-layer-control.ts`, `src/maps/map-overlay-leaflet.js`, `src/terrain/terrain-overlays.js`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Portable opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
+| Map Layers menu | `src/maps/map-layers.ts`, `src/maps/map-layer-control.ts`, `src/maps/map-overlay-leaflet.js`, `src/terrain/terrain-overlays.js`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Portable opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
 | Custom map overlays | `src/maps/custom-overlay-schema.js`, `src/maps/custom-overlay-control.js`, `src/maps/custom-overlay-bridge.js`, `src/maps/custom-overlay-editor.js`, `src/maps/custom-overlay-client.js`, `src/maps/custom-overlay-render.js`, `src/background/custom-overlay-store.js` | Separate local registry with serialized revision checks; only the packaged editor changes definitions. Public validated configuration crosses the isolated bridge; direct anonymous CORS requests stay with the active renderer. Packaged, disposable workers decode bounded GeoJSON/MVT; private sources instead use the constrained worker relay described below. Early Leaflet discovery attaches one owner per map, including unnamed/late instances. Typed IDs/revisions and opacity extend the existing terrain/Full Screen contract without widening trusted basemap styles or settings writes. |
 | Wildfire data and rendering | `src/maps/wildfire-core.js`, `src/maps/wildfire-client.js`, `src/maps/wildfire-session.js`, `src/maps/wildfire-leaflet.js`, `src/terrain/terrain-wildfires.js` | Fixed WF-only NIFC queries, validated public identities/geometry and independent component freshness; bounded page-memory viewport transactions owned by the visible renderer. Typed metadata alone crosses the frame bridge, with retry-only actions and no privileged API exposure. Native vectors retain priority. |
 | Map location menu | `src/maps/map-location-menu.ts`, `src/maps/map-elevation.js`, `src/maps/peak-weather-map.js` | Shared MAIN-world coordinates and approximate terrain elevation on native and 3D maps; explicit right-click, bounded credential-free Mapterhorn reads and tab-memory tiles. Independent of weather/3D opt-outs; forecast requests stay with the isolated peak weather card. |
 | Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.js` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
-| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
+| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.js` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
@@ -410,7 +410,7 @@ writes are already included. These ordering fields are protocol metadata, not
 settings schema, storage, or export fields.
 
 The BigMap and Peak-page bridges are read-only and send only the fields their
-coordinators need. `src/terrain/terrain-map.js` separately validates messages between a
+coordinators need. `src/terrain/terrain-map.ts` separately validates messages between a
 page coordinator and the extension-owned frame. Tags, direction fields, source
 and origin checks, bounded payload validators, and all-or-nothing parsing keep
 unrelated or malformed page messages from becoming renderer input.
@@ -1085,7 +1085,7 @@ the native map context, requests the same feed in the page session, and relays a
 validated all-or-nothing reply. New camera positions abort stale requests.
 
 MapLibre's terrain-aware layer events do not reliably hit billboarded rings on
-a pitched camera, so `src/terrain/terrain-frame-runtime.js` renders terrain-positioned
+a pitched camera, so `src/terrain/terrain-frame-runtime.ts` renders terrain-positioned
 Marker buttons; a bounded screen-space hit test remains only for the reduced-API
 circle fallback. Peak anchors may be snapped to a nearby rendered DEM maximum
 within a leash. The exact feed mapping, subject-peak preservation, interaction,
@@ -1330,7 +1330,7 @@ MAIN world. They can read the rendered DOM and extension storage without exposin
 privileged APIs through a page global or `postMessage` bridge. The manifest
 loads the ascent-filter bundle on `PeakAscents.aspx`, `ClimbListC.aspx`, and the
 Buddy report endpoint; the smaller climber-favorite bundle loads only on public
-`climber.aspx` pages. `scripts/build-config.mjs` composes both bundles with the
+`climber.aspx` pages. `scripts/build-config.mts` composes both bundles with the
 single settings schema and favorite-climbers contract.
 
 ### Persisted state and schemas
@@ -1733,7 +1733,7 @@ The focused automated evidence is deliberately split by boundary:
 - `test/github/github-client.test.mjs` and `test/github/github-backup-integration.test.mjs`
   cover fixed-root-file Git mechanics, conflicts, feature gates, extension-only
   messaging, missing restore files, and token confinement.
-- `test/settings/settings-schema.test.mts`, `test/project/manifest-capture.test.mjs`, and the
+- `test/settings/settings-schema.test.mts`, `test/project/manifest-capture.test.mts`, and the
   fixture-privacy guard pin the default/allowlist, isolated-world routes and
   bundle composition, and synthetic third-party fixture data.
 

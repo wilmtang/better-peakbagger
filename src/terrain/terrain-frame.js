@@ -5,7 +5,7 @@
 
 import * as maplibre from 'maplibre-gl';
 import { settings } from '../settings/settings.js';
-import { startTerrainFrame } from './terrain-frame-runtime.js';
+import { startTerrainFrame } from './terrain-frame-runtime.ts';
 
 // A web-accessible extension frame can be embedded directly by a Peakbagger
 // page. Read the authoritative feature gate in the frame itself before even

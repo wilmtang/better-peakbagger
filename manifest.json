@@ -503,7 +503,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "terrain/terrain.html", "terrain/vector.html", "reports/instagram.html",
+        "terrain/terrain.html", "terrain/vector.html", "images/maptoolkit-attribution.png", "reports/instagram.html",
         "photos/guide.html", "custom-overlay/editor.html"
       ],
       "matches": [

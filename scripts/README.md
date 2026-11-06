@@ -25,7 +25,7 @@ independent of the existing targets.
 
 ## Build and local development
 
-- [build-config.mjs](build-config.mjs)
+- [build-config.mts](build-config.mts)
 - [build.mjs](build.mjs)
 - [generate-map-overlay-regions.mjs](generate-map-overlay-regions.mjs)
 - [install-git-hooks.mjs](install-git-hooks.mjs)
@@ -63,6 +63,7 @@ independent of the existing targets.
 
 - [browser-verification-evidence.mjs](browser-verification-evidence.mjs)
 - [browser-verification-fixtures.mjs](browser-verification-fixtures.mjs)
+- [browser-verification-png.mts](browser-verification-png.mts)
 - [chrome-launch-guard.mjs](chrome-launch-guard.mjs)
 - [firefox-content-viewport.mjs](firefox-content-viewport.mjs)
 - [firefox-verifier-processes.mjs](firefox-verifier-processes.mjs)
@@ -105,7 +106,7 @@ independent of the existing targets.
 - [verify-onx.mjs](verify-onx.mjs)
 - [verify-map-layer-control.mjs](verify-map-layer-control.mjs)
 - [verify-map-layers.mjs](verify-map-layers.mjs)
-- [verify-vector-map.mjs](verify-vector-map.mjs)
+- [verify-vector-map.mts](verify-vector-map.mts)
 - [verify-map-location-cases.mjs](verify-map-location-cases.mjs)
 - [verify-peak-link-order.mjs](verify-peak-link-order.mjs)
 - [verify-peak-map-layout.mjs](verify-peak-map-layout.mjs)
@@ -113,7 +114,7 @@ independent of the existing targets.
 - [verify-terrain-lod.mjs](verify-terrain-lod.mjs)
 - [verify-terrain-popup.mjs](verify-terrain-popup.mjs)
 - [verify-terrain-provider-ui.mjs](verify-terrain-provider-ui.mjs)
-- [verify-terrain-visual.mjs](verify-terrain-visual.mjs)
+- [verify-terrain-visual.mts](verify-terrain-visual.mts)
 
 ## Climbers and profiles
 

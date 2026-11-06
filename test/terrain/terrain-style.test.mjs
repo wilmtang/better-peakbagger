@@ -7,7 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { terrainStyle as TerrainStyle } from '../../src/terrain/terrain-style.js';
+import { terrainStyle as TerrainStyle } from '../../src/terrain/terrain-style.ts';
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const style = (overrides = {}) => ({ version: 8, sources: {}, layers: [], ...overrides });
