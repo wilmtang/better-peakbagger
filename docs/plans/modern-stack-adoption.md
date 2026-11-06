@@ -74,7 +74,7 @@ another. This document update queues the work; it does not implement it.
    decoding/validation coverage. Convert substantively changed modules/tests to
    `.mts`; do not bypass privacy checks for JSON or the fixture directory.
 2. Register the missing ascent-filter verifier in [the script inventory](../../scripts/README.md).
-   Make [its inventory test](../../test/project/verifier-assets.test.mjs)
+   Make [its inventory test](../../test/project/verifier-assets.test.mts)
    recognize both `.mjs` and `.mts` modules so later tooling conversions cannot
    silently disappear. Convert that test to `.mts` when changing its logic.
 3. Record a fresh full-suite baseline and run the checking/tooling tests on
