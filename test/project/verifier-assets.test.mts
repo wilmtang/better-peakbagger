@@ -34,3 +34,8 @@ test('the script inventory registers every current module exactly once', async (
     const current = scriptModules(await readdir(new URL('../../scripts/', import.meta.url)));
     assert.deepEqual(names.sort(), current.sort(), 'add or remove the matching inventory entry when scripts change');
 });
+
+test('the terrain verifier retries removing a profile Chrome may still be writing', async () => {
+    const source = await readFile(new URL('../../scripts/verify-terrain-visual.mts', import.meta.url), 'utf8');
+    assert.match(source, /'terrain Chrome profile', \(\) => rm\(profile, \{[^}]*maxRetries: [1-9]/);
+});

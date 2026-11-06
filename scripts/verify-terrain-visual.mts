@@ -786,7 +786,9 @@ await resources.guard(listenServer(server, 0, '127.0.0.1'));
 const serverPort = server.address().port;
 const profile = await resources.guard(
     mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-terrain-profile-')));
-resources.defer('terrain Chrome profile', () => rm(profile, { recursive: true, force: true }));
+// Chrome's helper processes can outlive the browser and write one last file while
+// the directory is being removed, which fails an otherwise passing run with ENOTEMPTY.
+resources.defer('terrain Chrome profile', () => rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
 assertChromeLaunchAllowed();
 const chrome = spawn(chromePath, [
     '--headless=new',
