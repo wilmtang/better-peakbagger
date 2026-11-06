@@ -35,9 +35,9 @@ test('shared package gate builds once and exercises capture against the producti
     const gate = await load('actions/verify-package/action.yml');
     const steps = gate.runs.steps;
     assert.match(steps[0].run, /npm run release:verify-packages/);
-    assert.equal(steps.filter((step: WorkflowStep) => step.run.includes('npm run')).length, 1);
+    assert.equal(steps.filter((step: WorkflowStep) => step.run!.includes('npm run')).length, 1);
     for (const script of ['capture-popup', 'capture-readiness', 'capture-flow', 'multi-summit']) {
-        assert.ok(steps.slice(1).some((step: WorkflowStep) => step.run.includes(`node scripts/verify-${script}.mjs`)), script);
+        assert.ok(steps.slice(1).some((step: WorkflowStep) => step.run!.includes(`node scripts/verify-${script}.mjs`)), script);
     }
     for (const step of steps) {
         assert.equal(step.shell, 'bash', 'tee must not conceal a failed verifier');
@@ -113,7 +113,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.equal(surfaceJob.strategy['fail-fast'], false);
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('peak-surfaces'));
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$SURFACE_RESULT" = success/);
-    const surfaces = surfaceJob.steps.find((step: WorkflowStep) => step.name === 'Verify independent peak surface');
+    const surfaces = surfaceJob.steps.find((candidate: WorkflowStep) => candidate.name === 'Verify independent peak surface');
     assert.ok(surfaces, 'the required layout path must execute the newer surface matrices');
     assert.equal(surfaces.if, undefined);
     assert.equal(surfaces['continue-on-error'], undefined);
@@ -137,7 +137,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
 
 test('the CI surface step selects the requested engine and preserves each verifier failure', async () => {
     const ordinary = await load('workflows/test.yml');
-    const step = ordinary.jobs['peak-surfaces'].steps.find((step: WorkflowStep) => step.name === 'Verify independent peak surface');
+    const step = ordinary.jobs['peak-surfaces'].steps.find((candidate: WorkflowStep) => candidate.name === 'Verify independent peak surface');
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-surface-ci-'));
     const executable = path.join(directory, 'node'), commands = path.join(directory, 'commands');
     try {
@@ -175,7 +175,7 @@ test('shared setup exports the installed paths and versions and keeps exact tool
         assert.match(contract.run, new RegExp(`${browser}_BIN=`));
     }
     assert.ok(steps.some((step: WorkflowStep) => step.run?.includes('verification-browser-identity.mjs --playwright-chromium')));
-    assert.ok(steps.filter((step: WorkflowStep) => step.uses).every((step: WorkflowStep) => /@[a-f0-9]{40}$/.test(step.uses)));
+    assert.ok(steps.filter((step: WorkflowStep) => step.uses).every((step: WorkflowStep) => /@[a-f0-9]{40}$/.test(step.uses!)));
 });
 
 test('fast fixture preflight is independently required and installs only its selected engine', async () => {
