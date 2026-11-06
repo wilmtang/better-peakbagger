@@ -122,6 +122,11 @@ try {
         { id: 'probes', type: 'circle', source: 'fixture', 'source-layer': 'probes', paint: { 'circle-radius': 12, 'circle-color': '#1e64d2' } },
     ] };
     if (zoomMode) style.layers.find(layer => layer.id === 'probes').paint['circle-radius'] = 20;
+    if (basemap === MAPTOOLKIT_BASEMAP) {
+        // The real Hiking style shades from Mapterhorn. A healthy DEM must not hide a cartography outage.
+        style.sources.dem = { type: 'raster-dem', tiles: ['https://tiles.mapterhorn.com/{z}/{x}/{y}.webp'], tileSize: 512, encoding: 'terrarium' };
+        style.layers.splice(1, 0, { id: 'relief', type: 'hillshade', source: 'dem' });
+    }
     if (basemap === MAPTOOLKIT_BASEMAP) style.sprite = [{ id: 'sdf', url: 'https://icons.maptoolkit.org/sprite' }, { id: 'nature', url: 'https://icons.maptoolkit.org/nature' }];
     await context.route(url => basemap.origins.some(origin => url.origin === origin) || terrainMode && url.origin === 'https://tiles.mapterhorn.com', async route => {
         const url = route.request().url(); requests.push(url);
@@ -140,7 +145,11 @@ try {
         if (url.startsWith('https://icons.maptoolkit.org/')) return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: url.endsWith('.png') ? 'image/png' : 'application/json', body: url.endsWith('.png') ? png : '{}' });
         const metadata = url.endsWith('/vector.json');
         if (mode === 'partial' && url.endsWith('.pbf')) partialUrl ??= url;
-        const tileFailed = url.endsWith('.pbf') && (mode === 'tile-error' || mode === 'partial' && url === partialUrl);
+        const atCenter = url.endsWith('.pbf') && (() => {
+            const [, z, x, y] = /\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(url).map(Number), scale = 2 ** z;
+            return x === Math.floor((-121.760395 + 180) / 360 * scale) && y === Math.floor((1 - Math.asinh(Math.tan(46.851731 * Math.PI / 180)) / Math.PI) / 2 * scale);
+        })();
+        const tileFailed = url.endsWith('.pbf') && (mode === 'tile-error' || mode === 'partial' && url === partialUrl || mode === 'center-error' && atCenter);
         const limited = mode === 'style-limit' && isStyle || mode === 'tile-limit' && url.endsWith('.pbf');
         if (tileFailed) tileFailures++;
         try {
@@ -517,6 +526,11 @@ try {
         assert.equal(await page.locator('.bpb-vector-slot').evaluate(element => element.style.opacity), '1', 'Cached empty tiles remain usable beside failures'); cases++;
         partialUrl = null; mode = 'partial'; await open(); await activate();
         assert.ok(partialUrl); assert.equal(await page.locator('.bpb-vector-status').evaluate(element => element.hidden), true, 'Partial tile loss preserves usable output'); cases++;
+        const centerFailures = tileFailures; mode = 'center-error'; await open();
+        const centerStart = Date.now(); await activate();
+        assert.ok(tileFailures > centerFailures, 'The fixture failed the center tile');
+        assert.ok(Date.now() - centerStart < 10000, `A failed center tile waited for the deadline: ${Date.now() - centerStart} ms`);
+        assert.equal(await page.locator('.bpb-vector-status').evaluate(element => element.hidden), true, 'A failed center tile keeps its usable neighbors'); cases++;
         mode = 'metadata-error'; await open(); await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
         await page.locator('.bpb-vector-status button[data-bpb-vector-map]').waitFor({ state: 'visible', timeout: 6000 });
         assert.equal(await page.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles)), true, 'Failed TileJSON is unavailable, not a valid empty viewport'); cases++;

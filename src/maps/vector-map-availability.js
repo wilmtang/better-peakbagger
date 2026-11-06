@@ -10,6 +10,9 @@ export function vectorMapAvailability(map, { center } = {}) {
     let requested = false, usable = false;
     for (const manager of Object.values(managers)) {
         if (typeof manager?.getIds !== 'function' || typeof manager.getRenderableIds !== 'function') throw new Error('Vector tile availability is unsupported.');
+        // Elevation only shades cartography. A healthy DEM provider cannot make a
+        // vector outage look usable, and a failed DEM tile is not an outage.
+        if (manager.getSource?.()?.type === 'raster-dem') continue;
         const ids = manager.getIds(), renderable = manager.getRenderableIds();
         if (!Array.isArray(ids) || !Array.isArray(renderable)) throw new Error('Unexpected vector tile availability.');
         // Failed TileJSON has no tile IDs at all. Only an active source whose
@@ -34,4 +37,14 @@ export function vectorMapAvailability(map, { center } = {}) {
         }
     }
     return { requested, usable };
+}
+
+// Before settling, only cartography at the camera center may replace the native
+// map. Once settled, a failed center tile must not withhold its usable
+// neighbors, and a view with no requested tiles is valid out-of-coverage output.
+export function vectorMapReadyToPublish(map, center) {
+    if (vectorMapAvailability(map, { center }).usable) return true;
+    if (!map.areTilesLoaded() || !map.isStyleLoaded()) return false;
+    const { requested, usable } = vectorMapAvailability(map);
+    return usable || !requested;
 }

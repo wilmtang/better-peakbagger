@@ -5,7 +5,7 @@ import * as maplibre from 'maplibre-gl';
 import { terrainStyle } from '../terrain/terrain-style.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.js';
-import { vectorMapAvailability } from './vector-map-availability.js';
+import { vectorMapAvailability, vectorMapReadyToPublish } from './vector-map-availability.js';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.js';
 import { readRetryAt } from '../net/rate-limit.js';
 
@@ -76,8 +76,7 @@ const settled = (progressive = false) => {
     if (disposed || !active || !map || !progressive && !map.areTilesLoaded()) return;
     try {
         const availability = vectorMapAvailability(map);
-        if (progressive && !vectorMapAvailability(map, { center: view.center }).usable
-            && !(map.areTilesLoaded() && map.isStyleLoaded() && !availability.requested)) return;
+        if (progressive && !vectorMapReadyToPublish(map, view.center)) return;
         if (availability.requested && !availability.usable) {
             console.warn('Better Peakbagger vector map: No usable viewport tiles.'); fail(); return;
         }
