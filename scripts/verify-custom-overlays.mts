@@ -407,7 +407,7 @@ async function verifyFirefox({ temporaryRoot, origin, providerOrigin, setPng, de
     const profile = path.join(temporaryRoot, 'profile'); await mkdir(profile);
     const options = new firefox.Options();
     options.enableBidi(); options.setAcceptInsecureCerts(true);
-    // Without -no-remote, Firefox hands off to a running user instance and exits before the first page.
+    // Observed: without -no-remote, this run exited before its first page while a personal Firefox was open.
     options.addArguments('-headless', '-no-remote').setProfile(profile)
         .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com,tiles.example.com').setPreference('network.proxy.type', 0)
         .setPreference('webgl.sanitize-unmasked-renderer', false).setPreference('webgl.disable-angle', false);
