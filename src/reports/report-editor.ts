@@ -22,7 +22,7 @@
 // matching Add/Edit success in this tab. Validation and navigation failures
 // therefore keep the local recovery copy.
 
-import { installReportLocalPhotos } from './report-local-photos.js';
+import { installReportLocalPhotos } from './report-local-photos.ts';
 import { createInstagramPresentation } from './instagram-ui.js';
 import { createStableText } from '../ui/stable-text.js';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
@@ -37,9 +37,14 @@ import { createMarkdownEditor } from './report-md-editor.js';
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
+import type { Editor } from '@tiptap/core';
 
 // Kept as an IIFE for early-exit control flow (no editor form → nothing to do);
 // dependencies are ES imports and no globals are published.
+interface PhotoReturnMessage { type: string; returnToken?: string; localPhotoId?: string; url?: string; alt?: string; caption?: string; displayWidth?: number; imageEditId?: string; [field: string]: unknown }
+interface ImageEditTarget { src: string; alt?: string; caption?: string; getPos?: () => number | undefined; editor?: Editor | null }
+interface DraftRecord { text: string; mode: string | null; savedAt: number; source?: string; pendingSave?: { attemptId?: string; [field: string]: unknown } | null; label?: object; [field: string]: unknown }
+
 (() => {
     'use strict';
 
@@ -47,7 +52,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     if (!ext || !ext.storage) return;
 
     const isProfile = /\/climber\/climberedit\.aspx$/i.test(location.pathname);
-    const textarea = document.getElementById(isProfile ? 'ClimberText' : 'JournalText');
+    const textarea = document.getElementById(isProfile ? 'ClimberText' : 'JournalText') as HTMLTextAreaElement | null;
     const form = textarea && textarea.form;
     if (!textarea || !form) return;
     const editorLabel = isProfile ? 'Climber biography' : 'Trip report';
@@ -64,9 +69,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/'
         : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn';
     const REPORT_CREDIT = `[small][i]Created with [a href="${STORE_URL}" target="_blank"]Better Peakbagger[/a].[/i][/small]`;
-    let localPhotos = null;
+    let localPhotos: ReturnType<typeof installReportLocalPhotos> | null = null;
     let trustedActionSequence = 0;
-    const nextTrustedActionGeneration = action =>
+    const nextTrustedActionGeneration = (action: string) =>
         `report-${action}-${Date.now().toString(36)}-${++trustedActionSequence}`;
 
     // Drafts exist to recover user-authored content, not an empty editor or the
@@ -75,9 +80,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // cannot make either case look substantive. The ignored document is
     // derived from REPORT_CREDIT itself; draft policy does not duplicate or
     // pattern-match the credit's wording, markup, or store URL.
-    const canonicalDraftText = value => Markup.astToBracket(Markup.parseBracket(value));
+    const canonicalDraftText = (value: string) => Markup.astToBracket(Markup.parseBracket(value));
     const creditOnlyDraftTexts = new Set();
-    const rememberCreditOnlyDraftText = value => {
+    const rememberCreditOnlyDraftText = (value: string) => {
         try {
             const canonical = canonicalDraftText(value);
             if (canonical) creditOnlyDraftTexts.add(canonical);
@@ -85,7 +90,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
     rememberCreditOnlyDraftText(REPORT_CREDIT);
     rememberCreditOnlyDraftText(Markup.markdownToBracket(Markup.bracketToMarkdown(REPORT_CREDIT)));
-    const hasRecoverableDraftContent = value => {
+    const hasRecoverableDraftContent = (value: string) => {
         if (!String(value ?? '').trim()) return false;
         try {
             const canonical = canonicalDraftText(value);
@@ -118,16 +123,16 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         : null;
 
     const state = {
-        mode: null,
-        mdSource: null,      // authoritative markdown text while in markdown mode
+        mode: null as string | null,
+        mdSource: null as string | null,      // authoritative markdown text while in markdown mode
         mdDirty: false,      // do not normalize an untouched server report
         richDirty: false,    // preserve untouched unsupported server markup verbatim
         creditScaffold: false, // temporary blank writing space before a newly seeded credit
-        syncTimer: null,
-        autosaveTimer: null,
-        pendingSave: null,
+        syncTimer: null as ReturnType<typeof setTimeout> | null,
+        autosaveTimer: null as ReturnType<typeof setTimeout> | null,
+        pendingSave: null as { attemptId: string; [field: string]: unknown } | null,
         saveIntentScheduled: false,
-        conversionDiagnostics: [],
+        conversionDiagnostics: [] as object[],
         conversionAccepted: true,
         conversionTarget: 'rich',
         terminalSubmission: false,
@@ -135,16 +140,16 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
     let nextSaveAttempt = 0;
 
-    let richEditor = null;
-    let instagramPresentation = null;   // created in initialize(), only when enabled
-    let mdEditor = null;
+    let richEditor: Editor | null = null;
+    let instagramPresentation: ReturnType<typeof createInstagramPresentation> | null = null;   // created in initialize(), only when enabled
+    let mdEditor = null as unknown as ReturnType<typeof createMarkdownEditor>;
 
     // ---- DOM ----------------------------------------------------------------
 
-    const el = (tag, className, text) => Dom.element(tag, { class: className, text });
+    const el = <T extends HTMLElement = HTMLElement>(tag: string, className?: string | null, text?: string) => Dom.element(tag, { class: className, text } as never) as unknown as T;
 
-    const button = (className, label, title, content) => {
-        const node = el('button', className);
+    const button = (className: string, label: string, title?: string | null, content?: Node | string | (Node | string)[]) => {
+        const node = el<HTMLButtonElement>('button', className);
         node.type = 'button';
         node.title = title || label;
         node.setAttribute('aria-label', title || label);
@@ -174,7 +179,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     bar.setAttribute('aria-label', `${editorLabel} formatting`);
 
     const tools = el('div', 'bpb-re-tools');
-    const blockFormat = el('select', 'bpb-re-format');
+    const blockFormat = el<HTMLSelectElement>('select', 'bpb-re-format');
     blockFormat.setAttribute('aria-label', 'Block style');
     blockFormat.title = 'Block style';
     for (const [value, label] of [
@@ -183,22 +188,22 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         ['h4', 'Heading 4'], ['h5', 'Heading 5'], ['h6', 'Heading 6'],
         ['blockquote', 'Quote'], ['pre', 'Preformatted']
     ]) {
-        const option = el('option', null, label);
+        const option = el<HTMLOptionElement>('option', null, label);
         option.value = value;
         blockFormat.append(option);
     }
 
     const SVG_NS = 'http://www.w3.org/2000/svg';
-    const svgElement = (tag, attributes = {}, children = []) => {
+    const svgElement = (tag: string, attributes: Record<string, string> = {}, children: Element[] = []) => {
         const node = document.createElementNS(SVG_NS, tag);
         for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
         node.append(...(Array.isArray(children) ? children : [children]));
         return node;
     };
-    const svg = (...children) => svgElement('svg', {
+    const svg = (...children: Element[]) => svgElement('svg', {
         viewBox: '0 0 16 16', width: '14', height: '14', 'aria-hidden': 'true'
     }, children);
-    const formattedLabel = (tag, text) => el(tag, null, text);
+    const formattedLabel = (tag: string, text: string) => el(tag, null, text);
     const toolButtons = {
         bold: button('bpb-re-tool', 'B', 'Bold (Ctrl/Cmd+B)', formattedLabel('b', 'B')),
         italic: button('bpb-re-tool', 'I', 'Italic (Ctrl/Cmd+I)', formattedLabel('i', 'I')),
@@ -250,19 +255,19 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 ]),
                 svgElement('g', {
                     stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round'
-                }, svgElement('path', { d: 'M6.5 4h6.5M6.5 8h6.5M6.5 12h6.5' }))
+                }, svgElement('path', { d: 'M6.5 4h6.5M6.5 8h6.5M6.5 12h6.5' }) as never)
             )),
         orderedList: button('bpb-re-tool', 'Numbered list', 'Numbered list',
             svg(
                 svgElement('g', {
                     fill: 'currentColor', 'font-size': '5.5', 'font-family': 'Tahoma, sans-serif'
                 }, [
-                    svgElement('text', { x: '1', y: '6' }, '1'),
-                    svgElement('text', { x: '1', y: '14' }, '2')
+                    svgElement('text', { x: '1', y: '6' }, '1' as never),
+                    svgElement('text', { x: '1', y: '14' }, '2' as never)
                 ]),
                 svgElement('g', {
                     stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round'
-                }, svgElement('path', { d: 'M6.5 4h6.5M6.5 12h6.5' }))
+                }, svgElement('path', { d: 'M6.5 4h6.5M6.5 12h6.5' }) as never)
             )),
         horizontalRule: button('bpb-re-tool', 'Rule', 'Horizontal rule',
             svg(svgElement('path', {
@@ -310,8 +315,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     plainHint.hidden = true;
 
     const markdownHint = el('div', 'bpb-re-mode-hint bpb-re-markdown-hint');
-    const syntaxExample = value => el('code', 'bpb-re-markdown-example', value);
-    const labelledExample = (label, value) => {
+    const syntaxExample = (value: string) => el('code', 'bpb-re-markdown-example', value);
+    const labelledExample = (label: string, value: string) => {
         const group = el('span', 'bpb-re-markdown-example-group', `${label}: `);
         group.append(syntaxExample(value));
         return group;
@@ -351,13 +356,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const removeCaption = button('bpb-re-tablebtn', 'Remove caption');
     captionBar.append(editCaption, removeCaption);
     for (const [control, command] of [[editCaption, 'editCaption'], [removeCaption, 'removeCaption']]) {
-        control.addEventListener('mousedown', event => event.preventDefault());
-        control.addEventListener('click', () => richCommands[command](richEditor));
+        (control as HTMLButtonElement).addEventListener('mousedown', (event: Event) => event.preventDefault());
+        (control as HTMLButtonElement).addEventListener('click', () => (richCommands as unknown as Record<string, (editor: unknown) => void>)[command as string](richEditor));
     }
 
     const linkBox = el('div', 'bpb-re-box bpb-re-linkbox');
     linkBox.hidden = true;
-    const linkInput = el('input');
+    const linkInput = el<HTMLInputElement>('input');
     linkInput.type = 'text';
     linkInput.placeholder = 'https://example.com/…';
     linkInput.setAttribute('aria-label', 'Link URL');
@@ -373,11 +378,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const imageBox = el('div', 'bpb-re-box bpb-re-imagebox');
     imageBox.hidden = true;
-    const imageSrcInput = el('input');
+    const imageSrcInput = el<HTMLInputElement>('input');
     imageSrcInput.type = 'text';
     imageSrcInput.placeholder = 'https://example.com/photo.jpg';
     imageSrcInput.setAttribute('aria-label', 'Image URL (HTTPS)');
-    const imageCaptionInput = el('input');
+    const imageCaptionInput = el<HTMLInputElement>('input');
     imageCaptionInput.type = 'text';
     imageCaptionInput.maxLength = PHOTO_TEXT_LIMIT;
     imageCaptionInput.placeholder = 'Caption (optional)';
@@ -396,8 +401,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const imageLaunchStatus = el('div', 'bpb-re-image-status');
     imageLaunchStatus.setAttribute('role', 'status');
     imageLaunchStatus.setAttribute('aria-live', 'polite');
-    const externalLink = (label, href) => {
-        const link = el('a', null, label);
+    const externalLink = (label: string, href: string) => {
+        const link = el<HTMLAnchorElement>('a', null, label);
         link.href = href;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
@@ -499,7 +504,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const videoBox = el('div', 'bpb-re-box bpb-re-videobox');
     videoBox.hidden = true;
-    const videoSrcInput = el('input');
+    const videoSrcInput = el<HTMLInputElement>('input');
     videoSrcInput.type = 'text';
     videoSrcInput.placeholder = 'https://example.com/clip.mp4 or https://youtu.be/...';
     videoSrcInput.setAttribute('aria-label', 'Video file or YouTube URL');
@@ -563,7 +568,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const saveRecoveryCopy = button('bpb-re-save-copy', 'Copy Markdown');
     const saveRecoveryFeedback = el('span', 'bpb-re-save-feedback');
     saveRecoveryFeedback.setAttribute('role', 'status');
-    const saveRecoveryManual = el('textarea', 'bpb-re-save-manual');
+    const saveRecoveryManual = el<HTMLTextAreaElement>('textarea', 'bpb-re-save-manual');
     saveRecoveryManual.readOnly = true;
     saveRecoveryManual.rows = 3;
     saveRecoveryManual.setAttribute('aria-label', 'Unsaved trip report Markdown');
@@ -572,9 +577,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     let draftPersistenceStatus = '';
     let draftManagerBusy = false;
     let draftManagerStatus = '';
-    let draftManagerStatusTimer = null;
+    let draftManagerStatusTimer: ReturnType<typeof setTimeout> | null = null;
     const renderStatus = () => { status.textContent = draftManagerStatus || draftPersistenceStatus; };
-    const setDraftPersistenceStatus = (message, { recovery = false, cleanup = false } = {}) => {
+    const setDraftPersistenceStatus = (message: string, { recovery = false, cleanup = false } = {}) => {
         draftPersistenceStatus = message;
         saveRecovery.hidden = !recovery;
         saveRecoveryText.textContent = cleanup
@@ -587,7 +592,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         }
         renderStatus();
     };
-    const setDraftManagerStatus = message => {
+    const setDraftManagerStatus = (message: string) => {
         if (draftManagerStatusTimer != null) globalThis.clearTimeout(draftManagerStatusTimer);
         draftManagerStatus = message;
         draftManagerStatusTimer = null;
@@ -599,14 +604,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             renderStatus();
         }, DRAFT_MANAGER_FEEDBACK_MS);
     };
-    const openDraftsManager = async event => {
+    const openDraftsManager = async (event: Event) => {
         if (draftManagerBusy) return;
         const generation = nextTrustedActionGeneration('drafts');
         const activation = await TrustedAction.issue(ext, event, 'draft-manager', generation);
         if (!activation) return;
         draftManagerBusy = true;
         setDraftManagerStatus('');
-        const controls = ui.querySelectorAll('.bpb-re-manage, .bpb-re-draft-manage');
+        const controls = ui.querySelectorAll<HTMLButtonElement>('.bpb-re-manage, .bpb-re-draft-manage');
         for (const control of controls) {
             control.disabled = true;
             control.setAttribute('aria-busy', 'true');
@@ -645,7 +650,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         [imageSrcInput, imageError],
         [videoSrcInput, videoError],
     ]);
-    const clearFieldError = input => {
+    const clearFieldError = (input: HTMLInputElement) => {
         const error = fieldErrors.get(input);
         if (!error) return;
         input.classList.remove('bpb-re-invalid');
@@ -654,7 +659,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         error.hidden = true;
         error.textContent = '';
     };
-    const showFieldError = (input, message) => {
+    const showFieldError = (input: HTMLInputElement, message: string) => {
         const error = fieldErrors.get(input);
         if (!error) return;
         // Re-hide and replace the live node so repeating the same invalid
@@ -668,12 +673,12 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         error.hidden = false;
         input.focus();
     };
-    const hasDisallowedScheme = (value, allowed) => {
+    const hasDisallowedScheme = (value: string, allowed: string[]) => {
         if (/^\/\//.test(value)) return true;
         const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value)?.[1]?.toLowerCase();
         return Boolean(scheme && !allowed.includes(scheme));
     };
-    const unsupportedVideoEmbed = value => {
+    const unsupportedVideoEmbed = (value: string) => {
         try {
             const url = new URL(value);
             const host = url.hostname.toLowerCase().replace(/^www\./, '');
@@ -710,7 +715,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         dismiss.addEventListener('click', () => closeBoxAndRestoreEditor());
         box.append(dismiss);
     }
-    const toggleBox = box => {
+    const toggleBox = (box: HTMLElement) => {
         const wasOpen = !box.hidden;
         closeBoxes();
         box.hidden = wasOpen;
@@ -726,27 +731,27 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // cursors), so serialization reads the schema's clean HTML instead, parsed
     // detached and folded through the same domToBracket path as pasted DOM.
     const richBracket = () => {
-        const parsed = new DOMParser().parseFromString(richEditor.getHTML(), 'text/html');
+        const parsed = new DOMParser().parseFromString(richEditor!.getHTML(), 'text/html');
         return Markup.domToBracket(parsed.body);
     };
 
     // Markup owns the allowlist and escaping. This named boundary performs the
     // one HTML parse only after that sanitizer has produced the complete
     // preview document, then adopts its nodes without assigning innerHTML.
-    const renderSanitizedPreviewHtml = html => {
+    const renderSanitizedPreviewHtml = (html: string) => {
         const parsed = new DOMParser().parseFromString(html, 'text/html');
         for (const image of parsed.body.querySelectorAll('img')) {
             const src = image.getAttribute('src');
             if (!PendingPhoto.id(src)) continue;
             image.removeAttribute('src');
             image.alt ||= 'Not uploaded';
-            void localPhotos?.resolvePreview(src).then(value => { image.src = value; }).catch(() => {});
+            void localPhotos?.resolvePreview(src!).then(value => { image.src = value; }).catch(() => {});
         }
         if (instagramPresentation) instagramPresentation.render(preview, parsed.body.childNodes);
         else preview.replaceChildren(...parsed.body.childNodes);
     };
 
-    const diagnosticLabel = diagnostic => {
+    const diagnosticLabel = (diagnostic: { kind?: string; tag?: string; [field: string]: unknown }) => {
         const tag = `[${diagnostic.tag}]`;
         if (diagnostic.code === 'unsupported-attribute') {
             return `${diagnostic.attribute} on ${tag}`;
@@ -756,7 +761,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return tag;
     };
 
-    const summarizeDiagnostics = diagnostics => {
+    const summarizeDiagnostics = (diagnostics: Parameters<typeof diagnosticLabel>[0][]) => {
         const labels = [...new Set(diagnostics.map(diagnosticLabel))];
         const visible = labels.slice(0, 3);
         const remainder = labels.length - visible.length;
@@ -765,7 +770,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return `${visible.slice(0, -1).join(', ')} and ${visible.at(-1)}`;
     };
 
-    const configureConversionGuard = (source, preferredMode = state.conversionTarget) => {
+    const configureConversionGuard = (source: string, preferredMode = state.conversionTarget) => {
         const { diagnostics } = Markup.parseBracketWithDiagnostics(source);
         state.conversionDiagnostics = diagnostics;
         state.conversionAccepted = diagnostics.length === 0;
@@ -840,12 +845,12 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // ---- Local drafts ---------------------------------------------------------
 
     const localStore = ext.storage.local;
-    const mutateDraft = message => RuntimeMessage.send(ext, { ...message, draftKey });
+    const mutateDraft = (message: object) => RuntimeMessage.send(ext, { ...message, draftKey });
     let draftEditRevision = 0;
-    let draftVersion = null, persistedDraftContent = null, persistedDraftRevision = 0, initialDraftText = textarea.value;
-    let draftDeletionEpoch = null;
+    let draftVersion: string | null = null, persistedDraftContent: string | null = null, persistedDraftRevision = 0, initialDraftText = textarea.value;
+    let draftDeletionEpoch: unknown = null;
     let draftPersistenceQueue = Promise.resolve();
-    const draftContent = record => JSON.stringify([record.text, record.mode, record.source ?? null, record.pendingSave?.attemptId ?? null]);
+    const draftContent = (record: DraftRecord) => JSON.stringify([record.text, record.mode, record.source ?? null, record.pendingSave?.attemptId ?? null]);
     const draftConflict = () => Object.assign(new Error('The saved draft changed.'), { code: 'draft-conflict' });
 
     saveRecoveryCopy.addEventListener('click', async () => {
@@ -879,7 +884,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return `fallback-${Date.now()}-${nextSaveAttempt}-${Math.random().toString(36).slice(2)}`;
     };
 
-    const timeLabel = stamp => {
+    const timeLabel = (stamp: number) => {
         const then = new Date(stamp);
         const now = new Date();
         return then.toDateString() === now.toDateString()
@@ -894,11 +899,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             state.autosaveTimer = null;
         }
         if (state.terminalSubmission) return;
-        if (!includePlain && !['rich', 'markdown'].includes(state.mode) && !state.nativeHandoff
+        if (!includePlain && !['rich', 'markdown'].includes(state.mode as string) && !state.nativeHandoff
             && !PendingPhoto.ids(textarea.value).length) return;
         flushSync();
         const revision = draftEditRevision;
-        const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() };
+        const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() } as DraftRecord;
         if (state.mode === 'markdown') record.source = mdEditor.getValue();
         if (state.pendingSave) record.pendingSave = state.pendingSave;
         const content = draftContent(record);
@@ -916,7 +921,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             try {
                 if (draftVersion === null) {
                     const values = await localStore.get([draftKey, ReportDrafts.DELETION_EPOCH_KEY]);
-                    const stored = values[draftKey];
+                    const stored = values[draftKey] as DraftRecord;
                     if (ReportDrafts.validRecord(stored) && normalized(stored.text) !== normalized(initialDraftText)) throw draftConflict();
                     draftVersion = ReportDrafts.version(stored);
                     draftDeletionEpoch = values[ReportDrafts.DELETION_EPOCH_KEY] ?? null;
@@ -941,10 +946,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 setDraftPersistenceStatus(removing ? '' : `Draft saved on this device · ${timeLabel(record.savedAt)}`);
             } catch (error) {
                 if (state.terminalSubmission || revision !== draftEditRevision) return;
-                setDraftPersistenceStatus(error.code === 'draft-conflict'
+                setDraftPersistenceStatus((error as { code?: string }).code === 'draft-conflict'
                     ? 'The saved draft changed — keep this page open or copy your text'
                     : removing ? 'Older saved draft couldn’t be removed' : 'Draft not saved — keep this page open',
-                { recovery: true, cleanup: removing && error.code !== 'draft-conflict' });
+                { recovery: true, cleanup: removing && (error as { code?: string }).code !== 'draft-conflict' });
             }
         });
         draftPersistenceQueue = operation.catch(() => {});
@@ -960,7 +965,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         state.autosaveTimer = globalThis.setTimeout(() => { void saveDraftNow(); }, AUTOSAVE_DEBOUNCE_MS);
     };
 
-    const clearDraft = (stored = null) => {
+    const clearDraft = (stored: DraftRecord | null = null) => {
         if (!draftKey) return;
         if (state.autosaveTimer !== null) {
             globalThis.clearTimeout(state.autosaveTimer);
@@ -1008,7 +1013,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // sent when the feature is off.
     let backupEnabled = false;
     Settings.get().then(next => { backupEnabled = !!next.enableGithubBackup; }).catch(() => {});
-    Settings.subscribe(next => { backupEnabled = !!next.enableGithubBackup; });
+    Settings.subscribe((next: typeof Settings.DEFAULTS) => { backupEnabled = !!next.enableGithubBackup; });
 
     // Resolve the report to a Markdown body here, where the DOM and the Markdown
     // parser exist: the exact Markdown-source sidecar when the user authored in
@@ -1027,7 +1032,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 params,
                 report: { markdown: reportMarkdownBody() },
                 extensionVersion: version,
-            });
+            } as never);
             ext.runtime.sendMessage({ type: 'GITHUB_BACKUP_SNAPSHOT', key, identity, snapshot,
                 attemptId: state.pendingSave?.attemptId });
         } catch (error) { /* backup is best-effort; never disrupt the save */ }
@@ -1083,7 +1088,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // terminal; otherwise it could recreate the draft after the worker removed
     // it on the successful response.
     document.addEventListener(ReportDrafts.SAVED_EVENT, event => {
-        if (event.detail?.draftKey !== draftKey) return;
+        if ((event as CustomEvent<{ draftKey?: string }>).detail?.draftKey !== draftKey) return;
         state.terminalSubmission = true;
         state.pendingSave = null;
         if (state.autosaveTimer !== null) {
@@ -1093,7 +1098,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         setDraftPersistenceStatus('');
     });
 
-    const offerDraft = stored => {
+    const offerDraft = (stored: DraftRecord) => {
         draftBar.textContent = '';
         const label = el('span', 'bpb-re-draft-text',
             `A locally saved draft of this report (${timeLabel(stored.savedAt)}) differs from what’s shown.`);
@@ -1110,7 +1115,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             draftBar.hidden = true;
             // flush: false — the restored textarea value must not be clobbered
             // by a serialization of the outgoing (pre-restore) content.
-            const restoredMode = MODES.includes(stored.mode) ? stored.mode : state.mode;
+            const restoredMode = (MODES.includes(stored.mode as string) ? stored.mode : state.mode) as string;
             const guarded = configureConversionGuard(stored.text, restoredMode);
             setMode(guarded ? 'plain' : restoredMode, { persist: false, flush: false });
             setDraftManagerStatus('Draft restored');
@@ -1126,14 +1131,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     // The browser posts textarea content as \r\n, so the server's echo of a
     // saved report differs byte-wise from the \n draft; compare normalized.
-    const normalized = value => String(value).replace(/\r\n?/g, '\n').trim();
+    const normalized = (value: string) => String(value).replace(/\r\n?/g, '\n').trim();
 
     const checkDraft = async () => {
         if (!draftKey) return;
-        let stored;
+        let stored: DraftRecord;
         try {
             const values = await localStore.get([draftKey, ReportDrafts.DELETION_EPOCH_KEY]);
-            stored = values[draftKey];
+            stored = values[draftKey] as DraftRecord;
             draftDeletionEpoch = values[ReportDrafts.DELETION_EPOCH_KEY] ?? null;
         } catch (error) { return; }
         draftVersion = ReportDrafts.version(stored);
@@ -1148,7 +1153,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             // the success surface in this document. Retain the recovery copy,
             // but detach it from that old attempt so a late confirmation cannot
             // consume newer edits or a same-key draft from another tab.
-            const retained = { ...stored };
+            const retained: DraftRecord = { ...stored };
             delete retained.pendingSave;
             stored = retained;
             void RuntimeMessage.send(ext, {
@@ -1199,7 +1204,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             if (name !== 'undo' && name !== 'redo') control.disabled = snapshot.captionActive;
         }
         for (const name of ['bold', 'italic', 'underline', 'strike']) {
-            toolButtons[name].setAttribute('aria-pressed', String(snapshot.marks[name]));
+            (toolButtons as Record<string, HTMLElement>)[name].setAttribute('aria-pressed', String(snapshot.marks[name]));
         }
         for (const [name, control] of Object.entries(moreButtons)) {
             control.setAttribute('aria-pressed', String(snapshot.marks[name]));
@@ -1254,8 +1259,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         clearFieldError(linkInput);
         // With nothing selected and no link under the caret, insert the URL as
         // its own linked text rather than silently doing nothing.
-        if (richEditor.state.selection.empty && !richEditor.isActive('link')) {
-            richEditor.chain().focus()
+        if (richEditor!.state.selection.empty && !richEditor!.isActive('link')) {
+            richEditor!.chain().focus()
                 .insertContent({ type: 'text', text: href, marks: [{ type: 'link', attrs: { href } }] })
                 .run();
         } else {
@@ -1282,7 +1287,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     let photoLaunchBusy = false;
     const imageEditTargets = new Map();
-    const launchPhotoEditor = async (event, localPhotoId = null, target = null) => {
+    const launchPhotoEditor = async (event: Event, localPhotoId: string | null = null, target: ImageEditTarget | null = null) => {
         if (isProfile) return;
         if (photoLaunchBusy) return;
         photoLaunchBusy = true;
@@ -1312,7 +1317,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             if (!response?.ok) {
                 imageEditTargets.delete(generation);
                 const message = response?.error?.message || 'Couldn’t open the photo editor. Try again.';
-                if (localPhotoId || target) localPhotos.showError(message);
+                if (localPhotoId || target) localPhotos!.showError(message);
                 else imageLaunchStatus.textContent = message;
             }
         } finally {
@@ -1379,7 +1384,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             if (name === 'image') return imageBox.hidden ? openImageBox() : closeBoxAndRestoreEditor();
             if (name === 'video') return videoBox.hidden ? openVideoBox() : closeBoxAndRestoreEditor();
             closeBoxes();
-            richCommands[name](richEditor);
+            (richCommands as unknown as Record<string, (editor: unknown) => void>)[name](richEditor);
         });
     }
     for (const control of swatchButtons) {
@@ -1432,7 +1437,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // A press anywhere outside the editor dismisses the popover instead of
     // being swallowed by it, so the covered form is one click away. Focus
     // follows the press; do not pull it back into the editor here.
-    const dismissOnOutsidePointer = event => {
+    const dismissOnOutsidePointer = (event: Event) => {
         const target = event.target;
         if (!(target instanceof Node) || !instagramHelp.contains(target)) hideInstagramHelp();
         if (!openManualBox()) return;
@@ -1444,7 +1449,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     // ---- Modes -------------------------------------------------------------------
 
-    const showNative = visible => {
+    const showNative = (visible: boolean) => {
         textarea.classList.toggle('bpb-re-hidden', !visible);
         if (nativeBreak) nativeBreak.classList.toggle('bpb-re-hidden', !visible);
         if (nativeHints) nativeHints.classList.toggle('bpb-re-hidden', !visible);
@@ -1460,20 +1465,20 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             onUpdate: () => { state.richDirty = true; state.creditScaffold = false; scheduleSync(); },
             onStateChange: () => refreshToolbar(),
             shortcuts: { 'Mod-k': openLinkBox },
-            resolveLocalImage: src => localPhotos ? localPhotos.resolvePreview(src) : Promise.resolve(src),
-            editLocalImage: isProfile ? undefined : (event, src, getPos) => {
-                if (localPhotos.busy()) return;
+            resolveLocalImage: (src: string) => localPhotos ? localPhotos.resolvePreview(src) : Promise.resolve(src),
+            editLocalImage: isProfile ? undefined : (event: Event, src: string, getPos: () => number) => {
+                if (localPhotos!.busy()) return;
                 const pos = getPos();
                 if (!Number.isInteger(pos)) return;
                 void launchPhotoEditor(event, PendingPhoto.id(src), {
-                    src, getPos, editor: richEditor, alt: richEditor.state.doc.nodeAt(pos)?.attrs.alt || '',
+                    src, getPos, editor: richEditor, alt: richEditor!.state.doc.nodeAt(pos)?.attrs.alt || '',
                     caption: richCommands.imageCaption(richEditor, pos),
                 });
             }
         });
     };
 
-    const setMode = (mode, { persist = true, flush = true } = {}) => {
+    const setMode = (mode: string, { persist = true, flush = true } = {}) => {
         if (localPhotos?.busy()) return;
         if (flush) flushSync();   // capture the outgoing mode's content first
         else if (state.syncTimer !== null) {
@@ -1517,7 +1522,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             // fill unrecorded, so undo starts empty instead of offering to
             // blank the document.
             const editorHtml = Markup.bracketToEditorHtml(textarea.value);
-            const initialContent = richEditor.chain()
+            const initialContent = richEditor!.chain()
                 .setMeta('addToHistory', false)
                 .setContent(state.creditScaffold ? `<p></p>${editorHtml}` : editorHtml, { emitUpdate: false });
             if (state.creditScaffold) initialContent.setTextSelection(1);
@@ -1545,7 +1550,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 setDraftManagerStatus('Editor preference couldn’t be saved');
             });
             if (rich || markdown) scheduleAutosave();
-            if (rich) richEditor.commands.focus();
+            if (rich) richEditor!.commands.focus();
             else if (markdown) mdEditor.focus();
             else textarea.focus();
         }
@@ -1569,14 +1574,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     });
 
     const handledPhotoReturnTokens = new Set();
-    const rememberPhotoReturnToken = token => {
+    const rememberPhotoReturnToken = (token: string) => {
         handledPhotoReturnTokens.add(token);
         if (handledPhotoReturnTokens.size > 50) {
             handledPhotoReturnTokens.delete(handledPhotoReturnTokens.values().next().value);
         }
     };
 
-    const cleanPhotoInsertion = message => {
+    const cleanPhotoInsertion = (message: PhotoReturnMessage) => {
         if (!message || message.type !== 'PHOTO_INSERT_RESULT') return null;
         const localPhotoId = typeof message.localPhotoId === 'string'
             && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(message.localPhotoId)
@@ -1585,7 +1590,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         const alt = String(message.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, PHOTO_TEXT_LIMIT);
         let src = null;
         try {
-            const candidate = new URL(message.url);
+            const candidate = new URL(message.url!);
             if (candidate.protocol === 'https:' && !candidate.username && !candidate.password) {
                 src = Markup.sanitizeImageSrc(candidate.toString());
             }
@@ -1600,13 +1605,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         } : null;
     };
 
-    const samePhotoReturnContext = message => {
+    const samePhotoReturnContext = (message: PhotoReturnMessage) => {
         const expected = message?.expectedIdentity;
         if (!expected || typeof expected !== 'object' || Array.isArray(expected)) return false;
         const identityKeys = ['cid', 'aid', 'pid'];
         const sameIdentity = identityKeys.every(key => {
             const current = params.get(key);
-            const wanted = expected[key];
+            const wanted = (expected as Record<string, unknown>)[key];
             return wanted == null ? current == null : current === String(wanted);
         });
         if (!sameIdentity || typeof message.expectedUrl !== 'string') return false;
@@ -1617,15 +1622,15 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         } catch { return false; }
     };
 
-    const replaceEditedImage = (message, src, alt) => {
+    const replaceEditedImage = (message: PhotoReturnMessage, src: string, alt: string) => {
         const target = imageEditTargets.get(message.imageEditId);
         if (!target || target.editor !== richEditor || richEditor?.isDestroyed) return false;
         let pos;
         try { pos = target.getPos(); } catch { return false; }
         if (!Number.isInteger(pos)) return false;
-        const node = richEditor.state.doc.nodeAt(pos);
+        const node = richEditor!.state.doc.nodeAt(pos);
         if (node?.type.name !== 'image' || node.attrs.src !== target.src) return false;
-        richEditor.view.dispatch(richEditor.state.tr.setNodeMarkup(pos, null, {
+        richEditor!.view.dispatch(richEditor!.state.tr.setNodeMarkup(pos, null, {
             ...node.attrs, src, alt: (node.attrs.alt || '') === target.alt ? alt : node.attrs.alt,
         }));
         // The report remains editable while Photo Topos is open. Apply the
@@ -1642,7 +1647,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return true;
     };
 
-    const handlePhotoInsertion = (message, sender, sendResponse) => {
+    const handlePhotoInsertion = (message: PhotoReturnMessage, sender: chrome.runtime.MessageSender, sendResponse: (response: object) => void) => {
         if (isProfile) return undefined;
         if (message?.type === 'PHOTO_LOCAL_RESULT') {
             if (!samePhotoReturnContext(message) || sender?.id !== ext.runtime.id) {
@@ -1654,9 +1659,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 return false;
             }
             const ok = state.mode === 'rich' && (message.imageEditId
-                ? !!PendingPhoto.id(message.url) && replaceEditedImage(message, message.url, message.alt)
-                : localPhotos.receive(message, sender));
-            if (ok) rememberPhotoReturnToken(message.returnToken);
+                ? !!PendingPhoto.id(message.url!) && replaceEditedImage(message, message.url!, message.alt!)
+                : localPhotos!.receive(message as never, sender));
+            if (ok) rememberPhotoReturnToken(message.returnToken!);
             sendResponse?.({ ok });
             return false;
         }
@@ -1688,7 +1693,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 return false;
             }
         } else {
-            richCommands.insertImage(richEditor, insertion);
+            richCommands.insertImage(richEditor, insertion as never);
         }
         flushSync();
         if (returnToken) rememberPhotoReturnToken(returnToken);
@@ -1704,21 +1709,21 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     if (!isProfile) localPhotos = installReportLocalPhotos({
         ext, form, textarea, ui, getEditor: () => richEditor,
-        flush: flushSync, saveDraft: () => saveDraftNow({ includePlain: true }), launchEditor: launchPhotoEditor,
-        replaceText: replacements => {
+        flush: flushSync, saveDraft: () => saveDraftNow({ includePlain: true }) as Promise<unknown>, launchEditor: launchPhotoEditor as never,
+        replaceText: (replacements: Map<string, string>) => {
             flushSync();
-            const replace = text => {
+            const replace = (text: string) => {
                 for (const [from, to] of replacements) text = text.split(from).join(to);
                 return text;
             };
             if (state.mode === 'rich') {
-                const transaction = richEditor.state.tr;
-                richEditor.state.doc.descendants((node, pos) => {
+                const transaction = richEditor!.state.tr;
+                richEditor!.state.doc.descendants((node, pos) => {
                     if (node.type.name === 'image' && replacements.has(node.attrs.src)) {
                         transaction.setNodeMarkup(pos, null, { ...node.attrs, src: replacements.get(node.attrs.src) });
                     }
                 });
-                richEditor.view.dispatch(transaction);
+                richEditor!.view.dispatch(transaction);
             } else if (state.mode === 'markdown') {
                 mdEditor.setValue(replace(mdEditor.getValue()));
                 state.mdDirty = true;
@@ -1757,7 +1762,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         // harness (one shared world) drives the editors through it instead of
         // synthesizing keystrokes. `rich` is a getter because rich-mode entry
         // rebuilds its editor.
-        ui._bpbEditors = { get rich() { return richEditor; }, markdown: mdEditor };
+        (ui as HTMLElement & { _bpbEditors?: object })._bpbEditors = { get rich() { return richEditor; }, markdown: mdEditor };
 
         textarea.before(ui);
         // Pruning retires deletion markers for all reports. Complete our own
@@ -1769,12 +1774,12 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         setMode(guarded ? 'plain' : settings.reportEditorMode, { persist: false });
         initialDraftText = textarea.value;
         persistedDraftContent = draftContent({ text: textarea.value, mode: state.mode,
-            ...(state.mode === 'markdown' && { source: mdEditor.getValue() }) });
+            ...(state.mode === 'markdown' && { source: mdEditor.getValue() }) } as DraftRecord);
         ext.runtime.onMessage.addListener(handlePhotoInsertion);
 
         // If the feature is turned off in the options while this page is open,
         // hand the form back to the native textarea.
-        Settings.subscribe(next => {
+        Settings.subscribe((next: typeof Settings.DEFAULTS) => {
             if (!next.enableReportEditor && ui.isConnected) {
                 flushSync();
                 if (state.autosaveTimer !== null) {

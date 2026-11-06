@@ -55,11 +55,11 @@ ledger.
 
 ### F1 — The popup offers "Open N drafts" after drafts are already open, and the click does nothing — **verified** · **fixed**
 
-[popup.js:290](../../popup/popup.js) updates only the button's label after
+[popup.js:290](../../popup/popup.ts) updates only the button's label after
 `CAPTURE_OPEN_DRAFTS` succeeds. It never re-renders the results, so `currentJob`
 keeps `phase: 'ready'` — polling has already stopped, because `ready` is
 terminal. The lock affordances that exist for exactly this state
-(`checkbox.disabled` in [popup.js:179](../../popup/popup.js) and the
+(`checkbox.disabled` in [popup.js:179](../../popup/popup.ts) and the
 `selection-lock-hint` paragraph) engage only when the popup is closed and
 reopened.
 
@@ -194,7 +194,7 @@ always have been making, since severity is now part of the contract.
 
 ### F3 — The popup is the only surface that ignores the Units setting — **verified** · **fixed**
 
-[`evidenceText`](../../popup/popup.js) hardcodes metres: `"${…} m from
+[`evidenceText`](../../popup/popup.ts) hardcodes metres: `"${…} m from
 summit"`, `"${…} m elevation difference"`, and the track summary line reports
 `max deviation ${…} m`. The popup bundle's sources are
 `['capture/capture-phases.js', 'popup-main.js']`
@@ -289,7 +289,7 @@ two surfaces:
 
 - [ascent-upload.js:229](../../src/ascent/ascent-upload.js) renders it
   verbatim in the status line — so a user can see a raw exception string.
-- [popup.js:300](../../popup/popup.js) collapses it to the button *label*
+- [popup.js:300](../../popup/popup.ts) collapses it to the button *label*
   `"Drafts opened without group"`, which uses the primary action's label as a
   status message and never explains what happened.
 
@@ -469,7 +469,7 @@ alone rather than swept in.
 
 ### F9 — A transient poll failure declares the capture dead and shows browser-internal text — **fixed**
 
-[popup.js:237](../../popup/popup.js): `poll()`'s catch calls
+[popup.js:237](../../popup/popup.ts): `poll()`'s catch calls
 `errorState({ message: error.message })`. Three things follow from one failed
 tick:
 

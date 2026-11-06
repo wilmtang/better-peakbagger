@@ -52,7 +52,7 @@ mirror so the popup doesn't flash), and restructure `popup.css` like
 `test/theme/dark-contrast.test.mjs` to the popup surface.
 
 ### B2 — "No confident summit matches" is a 30-minute dead end
-**Severity: medium · [popup.js:207-209](../../popup/popup.js)**
+**Severity: medium · [popup.js:207-209](../../popup/popup.ts)**
 
 The `no-matches` state card has no action. Reopening the popup calls
 `beginCapture(false)`, and `startCapture` returns the cached terminal job
@@ -79,7 +79,7 @@ Fix: include `hasGithubPermission()` in `refreshGithub` the way favorites
 does, and render the same "Connect GitHub above" prompt when it is missing.
 
 ### B4 — "Open 1 drafts" after a failed draft open
-**Severity: low · [popup.js:292](../../popup/popup.js)**
+**Severity: low · [popup.js:292](../../popup/popup.ts)**
 
 The error-recovery path resets the button to
 `` `Open ${selectedIds().length} drafts` ``, losing the singular form that
@@ -87,7 +87,7 @@ The error-recovery path resets the button to
 reuse its label logic) instead of rebuilding the label by hand.
 
 ### B5 — Reopened popup shows a dead "Drafts opened" button
-**Severity: low · [popup.js:186-189](../../popup/popup.js),
+**Severity: low · [popup.js:186-189](../../popup/popup.ts),
 [background.js:558-566](../../src/background/background.js)**
 
 `openDrafts` has a deliberate reuse path: clicking again focuses the existing
@@ -130,7 +130,7 @@ tab/group choreography in one background helper both callers use.
 ### E3 — The terminal-phase set is defined three times
 [background.js:436](../../src/background/background.js),
 [background.js:507](../../src/background/background.js), and
-[popup.js:21](../../popup/popup.js) each hardcode
+[popup.js:21](../../popup/popup.ts) each hardcode
 `['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']`. Adding a
 phase means finding all three. Export it from a tiny pure module (e.g.
 `capture/capture-phases.js`) added to both bundles — the established
@@ -167,7 +167,7 @@ The same small helpers are now copied across surfaces:
 - DOM builders: `el()` verbatim in [github.js:62](../../options/github.js) and
   [ascent-backup.js:36](../../src/ascent/ascent-backup.js), a `node()` clone
   in [profile-backup.js](../../src/profile/profile-backup.js), and a smaller
-  variant in [report-editor.js](../../src/reports/report-editor.js).
+  variant in [report-editor.js](../../src/reports/report-editor.ts).
 - The undoable-delete machinery (`pendingDeletes` map + `pendingBulk` +
   timers + deleted-row rendering) implemented independently in
   [favorites.js](../../options/favorites.js) and

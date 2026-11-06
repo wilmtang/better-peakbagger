@@ -79,7 +79,7 @@ UX polish; nothing here is an exploitable security hole.
 ## 1. Bugs
 
 ### B1 — Backup snapshot is captured on *any* form submit, not only Save
-**Severity: high (data correctness / user trust) · [report-editor.js:447](../../src/reports/report-editor.js)**
+**Severity: high (data correctness / user trust) · [report-editor.js:447](../../src/reports/report-editor.ts)**
 
 `form.addEventListener('submit', captureBackupSnapshot, true)` fires for every
 submit-triggering control on `ascentedit.aspx` — including **GPS Preview**
@@ -132,7 +132,7 @@ Fix (two layers):
    which removes the long-lived in-worker loop entirely.
 
 ### B4 — Popup header claims "Strava activity" on non-provider pages
-**Severity: low · [popup.js:159](../../popup/popup.js)**
+**Severity: low · [popup.js:159](../../popup/popup.ts)**
 
 `job.provider === 'garmin' ? 'Garmin Connect activity' : 'Strava activity'`
 renders "Strava activity" for error jobs with no provider (the common "clicked
@@ -241,7 +241,7 @@ the dead branch in E6) at near-zero noise cost.
 **The most common first interaction with the extension is an error card.**
 Clicking the toolbar icon on any non-Garmin/Strava page shows "Capture
 stopped / Open a Garmin Connect or Strava activity first" styled as an
-*error*, with no actions ([popup.js:56-86](../../popup/popup.js)). For a new user
+*error*, with no actions ([popup.js:56-86](../../popup/popup.ts)). For a new user
 this reads as "the extension is broken".
 
 Fix: a neutral empty state — icon, one sentence ("Open a Garmin or Strava
@@ -281,7 +281,7 @@ current route width or add one line of helper text ("casing is always at least
 2 px wider than the route").
 
 ### U7 — Implementation-speak in user copy
-"Discard cached capture" / "Cached capture removed" ([popup.js](../../popup/popup.js))
+"Discard cached capture" / "Cached capture removed" ([popup.js](../../popup/popup.ts))
 name the mechanism, not the user's mental model. "Delete captured track data"
 says what the user actually deletes. Similarly, the transient 1.2 s flash
 "GitHub access is needed to back up" after a declined permission prompt

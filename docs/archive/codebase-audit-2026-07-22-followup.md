@@ -71,8 +71,8 @@ adjacent to the fixes that landed.
 ## 1. Bugs and behavior contradictions
 
 ### B1 — Changing the selection after drafts open silently does nothing
-**Severity: medium · [popup.js:141-148](../../popup/popup.js),
-[popup.js:187-189](../../popup/popup.js),
+**Severity: medium · [popup.js:141-148](../../popup/popup.ts),
+[popup.js:187-189](../../popup/popup.ts),
 [background.js:609-617](../../src/background/background.js)**
 
 In the `opened` phase the peak checkboxes stay live. Any change runs
@@ -93,7 +93,7 @@ touches suffix reassignment and trip-info sequencing and is not worth it.
 Popup regression test for the changed-selection click.
 
 ### B2 — `previewed` strands a user who lost their draft tabs before Save
-**Severity: medium-low · [popup.js:190-193](../../popup/popup.js),
+**Severity: medium-low · [popup.js:190-193](../../popup/popup.ts),
 [background.js:599](../../src/background/background.js)**
 
 After GPS Preview completes on every draft, the drafts still need the user's
@@ -191,7 +191,7 @@ one module the missing-element logging (E6) treats differently, since it
 `return`s instead of returning a no-op `populate`.
 
 ### E4 — Dead `unsupported` branch in the popup's error actions
-[popup.js:66-73](../../popup/popup.js), [popup.js:96](../../popup/popup.js)
+[popup.js:66-73](../../popup/popup.ts), [popup.js:96](../../popup/popup.ts)
 
 `errorState` returns early for `code === 'unsupported'`, so the
 `code === 'unsupported'` half of the final actions ternary is unreachable.
@@ -232,7 +232,7 @@ The list will match the backup from ⟨repo⟩." Keep the undo afterward. Reuse
 the mirror-confirmation styling; do not invent a second dialog design.
 
 ### U2 — "Possible and weak results are intentionally hidden" names internal tiers
-**Severity: low, owner call · [popup.js:213](../../popup/popup.js)**
+**Severity: low, owner call · [popup.js:213](../../popup/popup.ts)**
 
 The visible vocabulary everywhere else is Strong and Probable; "Possible" and
 "weak" are the detector's internal classifications and appear nowhere else in

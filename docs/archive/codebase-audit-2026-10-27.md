@@ -58,7 +58,7 @@ separate check after an authorized push.
 **Evidence.** [Settings import](../../src/background/settings-file-routes.js)
 (lines 180–238) snapshots the ImgBB record, awaits conditional settings and
 custom-layer writes, then calls unconditional `keyStore.replace`. Concurrent
-[Save/Remove handlers](../../src/background/photo-routes.js) (lines 179–195)
+[Save/Remove handlers](../../src/background/photo-routes.ts) (lines 179–195)
 can change that same store during those waits. The key store already provides
 [queue-owned comparison and replacement](../../src/photos/imgbb-auth.js)
 (lines 53–65); import uses it only during rollback.

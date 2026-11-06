@@ -32,7 +32,7 @@ import { createCaltopoRoutes } from './caltopo-routes.js';
 import { createAlltrailsRoutes } from './alltrails-routes.js';
 import { createGaiaRoutes } from './gaia-routes.js';
 import { createOnxRoutes } from './onx-routes.js';
-import { createPhotoRoutes } from './photo-routes.js';
+import { createPhotoRoutes } from './photo-routes.ts';
 import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.js';
 import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';

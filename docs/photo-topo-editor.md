@@ -441,7 +441,7 @@ failure.
 
 ## Report-editor handoff
 
-`src/reports/report-editor.js` keeps direct URL insertion as the lightweight
+`src/reports/report-editor.ts` keeps direct URL insertion as the lightweight
 path. The two photo-library actions are available only in Rich mode, where the
 editor can insert a validated image node without rewriting unsupported native
 markup.

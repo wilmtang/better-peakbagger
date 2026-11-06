@@ -17,7 +17,7 @@ const photosDoc = new JSDOM(photosHtml).window.document;
 const photosSource = await fs.readFile(new URL('../../photos/photos.ts', import.meta.url), 'utf8');
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
 const reportEditor = await fs.readFile(
-    new URL('../../src/reports/report-editor.js', import.meta.url), 'utf8');
+    new URL('../../src/reports/report-editor.ts', import.meta.url), 'utf8');
 
 test('the guide ships as a packaged page with no inline script', () => {
     assert.ok(COPY_FILES.some(([from, to]) =>

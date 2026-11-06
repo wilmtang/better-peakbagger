@@ -100,7 +100,7 @@ Preview HTML       <p>We climbed <b>Baker</b> under <span style="color:#2471a3">
 These values are semantically related, not byte-for-byte mirrors. Only
 `JournalText` has submission authority.
 
-Module ownership follows the same boundary: `src/reports/report-editor.js` orchestrates
+Module ownership follows the same boundary: `src/reports/report-editor.ts` orchestrates
 mode switches, dirty state, drafts, and `JournalText`; `src/reports/report-rich-editor.js`
 owns the TipTap schema and commands; `src/reports/report-md-editor.js` owns only the
 CodeMirror surface; and `src/reports/report-markup.js` owns every format conversion,
@@ -617,7 +617,7 @@ the optional GitHub save-time snapshot. A TR draft uses extension
 and never leaves the browser profile. It is not synced to another browser or
 device and is not sent to Peakbagger, GitHub, or the extension developer.
 
-`src/reports/report-editor.js` owns persistence and recovery. The pure
+`src/reports/report-editor.ts` owns persistence and recovery. The pure
 `src/reports/report-drafts.js` module is the shared identity, expiry, and limit contract
 used by the editor and the manager in `options/drafts.js`.
 

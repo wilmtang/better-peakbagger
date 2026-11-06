@@ -15,11 +15,11 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 export const IMGBB_ORIGINS = ['https://api.imgbb.com/*'];
 
-export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.chrome, flash } = {}) => {
-    const keyEl = document.getElementById('imgbb-key');
-    const saveEl = document.getElementById('imgbb-key-save');
-    const removeEl = document.getElementById('imgbb-key-remove');
-    const statusEl = document.getElementById('imgbb-key-status');
+export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.chrome, flash }: { extensionApi?: typeof chrome; flash?: (message: string) => void } = {}) => {
+    const keyEl = document.getElementById('imgbb-key') as HTMLInputElement;
+    const saveEl = document.getElementById('imgbb-key-save') as HTMLElement;
+    const removeEl = document.getElementById('imgbb-key-remove') as HTMLElement;
+    const statusEl = document.getElementById('imgbb-key-status') as HTMLElement;
     if (!extensionApi?.runtime || OptionsUtils.logMissingElements('ImgBB key setting', {
         'imgbb-key': keyEl,
         'imgbb-key-save': saveEl,
@@ -32,13 +32,13 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
     let configured = false;
     let revision = 0;
 
-    const setStatus = (message, tone = '') => {
+    const setStatus = (message: string, tone = '') => {
         statusEl.textContent = message;
         statusEl.classList.toggle('is-set', tone === 'set');
         statusEl.classList.toggle('is-error', tone === 'error');
     };
 
-    const setBusy = value => {
+    const setBusy = (value: boolean) => {
         busy = value;
         OptionsUtils.setButtonBusy(saveEl, value);
         OptionsUtils.setButtonBusy(removeEl, value);
@@ -47,7 +47,7 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
     // Three states worth distinguishing: no key, a key that can upload, and a
     // key whose host permission was declined — the last is the one a user
     // would otherwise only discover at upload time.
-    const render = ({ permissionGranted }) => {
+    const render = ({ permissionGranted }: { permissionGranted: boolean }) => {
         removeEl.hidden = !configured;
         if (!configured) {
             setStatus('No key saved on this device.');

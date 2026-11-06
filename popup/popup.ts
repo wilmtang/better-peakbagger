@@ -11,30 +11,38 @@ import { units as Units } from '../src/ui/units.js';
 import { createStableText } from '../src/ui/stable-text.js';
 import { rateLimitMessage } from '../src/net/rate-limit.js';
 
+// The worker owns these records; the popup reads only the fields it renders.
+interface CaptureError { code?: string; message?: string; recovery?: string; recoveryTabId?: number; fromWorker?: boolean; retryAt?: number }
+interface PeakMatch { id: number; name: string; confidence?: string; evidence: { distanceM: number; elevationDeltaM: number; trackQuality: number; ambiguous?: boolean }; [field: string]: unknown }
+// Index access covers the many optional result fields, which vary by phase.
+interface CaptureJob { phase: string; provider?: string; activityId?: string | number; error?: CaptureError | null; matches: PeakMatch[]; selectedIds: number[]; message?: string; progress?: { completed?: number; total?: number }; track: { originalPointCount: number; retainedPointCount: number; maxDeviationM: number }; [field: string]: unknown }
+interface CardAction { label: string; primary?: boolean; pending?: boolean; onClick: (event: MouseEvent) => unknown }
+interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: boolean; kind?: string }
+
 (() => {
     'use strict';
 
     const ext = globalThis.browser || globalThis.chrome;
-    const state = document.getElementById('state');
-    const results = document.getElementById('results');
-    const list = document.getElementById('peak-list');
-    const summary = document.getElementById('track-summary');
-    const timestampChoice = document.getElementById('timestamp-choice');
-    const includeTimestampsOnce = document.getElementById('include-timestamps-once');
-    const privacyNote = document.getElementById('capture-privacy-note');
+    const state = (document.getElementById('state') as HTMLElement);
+    const results = (document.getElementById('results') as HTMLElement);
+    const list = (document.getElementById('peak-list') as HTMLElement);
+    const summary = (document.getElementById('track-summary') as HTMLElement);
+    const timestampChoice = (document.getElementById('timestamp-choice') as HTMLElement);
+    const includeTimestampsOnce = (document.getElementById('include-timestamps-once') as HTMLInputElement);
+    const privacyNote = (document.getElementById('capture-privacy-note') as HTMLElement);
     const privacyText = createStableText(privacyNote);
     const timedPrivacy = 'Peak lookup sends small track-corridor boxes to Peakbagger. Opening drafts sends the reduced GPX track with coordinates, elevation, and time to Preview. Save is always manual.';
     const timelessPrivacy = 'Peak lookup sends small track-corridor boxes to Peakbagger. Opening drafts sends the reduced GPX track with coordinates and elevation, with timestamps removed, to Preview. Save is always manual.';
     privacyText.reserve([timedPrivacy, timelessPrivacy]);
-    const openButton = document.getElementById('open-drafts');
-    const clearCaptureButton = document.getElementById('clear-capture');
-    const selectionCount = document.getElementById('selection-count');
-    const selectionLockHint = document.getElementById('selection-lock-hint');
-    const openNote = document.getElementById('open-note');
-    const providerLabel = document.getElementById('provider-label');
-    const settingsButton = document.getElementById('open-settings');
-    let activeTab = null;
-    let currentJob = null; let garminInboxEnabled = false;
+    const openButton = (document.getElementById('open-drafts') as HTMLButtonElement);
+    const clearCaptureButton = (document.getElementById('clear-capture') as HTMLButtonElement);
+    const selectionCount = (document.getElementById('selection-count') as HTMLElement);
+    const selectionLockHint = (document.getElementById('selection-lock-hint') as HTMLElement);
+    const openNote = (document.getElementById('open-note') as HTMLElement);
+    const providerLabel = (document.getElementById('provider-label') as HTMLElement);
+    const settingsButton = (document.getElementById('open-settings') as HTMLButtonElement);
+    let activeTab: chrome.tabs.Tab | null = null;
+    let currentJob: CaptureJob | null = null; let garminInboxEnabled = false;
     // Resolved once when the popup opens. `units: 'auto'` means "follow the
     // page", and the popup has no Peakbagger page to follow — it opens over a
     // Garmin or Strava activity — so it takes the shared module's documented
@@ -42,18 +50,18 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     // persisting a "last units seen" value for a cosmetic tie-break.
     let displayUnits = { distance: Units.IMPERIAL, elevation: Units.IMPERIAL };
     let displayUnitsReady = false;
-    let pendingUnitsJob = null;
-    let pollTimer = null;
+    let pendingUnitsJob: CaptureJob | null = null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let captureRevision = 0;
     let capturePending = false;
     let resultActionPending = false;
     let cancelling = false;
-    let progressCard = null;
-    let popupCaptureStartedAt = null;
+    let progressCard: { card: HTMLElement; actions: CardAction[]; controls: HTMLButtonElement[]; title: Text; detail: ReturnType<typeof createStableText>; [field: string]: unknown } | null = null;
+    let popupCaptureStartedAt: number | null = null;
     let popupDiagnosticReported = false;
 
     const replaceOperation = () => {
-        clearTimeout(pollTimer);
+        clearTimeout(pollTimer!);
         pollTimer = null;
         capturePending = false;
         pendingUnitsJob = null;
@@ -61,8 +69,8 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     };
 
     const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
-    const reportPopupDiagnostic = job => {
-        if (globalThis.BPB_CAPTURE_DIAGNOSTICS !== true
+    const reportPopupDiagnostic = (job: CaptureJob) => {
+        if ((globalThis as { BPB_CAPTURE_DIAGNOSTICS?: boolean } & typeof globalThis).BPB_CAPTURE_DIAGNOSTICS !== true
             || popupDiagnosticReported
             || popupCaptureStartedAt === null
             || !CapturePhases.isTerminal(job?.phase)) return;
@@ -74,7 +82,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         });
     };
 
-    const clear = element => { while (element.firstChild) element.firstChild.remove(); };
+    const clear = (element: Element) => { while (element.firstChild) element.firstChild.remove(); };
 
     // The worker reports its own failures as data — a job with phase 'error', or
     // a route result carrying { error: { code, message } } — so those sentences
@@ -85,10 +93,10 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     // anything unmarked gets the same plain transport copy poll() and
     // beginCapture() already use.
     const TRANSPORT_FAILURE = 'The extension couldn’t be reached. Try again in a moment.';
-    const reportedFailure = message => Object.assign(new Error(message), { fromWorker: true });
-    const publicMessage = error => (error?.fromWorker && error.message) || TRANSPORT_FAILURE;
+    const reportedFailure = (message: string) => Object.assign(new Error(message), { fromWorker: true });
+    const publicMessage = (error: CaptureError | null | undefined) => (error?.fromWorker && error.message) || TRANSPORT_FAILURE;
 
-    const button = (label, onClick, className = '') => {
+    const button = (label: string, onClick: (event: MouseEvent) => unknown, className = '') => {
         const element = document.createElement('button');
         element.type = 'button';
         element.className = `panel-button ${className}`;
@@ -97,7 +105,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         return element;
     };
 
-    const stateCard = (title, detail, options = {}) => {
+    const stateCard = (title: string, detail: string, options: CardOptions = {}) => {
         const actions = options.actions || (options.action ? [options.action] : []);
         const ownedFocus = state.contains(document.activeElement) || results.contains(document.activeElement);
         results.hidden = true;
@@ -105,10 +113,10 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         // keyboard or pointer. Reservations use real copy and remain unpainted.
         if (options.loading && progressCard?.card.isConnected
             && actions.length === progressCard.actions.length
-            && actions.every((action, index) => action.onClick === progressCard.actions[index].onClick)) {
+            && actions.every((action: CardAction, index: number) => action.onClick === progressCard!.actions[index].onClick)) {
             progressCard.title.textContent = title;
             progressCard.detail.set(detail);
-            progressCard.controls.forEach((control, index) => {
+            progressCard.controls.forEach((control: HTMLButtonElement, index: number) => {
                 control.setAttribute('aria-disabled', String(!!actions[index].pending));
                 control.setAttribute('aria-busy', String(!!actions[index].pending));
             });
@@ -132,8 +140,8 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         paragraph.className = 'state-detail';
         paragraph.textContent = detail;
         card.append(heading, paragraph);
-        const controls = actions.map(action => {
-            const control = button(action.label, event => {
+        const controls = actions.map((action: CardAction) => {
+            const control = button(action.label, (event: MouseEvent) => {
                 if (control.getAttribute('aria-disabled') !== 'true') action.onClick(event);
             }, action.primary ? 'primary' : 'secondary');
             control.setAttribute('aria-disabled', String(!!action.pending));
@@ -147,7 +155,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             detailText.reserve([
                 detail,
                 ...['validating-activity', 'waiting-provider', 'verifying-ownership', 'checking-peakbagger',
-                    'exporting-gpx', 'processing-track', 'preparing-results', 'searching-summits'].map(phase => phaseText({ phase })[1]),
+                    'exporting-gpx', 'processing-track', 'preparing-results', 'searching-summits'].map(phase => phaseText({ phase } as CaptureJob)[1]),
                 'Removing this in-progress capture from the extension.',
             ]);
             progressCard = { card, title: titleNode, detail: detailText, actions, controls };
@@ -161,7 +169,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             try {
                 const focused = await ext.runtime.sendMessage({
                     type: 'CAPTURE_FOCUS_RECOVERY',
-                    tabId: activeTab.id,
+                    tabId: activeTab!.id,
                 });
                 if (focused?.ok) return;
             } catch { /* fall through to a new canonical first-party tab */ }
@@ -172,9 +180,9 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         try { void ext.runtime.openOptionsPage(); } catch { /* unavailable in a broken extension context */ }
     };
     const providerName = () => currentJob?.provider === 'garmin' ? 'Garmin' : 'Strava';
-    const focusProvider = () => ext.tabs.update(activeTab.id, { active: true });
+    const focusProvider = () => ext.tabs.update(activeTab!.id, { active: true });
     const reloadProvider = async () => {
-        await ext.tabs.reload(activeTab.id);
+        await ext.tabs.reload(activeTab!.id);
     };
     const reopenProvider = () => {
         const activityId = String(currentJob?.activityId || '');
@@ -185,8 +193,8 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
                 ? `https://www.strava.com/activities/${activityId}` : null;
         if (url) return ext.tabs.create({
             url,
-            ...(Number.isInteger(activeTab.windowId) ? { windowId: activeTab.windowId } : {}),
-            ...(Number.isInteger(activeTab.index) ? { index: activeTab.index + 1 } : {}),
+            ...(Number.isInteger(activeTab!.windowId) ? { windowId: activeTab!.windowId } : {}),
+            ...(Number.isInteger(activeTab!.index) ? { index: activeTab!.index + 1 } : {}),
         });
     };
     const openProviderSignIn = () => ext.tabs.create({
@@ -194,7 +202,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             ? 'https://connect.garmin.com/signin/'
             : 'https://www.strava.com/login'
     });
-    const actionForRecovery = recovery => ({
+    const actionForRecovery = (recovery: string) => ({
         retry: { label: 'Try again', primary: true, onClick: retry },
         'check-again': { label: 'Check again', primary: true, onClick: retry },
         settings: { label: 'Settings', onClick: openSettings },
@@ -212,15 +220,15 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         'too-many-waypoints',
         'invalid-track',
     ]);
-    const errorState = error => {
+    const errorState = (error: CaptureError | null | undefined) => {
         const code = error?.code || 'capture-failed';
         if (code === 'garmin-inbox-activity' && !garminInboxEnabled) {
             stateCard('Activity already imported', 'Enable automatic Garmin activity detection in General settings to review the saved draft.', { action: { label: 'Open General settings', primary: true, onClick: () => { void ext.tabs.create({ url: ext.runtime.getURL('options/options.html#general') }); } } });
             return;
         }
         if (code === 'garmin-inbox-activity') {
-            stateCard('Activity already imported', error.message, { action: { label: 'Open activity inbox', primary: true,
-                onClick: () => document.getElementById('activity-inbox')?.click() } });
+            stateCard('Activity already imported', error!.message!, { action: { label: 'Open activity inbox', primary: true,
+                onClick: () => (document.getElementById('activity-inbox') as HTMLButtonElement)?.click() } });
             return;
         }
         const policy = captureErrorPolicy(code);
@@ -233,7 +241,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             const service = code === 'rate-limit' ? 'Peakbagger' : currentJob?.provider === 'garmin'
                 ? 'Garmin' : currentJob?.provider === 'strava' ? 'Strava' : 'Activity provider';
             title = `${service} request limit reached`;
-            detail = rateLimitMessage(service, error?.retryAt).slice(`${title}. `.length)
+            detail = rateLimitMessage(service, error?.retryAt as never).slice(`${title}. `.length)
                 + ' Select Better Peakbagger again to retry.';
         }
         stateCard(
@@ -247,7 +255,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         );
     };
 
-    const phaseText = job => {
+    const phaseText = (job: CaptureJob) => {
         if (job.phase === 'searching-summits') {
             const completed = Number(job.progress?.completed);
             const total = Number(job.progress?.total);
@@ -285,7 +293,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             loading: true, action: { label: 'Cancel', onClick: cancelCapture, pending: true }
         });
         try {
-            const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CANCEL', tabId: activeTab.id });
+            const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CANCEL', tabId: activeTab!.id });
             if (revision !== captureRevision) return;
             if (!response?.ok) {
                 if (response?.job) { render(response.job); void poll(revision); return; }
@@ -299,13 +307,13 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             );
         } catch (error) {
             if (revision !== captureRevision) return;
-            stateCard('Couldn’t cancel capture', publicMessage(error), {
+            stateCard('Couldn’t cancel capture', publicMessage(error as CaptureError), {
                 kind: 'error', action: { label: 'Try again', onClick: cancelCapture }
             });
         } finally { cancelling = false; }
     };
 
-    const evidenceText = match => {
+    const evidenceText = (match: PeakMatch) => {
         const parts = [`${Units.formatApproach(match.evidence.distanceM, displayUnits.distance)} from summit`];
         if (Number.isFinite(match.evidence.elevationDeltaM)) {
             parts.push(`${Units.formatElevation(match.evidence.elevationDeltaM, displayUnits.elevation)} elevation difference`);
@@ -315,13 +323,13 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         return parts.join(' · ');
     };
 
-    const selectedIds = () => [...list.querySelectorAll('input:checked')].map(input => Number(input.value));
-    const setResultActionPending = pending => {
+    const selectedIds = () => [...list.querySelectorAll<HTMLInputElement>('input:checked')].map(input => Number(input.value));
+    const setResultActionPending = (pending: boolean) => {
         resultActionPending = pending;
         const locked = pending || currentJob?.phase !== 'ready';
         list.querySelectorAll('input').forEach(input => {
             input.disabled = locked;
-            input.closest('.peak-row').classList.toggle('selection-locked', locked);
+            input.closest('.peak-row')!.classList.toggle('selection-locked', locked);
         });
         includeTimestampsOnce.disabled = locked;
         clearCaptureButton.setAttribute('aria-disabled', String(pending));
@@ -347,11 +355,11 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         openButton.textContent = count === 1 ? 'Open 1 draft' : `Open ${count} drafts`;
         openButton.disabled = count === 0;
         openButton.setAttribute('aria-disabled', String(count === 0 || resultActionPending));
-        currentJob.selectedIds = selectedIds();
-        void ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab.id, selectedIds: selectedIds() });
+        currentJob!.selectedIds = selectedIds();
+        void ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab!.id, selectedIds: selectedIds() });
     };
 
-    const renderResults = job => {
+    const renderResults = (job: CaptureJob) => {
         const ownedProgressFocus = state.contains(document.activeElement);
         currentJob = job;
         clear(state);
@@ -364,7 +372,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         // Reset the note; the open handler re-states it for the job it just opened.
         openNote.hidden = true;
         openNote.textContent = '';
-        const track = job.trackSummary;
+        const track = job.trackSummary as CaptureJob['track'];
         clear(summary);
         clearCaptureButton.hidden = !job.hasCachedGpx;
         clearCaptureButton.setAttribute('aria-disabled', 'false');
@@ -374,7 +382,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         const deviation = Units.formatApproach(track.maxDeviationM, displayUnits.distance, 1);
         summary.append(counts, document.createTextNode(` · max deviation ${deviation} · health/device metadata removed`));
 
-        job.matches.forEach(match => {
+        job.matches.forEach((match: PeakMatch) => {
             const row = document.createElement('label');
             row.className = `peak-row ${match.classification}`;
             const checkbox = document.createElement('input');
@@ -404,10 +412,10 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             list.append(row);
         });
         refreshSelection();
-        if (ownedProgressFocus) (list.querySelector('input:not(:disabled)') || openButton).focus({ preventScroll: true });
+        if (ownedProgressFocus) (list.querySelector<HTMLElement>('input:not(:disabled)') || openButton).focus({ preventScroll: true });
     };
 
-    const render = job => {
+    const render = (job: CaptureJob) => {
         if (!job) return;
         currentJob = job;
         providerLabel.textContent = job.provider === 'garmin'
@@ -486,23 +494,23 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         }
     };
 
-    const beginCapture = force => {
+    const beginCapture = (force: boolean) => {
         const revision = replaceOperation();
         currentJob = null;
-        popupCaptureStartedAt = globalThis.BPB_CAPTURE_DIAGNOSTICS === true ? monotonicNow() : null;
+        popupCaptureStartedAt = (globalThis as { BPB_CAPTURE_DIAGNOSTICS?: boolean } & typeof globalThis).BPB_CAPTURE_DIAGNOSTICS === true ? monotonicNow() : null;
         popupDiagnosticReported = false;
         capturePending = true;
         pollFailures = 0;
         stateCard('Starting capture…', 'No GPS data is accessed until account ownership is verified.', {
             loading: true, action: { label: 'Cancel', onClick: cancelCapture }
         });
-        void ext.runtime.sendMessage({ type: 'CAPTURE_START', tabId: activeTab.id, force })
+        void ext.runtime.sendMessage({ type: 'CAPTURE_START', tabId: activeTab!.id, force })
             .then(job => {
                 if (revision !== captureRevision) return;
                 capturePending = false;
                 if (job) render(job);
                 if (!job || CapturePhases.isTerminal(job.phase)) {
-                    clearTimeout(pollTimer);
+                    clearTimeout(pollTimer!);
                     pollTimer = null;
                 }
             })
@@ -512,7 +520,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
                 // the worker reports its own failures as a phase: 'error' job.
                 console.warn('Better Peakbagger: capture start failed', error);
                 capturePending = false;
-                clearTimeout(pollTimer);
+                clearTimeout(pollTimer!);
                 pollTimer = null;
                 stateCard(
                     'Couldn’t reach the extension',
@@ -535,7 +543,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         clearCaptureButton.setAttribute('aria-busy', 'true');
         clearCaptureButton.textContent = 'Deleting…';
         try {
-            const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CLEAR', tabId: activeTab.id });
+            const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CLEAR', tabId: activeTab!.id });
             if (revision !== captureRevision) return;
             if (!response?.ok) throw reportedFailure(response?.error?.message || 'The captured track data could not be deleted.');
             currentJob = null;
@@ -547,8 +555,8 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         } catch (error) {
             if (revision !== captureRevision) return;
             setResultActionPending(false);
-            renderResults(currentJob);
-            openNote.textContent = publicMessage(error);
+            renderResults(currentJob!);
+            openNote.textContent = publicMessage(error as CaptureError);
             openNote.hidden = false;
         } finally {
             setResultActionPending(false);
@@ -564,7 +572,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         currentJob.selectedIds = selectedIds();
         currentJob.includeTimestampsOnce = includeTimestampsOnce.checked;
         currentJob.timestampsRemoved = !includeTimestampsOnce.checked;
-        renderResults(currentJob);
+        renderResults(currentJob!);
     });
 
     openButton.addEventListener('click', async () => {
@@ -578,7 +586,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         try {
             const response = await ext.runtime.sendMessage({
                 type: 'CAPTURE_OPEN_DRAFTS',
-                tabId: activeTab.id,
+                tabId: activeTab!.id,
                 selectedIds: selectedIds(),
                 includeTimestampsOnce: includeTimestampsOnce.checked
             });
@@ -602,7 +610,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             setResultActionPending(false);
             refreshSelection();
             includeTimestampsOnce.disabled = currentJob?.phase !== 'ready';
-            openNote.textContent = publicMessage(error);
+            openNote.textContent = publicMessage(error as CaptureError);
             openNote.hidden = false;
         } finally {
             setResultActionPending(false);
@@ -632,14 +640,14 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         // belongs to the explicit Capture this activity gesture.
         void ext.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: activeTab.id }).then(job => {
             if (job?.phase) { render(job); if (!CapturePhases.isTerminal(job.phase)) pollTimer = setTimeout(() => void poll(), 450); }
-            else if (activeTab.url && !providerFromUrl(activeTab.url)) errorState({ code: 'unsupported' });
+            else if (activeTab!.url && !providerFromUrl(activeTab!.url)) errorState({ code: 'unsupported' });
             else stateCard('Prepare this activity', 'Open a Garmin or Strava activity to prepare summit drafts.', {
                 action: { label: 'Capture this activity', primary: true, onClick: () => beginCapture(false) },
             });
         }).catch(() => stateCard('Couldn’t read capture status', 'Try opening the popup again.'));
     });
-    const inboxButton = document.getElementById('activity-inbox');
-    const inboxStatus = document.getElementById('activity-inbox-status');
+    const inboxButton = (document.getElementById('activity-inbox') as HTMLButtonElement);
+    const inboxStatus = (document.getElementById('activity-inbox-status') as HTMLElement);
     let openingInbox = false;
     inboxButton?.addEventListener('click', async () => {
         if (openingInbox || !garminInboxEnabled) return; openingInbox = true;
@@ -651,16 +659,16 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         } catch { inboxStatus.textContent = 'Couldn’t open inbox. Try again.'; }
         finally { openingInbox = false; inboxButton.removeAttribute('aria-disabled'); inboxButton.removeAttribute('aria-busy'); }
     });
-    const refreshInbox = async settings => {
+    const refreshInbox = async (settings: typeof Settings.DEFAULTS) => {
         garminInboxEnabled = settings.enableGarminInbox;
-        document.querySelector('.inbox-entry').hidden = !garminInboxEnabled;
+        document.querySelector<HTMLElement>('.inbox-entry')!.hidden = !garminInboxEnabled;
         if (!garminInboxEnabled) return;
         const inboxSummary = await ext.runtime.sendMessage({ type: 'GARMIN_SUMMARY' });
         if (!garminInboxEnabled) return;
         if (!inboxSummary?.ok || openingInbox) return;
         const count = inboxSummary.pending;
         if (!Number.isInteger(count) || count < 0) return;
-        document.getElementById('inbox-count').textContent = count > 99 ? '99+' : count ? String(count) : '';
+        (document.getElementById('inbox-count') as HTMLElement).textContent = count > 99 ? '99+' : count ? String(count) : '';
         inboxButton.setAttribute('aria-label', `Open inbox, ${count} pending activities`);
         inboxStatus.textContent = inboxSummary.error?.code === 'key-rejected' ? 'Garmin needs a new key. Open inbox to reconnect.'
             : inboxSummary.queued > 0 ? `${inboxSummary.queued} waiting for peak checks. Open inbox to resume.`
@@ -668,6 +676,6 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
                     ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
     };
     void Settings.requireCurrent().then(refreshInbox).catch(() => {});
-    const unsubscribeInbox = Settings.subscribe(settings => { void refreshInbox(settings).catch(() => {}); });
+    const unsubscribeInbox = Settings.subscribe((settings: typeof Settings.DEFAULTS) => { void refreshInbox(settings).catch(() => {}); });
     addEventListener('pagehide', unsubscribeInbox, { once: true });
 })();

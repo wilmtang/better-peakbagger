@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPhotoRoutes, photoRoutes as PhotoRoutes } from '../../src/background/photo-routes.js';
+import { createPhotoRoutes, photoRoutes as PhotoRoutes } from '../../src/background/photo-routes.ts';
 import { imgbbAuth as ImgbbAuth } from '../../src/photos/imgbb-auth.js';
 
 const makeStorageArea = () => {

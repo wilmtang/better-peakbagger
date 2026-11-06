@@ -590,7 +590,7 @@ the produced archives to prove no tooling package entered `dist/`.
   compass insertions compiled from one
   [`terrain-compass.js`](../../src/terrain/terrain-compass.js) source line, and
   four in the ascent-editor bundle. The owned ascent-editor warnings come from
-  two [`report-editor.js`](../../src/reports/report-editor.js) lines: static
+  two [`report-editor.js`](../../src/reports/report-editor.ts) lines: static
   toolbar markup and sanitized report preview; the other two come from editor
   dependencies.
 
@@ -992,7 +992,7 @@ One refinement worth writing down, because the finding reads like ten separate
 cleanups: the three "compass insertions" are **one** source line —
 [`terrain-compass.js:36`](../../src/terrain/terrain-compass.js) — bundled into
 three outputs. The owned ascent-editor pair is
-[`report-editor.js:122`](../../src/reports/report-editor.js) (static toolbar
+[`report-editor.js:122`](../../src/reports/report-editor.ts) (static toolbar
 markup) and `:366` (sanitized preview). So two source edits clear 4 of the 10
 warnings, and only the preview needs the named-sanitizer treatment.
 

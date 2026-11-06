@@ -15,7 +15,7 @@ const FAIL_SOFT = Object.freeze({
     'photos/photos.ts': [{ count: 1, kind: 'display', reason: 'render the passive export-size warning and inherited report image width; no transport is gated by this value' }],
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
-    'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
+    'popup/popup.ts': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-gaia.js': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
     'src/background/github-routes.js': [
         { count: 3, kind: 'display', reason: 'render connection, ascent-backup and photo-recovery status' },
@@ -27,14 +27,14 @@ const FAIL_SOFT = Object.freeze({
     'src/maps/peak-link-order.js': [{ count: 1, kind: 'display', reason: 'restore passive planning-link order without fetching provider data' }],
     'src/maps/peak-map-bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated map settings' }],
     'src/profile/profile-units.js': [{ count: 1, kind: 'display', reason: 'convert native profile readings without fetching data; defaults preserve native units' }],
-    'src/reports/report-editor.js': [{ count: 2, kind: 'display', reason: 'render editor and backup availability' }],
+    'src/reports/report-editor.ts': [{ count: 2, kind: 'display', reason: 'render editor and backup availability' }],
     'src/settings/bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
     'src/terrain/terrain-map.ts': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
 });
 
 const AUTHORITATIVE = Object.freeze({
     'options/inbox.js': [{ count: 1, kind: 'privacy', reason: 'hide the inbox until the master switch is read authoritatively' }],
-    'popup/popup.js': [{ count: 1, kind: 'privacy', reason: 'hide the inbox entry until the master switch is read authoritatively' }],
+    'popup/popup.ts': [{ count: 1, kind: 'privacy', reason: 'hide the inbox entry until the master switch is read authoritatively' }],
     'options/garmin.js': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
     'src/garmin/garmin-imports.js': [{ count: 7, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],
     'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],

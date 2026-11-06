@@ -110,7 +110,7 @@ link, which automatically tracks endpoint query changes.
 
 | Module | Owns | Must not own |
 | --- | --- | --- |
-| `src/reports/report-editor.js` | Pre-Save flush, exact Markdown sidecar, save-time snapshot emission | GitHub token, repository writes, post-save identity guessing |
+| `src/reports/report-editor.ts` | Pre-Save flush, exact Markdown sidecar, save-time snapshot emission | GitHub token, repository writes, post-save identity guessing |
 | `src/ascent/ascent-snapshot.js` | The only mapping from Peakbagger form control names to raw snapshot fields | Network, extension storage, GitHub serialization |
 | `src/ascent/ascent-saved.js` | Add/Edit success recognition and routing to the saved ascent | Clicking Save, constructing backup payloads |
 | `src/ascent/ascent-delete.js` | The two observed native Delete submitters, combined confirmation, and pre-submit intent handoff | Treating a click as server success or accessing GitHub |

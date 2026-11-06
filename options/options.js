@@ -11,7 +11,7 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
 import { initGithubBackup } from './github.js';
 import { initIgnoredBackup } from './ignored-backup.js';
 import { initFavoritesBackup } from './favorites-backup.js';
-import { initImgbbKey } from './imgbb.js';
+import { initImgbbKey } from './imgbb.ts';
 import { initSettingsBackup } from './settings-backup.js';
 import { initPhotoBackup } from './photos.js';
 import { initSectionNav } from '../src/ui/section-nav.js';

@@ -5,8 +5,18 @@ import { reportPhoto as Pending } from '../photos/report-photo.js';
 import { photoProject as Project } from '../photos/photo-project.js';
 import { trustedAction as Trusted } from '../ui/trusted-action.js';
 import { richCommands } from './report-rich-editor.js';
+import type { Editor } from '@tiptap/core';
 
-export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, flush, saveDraft, launchEditor, replaceText }) {
+interface ImageEditTarget { src: string; alt?: string; caption?: string }
+interface LocalPhotoResult { type: string; replacesLocalPhotoId: string; url: string; alt?: string; caption?: string }
+interface LocalPhotoOptions {
+    ext: typeof chrome; form: HTMLFormElement; textarea: HTMLTextAreaElement; ui: HTMLElement;
+    getEditor: () => Editor | null; flush: () => void; saveDraft: () => Promise<unknown>;
+    launchEditor: (event: Event, localPhotoId?: string | null, target?: ImageEditTarget | null) => Promise<void>;
+    replaceText: (replacements: Map<string, string>) => unknown;
+}
+
+export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, flush, saveDraft, launchEditor, replaceText }: LocalPhotoOptions) {
     const status = document.createElement('div');
     status.className = 'bpb-re-local-photo-status';
     status.setAttribute('role', 'status');
@@ -22,7 +32,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
     dismiss.onclick = () => { status.hidePopover?.(); status.hidden = true; };
     status.append(statusMessage, dismiss);
     ui.prepend(status);
-    const say = (message, state = '') => {
+    const say = (message: string, state = '') => {
         statusMessage.textContent = message;
         status.hidden = !message;
         if (state) status.dataset.state = state;
@@ -31,7 +41,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         if (message && typeof status.showPopover === 'function') status.showPopover();
         else if (!message) status.hidePopover?.();
     };
-    const send = async message => {
+    const send = async (message: object) => {
         const result = await ext.runtime.sendMessage(message);
         if (!result?.ok) throw new Error(result?.error?.message || 'The photo could not be saved. Your report is still open.');
         return result;
@@ -46,7 +56,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
     window.addEventListener('pagehide', () => { pageGeneration++; });
     let pasteQueue = Promise.resolve();
     const generation = () => `report-photo-${Date.now()}-${++sequence}`;
-    const replaceNode = (from, to, alt, caption) => {
+    const replaceNode = (from: string, to: string | null, alt?: string, caption?: string) => {
         const editor = getEditor();
         if (!editor || editor.isDestroyed) return false;
         let transaction = editor.state.tr;
@@ -59,7 +69,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         if (!transaction.docChanged) return false;
         editor.view.dispatch(transaction);
         if (to && typeof caption === 'string') {
-            const positions = [];
+            const positions: number[] = [];
             editor.state.doc.descendants((node, pos) => {
                 if (node.type.name === 'image' && node.attrs.src === to) positions.push(pos);
             });
@@ -68,17 +78,17 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         }
         return true;
     };
-    const resolvePreview = async src => {
+    const resolvePreview = async (src: string) => {
         const localPhotoId = Pending.id(src);
         if (!localPhotoId) return src;
         if (!previews.has(src)) previews.set(src, send({ type: 'PHOTO_REPORT_READ', localPhotoId })
             .then(result => result.dataUrl).catch(error => { previews.delete(src); throw error; }));
         return previews.get(src);
     };
-    const canvasBlob = (canvas, mime) => new Promise((resolve, reject) => {
+    const canvasBlob = (canvas: HTMLCanvasElement, mime: string) => new Promise<Blob>((resolve, reject) => {
         canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('The image could not be prepared.')), mime);
     });
-    const prepare = async file => {
+    const prepare = async (file: File) => {
         if (!file.size || file.size > Pending.MAX_BYTES) throw new Error('Paste an image smaller than 16 MiB.');
         const bitmap = await createImageBitmap(file);
         try {
@@ -86,20 +96,20 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
             const canvas = document.createElement('canvas');
             canvas.width = bitmap.width;
             canvas.height = bitmap.height;
-            canvas.getContext('2d').drawImage(bitmap, 0, 0);
+            canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
             const blob = await canvasBlob(canvas, 'image/png');
             if (blob.size > Pending.MAX_BYTES) throw new Error('This image is too large to paste. Use a smaller copy.');
             const scale = Math.min(1, 320 / Math.max(bitmap.width, bitmap.height));
             canvas.width = Math.max(1, Math.round(bitmap.width * scale));
             canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-            canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
             return { dataUrl: await Pending.toDataUrl(blob), thumbnail: canvas.toDataURL('image/png'),
                 width: bitmap.width, height: bitmap.height };
         } finally { bitmap.close(); }
     };
-    const paste = event => {
+    const paste = (event: ClipboardEvent) => {
         const editor = getEditor();
-        if (!event.isTrusted || saving || !editor || !editor.view.dom.contains(event.target)) return;
+        if (!event.isTrusted || saving || !editor || !editor.view.dom.contains(event.target as Node)) return;
         const files = [...(event.clipboardData?.items || [])]
             .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
             .map(item => item.getAsFile()).filter(Boolean);
@@ -108,7 +118,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         event.stopImmediatePropagation();
         for (const file of files) {
             const provisional = Pending.url(crypto.randomUUID());
-            if (!file.size || file.size > Pending.MAX_BYTES) { say('Paste an image smaller than 16 MiB.'); continue; }
+            if (!file!.size || file!.size > Pending.MAX_BYTES) { say('Paste an image smaller than 16 MiB.'); continue; }
             previews.set(provisional, Pending.toDataUrl(file));
             editor.chain().insertContent({ type: 'image', attrs: { src: provisional, alt: 'Pasted photo', width: 640 } }).run();
             preparing++;
@@ -118,22 +128,22 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
                     await send({ type: 'PHOTO_REPORT_STATUS' }).then(result => {
                         if (!result.configured || !result.permissionGranted) throw new Error('Set up ImgBB in Settings before pasting photos.');
                     });
-                    const prepared = await prepare(file);
+                    const prepared = await prepare(file!);
                     const actionGeneration = generation();
                     const activation = await Trusted.issue(ext, event, 'report-photos', actionGeneration);
                     if (!activation) throw new Error('Paste the photo again to add it.');
                     const result = await send({ type: 'PHOTO_REPORT_CREATE', ...prepared, localPhotoId: Pending.id(provisional),
                         generation: actionGeneration, activationToken: activation.token });
                     previews.set(result.url, Promise.resolve(prepared.dataUrl));
-                    replaceNode(provisional, result.url, '');
+                    replaceNode(provisional!, result.url, '');
                     flush();
                     await saveDraft();
                     say('Photos stay on this device until you save the TR.');
                 } catch (error) {
                     pasteFailures++;
                     previews.delete(provisional);
-                    replaceNode(provisional, null);
-                    say(error.message, 'error');
+                    replaceNode(provisional!, null);
+                    say((error as Error).message, 'error');
                 } finally {
                     preparing--;
                 }
@@ -142,10 +152,10 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
     };
     document.addEventListener('paste', paste, true);
     const pendingIds = () => { flush(); return Pending.ids(textarea.value); };
-    const gate = event => {
-        const control = event.type === 'click' ? event.target.closest?.('#SaveButton, #SaveButton2') : event.submitter;
+    const gate = (event: Event) => {
+        const control = event.type === 'click' ? (event.target as Element).closest?.<HTMLInputElement>('#SaveButton, #SaveButton2') : (event as SubmitEvent).submitter;
         const save = event.type === 'submit' ? event.target === form && (!control || ['SaveButton', 'SaveButton2'].includes(control.id))
-            : control?.form === form;
+            : (control as HTMLInputElement | null)?.form === form;
         if (!save || event.defaultPrevented || (!preparing && !saving && !pendingIds().length && !pendingReferences.size)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -154,16 +164,16 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         if (typeof form.reportValidity === 'function' && !form.reportValidity()) return;
         const savePageGeneration = pageGeneration;
         const failuresBeforeSave = pasteFailures;
-        status.dataset.edge = control?.getBoundingClientRect().top > window.innerHeight / 2 ? 'top' : 'bottom';
+        status.dataset.edge = (control?.getBoundingClientRect().top as number) > window.innerHeight / 2 ? 'top' : 'bottom';
         saving = true;
         const wasInert = form.inert;
         const wasBusy = form.getAttribute('aria-busy');
-        const saveControls = [...form.querySelectorAll('#SaveButton, #SaveButton2')].map(saveControl => ({
+        const saveControls = [...form.querySelectorAll<HTMLInputElement>('#SaveButton, #SaveButton2')].map(saveControl => ({
             control: saveControl,
             value: saveControl.value,
             ariaBusy: saveControl.getAttribute('aria-busy'),
         }));
-        const showSaveProgress = (message, label) => {
+        const showSaveProgress = (message: string, label: string) => {
             say(message, 'busy');
             form.setAttribute('aria-busy', 'true');
             for (const { control: saveControl } of saveControls) {
@@ -223,7 +233,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
                 showSaveProgress('Photos uploaded. Saving ascent…', 'Saving ascent…');
                 ready = true;
             } catch (error) {
-                say(`${error.message} The report has not been submitted.`, 'error');
+                say(`${(error as Error).message} The report has not been submitted.`, 'error');
             } finally {
                 await Trusted.end(ext, workflow, actionGeneration);
                 saving = false;
@@ -250,8 +260,8 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         // textarea instead of removing it with the editor chrome.
         handoffToNative: () => textarea.before(status),
         resolvePreview,
-        edit: (event, src) => { const id = Pending.id(src); if (id && !saving && !preparing) void launchEditor(event, id); },
-        receive: (message, sender) => {
+        edit: (event: Event, src: string) => { const id = Pending.id(src); if (id && !saving && !preparing) void launchEditor(event, id); },
+        receive: (message: LocalPhotoResult, sender: chrome.runtime.MessageSender) => {
             if (message.type !== 'PHOTO_LOCAL_RESULT' || sender?.id !== ext.runtime.id) return false;
             const from = Pending.url(message.replacesLocalPhotoId);
             if (!from || !Pending.id(message.url)) return false;
