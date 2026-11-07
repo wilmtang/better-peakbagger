@@ -1,6 +1,6 @@
 # Modern stack adoption with legacy compatibility
 
-Last updated November 6, 2026 against `b6cb5a6b`.
+Last updated November 6, 2026 against `17606ac8`.
 
 ## Goal
 
@@ -47,33 +47,35 @@ of effort.
 
 ## Current progress
 
-**Next: M2, then M3.** Production adoption has not started: nothing ships through
-Svelte, and Svelte is not installed.
+**Next: M4, then M5.** M0–M3 are complete; M7's pure-TS batches are also
+unblocked by M3. Production Svelte adoption has not started: nothing ships
+through Svelte, and Svelte is not installed.
 
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
 | M0 | Done | Strict browser and Node checking, TS lint scopes, adoption policy in hooks/CI/release, and shared discovery for all seven source guards. |
-| M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`. Results are in the [follow-up ledger](follow-ups.md). |
-| M2 | Done | `src/ui/latest-read.ts` and `src/ui/page-lifecycle.ts` are converted. |
-| M3 | In progress | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` are converted. The watcher still derives directories from entries and misses `src/storage/`. |
+| M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`, `a9de7d7b`. `npm run audit:ci` passes with zero advisories in shipped code; Results are in the [follow-up ledger](follow-ups.md). |
+| M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
+| M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Not started | `src/ui/runtime-message.js` is still JavaScript. No Units panel contract exists. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
-| M6 | Not started, **blocked for release** | `options/unit-settings.js` is unchanged. `npm run audit:ci` fails on addons-linter, deepmerge and web-ext (run November 6). The deepmerge chain has no patched release and its exception has expired. |
-| M7 | Started out of order | 13 more map, terrain and hover-card modules became TS during other work, ahead of the batch order. The first planned batch, starting with `src/storage/storage-value.js`, has not begun. |
+| M6 | Not started | `options/unit-settings.js` is unchanged; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
+| M7 | Started out of order | 35 runtime modules are now TS across `src/`, `options/`, `popup/` and `photos/`. The first planned batch, starting with `src/storage/storage-value.js`, is unblocked after M3. |
 | M8 | Not started | Depends on M6. |
 
 Remaining conversion scope, all of which M7 must finish:
 
 | Area | TypeScript | JavaScript |
 | --- | --- | --- |
-| Runtime (`src`, `options`, `popup`, `photos`) | 16 | 294 |
-| `scripts/` | 8 | 133 |
-| `test/` | 32 | 295 |
+| Runtime (`src`, `options`, `popup`, `photos`) | 35 | 278 |
+| `scripts/` | 29 | 115 |
+| `test/` | 51 | 283 |
 | Other (root config, `docs/plans/`, `store-assets/`) | 1 | 16 |
 
-Runtime TS is all in `src/maps/` and `src/terrain/`, plus
-`src/favorites/climber-hover-card.ts`. There are no Svelte components. The build
-produces 66 outputs: 64 IIFEs and two ESM frames. Recompute the runtime counts with
+Runtime TS spans `src/`, `options/`, `popup/` and `photos/` (including
+`src/ui/latest-read.ts` and `src/ui/page-lifecycle.ts`). There are no Svelte
+components. The build produces 67 outputs: 65 IIFEs and two ESM frames.
+Recompute the runtime counts with
 [`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts) when starting a batch.
 
 Limits of what is proven:
@@ -124,6 +126,8 @@ does not forbid independent local work, but blocks a claim that M6 is releasable
 
 ### M2 — Convert small UI lifetime helpers
 
+Status: complete on November 6, 2026 (`730c7039`, `7d916b3d`).
+
 1. Convert [latest-read.ts](../../src/ui/latest-read.ts) to `.ts`, preserving
    abort ordering, stale-result rejection and reentrant cancellation behavior.
    Update exact caller references and retain its existing focused tests.
@@ -138,6 +142,8 @@ are already under a watched directory, so M2 does not depend on repairing the
 watcher. Run real-extension checks for changed content-script load dependencies.
 
 ### M3 — Complete build/watch support
+
+Status: complete on November 6, 2026 (`bc5fa3b3`, `8d4590ef`, `17606ac8`).
 
 1. Convert [build.mts](../../scripts/build.mts) to `.mts` without changing build
    behavior. Update command/workflow references, imports, literal source readers,
@@ -404,8 +410,8 @@ checks use [shared runtime discovery](../../test/helpers/runtime-sources.mts)
 across the build-owned roots, exclude declarations and generated/vendor code,
 and include `.svelte.ts` through the `.ts` suffix. Fixtures stay outside the
 production scan. Existing policy counts are preserved; the newly discovered
-photo-editor display read has an explicit reviewed owner. Watcher completion is
-M3; executable Svelte coverage is M5.
+photo-editor display read has an explicit reviewed owner. Watcher coverage across
+all authored roots is complete in M3; executable Svelte coverage is M5.
 
 | Existing test | Boundary to preserve |
 | --- | --- |
