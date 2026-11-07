@@ -8,7 +8,7 @@
 // orchestration and UI policy, but they must not invent a second form parser or
 // accept a response based on HTTP status alone.
 
-import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';
+import { ascentSnapshot as Snapshot } from './ascent-snapshot.ts';
 import { reportMarkup as Markup } from '../reports/report-markup.ts';
 import {
     fetchPeakbaggerDocument,

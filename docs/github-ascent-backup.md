@@ -47,7 +47,7 @@ record merge before writing or restoring.
 | --- | --- | --- | --- |
 | User trigger | **Back up all ascents and TRs** or confirmed **Refresh all** on the owner's `ClimbListC.aspx` | Ascent backup enabled; a confirmed Add/Edit success routes to `ascent.aspx` | **Back up ascent and TR** beside Peakbagger's owner actions |
 | Raw fields | Fetch each owner-only `AscentEdit.aspx?aid=…`; shared persisted-form reader | Fetch that ascent's owner-only edit URL; shared persisted-form reader | Same as automatic; the same `runBackup()` function |
-| Raw-field mapper | `src/ascent/ascent-snapshot.js` via `src/ascent/ascent-backup-source.js` | Same | Same |
+| Raw-field mapper | `src/ascent/ascent-snapshot.ts` via `src/ascent/ascent-backup-source.js` | Same | Same |
 | Report body | Persisted `JournalText`, bracket markup converted to Markdown | Fresh save-time exact Markdown sidecar when present; otherwise persisted `JournalText` conversion | Fresh sidecar if a matching save transaction still exists; otherwise persisted conversion |
 | GPX existence | Owner-list GPS marker | Actual GPX link on `ascent.aspx` | Actual GPX link on `ascent.aspx` |
 | GPX URL | Shared canonical `GPXFile.aspx?aid=<aid>&sep=1` builder | The exact display-page link | The exact display-page link |
@@ -111,7 +111,7 @@ link, which automatically tracks endpoint query changes.
 | Module | Owns | Must not own |
 | --- | --- | --- |
 | `src/reports/report-editor.ts` | Pre-Save flush, exact Markdown sidecar, save-time snapshot emission | GitHub token, repository writes, post-save identity guessing |
-| `src/ascent/ascent-snapshot.js` | The only mapping from Peakbagger form control names to raw snapshot fields | Network, extension storage, GitHub serialization |
+| `src/ascent/ascent-snapshot.ts` | The only mapping from Peakbagger form control names to raw snapshot fields | Network, extension storage, GitHub serialization |
 | `src/ascent/ascent-saved.js` | Add/Edit success recognition and routing to the saved ascent | Clicking Save, constructing backup payloads |
 | `src/ascent/ascent-delete.js` | The two observed native Delete submitters, combined confirmation, and pre-submit intent handoff | Treating a click as server success or accessing GitHub |
 | `src/ascent/ascent-page.js` | Saved `aid`, owner edit link, peak fallback, date fallback, actual GPX link | Raw form-field or rendered-report backup scraping |
@@ -218,7 +218,7 @@ have already passed.
 
 ### Raw form-field map
 
-`src/ascent/ascent-snapshot.js` is the only module allowed to know these ASP.NET
+`src/ascent/ascent-snapshot.ts` is the only module allowed to know these ASP.NET
 control names:
 
 | Snapshot field | Peakbagger source |
@@ -257,7 +257,7 @@ Save click or implicit form submission it:
 1. flushes the active Rich/Markdown/Plain editor into `JournalText`;
 2. resolves the report body to exact Markdown source when a valid Markdown
    sidecar exists, otherwise converts the submitted bracket markup;
-3. serializes the live `Form1` through `ascent-snapshot.js`; and
+3. serializes the live `Form1` through `ascent-snapshot.ts`; and
 4. sends `GITHUB_BACKUP_SNAPSHOT` without delaying or changing the Peakbagger
    submission.
 
