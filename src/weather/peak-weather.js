@@ -8,7 +8,7 @@ import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
-import { createLatestRead } from '../ui/latest-read.js';
+import { createLatestRead } from '../ui/latest-read.ts';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.js';

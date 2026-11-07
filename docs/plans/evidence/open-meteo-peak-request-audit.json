@@ -24,7 +24,7 @@
     "src/ui/card-read-gate.ts",
     "src/ui/column-resize.js",
     "src/ui/dom.js",
-    "src/ui/latest-read.js",
+    "src/ui/latest-read.ts",
     "src/ui/layout-menu.js",
     "src/ui/page-lifecycle.js",
     "src/ui/peak-card-layout.js",

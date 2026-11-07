@@ -54,7 +54,7 @@ Svelte, and Svelte is not installed.
 | --- | --- | --- |
 | M0 | Done | Strict browser and Node checking, TS lint scopes, adoption policy in hooks/CI/release, and shared discovery for all seven source guards. |
 | M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`. Results are in the [follow-up ledger](follow-ups.md). |
-| M2 | Not started | `src/ui/latest-read.js` and `src/ui/page-lifecycle.js` are still JavaScript. |
+| M2 | In progress | `src/ui/latest-read.ts` is converted; `src/ui/page-lifecycle.js` is still JavaScript. |
 | M3 | Not started | `scripts/build-config.mts` is converted (`bc5fa3b3`), but `scripts/build.mjs` is not. The watcher still derives directories from entries and misses `src/storage/`. |
 | M4 | Not started | `src/ui/runtime-message.js` is still JavaScript. No Units panel contract exists. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
@@ -124,7 +124,7 @@ does not forbid independent local work, but blocks a claim that M6 is releasable
 
 ### M2 — Convert small UI lifetime helpers
 
-1. Convert [latest-read.js](../../src/ui/latest-read.js) to `.ts`, preserving
+1. Convert [latest-read.ts](../../src/ui/latest-read.ts) to `.ts`, preserving
    abort ordering, stale-result rejection and reentrant cancellation behavior.
    Update exact caller references and retain its existing focused tests.
 2. Convert [page-lifecycle.js](../../src/ui/page-lifecycle.js) to `.ts` with
