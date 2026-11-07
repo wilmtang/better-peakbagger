@@ -6,7 +6,6 @@
 // dragging a slider, holding an arrow key, moving a route vertex — are
 // exercised the way a user performs them rather than asserted from source.
 
-/* eslint-disable @typescript-eslint/no-shadow -- page harness callbacks reuse the outer names they receive. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';

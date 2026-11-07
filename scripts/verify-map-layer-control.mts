@@ -25,7 +25,7 @@ interface LayerStatus { [field: string]: unknown }
 interface LayerFixture {
     paint(): void; retryRequests?: number; landInfo(value: unknown): LayerStatus; coverage?: Record<string, boolean>; zoom?: number;
     state: Record<string, { enabled: boolean; opacity: number; [field: string]: unknown }>; statuses: Record<string, LayerStatus>;
-    control: { dispose(): void; render(view: object): void }; toggles: unknown[]; selections?: number; membership(allowed: boolean): void; showPopup(scale: number): void;
+    control: { dispose(): void; render(view: object): void; position(rect: DOMRect): void }; toggles: unknown[]; selections?: number; membership(allowed: boolean): void; showPopup(scale: number): void;
 }
 interface LayerHost { fixture: LayerFixture; setFixtureTheme(theme: string): void }
 const resources = createResourceStack(), screenshots = process.env.BPB_LAYER_SCREENSHOT_DIR;
@@ -220,6 +220,7 @@ try {
         const caret = trigger.locator('.bpb-layers-caret');
         assert.equal(await caret.isVisible(), true);
         assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'none');
+        const followingClosed = await page.locator('h2').boundingBox();
         await trigger.click();
         assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
         assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'matrix(-1, 0, 0, -1, 0, 0)');
@@ -229,6 +230,20 @@ try {
         // follows the overlay list instead of pinning how many overlays exist.
         const rows = await page.locator('.bpb-layers-row').count();
         assert.ok(box!.width <= 233 && box!.height <= (rows * 36 + 16) * scale, `compact readable overview ${JSON.stringify({ box, rows })}`);
+        // The open panel floats like a menu over a short map's neighbours: it moves
+        // nothing, and every row stays reachable when the window itself is short.
+        assert.deepEqual(await page.locator('h2').boundingBox(), followingClosed, 'opening the panel moves no page content');
+        const lastRow = page.locator('.bpb-layers-row').last();
+        await page.setViewportSize({ width, height: 240 });
+        // map-layers.ts repositions the control on every window resize.
+        await page.evaluate(() => (window as unknown as LayerHost).fixture.control.position(document.querySelector('#map')!.getBoundingClientRect()));
+        await page.waitForFunction(() => { const panel = document.querySelector('.bpb-layers-panel')!; return panel.getBoundingClientRect().bottom <= innerHeight; });
+        await lastRow.scrollIntoViewIfNeeded();
+        const lastBox = (await lastRow.boundingBox())!;
+        assert.ok(lastBox.y >= 0 && lastBox.y + lastBox.height <= 240 + 1, `last overlay row reachable in a short window ${JSON.stringify(lastBox)}`);
+        await lastRow.evaluate(element => { element.closest('.bpb-layers-panel')!.scrollTop = 0; });
+        await page.setViewportSize({ width, height: 800 });
+        await page.evaluate(() => (window as unknown as LayerHost).fixture.control.position(document.querySelector('#map')!.getBoundingClientRect()));
         const mapBox = await page.locator('#map').boundingBox(), triggerBox = await trigger.boundingBox();
         assert.ok(Math.abs(triggerBox!.x - mapBox!.x - 10) <= 1 && Math.abs(box!.x - triggerBox!.x) <= 1, 'trigger and menu share the map left inset');
         assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0);

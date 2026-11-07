@@ -6,7 +6,7 @@
 // worker route and real tabs. State geometry runs with the popup as a tab, where
 // only the pending and failure replies are stubbed. The real toolbar popup then
 // proves native sizing and the sender it actually presents, which has no tab.
-// Window focus stays outside a hidden check.
+// Window focus is what the browser reports; a hidden run shows no real window.
 /* global document, chrome, innerWidth, window */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -153,6 +153,9 @@ try {
             const inbox = popup?.document.querySelector('.inbox-entry') as HTMLElement | null;
             const entry = popup?.document.querySelector('#open-photo-editor') as HTMLElement | null;
             if (!entry || inbox?.hidden !== false || !popup!.document.querySelector('#state')!.textContent) continue;
+            // Measure only once the stylesheet applies and the autosized layout has settled.
+            if (popup!.getComputedStyle(entry).width !== '32px' || popup!.innerWidth !== 390) continue;
+            await new Promise(resolve => popup!.requestAnimationFrame(() => popup!.requestAnimationFrame(resolve)));
             const box = entry.getBoundingClientRect();
             const layout = { width: popup!.innerWidth, height: popup!.innerHeight, entryRight: box.right, entryBottom: box.bottom,
                 overflow: popup!.document.documentElement.scrollWidth };
@@ -162,16 +165,39 @@ try {
         throw new Error('The real popup did not show the photo editor entry');
     });
     assert.equal(nativeEntry.width, 390);
-    assert.ok(nativeEntry.overflow <= 390 && nativeEntry.entryRight <= 390 && nativeEntry.entryBottom <= nativeEntry.height,
+    assert.ok(nativeEntry.overflow <= 390 && nativeEntry.entryRight <= 374 && nativeEntry.entryRight > 300 && nativeEntry.entryBottom > 0 && nativeEntry.entryBottom <= nativeEntry.height,
         `Native popup clipped the entry: ${JSON.stringify(nativeEntry)}`);
     await waitForPhotoPages(1);
     await setup.waitForFunction(() => chrome.extension.getViews({ type: 'popup' }).length === 0);
     const activeUrl = await setup.evaluate(async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.url);
     assert.equal(activeUrl, photoUrl, 'The opened editor must be the active tab');
 
+    // Reusing a tab in another window must bring that window forward.
+    const focus = await setup.evaluate(async photoUrl => {
+        const [editor] = await chrome.tabs.query({ url: photoUrl });
+        const other = await chrome.windows.create({ url: 'about:blank', focused: true });
+        const before = (await chrome.windows.getLastFocused()).id;
+        const popupTab = await chrome.tabs.create({ windowId: other!.id, url: chrome.runtime.getURL('popup/popup.html'), active: true });
+        return { editorWindow: editor.windowId, editorTab: editor.id!, other: other!.id, before, popupTab: popupTab.id };
+    }, photoUrl);
+    assert.equal(focus.before, focus.other, 'the fixture must start focused on the other window');
+    const popupInOtherWindow = await (async () => {
+        for (const deadline = Date.now() + 15000; Date.now() < deadline; await new Promise(resolve => setTimeout(resolve, 50))) {
+            const found = context!.pages().find(page => page !== setup && page.url() === popupUrl);
+            if (found) return found;
+        }
+        throw new Error('The popup tab did not open in the other window');
+    })();
+    await popupInOtherWindow.locator(ENTRY).waitFor();
+    await popupInOtherWindow.locator(ENTRY).click();
+    await setup.waitForFunction(async ({ editorWindow, editorTab }) =>
+        (await chrome.windows.getLastFocused()).id === editorWindow
+            && ((await chrome.tabs.get(editorTab)) as unknown as chrome.tabs.Tab).active, focus);
+    assert.equal(photoPages().length, 1, 'Focusing the other window must not duplicate the editor');
+
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser()?.version(), hidden: true, viewport: '390×600 at 100%/200% CSS zoom',
-        cases: states.length, reused: true, boundTabSpared: true, nativePopup: nativeEntry, unproven: 'window focus', passed: true }));
+        cases: states.length, reused: true, boundTabSpared: true, nativePopup: nativeEntry, windowFocus: 'browser-reported in a hidden run', passed: true }));
 } finally {
     await context?.close();
     await rm(profile, { recursive: true, force: true });

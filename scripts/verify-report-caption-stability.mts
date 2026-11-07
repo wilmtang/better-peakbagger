@@ -338,4 +338,26 @@ async function verifyFormatPainter(page: Page, origin: string, variant: LayoutVa
     await capture(page, `${variant.name}-format-painter-caption-tools`);
     await page.locator('.bpb-re-mode', { hasText: 'Plain' }).click();
     assert.match(await page.locator('#JournalText').inputValue(), /\[figcaption\]Caption \[b\]\[i\]words\[\/i\]\[\/b\] here\[\/figcaption\]/);
+
+    // Windows and Linux bind these to Ctrl+Alt. The editor reads the platform when
+    // it loads, so a non-Mac platform proves that binding on any host.
+    await page.addInitScript(() => { Object.defineProperty(navigator, 'platform', { get: () => 'Linux x86_64' }); });
+    await page.goto(`${origin}/climber/ascentedit.aspx?cid=900001`);
+    await page.evaluate(() => { (document.getElementById('JournalText') as FixtureElement)!.value = '[b]Source[/b] target'; });
+    await page.addStyleTag({ content: (await asset('css/report-editor.css')).toString() });
+    for (const file of ['vendor/marked.umd.js', 'content/ascent-editor.js']) {
+        await page.addScriptTag({ content: (await asset(file)).toString() });
+    }
+    await page.locator('.bpb-re-surface').waitFor();
+    await dragOver('Source');
+    await page.keyboard.press('Control+Alt+C');
+    await pressed('true');
+    await dragOver('target');
+    await page.locator('.bpb-re-surface strong', { hasText: 'target' }).waitFor();
+    await pressed('false');
+    await dragOver('Source');
+    await page.keyboard.press('Control+Alt+C');
+    await pressed('true');
+    await page.keyboard.press('Escape');
+    await pressed('false');
 }

@@ -121,7 +121,7 @@ on the editor, and otherwise opens a new tab. A tab carrying `returnToken`,
 reused, so the button cannot redirect a report's Save and return. Focused hidden
 check: `npm run verify -- popup-photo-entry`. It uses the real worker and tabs, checks
 state geometry with the popup loaded as a tab, then opens the real toolbar popup
-to check its sizing and tab-less sender. Window focus stays outside a hidden run.
+to check its sizing and tab-less sender, and that reuse brings another window forward, as the browser reports it.
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
 project starts when the user chooses, drags, or pastes a browser-decodable image.
