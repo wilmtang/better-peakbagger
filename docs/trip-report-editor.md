@@ -102,7 +102,7 @@ These values are semantically related, not byte-for-byte mirrors. Only
 
 Module ownership follows the same boundary: `src/reports/report-editor.ts` orchestrates
 mode switches, dirty state, drafts, and `JournalText`; `src/reports/report-rich-editor.ts`
-owns the TipTap schema and commands; `src/reports/report-md-editor.js` owns only the
+owns the TipTap schema and commands; `src/reports/report-md-editor.ts` owns only the
 CodeMirror surface; and `src/reports/report-markup.ts` owns every format conversion,
 sanitizer, and canonical serializer.
 

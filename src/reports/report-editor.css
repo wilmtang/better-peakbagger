@@ -1026,7 +1026,7 @@
     color: #8a8a86;
 }
 
-/* Markdown token classes from src/reports/report-md-editor.js's highlight style. */
+/* Markdown token classes from src/reports/report-md-editor.ts's highlight style. */
 .bpb-md-heading { color: #1e2f49; font-weight: bold; }
 .bpb-md-strong { font-weight: bold; }
 .bpb-md-em { font-style: italic; }

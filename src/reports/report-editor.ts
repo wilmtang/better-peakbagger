@@ -5,7 +5,7 @@
 //
 // Replaces the bare JournalText (ascent) or ClimberText (profile) textarea with a rich-text surface (TipTap,
 // schema-locked in src/reports/report-rich-editor.ts) or a Markdown source pane
-// (CodeMirror, src/reports/report-md-editor.js) beside a live preview, converting
+// (CodeMirror, src/reports/report-md-editor.ts) beside a live preview, converting
 // everything through src/reports/report-markup.ts into Peakbagger's square-bracket
 // markup. The native textarea never leaves the form: it is the single
 // submitted source of truth, kept in sync on every edit and flushed
@@ -35,7 +35,7 @@ import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.js';
 import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.ts';
 import { createFormatPainter } from './report-format-painter.ts';
-import { createMarkdownEditor } from './report-md-editor.js';
+import { createMarkdownEditor } from './report-md-editor.ts';
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';

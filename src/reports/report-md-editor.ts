@@ -5,8 +5,8 @@
 //
 // CodeMirror is only the input surface: GFM syntax highlighting, list
 // continuation on Enter, undo history, and line wrapping. It renders nothing.
-// The live preview beside it is produced by report-editor.js from
-// report-markup.js's own allowlisted pipeline, so what the preview shows is
+// The live preview beside it is produced by report-editor.ts from
+// report-markup.ts's own allowlisted pipeline, so what the preview shows is
 // exactly what will be saved — CodeMirror never parses Markdown into HTML.
 //
 // Highlighting uses CSS classes (bpb-md-*) styled in report-editor.css, so the
@@ -35,8 +35,10 @@ const mdHighlight = HighlightStyle.define([
     { tag: tags.contentSeparator, class: 'bpb-md-marker' }
 ]);
 
-export const createMarkdownEditor = ({ parent, placeholder: placeholderText, ariaLabel, onDocChanged, instagram = false }) => {
-    const makeState = doc => EditorState.create({
+interface MarkdownEditorOptions { parent: HTMLElement; placeholder: string; ariaLabel: string; onDocChanged: () => void; instagram?: boolean }
+
+export const createMarkdownEditor = ({ parent, placeholder: placeholderText, ariaLabel, onDocChanged, instagram = false }: MarkdownEditorOptions) => {
+    const makeState = (doc: string) => EditorState.create({
         doc,
         extensions: [
             history(),
@@ -48,7 +50,7 @@ export const createMarkdownEditor = ({ parent, placeholder: placeholderText, ari
                 const url=instagramPasteUrl(source);if(!url)return false;
                 const selection=view.state.selection.main, line=view.state.doc.lineAt(selection.from);
                 if(line.text.trim() && !(selection.from===line.from&&selection.to===line.to))return false;
-                for(let node=syntaxTree(view.state).resolveInner(selection.from,-1);node;node=node.parent)if(/Code/.test(node.name))return false;
+                for(let node:ReturnType<ReturnType<typeof syntaxTree>['resolveInner']>|null=syntaxTree(view.state).resolveInner(selection.from,-1);node;node=node.parent)if(/Code/.test(node.name))return false;
                 event.preventDefault();view.dispatch(view.state.replaceSelection(url));return true;
             }}),
             placeholder(placeholderText),
@@ -70,7 +72,7 @@ export const createMarkdownEditor = ({ parent, placeholder: placeholderText, ari
         getValue: () => view.state.doc.toString(),
         // Mode switches and draft restores replace the document wholesale; a
         // fresh state keeps the previous content out of the undo history.
-        setValue: value => view.setState(makeState(value)),
+        setValue: (value: string) => view.setState(makeState(value)),
         focus: () => view.focus(),
         destroy: () => view.destroy()
     };
