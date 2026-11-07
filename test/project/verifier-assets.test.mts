@@ -52,3 +52,11 @@ test('the Firefox profile fixture provides the device settings read that setting
     const source = await readFile(new URL('../../scripts/verify-profile-editor.mts', import.meta.url), 'utf8');
     assert.match(source, /local: \{ get: async \(\) => \(\{\}\) \}/);
 });
+
+test('map layer verifiers read overlay preferences where settings now keep them', async () => {
+    const layers = await readFile(new URL('../../scripts/verify-map-layers.mts', import.meta.url), 'utf8');
+    assert.doesNotMatch(layers, /storage\.local\.get\('bpbMapOverlayOpacityV1'\)/);
+    assert.match(layers, /storage\.sync\.get\('bpbSettings'\)/);
+    const control = await readFile(new URL('../../scripts/verify-map-layer-control.mts', import.meta.url), 'utf8');
+    assert.match(control, /window\.chrome=\{storage:\{sync:\{[^}]*\}[^}]*\},local:\{get:async\(\)=>\(\{\}\)\}/);
+});

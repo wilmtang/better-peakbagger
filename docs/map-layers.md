@@ -326,7 +326,7 @@ opens official regional guidance without adding another map preset.
 Opacity updates immediately and changes only the edited raster; station markers
 and unrelated overlays stay untouched. Unchanged legends are reused, and
 regional land metadata is recalculated only when the viewport changes.
-Opacity and public-land type preferences are saved on this device. Startup waits for both saved
+Opacity and public-land type preferences are saved with your portable settings. Startup waits for both saved
 opacity and settings before announcing them, and a
 late startup read cannot replace a newer save.
 Unrelated map sessions start with overlays off. A native Full Screen link carries
@@ -605,7 +605,7 @@ stubbed; this does not establish the browser's native optional-permission prompt
 or current live parcel completeness. The historical Sentinel verifier entry
 delegates to this integration check. Use `BPB_VERIFY_LAYERS_SCREENSHOT_DIR` to
 retain integration screenshots.
-Run `node scripts/verify-map-layer-control.mjs --firefox` for the matching compact
+Run `node scripts/verify-map-layer-control.mts --firefox` for the matching compact
 component matrix in Firefox.
 Both browsers also sample real wheel scrolling at 736/320 × 800, light/dark,
 normal/doubled control text, and open/closed menus. Delayed position callbacks

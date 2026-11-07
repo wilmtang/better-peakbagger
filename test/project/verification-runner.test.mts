@@ -33,7 +33,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['provider-performance'], [['verify-provider-performance.mjs']]],
         [['map-handoffs'], [['verify-map-handoffs.mjs']]],
         [['onx'], [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']]],
-        [['map-layers'], [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']]],
+        [['map-layers'], [['verify-map-layer-control.mts'], ['verify-map-layers.mts']]],
         [['settings-navigation'], [['verify-settings-fragments.mjs', 'chrome'], ['verify-settings-fragments.mjs', 'firefox']]],
         [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
         [['api-rate-limits'], [['verify-api-rate-limits.mjs']]],

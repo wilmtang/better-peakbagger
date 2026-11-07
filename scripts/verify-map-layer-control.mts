@@ -1,3 +1,6 @@
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+/* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document, window, getComputedStyle */
@@ -15,14 +18,22 @@ import { darkCss } from '../src/theme/site-dark-css.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
-if (args.length > 1 || args.some(arg => arg !== '--firefox')) throw new Error('Usage: node scripts/verify-map-layer-control.mjs [--firefox]');
+if (args.length > 1 || args.some(arg => arg !== '--firefox')) throw new Error('Usage: node scripts/verify-map-layer-control.mts [--firefox]');
 const firefoxMode = args.includes('--firefox');
+type PageElement = HTMLElement & HTMLInputElement & HTMLSelectElement;
+interface LayerStatus { [field: string]: unknown }
+interface LayerFixture {
+    paint(): void; retryRequests?: number; landInfo(value: unknown): LayerStatus; coverage?: Record<string, boolean>; zoom?: number;
+    state: Record<string, { enabled: boolean; opacity: number; [field: string]: unknown }>; statuses: Record<string, LayerStatus>;
+    control: { dispose(): void; render(view: object): void }; toggles: unknown[]; selections?: number; membership(allowed: boolean): void; showPopup(scale: number): void;
+}
+interface LayerHost { fixture: LayerFixture; setFixtureTheme(theme: string): void }
 const resources = createResourceStack(), screenshots = process.env.BPB_LAYER_SCREENSHOT_DIR;
-let primaryError, summary;
+let primaryError: unknown, summary: unknown;
 try {
     const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-layer-control-'));
     resources.defer('layer control temporary files', () => rm(temporaryRoot, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot });
+    const fixture = await createBrowserFixtureServer({ temporaryRoot } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
     resources.defer('layer control HTTPS fixture', () => fixture.close());
     if (!firefoxMode) assertChromeLaunchAllowed();
     const context = await (firefoxMode ? firefox : chromium).launchPersistentContext(temporaryRoot, firefoxMode ? {
@@ -58,7 +69,7 @@ try {
             window.fixture.membership=allowed=>updateSnotelPopupAction(popup,station,allowed?()=>{window.fixture.selections=(window.fixture.selections||0)+1}:undefined);
         }};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
     const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
-    const page = await context.newPage(), errors = [];
+    const page = await context.newPage(), errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     // Match the live native selector's white, black-bordered surround. The
@@ -72,7 +83,7 @@ try {
         <style>body{margin:16px;font:14px Arial}iframe{width:100%;height:300px;border:0}</style>
         <h1>Dynamic Map</h1><a id="before-map" href="#">Before map</a><iframe src="/map/MasterMap.aspx?themeFixture=1"></iframe><a id="after-map" href="#">Full screen map</a><h2>Following native content</h2>
         <script>let settings={theme:'light'};const listeners=[];
-        window.chrome={storage:{sync:{get:async()=>({bpbSettings:settings})},onChanged:{addListener:listener=>listeners.push(listener),removeListener:()=>{}}}};
+        window.chrome={storage:{sync:{get:async()=>({bpbSettings:settings})},local:{get:async()=>({})},onChanged:{addListener:listener=>listeners.push(listener),removeListener:()=>{}}}};
         window.setFixtureTheme=theme=>{settings={theme};listeners.forEach(listener=>listener({bpbSettings:{newValue:settings}},'sync'))};</script>` }));
     const themeBundle = await readFile(path.join(root, 'dist/content/theme.js'), 'utf8');
     let nativeThemeCases = 0;
@@ -81,7 +92,7 @@ try {
         await page.goto(`${origin}/native-map-theme.aspx`);
         await page.addScriptTag({ content: themeBundle });
         await page.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'light');
-        await page.locator('body').evaluate((body, scale) => { body.style.zoom = scale; }, scale);
+        await page.locator('body').evaluate((body, scale) => { body.style.zoom = String(scale); }, scale);
         const native = page.frameLocator('iframe'), picker = native.locator('#selmap');
         await picker.waitFor();
         await page.locator('#before-map').focus();
@@ -92,25 +103,25 @@ try {
         assert.equal(await picker.evaluate(element => document.activeElement === element && document.hasFocus() && element.matches(':focus-visible')), true,
             'Tab reaches the native basemap picker with visible keyboard focus');
         const geometry = () => page.evaluate(() => {
-            const frame = document.querySelector('iframe'), doc = frame.contentDocument;
-            const rect = element => { const r = element.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]; };
+            const frame = document.querySelector('iframe'), doc = frame!.contentDocument;
+            const rect = (element: Element) => { const r = element.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]; };
             return { page: [...document.querySelectorAll('h1,iframe,h2')].map(rect),
-                map: ['#map','#selboxdiv','#selmap'].map(selector => rect(doc.querySelector(selector))),
-                scroll: [window.scrollX,window.scrollY,doc.defaultView.scrollX,doc.defaultView.scrollY] };
+                map: ['#map','#selboxdiv','#selmap'].map(selector => rect(doc!.querySelector(selector)!)),
+                scroll: [window.scrollX,window.scrollY,doc!.defaultView!.scrollX,doc!.defaultView!.scrollY] };
         });
         const before = await geometry();
         for (const theme of ['dark', 'light', 'dark']) {
-            await page.evaluate(theme => window.setFixtureTheme(theme), theme);
+            await page.evaluate(theme => (window as unknown as LayerHost).setFixtureTheme(theme), theme);
             await native.locator(`html[data-bpb-theme="${theme}"]`).waitFor({ state: 'attached' });
             assert.equal(await native.locator('html').getAttribute('data-bpb-theme'), theme);
             const appearance = await picker.evaluate(element => {
-                const style = getComputedStyle(element), surround = getComputedStyle(element.parentElement);
+                const style = getComputedStyle(element), surround = getComputedStyle(element.parentElement!);
                 return { background: style.backgroundColor, color: style.color, scheme: style.colorScheme,
                     surround: surround.backgroundColor, border: surround.borderTopWidth, borderColor: surround.borderTopColor,
                     focused: document.activeElement === element && document.hasFocus(), focusVisible: element.matches(':focus-visible'),
                     outline: style.outlineStyle, outlineWidth: style.outlineWidth,
-                    option: getComputedStyle(element.options[0]).backgroundColor,
-                    map: getComputedStyle(document.getElementById('map')).backgroundColor };
+                    option: getComputedStyle((element as HTMLSelectElement).options[0]).backgroundColor,
+                    map: getComputedStyle(document.getElementById('map')!).backgroundColor };
             });
             if (theme === 'dark') {
                 assert.equal(appearance.background, 'rgb(38, 54, 44)', 'native picker must use BPB dark inputs');
@@ -133,12 +144,12 @@ try {
         <h1>Ascent map</h1><div class="before-map"></div><div id="map"></div><h2>Following native content</h2><div class="after-map"></div>` }));
     const scrollCases = [];
     for (const width of [736, 320]) for (const theme of ['light', 'dark']) for (const scale of [1, 2]) {
-        await page.setViewportSize({ width, height: 800 }); await page.emulateMedia({ colorScheme: theme });
+        await page.setViewportSize({ width, height: 800 }); await page.emulateMedia({ colorScheme: theme as 'light' | 'dark' });
         await page.goto(`${origin}/layer-scroll.aspx`);
         await page.addStyleTag({ content: css + darkCss });
         await page.evaluate(theme => {
             document.documentElement.dataset.bpbTheme = theme;
-            window.scrollTo(0, document.querySelector('#map').getBoundingClientRect().top - 220);
+            window.scrollTo(0, document.querySelector('#map')!.getBoundingClientRect().top - 220);
         }, theme);
         await page.addScriptTag({ content: bundle.outputFiles[0].text });
         await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${13 * scale}px`; }, scale);
@@ -151,9 +162,9 @@ try {
                 window.traceScroll = true;
                 const sample = () => {
                     if (!window.traceScroll) return;
-                    const map = document.querySelector('#map').getBoundingClientRect();
-                    const trigger = document.querySelector('.bpb-layers-trigger').getBoundingClientRect();
-                    const heading = document.querySelector('h2').getBoundingClientRect();
+                    const map = document.querySelector('#map')!.getBoundingClientRect();
+                    const trigger = document.querySelector('.bpb-layers-trigger')!.getBoundingClientRect();
+                    const heading = document.querySelector('h2')!.getBoundingClientRect();
                     window.scrollFrames.push({ x: trigger.x - map.x, y: trigger.y - map.y,
                         width: trigger.width, height: trigger.height, following: heading.y - map.bottom,
                         mapDocumentY: map.y + window.scrollY, headingDocumentY: heading.y + window.scrollY, scrollY: window.scrollY });
@@ -162,16 +173,16 @@ try {
                 sample();
             });
             await page.mouse.move(width - 2, 300);
-            for (const [delta, status] of [[80, { pending: true }], [-50, { error: true, retry: true, message: 'Could not load slope shading.' }], [60, {}]]) {
+            for (const [delta, status] of ([[80, { pending: true }], [-50, { error: true, retry: true, message: 'Could not load slope shading.' }], [60, {}]] as [number, object][])) {
                 const before = await page.evaluate(() => window.scrollY);
                 await page.mouse.wheel(0, delta);
                 await page.waitForFunction(before => window.scrollY !== before && window.scrollFrames.at(-1)?.scrollY === window.scrollY, before);
                 await page.evaluate(async status => {
-                    const { control, state, statuses } = window.fixture;
+                    const { control, state, statuses } = (window as unknown as LayerHost).fixture;
                     // Provider replies can paint before the delayed scroll
                     // handler; they must not combine stale viewport geometry
                     // with the new scroll offset and snap the button back.
-                    statuses.slope = status;
+                    statuses.slope = status as LayerStatus;
                     control.render({ state, statuses, theme: document.documentElement.dataset.bpbTheme });
                     await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
                 }, status);
@@ -186,7 +197,7 @@ try {
             // Once the owner catches up, updating its geometry must also be
             // invisible; the dropdown can still recalculate viewport limits.
             const before = await page.locator('.bpb-layers-trigger').boundingBox();
-            await page.evaluate(() => window.fixture.paint());
+            await page.evaluate(() => (window as unknown as LayerHost).fixture.paint());
             assert.deepEqual(await page.locator('.bpb-layers-trigger').boundingBox(), before, 'the scroll callback cannot move the anchored button');
             if (screenshots) {
                 await mkdir(screenshots, { recursive: true });
@@ -199,7 +210,7 @@ try {
     await page.route('**/layer-control.aspx', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>body{margin:16px;font:14px system-ui}#map{height:240px;margin-top:36px;background:#c4cdc3}</style><div id="map"></div><h2>Following native content</h2>' }));
     const cases = [];
     for (const width of [736, 320]) for (const theme of ['light', 'dark']) for (const scale of [1, 2]) {
-        await page.setViewportSize({ width, height: 800 }); await page.emulateMedia({ colorScheme: theme });
+        await page.setViewportSize({ width, height: 800 }); await page.emulateMedia({ colorScheme: theme as 'light' | 'dark' });
         await page.goto(`https://www.peakbagger.com:${fixture.port}/layer-control.aspx`);
         await page.addStyleTag({ content: css }); await page.addScriptTag({ content: bundle.outputFiles[0].text });
         await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${13 * scale}px`; }, scale);
@@ -214,11 +225,14 @@ try {
         assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'matrix(-1, 0, 0, -1, 0, 0)');
         assert.deepEqual(await trigger.boundingBox(), collapsedTrigger, 'caret rotation does not move or resize the trigger');
         const box = await page.locator('.bpb-layers-panel').boundingBox();
-        assert.ok(box.width <= 233 && box.height <= (scale === 1 ? 170 : 340), `compact readable overview ${JSON.stringify(box)}`);
+        // One compact row per overlay and only the panel's own padding, so the limit
+        // follows the overlay list instead of pinning how many overlays exist.
+        const rows = await page.locator('.bpb-layers-row').count();
+        assert.ok(box!.width <= 233 && box!.height <= (rows * 36 + 16) * scale, `compact readable overview ${JSON.stringify({ box, rows })}`);
         const mapBox = await page.locator('#map').boundingBox(), triggerBox = await trigger.boundingBox();
-        assert.ok(Math.abs(triggerBox.x - mapBox.x - 10) <= 1 && Math.abs(box.x - triggerBox.x) <= 1, 'trigger and menu share the map left inset');
+        assert.ok(Math.abs(triggerBox!.x - mapBox!.x - 10) <= 1 && Math.abs(box!.x - triggerBox!.x) <= 1, 'trigger and menu share the map left inset');
         assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0);
-        const geometry = () => page.evaluate(() => ['.bpb-layers-trigger', ...Array.from(document.querySelectorAll('.bpb-layers-row')).map(row => `[data-layer="${row.dataset.layer}"]`), '#map', 'h2'].map(selector => { const r = document.querySelector(selector).getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }));
+        const geometry = () => page.evaluate(() => ['.bpb-layers-trigger', ...Array.from(document.querySelectorAll<PageElement>('.bpb-layers-row')).map(row => `[data-layer="${row.dataset.layer}"]`), '#map', 'h2'].map(selector => { const r = document.querySelector(selector)!.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }));
         const before = await geometry();
         const stable = async () => { const after = await geometry(); before.forEach((rect, i) => rect.forEach((value, j) => assert.ok(Math.abs(value - after[i][j]) <= 1, `stable control ${i}/${j}`))); };
         if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-overview.png`) }); }
@@ -226,18 +240,18 @@ try {
             const caption = page.locator(`[data-layer="${id}"] .bpb-layers-value-label`);
             assert.equal(await caption.textContent(), 'Opacity');
             assert.equal(await caption.evaluate(element => {
-                const caption = element.getBoundingClientRect(), label = element.closest('label').getBoundingClientRect();
+                const caption = element.getBoundingClientRect(), label = element.closest('label')!.getBoundingClientRect();
                 return caption.left >= label.left && caption.right <= label.right && caption.top >= label.top && caption.bottom <= label.bottom;
             }), true, 'opacity caption fits its primary toggle label');
         }
         const landToggle = page.locator('[data-layer="land"] input'), landName = page.locator('[data-layer="land"] .bpb-layers-row-name');
         const choiceBox = await page.locator('[data-layer="land"] label').boundingBox(), rowBox = await page.locator('[data-layer="land"]').boundingBox();
-        assert.ok(choiceBox.width >= rowBox.width * .7, 'the primary visibility toggle gets most of the row');
+        assert.ok(choiceBox!.width >= rowBox!.width * .7, 'the primary visibility toggle gets most of the row');
         await landName.click(); assert.equal(await landToggle.isChecked(), true); await stable();
-        const toggles = await page.evaluate(() => window.fixture.toggles.length);
+        const toggles = await page.evaluate(() => (window as unknown as LayerHost).fixture.toggles.length);
         await page.locator('[data-layer="land"] button').click();
         assert.equal(await landToggle.isChecked(), true, 'settings never toggle visibility');
-        assert.equal(await page.evaluate(() => window.fixture.toggles.length), toggles, 'settings do not duplicate toggle events');
+        assert.equal(await page.evaluate(() => (window as unknown as LayerHost).fixture.toggles.length), toggles, 'settings do not duplicate toggle events');
         await landName.click(); assert.equal(await landToggle.isChecked(), false); await stable();
         await landToggle.focus(); await landToggle.press('Space'); assert.equal(await landToggle.isChecked(), true); await stable();
         await landToggle.press('Space'); assert.equal(await landToggle.isChecked(), false); await stable();
@@ -251,7 +265,7 @@ try {
                 assert.equal(await guidance.getAttribute('href'), 'https://www.blm.gov/programs/recreation/camping');
                 assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) [data-land-type] label').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local / district', 'Tribal']);
                 const detailBox = await page.locator('.bpb-layers-detail:not([hidden])').boundingBox();
-                assert.ok(detailBox.x >= box.x && detailBox.x + detailBox.width <= box.x + box.width, 'land detail stays within compact width');
+                assert.ok(detailBox!.x >= box!.x && detailBox!.x + detailBox!.width <= box!.x + box!.width, 'land detail stays within compact width');
                 if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-land.png`) });
                 await page.locator('[data-layer="land"] input').check();
                 const all = page.getByRole('checkbox', { name: 'All land types', exact: true });
@@ -259,16 +273,16 @@ try {
                 await only.scrollIntoViewIfNeeded(); await only.focus();
                 const typeGeometry = () => page.evaluate(() => ({
                     boxes: ['.bpb-layers-panel', '[data-overlay="land"]', '[data-land-type="BLM"]', '[data-land-type="USFS"]', '#map', 'h2'].map(selector => {
-                        const r = document.querySelector(selector).getBoundingClientRect(); return [r.x,r.y,r.width,r.height];
-                    }), scroll: [window.scrollY, document.querySelector('.bpb-layers-panel').scrollTop]
+                        const r = document.querySelector(selector)!.getBoundingClientRect(); return [r.x,r.y,r.width,r.height];
+                    }), scroll: [window.scrollY, document.querySelector('.bpb-layers-panel')!.scrollTop]
                 }));
                 const typeBefore = await typeGeometry();
                 await only.press('Enter');
-                assert.equal(await all.evaluate(input => input.indeterminate), true);
+                assert.equal(await all.evaluate(input => (input as HTMLInputElement).indeterminate), true);
                 assert.equal(await page.getByRole('checkbox', { name: 'BLM land', exact: true }).isChecked(), true);
                 assert.equal(await page.getByRole('checkbox', { name: 'USFS land', exact: true }).isChecked(), false);
                 for (const status of [{pending:true,message:'Loading public lands'}, {error:true,retry:true,message:'Land coverage couldn’t load. Try again.'}, {message:''}]) {
-                    await page.evaluate(status => { window.fixture.statuses.land = {...window.fixture.landInfo(null),...status}; window.fixture.paint(); }, status);
+                    await page.evaluate(status => { (window as unknown as LayerHost).fixture.statuses.land = {...(window as unknown as LayerHost).fixture.landInfo(null),...status}; (window as unknown as LayerHost).fixture.paint(); }, status);
                     assert.deepEqual(await typeGeometry(), typeBefore, 'filter rows, panel and reading position stay anchored through provider feedback');
                     assert.equal(await only.evaluate(element => document.activeElement === element), true);
                 }
@@ -279,26 +293,26 @@ try {
                 assert.deepEqual(await typeGeometry(), typeBefore, 'empty selection retains the compact panel geometry');
                 await all.press('Space');
                 await page.evaluate(() => {
-                    window.fixture.state.land.enabled = true;
-                    window.fixture.statuses.land = { ...window.fixture.landInfo([-125, 53, -124, 54]), permission: true, retry: true, message: 'Allow BC parcel maps.' };
-                    window.fixture.paint();
+                    (window as unknown as LayerHost).fixture.state.land.enabled = true;
+                    (window as unknown as LayerHost).fixture.statuses.land = { ...(window as unknown as LayerHost).fixture.landInfo([-125, 53, -124, 54]), permission: true, retry: true, message: 'Allow BC parcel maps.' };
+                    (window as unknown as LayerHost).fixture.paint();
                 });
                 const allow = page.getByRole('button', { name: 'Allow BC land maps', exact: true });
                 await allow.scrollIntoViewIfNeeded(); const allowBox = await allow.boundingBox();
                 const scroll = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
                 await allow.focus();
                 for (const status of [{ pending: true, message: 'Allow BC parcel maps.' }, { pending: false, error: true, message: 'BC access not granted.' }]) {
-                    await page.evaluate(status => { Object.assign(window.fixture.statuses.land, status); window.fixture.paint(); }, status);
+                    await page.evaluate(status => { Object.assign((window as unknown as LayerHost).fixture.statuses.land, status); (window as unknown as LayerHost).fixture.paint(); }, status);
                     assert.deepEqual(await allow.boundingBox(), allowBox, 'permission pending/denial keep the action anchored');
                     assert.equal(await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop), scroll, 'permission feedback preserves menu reading position');
                     assert.equal(await allow.evaluate(element => document.activeElement === element), true);
                 }
                 assert.equal(await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).isVisible(), true);
-                await page.evaluate(() => { Object.assign(window.fixture.statuses.land, { partial: true, pending: false, message: 'BC maps need access. Other land coverage is shown.' }); window.fixture.paint(); });
+                await page.evaluate(() => { Object.assign((window as unknown as LayerHost).fixture.statuses.land, { partial: true, pending: false, message: 'BC maps need access. Other land coverage is shown.' }); (window as unknown as LayerHost).fixture.paint(); });
                 assert.equal(await page.locator('[data-layer="land"] .bpb-layers-row-status').textContent(), 'Partly loaded');
                 assert.deepEqual(await allow.boundingBox(), allowBox, 'partial coverage keeps the permission action anchored');
                 if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-canada.png`) });
-                await page.evaluate(() => { window.fixture.state.land.enabled = false; window.fixture.statuses.land = window.fixture.landInfo(null); window.fixture.paint(); });
+                await page.evaluate(() => { (window as unknown as LayerHost).fixture.state.land.enabled = false; (window as unknown as LayerHost).fixture.statuses.land = (window as unknown as LayerHost).fixture.landInfo(null); (window as unknown as LayerHost).fixture.paint(); });
                 await page.locator('.bpb-layers-panel').evaluate(element => { element.scrollTop = 0; });
             }
         }
@@ -309,15 +323,15 @@ try {
             const legends = [...document.querySelectorAll('.bpb-layers-legend')];
             const originals = legends.map(legend => [...legend.childNodes]);
             for (const opacity of [0, 25, 50, 75, 100, 60]) {
-                element.value = String(opacity); element.dispatchEvent(new window.Event('input', { bubbles: true }));
-                if (document.querySelector('[data-layer="slope"] .bpb-layers-value-number').textContent !== `${opacity}%`) return { immediate: false };
+                (element as HTMLInputElement).value = String(opacity); element.dispatchEvent(new window.Event('input', { bubbles: true }));
+                if (document.querySelector('[data-layer="slope"] .bpb-layers-value-number')!.textContent !== `${opacity}%`) return { immediate: false };
             }
             return { immediate: true, focused: document.activeElement === element,
                 reused: legends.every((legend, i) => [...legend.childNodes].every((node, j) => node === originals[i][j])) };
         });
         assert.deepEqual(drag, { immediate: true, focused: true, reused: true }, 'opacity stays immediate and reuses unchanged legends');
         assert.deepEqual(await geometry(), dragGeometry, 'opacity dragging preserves rows, map and following content');
-        await page.evaluate(() => { window.fixture.statuses.slope = { error: true, retry: true, message: 'Some tiles could not load.' }; window.fixture.paint(); });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.slope = { error: true, retry: true, message: 'Some tiles could not load.' }; (window as unknown as LayerHost).fixture.paint(); });
         const recovery = page.getByRole('button', { name: /^(Retry|Reload)$/ });
         await recovery.scrollIntoViewIfNeeded(); await recovery.focus();
         const recoveryBox = await recovery.boundingBox(), scrollBeforeRecovery = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
@@ -329,11 +343,11 @@ try {
             assert.equal(await recovery.evaluate(element => document.activeElement === element), true);
         };
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Couldn’t load');
-        await page.evaluate(() => { window.fixture.state.sentinel.enabled = true; Object.assign(window.fixture.statuses.sentinel, { pending: false, error: true, captureError: true, message: 'Capture search failed. Previous imagery shown.' }); window.fixture.paint(); });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.state.sentinel.enabled = true; Object.assign((window as unknown as LayerHost).fixture.statuses.sentinel, { pending: false, error: true, captureError: true, message: 'Capture search failed. Previous imagery shown.' }); (window as unknown as LayerHost).fixture.paint(); });
         assert.equal(await page.locator('[data-layer="sentinel"] .bpb-layers-row-status').textContent(), 'Search failed'); await stableRecovery();
-        await page.evaluate(() => { window.fixture.state.sentinel.enabled = false; Object.assign(window.fixture.statuses.sentinel, { error: false, captureError: false, message: '' }); window.fixture.paint(); });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.state.sentinel.enabled = false; Object.assign((window as unknown as LayerHost).fixture.statuses.sentinel, { error: false, captureError: false, message: '' }); (window as unknown as LayerHost).fixture.paint(); });
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-failure.png`) });
-        await page.evaluate(() => { window.fixture.statuses.slope = { error: true, partial: true, retry: true, message: 'Some slope tiles couldn’t load. Available shading is still shown.' }; window.fixture.paint(); });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.slope = { error: true, partial: true, retry: true, message: 'Some slope tiles couldn’t load. Available shading is still shown.' }; (window as unknown as LayerHost).fixture.paint(); });
         await stableRecovery();
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Partly loaded');
         assert.equal(await page.getByText('Some slope tiles couldn’t load. Available shading is still shown.', { exact: true }).isVisible(), true);
@@ -341,17 +355,17 @@ try {
         await recovery.click(); await stableRecovery();
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Loading');
         assert.equal(await recovery.getAttribute('aria-disabled'), 'true');
-        const requests = await page.evaluate(() => window.fixture.retryRequests);
-        await recovery.press('Enter'); assert.equal(await page.evaluate(() => window.fixture.retryRequests), requests, 'busy retry rejects duplicate keyboard activation');
+        const requests = await page.evaluate(() => (window as unknown as LayerHost).fixture.retryRequests);
+        await recovery.press('Enter'); assert.equal(await page.evaluate(() => (window as unknown as LayerHost).fixture.retryRequests), requests, 'busy retry rejects duplicate keyboard activation');
         const spinner = page.locator('[data-layer="slope"] .bpb-layers-spinner'); assert.equal(await spinner.isVisible(), true);
         assert.equal(await spinner.evaluate(element => getComputedStyle(element).animationName), 'bpb-layer-spin');
-        await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+        await page.emulateMedia({ colorScheme: theme as 'light' | 'dark', reducedMotion: 'reduce' });
         assert.equal(await spinner.evaluate(element => getComputedStyle(element).animationName), 'none');
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-loading.png`) });
-        await page.emulateMedia({ colorScheme: theme, reducedMotion: 'no-preference' });
-        await page.evaluate(() => { window.fixture.statuses.slope = { error: true, retry: true, message: 'Some tiles could not load.' }; window.fixture.paint(); }); await stableRecovery();
+        await page.emulateMedia({ colorScheme: theme as 'light' | 'dark', reducedMotion: 'no-preference' });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.slope = { error: true, retry: true, message: 'Some tiles could not load.' }; (window as unknown as LayerHost).fixture.paint(); }); await stableRecovery();
         await recovery.click();
-        await page.evaluate(() => { window.fixture.statuses.slope = {}; window.fixture.paint(); }); await stableRecovery();
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.slope = {}; (window as unknown as LayerHost).fixture.paint(); }); await stableRecovery();
         assert.equal(await recovery.textContent(), 'Reload', 'success retains a real action until the user leaves it');
         assert.equal(await page.getByText('Overlay refreshed.', { exact: true }).isVisible(), true);
         assert.equal(await recovery.getAttribute('aria-disabled'), 'false');
@@ -367,20 +381,20 @@ try {
             assert.equal(await page.locator(`[data-layer="${id}"]`).getAttribute('data-selected'), 'true');
             assert.equal(await page.locator('.bpb-layers-row[data-selected="true"]').count(), 1);
             assert.equal(await page.locator('.bpb-layers-detail:not([hidden])').getAttribute('aria-label'), `${await checkbox.getAttribute('aria-label')} settings`);
-            await page.evaluate(() => { window.fixture.statuses.sentinel.pending = true; window.fixture.paint(); });
+            await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.sentinel.pending = true; (window as unknown as LayerHost).fixture.paint(); });
             assert.equal(await checkbox.evaluate(element => element === document.activeElement), true, 'async feedback preserves the toggle focus');
             assert.equal(await page.locator(`[data-layer="${id}"] button`).getAttribute('aria-expanded'), 'true'); await stable();
         }
-        await page.evaluate(() => { window.fixture.state.slope.enabled = true; window.fixture.statuses.sentinel.pending = false; window.fixture.paint(); });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.state.slope.enabled = true; (window as unknown as LayerHost).fixture.statuses.sentinel.pending = false; (window as unknown as LayerHost).fixture.paint(); });
         const slider = page.getByRole('slider', { name: 'Slope angle opacity' });
         await slider.focus(); await slider.press('Home'); assert.equal(await slider.inputValue(), '0');
         await slider.press('End'); assert.equal(await slider.inputValue(), '100');
         for (const status of [{ pending: true, message: 'Loading slope…', retry: true }, { error: true, message: 'Slope is unavailable. Try again.', retry: true }, { message: 'Loaded' }]) {
-            await page.evaluate(status => { window.fixture.statuses.slope = status; window.fixture.paint(); }, status); await stable();
+            await page.evaluate(status => { (window as unknown as LayerHost).fixture.statuses.slope = status as LayerStatus; (window as unknown as LayerHost).fixture.paint(); }, status); await stable();
         }
         const zoomGeometry = await geometry(), zoomPanel = await page.locator('.bpb-layers-panel').boundingBox();
         for (const zoom of [7, 8, 7, 8]) {
-            await page.evaluate(zoom => { window.fixture.zoom = zoom; window.fixture.statuses.slope = { pending: true, retry: true, message: 'Loading slope shading' }; window.fixture.paint(); }, zoom);
+            await page.evaluate(zoom => { (window as unknown as LayerHost).fixture.zoom = zoom; (window as unknown as LayerHost).fixture.statuses.slope = { pending: true, retry: true, message: 'Loading slope shading' }; (window as unknown as LayerHost).fixture.paint(); }, zoom);
             assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), zoom < 8 ? 'Zoom in' : 'Loading');
             assert.equal(await page.locator('[data-layer="sentinel"] .bpb-layers-row-status').textContent(), 'Zoom in', 'Sentinel requires catalog zoom 9, even when other rasters reach their zoom limit');
             assert.equal(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-retry').isVisible(), zoom >= 8);
@@ -389,13 +403,13 @@ try {
             assert.equal(await slider.evaluate(element => document.activeElement === element), true);
             if (screenshots && zoom === 7) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-zoom.png`) });
         }
-        await page.evaluate(() => { window.fixture.statuses.slope = { message: 'Loaded' }; window.fixture.paint(); });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.slope = { message: 'Loaded' }; (window as unknown as LayerHost).fixture.paint(); });
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-detail.png`) });
         await slider.press('Escape'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true);
         assert.equal(await slider.evaluate(element => document.activeElement === element), true, 'Escape keeps focus with the current control');
-        assert.equal(await page.evaluate(() => window.fixture.state.slope.enabled), true);
+        assert.equal(await page.evaluate(() => (window as unknown as LayerHost).fixture.state.slope.enabled), true);
         await page.mouse.click(width - 15, 320); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true);
-        await page.locator('#map').click({ position: { x: mapBox.width - 10, y: 10 } });
+        await page.locator('#map').click({ position: { x: mapBox!.width - 10, y: 10 } });
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true); await stable();
         await trigger.click(); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'none');
@@ -409,14 +423,14 @@ try {
         const capture = page.getByRole('combobox', { name: 'Sentinel-2 capture' });
         for (const id of ['latest', 'older', 'unknown']) {
             await capture.selectOption(id);
-            const metadata = await capture.evaluate(element => ({ title: element.title, label: element.selectedOptions[0].textContent,
-                accessible: element.selectedOptions[0].getAttribute('aria-label') }));
+            const metadata = await capture.evaluate(select => { const element = select as HTMLSelectElement; return { title: element.title, label: element.selectedOptions[0].textContent,
+                accessible: element.selectedOptions[0].getAttribute('aria-label') }; });
             assert.match(metadata.label, /☁ (?:3%|100%|\?)/); assert.match(metadata.title, /2026-10-0[567] 18:27 PDT · Clouds (?:3%|100%|unknown)$/);
             assert.equal(metadata.title, metadata.accessible); await stable();
         }
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-sentinel.png`) });
         await page.locator('[data-layer="snotel"] button').click();
-        await page.evaluate(() => { window.fixture.state.snotel.enabled = true; window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, error: true, saved: true, retry: true, count: 3, message: 'Showing loaded locations.' }; window.fixture.paint(); });
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.state.snotel.enabled = true; (window as unknown as LayerHost).fixture.statuses.snotel = { ...(window as unknown as LayerHost).fixture.statuses.snotel, error: true, saved: true, retry: true, count: 3, message: 'Showing loaded locations.' }; (window as unknown as LayerHost).fixture.paint(); });
         const stationRetry = page.getByRole('button', { name: /^(Retry|Reload)$/ }); await stationRetry.scrollIntoViewIfNeeded(); await stationRetry.focus();
         const stationBox = await stationRetry.boundingBox(), stationPanel = await page.locator('.bpb-layers-panel').boundingBox();
         const stationScroll = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
@@ -425,27 +439,27 @@ try {
         await stationRetry.click(); await stable();
         assert.deepEqual(await stationRetry.boundingBox(), stationBox);
         assert.deepEqual(await page.locator('.bpb-layers-panel').boundingBox(), stationPanel, 'station recovery preserves the compact panel dimensions');
-        const stationRequests = await page.evaluate(() => window.fixture.retryRequests);
-        await stationRetry.press('Enter'); assert.equal(await page.evaluate(() => window.fixture.retryRequests), stationRequests);
-        await page.evaluate(() => { window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, pending: false, error: false, saved: false, retry: false, count: 3, message: '3 stations in view.' }; window.fixture.paint(); }); await stable();
+        const stationRequests = await page.evaluate(() => (window as unknown as LayerHost).fixture.retryRequests);
+        await stationRetry.press('Enter'); assert.equal(await page.evaluate(() => (window as unknown as LayerHost).fixture.retryRequests), stationRequests);
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.snotel = { ...(window as unknown as LayerHost).fixture.statuses.snotel, pending: false, error: false, saved: false, retry: false, count: 3, message: '3 stations in view.' }; (window as unknown as LayerHost).fixture.paint(); }); await stable();
         assert.equal(await stationRetry.textContent(), 'Reload');
         assert.deepEqual(await stationRetry.boundingBox(), stationBox);
         assert.deepEqual(await page.locator('.bpb-layers-panel').boundingBox(), stationPanel);
         assert.equal(await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop), stationScroll);
         assert.equal(await stationRetry.evaluate(element => document.activeElement === element), true);
         await page.locator('[data-layer="snotel"] input').focus();
-        await page.evaluate(() => { window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, count: 0, overflow: true, message: 'More than 50 stations. Zoom in.' }; window.fixture.paint(); }); await stable();
+        await page.evaluate(() => { (window as unknown as LayerHost).fixture.statuses.snotel = { ...(window as unknown as LayerHost).fixture.statuses.snotel, count: 0, overflow: true, message: 'More than 50 stations. Zoom in.' }; (window as unknown as LayerHost).fixture.paint(); }); await stable();
         assert.equal(await page.locator('[data-layer="snotel"] .bpb-layers-row-status').textContent(), 'Zoom in');
         await page.evaluate(() => {
-            window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, overflow: false, message: 'No coverage here.' };
-            window.fixture.paint();
+            (window as unknown as LayerHost).fixture.statuses.snotel = { ...(window as unknown as LayerHost).fixture.statuses.snotel, overflow: false, message: 'No coverage here.' };
+            (window as unknown as LayerHost).fixture.paint();
         });
         const stationToggle = page.getByRole('checkbox', { name: 'SNOTEL stations', exact: true }); await stationToggle.focus();
         const regionGeometry = await geometry(), regionPanel = await page.locator('.bpb-layers-panel').boundingBox();
         const regionScroll = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
         for (const supported of [false, true, false, true]) {
             await page.evaluate(supported => {
-                const fixture = window.fixture; fixture.coverage = { sentinel: true, slope: supported, land: supported, snotel: supported };
+                const fixture = (window as unknown as LayerHost).fixture; fixture.coverage = { sentinel: true, slope: supported, land: supported, snotel: supported };
                 for (const id of ['slope', 'land', 'snotel']) fixture.state[id].enabled = false;
                 fixture.paint();
             }, supported);
@@ -460,18 +474,18 @@ try {
             assert.equal(await page.locator('[data-layer="snotel"] button').evaluate(element => document.activeElement === element), true, 'disabling the focused toggle preserves focus on its row disclosure');
             if (!supported && screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-regional.png`) });
         }
-        await page.evaluate(scale => window.fixture.showPopup(scale), scale);
+        await page.evaluate(scale => (window as unknown as LayerHost).fixture.showPopup(scale), scale);
         const official = page.getByRole('link', { name: 'View NRCS snow data', exact: true }); await official.focus();
-        await page.evaluate(() => window.fixture.membership(true));
+        await page.evaluate(() => (window as unknown as LayerHost).fixture.membership(true));
         const conditions = page.getByRole('button', { name: 'Show conditions at Paradise SNOTEL station', exact: true });
         assert.equal(await conditions.isVisible(), true);
         assert.equal(await official.evaluate(element => document.activeElement === element), true, 'new membership keeps the official link focused');
         await conditions.focus(); await conditions.press('Enter');
-        assert.equal(await page.evaluate(() => window.fixture.selections), 1);
-        await page.evaluate(() => window.fixture.membership(false));
+        assert.equal(await page.evaluate(() => (window as unknown as LayerHost).fixture.selections), 1);
+        await page.evaluate(() => (window as unknown as LayerHost).fixture.membership(false));
         assert.equal(await conditions.count(), 0, 'an unavailable condition action is removed');
         assert.equal(await official.evaluate(element => document.activeElement === element), true, 'revocation returns focus to the same official link');
-        cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true, regionalCoverage: true, popupFocus: true });
+        cases.push({ width, theme, textScale: scale, overview: { width: box!.width, height: box!.height }, anchored: true, regionalCoverage: true, popupFocus: true });
     }
     const setupAssets = new Set(['bc-land/access.html', 'bc-land/access-head.js', 'bc-land/access.js', 'css/panel.css', 'css/gaia-access.css', 'css/bc-land-access.css', 'icons/icon-48.png']);
     await page.route(`https://www.peakbagger.com:${fixture.port}/dist/**`, async route => {
@@ -483,17 +497,17 @@ try {
     await page.addInitScript(() => {
         if (!window.location.pathname.endsWith('/bc-land/access.html')) return;
         window.__bcSetup = { requests: 0, notified: 0 };
-        window.chrome = { runtime: {}, storage: { sync: { get: async () => ({ bpbSettings: { theme: 'system' } }) }, onChanged: { addListener() {}, removeListener() {} } },
-            permissions: { request: () => { window.__bcSetup.requests++; return new Promise(resolve => { window.__bcSetup.finish = resolve; }); } },
+        (window as unknown as { chrome: unknown }).chrome = { runtime: {}, storage: { sync: { get: async () => ({ bpbSettings: { theme: 'system' } }) }, onChanged: { addListener() {}, removeListener() {} } },
+            permissions: { request: () => { window.__bcSetup.requests++; return new Promise(resolve => { window.__bcSetup.finish = resolve as (granted: boolean) => void; }); } },
             tabs: { sendMessage: async () => { window.__bcSetup.notified++; } } };
         window.close = () => { window.__bcSetup.closed = true; };
     });
     for (const entry of cases) {
-        await page.setViewportSize({ width: entry.width, height: 800 }); await page.emulateMedia({ colorScheme: entry.theme });
+        await page.setViewportSize({ width: entry.width, height: 800 }); await page.emulateMedia({ colorScheme: entry.theme as 'light' | 'dark' });
         await page.goto(`https://www.peakbagger.com:${fixture.port}/dist/bc-land/access.html?tab=7`);
         const allow = page.getByRole('button', { name: 'Allow access', exact: true }); await allow.waitFor();
-        await page.evaluate(scale => { document.querySelectorAll('h1,p,button').forEach(element => { element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * scale}px`; }); }, entry.textScale);
-        const geometry = () => page.evaluate(() => ['h1', '.access-card', 'button'].map(selector => { const box = document.querySelector(selector).getBoundingClientRect(); return [box.x,box.y,box.width,box.height]; }));
+        await page.evaluate(scale => { document.querySelectorAll<PageElement>('h1,p,button').forEach(element => { element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * scale}px`; }); }, entry.textScale);
+        const geometry = () => page.evaluate(() => ['h1', '.access-card', 'button'].map(selector => { const box = document.querySelector(selector)!.getBoundingClientRect(); return [box.x,box.y,box.width,box.height]; }));
         // Establish the user's focus/reading position before measuring async
         // feedback; keyboard focus can reveal a partly offscreen action.
         await allow.scrollIntoViewIfNeeded(); await allow.focus();
@@ -502,19 +516,19 @@ try {
         await allow.press('Enter'); await page.waitForFunction(() => window.__bcSetup.requests === 1);
         await allow.press('Enter'); assert.equal(await page.evaluate(() => window.__bcSetup.requests), 1); await stable();
         assert.equal(await allow.evaluate(element => document.activeElement === element), true);
-        await page.evaluate(() => window.__bcSetup.finish(false)); await page.getByText('Access not granted. Try again.', { exact: true }).waitFor(); await stable();
+        await page.evaluate(() => window.__bcSetup.finish!(false)); await page.getByText('Access not granted. Try again.', { exact: true }).waitFor(); await stable();
         await allow.press('Space'); await page.waitForFunction(() => window.__bcSetup.requests === 2);
-        await page.evaluate(() => window.__bcSetup.finish(true));
+        await page.evaluate(() => window.__bcSetup.finish!(true));
         const back = page.getByRole('button', { name: 'Return to map', exact: true }); await back.waitFor(); await stable();
         assert.equal(await back.evaluate(element => document.activeElement === element), true);
         assert.equal(await page.evaluate(() => window.__bcSetup.notified), 1);
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${entry.width}-${entry.theme}-${entry.textScale}x-bc-setup.png`), fullPage: true });
         await back.click(); assert.equal(await page.evaluate(() => window.__bcSetup.closed), true);
-        entry.setupAnchored = true;
+        (entry as typeof entry & { setupAnchored?: boolean }).setupAnchored = true;
     }
     assert.equal(errors.length, 0, errors.join('\n'));
     assert.equal(cases.length, 8, 'all component selections executed');
-    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser().version(), hidden: true, nativeThemeCases, scrollCases, cases };
+    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser()!.version(), hidden: true, nativeThemeCases, scrollCases, cases };
 } catch (error) { primaryError = error; }
-await resources.dispose(primaryError);
-console.log(JSON.stringify({ ...summary, teardown: 'passed' }));
+await resources.dispose(primaryError as null);
+console.log(JSON.stringify({ ...(summary as object), teardown: 'passed' }));

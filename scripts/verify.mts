@@ -35,7 +35,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'map-handoffs': [['verify-map-handoffs.mjs']],
     onx: [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']],
     'map-controls': [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']],
-    'map-layers': [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']],
+    'map-layers': [['verify-map-layer-control.mts'], ['verify-map-layers.mts']],
     'vector-map': [['verify-vector-map.mts'], ['verify-vector-map.mts', '--firefox']],
     'custom-overlays': [['verify-custom-overlays.mts'], ['verify-custom-overlays.mts', '--firefox']],
     'private-layers': [['verify-private-layers.mjs', 'chrome'], ['verify-private-layers.mjs', 'firefox']],

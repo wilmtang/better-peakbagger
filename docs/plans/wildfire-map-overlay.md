@@ -299,7 +299,7 @@ integration checks pass; a dormant data module alone is not a shipped feature.
 
 Before UI implementation, confirm the existing HTTPS Leaflet fixture and real
 packaged MapLibre frame can render the intended vector primitives. The current
-[map-layer verifier](../../scripts/verify-map-layers.mjs) loads real unpacked
+[map-layer verifier](../../scripts/verify-map-layers.mts) loads real unpacked
 `dist/`, pinned Leaflet and hardware MapLibre; it is a suitable starting point,
 not evidence that wildfire rendering has already been inspected.
 
