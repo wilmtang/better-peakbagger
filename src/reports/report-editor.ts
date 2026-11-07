@@ -1193,6 +1193,8 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
 
     // ---- Rich toolbar ---------------------------------------------------------
 
+    const CAPTION_TOOLS = new Set(['bold', 'italic', 'underline', 'strike', 'more', 'link']);
+
     // Painted from a richState snapshot on every editor transaction, so active
     // states, the block dropdown, undo/redo, and the table bar always reflect
     // the caret position.
@@ -1201,8 +1203,11 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         const snapshot = richState(richEditor);
         blockFormat.value = snapshot.block;
         blockFormat.disabled = snapshot.captionActive;
+        // A caption is one line of text: inline formatting applies, block styles and media do not.
         for (const [name, control] of Object.entries(toolButtons)) {
-            if (name !== 'undo' && name !== 'redo') control.disabled = snapshot.captionActive;
+            if (name !== 'undo' && name !== 'redo') {
+                control.disabled = snapshot.captionActive && !(snapshot.captionText && CAPTION_TOOLS.has(name));
+            }
         }
         for (const name of ['bold', 'italic', 'underline', 'strike']) {
             (toolButtons as Record<string, HTMLElement>)[name].setAttribute('aria-pressed', String(snapshot.marks[name]));
@@ -1229,7 +1234,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     const openLinkBox = () => {
         if (state.mode !== 'rich' || !richEditor) return;
         const snapshot = richState(richEditor);
-        if (snapshot.captionActive) return;
+        if (snapshot.captionActive && !snapshot.captionText) return;
         closeBoxes();
         linkInput.value = snapshot.linkHref;
         linkRemove.hidden = !snapshot.linkActive;

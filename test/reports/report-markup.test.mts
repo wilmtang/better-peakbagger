@@ -10,6 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+// @ts-expect-error jsdom ships no type declarations.
 import { JSDOM } from 'jsdom';
 import { reportMarkup as Markup } from '../../src/reports/report-markup.ts';
 
@@ -17,7 +18,7 @@ const browserDom = new JSDOM('');
 globalThis.DOMParser = browserDom.window.DOMParser;
 const markedContext = vm.createContext({});
 vm.runInContext(await readFile(new URL('../../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
-globalThis.marked = markedContext.marked;
+(globalThis as unknown as { marked: unknown }).marked = markedContext.marked;
 
 const VIDEO_ATTRIBUTES = ' controls preload="metadata" playsinline referrerpolicy="no-referrer"';
 const YOUTUBE_ATTRIBUTES = ' title="YouTube video" loading="lazy"'
@@ -527,7 +528,7 @@ test('Markdown HTML table support keeps unsafe and malformed markup inert', () =
 
 // ---- editor DOM → bracket ----------------------------------------------------
 
-const body = html => {
+const body = (html: string) => {
     const dom = new JSDOM(`<div id="root">${html}</div>`);
     return dom.window.document.getElementById('root');
 };
@@ -670,6 +671,50 @@ test('captioned images preserve text, links and dimensions through every convers
     }
 });
 
+test('formatted captions survive every conversion and stay inline', () => {
+    const image = '[img src="https://example.com/ridge.jpg" alt="Ridge" width="320"]';
+    const caption = 'Looking [b]north [i]from[/i][/b] the [u]col[/u] [s]ridge[/s] [small]fine[/small] [mark]note[/mark] '
+        + 'H[sub]2[/sub]O x[sup]2[/sup] [code]5.7[/code] [q]wow[/q] '
+        + '[span style="color:#b03a2e"]red[/span] [a href="https://example.com/a_b*c" target="_blank"]map[/a] '
+        + '[a href="https://example.com/route"]route[/a] *literal* | [b]_x_[/b]';
+    const figure = `[figure]${image}[figcaption]${caption}[/figcaption][/figure]`;
+    for (const source of [figure, `Before\n\n${figure}\n\nAfter`,
+        `[ul][li]Before${figure}After[/li][/ul]`,
+        `[table border="1"][tr][th]Photo[/th][/tr][tr][td]${figure}[/td][/tr][/table]`]) {
+        const parsed = Markup.parseBracketWithDiagnostics(source);
+        assert.deepEqual(parsed.diagnostics, [], source);
+        const canonical = Markup.astToBracket(parsed.ast);
+        assert.ok(canonical.includes(`[figcaption]${caption}[/figcaption]`), canonical);
+        let roundTrip = canonical;
+        for (let cycle = 0; cycle < 3; cycle++) {
+            roundTrip = Markup.markdownToBracket(Markup.bracketToMarkdown(roundTrip));
+            assert.equal(roundTrip, canonical);
+            const doc = new browserDom.window.DOMParser().parseFromString(Markup.bracketToEditorHtml(roundTrip), 'text/html');
+            roundTrip = Markup.domToBracket(doc.body);
+            assert.equal(roundTrip, canonical);
+        }
+    }
+    const preview = new browserDom.window.DOMParser().parseFromString(Markup.bracketToPreviewHtml(figure), 'text/html');
+    const rendered = preview.querySelector('figcaption');
+    assert.equal(rendered.querySelector('b i').textContent, 'from');
+    assert.equal(rendered.querySelector('a[target="_blank"]').getAttribute('rel'), 'noopener noreferrer');
+    assert.equal(rendered.querySelector('span').getAttribute('style'), 'color:#b03a2e');
+});
+
+test('Markdown shows caption formatting as narrow HTML with literal delimiters', () => {
+    const source = '[figure][img src="https://example.com/a.jpg"][figcaption]A [b]*bold*[/b] _text_[/figcaption][/figure]';
+    assert.equal(Markup.bracketToMarkdown(source),
+        '<figure><img src="https://example.com/a.jpg"><figcaption>A <b>&#42;bold&#42;</b> &#95;text&#95;</figcaption></figure>');
+});
+
+test('caption whitespace, breaks and empty formatting normalize without dropping the image', () => {
+    const image = '[img src="https://example.com/a.jpg"]';
+    const caption = (value: string) => Markup.astToBracket(Markup.parseBracket(`[figure]${image}[figcaption]${value}[/figcaption][/figure]`));
+    assert.equal(caption('  One\n[b]two [/b]  '), `[figure]${image}[figcaption]One [b]two[/b][/figcaption][/figure]`);
+    assert.equal(caption('[b]  [/b]'), image);
+    assert.equal(caption('[b][i] [/i][/b]'), image);
+});
+
 test('empty captions normalize to images and adjacent prose stays independent', () => {
     const image = '[img src="https://example.com/ridge.jpg"]';
     assert.equal(Markup.astToBracket(Markup.parseBracket(`[figure]${image}[figcaption]  [/figcaption][/figure]`)), image);
@@ -682,7 +727,12 @@ test('malformed and unsafe figures retain conversion diagnostics and never enabl
     for (const source of [
         '[figure][img src="javascript:alert(1)"][figcaption]Caption[/figcaption][/figure]',
         '[figure onclick="bad()"][img src="https://example.com/a.jpg"][figcaption]Caption[/figcaption][/figure]',
-        '[figure][img src="https://example.com/a.jpg"][figcaption][b]Bold[/b][/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][figcaption][img src="https://example.com/b.jpg"][/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][figcaption][ul][li]List[/li][/ul][/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][figcaption][h2]Heading[/h2][/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][figcaption][video src="https://example.com/a.mp4"][/video][/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][figcaption][a href="javascript:alert(1)"]Bad[/a][/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][figcaption][span style="font-size:90px"]Big[/span][/figcaption][/figure]',
         '[figure][img src="https://example.com/a.jpg"][img src="https://example.com/b.jpg"][figcaption]Caption[/figcaption][/figure]',
         '[figcaption]Orphan[/figcaption]',
         '[figure][figure][img src="https://example.com/a.jpg"][figcaption]Nested[/figcaption][/figure][/figure]',

@@ -452,10 +452,15 @@ add/delete row and column, header-row toggle, and table removal.
 ### Image captions
 
 Click **Write a caption…** beneath any image in Rich text to start typing.
-Captions are plain text, separate from the image's alt description.
+Captions are separate from the image's alt description. Select caption text to
+format it with Bold, Italic, Underline, Strikethrough, **Aa** (highlight, inline
+code, sub/superscript, small, inline quote and color), and Link. Bracket, Markdown
+and preview conversions all keep that formatting.
 The placeholder disappears while its empty field has the caret. In Rich text
 and preview, captions use smaller, centered, italic secondary text so they stay
-visually distinct from the surrounding report prose.
+visually distinct from the surrounding report prose. Italic inside a caption
+therefore turns upright in Rich text and preview so it remains visible;
+Peakbagger's own page shows captions upright, where it appears italic.
 Entering or clearing a caption keeps the photo and surrounding report steady,
 including when the image is the report's last block. A following paragraph is
 created only when keyboard navigation or Enter needs it.
@@ -475,7 +480,11 @@ created when needed. Click the caption to enter it. Enter (or Shift+Enter) from
 a caption starts an unformatted paragraph after the image.
 Backspace at the start selects the whole figure;
 another deletion removes the photo and caption together. Undo restores them.
-Text formatting and insertion controls are disabled while editing a figure.
+A caption is one line of text, so block styles, lists, tables, rules and media
+are disabled while editing one, and every tool except Undo and Redo is disabled
+while the figure itself is selected. Typing and pasting stay literal: `**bold**`
+remains those characters and pasted text arrives unformatted, because only the
+toolbar and its shortcuts apply formatting.
 
 A captioned photo is a block. Adding a caption to an inline photo splits the
 surrounding prose without discarding its text or formatting. Existing image links
@@ -485,7 +494,7 @@ and their placeholders are not saved: they normalize to ordinary images.
 Captions stay with their photo during resizing, local preview resolution, draft
 restoration, Photo Topos replacement, and upload. In the document model a figure
 contains the existing `image` node inside a constrained media block, followed by
-a plain-text caption block. This keeps the established exact-occurrence photo
+a text-only caption block that accepts the report's inline marks. This keeps the established exact-occurrence photo
 replacement and source-rewrite paths unchanged. The serializer removes editor
 wrappers and emits a compact figure without layout newlines inside it:
 
@@ -500,12 +509,20 @@ than guessing that nearby prose is a caption:
 <figure><img src="https://example.com/ridge.jpg" alt="Rocky ridge" width="320"><figcaption>Looking north from the summit.</figcaption></figure>
 ```
 
-The caption text can be edited in Markdown; returning to Rich restores the
-attached caption. Markdown delimiters and table pipes inside generated captions
-are entity-escaped to remain literal text. The parser permits one image,
-optionally linked, followed by one text caption. Malformed figures, arbitrary
-attributes/styles, and formatted or nested captions retain conversion diagnostics;
-the figure path does not widen the general HTML allowlist.
+The caption can be edited in Markdown; returning to Rich restores the attached
+caption. Caption formatting appears there as the same allowlisted inline HTML
+(`<b>`, `<i>`, `<a href>`, `<span style="color:…">` and so on) rather than
+Markdown delimiters, because this block is HTML to Marked. Delimiters and table
+pipes in generated caption text are entity-escaped to remain literal. Plain mode
+shows the bracket form, such as `[figcaption]Looking [b]north[/b][/figcaption]`.
+The parser permits one image, optionally linked, followed by one caption of
+formatted text. Malformed figures, arbitrary attributes/styles, and media, nested
+figures or block structure inside a caption retain conversion diagnostics; the
+figure path does not widen the general HTML allowlist.
+
+Photo Topos' **Caption** field is plain text. Returning with the text unchanged
+keeps the report's caption formatting; returning with edited text replaces the
+caption with that plain text.
 
 Live compatibility evidence: a saved
 [Mount Niblock ascent](https://www.peakbagger.com/climber/ascent.aspx?aid=3358087)
@@ -515,6 +532,9 @@ browser without the extension. Peakbagger's native page shows captions as plain,
 left-aligned text; the centered italic styling described above applies to Rich
 editing and preview. The original Save action was not observed during this check.
 See the [archived verification record](archive/report-image-captions.md).
+That evidence covers plain captions. Formatted captions use the same inline tags
+Peakbagger renders elsewhere, but a saved formatted caption has not been checked on
+the live site.
 
 ### Photo topo editor and library handoff
 
@@ -990,7 +1010,7 @@ shows the exact bracket source.
 - Parser tests pin structured drop/unwrap/neutralize diagnostics for unsupported
   tags, attributes, and nesting, while proving aliases, legacy lists, and
   whitespace normalization remain warning-free.
-- `test/reports/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
+- `test/reports/report-markup.test.mts` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, raw color validation,
   TipTap color-token revalidation, and round trips.
 - `test/reports/report-editor-mount.test.mjs`,

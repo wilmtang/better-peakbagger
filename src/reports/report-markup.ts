@@ -29,7 +29,7 @@ import { instagramBlocks, instagramPasteUrl } from './instagram-url.js';
 
 // The allowlisted AST. Node kinds share one shape because the converters walk
 // them generically; each reader knows which fields its `t` or `type` carries.
-export interface InlineNode { t: string; text?: string; kids?: InlineNode[]; href?: string; blank?: boolean; src?: string; alt?: string; width?: number | null; height?: number | null; color?: string; media?: InlineNode; caption?: string }
+export interface InlineNode { t: string; text?: string; kids?: InlineNode[]; href?: string; blank?: boolean; src?: string; alt?: string; width?: number | null; height?: number | null; color?: string; media?: InlineNode; caption?: InlineNode[] }
 export interface TableRow { header: boolean; cells: BlockNode[][] }
 export interface BlockNode { type: string; kids?: InlineNode[]; level?: number; blocks?: BlockNode[]; ordered?: boolean; items?: BlockNode[][]; rows?: TableRow[]; text?: string; url?: string }
 export interface ConversionDiagnostic { action: string; code: string; tag: string; attribute?: string; parent?: string | null; count?: number }
@@ -343,10 +343,15 @@ const droppedAttributes = (tag: string, attrs: string) => {
     return [...new Map(dropped.map(entry => [entry.name, entry])).values()];
 };
 
+// A caption is one line of formatted text. Media, nested figures and block
+// structure never belong inside it.
+const CAPTION_WRAPPERS = new Set([...INLINE_TAGS.values(), 'a', 'color']);
+const CAPTION_SOURCE_TAGS = new Set([...INLINE_TAGS.values(), 'a', 'span']);
+
 const invalidStructuralParent = (tag: string, ancestors: string[]) => {
     const parent = ancestors.at(-1) || null;
     if (tag === 'figcaption') return parent !== 'figure';
-    if (ancestors.includes('figcaption')) return true;
+    if (ancestors.includes('figcaption') && !CAPTION_SOURCE_TAGS.has(tag)) return true;
     if (tag === 'figure' && ancestors.some(ancestor => ['figure', 'a'].includes(ancestor))) return true;
     if (tag === 'li') return parent !== 'ul' && parent !== 'ol';
     if (tag === 'tr') return !['table', 'thead', 'tbody', 'tfoot'].includes(parent as string);
@@ -616,8 +621,47 @@ const inlineFromNode = (source: Node): InlineNode[] => {
 
 const inlinesFrom = (element: Element) => compactInlines([...element.childNodes].flatMap(inlineFromNode));
 
+const trimCaptionEdge = (nodes: InlineNode[], start: boolean) => {
+    while (nodes.length) {
+        const index = start ? 0 : nodes.length - 1;
+        const node = nodes[index];
+        if (node.t === 'text') {
+            const value = start ? node.text!.replace(/^ +/, '') : node.text!.replace(/ +$/, '');
+            if (value) { nodes[index] = text(value); return; }
+        } else {
+            trimCaptionEdge(node.kids!, start);
+            if (node.kids!.length) return;
+        }
+        nodes.splice(index, 1);
+    }
+};
+
+// Returns the caption's normalized inline content, or null when it contains
+// anything other than formatted text. Line breaks become spaces, and formatting
+// around only whitespace disappears, so an empty result means "no caption".
+const captionInlines = (nodes: InlineNode[]) => {
+    const copy = (list: InlineNode[]): InlineNode[] | null => {
+        const out: InlineNode[] = [];
+        for (const node of list) {
+            if (node === BREAK || node.t === 'br') out.push(text(' '));
+            else if (node.t === 'text') out.push(text(node.text!.replace(/[\t\n\f\r \u00a0]+/g, ' ')));
+            else {
+                if (!CAPTION_WRAPPERS.has(node.t)) return null;
+                const kids = copy(node.kids || []);
+                if (!kids) return null;
+                out.push({ ...node, kids });
+            }
+        }
+        return compactInlines(out);
+    };
+    const kids = copy(nodes);
+    if (!kids) return null;
+    trimCaptionEdge(kids, true);
+    trimCaptionEdge(kids, false);
+    return kids;
+};
+
 // Only explicit figures carry captions. Never infer them from adjacent prose.
-// Caption text follows the same whitespace convention as ordinary report text.
 export const figureFromElement = (element: Element): InlineNode | null => {
     const children = [...element.childNodes].filter(node =>
         node.nodeName !== 'BR' && !(node.nodeType === 3 && !node.nodeValue!.trim()));
@@ -629,15 +673,14 @@ export const figureFromElement = (element: Element): InlineNode | null => {
     if (media.nodeName === 'DIV' && media.hasAttribute('data-bpb-figure-media') && media.childNodes.length === 1) {
         media = media.firstChild as Element;
     }
-    if ([...caption.childNodes].some(node => node.nodeType !== 3 && node.nodeName !== 'BR')) return null;
+    const captionKids = captionInlines(inlinesFrom(caption as Element));
+    if (!captionKids) return null;
     const linked = media.nodeName === 'A';
     const image = linked && media.childNodes.length === 1 ? media.firstChild : media;
     if (image?.nodeName !== 'IMG') return null;
     const kids = inlineFromNode(media);
     if (kids.length !== 1 || (linked && kids[0].t !== 'a') || (!linked && kids[0].t !== 'img')) return null;
-    const value = [...caption.childNodes].map(node => node.nodeName === 'BR' ? ' ' : node.nodeValue)
-        .join('').replace(/[\t\n\f\r \u00a0]+/g, ' ').trim();
-    return value ? { t: 'figure', media: kids[0], caption: value } : kids[0];
+    return captionKids.length ? { t: 'figure', media: kids[0], caption: captionKids } : kids[0];
 };
 
 // Two consecutive <br> elements are Peakbagger's paragraph separator. A
@@ -895,9 +938,10 @@ const makeMarkdownExtensionNode = (safe: SafeTag, kids: InlineNode[] = []): Inli
         const [media, caption] = meaningful;
         if (meaningful.length !== 2 || caption.t !== 'figcaption'
             || !(media.t === 'img' || (media.t === 'a' && media.kids!.length === 1 && media.kids![0].t === 'img'))
-            || caption.kids!.some(kid => kid.t !== 'text')) return null;
-        const value = caption.kids!.map(kid => kid.text).join('').replace(/\s+/g, ' ').trim();
-        return value ? { t: 'figure', media, caption: value } : media;
+        ) return null;
+        const captionKids = captionInlines(caption.kids!);
+        if (!captionKids) return null;
+        return captionKids.length ? { t: 'figure', media, caption: captionKids } : media;
     }
     return kids.length ? { ...safe.ast!, kids } : null;
 };
@@ -1178,7 +1222,7 @@ const parseMarkdown = (source: unknown) => {
 
 const inlinesToBracket = (kids: InlineNode[] | undefined): string => (kids || []).map(node => {
     if (node.t === 'figure') return `[figure]${inlinesToBracket([node.media!])}[figcaption]${
-        escapeBracketText(node.caption)}[/figcaption][/figure]`;
+        inlinesToBracket(node.caption)}[/figcaption][/figure]`;
     if (node.t === 'text') return escapeBracketText(node.text);
     if (node.t === 'br') return '\n';
     if (node.t === 'img') {
@@ -1234,7 +1278,7 @@ const astToBracket = blocksToBracket;
 
 const inlinesToHtml = (kids: InlineNode[] | undefined): string => (kids || []).map(node => {
     if (node.t === 'figure') return `<figure>${inlinesToHtml([node.media!])}<figcaption>${
-        escapeHtml(node.caption)}</figcaption></figure>`;
+        inlinesToHtml(node.caption)}</figcaption></figure>`;
     if (node.t === 'text') return escapeHtml(node.text);
     if (node.t === 'br') return '<br>';
     if (node.t === 'img') {
@@ -1307,14 +1351,21 @@ const codeSpan = (value: unknown) => {
     return `${fence}${value}${fence}`;
 };
 
+// Captions stay in the narrow figure HTML even when formatted. Text keeps its
+// Markdown delimiters and table pipes literal through entities.
+const captionToMarkdown = (kids: InlineNode[] | undefined): string => (kids || []).map(node => {
+    if (node.t === 'text') return escapeAttribute(node.text).replace(/[*_`|]/g,
+        character => `&#${character.charCodeAt(0)};`);
+    const inner = captionToMarkdown(node.kids);
+    if (node.t === 'a') return `<a href="${escapeAttribute(node.href)}"${node.blank ? ' target="_blank"' : ''}>${inner}</a>`;
+    if (node.t === 'color') return `<span style="color:${escapeAttribute(node.color)}">${inner}</span>`;
+    return `<${node.t}>${inner}</${node.t}>`;
+}).join('');
+
 const inlinesToMarkdown = (kids: InlineNode[] | undefined): string => (kids || []).map(node => {
     if (node.t === 'figure') {
-        // Keep HTML as literal caption text, including Markdown delimiters.
-        // Encode pipes so the same representation also survives GFM tables.
         const media = inlinesToBracket([node.media!]).replace(/\[([^\]]+)\]/g, '<$1>');
-        const caption = escapeAttribute(node.caption).replace(/[*_`|]/g,
-            character => `&#${character.charCodeAt(0)};`);
-        return `<figure>${media}<figcaption>${caption}</figcaption></figure>`;
+        return `<figure>${media}<figcaption>${captionToMarkdown(node.caption)}</figcaption></figure>`;
     }
     if (node.t === 'text') return escapeMarkdownText(node.text);
     if (node.t === 'br') return '\n';

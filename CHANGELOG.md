@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Format image captions.** Bold, italic, links, color and the other inline tools
+  now work on selected caption text, and the formatting carries through Markdown,
+  Plain, preview and save. Photo Topos' Caption field stays plain text, and leaves
+  a formatted caption alone unless you change its words.
+
 - **Open the photo editor from the toolbar.** The popup's new Photo editor card
   opens Photo Topos without starting from a report, and returns to an editor tab
   you already have open. Tabs editing a report's photo keep their place.

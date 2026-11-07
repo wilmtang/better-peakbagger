@@ -28,7 +28,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
 import { Fragment } from '@tiptap/pm/model';
-import type { Mark as PMMark, Node as PMNode } from '@tiptap/pm/model';
+import type { Mark as PMMark, Node as PMNode, Schema } from '@tiptap/pm/model';
 import type { ImageOptions } from '@tiptap/extension-image';
 import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
@@ -40,6 +40,7 @@ import {
     sanitizeYouTubeEmbedSrc,
     figureFromElement
 } from './report-markup.ts';
+import type { InlineNode } from './report-markup.ts';
 
 // TipTap parses a raw hex token correctly, but its DOM serializer can still
 // canonicalize the rendered style to rgb(). Carry the parsed token in an
@@ -494,12 +495,25 @@ const navigateImageArrow = (editor: Editor, key: string) => {
     return true;
 };
 
+// Report AST wrappers and the schema marks they become. The sanitizer already
+// limited a caption to these, plus links and colors.
+const CAPTION_MARKS: Record<string, string> = { b: 'bold', i: 'italic', u: 'underline', s: 'strike', code: 'code',
+    mark: 'highlight', sub: 'subscript', sup: 'superscript', small: 'small', q: 'inlineQuote' };
+
+const captionContent = (schema: Schema, kids: InlineNode[] = [], marks: readonly PMMark[] = []): PMNode[] => kids.flatMap(kid => {
+    if (kid.t === 'text') return kid.text ? [schema.text(kid.text, marks)] : [];
+    const mark = kid.t === 'a' ? schema.marks.link.create({ href: kid.href, target: kid.blank ? '_blank' : null })
+        : kid.t === 'color' ? schema.marks.textStyle.create({ color: kid.color })
+            : schema.marks[CAPTION_MARKS[kid.t]].create();
+    return captionContent(schema, kid.kids, mark.addToSet(marks));
+});
+
 const ReportCaption = Node.create({
     name: 'reportCaption',
     content: 'text*',
-    marks: '',
-    // TipTap skips input/paste formatting rules in literal-text nodes. Without
-    // this flag, those rules strip delimiters even though captions reject marks.
+    // Toolbar and shortcut formatting apply as usual. This flag keeps typing and
+    // pasting literal: TipTap skips input and paste rules in code-like nodes, so
+    // delimiters stay as typed and media or block syntax cannot enter a caption.
     code: true,
     whitespace: 'normal',
     selectable: false,
@@ -643,7 +657,7 @@ const ReportFigure = Node.create({
                 })] : [];
                 return Fragment.fromArray([
                     schema.nodes.reportFigureMedia.create(null, schema.nodes.image.create(image, null, marks)),
-                    schema.nodes.reportCaption.create(null, figure.caption ? schema.text(figure.caption) : null),
+                    schema.nodes.reportCaption.create(null, captionContent(schema, figure.caption)),
                 ]);
             } }];
     },
@@ -713,6 +727,8 @@ const figureAtImage = (editor: Editor, pos: number): FigureTarget | null => {
 
 const setImageCaption = (editor: Editor, pos: number, caption: string) => {
     const target = figureAtImage(editor, pos);
+    // Photo Topos edits plain text, so an unchanged caption keeps its formatting.
+    if (target?.node.lastChild!.textContent === caption) return true;
     if (target) {
         const start = target.pos + target.node.firstChild!.nodeSize + 2;
         editor.view.dispatch(editor.state.tr.replaceWith(start, start + target.node.lastChild!.content.size,
@@ -1037,6 +1053,7 @@ export const richState = (editor: Editor) => {
     return {
         imageSelected: !!selectedReportImage(editor),
         captionActive: !!selectedFigure(editor),
+        captionText: editor.state.selection.$from.parent.type.name === 'reportCaption',
         block: editor.isActive('codeBlock') ? 'pre'
             : headingLevel ? `h${headingLevel}`
                 : editor.isActive('blockquote') ? 'blockquote' : 'p',
