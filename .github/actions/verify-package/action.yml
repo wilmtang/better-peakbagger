@@ -14,7 +14,7 @@ runs:
       shell: bash
       env:
         BPB_CAPTURE_POPUP_ARTIFACTS: browser-evidence/popup
-      run: node scripts/verify-capture-popup.mjs 2>&1 | tee browser-evidence/verify-capture-popup.log
+      run: node scripts/verify-capture-popup.mts 2>&1 | tee browser-evidence/verify-capture-popup.log
     - name: Verify capture with pending page resources
       shell: bash
       run: node scripts/verify-capture-readiness.mjs chrome 2>&1 | tee browser-evidence/verify-capture-readiness-chrome.log

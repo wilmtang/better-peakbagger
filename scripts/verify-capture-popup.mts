@@ -6,10 +6,12 @@
 // and styles with a narrow browser-API mock for recovery-state layout. Hidden
 // checks do not establish visible popup chrome, dismissal, or focus.
 
+/* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their serialized argument under its own name. */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
+import type { Browser, BrowserType, LaunchOptions, Page } from 'playwright';
 import { createResourceStack } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
@@ -28,7 +30,27 @@ const shell = popupHtml
     .replace(/\s*<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi, '')
     .replace('../icons/icon-32.png', `data:image/png;base64,${icon.toString('base64')}`);
 
-const readyJob = phase => ({
+type PopupCase = { code: string; title?: string | null; action?: string | null; job?: unknown; provider?: string | null; retryAt?: number };
+type PopupVariant = { name: string; theme: string; viewport: { width: number; height: number }; deviceScaleFactor: number; scheme?: string };
+type ListedExtension = { location: string; name: string };
+type PopupMessage = { type: string };
+
+// Hidden macOS runners occasionally fail one capture with this protocol error even
+// though the page is healthy, so the evidence is retried before it fails the run.
+const screenshotRetries = 3;
+async function captureEvidence(page: Page, file: string) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            await page.screenshot({ path: file, fullPage: true });
+            return;
+        } catch (error) {
+            if (attempt >= screenshotRetries || !/Unable to capture screenshot/.test((error as Error).message)) throw error;
+            await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+        }
+    }
+}
+
+const readyJob = (phase: string) => ({
     phase, provider: 'garmin', activityId: '777', hasCachedGpx: true, selectedIds: [1, 2],
     trackSummary: { originalPointCount: 6200, retainedPointCount: 3000, maxDeviationM: 2.4 },
     matches: Array.from({ length: 12 }, (_, index) => ({
@@ -90,7 +112,7 @@ const verifyNativeSizing = async () => {
         await control.goto('chrome://extensions-internals/');
         const record = await control.waitForFunction(() => {
             try {
-                return JSON.parse(globalThis.document.body.innerText).find(item =>
+                return JSON.parse(globalThis.document.body.innerText).find((item: ListedExtension) =>
                     item.location === 'COMMAND_LINE' && item.name === 'Better Peakbagger') || false;
             } catch { return false; }
         }, null, { timeout: 15_000 }).then(handle => handle.jsonValue());
@@ -139,7 +161,7 @@ const verifyNativeSizing = async () => {
                         + JSON.stringify(await readLayout()), { cause: error });
                 }
                 const layout = await readLayout();
-                if (layout.documentWidth > 390 || layout.cardBottom > layout.viewportHeight) {
+                if (layout.documentWidth! > 390 || layout.cardBottom! > layout.viewportHeight!) {
                     throw new Error(`Native popup clipped: ${JSON.stringify(layout)}`);
                 }
                 results.push({ theme, tabZoom, ...layout });
@@ -151,27 +173,27 @@ const verifyNativeSizing = async () => {
             }
         }
         console.log(JSON.stringify({
-            browser: 'chrome-action-popup', version: context.browser().version(),
+            browser: 'chrome-action-popup', version: context.browser()!.version(),
             hidden: true, viewportOverride: null, results,
         }));
     } catch (error) {
         failure = error;
     }
-    await resources.dispose(failure);
+    await resources.dispose(failure as null);
 };
 
-const renderCase = async (browser, browserName, item, variant) => {
+const renderCase = async (browser: Browser, browserName: string, item: PopupCase, variant: PopupVariant) => {
     const context = await browser.newContext({
         viewport: variant.viewport,
         deviceScaleFactor: variant.deviceScaleFactor,
-        colorScheme: variant.scheme || variant.theme,
+        colorScheme: (variant.scheme || variant.theme) as 'light' | 'dark',
     });
     const page = await context.newPage();
     try {
         await page.setContent(shell, { waitUntil: 'domcontentloaded' });
         await page.addStyleTag({ content: panelCss });
         await page.addStyleTag({ content: popupCss });
-        await page.evaluate(({ theme, job }) => {
+        await page.evaluate(({ theme, job }: { theme: string; job: unknown }) => {
             if (theme !== 'system') globalThis.document.documentElement.setAttribute('data-bpb-theme', theme);
             globalThis.chrome = {
                 tabs: {
@@ -188,12 +210,12 @@ const renderCase = async (browser, browserName, item, variant) => {
                     onChanged: { addListener() {}, removeListener() {} },
                 },
                 runtime: {
-                    sendMessage: async message => ['CAPTURE_START', 'CAPTURE_STATUS'].includes(message.type)
+                    sendMessage: async (message: PopupMessage) => ['CAPTURE_START', 'CAPTURE_STATUS'].includes(message.type)
                         ? job
                         : { ok: true },
                     openOptionsPage: async () => {},
                 },
-            };
+            } as unknown as typeof chrome;
         }, {
             theme: variant.theme,
             job: item.job || {
@@ -204,23 +226,23 @@ const renderCase = async (browser, browserName, item, variant) => {
             },
         });
         await page.addScriptTag({ content: popupBundle });
-        await page.waitForFunction(({ title, action }) => title
+        await page.waitForFunction(({ title, action }: PopupCase) => title
             ? globalThis.document.querySelector('.state-title')?.textContent === title
             : globalThis.document.querySelector('#open-drafts')?.textContent === action, item);
-        const layout = await page.evaluate(theme => {
+        const layout = await page.evaluate((theme?: string) => {
             const viewportWidth = globalThis.document.documentElement.clientWidth;
             const viewportHeight = globalThis.document.documentElement.clientHeight;
             const card = globalThis.document.querySelector('.state-card') || globalThis.document.querySelector('#results');
             const cardRect = card?.getBoundingClientRect();
-            const buttons = [...card.querySelectorAll('button:not([hidden])')].map(button => {
+            const buttons = [...card!.querySelectorAll<HTMLButtonElement>('button:not([hidden])')].map(button => {
                 const rect = button.getBoundingClientRect();
                 return { label: button.textContent, left: rect.left, right: rect.right, bottom: rect.bottom,
                     disabled: button.disabled || button.getAttribute('aria-disabled') === 'true' };
             });
-            const names = [...card.querySelectorAll('.peak-name')].map(name => {
+            const names = [...card!.querySelectorAll('.peak-name')].map(name => {
                 const rect = name.getBoundingClientRect();
                 const row = name.closest('.peak-row');
-                return { left: rect.left, right: rect.right, rowRight: row.getBoundingClientRect().right,
+                return { left: rect.left, right: rect.right, rowRight: row!.getBoundingClientRect().right,
                     overflow: name.scrollWidth > name.clientWidth + 1 };
             });
             const swatch = globalThis.document.createElement('span');
@@ -250,13 +272,13 @@ const renderCase = async (browser, browserName, item, variant) => {
         }
         const horizontallyContained = layout.documentWidth <= layout.viewportWidth + 1
             && layout.bodyWidth <= layout.viewportWidth + 1
-            && layout.card?.left >= -1
-            && layout.card?.right <= layout.viewportWidth + 1
+            && layout.card!.left >= -1
+            && layout.card!.right <= layout.viewportWidth + 1
             && layout.buttons.every(button => button.left >= -1 && button.right <= layout.viewportWidth + 1);
         if (!horizontallyContained) {
             throw new Error(`${browserName} ${variant.name} ${item.code} overflowed: ${JSON.stringify(layout)}`);
         }
-        if (layout.card.bottom > layout.viewportHeight + 1) {
+        if (layout.card!.bottom > layout.viewportHeight + 1) {
             throw new Error(`${browserName} ${variant.name} ${item.code} clipped vertically: ${JSON.stringify(layout)}`);
         }
         if (item.job && (layout.buttons.some(button => button.bottom > layout.viewportHeight + 1)
@@ -265,18 +287,15 @@ const renderCase = async (browser, browserName, item, variant) => {
             throw new Error(`${browserName} ${variant.name} ${item.code} results clipped or unusable: ${JSON.stringify(layout)}`);
         }
         if (artifactDir) {
-            await page.screenshot({
-                path: path.join(artifactDir, `${browserName}-${variant.name}-${item.code}.png`
-                    .replaceAll(/[^a-z0-9.-]+/gi, '-').toLowerCase()),
-                fullPage: true,
-            });
+            await captureEvidence(page, path.join(artifactDir, `${browserName}-${variant.name}-${item.code}.png`
+                .replaceAll(/[^a-z0-9.-]+/gi, '-').toLowerCase()));
         }
         return {
             code: item.code,
             action: item.action,
             documentWidth: layout.documentWidth,
             bodyWidth: layout.bodyWidth,
-            cardBottom: Math.round(layout.card.bottom * 10) / 10,
+            cardBottom: Math.round(layout.card!.bottom * 10) / 10,
             background: layout.background,
         };
     } catch (error) {
@@ -290,12 +309,12 @@ const renderCase = async (browser, browserName, item, variant) => {
     }
 };
 
-const verifyBrowser = async ({ name, engine, launch }) => {
+const verifyBrowser = async ({ name, engine, launch }: { name: string; engine: BrowserType; launch: LaunchOptions }) => {
     let browser = null;
     try {
         if (engine === chromium) assertChromeLaunchAllowed();
         browser = await engine.launch({ headless: true, ...launch });
-        const variants = {};
+        const variants: Record<string, unknown[]> = {};
         for (const variant of VARIANTS) {
             variants[variant.name] = [];
             for (const item of CASES) {

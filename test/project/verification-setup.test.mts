@@ -37,7 +37,7 @@ test('shared package gate builds once and exercises capture against the producti
     assert.match(steps[0].run, /npm run release:verify-packages/);
     assert.equal(steps.filter((step: WorkflowStep) => step.run!.includes('npm run')).length, 1);
     for (const script of ['capture-popup', 'capture-readiness', 'capture-flow', 'multi-summit']) {
-        assert.ok(steps.slice(1).some((step: WorkflowStep) => step.run!.includes(`node scripts/verify-${script}.mjs`)), script);
+        assert.ok(steps.slice(1).some((step: WorkflowStep) => /\.m[jt]s/.test(step.run!.split(`node scripts/verify-${script}`)[1]?.slice(0, 4) ?? '')), script);
     }
     for (const step of steps) {
         assert.equal(step.shell, 'bash', 'tee must not conceal a failed verifier');
