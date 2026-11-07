@@ -73,14 +73,16 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
         render({ permissionGranted: !!response.permissionGranted });
     };
 
-    // permissions.request() needs the click's own user gesture, and an awaited
-    // message can spend it, so ask before anything else in the handler.
-    const requestPermission = async () => {
+    // permissions.request() needs the click's own user gesture. Firefox treats
+    // any await before it, even permissions.contains(), as leaving the handler
+    // and refuses the request, so it is the first call. Asking for a permission
+    // already held resolves true without a prompt.
+    const requestPermission = () => {
         try {
-            return !!(await extensionApi.permissions?.contains({ origins: IMGBB_ORIGINS })
-                || await extensionApi.permissions?.request({ origins: IMGBB_ORIGINS }));
+            return Promise.resolve(extensionApi.permissions?.request({ origins: IMGBB_ORIGINS }))
+                .then(granted => !!granted, () => false);
         } catch {
-            return false;
+            return Promise.resolve(false);
         }
     };
 
@@ -92,10 +94,11 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
             keyEl.focus();
             return;
         }
+        const permission = requestPermission();
         revision++; setBusy(true);
         setStatus('Saving key…');
         try {
-            if (!await requestPermission()) {
+            if (!await permission) {
                 setStatus('Allow access to api.imgbb.com, then choose Save key again.', 'error');
                 return;
             }
