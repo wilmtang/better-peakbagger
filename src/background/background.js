@@ -58,7 +58,7 @@ import {
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 import { classifyResponse as classifyPeakbaggerResponse } from '../peakbagger/peakbagger-response.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { createGarminImports, GARMIN_ALARM } from '../garmin/garmin-imports.js';
+import { createGarminImports, GARMIN_ALARM } from '../garmin/garmin-imports.ts';
 import { GarminError } from '../garmin/garmin-api.js';
 
 (() => {

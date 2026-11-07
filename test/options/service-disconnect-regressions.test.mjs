@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.js';
-import { createGarminImports } from '../../src/garmin/garmin-imports.js';
+import { createGarminImports } from '../../src/garmin/garmin-imports.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { loadOptions, registerCleanup } from '../helpers/options-helpers.mjs';
 import { waitFor } from '../helpers/load-page.mjs';

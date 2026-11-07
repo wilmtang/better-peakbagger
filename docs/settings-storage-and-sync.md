@@ -213,7 +213,7 @@ key removes that key. Included GitHub and non-null Garmin credentials require
 host access and validation. A fresh Garmin key import leaves import consent off;
 existing destination consent remains its own choice. GitHub connection imports
 retain destination transfer settings. See the [manual file routes](../src/background/settings-file-routes.js)
-and [Garmin import handling](../src/garmin/garmin-imports.js).
+and [Garmin import handling](../src/garmin/garmin-imports.ts).
 
 ## Climber-list files
 
