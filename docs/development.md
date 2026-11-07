@@ -271,9 +271,20 @@ unpacked extension, and reload it yourself after a rebuild:
 
 Standalone `npm run watch` still writes the completed-build signal, but a
 manually loaded browser does not subscribe to it; use the browser's extension
-reload control, then refresh the target page. Restart any watcher after changing
-`scripts/build-config.mts`, the build scripts, or installed dependencies—the
-running Node process has already loaded those inputs.
+reload control, then refresh the target page. Watch mode recursively watches
+every existing directory in `AUTHORED_SOURCE_ROOTS` (`src/`, `options/`,
+`popup/`, `photos/` — derived from the top-level roots referenced by `ENTRIES`),
+the copied asset directories (`icons/`, `terrain/`, `third_party/`), and copied
+root files (`manifest.json`, `README.md`, `PRIVACY.md`, `LICENSE`,
+`ACKNOWLEDGEMENTS.md`), with overlapping directory watches deduplicated.
+Creating new nested subdirectories or files inside an already-watched root works
+live without restarting. Restart any watcher after adding a new top-level source
+or asset directory, creating a configured top-level directory that did not exist
+when the watcher started, or changing entry or compiler configuration
+(`scripts/build-config.mts`, `scripts/build.mts`, `tsconfig.check.json`,
+`tsconfig.node.check.json`) or installed dependencies (`package.json`,
+`package-lock.json`, `node_modules/`)—the running Node process has already
+created its esbuild contexts and loaded those inputs.
 
 Do **not** load the repo root — `manifest.json` there names bundle files that
 only exist under `dist/` after a build.
@@ -622,7 +633,7 @@ token unchanged.
 
 `scripts/build-config.mts` is the **single source of truth** for how the
 extension is assembled—which source roots belong to each bundle and which
-assets/vendor distributions are copied. `scripts/build.mjs` turns that config
+assets/vendor distributions are copied. `scripts/build.mts` turns that config
 into esbuild calls. The manifest names only generated bundle paths; tests
 cross-check those references against the config.
 

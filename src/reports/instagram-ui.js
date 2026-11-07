@@ -3,7 +3,7 @@
 import { canonicalInstagramUrl, instagramParagraphUrl } from './instagram-url.js';
 import { instagramEmbedHeight } from './instagram-sizing.js';
 import { createStableText } from '../ui/stable-text.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { trustedAction } from '../ui/trusted-action.js';
 import { settings } from '../settings/settings.js';
 

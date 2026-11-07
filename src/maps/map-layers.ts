@@ -14,7 +14,7 @@ import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns, readAttribution
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createMapLocationMenu } from './map-location-menu.ts';
 import { bindMapLocationMenu } from './peak-weather-map.js';
 

@@ -512,7 +512,7 @@ Pinned calculation sources, inspected October 24–25, 2026:
 | `src/weather/summit-cloud.js`, client/models/core | Cloud card, pressure-profile capabilities, sampling and prediction |
 | `src/weather/peak-weather-updates.js`, AQI client/view | Separate metadata and AQI ownership/caches |
 | `src/weather/weather-hourly-table.js`, `weather-chart-scale.js` | Shared interval series, conditions table and chart scale/ticks |
-| `src/ui/card-read-gate.ts`, `latest-read.js`, `page-lifecycle.js` | Eligibility/lazy start, superseding-read ownership, BFCache lifetime |
+| `src/ui/card-read-gate.ts`, `latest-read.ts`, `page-lifecycle.ts` | Eligibility/lazy start, superseding-read ownership, BFCache lifetime |
 | `src/ui/card.css`, peak layout, drag helpers | Opt-in palette/shell and surface adapters; see card conventions |
 
 Eligibility combines authoritative settings, feature/date policy, active

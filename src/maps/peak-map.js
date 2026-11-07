@@ -16,7 +16,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
 import { mountainTime as MountainTime } from '../time/mountain-time.js';
 import { sunState as SunState } from '../sun/sun-state.js';
 import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
-import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 import { mapViewport as MapViewport } from '../gpx/map-viewport.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);

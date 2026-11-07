@@ -3,7 +3,7 @@
 
 import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
 import type { VectorBasemap, VectorView } from './vector-basemap.ts';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { readRetryAt } from '../net/rate-limit.js';
 
 interface BridgeEntry {

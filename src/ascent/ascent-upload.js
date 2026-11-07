@@ -28,7 +28,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
 import { createStableText } from '../ui/stable-text.js';
-import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 import tzlookup from 'tz-lookup';
 
 (() => {

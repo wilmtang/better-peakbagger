@@ -4,7 +4,7 @@
 import { dom as D } from '../ui/dom.js';
 import { createStableText } from '../ui/stable-text.js';
 import { settings as S } from '../settings/settings.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { trustedAction } from '../ui/trusted-action.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';

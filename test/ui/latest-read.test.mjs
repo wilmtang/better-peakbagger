@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createLatestRead } from '../../src/ui/latest-read.js';
+import { createLatestRead } from '../../src/ui/latest-read.ts';
 
 test('superseded successes, errors and finalizers cannot own a newer read', () => {
     const reads = createLatestRead(), first = reads.start(), second = reads.start();

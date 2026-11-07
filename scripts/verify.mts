@@ -99,7 +99,7 @@ export function verificationPlan([target, ...args]: string[]) {
 
 export async function runVerification(args: string[], { execute = runChildProcess as unknown as VerifierExecute } = {}) {
     const plan = verificationPlan(args);
-    if (plan.build) await execute(process.execPath, [path.join(root, 'scripts/build.mjs')], { cwd: root });
+    if (plan.build) await execute(process.execPath, [path.join(root, 'scripts/build.mts')], { cwd: root });
     for (const command of plan.commands) {
         await execute(process.execPath, command, { cwd: root });
     }

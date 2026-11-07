@@ -3,8 +3,20 @@
 
 // Own a latest-only read, without choosing identity, cache or UI policy.
 // A stale success/error/finalizer cannot finish a newer transaction.
-export function createLatestRead() {
-    let active = null;
+export interface LatestReadTransaction {
+    readonly signal: AbortSignal;
+    isCurrent(): boolean;
+    finish(): boolean;
+}
+
+export interface LatestRead {
+    readonly pending: boolean;
+    cancel(): void;
+    start(): LatestReadTransaction;
+}
+
+export function createLatestRead(): LatestRead {
+    let active: AbortController | null = null;
     return {
         get pending() { return active !== null; },
         cancel() { const previous = active; active = null; previous?.abort(); },

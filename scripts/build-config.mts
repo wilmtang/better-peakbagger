@@ -5,7 +5,7 @@
 //
 // This module is the authority on how the extension is assembled: which source
 // modules go into which bundle, in what order, and which static assets are
-// copied. scripts/build.mjs consumes it to produce dist/, and the test suite
+// copied. scripts/build.mts consumes it to produce dist/, and the test suite
 // imports it to assert bundle composition, load order, and execution world
 // without re-encoding the layout in each test.
 //
@@ -21,29 +21,32 @@ import { fileURLToPath } from 'node:url';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const distDir = path.join(root, 'dist');
-export const srcFile = (f: string) => path.join(root, 'src', f);
+export const srcFile = (f: string, projectRoot?: string | number) =>
+    path.join(typeof projectRoot === 'string' ? projectRoot : root, 'src', f);
 
 // Page bundles (options, popup) mix shared src/ modules with page-local files.
 // Page-local names resolve here; every other name falls back to src/.
-const PAGE_LOCAL: Record<string, string> = {
-    'options-main.js': path.join(root, 'options', 'options.js'),
-    'garmin-settings-page.js': path.join(root, 'options', 'garmin.js'),
-    'garmin-inbox-page.js': path.join(root, 'options', 'inbox.js'),
-    'inbox-toolbar-setting-page.js': path.join(root, 'options', 'inbox-toolbar-setting.ts'),
-    'options-drafts.js': path.join(root, 'options', 'drafts.js'),
-    'options-drafts-page.js': path.join(root, 'options', 'drafts-page.js'),
-    'options-favorites.js': path.join(root, 'options', 'favorites.js'),
-    'options-favorites-page.js': path.join(root, 'options', 'favorites-page.js'),
-    'options-buddy-refresh.js': path.join(root, 'options', 'buddy-refresh.js'),
-    'options-ignored.js': path.join(root, 'options', 'ignored.js'),
-    'options-favorites-backup.js': path.join(root, 'options', 'favorites-backup.js'),
-    'options-utils.js': path.join(root, 'options', 'options-utils.js'),
-    'popup-main.js': path.join(root, 'popup', 'popup.ts'),
-    'photos-main.js': path.join(root, 'photos', 'photos.ts'),
-    'photos-guide.js': path.join(root, 'photos', 'guide.js'),
+const PAGE_LOCAL_RELATIVE: Record<string, readonly [string, string]> = {
+    'options-main.js': ['options', 'options.js'],
+    'garmin-settings-page.js': ['options', 'garmin.js'],
+    'garmin-inbox-page.js': ['options', 'inbox.js'],
+    'inbox-toolbar-setting-page.js': ['options', 'inbox-toolbar-setting.ts'],
+    'options-drafts.js': ['options', 'drafts.js'],
+    'options-drafts-page.js': ['options', 'drafts-page.js'],
+    'options-favorites.js': ['options', 'favorites.js'],
+    'options-favorites-page.js': ['options', 'favorites-page.js'],
+    'options-buddy-refresh.js': ['options', 'buddy-refresh.js'],
+    'options-ignored.js': ['options', 'ignored.js'],
+    'options-favorites-backup.js': ['options', 'favorites-backup.js'],
+    'options-utils.js': ['options', 'options-utils.js'],
+    'popup-main.js': ['popup', 'popup.ts'],
+    'photos-main.js': ['photos', 'photos.ts'],
+    'photos-guide.js': ['photos', 'guide.js'],
 };
-export function resolvePageSource(name: string) {
-    return PAGE_LOCAL[name] || srcFile(name);
+export function resolvePageSource(name: string, projectRoot?: string | number) {
+    const base = typeof projectRoot === 'string' ? projectRoot : root;
+    const relative = PAGE_LOCAL_RELATIVE[name];
+    return relative ? path.join(base, ...relative) : srcFile(name, base);
 }
 
 // One record per bundle. `out` is the dist-relative output path; `sources` are
@@ -68,9 +71,9 @@ export const ENTRIES: BundleEntry[] = [
     { out: 'provider-page.js', sources: ['capture/provider-url.js', 'capture/provider-response.js', 'capture/capture-error-policy.js', 'capture/provider-timing.js', 'gpx/gpx-parse.js', 'net/request-deadline.js', 'capture/provider-page.js'] },
     { out: 'peakbagger-page.js', sources: ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'peakbagger/peakbagger-page.js'] },
 
-    { out: 'content/ascent-editor.js', sources: ['ui/units.js', 'ui/page-lifecycle.js', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts'] },
+    { out: 'content/ascent-editor.js', sources: ['ui/units.js', 'ui/page-lifecycle.ts', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts'] },
     { out: 'content/ascent-backup.js', sources: ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'reports/report-markup.ts', 'ascent/ascent-snapshot.ts', 'ascent/ascent-backup-source.js', 'ascent/ascent-page.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'ascent/ascent-backup.js'] },
-    { out: 'content/ascent-gaia.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'ascent/ascent-page.js', 'caltopo/caltopo-import.js', 'alltrails/alltrails-import.js', 'gaia/gaia-import.js', 'gpx/saved-gpx-source.js', 'onx/onx-import.js', 'ui/dom.js', 'ui/page-lifecycle.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'ui/stable-text.js', 'ascent/ascent-gaia.js'] },
+    { out: 'content/ascent-gaia.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'ascent/ascent-page.js', 'caltopo/caltopo-import.js', 'alltrails/alltrails-import.js', 'gaia/gaia-import.js', 'gpx/saved-gpx-source.js', 'onx/onx-import.js', 'ui/dom.js', 'ui/page-lifecycle.ts', 'ui/runtime-message.js', 'ui/trusted-action.js', 'ui/stable-text.js', 'ascent/ascent-gaia.js'] },
     { out: 'content/ascent-report-visibility.js', sources: ['ascent/ascent-report-visibility.js'] },
     { out: 'content/ascent-layout.js', sources: ['ui/dom.js', 'ascent/ascent-table-split.js', 'ascent/ascent-layout.js'] },
     { out: 'content/ascent-weather.js', sources: ['ascent/ascent-weather.js'] },
@@ -81,7 +84,7 @@ export const ENTRIES: BundleEntry[] = [
     { out: 'content/theme-early.js', sources: ['theme/theme-resolve.js', 'theme/theme-bootstrap.js', 'theme/theme-early.js'] },
     { out: 'content/theme.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'theme/theme-bootstrap.js', 'theme/dynamic-inline-colors.js', 'theme/site-dark-css.js', 'theme/theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'settings/bridge.js'] },
-    { out: 'content/gpx-analyzer.js', sources: ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.js', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.ts', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js'] },
+    { out: 'content/gpx-analyzer.js', sources: ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.ts', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.ts', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js'] },
     { out: 'content/terrain-map.js', sources: ['terrain/terrain-camera.js', 'terrain/terrain-failure.js', 'terrain/terrain-lifecycle.js', 'settings/settings-schema.ts', 'settings/settings.js', 'terrain/terrain-map.ts'] },
     { out: 'content/ascent-filter.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/trusted-action.js', 'ascent/ascent-filter.js'] },
     { out: 'content/climber-favorite.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'favorites/climber-favorite.js', 'favorites/climber-ignore.js'] },
@@ -94,9 +97,9 @@ export const ENTRIES: BundleEntry[] = [
     { out: 'terrain/vector-map-frame.js', sources: ['maps/vector-map-frame.ts'], format: 'esm',
         browserImports: { 'maplibre-gl': '../vendor/maplibre-gl.mjs' } },
     { out: 'content/peak-report-filter.js', sources: ['favorites/peak-report-filter.js'] },
-    { out: 'content/peak-map.js', sources: ['ui/page-lifecycle.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'maps/peak-map.js'] },
+    { out: 'content/peak-map.js', sources: ['ui/page-lifecycle.ts', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'maps/peak-map.js'] },
     { out: 'content/big-map-bridge.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'maps/big-map-bridge.js'] },
-    { out: 'content/big-map.js', sources: ['ui/page-lifecycle.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'maps/big-map.js'] },
+    { out: 'content/big-map.js', sources: ['ui/page-lifecycle.ts', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'maps/big-map.js'] },
     { out: 'gaia/access-head.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.js'] },
     { out: 'bc-land/access-head.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.js'] },
     { out: 'bc-land/access.js', sources: ['maps/bc-land-access.js'] },
@@ -137,9 +140,11 @@ export interface BundleEntry {
     out: string; sources: string[]; page?: boolean; format?: string; browserImports?: Record<string, string>; [field: string]: unknown;
 }
 
-export function entrySources(entry: Pick<BundleEntry, 'page' | 'sources'>) {
-    const resolve = entry.page ? resolvePageSource : srcFile;
-    return entry.sources.map(resolve);
+export function entrySources(entry: Pick<BundleEntry, 'page' | 'sources'>, projectRoot?: string | number) {
+    const base = typeof projectRoot === 'string' ? projectRoot : root;
+    return entry.sources.map(source => entry.page
+        ? resolvePageSource(source, base)
+        : srcFile(source, base));
 }
 
 // Reviewer metadata must name every authored top-level source root. Derive the

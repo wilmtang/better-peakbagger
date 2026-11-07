@@ -20,9 +20,9 @@ These shared modules already exist:
 | Concern | Reuse now | Policy retained by the caller |
 | --- | --- | --- |
 | Safe DOM and feedback | [`dom.js`](../src/ui/dom.js), [`stable-text.js`](../src/ui/stable-text.js) | Labels, status alternatives, deliberate expansion and retained content |
-| Page lifetime and cooldown UI | [`page-lifecycle.js`](../src/ui/page-lifecycle.js), [`retry-cooldown.js`](../src/ui/retry-cooldown.js) | Eligible reads, cancellation, TTL, resume and remote-write reconciliation |
+| Page lifetime and cooldown UI | [`page-lifecycle.ts`](../src/ui/page-lifecycle.ts), [`retry-cooldown.js`](../src/ui/retry-cooldown.js) | Eligible reads, cancellation, TTL, resume and remote-write reconciliation |
 | Read eligibility and lazy start | [`card-read-gate.ts`](../src/ui/card-read-gate.ts) | Feature/date eligibility, optional collapse, freshness, retained results and cancellation |
-| Latest read ownership | [`latest-read.js`](../src/ui/latest-read.js) | Request identity, validation, cache/TTL, retained labels and pending UI |
+| Latest read ownership | [`latest-read.ts`](../src/ui/latest-read.ts) | Request identity, validation, cache/TTL, retained labels and pending UI |
 | Movement | [`card-drag.js`](../src/ui/card-drag.js), [`layout-menu.js`](../src/ui/layout-menu.js) | Native anchors, valid destinations, order, persistence and preview strategy |
 | Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.js`](../src/time/mountain-time.js) | Forecast versus historical endpoint, date range, model capabilities and freshness |
 | Weather display | [`weather-hourly-table.js`](../src/weather/weather-hourly-table.js), [`weather-chart-scale.js`](../src/weather/weather-chart-scale.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |

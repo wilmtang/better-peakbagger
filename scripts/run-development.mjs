@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { distDir, root } from './build-config.mts';
-import { RELOAD_SIGNAL, watchAll } from './build.mjs';
+import { RELOAD_SIGNAL, watchAll } from './build.mts';
 import {
     createFirefoxSource,
     syncFirefoxSource,

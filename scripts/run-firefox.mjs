@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { createFirefoxManifest } from './build-firefox-package.mjs';
-import { publishBuildTree, RELOAD_SIGNAL } from './build.mjs';
+import { publishBuildTree, RELOAD_SIGNAL } from './build.mts';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = path.resolve(scriptDir, '..');

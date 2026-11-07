@@ -27,7 +27,7 @@ import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js'
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { units as Units } from '../ui/units.js';
-import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 import { mapViewport as MapViewport } from './map-viewport.js';
 import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.js';
 import { mapOverlay as MapOverlay } from './map-overlay.js';

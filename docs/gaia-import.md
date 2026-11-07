@@ -85,7 +85,7 @@ The GPX Analyzer loads independently and may add its panel after the map
 handoff control. One `MutationObserver` therefore maintains the invariant that
 the shared control is the download link's immediate sibling. The observer suspends for a
 persisted `pagehide`, resumes and revalidates placement on `pageshow`, and is
-removed on terminal page disposal through `src/ui/page-lifecycle.js`.
+removed on terminal page disposal through `src/ui/page-lifecycle.ts`.
 
 The compact Gaia and onX pills use the site's explicit light/dark theme where
 present and the operating-system scheme otherwise. The Firefox access page uses the
