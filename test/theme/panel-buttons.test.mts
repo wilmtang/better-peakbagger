@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+// @ts-expect-error jsdom ships no type declarations.
 import { JSDOM } from 'jsdom';
 import { loadOptions } from '../helpers/options-helpers.mjs';
 
@@ -11,14 +12,14 @@ import { loadOptions } from '../helpers/options-helpers.mjs';
 const actions = '.primary, .secondary, .primary-button, .secondary-button, .github-primary, '
     + '.file-button, .quiet-button, .danger-button, .settings-backup-confirm, '
     + '.photos-restore-confirm, .favorites-mirror-confirm, .favorite-undo, .draft-undo';
-const specialized = '.status-dismiss, .settings-button, .icon-button, .tab-button, [role="tab"], '
+const specialized = '.status-dismiss, .header-button, .icon-button, .tab-button, [role="tab"], '
     + '.favorites-source-filter button, .tool-rail button, .view-controls button, #reset-viewport, '
     + '.order-grip, .github-code, .github-repo';
-const assertSharedButtons = (doc, surface) => {
-    const controls = [...doc.querySelectorAll(`button, ${actions}`)].filter(control => !control.matches(specialized));
+const assertSharedButtons = (doc: Document, surface: string) => {
+    const controls = [...doc.querySelectorAll<HTMLElement>(`button, ${actions}`)].filter(control => !control.matches(specialized));
     assert(controls.length > 0, `${surface} must exercise action controls`);
     for (const control of controls) assert(control.classList.contains('panel-button'),
-        `${surface}: ${control.id || control.getAttribute('aria-label') || control.textContent.trim()} must use the shared action component`);
+        `${surface}: ${control.id || control.getAttribute('aria-label') || control.textContent!.trim()} must use the shared action component`);
 };
 
 test('all panel action markup uses the shared button component', async () => {
