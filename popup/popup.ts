@@ -660,6 +660,20 @@ interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: b
         } catch { inboxStatus.textContent = 'Couldn’t open inbox. Try again.'; }
         finally { openingInbox = false; inboxButton.removeAttribute('aria-disabled'); inboxButton.removeAttribute('aria-busy'); }
     });
+    const photoEditorButton = (document.getElementById('open-photo-editor') as HTMLButtonElement);
+    const photoEditorStatus = (document.getElementById('photo-editor-status') as HTMLElement);
+    let openingPhotoEditor = false;
+    photoEditorButton.addEventListener('click', async () => {
+        if (openingPhotoEditor) return; openingPhotoEditor = true;
+        photoEditorButton.setAttribute('aria-disabled', 'true'); photoEditorButton.setAttribute('aria-busy', 'true');
+        photoEditorStatus.textContent = 'Opening the photo editor…';
+        try {
+            const result = await ext.runtime.sendMessage({ type: 'PHOTO_STANDALONE_OPEN' });
+            if (!result?.ok) throw new Error();
+            window.close();
+        } catch { photoEditorStatus.textContent = 'Couldn’t open the editor. Try again.'; }
+        finally { openingPhotoEditor = false; photoEditorButton.removeAttribute('aria-disabled'); photoEditorButton.removeAttribute('aria-busy'); }
+    });
     const refreshInbox = async (settings: typeof Settings.DEFAULTS) => {
         garminInboxEnabled = settings.enableGarminInbox;
         document.querySelector<HTMLElement>('.inbox-entry')!.hidden = !garminInboxEnabled;

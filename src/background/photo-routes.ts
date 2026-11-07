@@ -6,6 +6,7 @@
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { photoLibrary as Library } from '../photos/photo-library.js';
 import { sanitizeReportDimension } from '../reports/report-markup.js';
+import { createPackagedPageMatcher } from './sender-policy.js';
 import { createReportPhotoService, reportPhotoOwner } from './report-photo-service.js';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
@@ -216,6 +217,38 @@ export function createPhotoRoutes({
         return key
             ? { ok: true, key }
             : { ok: false, error: { code: 'not-configured', message: 'Enter an ImgBB API key.' } };
+    };
+
+    // A tab carrying report context belongs to that report's Save-and-return, so
+    // the toolbar never takes it over: it reuses only an unbound photo tab,
+    // preferring one that opened on the editor over one that opened on the library.
+    const isPopup = createPackagedPageMatcher(ext, ['popup/popup.html']);
+    const standaloneView = (url: string | undefined) => {
+        try {
+            const actual = new URL(url || ''), expected = new URL(photoPageBase!);
+            if (actual.protocol !== expected.protocol || actual.host !== expected.host || actual.pathname !== expected.pathname
+                || ['returnToken', 'localPhotoId', 'imageUrl'].some(name => actual.searchParams.has(name))) return null;
+            return actual.searchParams.get('mode') === 'library' ? 'library' : 'editor';
+        } catch { return null; }
+    };
+    let openingStandalone: Promise<{ ok: boolean; tabId?: number }> | null = null;
+    const openStandaloneEditor = (_message: PhotoMessage, sender: chrome.runtime.MessageSender) => {
+        if (!isPopup(sender)) return { ok: false, error: { code: 'forbidden' } };
+        openingStandalone ||= (async () => {
+            try {
+                const tabs = await ext.tabs.query({});
+                const tab = tabs.find(candidate => standaloneView(candidate.url) === 'editor')
+                    || tabs.find(candidate => standaloneView(candidate.url) === 'library');
+                if (!tab) {
+                    const created = await ext.tabs.create({ url: photoPageBase!, active: true });
+                    return { ok: true, tabId: created.id };
+                }
+                await ext.tabs.update(tab.id!, { active: true });
+                if (Number.isInteger(tab.windowId)) await ext.windows.update(tab.windowId, { focused: true });
+                return { ok: true, tabId: tab.id };
+            } catch { return { ok: false }; }
+        })().finally(() => { openingStandalone = null; });
+        return openingStandalone;
     };
 
     const openEditor = async (message: PhotoMessage, sender: chrome.runtime.MessageSender) => {
@@ -454,6 +487,7 @@ export function createPhotoRoutes({
             PHOTO_IMGBB_REMOVE_KEY: removeKey,
             PHOTO_IMGBB_LEASE_KEY: leaseKey,
             PHOTO_EDITOR_OPEN: openEditor,
+            PHOTO_STANDALONE_OPEN: openStandaloneEditor,
             PHOTO_INSERT_COMMIT: insertResult,
         },
         cleanup,

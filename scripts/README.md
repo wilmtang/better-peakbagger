@@ -179,6 +179,7 @@ independent of the existing targets.
 - [verify-ascent-filters.mjs](verify-ascent-filters.mjs) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.
 - [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
 - [verify-photo-editor.mts](verify-photo-editor.mts)
+- [verify-popup-photo-entry.mts](verify-popup-photo-entry.mts)
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
 - [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
 - [verify-report-caption-stability.mts](verify-report-caption-stability.mts)

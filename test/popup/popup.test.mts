@@ -1542,3 +1542,53 @@ test('the inbox chip counts only activities waiting for peak checks', async () =
         assert.equal(dom.window.document.getElementById('inbox-count').textContent, '');
     } finally { dom.window.close(); }
 });
+
+const photoEntryPopup = (open: () => Promise<unknown>) => {
+    const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    const messages: PopupMessage[] = [];
+    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async (message: PopupMessage) => {
+        messages.push(message);
+        return message.type === 'PHOTO_STANDALONE_OPEN' ? open() : null;
+    } } };
+    let closed = 0;
+    dom.window.close = () => { closed++; };
+    dom.window.eval(source);
+    return { dom, messages, closed: () => closed, control: dom.window.document.getElementById('open-photo-editor'), status: dom.window.document.getElementById('photo-editor-status') };
+};
+
+test('the photo editor entry stays available with the inbox off and closes the popup once opened', async () => {
+    let release: (value: unknown) => void = () => {};
+    const popup = photoEntryPopup(() => new Promise(resolve => { release = resolve; }));
+    try {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(popup.dom.window.document.querySelector('.inbox-entry').hidden, true);
+        assert.equal(popup.dom.window.document.querySelector('.photo-entry').hidden, false);
+        assert.equal(popup.control.getAttribute('aria-label'), 'Open photo editor');
+        popup.control.focus();
+        popup.control.click(); popup.control.click();
+        assert.equal(popup.dom.window.document.activeElement, popup.control);
+        assert.equal(popup.control.disabled, false, 'busy state must keep keyboard focus on the action');
+        assert.equal(popup.control.getAttribute('aria-busy'), 'true');
+        assert.equal(popup.control.getAttribute('aria-disabled'), 'true');
+        assert.equal(popup.messages.filter(message => message.type === 'PHOTO_STANDALONE_OPEN').length, 1);
+        release({ ok: true });
+        await waitFor(() => popup.closed() === 1);
+        assert.equal(popup.closed(), 1);
+        assert.equal(popup.messages.filter(message => message.type === 'CAPTURE_START').length, 0);
+    } finally { popup.dom.window.close(); }
+});
+
+test('a failed photo editor open keeps the popup and offers a retry', async () => {
+    const answers: unknown[] = [{ ok: false }, { ok: true }];
+    const popup = photoEntryPopup(async () => answers.shift());
+    try {
+        popup.control.click();
+        await waitFor(() => /Couldn’t open the editor/.test(popup.status.textContent));
+        assert.match(popup.status.textContent, /Couldn’t open the editor/);
+        assert.equal(popup.closed(), 0);
+        assert.equal(popup.control.hasAttribute('aria-busy'), false);
+        popup.control.click();
+        await waitFor(() => popup.closed() === 1);
+        assert.equal(popup.closed(), 1);
+    } finally { popup.dom.window.close(); }
+});

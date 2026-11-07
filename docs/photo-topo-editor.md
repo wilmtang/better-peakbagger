@@ -112,6 +112,19 @@ theme, and it is listed in `web_accessible_resources` for Peakbagger so the
 popover — a content script — can link to it. Its symbol legend is painted from
 `photo-renderer`, so what it teaches cannot drift from what the export draws.
 
+The toolbar popup's **Photo editor** card opens the editor without a report.
+It sits beside the Activity inbox and stays available when that inbox is off.
+The worker's `PHOTO_STANDALONE_OPEN` route accepts only the packaged popup. It
+focuses an open photo tab that has no report context, preferring one that opened
+on the editor, and otherwise opens a new tab. A tab carrying `returnToken`,
+`localPhotoId` or `imageUrl` belongs to its report's return flow and is never
+reused, so the card cannot redirect a report's Save and return. The card steps
+aside while detected peaks are on screen, because reviewing them needs the
+popup's full 600px for **Open drafts**. Focused hidden check: build, then run
+`node scripts/verify-popup-photo-entry.mts`. It uses the real worker and tabs,
+with the popup loaded as a tab, so native popup sizing and window focus remain
+unverified by it.
+
 The extension opens `photos/photos.html` in a normal extension tab. A new
 project starts when the user chooses, drags, or pastes a browser-decodable image.
 The encoded source may be at most 128 MiB, while the decoded image may be no
