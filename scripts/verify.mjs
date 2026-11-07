@@ -7,7 +7,7 @@ import { runChildProcess } from './resource-stack.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const targets = {
-    garmin: [['verify-garmin-ui.mjs']],
+    garmin: [['verify-garmin-ui.mts']],
     connections: [['verify-connections.mjs']],
     chrome: [['verify-extension.mts']],
     firefox: [['verify-firefox-extension.mts']],

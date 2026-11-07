@@ -4,20 +4,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+// @ts-expect-error jsdom ships no type declarations.
 import { JSDOM } from 'jsdom';
+
+interface PopupMessage { type: string; [key: string]: unknown }
+type PopupDom = InstanceType<typeof JSDOM>;
+type TimerCallback = (...args: unknown[]) => unknown;
 
 const html = await fs.readFile(new URL('../../popup/popup.html', import.meta.url), 'utf8');
 const headSource = await fs.readFile(new URL('../../dist/popup/popup-head.js', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../dist/popup/popup.js', import.meta.url), 'utf8');
 const css = await fs.readFile(new URL('../../popup/popup.css', import.meta.url), 'utf8');
-const waitFor = async condition => {
+const waitFor = async (condition: () => unknown) => {
     for (let attempt = 0; attempt < 50 && !condition(); attempt++) {
         await new Promise(resolve => setTimeout(resolve, 10));
     }
 };
 
 // Existing capture-path scenarios now enter through the explicit user gesture.
-const startIfOffered = async dom => {
+const startIfOffered = async (dom: PopupDom) => {
     await new Promise(resolve => setTimeout(resolve, 0));
     const action = [...dom.window.document.querySelectorAll('#state button')]
         .find(element => element.textContent === 'Capture this activity');
@@ -30,7 +35,7 @@ test('popup stops spinner motion when the user requests reduced motion', () => {
 
 test('popup theme bootstrap loads before the stylesheet', () => {
     const dom = new JSDOM(html);
-    const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
+    const resources = Array.from<Element>(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
     // The shared panel stylesheet comes first so popup rules of equal
     // specificity win, and both come after the theme bootstrap.
@@ -43,7 +48,7 @@ test('popup paints from the cached theme and reconciles the synced preference', 
         runScripts: 'outside-only'
     });
     dom.window.localStorage.setItem('bpbThemePref', 'dark');
-    dom.window.matchMedia = query => ({ matches: query === '(prefers-color-scheme: dark)' });
+    dom.window.matchMedia = (query: string) => ({ matches: query === '(prefers-color-scheme: dark)' });
     dom.window.chrome = {
         storage: { local: { get: async () => ({}) },
             sync: { get: async () => ({ bpbSettings: { theme: 'light' } }) },
@@ -94,7 +99,7 @@ test('popup explains both match class and confidence percentage', async () => {
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                 return { ok: true };
             }
@@ -127,7 +132,7 @@ const unitsJob = {
     }]
 };
 
-const loadPopupWithUnits = async (units, overrides = {}) => {
+const loadPopupWithUnits = async (units: string, overrides = {}) => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
@@ -139,7 +144,7 @@ const loadPopupWithUnits = async (units, overrides = {}) => {
             onChanged: { addListener() {}, removeListener() {} }
         },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return unitsJob;
                 return { ok: true };
             }
@@ -191,12 +196,12 @@ test('popup reads cached results before units resolve and delays the first resul
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
     });
-    let resolveSettings;
+    let resolveSettings!: (value: unknown) => void;
     const settings = new Promise(resolve => { resolveSettings = resolve; });
-    const messages = [];
+    const messages: PopupMessage[] = [];
     const diagnostics = [];
     dom.window.BPB_CAPTURE_DIAGNOSTICS = true;
-    dom.window.console.debug = (...args) => diagnostics.push(args);
+    dom.window.console.debug = (...args: unknown[]) => diagnostics.push(args);
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         storage: { local: { get: async () => ({}) },
@@ -204,7 +209,7 @@ test('popup reads cached results before units resolve and delays the first resul
             onChanged: { addListener() {}, removeListener() {} }
         },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return unitsJob;
                 return { ok: true };
@@ -239,12 +244,12 @@ test('popup discards the cached GPX before offering a fresh capture', async () =
             evidence: { distanceM: 8, elevationDeltaM: 4, trackQuality: 0.98 }
         }]
     };
-    const messages = [];
+    const messages: PopupMessage[] = [];
     let captureStarts = 0;
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START') {
                     captureStarts++;
@@ -287,11 +292,11 @@ test('popup presents a trackless manual activity as a neutral retryable state', 
         hasCachedGpx: false,
         message: 'This activity has no recorded route to capture. Manually created activities need recorded track data before a GPX can be generated.'
     };
-    const captureStarts = [];
+    const captureStarts: PopupMessage[] = [];
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START') captureStarts.push(message);
                 return job;
             }
@@ -327,11 +332,11 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
         provider: 'garmin',
         hasCachedGpx: true
     };
-    const captureStarts = [];
+    const captureStarts: PopupMessage[] = [];
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START') captureStarts.push(message);
                 return job;
             }
@@ -371,17 +376,17 @@ test('popup locks the selection in the same turn the drafts open', async () => {
         }
     ];
     // The worker hands back a fresh object per message, the way publicJob() does.
-    const job = phase => ({
+    const job = (phase: string) => ({
         phase, provider: 'garmin', hasCachedGpx: true, selectedIds: [1, 2],
         trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
         matches: matches.map(match => ({ ...match }))
     });
     let phase = 'ready';
-    const messages = [];
+    const messages: PopupMessage[] = [];
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job(phase);
                 if (message.type === 'CAPTURE_OPEN_DRAFTS') {
@@ -426,7 +431,7 @@ test('popup keeps a persisted opening generation visibly locked', async () => {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
     });
-    const messages = [];
+    const messages: PopupMessage[] = [];
     const job = {
         phase: 'opening', provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
         trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
@@ -438,7 +443,7 @@ test('popup keeps a persisted opening generation visibly locked', async () => {
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return structuredClone(job);
                 return { ok: true };
@@ -462,7 +467,7 @@ test('popup reports a grouping failure in the status line, not on the primary bu
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
     });
-    const job = phase => ({
+    const job = (phase: string) => ({
         phase, provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
         trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
         matches: [{
@@ -474,7 +479,7 @@ test('popup reports a grouping failure in the status line, not on the primary bu
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job(phase);
                 if (message.type === 'CAPTURE_OPEN_DRAFTS') {
                     phase = 'opened';
@@ -520,11 +525,11 @@ test('popup locks an opened selection and keeps its existing drafts discoverable
             }
         ]
     };
-    const messages = [];
+    const messages: PopupMessage[] = [];
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                 if (message.type === 'CAPTURE_OPEN_DRAFTS') return { tabIds: [20], reused: true };
@@ -566,11 +571,11 @@ test('popup keeps previewed drafts reachable for manual review and Save', async 
             evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
         }]
     };
-    const messages = [];
+    const messages: PopupMessage[] = [];
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                 if (message.type === 'CAPTURE_OPEN_DRAFTS') return { tabIds: [20], reused: true };
@@ -609,7 +614,7 @@ test('popup explains when every previewed draft tab is gone and offers recovery'
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                 // The worker reports a route failure as data, not as a rejected
                 // message: openDrafts() throws a public error, and the onMessage
@@ -659,7 +664,7 @@ test('popup restores the singular draft label after opening fails', async () => 
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                 if (message.type === 'CAPTURE_OPEN_DRAFTS') throw new Error('Opening failed.');
                 return { ok: true };
@@ -684,16 +689,16 @@ test('popup rides out a transient poll failure instead of declaring the capture 
         runScripts: 'outside-only'
     });
     const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
-    dom.window.setTimeout = (callback, delay, ...args) =>
+    dom.window.setTimeout = (callback: TimerCallback, delay: number, ...args: unknown[]) =>
         nativeSetTimeout(callback, delay === 450 ? 3 : delay, ...args);
-    const warnings = [];
-    dom.window.console = { ...dom.window.console, warn: (...args) => warnings.push(args.join(' ')) };
+    const warnings: string[] = [];
+    dom.window.console = { ...dom.window.console, warn: (...args: unknown[]) => warnings.push(args.join(' ')) };
     // Two torn-down-worker ticks in the middle of an in-progress capture.
     let statusCalls = 0;
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_STATUS') {
                     statusCalls++;
                     if (statusCalls === 2 || statusCalls === 3) {
@@ -743,15 +748,15 @@ test('popup gives up on a sustained poll outage with recoverable, plain copy', a
         runScripts: 'outside-only'
     });
     const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
-    dom.window.setTimeout = (callback, delay, ...args) =>
+    dom.window.setTimeout = (callback: TimerCallback, delay: number, ...args: unknown[]) =>
         nativeSetTimeout(callback, delay === 450 ? 3 : delay, ...args);
     dom.window.console = { ...dom.window.console, warn: () => {} };
-    const starts = [];
+    const starts: unknown[] = [];
     let initialStatus = true;
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_STATUS') {
                     if (initialStatus) { initialStatus = false; return null; }
                     throw new Error('Could not establish connection. Receiving end does not exist.');
@@ -789,13 +794,13 @@ test('popup stops status polling when capture finishes without storing a job', a
         runScripts: 'outside-only'
     });
     const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
-    dom.window.setTimeout = (callback, delay, ...args) =>
+    dom.window.setTimeout = (callback: TimerCallback, delay: number, ...args: unknown[]) =>
         nativeSetTimeout(callback, delay === 450 ? 5 : delay, ...args);
     let statusCalls = 0;
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_STATUS') {
                     statusCalls++;
                     return null;
@@ -849,7 +854,7 @@ test('popup names each capture stage and shows bounded summit-area progress', as
         dom.window.chrome = {
             tabs: { query: async () => [{ id: 9 }] },
             runtime: {
-                sendMessage: async message => {
+                sendMessage: async (message: PopupMessage) => {
                     if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                     return { ok: true };
                 },
@@ -875,7 +880,7 @@ test('popup shows a neutral unsupported-page state with discoverable Settings', 
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
             openOptionsPage: async () => { settingsOpens++; },
-            sendMessage: async message => message.type === 'CAPTURE_STATUS' ? null : {
+            sendMessage: async (message: PopupMessage) => message.type === 'CAPTURE_STATUS' ? null : {
                 phase: 'error',
                 error: { code: 'unsupported', message: 'Open a supported activity first.' }
             }
@@ -895,7 +900,7 @@ test('popup shows a neutral unsupported-page state with discoverable Settings', 
     const headerSettings = dom.window.document.getElementById('open-settings');
     assert.equal(headerSettings.getAttribute('aria-label'), 'Open Settings');
     headerSettings.click();
-    Array.from(card.querySelectorAll('button')).find(button => button.textContent === 'Settings').click();
+    Array.from<HTMLElement>(card.querySelectorAll('button')).find(button => button.textContent === 'Settings')!.click();
     await waitFor(() => settingsOpens === 2);
     dom.window.close();
 });
@@ -905,8 +910,8 @@ test('popup turns a Peakbagger human check into a direct recovery flow', async (
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
     });
-    const opened = [];
-    const starts = [];
+    const opened: Record<string, unknown>[] = [];
+    const starts: unknown[] = [];
     const job = {
         phase: 'error',
         provider: 'garmin',
@@ -918,10 +923,10 @@ test('popup turns a Peakbagger human check into a direct recovery flow', async (
     dom.window.chrome = {
         tabs: {
             query: async () => [{ id: 9 }],
-            create: async details => { opened.push(details); return { id: 10, ...details }; }
+            create: async (details: Record<string, unknown>) => { opened.push(details); return { id: 10, ...details }; }
         },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START') {
                     starts.push(message.force);
                     return job;
@@ -953,8 +958,8 @@ test('popup focuses the exact preserved Peakbagger challenge instead of opening 
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
     });
-    const opened = [];
-    const messages = [];
+    const opened: Record<string, unknown>[] = [];
+    const messages: PopupMessage[] = [];
     const job = {
         phase: 'error',
         provider: 'strava',
@@ -966,10 +971,10 @@ test('popup focuses the exact preserved Peakbagger challenge instead of opening 
     dom.window.chrome = {
         tabs: {
             query: async () => [{ id: 9 }],
-            create: async details => { opened.push(details); },
+            create: async (details: Record<string, unknown>) => { opened.push(details); },
         },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                 if (message.type === 'CAPTURE_FOCUS_RECOVERY') return { ok: true, tabId: 44 };
@@ -1011,16 +1016,16 @@ test('popup names Peakbagger transport failures and offers direct recovery', asy
             url: 'chrome-extension://better-peakbagger/popup/popup.html',
             runScripts: 'outside-only'
         });
-        const opened = [];
-        const starts = [];
+        const opened: Record<string, unknown>[] = [];
+        const starts: unknown[] = [];
         const job = { phase: 'error', provider: 'garmin', error: item };
         dom.window.chrome = {
             tabs: {
                 query: async () => [{ id: 9 }],
-                create: async details => { opened.push(details); return { id: 10, ...details }; }
+                create: async (details: Record<string, unknown>) => { opened.push(details); return { id: 10, ...details }; }
             },
             runtime: {
-                sendMessage: async message => {
+                sendMessage: async (message: PopupMessage) => {
                     if (message.type === 'CAPTURE_START') {
                         starts.push(message.force);
                         return job;
@@ -1053,19 +1058,19 @@ test('popup recovery actions match the shared capture error policy', async t => 
             code: 'provider-human-check',
             title: 'Your activity provider needs a human check',
             action: 'Return to Garmin',
-            invoked: calls => calls.updates.length === 1,
+            invoked: (calls: Record<string, unknown[]>) => calls.updates.length === 1,
         },
         {
             code: 'provider-response-changed',
             title: 'The activity response changed',
             action: 'Reload activity',
-            invoked: calls => calls.reloads.length === 1,
+            invoked: (calls: Record<string, unknown[]>) => calls.reloads.length === 1,
         },
         {
             code: 'provider-unavailable',
             title: 'Your activity provider is unavailable',
             action: 'Try again',
-            invoked: calls => calls.starts.length === 2,
+            invoked: (calls: Record<string, unknown[]>) => calls.starts.length === 2,
         },
         {
             code: 'provider-rate-limited',
@@ -1089,7 +1094,7 @@ test('popup recovery actions match the shared capture error policy', async t => 
                 url: 'chrome-extension://better-peakbagger/popup/popup.html',
                 runScripts: 'outside-only'
             });
-            const calls = { updates: [], reloads: [], starts: [] };
+            const calls = { updates: [] as unknown[][], reloads: [] as unknown[][], starts: [] as unknown[] };
             const job = {
                 phase: 'error',
                 provider: 'garmin',
@@ -1102,12 +1107,12 @@ test('popup recovery actions match the shared capture error policy', async t => 
             dom.window.chrome = {
                 tabs: {
                     query: async () => [{ id: 9 }],
-                    update: async (...args) => { calls.updates.push(args); },
-                    reload: async (...args) => { calls.reloads.push(args); },
+                    update: async (...args: unknown[]) => { calls.updates.push(args); },
+                    reload: async (...args: unknown[]) => { calls.reloads.push(args); },
                     create: async () => ({ id: 10 }),
                 },
                 runtime: {
-                    sendMessage: async message => {
+                    sendMessage: async (message: PopupMessage) => {
                         if (message.type === 'CAPTURE_STATUS') return null;
                         if (message.type === 'CAPTURE_START') calls.starts.push(message.force);
                         return job;
@@ -1139,20 +1144,20 @@ test('export recovery reopens only the captured provider activity and preserves 
                 const dom = new JSDOM(html, {
                     url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
                 });
-                const created = [];
-                const starts = [];
-                const destructive = [];
+                const created: Record<string, unknown>[] = [];
+                const starts: unknown[] = [];
+                const destructive: string[] = [];
                 const job = { phase: 'error', provider, activityId: '777', error: { code } };
                 dom.window.chrome = {
                     tabs: {
                         query: async () => [{ id: 9, windowId: 4, index: 2, url: 'https://unrelated.example/?PRIVATE_QUERY' }],
-                        create: async details => { created.push(details); return { id: 10 }; },
+                        create: async (details: Record<string, unknown>) => { created.push(details); return { id: 10 }; },
                         reload: async () => destructive.push('reload'),
                         remove: async () => destructive.push('remove'),
                         update: async () => destructive.push('update'),
                     },
                     runtime: {
-                        sendMessage: async message => {
+                        sendMessage: async (message: PopupMessage) => {
                             if (message.type === 'CAPTURE_START') starts.push(message);
                             return job;
                         },
@@ -1184,12 +1189,12 @@ test('popup can cancel an in-progress capture without retaining track data', asy
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
     });
-    const messages = [];
-    let finishStart;
+    const messages: PopupMessage[] = [];
+    let finishStart!: (value: unknown) => void;
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: message => {
+            sendMessage: (message: PopupMessage) => {
                 messages.push(message);
                 if (message.type === 'CAPTURE_START') return new Promise(resolve => { finishStart = resolve; });
                 if (message.type === 'CAPTURE_STATUS') return Promise.resolve(messages.filter(m => m.type === 'CAPTURE_STATUS').length === 1 ? null : { phase: 'checking-peakbagger', provider: 'strava' });
@@ -1201,14 +1206,14 @@ test('popup can cancel an in-progress capture without retaining track data', asy
 
     dom.window.eval(source);
     await startIfOffered(dom);
-    await waitFor(() => Array.from(dom.window.document.querySelectorAll('#state button'))
+    await waitFor(() => Array.from<HTMLElement>(dom.window.document.querySelectorAll('#state button'))
         .some(button => button.textContent === 'Cancel'));
-    Array.from(dom.window.document.querySelectorAll('#state button'))
-        .find(button => button.textContent === 'Cancel').click();
+    Array.from<HTMLElement>(dom.window.document.querySelectorAll('#state button'))
+        .find(button => button.textContent === 'Cancel')!.click();
     await waitFor(() => /No track data from this capture was kept/.test(dom.window.document.getElementById('state').textContent));
 
     assert.ok(messages.some(message => message.type === 'CAPTURE_CANCEL' && message.tabId === 9));
-    assert.ok(Array.from(dom.window.document.querySelectorAll('#state button'))
+    assert.ok(Array.from<HTMLElement>(dom.window.document.querySelectorAll('#state button'))
         .some(button => button.textContent === 'Start again'));
     finishStart(null);
     dom.window.close();
@@ -1222,18 +1227,18 @@ for (const obsoleteReply of ['progress', 'failure']) {
         t.after(() => dom.window.close());
         const nativeSet = dom.window.setTimeout.bind(dom.window);
         let scheduledPolls = 0;
-        dom.window.setTimeout = (fn, delay, ...args) => {
+        dom.window.setTimeout = (fn: TimerCallback, delay: number, ...args: unknown[]) => {
             if (delay === 450) scheduledPolls++;
             return nativeSet(fn, delay === 450 ? 1 : delay, ...args);
         };
-        let finishStart, failStart, finishPoll, failPoll;
+        let finishStart!: (value: unknown) => void, failStart!: (reason: Error) => void, finishPoll!: (value: unknown) => void, failPoll!: (reason: Error) => void;
         const start = new Promise((resolve, reject) => { finishStart = resolve; failStart = reject; });
         const status = new Promise((resolve, reject) => { finishPoll = resolve; failPoll = reject; });
         const progress = { phase: 'exporting-gpx', provider: 'garmin' };
         let polls = 0;
         dom.window.chrome = {
             tabs: { query: async () => [{ id: 9 }] },
-            runtime: { sendMessage: message => {
+            runtime: { sendMessage: (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START') return start;
                 if (message.type === 'CAPTURE_STATUS') return ++polls === 1 ? Promise.resolve(null) : polls === 2
                     ? Promise.resolve(progress) : status;
@@ -1260,7 +1265,7 @@ for (const obsoleteReply of ['progress', 'failure']) {
 
 for (const action of ['clear', 'open']) {
     test(`${action} results cannot be overwritten by a late capture-start result`, async t => {
-        let finishStart;
+        let finishStart!: (value: unknown) => void;
         const start = new Promise(resolve => { finishStart = resolve; });
         const dom = new JSDOM(html, {
             url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
@@ -1268,7 +1273,7 @@ for (const action of ['clear', 'open']) {
         t.after(() => dom.window.close());
         dom.window.chrome = {
             tabs: { query: async () => [{ id: 9 }] },
-            runtime: { sendMessage: async message => {
+            runtime: { sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START') return start;
                 if (message.type === 'CAPTURE_STATUS') return unitsJob;
                 if (message.type === 'CAPTURE_OPEN_DRAFTS') return { job: { ...unitsJob, phase: 'opened' } };
@@ -1314,7 +1319,7 @@ const readyJob = {
     }]
 };
 
-const mountPopup = (respond, job = readyJob) => {
+const mountPopup = (respond: (message: PopupMessage) => unknown, job: Record<string, unknown> = readyJob) => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
@@ -1322,7 +1327,7 @@ const mountPopup = (respond, job = readyJob) => {
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: PopupMessage) => {
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
                 return respond(message);
             }
@@ -1332,15 +1337,15 @@ const mountPopup = (respond, job = readyJob) => {
     return dom;
 };
 
-const stateText = dom => dom.window.document.getElementById('state').textContent;
+const stateText = (dom: PopupDom) => dom.window.document.getElementById('state').textContent;
 
 test('an unreachable worker never explains a failed popup action with messaging internals', async () => {
     const actions = [
-        { type: 'CAPTURE_OPEN_DRAFTS', control: 'open-drafts', ready: node => node.textContent === 'Open 1 draft' },
-        { type: 'CAPTURE_CLEAR', control: 'clear-capture', ready: node => node.hidden === false },
+        { type: 'CAPTURE_OPEN_DRAFTS', control: 'open-drafts', ready: (node: Element) => node.textContent === 'Open 1 draft' },
+        { type: 'CAPTURE_CLEAR', control: 'clear-capture', ready: (node: HTMLElement) => node.hidden === false },
     ];
     for (const { type, control: controlId, ready } of actions) {
-        const dom = mountPopup(message => {
+        const dom = mountPopup((message: PopupMessage) => {
             if (message.type === type) throw new Error(WORKER_UNREACHABLE);
             return { ok: true };
         });
@@ -1361,7 +1366,7 @@ test('an unreachable worker never explains a failed popup action with messaging 
 });
 
 test('an unreachable worker does not explain a failed cancel with messaging internals', async () => {
-    const dom = mountPopup(message => {
+    const dom = mountPopup((message: PopupMessage) => {
         if (message.type === 'CAPTURE_CANCEL') throw new Error(WORKER_UNREACHABLE);
         return { ok: true };
     }, { phase: 'checking-peakbagger', provider: 'strava' });
@@ -1381,7 +1386,7 @@ test('a failure the worker itself reports keeps its own copy on screen', async (
     // or a job that comes back in phase 'error', is describing something the
     // user can act on. Replacing that with the transport sentence would be the
     // opposite regression.
-    const dom = mountPopup(message => {
+    const dom = mountPopup((message: PopupMessage) => {
         if (message.type === 'CAPTURE_OPEN_DRAFTS') {
             return {
                 phase: 'error',
@@ -1401,7 +1406,7 @@ test('a failure the worker itself reports keeps its own copy on screen', async (
 });
 
 test('a worker-reported delete failure keeps its own copy on screen', async () => {
-    const dom = mountPopup(message => {
+    const dom = mountPopup((message: PopupMessage) => {
         if (message.type === 'CAPTURE_CLEAR') {
             return { ok: false, error: { code: 'capture-busy', message: 'Wait for the current capture to finish before discarding it.' } };
         }
@@ -1419,8 +1424,8 @@ test('a worker-reported delete failure keeps its own copy on screen', async () =
 
 test('popup pending result actions retain focus and reject repeated activation', async t => {
     for (const [id, type] of [['open-drafts', 'CAPTURE_OPEN_DRAFTS'], ['clear-capture', 'CAPTURE_CLEAR']]) {
-        let finish, calls = 0;
-        const dom = mountPopup(message => {
+        let finish!: (value: unknown) => void, calls = 0;
+        const dom = mountPopup((message: PopupMessage) => {
             if (message.type !== type) return { ok: true };
             calls++;
             return new Promise(resolve => { finish = resolve; });
@@ -1451,8 +1456,8 @@ test('popup pending result actions retain focus and reject repeated activation',
 test('capture progress keeps the same focused Cancel button across status polls', async t => {
     const dom = new JSDOM(html, { url: 'chrome-extension://test/popup/popup.html', runScripts: 'outside-only' });
     t.after(() => dom.window.close());
-    let tick;
-    dom.window.setTimeout = callback => { tick = callback; return 1; };
+    let tick: TimerCallback | undefined;
+    dom.window.setTimeout = (callback: TimerCallback) => { tick = callback; return 1; };
     let completed = 0;
     const job = () => ({ phase: 'searching-summits', provider: 'garmin', progress: { completed: completed++, total: 10 } });
     dom.window.chrome = { tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async () => job() } };
@@ -1460,7 +1465,7 @@ test('capture progress keeps the same focused Cancel button across status polls'
     await startIfOffered(dom);
     await waitFor(() => tick && dom.window.document.querySelector('#state button'));
     const cancel = dom.window.document.querySelector('#state button');
-    cancel.focus(); tick();
+    cancel.focus(); tick?.();
     await waitFor(() => dom.window.document.querySelector('.state-detail').textContent === '2 of 10 areas checked.');
     assert.equal(dom.window.document.querySelector('#state button'), cancel);
     assert.equal(dom.window.document.activeElement, cancel);
@@ -1482,11 +1487,11 @@ test('a failed capture deletion preserves the current summit selection', async t
 
 test('opening popup and inbox never starts a capture', async () => {
     const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
-    const messages = [];
-    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async message => {
+    const messages: PopupMessage[] = [];
+    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async (message: PopupMessage) => {
         messages.push(message);
         if (message.type === 'CAPTURE_STATUS') return null;
-        if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 3 };
+        if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 5, queued: 3 };
         if (message.type === 'GARMIN_INBOX_OPEN') return { ok: false };
         return { ok: true };
     } } };
@@ -1502,10 +1507,10 @@ test('opening popup and inbox never starts a capture', async () => {
 
 test('the master switch hides the popup inbox and blocks opening it', async () => {
     const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
-    const messages = [], listeners = []; let settings = { enableGarminInbox: false };
-    dom.window.chrome = { tabs: { query: async () => [] }, runtime: { sendMessage: async message => {
-        messages.push(message); return { ok: true, configured: true, pending: 3, queued: 2 };
-    } }, storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: settings }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener() {} } } };
+    const messages: PopupMessage[] = [], listeners: ((changes: Record<string, unknown>, area: string) => void)[] = []; let settings = { enableGarminInbox: false };
+    dom.window.chrome = { tabs: { query: async () => [] }, runtime: { sendMessage: async (message: PopupMessage) => {
+        messages.push(message); return { ok: true, configured: true, pending: 5, queued: 2 };
+    } }, storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: settings }) }, onChanged: { addListener: (fn: TimerCallback) => listeners.push(fn), removeListener() {} } } };
     try {
         dom.window.eval(source); await new Promise(resolve => setTimeout(resolve, 0));
         const entry = dom.window.document.querySelector('.inbox-entry');
@@ -1514,9 +1519,26 @@ test('the master switch hides the popup inbox and blocks opening it', async () =
         assert.equal(messages.filter(m => m.type.startsWith('GARMIN_')).length, 0);
         settings = { enableGarminInbox: true };
         listeners.forEach(fn => fn({ bpbSettings: { newValue: settings } }, 'sync'));
-        await waitFor(() => dom.window.document.getElementById('inbox-count').textContent === '3');
+        await waitFor(() => dom.window.document.getElementById('inbox-count').textContent === '2');
         assert.equal(entry.hidden, false);
-        assert.equal(dom.window.document.getElementById('inbox-count').textContent, '3');
+        assert.equal(dom.window.document.getElementById('inbox-count').textContent, '2');
         assert.match(dom.window.document.getElementById('activity-inbox-status').textContent, /2 waiting for peak checks/);
+    } finally { dom.window.close(); }
+});
+
+test('the inbox chip counts only activities waiting for peak checks', async () => {
+    const dom = new JSDOM(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    // Four reviewed activities (for example "No matching summits") with an empty queue.
+    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async (message: PopupMessage) => {
+        if (message.type === 'CAPTURE_STATUS') return null;
+        if (message.type === 'GARMIN_SUMMARY') return { ok: true, configured: true, pending: 4, queued: 0 };
+        return { ok: true };
+    } } };
+    try {
+        dom.window.eval(source);
+        const button = dom.window.document.getElementById('activity-inbox');
+        await waitFor(() => /0 waiting for peak checks/.test(button.getAttribute('aria-label')));
+        assert.match(button.getAttribute('aria-label'), /0 waiting for peak checks/);
+        assert.equal(dom.window.document.getElementById('inbox-count').textContent, '');
     } finally { dom.window.close(); }
 });

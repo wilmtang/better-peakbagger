@@ -666,10 +666,12 @@ interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: b
         const inboxSummary = await ext.runtime.sendMessage({ type: 'GARMIN_SUMMARY' });
         if (!garminInboxEnabled) return;
         if (!inboxSummary?.ok || openingInbox) return;
-        const count = inboxSummary.pending;
+        // The chip means "waiting for peak checks", matching the inbox page and
+        // the toolbar badge; reviewed outcomes such as no-match do not count.
+        const count = inboxSummary.queued;
         if (!Number.isInteger(count) || count < 0) return;
         (document.getElementById('inbox-count') as HTMLElement).textContent = count > 99 ? '99+' : count ? String(count) : '';
-        inboxButton.setAttribute('aria-label', `Open inbox, ${count} pending activities`);
+        inboxButton.setAttribute('aria-label', `Open inbox, ${count} waiting for peak checks`);
         inboxStatus.textContent = inboxSummary.error?.code === 'key-rejected' ? 'Garmin needs a new key. Open inbox to reconnect.'
             : inboxSummary.queued > 0 ? `${inboxSummary.queued} waiting for peak checks. Open inbox to resume.`
                 : !inboxSummary.configured ? 'Connect Garmin to import your activities.' : inboxSummary.manual
