@@ -1451,7 +1451,7 @@ main:has(#editor-view:not([hidden]) #editor-workspace:not([hidden])) { padding-t
 .imgbb-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .imgbb-dialog-heading h2 { margin: 0; font-size: 17px; }
 .imgbb-dialog p { margin: 0; }
-.imgbb-dialog .credential-form { display: grid; gap: 10px; }
+.imgbb-dialog .credential-form { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .imgbb-dialog label:not(.check-row) { display: grid; gap: 4px; font-weight: 600; }
 .imgbb-error { color: var(--danger); font-size: 13px; }
 .imgbb-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }

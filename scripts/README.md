@@ -179,6 +179,7 @@ independent of the existing targets.
 - [verify-ascent-filters.mjs](verify-ascent-filters.mjs) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.
 - [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
 - [verify-photo-editor.mts](verify-photo-editor.mts)
+- [verify-photo-output.mts](verify-photo-output.mts)
 - [verify-popup-photo-entry.mts](verify-popup-photo-entry.mts)
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
 - [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
@@ -189,7 +190,7 @@ independent of the existing targets.
 - [verify-report-draft-ownership.mjs](verify-report-draft-ownership.mjs)
 - [verify-report-photos.mts](verify-report-photos.mts)
 - [verify-climber-files.mjs](verify-climber-files.mjs) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
-- [verify-settings-actions.mjs](verify-settings-actions.mjs) — held Settings actions and restore focus, run by `layout-stability`.
+- [verify-settings-actions.mts](verify-settings-actions.mts) — held Settings actions and restore focus, run by `layout-stability`.
 - [settings-fragment-verification.mjs](settings-fragment-verification.mjs) — shared assertions for the packaged Settings anchor verifier.
 - [verify-settings-navigation.mts](verify-settings-navigation.mts)
 - [verify-settings-fragments.mjs](verify-settings-fragments.mjs) — real packaged Chrome/Firefox Settings anchors, refresh, keyboard navigation, Back/Forward and manual reading positions; run `npm run verify -- settings-navigation`.

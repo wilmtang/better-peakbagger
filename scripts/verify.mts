@@ -17,6 +17,7 @@ const targets: Record<string, VerifierCommand[]> = {
     browsers: [['verify-extension.mts'], ['verify-firefox-extension.mts']],
     'capture-popup': [['verify-capture-popup.mts']],
     'popup-photo-entry': [['verify-popup-photo-entry.mts']],
+    'photo-output': [['verify-photo-output.mts']],
     'layout-stability': [['verify-layout-stability.mts']],
     'fixture-preflight': [['verify-fixture-preflight.mjs']],
     'gpx-header': [['verify-gpx-header.mjs']],

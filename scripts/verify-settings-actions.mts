@@ -1,33 +1,39 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, location, getComputedStyle */
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+/* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 import assert from 'node:assert/strict';
+import type { Page } from 'playwright';
 import { settingsTransfer } from '../src/settings/settings-transfer.js';
 
+// The stubbed page globals and deserialized page results are untyped by nature.
+type Loose = Awaited<ReturnType<typeof JSON.parse>>;
+
 // Real shipped Settings with held worker replies; no credentials or remote writes.
-export async function verifySettingsActions(page, origin, variant, { capture }) {
+export async function verifySettingsActions(page: Page, origin: string, variant: Loose, { capture }: Loose) {
     await page.addInitScript(({ theme }) => {
         const settings = { theme, enableGithubBackup: true, enableReportEditor: true };
         const area = { get: async () => ({ bpbSettings: settings, bpbDeviceSettings: { schemaVersion: 1, settings } }), set: async () => {}, remove: async () => {} };
         const repo = { owner: 'fixture', name: 'backup', fullName: 'fixture/backup' };
-        globalThis.__calls = 0;
-        globalThis.__openedTabs = [];
-        globalThis.chrome = {
-            tabs: { create: async details => { globalThis.__openedTabs.push(details.url); } },
+        (globalThis as Loose).__calls = 0;
+        (globalThis as Loose).__openedTabs = [];
+        (globalThis as Loose).chrome = {
+            tabs: { create: async (details: Loose) => { (globalThis as Loose).__openedTabs.push(details.url); } },
             storage: { sync: area, local: area, session: area, onChanged: { addListener() {}, removeListener() {} } },
-            permissions: { contains: async () => true, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
+            permissions: { contains: async () => true, request: async () => true, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
             runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.2' }),
-                getURL: file => new URL(`/dist/${file}`, location.origin).href,
-                sendMessage: async message => {
+                getURL: (file: string) => new URL(`/dist/${file}`, location.origin).href,
+                sendMessage: async (message: Loose) => {
                     const key = message.type + (message.action ? `:${message.action}` : '');
-                    if (key === globalThis.__hold) {
-                        globalThis.__calls++;
-                        return new Promise(resolve => { globalThis.__finish = response => { globalThis.__finish = null; resolve(response); }; });
+                    if (key === (globalThis as Loose).__hold) {
+                        (globalThis as Loose).__calls++;
+                        return new Promise(resolve => { (globalThis as Loose).__finish = (response: Loose) => { (globalThis as Loose).__finish = null; resolve(response); }; });
                     }
                     if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, hasToken: true, repo, account: { login: 'fixture' } };
                     if (message.type === 'GITHUB_IGNORED_LIST') {
-                        if (message.action === 'enable' || message.action === 'disable') globalThis.__ignoredEnabled = message.action === 'enable';
-                        return { ok: true, state: { enabled: !!globalThis.__ignoredEnabled, phase: 'idle' }, count: 0 };
+                        if (message.action === 'enable' || message.action === 'disable') (globalThis as Loose).__ignoredEnabled = message.action === 'enable';
+                        return { ok: true, state: { enabled: !!(globalThis as Loose).__ignoredEnabled, phase: 'idle' }, count: 0 };
                     }
                     if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true, connected: true, repo, state: null };
                     if (message.type === 'PHOTO_IMGBB_STATUS') return { ok: true, configured: true, permissionGranted: true };
@@ -46,9 +52,9 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
     }
     assert.equal(await page.locator('.backup-confirmation[hidden]').evaluateAll(panels =>
         panels.every(panel => getComputedStyle(panel).display === 'none')), true, 'closed confirmations are unpainted');
-    const region = selector => page.locator(selector).evaluate(button => {
-        const row = button.closest('.row');
-        const rect = element => {
+    const region = (selector: Loose) => page.locator(selector).evaluate((button: HTMLElement) => {
+        const row: Loose = button.closest('.row');
+        const rect = (element: Loose) => {
             const { x, y, width, height } = element.getBoundingClientRect();
             return { x, y, width, height };
         };
@@ -56,7 +62,7 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             automatic: rect(row.parentElement.querySelector('.backup-automatic')),
             heading: rect(row.closest('.subsection').querySelector('h3')) };
     });
-    const stableRegion = (before, after, label) => {
+    const stableRegion = (before: Loose, after: Loose, label: Loose) => {
         for (const part of Object.keys(before)) for (const key of ['x', 'y', 'width', 'height']) {
             assert.ok(Math.abs(before[part][key] - after[part][key]) <= 1,
                 `${label}: ${part} ${key} shifted; ${JSON.stringify({ before, after })}`);
@@ -79,7 +85,7 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
         ['.github-history button', 'PEAKBAGGER_MY_ASCENTS'],
     ];
     const failures = [];
-    const focus = async (selector, label) => {
+    const focus = async (selector: Loose, label: Loose) => {
         await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
         const active = await page.locator(selector).first().evaluate(element => document.activeElement === element);
         if (!active) failures.push(label);
@@ -87,8 +93,8 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
     for (const textScale of [1, 2]) {
         // Enlarged control text is additional coverage, not native browser zoom.
         await page.addStyleTag({ content: `button, input, select { font-size: ${14 * textScale}px !important; }` });
-        const transfer = await page.locator('#settings-backup-export').evaluate(button => {
-            const row = button.closest('.row');
+        const transfer = await page.locator('#settings-backup-export').evaluate((button: HTMLElement) => {
+            const row: Loose = button.closest('.row');
             return { row: row.getBoundingClientRect().width, label: row.querySelector('.label').getBoundingClientRect().width };
         });
         if (transfer.row > 560) assert.ok(transfer.label >= transfer.row / 3,
@@ -97,16 +103,16 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
         for (const prefix of backupPairs) {
             const action = page.locator(`#${prefix}-backup`);
             await action.scrollIntoViewIfNeeded();
-            buttonShapes.push(await action.evaluate(button => {
+            buttonShapes.push(await action.evaluate((button: HTMLElement) => {
                 const { width, height } = button.getBoundingClientRect();
-                const actions = button.closest('.backup-actions');
+                const actions: Loose = button.closest('.backup-actions');
                 const controls = button.closest('.backup-controls');
                 const css = getComputedStyle(button);
-                const card = button.closest('.card').getBoundingClientRect();
+                const card = button.closest('.card')!.getBoundingClientRect();
                 const group = actions.getBoundingClientRect();
-                const row = button.closest('.row').getBoundingClientRect();
+                const row = button.closest('.row')!.getBoundingClientRect();
                 if (card.width <= 560
-                    && Math.abs(group.x - row.x - parseFloat(getComputedStyle(button.closest('.row')).paddingLeft)) > 1) {
+                    && Math.abs(group.x - row.x - parseFloat(getComputedStyle(button.closest('.row')!).paddingLeft)) > 1) {
                     throw new Error('Narrow backup actions must align with the row text');
                 }
                 if (!controls) throw new Error('Every backup uses the common controls owner');
@@ -121,11 +127,11 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
         }
         const ignored = page.locator('#ignored-backup');
         await ignored.scrollIntoViewIfNeeded();
-        const toggleBefore = await ignored.boundingBox();
+        const toggleBefore: Loose = await ignored.boundingBox();
         const ignoredBefore = await region('#ignored-backup');
         await page.locator('#ignored-sync-enable').check();
         await ignored.filter({ hasText: 'Sync now' }).waitFor();
-        const toggleAfter = await ignored.boundingBox();
+        const toggleAfter: Loose = await ignored.boundingBox();
         for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(toggleAfter[key] - toggleBefore[key]) <= 1,
             `switching to sync keeps the action ${key} within 1px browser rounding`);
         stableRegion(ignoredBefore, await region('#ignored-backup'), 'switching to sync');
@@ -136,26 +142,26 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             await page.locator('#imgbb-key').fill('0123456789abcdef0123456789abcdef');
             const action = page.locator(selector);
             await action.scrollIntoViewIfNeeded();
-            await page.evaluate(type => { globalThis.__hold = type; globalThis.__calls = 0; globalThis.__finish = null; }, type);
+            await page.evaluate(type => { (globalThis as Loose).__hold = type; (globalThis as Loose).__calls = 0; (globalThis as Loose).__finish = null; }, type);
             await action.focus();
-            const before = await action.boundingBox();
+            const before: Loose = await action.boundingBox();
             const beforeRegion = backupPairs.some(prefix => selector === `#${prefix}-backup` || selector === `#${prefix}-restore`)
                 ? await region(selector) : null;
             const scroll = await page.locator('.content').evaluate(element => element.scrollTop);
             await page.keyboard.press('Enter');
-            await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+            await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
             await focus(selector, `${selector} pending at ${textScale}x`);
             await page.keyboard.press('Enter');
             await page.keyboard.press('Space');
-            assert.equal(await page.evaluate(() => globalThis.__calls), 1, `${selector}: no duplicate work`);
-            const pending = await action.boundingBox();
+            assert.equal(await page.evaluate(() => (globalThis as Loose).__calls), 1, `${selector}: no duplicate work`);
+            const pending: Loose = await action.boundingBox();
             for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(before[key] - pending[key]) <= 1, `${selector}: pending ${key}`);
             if (beforeRegion) stableRegion(beforeRegion, await region(selector), `${selector} pending`);
-            await page.evaluate(type => globalThis.__finish({ ok: false, error: type === 'PEAKBAGGER_MY_ASCENTS'
+            await page.evaluate(type => (globalThis as Loose).__finish({ ok: false, error: type === 'PEAKBAGGER_MY_ASCENTS'
                 ? { code: 'peakbagger-unverified', message: 'Your Peakbagger account could not be verified. Open Peakbagger, check your session, then try again.' }
                 : { code: 'network', message: 'Connection unavailable. Try again.' } }), type);
-            await page.waitForFunction(selector => !document.querySelector(selector).disabled
-                && document.querySelector(selector).getAttribute('aria-disabled') !== 'true', selector);
+            await page.waitForFunction(selector => !document.querySelector<HTMLButtonElement>(selector)!.disabled
+                && document.querySelector(selector)!.getAttribute('aria-disabled') !== 'true', selector);
             await focus(selector, `${selector} failed at ${textScale}x`);
             if (beforeRegion) stableRegion(beforeRegion, await region(selector), `${selector} error`);
             if (type === 'PEAKBAGGER_MY_ASCENTS') {
@@ -163,20 +169,20 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
                 const recovery = page.locator('.github-history-status button');
                 assert.equal(await recovery.textContent(), 'Open Peakbagger');
                 await recovery.press('Enter');
-                assert.equal(await page.evaluate(() => globalThis.__openedTabs.at(-1)), 'https://www.peakbagger.com/Default.aspx');
+                assert.equal(await page.evaluate(() => (globalThis as Loose).__openedTabs.at(-1)), 'https://www.peakbagger.com/Default.aspx');
             }
             if (Math.abs(scroll - await page.locator('.content').evaluate(element => element.scrollTop)) > 1) failures.push(`${selector}: error reading position`);
-            await page.locator('#status-error-dismiss').evaluate(button => { if (!button.closest('[hidden]')) button.click(); });
+            await page.locator('#status-error-dismiss').evaluate((button: HTMLElement) => { if (!button.closest('[hidden]')) button.click(); });
             // Retry while deliberately moving to another visible control. A
             // late completion may update status, but may not reclaim focus.
             await action.focus();
             await page.keyboard.press('Enter');
-            await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+            await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
             const outside = page.locator('.nav-item').first();
             await outside.focus();
-            await page.evaluate(() => globalThis.__finish({ ok: true, result: { repo: 'fixture/backup', signature: 'fixture' }, state: { enabled: false, phase: 'backed-up' } }));
-            await page.waitForFunction(selector => !document.querySelector(selector).disabled
-                && document.querySelector(selector).getAttribute('aria-disabled') !== 'true', selector);
+            await page.evaluate(() => (globalThis as Loose).__finish({ ok: true, result: { repo: 'fixture/backup', signature: 'fixture' }, state: { enabled: false, phase: 'backed-up' } }));
+            await page.waitForFunction(selector => !document.querySelector<HTMLButtonElement>(selector)!.disabled
+                && document.querySelector(selector)!.getAttribute('aria-disabled') !== 'true', selector);
             await focus('.nav-item', `${selector} completion respects moved focus at ${textScale}x`);
             await action.scrollIntoViewIfNeeded();
             if (selector === '#ignored-backup' || selector === '#imgbb-key-save') await capture(page, `${variant.name}-settings-${selector.slice(1)}-${textScale}`);
@@ -190,46 +196,46 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
     ]) {
         const action = page.locator(selector);
         await action.scrollIntoViewIfNeeded();
-        await page.evaluate(type => { globalThis.__hold = type; globalThis.__finish = null; }, type);
+        await page.evaluate(type => { (globalThis as Loose).__hold = type; (globalThis as Loose).__finish = null; }, type);
         await action.press('Enter');
-        await page.waitForFunction(() => typeof globalThis.__finish === 'function');
-        await page.evaluate(path => globalThis.__finish({ ok: false, error: { code: 'backup-review' },
+        await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
+        await page.evaluate(path => (globalThis as Loose).__finish({ ok: false, error: { code: 'backup-review' },
             review: { path, scope: 'fixture', localSignature: 'local', remoteSignature: 'remote' } }), path);
         const panel = action.locator('xpath=ancestor::*[contains(@class,"subsection")][1]').locator('.backup-replacement');
         await panel.waitFor({ state: 'visible' });
         assert.equal(await panel.getByRole('button', { name: 'Cancel backup replacement', exact: true }).evaluate(element => document.activeElement === element), true, 'replacement enters its Cancel action');
         const accept = panel.getByRole('button', { name: 'Replace GitHub backup with this device’s copy', exact: true });
         await accept.scrollIntoViewIfNeeded();
-        const before = await accept.boundingBox();
+        const before: Loose = await accept.boundingBox();
         const scroll = await page.locator('.content').evaluate(element => element.scrollTop);
         await accept.press('Enter');
-        await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+        await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
         await accept.press('Space');
-        const during = await accept.boundingBox();
+        const during: Loose = await accept.boundingBox();
         for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(before[key] - during[key]) <= 1, `replacement ${key}`);
         assert.equal(await accept.evaluate(element => document.activeElement === element), true);
-        await page.evaluate(() => globalThis.__finish({ ok: false, error: { code: 'network' } }));
+        await page.evaluate(() => (globalThis as Loose).__finish({ ok: false, error: { code: 'network' } }));
         await page.waitForFunction(() => !document.querySelector('.backup-replacement:not([hidden])')?.hasAttribute('aria-busy'));
         assert.equal(await page.locator('.content').evaluate(element => element.scrollTop), scroll);
         await capture(page, `${variant.name}-${path}-replacement-retry`);
         await accept.press('Enter');
-        await page.waitForFunction(() => typeof globalThis.__finish === 'function');
-        await page.evaluate(() => globalThis.__finish({ ok: true, result: { repo: 'fixture/backup', signature: 'fixture' } }));
+        await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
+        await page.evaluate(() => (globalThis as Loose).__finish({ ok: true, result: { repo: 'fixture/backup', signature: 'fixture' } }));
         await panel.waitFor({ state: 'hidden' });
     }
     // Removing a key intentionally removes its own action; continue at Save.
-    await page.evaluate(() => { globalThis.__hold = 'PHOTO_IMGBB_REMOVE_KEY'; globalThis.__finish = null; });
+    await page.evaluate(() => { (globalThis as Loose).__hold = 'PHOTO_IMGBB_REMOVE_KEY'; (globalThis as Loose).__finish = null; });
     await page.locator('#imgbb-key-remove').press('Enter');
-    await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+    await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
     await focus('#imgbb-key-remove', 'remove key pending focus');
-    await page.evaluate(() => globalThis.__finish({ ok: true }));
+    await page.evaluate(() => (globalThis as Loose).__finish({ ok: true }));
     await page.locator('#imgbb-key-remove').waitFor({ state: 'hidden' });
     await focus('#imgbb-key-save', 'remove key continues at Save');
     const settings = { theme: variant.theme, enableGithubBackup: true, enableReportEditor: true };
     const restores = [
         { trigger: '#settings-backup-github-restore', read: 'GITHUB_SETTINGS_RESTORE',
             reply: { ok: true, content: settingsTransfer.serialize(settingsTransfer.buildPayload(settings,
-                { extensionVersion: '4.0.2', exportedAt: '2026-10-22T12:00:00Z' })) },
+                { extensionVersion: '4.0.2', exportedAt: '2026-10-22T12:00:00Z' } as never)) },
             panel: '#settings-backup-confirmation', confirm: '#settings-backup-confirm', write: 'SETTINGS_PATCH',
             result: { ok: true, settings } },
         { trigger: '#photos-restore', read: 'GITHUB_PHOTOS_RESTORE_PREVIEW',
@@ -245,32 +251,32 @@ export async function verifySettingsActions(page, origin, variant, { capture }) 
             result: { ok: true, state: { enabled: false, phase: 'restored' } } },
     ];
     for (const item of restores) {
-        await page.evaluate(type => { globalThis.__hold = type; globalThis.__finish = null; }, item.read);
+        await page.evaluate(type => { (globalThis as Loose).__hold = type; (globalThis as Loose).__finish = null; }, item.read);
         await page.locator(item.trigger).press('Enter');
-        await page.waitForFunction(() => typeof globalThis.__finish === 'function');
-        await page.evaluate(reply => globalThis.__finish(reply), item.reply);
+        await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
+        await page.evaluate(reply => (globalThis as Loose).__finish(reply), item.reply);
         await page.locator(item.panel).waitFor();
-        assert.equal(await page.locator(item.confirm).evaluate(button => button.classList.contains('danger')), true,
+        assert.equal(await page.locator(item.confirm).evaluate((button: HTMLElement) => button.classList.contains('danger')), true,
             'every restore confirmation uses the shared destructive action style');
         if (item.panel === '#ignored-review') assert.equal(await page.locator('#ignored-review-mode').locator('..').isVisible(), false,
             'restore must not leave an orphan list-choice prompt');
         await page.locator(item.panel).scrollIntoViewIfNeeded();
         await capture(page, `${variant.name}-${item.panel.slice(1)}-preview`);
         for (const success of [false, true]) {
-            await page.evaluate(type => { globalThis.__hold = type; globalThis.__calls = 0; globalThis.__finish = null; }, item.write);
+            await page.evaluate(type => { (globalThis as Loose).__hold = type; (globalThis as Loose).__calls = 0; (globalThis as Loose).__finish = null; }, item.write);
             await page.locator(item.confirm).press('Enter');
-            await page.waitForFunction(() => typeof globalThis.__finish === 'function');
+            await page.waitForFunction(() => typeof (globalThis as Loose).__finish === 'function');
             await focus(item.confirm, `${item.confirm}: pending confirmation focus`);
             await page.keyboard.press('Enter');
             await page.keyboard.press('Space');
-            assert.equal(await page.evaluate(() => globalThis.__calls), 1, `${item.confirm}: one confirmed write`);
+            assert.equal(await page.evaluate(() => (globalThis as Loose).__calls), 1, `${item.confirm}: one confirmed write`);
             if (success) await page.locator('.nav-item').first().focus();
-            await page.evaluate(reply => globalThis.__finish(reply), success ? item.result : { ok: false, error: { code: 'network' } });
+            await page.evaluate(reply => (globalThis as Loose).__finish(reply), success ? item.result : { ok: false, error: { code: 'network' } });
             if (success) {
                 await page.locator(item.panel).waitFor({ state: 'hidden' });
                 await focus('.nav-item', `${item.confirm}: completion respects moved focus`);
             } else {
-                await page.waitForFunction(selector => document.querySelector(selector).getAttribute('aria-busy') !== 'true', item.panel);
+                await page.waitForFunction(selector => document.querySelector(selector)!.getAttribute('aria-busy') !== 'true', item.panel);
                 await focus(item.confirm, `${item.confirm}: error retains retry focus`);
             }
         }

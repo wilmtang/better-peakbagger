@@ -17,7 +17,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
-import { verifySettingsActions } from './verify-settings-actions.mjs';
+import { verifySettingsActions } from './verify-settings-actions.mts';
 import { verifyClimberFiles } from './verify-climber-files.mjs';
 import { verifyPhotoReportEdit } from './verify-photo-report-edit.mjs';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
