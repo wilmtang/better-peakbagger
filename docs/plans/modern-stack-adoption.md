@@ -1,6 +1,6 @@
 # Modern stack adoption with legacy compatibility
 
-Last updated November 6, 2026 against `17606ac8`.
+Last updated November 7, 2026 against `64b522e1`.
 
 ## Goal
 
@@ -40,15 +40,20 @@ of effort.
 | M2 — Convert small UI lifetime helpers | Small; one owner per commit | M0; existing `src/ui/` watch coverage | Typed latest-read and page-lifecycle contracts with unchanged behavior. |
 | M3 — Complete build/watch support | Medium; build-script conversion, then watcher repair | M1 for affected test gates | Any authored source edit triggers a complete successful generation; failed generations keep the last usable build. |
 | M4 — Type the pilot's boundaries | Medium; narrow adapters and serialization tests | M2; M3 before adding a new domain | Typed settings/UI and runtime contracts without changing wire/storage formats. |
-| M5 — Enable and prove Svelte compilation | Medium–large; dependency, build and fixture work | M3 and M4 | Checked components and runes compile, mount, update, dispose and recover in watch mode. No production UI conversion yet. |
+| M4.5 — Choose the DOM test environment | Small typing step, then a medium browser harness | M3 | Typed jsdom for legacy tests and a Playwright tier for new DOM-behavior tests; jsdom's retirement is assigned to M7. |
+| M5 — Enable and prove Svelte compilation | Medium–large; dependency, build and fixture work | M3, M4 and M4.5 | Checked components and runes compile, mount, update, dispose and recover in watch mode. No production UI conversion yet. |
 | M6 — Ship one bounded Svelte island | Large; UI integration plus release/browser evidence | M1–M5 and dependency-audit gate | The existing Units settings panel works through checked TS/Svelte beside unchanged legacy sections. |
-| M7 — Convert all remaining JavaScript in batches | Very large in aggregate; small modules first | M3; M6 before more production Svelte | No authored JavaScript remains, from pure TS domains through owned pages, high-risk coordinators, scripts and tests. |
+| M7 — Convert all remaining JavaScript in batches | Very large in aggregate; small modules first | M3; M4.5 before DOM test batches; M6 before more production Svelte | No authored JavaScript remains, from pure TS domains through owned pages, high-risk coordinators, scripts and tests. |
 | M8 — Evaluate and optionally cut over WXT/Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | A separately built parity candidate, then a dedicated cutover only if all contracts survive. |
+
+M4.5 was inserted after M0–M3 shipped so later milestone numbers stay stable in
+existing commits and evidence.
 
 ## Current progress
 
-**Next: M4, then M5.** M0–M3 are complete; M7's pure-TS batches are also
-unblocked by M3. Production Svelte adoption has not started: nothing ships
+**Next: M4 and M4.5, then M5.** They are independent; M4.5's typing step is
+small and unblocks every test conversion, so it can go first. M0–M3 are
+complete; M7's pure-TS batches are also unblocked by M3. Production Svelte adoption has not started: nothing ships
 through Svelte, and Svelte is not installed.
 
 | Milestone | Status | Where it stands |
@@ -58,6 +63,7 @@ through Svelte, and Svelte is not installed.
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Not started | `src/ui/runtime-message.js` is still JavaScript. No Units panel contract exists. |
+| M4.5 | Not started | 105 test files import jsdom 30, which ships no declarations; converted tests suppress or hand-type it. `@playwright/test` is not installed. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
 | M6 | Not started | `options/unit-settings.js` is unchanged; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
 | M7 | Started out of order | 35 runtime modules are now TS across `src/`, `options/`, `popup/` and `photos/`. The first planned batch, starting with `src/storage/storage-value.js`, is unblocked after M3. |
@@ -187,6 +193,59 @@ behavior, and cloneable payloads omit unapproved fields. Adapters/declarations
 remain narrow compatibility promises backed by tests, not a second schema or
 an assertion that all imported JavaScript is trusted.
 
+### M4.5 — Choose the DOM test environment
+
+`npm test` evaluates the shipped IIFE bundles in jsdom: 105 test files construct
+it 281 times. jsdom ships no type declarations, so converted tests suppress the
+import ([page-lifecycle.test.mts](../../test/ui/page-lifecycle.test.mts)) or
+hand-type a constructor
+([map-layer-inspection.test.mts](../../test/maps/map-layer-inspection.test.mts)),
+and every M7 test batch would repeat that. jsdom also has no layout, mints only
+untrusted events and is not Firefox; the shared
+[page loader](../../test/helpers/load-page.mjs) already reaches into jsdom
+internals to dispatch trusted input. Settle both before M5 adds component tests
+and before M7 converts DOM tests. This milestone changes test tooling only; no
+shipped output changes.
+
+1. **Type the existing jsdom tests.** Add `@types/jsdom` at the major matching
+   the locked jsdom (30 at this checkpoint). Give jsdom tests a dedicated
+   checking project that adds the `dom` library, selected explicitly by
+   `npm run typecheck`; keep Node tooling and pure tests in the existing Node
+   project without DOM globals. Convert the shared page loader to `.mts` with
+   typed page objects so callers drop their `as unknown` casts, and keep its
+   trusted-dispatch internals behind one narrow local declaration pinned to the
+   locked jsdom version. Remove the suppressed import and the hand-typed
+   constructor. Group `jsdom` and `@types/jsdom` in Dependabot so their majors
+   move together.
+2. **Add a real-browser DOM tier.** Use `@playwright/test`, locked to the
+   installed `playwright` version, for new tests whose behavior depends on
+   layout, scrolling, trusted input, focus or browser-specific DOM. Load fixture
+   HTML at its real HTTPS Peakbagger URL through request routing, install
+   `chrome`/`browser` stubs with init scripts, inject the built IIFE bundles in
+   manifest order and assert through typed evaluation and locators. Reuse one
+   browser per worker and a fresh context per test. Run Chromium through
+   `channel: 'chromium'` in new headless mode after `assertChromeLaunchAllowed()`,
+   plus Playwright's Firefox. Keep retries off: a check that passes on re-run is
+   a bug in the check. Run the tier from `npm test`, the test CI job and the
+   release verification job, and document any new script in
+   [development.md](../development.md).
+3. **Prove the tier on an existing gap.** Port one test jsdom cannot establish,
+   such as the options scroll-spy offsets or a pointer path that now needs the
+   trusted-dispatch internals. Show the ported assertion fails against a
+   deliberately broken disposable copy, then passes in both engines. Delete the
+   jsdom original in the same change.
+4. **Record the routing rule in [development.md](../development.md):** pure
+   logic stays in `node:test` with no DOM; new DOM-behavior tests use the
+   browser tier; legacy jsdom tests stay on typed jsdom until M7 moves them.
+
+Exit: `npm run typecheck` checks jsdom usage with no suppressions or
+hand-written jsdom types; the browser tier runs in both engines from `npm test`
+and CI with reliable teardown, and its first ported test demonstrated a failure.
+Proof limits: the tier does not load the extension, Playwright's Firefox is a
+patched build, and hidden runs do not establish native focus or window
+placement. `npm run verify -- browsers` stays the only check for the real
+manifest, execution worlds, worker and bridge.
+
 ### M5 — Enable and prove Svelte compilation
 
 1. Resolve and lock a compatible Svelte 5/compiler-adapter/checker/lint set
@@ -201,11 +260,13 @@ an assertion that all imported JavaScript is trusted.
    production `dist/` and no automatically discovered checker-only tsconfig.
 3. Compile a test-only component plus `.svelte.ts` dependency through the actual
    normal, minified and incremental options. Check invalid props and missing
-   template names, mount/update/unmount the built client, and repeat M4's
+   template names, mount/update/unmount the built client in M4.5's browser
+   tier, and repeat M4's
    serialization tests with compiled `$state` values.
 4. Exercise transitive component/rune edits, syntax failure and correction with
    M3's generation/token assertions. Demonstrate the typed mount/update/dispose
-   adapter beside legacy DOM in a faithful hidden Chrome/Firefox fixture, with
+   adapter beside legacy DOM in a faithful hidden Chrome/Firefox fixture on
+   that tier, with
    suspension, resumption, removal and re-enable coverage.
 
 Exit: checks reject deliberate component errors; compiled fixtures work in both
@@ -296,9 +357,15 @@ applicable. Test and script conversion is not a prerequisite for runtime batches
 but it is required to close M7: convert whatever remains in owner-sized batches
 once its runtime owners are done.
 
+A test converted alongside its runtime owner may stay on typed jsdom, so a
+runtime batch does not also become a test-environment migration. The final test
+batches move the remaining jsdom tests to M4.5's browser tier, owner by owner,
+then remove `jsdom`, `@types/jsdom`, the jsdom checking project and the
+trusted-dispatch internals.
+
 Exit: no authored JavaScript remains anywhere in the repository, including
-`scripts/`, `test/`, `docs/plans/` and `store-assets/`, and the affected gates
-pass. The exclusions in `scripts/typescript-policy.mts` stay explicit for generated
+`scripts/`, `test/`, `docs/plans/` and `store-assets/`; no test depends on
+jsdom; and the affected gates pass. The exclusions in `scripts/typescript-policy.mts` stay explicit for generated
 and upstream code; a file a tool requires in JavaScript needs its own narrow
 documented exception. To keep the result, make the policy reject any authored
 JavaScript file rather than only changed ones, and remove `allowJs` from the
@@ -384,8 +451,9 @@ declining WXT as an explicit supported outcome if parity or benefit is absent.
   adapters free of extension APIs; compiler globals alone cannot enforce the
   execution world. Add declarations for existing `Chart`/`marked` globals only
   where consumed, preserving their manifest preload order.
-- Keep the Node runner, and untouched `.mjs` tests until M7 converts them;
-  new/substantively changed Node tests use `.mts`. Plain erasable `.ts` domain modules can be tested
+- Keep the Node runner for pure and legacy jsdom tests, and untouched `.mjs`
+  tests until M7 converts them; new/substantively changed Node tests use `.mts`.
+  New DOM-behavior tests use M4.5's browser tier once it exists. Plain erasable `.ts` domain modules can be tested
   directly. Components and rune modules must be compiled
   first and exercised through client bundles. Do not let a Node-imported
   controller transitively import `.svelte` or `.svelte.ts`.
@@ -534,7 +602,7 @@ working shared owner; broad protocol/storage migration has the greatest cost.
 | LayerCake / uPlot | New charts may evaluate a candidate; do not require legacy chart replacement. | Compare interaction, local-time labels, data gaps, accessibility, theme and measured size/render cost with current charts. |
 | MapLibre | Retain the packaged library and extension-frame architecture. | New controls can be TS/Svelte; camera, GPU renderer, workers, activation and network policy remain with their current owners. |
 | TipTap / CodeMirror | Already present; retain editor ownership and serialization. | Any Svelte wrapper must preserve editor instances, selection, composition, pasted-image flows and cleanup. |
-| Vitest / Playwright | Keep Node tests and existing browser verifiers initially; Playwright is already installed. | Add Vitest only for a concrete testing advantage, with compiler parity and retained manifest/worker/bridge tests. |
+| Vitest / Playwright | M4.5 adds a Playwright Test DOM tier beside `node:test`; existing browser verifiers stay. | Add Vitest only for a concrete testing advantage, with compiler parity and retained manifest/worker/bridge tests. |
 | Shadow DOM | Optional for a new standalone island. Retain light DOM for existing reparented host content. | Prove inherited tokens, dark mode, keyboard/focus, sizing and host integration. Scoped component CSS alone is not isolation. |
 
 The [messaging library](https://webext-core.aklinker1.io/messaging/installation)
