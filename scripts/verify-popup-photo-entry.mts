@@ -3,9 +3,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged check of the popup's photo editor entry against the real
-// worker route and real tabs. The popup runs as a tab, because a toolbar popup
-// cannot be opened headlessly, so native popup sizing and window focus stay
-// outside this check. Only the pending and failure replies are stubbed.
+// worker route and real tabs. State geometry runs with the popup as a tab, where
+// only the pending and failure replies are stubbed. The real toolbar popup then
+// proves native sizing and the sender it actually presents, which has no tab.
+// Window focus stays outside a hidden check.
 /* global document, chrome, innerWidth, window */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -141,9 +142,36 @@ try {
     assert.equal(photoPages().filter(page => new URL(page.url()).search === '').length, 1,
         'A report-bound tab must not be taken over');
 
+    // The real toolbar popup: autosized by the browser, and a sender with no tab.
+    await closePhotoPages();
+    await bound.close();
+    const nativeEntry = await setup.evaluate(async () => {
+        await chrome.storage.sync.set({ bpbSettings: { theme: 'light', enableGarminInbox: true } });
+        await chrome.action.openPopup();
+        for (const deadline = Date.now() + 5000; Date.now() < deadline; await new Promise(resolve => setTimeout(resolve, 50))) {
+            const popup = chrome.extension.getViews({ type: 'popup' })[0];
+            const inbox = popup?.document.querySelector('.inbox-entry') as HTMLElement | null;
+            const entry = popup?.document.querySelector('.photo-entry') as HTMLElement | null;
+            if (!entry || inbox?.hidden !== false || !popup!.document.querySelector('#state')!.textContent) continue;
+            const box = entry.getBoundingClientRect();
+            const layout = { width: popup!.innerWidth, height: popup!.innerHeight, entryRight: box.right, entryBottom: box.bottom,
+                overflow: popup!.document.documentElement.scrollWidth };
+            (popup!.document.getElementById('open-photo-editor') as HTMLButtonElement).click();
+            return layout;
+        }
+        throw new Error('The real popup did not show the photo editor entry');
+    });
+    assert.equal(nativeEntry.width, 390);
+    assert.ok(nativeEntry.overflow <= 390 && nativeEntry.entryRight <= 390 && nativeEntry.entryBottom <= nativeEntry.height,
+        `Native popup clipped the entry: ${JSON.stringify(nativeEntry)}`);
+    await waitForPhotoPages(1);
+    await setup.waitForFunction(() => chrome.extension.getViews({ type: 'popup' }).length === 0);
+    const activeUrl = await setup.evaluate(async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.url);
+    assert.equal(activeUrl, photoUrl, 'The opened editor must be the active tab');
+
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser()?.version(), hidden: true, viewport: '390×600 at 100%/200% CSS zoom',
-        cases: states.length, reused: true, boundTabSpared: true, unproven: 'native toolbar popup sizing and window focus', passed: true }));
+        cases: states.length, reused: true, boundTabSpared: true, nativePopup: nativeEntry, unproven: 'window focus', passed: true }));
 } finally {
     await context?.close();
     await rm(profile, { recursive: true, force: true });

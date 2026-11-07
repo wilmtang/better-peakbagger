@@ -121,9 +121,9 @@ on the editor, and otherwise opens a new tab. A tab carrying `returnToken`,
 reused, so the card cannot redirect a report's Save and return. The card steps
 aside while detected peaks are on screen, because reviewing them needs the
 popup's full 600px for **Open drafts**. Focused hidden check:
-`npm run verify -- popup-photo-entry`. It uses the real worker and tabs,
-with the popup loaded as a tab, so native popup sizing and window focus remain
-unverified by it.
+`npm run verify -- popup-photo-entry`. It uses the real worker and tabs, checks
+state geometry with the popup loaded as a tab, then opens the real toolbar popup
+to check its sizing and tab-less sender. Window focus stays outside a hidden run.
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
 project starts when the user chooses, drags, or pastes a browser-decodable image.

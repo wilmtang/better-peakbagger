@@ -251,6 +251,16 @@ async function verifyFormatPainter(page: Page, origin: string, variant: LayoutVa
     await page.mouse.move(hover.left, hover.y);
     assert.notEqual(await page.locator('.bpb-re-surface').evaluate((element: FixtureElement) => getComputedStyle(element).cursor), 'text');
     await expectStable(idle, 'arming');
+    // The cursor must be declared with a fallback, and its image must decode here,
+    // since a screenshot never shows the pointer.
+    const cursor = await page.locator('.bpb-re-surface').evaluate(async (element: FixtureElement) => {
+        const value = getComputedStyle(element).cursor;
+        const image = new Image();
+        image.src = /url\("(.+?)"\)/.exec(value)![1];
+        await image.decode();
+        return { value, width: image.naturalWidth, height: image.naturalHeight };
+    });
+    assert.ok(cursor.width === 24 && cursor.height === 24 && /,\s*copy$/.test(cursor.value), `${variant.name}: painter cursor ${JSON.stringify(cursor).slice(0, 200)}`);
     const contrast = await box.evaluate((element: FixtureElement) => {
         const channels = (value: string) => value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(channel => {
             const unit = channel / 255;

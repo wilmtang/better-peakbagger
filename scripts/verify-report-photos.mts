@@ -307,6 +307,19 @@ try {
     for (let index = 0; index < 'Topos.'.length; index++) await report.keyboard.press('Shift+ArrowLeft');
     await report.getByRole('button', { name: 'Bold (Ctrl/Cmd+B)', exact: true }).click();
     await report.locator('.bpb-re-surface figcaption strong', { hasText: 'Topos.' }).waitFor();
+    // Photo Topos edits plain caption text. Returning without changing it must
+    // leave that formatting in place.
+    const reopened = context.waitForEvent('page');
+    await report.locator('.bpb-re-image-resize img').dblclick();
+    const unchangedEditor = await reopened;
+    await unchangedEditor.locator('#upload-insert').filter({ hasText: 'Save and return' }).waitFor();
+    await unchangedEditor.waitForFunction(() => document.querySelector<HTMLElement>('#editor-workspace')?.hidden === false);
+    assert.equal(await unchangedEditor.locator('#photo-caption').inputValue(), originalCaption);
+    await unchangedEditor.locator('#upload-insert').click();
+    await unchangedEditor.getByText('Photo updated in the report. It will upload when you save the TR.', { exact: true }).waitFor();
+    await report.locator('.bpb-re-surface figcaption strong', { hasText: 'Topos.' }).waitFor();
+    assert.equal(await report.locator('.bpb-re-surface figcaption').textContent(), originalCaption);
+    await unchangedEditor.close();
     const saveGeometry = () => report.locator('#SaveButton, #SaveButton2').evaluateAll(elements => elements.map(element => {
         const rect = element.getBoundingClientRect();
         return { x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: rect.width, height: rect.height };
