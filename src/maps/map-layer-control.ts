@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
 import { createWildfireList } from './wildfire-details.js';
 import { WILDFIRE_MIN_ZOOM, WILDFIRE_SOURCE } from './wildfire-core.js';

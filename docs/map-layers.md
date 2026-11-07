@@ -475,7 +475,7 @@ coordinates survive asynchronous status paints and the dark theme's positioned b
 The overlay bootstrap does not depend on GPX readiness or 3D eligibility.
 
 The presentation lives in `src/maps/map-layer-control.ts`. State and opacity
-validation use `src/settings/settings-schema.js`; opacity and land-type choices
+validation use `src/settings/settings-schema.ts`; opacity and land-type choices
 use portable settings through a separate narrow bridge, never the analyzer
 settings-write allowlist. They travel through browser sync, settings files and
 GitHub settings backup; enabled overlays and selected scenes remain page state. The terrain bridge

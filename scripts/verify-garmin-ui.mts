@@ -11,7 +11,7 @@ import type { AddressInfo } from 'node:net';
 import { chromium, firefox, type Browser } from 'playwright';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mjs';
-import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
 import { initSectionNav } from '../src/ui/section-nav.js';
 
 // The packaged pages run against this synthetic runtime; its shape is owned by

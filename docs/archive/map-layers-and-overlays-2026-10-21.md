@@ -177,7 +177,7 @@ src/background/map-layer-handoff.js bounded, tab-bound full-screen handoff
 ```
 
 Keep defaults, opacity bounds and message validation in the pure
-`src/settings/settings-schema.js`; do not create a second settings schema.
+`src/settings/settings-schema.ts`; do not create a second settings schema.
 The controller owns one versioned state snapshot, not another settings service.
 Provider modules own catalog/tile work; the control renders their view models.
 
@@ -344,7 +344,7 @@ the old usable control before the replacement adapter and handoff work.
 
 Candidate existing files to extend include the surface modules above,
 `src/terrain/terrain-frame-runtime.js`, `src/terrain/terrain-map.js`,
-`src/settings/settings-schema.js`, `manifest.json` and
+`src/settings/settings-schema.ts`, `manifest.json` and
 `scripts/build-config.mjs`. Add only the MAIN-world, isolated-world and packaged
 worker assets each entry actually needs. Preserve stylesheet-before-theme
 ordering, the single background bundle and existing host permission boundaries.

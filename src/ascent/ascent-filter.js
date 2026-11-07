@@ -9,7 +9,7 @@
 // and peak-list pages reuse only the sorter; they have no beta filter surface.
 
 import { settings as S } from '../settings/settings.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import * as I from '../favorites/ignored-climbers.js';
 import { observeIgnored } from '../favorites/ignored-client.js';

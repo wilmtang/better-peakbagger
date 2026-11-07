@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { publicLandInfo } from '../../src/maps/map-overlay-providers.js';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
 import { readSnowDepthLegend } from '../../src/maps/snow-depth.js';

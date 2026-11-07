@@ -6,7 +6,7 @@ import { readBCTileCoordinates } from '../maps/bc-land-client.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { temporaryHttpStatus } from '../net/retry-transient.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 
 export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = () => false, fetchImpl = globalThis.fetch }) {
     const jobs = new Map();

@@ -56,7 +56,7 @@ test('reviewed owners and deadline exceptions retain their narrow boundaries', (
     const source = (file: string, text: string): RuntimeSource => ({file,text,variants:sourceVariants(file,text)});
     assert.deepEqual(unitConstantFindings(source('src/ui/units.js','const feet = 3.28084;')),[]);
     assert.equal(unitConstantFindings(source('photos/units.js','const feet = 3.28084;')).length,1);
-    assert.deepEqual(settingsDefaultFindings(source('src/settings/settings-schema.js','let pref = "system";')),[]);
+    assert.deepEqual(settingsDefaultFindings(source('src/settings/settings-schema.ts','let pref = "system";')),[]);
     assert.deepEqual(uploadLimitFindings(source('src/capture/upload-limits.js','points.length > 3000')),[]);
     assert.deepEqual(cloudflareFindings(source('src/capture/provider-response.js','"cf-mitigated"')),[]);
     assert.equal(cloudflareFindings(source('src/capture/provider-response.js','"Complete check on Peakbagger"')).length,1);

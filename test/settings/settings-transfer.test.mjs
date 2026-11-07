@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 import { readCustomSource } from '../../src/maps/custom-overlay-schema.js';
 

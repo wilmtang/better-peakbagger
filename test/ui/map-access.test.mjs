@@ -19,7 +19,7 @@ for (const [id, name, origin] of [
         assert.deepEqual(ENTRIES.find(entry => entry.out === `${id}/access.js`)?.sources,
             [`${id}/${id}-import.js`, `${id}/access.js`]);
         assert.deepEqual(ENTRIES.find(entry => entry.out === `${id}/access-head.js`)?.sources,
-            ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
+            ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.js']);
         assert.ok(COPY_FILES.some(entry => entry[1] === `${id}/access.html`));
         assert.match(html, /<script src="access-head\.js"><\/script>\s*<link rel="stylesheet" href="\.\.\/css\/panel\.css">/);
         const dom = new JSDOM(html, { url: `moz-extension://test/${id}/access.html`, runScripts: 'outside-only' });

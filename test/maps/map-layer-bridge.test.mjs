@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { snotelStations } from '../helpers/snotel-fixture.mjs';
 import { createMapLayerHandoff } from '../../src/background/map-layer-handoff.js';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 
 const bundle = await readFile(new URL('../../dist/content/peak-snow.js', import.meta.url), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));

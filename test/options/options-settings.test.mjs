@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { settingsSchema } from '../../src/settings/settings-schema.js';
+import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer } from '../../src/settings/settings-transfer.js';
 import {
     loadOptions, el, waitFor, withGithubBackground, registerCleanup, root,

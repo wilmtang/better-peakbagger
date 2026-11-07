@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { favoriteClimbers as F } from './favorite-climbers.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';

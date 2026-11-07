@@ -183,8 +183,8 @@ were stale; the closure ledger records what was actually changed.
 
 To avoid false positives or re-reporting closed items, the following areas were traced end-to-end and verified clean or already tracked:
 
-1. **Shared Settings Schema & Cross-World Validation (`src/settings/settings-schema.js`, `src/settings/bridge.js`, `src/gpx/gpx-analyzer.js`, `src/maps/big-map.js`, `src/terrain/terrain-frame-runtime.js`):**
-   - Verified that all page-world and terrain-frame consumers validate `postMessage` payloads exclusively through `src/settings/settings-schema.js` with no local constant drift.
+1. **Shared Settings Schema & Cross-World Validation (`src/settings/settings-schema.ts`, `src/settings/bridge.js`, `src/gpx/gpx-analyzer.js`, `src/maps/big-map.js`, `src/terrain/terrain-frame-runtime.js`):**
+   - Verified that all page-world and terrain-frame consumers validate `postMessage` payloads exclusively through `src/settings/settings-schema.ts` with no local constant drift.
 2. **Activity Capture Privacy & Ownership Gates (`src/capture/provider-page.js`, `src/capture/capture-core.js`, `src/background/background.js`, `src/ascent/ascent-draft.js`):**
    - Verified that raw GPX never leaves the provider page, ownership fails closed when signals are missing or ambiguous, waypoints share the 3,000-point budget and strip elevation/time/description/extensions, and draft filling never triggers Peakbagger Save.
 3. **3D Terrain LOD, Cancellation & Cache Bounds (`src/terrain/terrain-coordinator.js`, `src/terrain/terrain-frame-runtime.js`, `src/terrain/terrain-cache.js`):**

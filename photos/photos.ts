@@ -398,10 +398,10 @@ const rememberTool = (type: string, patch: { style?: Partial<TopoObject['style']
 const loadToolPreferences = async () => {
     try {
         const [preferences, local] = await Promise.all([Settings.preferences([...Project.OBJECT_TYPES.map(preferenceKey), SHARED_STYLE_KEY]), ext.storage.local.get(VIEWPORT_KEY)]);
-        const stored = { ...preferences, ...local };
+        const stored = { ...preferences, ...local } as unknown as Record<string, { width: number; height: number } | undefined>;
         viewportSize = {
-            width: cleanViewportDimension(stored[VIEWPORT_KEY]?.width, 280, 2400),
-            height: cleanViewportDimension(stored[VIEWPORT_KEY]?.height, 240, 1400),
+            width: cleanViewportDimension(stored[VIEWPORT_KEY]?.width as number, 280, 2400),
+            height: cleanViewportDimension(stored[VIEWPORT_KEY]?.height as number, 240, 1400),
         };
         applyViewportSize();
         for (const type of Project.OBJECT_TYPES) {

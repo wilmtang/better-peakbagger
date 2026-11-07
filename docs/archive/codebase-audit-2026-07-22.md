@@ -203,7 +203,7 @@ renamed, the favorites panel's live refresh silently stops. Export the keys
 [peak-map.js:107-110](../../src/maps/peak-map.js), with a fourth variant as
 `Settings.resolveTheme` ([settings.js:24-27](../../src/settings/settings.js)).
 MAIN-world code can't import `settings.js`, but this is the same situation
-`settings-schema.js` solves: one pure `theme/theme-resolve.js` bundled into
+`settings-schema.ts` solves: one pure `theme/theme-resolve.js` bundled into
 the MAIN-world entries and delegated to by `settings.js`. Same rationale as
 the schema rule — a drifting copy is invisible until it ships.
 

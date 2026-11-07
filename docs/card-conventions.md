@@ -267,7 +267,7 @@ table. Follow its existing reconciliation flow for uncertain remote writes.
 
 ## State, settings and requests
 
-- Use [`settings-schema.js`](../src/settings/settings-schema.js) for portable
+- Use [`settings-schema.ts`](../src/settings/settings-schema.ts) for portable
   preferences, feature gates, defaults and validation. Write through `settings`;
   do not introduce page localStorage or widen the MAIN-world settings allowlist.
   Existing column-width preferences (`pbAscentTableSplit.v1` and the peak split's

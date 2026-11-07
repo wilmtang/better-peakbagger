@@ -207,13 +207,13 @@ Analyzer resolves them ([`resolveUnits`](../../src/gpx/gpx-analyzer.js)).
 An imperial user therefore gets feet and miles everywhere in the product except
 the one panel that opens from the toolbar.
 
-**Fix.** Add `settings/settings-schema.js` + `settings/settings.js` to the popup
+**Fix.** Add `settings/settings-schema.ts` + `settings/settings.js` to the popup
 bundle and format through the shared helper introduced in F15. `units: 'auto'`
 has no page to sniff in the popup — resolve it to the same value the last
 Peakbagger surface used, or fall back to imperial, and say which in a comment.
 
 **Resolution.** The popup bundle is now
-`['capture/capture-phases.js', 'settings/settings-schema.js',
+`['capture/capture-phases.js', 'settings/settings-schema.ts',
 'settings/settings.js', 'ui/units.js', 'popup-main.js']`, and `evidenceText`
 plus the track-summary line format through F15's module.
 

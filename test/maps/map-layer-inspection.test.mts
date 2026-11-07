@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { readSnowDepthLegend } from '../../src/maps/snow-depth.js';
 import { readFile } from 'node:fs/promises';
 import { SnowDepthLayer, PublicLandLayer, SlopeLayer, snowDepthPointReading,

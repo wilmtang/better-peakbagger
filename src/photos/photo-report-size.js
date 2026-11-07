@@ -5,7 +5,7 @@
 // rendering or raster export: it resolves only the optional width attribute
 // sent back to the trip-report editor.
 
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 
 const CHOICES = Object.freeze([
     Object.freeze({ token: '320', label: 'Small · 320 px', width: 320 }),

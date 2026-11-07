@@ -6,7 +6,7 @@
 // MasterMap frame while settings and the renderer remain extension-isolated.
 
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { peakMarkers } from './peak-markers.js';

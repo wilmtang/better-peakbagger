@@ -493,7 +493,7 @@ not have independent meanings.
 true, so first use hides every ascent that does not match the extension's beta
 definition. The active chip and `Showing X of Y` status make this recoverable.
 The global Has-beta trip-report threshold is owned by
-`src/settings/settings-schema.js` (lines 85–121), while the visible inline Trip
+`src/settings/settings-schema.ts` (lines 85–121), while the visible inline Trip
 report threshold is independently stored at `src/ascent/ascent-filter.js`
 (lines 749–752 and 888–904). Both can be active and AND-compose; changing the
 visible number does not redefine Has beta.

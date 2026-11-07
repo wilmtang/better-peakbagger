@@ -22,7 +22,7 @@ import { BUDDY_CACHE_MESSAGE } from '../../src/favorites/buddy-cache.js';
 import { createBuddyCacheStore } from '../../src/background/buddy-cache-store.js';
 import { createReportDraftRoutes } from '../../src/background/report-draft-routes.js';
 import { isPeakbaggerSenderUrl } from '../../src/peakbagger/peakbagger-origin.js';
-import { settingsSchema } from '../../src/settings/settings-schema.js';
+import { settingsSchema } from '../../src/settings/settings-schema.ts';
 
 const require = createRequire(import.meta.url);
 

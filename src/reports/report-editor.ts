@@ -27,7 +27,7 @@ import { createInstagramPresentation } from './instagram-ui.js';
 import { createStableText } from '../ui/stable-text.js';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import { settings as Settings } from '../settings/settings.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { reportMarkup as Markup } from './report-markup.js';
 import { reportDrafts as ReportDrafts } from './report-drafts.js';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.js';

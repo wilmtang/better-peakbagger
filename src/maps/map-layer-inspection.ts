@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { cancelResponseBody, rateLimitError } from '../net/rate-limit.js';

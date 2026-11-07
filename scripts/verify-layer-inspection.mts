@@ -38,7 +38,7 @@ try {
     const bundle = await build({stdin: {resolveDir: process.cwd(), contents: `
         import {createMapLocationMenu} from './src/maps/map-location-menu.ts';
         import {createMapLayerControl} from './src/maps/map-layer-control.ts';
-        import {settingsSchema as Schema} from './src/settings/settings-schema.js';
+        import {settingsSchema as Schema} from './src/settings/settings-schema.ts';
         import {readSnowDepthLegend,SNOW_DEPTH_LEGEND} from './src/maps/snow-depth.js';
         const state=Schema.mapOverlayState({snow:{enabled:true},land:{enabled:true},slope:{enabled:true}});
         const model={state,landTypes:Schema.mapLandTypes(),theme:document.documentElement.dataset.bpbTheme,statuses:{snow:{legend:SNOW_DEPTH_LEGEND,analysisTime:Date.UTC(2026,10,1),legendEntries:readSnowDepthLegend(${JSON.stringify(legend)})}},zoom:12};

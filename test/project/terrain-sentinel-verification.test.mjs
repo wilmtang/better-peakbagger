@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { readSentinelCooldown } from '../../scripts/verify-terrain-provider-ui.mjs';
 
 test('terrain cooldown verification reads the actual shared control and requires an intercepted catalog request', t => {

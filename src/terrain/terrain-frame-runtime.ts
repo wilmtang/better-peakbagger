@@ -5,7 +5,7 @@
 
 import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
-import { settingsSchema } from '../settings/settings-schema.js';
+import { settingsSchema } from '../settings/settings-schema.ts';
 import type * as MapLibre from 'maplibre-gl';
 import type { LngLat, Map as MapLibreMap, MapMouseEvent, Popup, PointLike } from 'maplibre-gl';
 import { terrainStyle as TerrainStyle } from './terrain-style.ts';

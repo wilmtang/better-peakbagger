@@ -7,7 +7,7 @@ import { drawAlbertaLand } from './canadian-land.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
 import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 
 const abortError = () => new DOMException('Cancelled.', 'AbortError');
 const tileKey = ({ z, x, y }) => `${z}/${(x % 2 ** z + 2 ** z) % 2 ** z}/${y}`;

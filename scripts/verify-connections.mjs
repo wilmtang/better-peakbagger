@@ -8,7 +8,7 @@ import { createServer } from 'node:https';
 import { chromium, firefox } from 'playwright';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mjs';
-import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
 
 assert.equal(process.argv.length, 2, 'Connection verification accepts no arguments');
 assertChromeLaunchAllowed();

@@ -6,7 +6,7 @@
 // to route maps and summit-focused peak maps.
 // Runs in MAIN world because the Leaflet map and layers are page-owned globals.
 
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { gpxMetrics } from '../gpx/gpx-metrics.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';

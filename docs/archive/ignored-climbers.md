@@ -265,7 +265,7 @@ Wire every new bundle through `scripts/build-config.mjs` and `manifest.json` in
 the isolated world, supporting current www/bare-host and path-case variants.
 Keep the single bundled worker and stylesheet-before-theme startup unchanged.
 Any shared default/bound belongs in its pure owner; synchronized settings, if
-needed, belong in `src/settings/settings-schema.js`, with its structural tests.
+needed, belong in `src/settings/settings-schema.ts`, with its structural tests.
 
 ## Verification and acceptance
 

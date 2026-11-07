@@ -14,7 +14,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.js';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
 import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.js';

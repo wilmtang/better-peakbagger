@@ -33,7 +33,7 @@ cap with a curated list of your own.
 
 ## Data model
 
-Synced setting (inside the existing `bpbSettings` item, `src/settings/settings-schema.js`):
+Synced setting (inside the existing `bpbSettings` item, `src/settings/settings-schema.ts`):
 
 - `favoritesSource: 'buddies' | 'custom'`, default `'buddies'`, cleaned like
   `chartDefaultSeries`. No on/off gate — the Favorites button is part of the

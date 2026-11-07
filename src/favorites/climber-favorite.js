@@ -4,7 +4,7 @@
 // Better Peakbagger — custom favorite toggle on public climber pages.
 
 import { settings as S } from '../settings/settings.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';

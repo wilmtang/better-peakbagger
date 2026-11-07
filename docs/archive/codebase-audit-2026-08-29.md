@@ -466,7 +466,7 @@ the accessible value must describe the geometry the user can see.
 
 **Evidence.** Side layout caps the viewport wrapper at
 `calc(100vh - 16px)` in `src/gpx/gpx-panel-css.js` (lines 73–82), while schema
-allows a stored 720-pixel height in `src/settings/settings-schema.js` (lines
+allows a stored 720-pixel height in `src/settings/settings-schema.ts` (lines
 25–31). `src/gpx/map-viewport.js` keeps that uncapped value as `current`, writes
 it inline, announces it, and uses it as the vertical drag/keyboard baseline
 (lines 28–48, 67–75, and 177–221).
@@ -594,7 +594,7 @@ coalesced save at lines 283–304, but every insertion serially performs
 `cache.put`, mutates/trims the index, and immediately saves the full object at
 lines 313–336. `trim()` also recomputes total size from every entry and sorts the
 whole index at lines 229–240. The default cache is 512 MiB and the validated
-maximum is 2 GiB in `src/settings/settings-schema.js` (lines 26–31, 76–80, and
+maximum is 2 GiB in `src/settings/settings-schema.ts` (lines 26–31, 76–80, and
 153–158).
 
 A fake CacheStorage/storage probe inserting 1,000 valid unique tiny WebPs

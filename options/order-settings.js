@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { settingsSchema as Schema } from '../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
 
 // Stable rows preserve label associations and focus while reordering. Only the
 // grip starts a drag: using a provider checkbox never changes its position.

@@ -85,7 +85,7 @@ Key source anchors:
 
 - `manifest.json` and `scripts/build-config.mjs` define page coverage and loaded
   bundles; there is no global login switch around public content scripts.
-- `src/settings/settings-schema.js` (lines 78–137) defines display gates and
+- `src/settings/settings-schema.ts` (lines 78–137) defines display gates and
   the default Buddy source.
 - `src/maps/peak-map.js` (lines 64–76) and
   `src/terrain/terrain-frame-runtime.js` (lines 160–169) preserve unknown markers.

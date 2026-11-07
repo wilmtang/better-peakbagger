@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { loadPage, PAGE_FIXTURES, makeChromeStub } from '../helpers/load-page.mjs';
 import { enablePeakLinkOrder } from '../../src/maps/peak-link-order.js';
-import { settingsSchema } from '../../src/settings/settings-schema.js';
+import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
 import { readPeakNations } from '../../src/avalanche/avalanche-location.js';
 import { selectedReportTable } from '../../src/favorites/report-adapters.js';

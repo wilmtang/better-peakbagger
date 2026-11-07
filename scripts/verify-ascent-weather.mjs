@@ -33,7 +33,7 @@ import { verifyPeakWeatherInteractions } from './verify-peak-weather-interaction
 import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mjs';
-import { settingsSchema } from '../src/settings/settings-schema.js';
+import { settingsSchema } from '../src/settings/settings-schema.ts';
 
 verificationScreenshots(); // Reject invalid evidence configuration before any browser launch.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

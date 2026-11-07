@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
-import { settingsSchema } from '../../../src/settings/settings-schema.js';
+import { settingsSchema } from '../../../src/settings/settings-schema.ts';
 import { weatherFixture, weatherModelFixture } from '../../../test/helpers/weather-fixture.mjs';
 import { cloudResponseForUrl } from '../../../test/helpers/summit-cloud-fixture.mjs';
 import { airQualityFixture } from '../../../test/helpers/air-quality-fixture.mjs';

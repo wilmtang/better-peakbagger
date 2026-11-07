@@ -17,7 +17,7 @@ import { gpxMetrics as GpxMetrics } from './gpx-metrics.js';
 import { diagnoseGpxSegments, diagnosticMetricInputs } from './gpx-segment-diagnostics.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { pageSettingsClient as PageSettingsClient } from '../settings/page-settings-client.js';
 import { peakMarkers } from '../maps/peak-markers.js';

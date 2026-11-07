@@ -502,7 +502,7 @@ artifacts are specified in [3d-peak-markers.md](3d-peak-markers.md).
 ### Settings and live updates
 
 Route style, theme, viewport dimensions, cache budget, and feature state are
-cleaned through `src/settings/settings-schema.js`; readers do not carry local copies of
+cleaned through `src/settings/settings-schema.ts`; readers do not carry local copies of
 bounds or defaults. While 3D is open, route-style and theme changes are applied
 without rebuilding the frame. Feature disablement tears down an open or parked
 view and returns to native 2D.

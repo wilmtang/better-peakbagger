@@ -126,7 +126,7 @@ keeps `get()` fail-soft: any `storage.sync.get` failure returns schema defaults.
 That is appropriate for passive rendering, but the same API is used by
 [`readCapturePreferences`](../../src/background/background.js), and the
 defaults in
-[`settings-schema.js`](../../src/settings/settings-schema.js) enable waypoint
+[`settings-schema.ts`](../../src/settings/settings-schema.ts) enable waypoint
 retention, Trip Info, ascent details, wilderness nights, and external activity
 links.
 
@@ -931,7 +931,7 @@ re-check the registry at implementation time as the finding already says.
 Everything in F1's evidence checks out: the private strict `read()`
 ([`settings.js:43`](../../src/settings/settings.js)), the fail-soft `get()` at
 `:49`, all five capture defaults `true`
-([`settings-schema.js:34`](../../src/settings/settings-schema.js)),
+([`settings-schema.ts:34`](../../src/settings/settings-schema.ts)),
 `readCapturePreferences` on `get()`
 ([`background.js:43`](../../src/background/background.js)), the toolbar path
 handing those preferences into MAIN-world capture (`background.js:320`), and the

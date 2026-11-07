@@ -275,7 +275,7 @@ win at the single most fiddly moment of setup.
 
 ### U6 — Constraint surprises in options
 Setting a casing width below `route width + 2` silently snaps up on save with
-no explanation ([settings-schema.js:83-86](../../src/settings/settings-schema.js) +
+no explanation ([settings-schema.ts:83-86](../../src/settings/settings-schema.ts) +
 populate round-trip). Either set the number input's `min` dynamically from the
 current route width or add one line of helper text ("casing is always at least
 2 px wider than the route").

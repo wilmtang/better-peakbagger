@@ -4,7 +4,7 @@ import { createGarminStore, garminPublicSummary } from './garmin-store.js';
 import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.js';
 import { decodeGarminRecording } from './fit-activity.js';
 import { createPackagedPageMatcher } from '../background/sender-policy.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { publicErrors as PublicErrors } from '../background/public-errors.js';
 
 export const GARMIN_ALARM = 'bpb-garmin-check';

@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.js';
 import { createGarminImports, importRange } from '../../src/garmin/garmin-imports.js';
 import { GarminError } from '../../src/garmin/garmin-api.js';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 const sender = { id: 'test', url: 'chrome-extension://test/options/inbox.html', tab: { id: 1 }, frameId: 0 };
 async function setup(overrides = {}) {
     const store = createGarminStore(new IDBFactory()); const alarms = new Map();

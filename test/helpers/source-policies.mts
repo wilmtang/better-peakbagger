@@ -17,7 +17,7 @@ const settingsPatterns = [
     {pattern: /\['BLM',\s*'USFS',\s*'FED',\s*'STAT',\s*'LOC',\s*'TRIB',\s*'CROWN'/, what: 'the default land type selection'},
 ];
 export function settingsDefaultFindings(source: RuntimeSource): string[] {
-    return source.file === 'src/settings/settings-schema.js' ? [] : settingsPatterns
+    return source.file === 'src/settings/settings-schema.ts' ? [] : settingsPatterns
         .filter(({pattern}) => matches(source, pattern)).map(({what}) => finding(source, `hardcodes ${what}`));
 }
 export function uploadLimitFindings(source: RuntimeSource): string[] {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createCustomOverlayControl } from './custom-overlay-control.js';
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { createMapLayerControl } from './map-layer-control.ts';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';

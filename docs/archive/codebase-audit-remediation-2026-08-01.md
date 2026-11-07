@@ -43,7 +43,7 @@ add, remove, or suppress a warning.
   but only an authoritative sync-storage read can replace it. A failed read no
   longer converts explicit dark or light to the default.
 - **F4 and F12 — schema ownership:** chart series, report mode, favorite source,
-  and beta definition now resolve through `settings-schema.js`. Page-client
+  and beta definition now resolve through `settings-schema.ts`. Page-client
   pre-init reads and optimistic writes use the cleaned fallback. The structural
   scan's documentation now names only the route, viewport, and theme literals
   it actually inspects.

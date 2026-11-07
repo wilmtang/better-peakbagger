@@ -684,7 +684,7 @@ empty list to restore.
 ```
 
 The example abbreviates `settings`; the real file is a deterministic pick of
-all 67 `PORTABLE_KEYS` in `settings-schema.js`, after cleaning and filling
+all 67 `PORTABLE_KEYS` in `settings-schema.ts`, after cleaning and filling
 portable defaults. Unknown keys and the nine device settings (dimensions,
 cache budget and GitHub transfer choices) are excluded. Weather model/placement,
 overlay appearance and photo-tool defaults are now portable preferences.

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { settingsSchema } from '../../src/settings/settings-schema.js';
+import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { cloudResponseForUrl } from '../helpers/summit-cloud-fixture.mjs';
 
 const [html, bundle, layout] = await Promise.all([

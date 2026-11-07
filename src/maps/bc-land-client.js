@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 
 export function readBCTileCoordinates(value) {
     if (!value || ![value.z, value.x, value.y].every(Number.isSafeInteger) || value.z < 8 || value.z > 15

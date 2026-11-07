@@ -673,7 +673,7 @@ The **Better Peakbagger links** panel on `Peak.aspx` is rendered by
 `src/maps/peak-links.js`; `src/maps/peak-link-order.js` owns grip dragging,
 keyboard movement, cancellation, and persistence. The saved `peakLinkOrder`
 contains link IDs only, with its allowed IDs and default order defined by
-`PEAK_LINK_ORDER` in `src/settings/settings-schema.js`.
+`PEAK_LINK_ORDER` in `src/settings/settings-schema.ts`.
 
 The order is an extension setting in `chrome.storage.sync`, so it can follow
 the browser profile across devices when browser sync is enabled. It is also

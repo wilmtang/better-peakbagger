@@ -12,7 +12,7 @@
 // the MAIN-world bundles that validate settings without storage access. This
 // file adds only chrome.storage access on top of it.
 
-import { settingsSchema as Schema } from './settings-schema.js';
+import { settingsSchema as Schema } from './settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
 

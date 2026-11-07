@@ -16,7 +16,7 @@
 // (options page, another tab), so the chart re-themes / re-units live.
 
 import { settings as S } from './settings.js';
-import { settingsSchema as Schema } from './settings-schema.js';
+import { settingsSchema as Schema } from './settings-schema.ts';
 
 // The page world may only write the settings the GPX Analyzer owns.
 // Everything else — feature gates, capture privacy options, theme — stays

@@ -521,7 +521,7 @@ working shared owner; broad protocol/storage migration has the greatest cost.
 | Report layer | Incremental decision | Later conversion gate |
 | --- | --- | --- |
 | WXT / Vite | Defer build ownership replacement; new TS/Svelte does not depend on it. | Separate compatibility build and manifest/output parity proof in M8. |
-| Valibot | Optional for a new protocol/schema in its existing owning domain. Keep `settings-schema.js` authoritative. | Replacing a validator requires parity for coercion, defaults, bounds, unknown keys and failure behavior; no second settings schema. |
+| Valibot | Optional for a new protocol/schema in its existing owning domain. Keep `settings-schema.ts` authoritative. | Replacing a validator requires parity for coercion, defaults, bounds, unknown keys and failure behavior; no second settings schema. |
 | `@webext-core/messaging` | Use typed wrappers over the current wire protocol first. | A new RPC library needs an explicit adapter or new protocol on both ends, sender validation and compatibility tests; it is not a transparent replacement for raw envelopes. |
 | WXT storage | Keep the existing settings owner, sync/device split, subscriptions, write queue and theme mirror. | Demonstrate identical keys, migrations, authorization, error behavior and update/rollback behavior before replacement. |
 | `idb` / Dexie | New features call the existing store owners; use one chosen helper only if it solves a concrete new storage need. | Preserve existing database names, versions, transactions, retention and disconnect cleanup; test real upgrade data and multiple open contexts. |

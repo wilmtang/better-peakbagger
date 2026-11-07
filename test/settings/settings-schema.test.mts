@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 
 import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { settingsDefaultFindings } from '../helpers/source-policies.mts';

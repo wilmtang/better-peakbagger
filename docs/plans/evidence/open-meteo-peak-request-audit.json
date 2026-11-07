@@ -14,7 +14,7 @@
     "src/peakbagger/peakbagger-origin.js",
     "src/photos/photo-project.js",
     "src/photos/photo-tool-preferences.js",
-    "src/settings/settings-schema.js",
+    "src/settings/settings-schema.ts",
     "src/settings/settings.js",
     "src/storage/storage-value.js",
     "src/terrain/terrain-cache.js",

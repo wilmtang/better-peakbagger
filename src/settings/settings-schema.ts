@@ -17,6 +17,9 @@
 import { photoToolPreferences as ToolPreferences } from '../photos/photo-tool-preferences.js';
 import { customOverlaySchema } from '../maps/custom-overlay-schema.js';
 
+// Stored and bridged values are untrusted until they pass through this schema.
+const fields = (value: unknown) => (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+
 const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
 const CHART_DEFAULT_SERIES = Object.freeze(['both', 'distance', 'time']);
 const FAVORITES_SOURCES = Object.freeze(['buddies', 'custom']);
@@ -34,10 +37,10 @@ const UNIT_KEYS = Object.freeze({
     distance: 'distanceUnits', elevation: 'elevationUnits',
     temperature: 'temperatureUnits', precipitation: 'precipitationUnits', wind: 'windUnits'
 });
-const unitOverride = value => ['default', 'metric', 'imperial'].includes(value) ? value : 'default';
+const unitOverride = (value: unknown) => ['default', 'metric', 'imperial'].includes(value as string) ? value as string : 'default';
 // The existing page-world `units` control now writes only these two overrides.
 // Keep the default and every weather preference outside that write boundary.
-const trackUnitsPatch = value => ['default', 'auto', 'metric', 'imperial'].includes(value)
+const trackUnitsPatch = (value: unknown) => ['default', 'auto', 'metric', 'imperial'].includes(value as string)
     ? { distanceUnits: value === 'auto' ? 'default' : value, elevationUnits: value === 'auto' ? 'default' : value }
     : {};
 
@@ -48,16 +51,16 @@ const VIEWPORT = { width: 450, height: 450 };
 const MAP_OVERLAY_OPACITY = Object.freeze({ sentinel: 100, snow: 60, slope: 60, land: 25, snotel: 100, wildfire: 100 });
 const MAP_OVERLAY_IDS = Object.freeze(Object.keys(MAP_OVERLAY_OPACITY));
 const MAP_LAND_TYPE_IDS = Object.freeze(['BLM', 'USFS', 'FED', 'STAT', 'LOC', 'TRIB', 'CROWN', 'AGENCY', 'FIRST_NATIONS']);
-const mapLandTypes = value => value === undefined ? [...MAP_LAND_TYPE_IDS]
-    : Array.isArray(value) && value.length <= 64 ? MAP_LAND_TYPE_IDS.filter(id => value.includes(id)) : [];
-const mapOverlayPreferences = value => ({ ...Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id,
-    !['snotel', 'wildfire'].includes(id) && Number.isFinite(value?.[id])
-        ? Math.round(Math.max(0, Math.min(100, value[id]))) : MAP_OVERLAY_OPACITY[id],
-])), landTypes: mapLandTypes(value?.landTypes) });
-const mapOverlayState = value => {
-    const preferences = mapOverlayPreferences(Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id, value?.[id]?.opacity])));
+const mapLandTypes = (value?: unknown) => value === undefined ? [...MAP_LAND_TYPE_IDS]
+    : Array.isArray(value) && value.length <= 64 ? MAP_LAND_TYPE_IDS.filter(id => (value as unknown[]).includes(id)) : [];
+const mapOverlayPreferences = (value?: unknown) => ({ ...Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id,
+    !['snotel', 'wildfire'].includes(id) && Number.isFinite(fields(value)[id])
+        ? Math.round(Math.max(0, Math.min(100, fields(value)[id] as number))) : MAP_OVERLAY_OPACITY[id as keyof typeof MAP_OVERLAY_OPACITY],
+])), landTypes: mapLandTypes(fields(value).landTypes) });
+const mapOverlayState = (value?: unknown) => {
+    const preferences = mapOverlayPreferences(Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id, fields(fields(value)[id]).opacity])));
     return Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id, {
-        enabled: value?.[id]?.enabled === true, opacity: preferences[id],
+        enabled: fields(fields(value)[id]).enabled === true, opacity: (preferences as Record<string, unknown>)[id] as number,
     }]));
 };
 const BOUNDS = {
@@ -70,7 +73,7 @@ const BOUNDS = {
     garminCheckHours: { min: 0, max: 168 },
     garminRecentDays: { min: 1, max: 365 }
 };
-const validCalendarDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+const validCalendarDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 const DEFAULTS = {
@@ -171,27 +174,27 @@ const TRANSFER_KEYS = Object.freeze(DEVICE_KEYS.filter(key => !['mapViewportWidt
 const PERSONAL_KEYS = Object.freeze(Object.keys(DEFAULTS).filter(key => key.startsWith('bpb')));
 const PORTABLE_KEYS = Object.freeze(Object.keys(DEFAULTS).filter(key => !DEVICE_KEYS.includes(key)));
 
-const orderedIds = (value, allowed) => {
+const orderedIds = (value: unknown, allowed: readonly string[]) => {
     const unique = Array.isArray(value) ? [...new Set(value.filter(id => allowed.includes(id)))] : [];
     return [...unique, ...allowed.filter(id => !unique.includes(id))];
 };
 
-const clampWords = value => {
-    const words = parseInt(value, 10);
+const clampWords = (value: unknown) => {
+    const words = parseInt(value as string, 10);
     return Number.isFinite(words) && words > 0 ? words : DEFAULTS.betaTrMinWords;
 };
 
-const chartDefaultSeries = value => CHART_DEFAULT_SERIES.includes(value)
-    ? value
+const chartDefaultSeries = (value: unknown) => CHART_DEFAULT_SERIES.includes(value as string)
+    ? value as string
     : DEFAULTS.chartDefaultSeries;
-const favoritesSource = value => FAVORITES_SOURCES.includes(value)
-    ? value
+const favoritesSource = (value: unknown) => FAVORITES_SOURCES.includes(value as string)
+    ? value as string
     : DEFAULTS.favoritesSource;
-const reportEditorMode = value => REPORT_EDITOR_MODES.includes(value)
-    ? value
+const reportEditorMode = (value: unknown) => REPORT_EDITOR_MODES.includes(value as string)
+    ? value as string
     : DEFAULTS.reportEditorMode;
-const betaDefinitionFromSettings = settings => {
-    const source = settings && typeof settings === 'object' ? settings : {};
+const betaDefinitionFromSettings = (settings: unknown) => {
+    const source = fields(settings);
     const definition = {
         tr: typeof source.betaTr === 'boolean' ? source.betaTr : DEFAULTS.betaTr,
         trMinWords: clampWords(source.betaTrMinWords),
@@ -206,21 +209,21 @@ const betaDefinitionFromSettings = settings => {
     return definition;
 };
 
-const cleanColor = (value, fallback) =>
+const cleanColor = (value: unknown, fallback: string) =>
     typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : fallback;
 
-const clampInteger = (value, min, max, fallback) => {
-    const parsed = parseInt(value, 10);
+const clampInteger = <Fallback,>(value: unknown, min: number, max: number, fallback: Fallback) => {
+    const parsed = parseInt(value as string, 10);
     return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
 };
 
-const routeColor = value => cleanColor(value, ROUTE_STYLE.color);
-const routeCasingColor = value => cleanColor(value, ROUTE_STYLE.casingColor);
-const routeWidth = value =>
+const routeColor = (value: unknown) => cleanColor(value, ROUTE_STYLE.color);
+const routeCasingColor = (value: unknown) => cleanColor(value, ROUTE_STYLE.casingColor);
+const routeWidth = (value: unknown) =>
     clampInteger(value, BOUNDS.routeWidth.min, BOUNDS.routeWidth.max, ROUTE_STYLE.width);
 // The casing only reads as a casing when it is wider than the line it sits
 // behind, so the route width raises this floor regardless of the setting.
-const routeCasingWidth = (value, width) => Math.max(
+const routeCasingWidth = (value: unknown, width: number) => Math.max(
     clampInteger(value, BOUNDS.routeCasingWidth.min, BOUNDS.routeCasingWidth.max, ROUTE_STYLE.casingWidth),
     width + 2
 );
@@ -229,59 +232,62 @@ const routeCasingWidth = (value, width) => Math.max(
 // original 450 px map. Values below the usable pixel minimum also cover the
 // short-lived pre-release percentage schema; reset those to the original
 // width instead of misreading 100% as 320 px. Oversized values still clamp.
-const viewportWidth = value => {
-    const parsed = parseInt(value, 10);
+const viewportWidth = (value: unknown) => {
+    const parsed = parseInt(value as string, 10);
     return Number.isFinite(parsed) && parsed >= BOUNDS.viewportWidth.min
         ? Math.min(BOUNDS.viewportWidth.max, parsed)
         : VIEWPORT.width;
 };
-const viewportHeight = value =>
+const viewportHeight = (value: unknown) =>
     clampInteger(value, BOUNDS.viewportHeight.min, BOUNDS.viewportHeight.max, VIEWPORT.height);
 
-const terrainCacheLimitMb = value => clampInteger(
+const terrainCacheLimitMb = (value: unknown) => clampInteger(
     value, BOUNDS.terrainCacheLimitMb.min, BOUNDS.terrainCacheLimitMb.max, DEFAULTS.terrainCacheLimitMb
 );
-const reportImageWidth = value => value === null ? null : clampInteger(
+const reportImageWidth = (value: unknown) => value === null ? null : clampInteger(
     value, BOUNDS.reportImageWidth.min, BOUNDS.reportImageWidth.max, DEFAULTS.reportImageWidth
 );
 
 // Resolve an untrusted { color, width, casingColor, casingWidth } into a
 // drawable route style. Callers whose field names differ (the BigMap
 // bridge's wire shape, the stored mapRoute* settings) adapt at the call.
-const routeStyle = source => {
-    const width = routeWidth(source && source.width);
+const routeStyle = (source: unknown) => {
+    const input = fields(source);
+    const width = routeWidth(input.width);
     return {
-        color: routeColor(source && source.color),
+        color: routeColor(input.color),
         width,
-        casingColor: routeCasingColor(source && source.casingColor),
-        casingWidth: routeCasingWidth(source && source.casingWidth, width)
+        casingColor: routeCasingColor(input.casingColor),
+        casingWidth: routeCasingWidth(input.casingWidth, width)
     };
 };
 
-const routeStyleFromSettings = settings => routeStyle({
-    color: settings && settings.mapRouteColor,
-    width: settings && settings.mapRouteWidth,
-    casingColor: settings && settings.mapRouteCasingColor,
-    casingWidth: settings && settings.mapRouteCasingWidth
+const routeStyleFromSettings = (settings: unknown) => routeStyle({
+    color: fields(settings).mapRouteColor,
+    width: fields(settings).mapRouteWidth,
+    casingColor: fields(settings).mapRouteCasingColor,
+    casingWidth: fields(settings).mapRouteCasingWidth
 });
 
-const viewportSizeFromSettings = settings => ({
-    width: viewportWidth(settings && settings.mapViewportWidth),
-    height: viewportHeight(settings && settings.mapViewportHeight)
+const viewportSizeFromSettings = (settings: unknown) => ({
+    width: viewportWidth(fields(settings).mapViewportWidth),
+    height: viewportHeight(fields(settings).mapViewportHeight)
 });
 
-const clean = raw => {
-    const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
-    if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
+const clean = (raw: unknown): typeof DEFAULTS => {
+    const input = fields(raw);
+    const defaults: Record<string, unknown> = DEFAULTS;
+    const s: Record<string, unknown> = { ...DEFAULTS, ...input };
+    if (!['auto', 'imperial', 'metric'].includes(s.units as string)) s.units = DEFAULTS.units;
     for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
-    if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
+    if (!['system', 'light', 'dark'].includes(s.theme as string)) s.theme = DEFAULTS.theme;
     for (const key of ['showSunMoon', 'showWeather', 'showSummitCloud', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakCloudCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'loadInstagramAutomatically', 'enableGarminInbox', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
-        if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
+        if (typeof s[key] !== 'boolean') s[key] = defaults[key];
     }
     // SNOTEL previously shared the weather gate. Preserve legacy opt-outs
     // until the user explicitly chooses the new independent preference.
-    if (typeof raw?.showSnotel !== 'boolean') s.showSnotel = s.showWeather;
-    if (typeof raw?.showSummitCloud !== 'boolean') s.showSummitCloud = s.showWeather;
+    if (typeof input.showSnotel !== 'boolean') s.showSnotel = s.showWeather;
+    if (typeof input.showSummitCloud !== 'boolean') s.showSummitCloud = s.showWeather;
     // One ascent-backup choice controls automatic saves. Keep the legacy field
     // consistent for older readers and imported settings.
     s.autoGithubBackup = s.enableGithubBackup;
@@ -292,14 +298,14 @@ const clean = raw => {
     s.peakLinkOrder = orderedIds(s.peakLinkOrder, PEAK_LINK_ORDER);
     s.peakCardOrder = orderedIds(s.peakCardOrder, PEAK_CARD_ORDER);
     s.peakCardColumns = Object.fromEntries(PEAK_CARD_ORDER.map(id => [id,
-        ['details', 'details-bottom'].includes(raw?.peakCardColumns?.[id]) ? raw.peakCardColumns[id] : 'map']));
+        ['details', 'details-bottom'].includes(fields(input.peakCardColumns)[id] as string) ? fields(input.peakCardColumns)[id] : 'map']));
     s.mapProvidersEnabled = Array.isArray(s.mapProvidersEnabled)
         ? [...new Set(s.mapProvidersEnabled.filter(id => MAP_PROVIDERS.includes(id)))] : [...MAP_PROVIDERS];
     s.betaPeakFilterOrder = s.betaPeakFilterOrder == null ? null : orderedIds(s.betaPeakFilterOrder, PEAK_FILTER_ORDER);
     s.betaPersonalFilterOrder = s.betaPersonalFilterOrder == null ? null : orderedIds(s.betaPersonalFilterOrder, PERSONAL_FILTER_ORDER);
     s.chartDefaultSeries = chartDefaultSeries(s.chartDefaultSeries);
-    s.garminCheckHours = Number.isInteger(s.garminCheckHours) && s.garminCheckHours >= BOUNDS.garminCheckHours.min && s.garminCheckHours <= BOUNDS.garminCheckHours.max ? s.garminCheckHours : DEFAULTS.garminCheckHours;
-    s.garminRecentDays = Number.isInteger(s.garminRecentDays) && s.garminRecentDays >= BOUNDS.garminRecentDays.min && s.garminRecentDays <= BOUNDS.garminRecentDays.max ? s.garminRecentDays : DEFAULTS.garminRecentDays;
+    s.garminCheckHours = Number.isInteger(s.garminCheckHours) && (s.garminCheckHours as number) >= BOUNDS.garminCheckHours.min && (s.garminCheckHours as number) <= BOUNDS.garminCheckHours.max ? s.garminCheckHours : DEFAULTS.garminCheckHours;
+    s.garminRecentDays = Number.isInteger(s.garminRecentDays) && (s.garminRecentDays as number) >= BOUNDS.garminRecentDays.min && (s.garminRecentDays as number) <= BOUNDS.garminRecentDays.max ? s.garminRecentDays : DEFAULTS.garminRecentDays;
     s.garminActivityTypes = s.garminActivityTypes === 'all' ? 'all' : 'walking';
     s.garminHistoryStart = s.garminHistoryStart === 'all' || validCalendarDate(s.garminHistoryStart)
         ? s.garminHistoryStart : '';
@@ -309,12 +315,12 @@ const clean = raw => {
     s.mapRouteColor = routeColor(s.mapRouteColor);
     s.mapRouteWidth = routeWidth(s.mapRouteWidth);
     s.mapRouteCasingColor = routeCasingColor(s.mapRouteCasingColor);
-    s.mapRouteCasingWidth = routeCasingWidth(s.mapRouteCasingWidth, s.mapRouteWidth);
+    s.mapRouteCasingWidth = routeCasingWidth(s.mapRouteCasingWidth, s.mapRouteWidth as number);
     s.mapViewportWidth = viewportWidth(s.mapViewportWidth);
     s.mapViewportHeight = viewportHeight(s.mapViewportHeight);
     s.terrainCacheLimitMb = terrainCacheLimitMb(s.terrainCacheLimitMb);
     if (typeof s.rememberMapLayer !== 'boolean') s.rememberMapLayer = DEFAULTS.rememberMapLayer;
-    if (!MAP_LAYERS.has(s.mapLastLayer)) s.mapLastLayer = DEFAULTS.mapLastLayer;
+    if (!MAP_LAYERS.has(s.mapLastLayer as string)) s.mapLastLayer = DEFAULTS.mapLastLayer;
     const beta = betaDefinitionFromSettings(s);
     s.betaTr = beta.tr;
     s.betaTrMinWords = beta.trMinWords;
@@ -326,17 +332,17 @@ const clean = raw => {
     for (const [key, allowed] of Object.entries({
         bpbPeakWeatherHourlyMetric: ['code', 'temperature', 'precipitation', 'snowfall', 'wind', 'gust', 'cloud', 'freezing'],
         bpbAscentWeatherColumn: ['report', 'summary'], bpbAscentWeatherSlot: ['before', 'gps', 'after'],
-    })) s[key] = allowed.includes(s[key]) ? s[key] : null;
+    })) s[key] = allowed.includes(s[key] as string) ? s[key] : null;
     s.bpbMapOverlayOpacityV1 = s.bpbMapOverlayOpacityV1 == null ? null : mapOverlayPreferences(s.bpbMapOverlayOpacityV1);
     if (s.bpbPhotoSharedStyle != null) {
-        const { color, opacity } = ToolPreferences.clean('route', { style: s.bpbPhotoSharedStyle }).style;
+        const { color, opacity } = ToolPreferences.clean('route', { style: s.bpbPhotoSharedStyle })!.style;
         s.bpbPhotoSharedStyle = { color, opacity };
     }
     for (const type of ToolPreferences.TYPES) {
         const key = `bpbPhotoTool:${type}`;
         s[key] = s[key] == null ? null : ToolPreferences.clean(type, s[key]);
     }
-    return s;
+    return s as typeof DEFAULTS;
 };
 
 const API = {

@@ -78,7 +78,7 @@ This limitation is distinct from the guarded GitHub file replacement below.
 
 Every key below is browser-sync eligible, settings-file exportable, and
 GitHub-settings-backup eligible. The inventory is the 67-key `PORTABLE_KEYS`
-allowlist in the [single settings schema](../src/settings/settings-schema.js).
+allowlist in the [single settings schema](../src/settings/settings-schema.ts).
 
 | Group | Exact keys |
 | --- | --- |

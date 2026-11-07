@@ -84,7 +84,7 @@ Four units, ordered as independently committable pieces.
 ## Unit 1 — shared pure module `src/reports/report-drafts.js`
 
 The options page must parse keys the editor builds; a shared pure module keeps
-the two from drifting (same arrangement as `settings-schema.js` /
+the two from drifting (same arrangement as `settings-schema.ts` /
 `gpx-metrics.js`). No DOM, no extension APIs.
 
 Export `reportDrafts` with:

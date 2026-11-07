@@ -3,7 +3,7 @@
 //
 // Better Peakbagger — pure settings backup payload helpers.
 
-import { settingsSchema as Schema } from './settings-schema.js';
+import { settingsSchema as Schema } from './settings-schema.ts';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { cleanGarminKey } from '../garmin/garmin-api.js';

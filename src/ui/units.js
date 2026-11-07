@@ -15,7 +15,7 @@
 // bundle it. Page detection stays with the surface that owns the page — each
 // passes its own probe to resolveUnits() against this one contract.
 
-import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 
 const FEET_PER_METER = 3.28084;
 const METERS_PER_MILE = 1609.344;

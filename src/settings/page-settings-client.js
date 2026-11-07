@@ -6,7 +6,7 @@
 // acknowledgement lifetime so a lost bridge reply cannot pin stale UI state.
 
 import { storageValue } from '../storage/storage-value.js';
-import { settingsSchema as Schema } from './settings-schema.js';
+import { settingsSchema as Schema } from './settings-schema.ts';
 
 const DEFAULT_READY_TIMEOUT_MS = 800;
 const DEFAULT_WRITE_ACK_TIMEOUT_MS = 5000;
