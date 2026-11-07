@@ -7,11 +7,11 @@
 // exercised the way a user performs them rather than asserted from source.
 
 import test from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mjs';
 import { photoArchive as Archive } from '../../src/photos/photo-archive.js';
@@ -20,10 +20,49 @@ import { photoProject as Project } from '../../src/photos/photo-project.js';
 import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.js';
 import { photoStore as Store } from '../../src/photos/photo-store.js';
 
-// jsdom ships no type declarations, and the page globals it hands back are
-// driven as the browser would drive them.
-const { JSDOM } = createRequire(import.meta.url)('jsdom');
-type Page = Awaited<ReturnType<typeof JSON.parse>>;
+import { JSDOM } from '../helpers/test-dom.mts';
+import type { TestWindow } from '../helpers/test-dom.mts';
+import type { ChromeStub, PageDocument, PageElement, StubMessage } from '../helpers/page-types.mts';
+
+// What these tests read back from the page's IndexedDB stores. The catalog and
+// project shapes come from their cleaners; journal rows are read by state.
+type CatalogRow = NonNullable<ReturnType<typeof Library.cleanPhoto>> & { deletedAt: string | null; [field: string]: unknown };
+type ProjectRow = { localId: string; export: { mime: string; quality: number }; objects: ProjectObject[]; [field: string]: unknown };
+type ProjectObject = { id: string; type: string; style: Record<string, unknown> & { opacity?: number; color?: string };
+    geometry: { points: [number, number][]; x: number; y: number; width?: number | null; rotation?: number; [field: string]: unknown };
+    text?: string; [field: string]: unknown };
+type JournalRow = { state: string; operationId: string; localId: string; [field: string]: unknown };
+interface StoreRows {
+    photos: CatalogRow; projects: ProjectRow; operations: JournalRow;
+    originals: { localId: string; blob: Blob }; thumbnails: { localId: string; blob: Blob };
+    secrets: { localId: string; deleteUrl: string }; tombstones: { localId: string; deletedAt: string };
+}
+type EditorWindow = TestWindow & { chrome: ChromeStub; [probe: string]: unknown };
+// fake-indexeddb's own bookkeeping, which the transaction hooks below reach into.
+interface FakeDatabase {
+    _closed: boolean;
+    transaction: (storeNames: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => IDBTransaction;
+}
+interface FakeFactory { _databases: Map<string, { connections: FakeDatabase[] }> }
+const fakeDatabase = (indexedDB: IDBFactory) => (indexedDB as unknown as FakeFactory)._databases
+    .get('betterPeakbaggerPhotos')?.connections.find(connection => !connection._closed);
+type CreateDraft = (input: Record<string, unknown>) => CatalogRow;
+type EditorPage = Awaited<ReturnType<typeof loadEditor>>;
+interface EditorOptions {
+    returnToReport?: boolean; imageUrl?: string | null; localPhotoId?: string | null; imageCaption?: string | null;
+    nativeBlobs?: boolean; imgbbStatus?: { ok: boolean; configured: boolean; permissionGranted: boolean };
+    runtimeHandler?: (message: StubMessage) => Promise<unknown> | unknown;
+    fetchImpl?: ((url: string, init?: RequestInit) => Promise<unknown>) | null;
+    indexedDB?: IDBFactory; pickPhoto?: boolean; pickedFileSize?: number | null;
+    imageLoader?: ((image: { onload?: (() => void) | null; currentSrc?: string }) => void) | null;
+    fileName?: string; fileType?: string;
+    onStoreReady?: ((context: { indexedDB: IDBFactory; win: EditorWindow }) => unknown) | null;
+    startMode?: string | null; fixedNow?: string | null; confirmImpl?: ((message?: string) => boolean) | null;
+    clipboard?: object; clipboardItem?: boolean;
+    storageEstimate?: (() => Promise<{ usage?: number; quota?: number }>) | null;
+    subtle?: Pick<SubtleCrypto, 'digest'>; imageSize?: { width: number; height: number };
+    localPreferences?: Record<string, unknown>; syncedPreferences?: Record<string, unknown>;
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');
@@ -38,7 +77,7 @@ const VIEW = { width: 800, height: 600 };
 // it produces rather than on a sleep. `settle` exists solely to let the
 // already-resolved autosave/render microtasks drain before an assertion reads
 // the DOM, and never carries the weight of an await that has real work behind it.
-const settle = (win: Page) => new Promise(resolve => win.setTimeout(resolve, 0));
+const settle = (win: TestWindow) => new Promise(resolve => win.setTimeout(resolve, 0));
 
 const loadEditor = async ({
     returnToReport = false,
@@ -63,7 +102,7 @@ const loadEditor = async ({
     subtle = globalThis.crypto.subtle,
     imageSize = IMAGE,
     localPreferences = {}, syncedPreferences = {},
-}: Page = {}): Promise<Page> => {
+}: EditorOptions = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
     if (imageUrl) params.set('imageUrl', imageUrl);
@@ -75,30 +114,30 @@ const loadEditor = async ({
         runScripts: 'outside-only',
         pretendToBeVisual: true,
     });
-    const win = dom.window;
-    if (nativeBlobs) win.Blob = Blob;
-    const doc = win.document;
+    const win = dom.window as EditorWindow;
+    if (nativeBlobs) win.Blob = Blob as typeof win.Blob;
+    const doc = win.document as unknown as PageDocument;
     if (fixedNow) {
         const NativeDate = win.Date;
         const fixedTime = NativeDate.parse(fixedNow);
         class FixedDate extends NativeDate {
-            constructor(...args: Page[]) {
-                super(...(args.length ? args : [fixedTime]));
+            constructor(...args: ConstructorParameters<DateConstructor>) {
+                super(...((args.length ? args : [fixedTime]) as [number]));
             }
 
             static now() {
                 return fixedTime;
             }
         }
-        win.Date = FixedDate;
+        win.Date = FixedDate as DateConstructor;
     }
     if (confirmImpl) win.confirm = confirmImpl;
     if (clipboardItem) {
         win.ClipboardItem = class ClipboardItem {
-            items: Page;
+            items: Record<string, Promise<Blob> | Blob>;
             types: string[];
-            constructor(items: Page) { this.items = items; this.types = Object.keys(items); }
-        };
+            constructor(items: Record<string, Promise<Blob> | Blob>) { this.items = items; this.types = Object.keys(items); }
+        } as unknown as typeof win.ClipboardItem;
     }
     if (clipboard !== undefined) {
         Object.defineProperty(win.navigator, 'clipboard', {
@@ -106,8 +145,8 @@ const loadEditor = async ({
             configurable: true,
         });
     }
-    win.indexedDB = indexedDB;
-    win.IDBKeyRange = IDBKeyRange;
+    Object.defineProperty(win, 'indexedDB', { value: indexedDB, configurable: true });
+    win.IDBKeyRange = IDBKeyRange as typeof win.IDBKeyRange;
     win.structuredClone = globalThis.structuredClone;
     if (storageEstimate !== undefined) {
         Object.defineProperty(win.navigator, 'storage', {
@@ -116,13 +155,13 @@ const loadEditor = async ({
         });
     }
     let ids = 0;
-    win.crypto.randomUUID = () => `mark-${++ids}`;
+    win.crypto.randomUUID = (() => `mark-${++ids}`) as typeof win.crypto.randomUUID;
     // jsdom exposes no SubtleCrypto; the page hashes the picked file with it.
     Object.defineProperty(win.crypto, 'subtle', { value: subtle, configurable: true });
     // Decoding and thumbnailing are the browser's, not the editor's, so the
     // harness answers for them with the fixture's dimensions.
-    const decodedBitmaps: Page[] = [];
-    win.createImageBitmap = async () => {
+    const decodedBitmaps: { width: number; height: number; closed: boolean; close(): void }[] = [];
+    win.createImageBitmap = (async () => {
         const bitmap = {
             ...imageSize,
             closed: false,
@@ -130,13 +169,14 @@ const loadEditor = async ({
         };
         decodedBitmaps.push(bitmap);
         return bitmap;
-    };
-    win.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
-    const encodeCalls: Page[] = [];
+    }) as unknown as typeof win.createImageBitmap;
+    win.HTMLCanvasElement.prototype.getContext = (() => ({ drawImage() {} })) as never;
+    const encodeCalls: { mime: string; quality: number | undefined; bytes: number }[] = [];
     win.HTMLCanvasElement.prototype.toBlob = function toBlob(
-        callback: Page,
+        this: HTMLCanvasElement,
+        callback: BlobCallback,
         mime = 'image/png',
-        quality: Page,
+        quality?: number,
     ) {
         const fullResolution = this.width === imageSize.width && this.height === imageSize.height;
         const bytes = mime === 'image/png'
@@ -150,9 +190,9 @@ const loadEditor = async ({
         callback(blob);
     };
     class OverlayImage {
-        currentSrc: Page;
-        onload: Page;
-        set src(value: Page) {
+        currentSrc = '';
+        onload: (() => void) | null = null;
+        set src(value: string) {
             this.currentSrc = value;
             if (imageLoader) imageLoader(this);
             else win.setTimeout(() => this.onload?.(), 0);
@@ -161,16 +201,16 @@ const loadEditor = async ({
     Object.defineProperty(win, 'Image', { value: OverlayImage, configurable: true });
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
-    if (fetchImpl) win.fetch = fetchImpl;
+    if (fetchImpl) win.fetch = fetchImpl as unknown as typeof win.fetch;
     // jsdom has HTMLDialogElement but neither showModal() nor close().
-    win.HTMLDialogElement.prototype.showModal = function showModal(this: Page) { this.open = true; };
-    win.HTMLDialogElement.prototype.close = function close(this: Page) {
+    win.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) { this.open = true; };
+    win.HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
         if (!this.open) return;
         this.open = false;
         this.dispatchEvent(new win.Event('close'));
     };
-    const chrome: Page = makeChromeStub({ bpbSettings: { reportImageWidth: 640, ...syncedPreferences } }, localPreferences);
-    chrome.runtime.sendMessage = async (message: Page) => {
+    const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640, ...syncedPreferences } }, localPreferences) as unknown as ChromeStub;
+    chrome.runtime.sendMessage = async (message: StubMessage) => {
         if (message?.type === 'PHOTO_IMGBB_STATUS') return imgbbStatus;
         if (message?.type === 'PHOTO_IMGBB_LEASE_KEY') return { ok: true, key: 'test-imgbb-key' };
         return runtimeHandler(message);
@@ -180,10 +220,10 @@ const loadEditor = async ({
         request: async () => imgbbStatus.permissionGranted,
     };
     chrome.tabs = { create: () => {} };
-    win.chrome = chrome;
-    const errors: Page[] = [];
-    win.addEventListener('error', (event: Page) => errors.push(String(event.error?.stack || event.message)));
-    win.addEventListener('unhandledrejection', (event: Page) => {
+    (win as { chrome: ChromeStub }).chrome = chrome;
+    const errors: string[] = [];
+    win.addEventListener('error', (event: ErrorEvent) => errors.push(String(event.error?.stack || event.message)));
+    win.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
         errors.push(String(event.reason?.stack || event.reason));
     });
     await evalBundle(win, 'photos/photos.js');
@@ -193,31 +233,16 @@ const loadEditor = async ({
         || doc.getElementById('library-list').children.length > 0);
     if (onStoreReady) await onStoreReady({ indexedDB, win });
 
-    if (!pickPhoto) return { dom, win, chrome, doc, errors, decodedBitmaps };
-
-    // Pick a photo the way the page's file input does.
-    const input = doc.getElementById('photo-file');
-    const pickedFile = new win.File(['pixels'], fileName, { type: fileType });
-    if (pickedFileSize != null) {
-        Object.defineProperty(pickedFile, 'size', { value: pickedFileSize });
-    }
-    Object.defineProperty(input, 'files', {
-        value: [pickedFile],
-        configurable: true,
-    });
-    input.dispatchEvent(new win.Event('change'));
-    await waitFor(dom, () => doc.getElementById('editor-workspace').hidden === false);
-
     const overlay = doc.getElementById('photo-overlay');
     overlay.getBoundingClientRect = () => ({
-        x: 0, y: 0, left: 0, top: 0, right: VIEW.width, bottom: VIEW.height, ...VIEW,
+        x: 0, y: 0, left: 0, top: 0, right: VIEW.width, bottom: VIEW.height, ...VIEW, toJSON() { return this; },
     });
-    const click = (node: Page) => node.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
-    const pointer = (type: Page, x: Page, y: Page, node = overlay) => node.dispatchEvent(
+    const click = (node: EventTarget) => node.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    const pointer = (type: string, x: number, y: number, node: EventTarget = overlay) => node.dispatchEvent(
         new win.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y }));
     // The secondary button, both halves of it: the press the editor must ignore
     // and the context menu the browser raises from it.
-    const rightClick = (x: Page, y: Page) => {
+    const rightClick = (x: number, y: number) => {
         overlay.dispatchEvent(new win.MouseEvent('pointerdown', {
             bubbles: true, button: 2, clientX: x, clientY: y,
         }));
@@ -227,9 +252,9 @@ const loadEditor = async ({
         overlay.dispatchEvent(menu);
         return menu.defaultPrevented;
     };
-    const key = (type: Page, init: Page) => doc.dispatchEvent(new win.KeyboardEvent(type, { bubbles: true, ...init }));
-    const emit = (node: Page, type: Page) => node.dispatchEvent(new win.Event(type, { bubbles: true }));
-    return {
+    const key = (type: string, init: KeyboardEventInit) => doc.dispatchEvent(new win.KeyboardEvent(type, { bubbles: true, ...init }));
+    const emit = (node: EventTarget, type: string) => node.dispatchEvent(new win.Event(type, { bubbles: true }));
+    const harness = {
         dom,
         win,
         chrome,
@@ -248,7 +273,7 @@ const loadEditor = async ({
         drawing: () => doc.getElementById('finish-route').hidden === false,
         // One handle per point, drawn only for the selected route under Select.
         vertexCount: () => overlay.querySelectorAll('.vertex-handle').length,
-        tool: (name: Page) => click(doc.querySelector(`[data-tool="${name}"]`)),
+        tool: (name: string) => click(doc.querySelector(`[data-tool="${name}"]`)),
         armedTool: () => [...doc.querySelectorAll('[data-tool]')]
             .find(button => button.getAttribute('aria-pressed') === 'true')?.dataset.tool,
         undoDepth: async () => {
@@ -261,9 +286,25 @@ const loadEditor = async ({
             await settle(win);
             return steps;
         },
-        markCount: () => Number(doc.getElementById('export-summary').textContent.match(/^(\d+)/)[1]),
-        routePath: () => overlay.querySelector('path[d]')?.getAttribute('d'),
+        markCount: () => Number(doc.getElementById('export-summary').textContent!.match(/^(\d+)/)![1]),
+        routePath: () => overlay.querySelector('path[d]')?.getAttribute('d') ?? '',
     };
+    if (!pickPhoto) return harness;
+
+    // Pick a photo the way the page's file input does.
+    const input = doc.getElementById('photo-file');
+    const pickedFile = new win.File(['pixels'], fileName, { type: fileType });
+    if (pickedFileSize != null) {
+        Object.defineProperty(pickedFile, 'size', { value: pickedFileSize });
+    }
+    Object.defineProperty(input, 'files', {
+        value: [pickedFile],
+        configurable: true,
+    });
+    input.dispatchEvent(new win.Event('change'));
+    await waitFor(dom, () => doc.getElementById('editor-workspace').hidden === false);
+
+    return harness;
 };
 
 test('the photo library distinguishes saved records, newer edits, and unconfirmed backup status', async () => {
@@ -288,7 +329,7 @@ test('the photo library distinguishes saved records, newer edits, and unconfirme
     ];
     for (const auto of [false, true]) {
         let state = cases[2].state;
-        const page = await loadEditor({ pickPhoto: false, runtimeHandler: async (message: Page) => {
+        const page = await loadEditor({ pickPhoto: false, runtimeHandler: async (message: StubMessage) => {
             if (message.type === 'GITHUB_PHOTOS_STATUS') return {
                 ok: true, connected: true, auto,
                 repo: { owner: 'me', name: 'backup', fullName: 'me/backup' }, state,
@@ -316,11 +357,11 @@ test('the photo library distinguishes saved records, newer edits, and unconfirme
 
 test('a confirmed backup with pending local reconciliation is never announced as failed', async () => {
     let pending = false;
-    let releaseStatus: Page;
+    let releaseStatus!: (value?: unknown) => void;
     const statusBarrier = new Promise(resolve => { releaseStatus = resolve; });
     const page = await loadEditor({
         pickPhoto: false,
-        runtimeHandler: async (message: Page) => {
+        runtimeHandler: async (message: StubMessage) => {
             if (message.type === 'GITHUB_PHOTOS_STATUS') {
                 if (pending) await statusBarrier;
                 return {
@@ -375,7 +416,7 @@ test('backup completion does not claim success when authoritative status cannot 
     let statusCalls = 0;
     const page = await loadEditor({
         pickPhoto: false,
-        runtimeHandler: async (message: Page) => {
+        runtimeHandler: async (message: StubMessage) => {
             if (message.type === 'GITHUB_PHOTOS_STATUS') {
                 statusCalls += 1;
                 return statusCalls === 1 ? {
@@ -406,7 +447,7 @@ test('photo backup capacity failures preserve the worker action and byte details
         + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.';
     const page = await loadEditor({
         pickPhoto: false,
-        runtimeHandler: async (request: Page) => request.type === 'GITHUB_PHOTOS_STATUS'
+        runtimeHandler: async (request: StubMessage) => request.type === 'GITHUB_PHOTOS_STATUS'
             ? {
                 ok: true,
                 connected: true,
@@ -433,7 +474,7 @@ test('photo backup capacity failures preserve the worker action and byte details
     assert.deepEqual(page.errors, []);
 });
 
-const readPhotoStore = (win: Page, storeName: string): Promise<Page> => new Promise((resolve, reject) => {
+const readPhotoStore = <K extends keyof StoreRows>(win: TestWindow, storeName: K): Promise<StoreRows[K][]> => new Promise((resolve, reject) => {
     const opened = win.indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
     opened.onerror = () => reject(opened.error);
     opened.onsuccess = () => {
@@ -449,7 +490,7 @@ const readPhotoStore = (win: Page, storeName: string): Promise<Page> => new Prom
     };
 });
 
-const deletePhotoStoreRecord = (indexedDB: Page, storeName: Page, key: Page) => new Promise<void>((resolve, reject) => {
+const deletePhotoStoreRecord = (indexedDB: IDBFactory, storeName: keyof StoreRows, key: string) => new Promise<void>((resolve, reject) => {
     const opened = indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
     opened.onerror = () => reject(opened.error);
     opened.onsuccess = () => {
@@ -465,16 +506,16 @@ const deletePhotoStoreRecord = (indexedDB: Page, storeName: Page, key: Page) => 
     };
 });
 
-const seedUploadedLibraryPhoto = async (indexedDB: Page, {
+const seedUploadedLibraryPhoto = async (indexedDB: IDBFactory, {
     localId = 'copy-url-photo',
     url = 'https://i.ibb.co/a/topo.jpg',
     withoutThumbnail = false,
     sourceSha256 = null,
-}: Page = {}) => {
+}: { localId?: string; url?: string; withoutThumbnail?: boolean; sourceSha256?: string | null } = {}) => {
     sourceSha256 ??= Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(localId))), byte => byte.toString(16).padStart(2, '0')).join('');
     const store = await Store.createPhotoStore({ indexedDB });
     const input = {
-        photo: (Library.createDraft as Page)({
+        photo: (Library.createDraft as unknown as CreateDraft)({
             localId,
             title: 'Copy URL topo',
             source: {
@@ -497,7 +538,7 @@ const seedUploadedLibraryPhoto = async (indexedDB: Page, {
         original: new Blob(['source'], { type: 'image/jpeg' }),
         thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
     };
-    input.photo = await store.putDraft(input);
+    input.photo = await store.putDraft(input) as CatalogRow;
     const photo = await store.putPhoto(Library.completeUpload(input.photo, {
         mime: 'image/jpeg', bytes: 8, width: 1600, height: 1200, sha256: 'b'.repeat(64),
     }, {
@@ -515,7 +556,7 @@ const seedUploadedLibraryPhoto = async (indexedDB: Page, {
     return photo;
 };
 
-const seedDeletedLibraryPhotos = async (indexedDB: Page, count: Page, {
+const seedDeletedLibraryPhotos = async (indexedDB: IDBFactory, count: number, {
     deletedAt = '2026-06-01T12:00:00.000Z',
 } = {}) => {
     const store = await Store.createPhotoStore({ indexedDB });
@@ -523,7 +564,7 @@ const seedDeletedLibraryPhotos = async (indexedDB: Page, count: Page, {
         const localId = `expired-photo-${String(index).padStart(3, '0')}`;
         const sourceSha256 = String(index % 10).repeat(64);
         const input = {
-            photo: (Library.createDraft as Page)({
+            photo: (Library.createDraft as unknown as CreateDraft)({
                 localId,
                 title: `Expired topo ${index + 1}`,
                 source: {
@@ -542,7 +583,7 @@ const seedDeletedLibraryPhotos = async (indexedDB: Page, count: Page, {
             original: new Blob(['source'], { type: 'image/jpeg' }),
             thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
         };
-        input.photo = await store.putDraft(input);
+        input.photo = await store.putDraft(input) as CatalogRow;
         await store.putPhoto(Library.markDeleted(input.photo, deletedAt));
     }
     store.close();
@@ -558,8 +599,8 @@ test('one photo-page lifetime drains more than two expired maintenance batches',
     });
     t.after(() => page.dom.window.close());
 
-    const photos: Page = await waitForPhotoStore(page.win, 'photos', (records: Page) => records.length === 45
-        && records.every((photo: Page) => !photo.assets.originalRetained
+    const photos = await waitForPhotoStore(page.win, 'photos', (records) => records.length === 45
+        && records.every((photo: CatalogRow) => !photo.assets.originalRetained
             && !photo.assets.projectRetained && !photo.assets.thumbnailRetained));
     assert.equal(photos.length, 45);
     assert.equal((await readPhotoStore(page.win, 'originals')).length, 0);
@@ -571,14 +612,14 @@ test('one photo-page lifetime drains more than two expired maintenance batches',
 test('photo maintenance pauses while hidden and retries one failed batch after visibility returns', async t => {
     const indexedDB = new IDBFactory();
     await seedDeletedLibraryPhotos(indexedDB, 1);
-    let quotaFailure: Page;
+    let quotaFailure!: ReturnType<typeof failNextDraftTransactionWithQuota>;
     const warnings = [];
     const page = await loadEditor({
         indexedDB,
         pickPhoto: false,
         fixedNow: '2026-08-14T12:00:00.000Z',
-        onStoreReady: ({ win }: Page) => {
-            win.console.warn = (...args: Page[]) => warnings.push(args);
+        onStoreReady: ({ win }: { win: EditorWindow }) => {
+            win.console.warn = (...args: unknown[]) => warnings.push(args);
             quotaFailure = failNextDraftTransactionWithQuota(indexedDB);
             Object.defineProperty(win.document, 'visibilityState', {
                 value: 'hidden', configurable: true,
@@ -597,17 +638,18 @@ test('photo maintenance pauses while hidden and retries one failed batch after v
 
     Object.defineProperty(page.doc, 'visibilityState', { value: 'visible', configurable: true });
     page.doc.dispatchEvent(new page.win.Event('visibilitychange'));
-    await waitForPhotoStore(page.win, 'photos', (records: Page) => records.length === 1
+    await waitForPhotoStore(page.win, 'photos', (records) => records.length === 1
         && !records[0].assets.originalRetained);
     assert.equal(quotaFailure.triggered(), true);
     assert.equal(warnings.length, 1, 'the first transient failure remains diagnosable without retry spam');
     assert.deepEqual(page.errors, []);
 });
 
-const waitForPhotoStore = async (win: Page, storeName: Page, predicate: Page, ms = 5000) => {
+const waitForPhotoStore = async <K extends keyof StoreRows>(win: TestWindow, storeName: K,
+    predicate: (records: StoreRows[K][]) => unknown, ms = 5000) => {
     const start = Date.now();
     while (true) {
-        const records: Page = await readPhotoStore(win, storeName);
+        const records = await readPhotoStore(win, storeName);
         if (predicate(records)) return records;
         if (Date.now() - start > ms) {
             throw new Error(`photo store wait timed out; store=${storeName} count=${records.length}`);
@@ -620,18 +662,17 @@ const waitForPhotoStore = async (win: Page, storeName: Page, predicate: Page, ms
 // The records themselves commit normally; only the page's awaited completion
 // is delayed, which reproduces the browser race where a large blob write
 // finishes after the user has already made another editor mutation.
-const deferNextDraftCompletion = (indexedDB: Page, matchesStores: Page = () => true) => {
-    const raw = indexedDB._databases.get('betterPeakbaggerPhotos');
-    const database = raw?.connections.find((connection: Page) => !connection._closed);
+const deferNextDraftCompletion = (indexedDB: IDBFactory, matchesStores: (names: string[]) => boolean = () => true) => {
+    const database = fakeDatabase(indexedDB);
     assert.ok(database, 'the photo page must have an open IndexedDB connection');
     const transaction = database.transaction.bind(database);
     let armed = true;
-    let release;
-    let started: Page;
+    let release!: (value?: unknown) => void;
+    let started!: (value?: unknown) => void;
     const released = new Promise(resolve => { release = resolve; });
     const transactionStarted = new Promise(resolve => { started = resolve; });
 
-    database.transaction = (storeNames: Page, mode: Page, options: Page) => {
+    database.transaction = (storeNames: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
         const next = transaction(storeNames, mode, options);
         const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
         if (!armed || mode !== 'readwrite'
@@ -640,12 +681,12 @@ const deferNextDraftCompletion = (indexedDB: Page, matchesStores: Page = () => t
             return next;
         }
         armed = false;
-        let completion: Page = null;
+        let completion: ((event: Event) => void) | null = null;
         Object.defineProperty(next, 'oncomplete', {
             configurable: true,
             get: () => completion,
-            set: handler => {
-                completion = (event: Page) => { void released.then(() => handler.call(next, event)); };
+            set: (handler: (this: IDBTransaction, event: Event) => void) => {
+                completion = (event: Event) => { void released.then(() => handler.call(next, event)); };
             },
         });
         started();
@@ -659,13 +700,12 @@ const deferNextDraftCompletion = (indexedDB: Page, matchesStores: Page = () => t
     };
 };
 
-const failNextDraftTransactionWithQuota = (indexedDB: Page) => {
-    const raw = indexedDB._databases.get('betterPeakbaggerPhotos');
-    const database = raw?.connections.find((connection: Page) => !connection._closed);
+const failNextDraftTransactionWithQuota = (indexedDB: IDBFactory) => {
+    const database = fakeDatabase(indexedDB);
     assert.ok(database, 'the photo page must have an open IndexedDB connection');
     const transaction = database.transaction.bind(database);
     let armed = true;
-    database.transaction = (storeNames: Page, mode: Page, options: Page) => {
+    database.transaction = (storeNames: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
         const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
         if (armed && mode === 'readwrite'
             && ['photos', 'projects', 'originals', 'thumbnails'].every(name => names.includes(name))) {
@@ -680,22 +720,22 @@ const failNextDraftTransactionWithQuota = (indexedDB: Page) => {
     };
 };
 
-const holdPhotoAutosave = (page: Page, t: Page) => {
+const holdPhotoAutosave = (page: EditorPage, t: TestContext) => {
     const { win } = page;
     const nativeSet = win.setTimeout.bind(win);
     const nativeClear = win.clearTimeout.bind(win);
     const held = new Set();
     let next = 987600;
-    win.setTimeout = (callback: Page, delay: Page, ...args: Page[]) => {
+    win.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
         if (delay !== 500) return nativeSet(callback, delay, ...args);
         held.add(++next);
         return next;
-    };
-    win.clearTimeout = (timer: Page) => { if (!held.delete(timer)) nativeClear(timer); };
+    }) as typeof win.setTimeout;
+    win.clearTimeout = (timer?: Parameters<typeof win.clearTimeout>[0]) => { if (!held.delete(timer)) nativeClear(timer); };
     t.after(() => { win.setTimeout = nativeSet; win.clearTimeout = nativeClear; });
 };
 
-const pickReplacementPhoto = (page: Page, name = 'second.jpg') => {
+const pickReplacementPhoto = (page: EditorPage, name = 'second.jpg') => {
     const file = new page.win.File(['second pixels'], name, { type: 'image/jpeg' });
     const input = page.doc.getElementById('photo-file');
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
@@ -705,7 +745,7 @@ const pickReplacementPhoto = (page: Page, name = 'second.jpg') => {
 for (const destination of ['new file', 'new version']) {
     test(`switching to ${destination} saves outgoing edits before replacing the project`, async t => {
         const page = await loadEditor({
-            onStoreReady: ({ win }: Page) => {
+            onStoreReady: ({ win }: { win: EditorWindow }) => {
                 // Native blobs survive fake-indexeddb's structured clone.
                 win.Blob = Blob;
                 win.File = File;
@@ -726,15 +766,15 @@ for (const destination of ['new file', 'new version']) {
             page.click(page.doc.getElementById('show-library'));
             await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
             [...page.doc.querySelectorAll('.photo-card button')]
-                .find((button: Page) => button.dataset.action === 'edit').click();
+                .find((button: PageElement) => button.dataset.action === 'edit')!.click();
             await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false && title.value === 'important outgoing edit');
         }
-        const photos: Page = await readPhotoStore(page.win, 'photos');
+        const photos = await readPhotoStore(page.win, 'photos');
         if (destination === 'new version') assert.equal(photos.length, 1, 'resuming a draft keeps its id');
-        const outgoing = photos.find((photo: Page) => photo.title === 'important outgoing edit');
+        const outgoing = photos.find((photo: CatalogRow) => photo.title === 'important outgoing edit')!;
         assert.ok(outgoing, 'the outgoing title remains durable');
-        const projects: Page = await readPhotoStore(page.win, 'projects');
-        assert.equal(projects.find((project: Page) => project.localId === outgoing.localId).objects.length, 1);
+        const projects = await readPhotoStore(page.win, 'projects');
+        assert.equal(projects.find((project: ProjectRow) => project.localId === outgoing.localId)!.objects.length, 1);
         assert.deepEqual(page.errors, []);
     });
 
@@ -754,7 +794,7 @@ for (const destination of ['new file', 'new version']) {
             page.click(page.doc.getElementById('show-library'));
             await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
             [...page.doc.querySelectorAll('.photo-card button')]
-                .find((button: Page) => button.dataset.action === 'edit').click();
+                .find((button: PageElement) => button.dataset.action === 'edit')!.click();
         }
         await waitFor(page.dom, () => /Resolve the save problem/.test(
             page.doc.getElementById('toast-message').textContent));
@@ -768,7 +808,7 @@ for (const destination of ['new file', 'new version']) {
 
 test('photo replacement waits for an in-flight save and persists edits made after its snapshot', async t => {
     const indexedDB = new IDBFactory();
-    let deferred: Page;
+    let deferred!: ReturnType<typeof deferNextDraftCompletion>;
     const page = await loadEditor({
         indexedDB, onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
     });
@@ -783,14 +823,14 @@ test('photo replacement waits for an in-flight save and persists edits made afte
     deferred.restore(); deferred.release();
     await waitFor(page.dom, () => title.value === 'second');
     assert.ok((await readPhotoStore(page.win, 'photos'))
-        .some((photo: Page) => photo.title === 'edit after first snapshot'));
+        .some((photo: CatalogRow) => photo.title === 'edit after first snapshot'));
     assert.deepEqual(page.errors, []);
 });
 
 for (const destination of ['new file', 'new version']) {
     for (const points of [1, 2]) {
         test(`${destination} ends an outgoing ${points}-point route before project replacement`, async t => {
-            const page = await loadEditor({ onStoreReady: ({ win }: Page) => { win.Blob = Blob; win.File = File; } });
+            const page = await loadEditor({ onStoreReady: ({ win }: { win: EditorWindow }) => { win.Blob = Blob; win.File = File; } });
             t.after(() => page.dom.window.close());
             await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
             page.tool('route'); page.pointer('pointerdown', 100, 100);
@@ -803,24 +843,24 @@ for (const destination of ['new file', 'new version']) {
                 page.click(page.doc.getElementById('show-library'));
                 await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
                 [...page.doc.querySelectorAll('.photo-card button')]
-                    .find((button: Page) => button.dataset.action === 'edit').click();
+                    .find((button: PageElement) => button.dataset.action === 'edit')!.click();
                 await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false);
             }
             assert.equal(page.drawing(), false);
             page.pointer('pointerdown', 300, 300);
             page.key('keydown', { key: 'Escape' });
             await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
-            const photos: Page = await readPhotoStore(page.win, 'photos');
-            const projects: Page = await readPhotoStore(page.win, 'projects');
-            const outgoing = photos.find((photo: Page) => photo.title === 'north-face');
-            assert.equal(projects.find((project: Page) => project.localId === outgoing.localId).objects.length,
+            const photos = await readPhotoStore(page.win, 'photos');
+            const projects = await readPhotoStore(page.win, 'projects');
+            const outgoing = photos.find((photo: CatalogRow) => photo.title === 'north-face')!;
+            assert.equal(projects.find((project: ProjectRow) => project.localId === outgoing.localId)!.objects.length,
                 points === 2 ? 1 : 0, 'placed routes are saved; a single-point preview is discarded');
             if (destination === 'new file') {
                 assert.match(page.doc.getElementById('export-summary').textContent, /600 × 800/);
                 assert.equal(page.markCount(), 0);
             } else {
                 const child = outgoing;
-                assert.equal(projects.find((project: Page) => project.localId === child.localId).objects.length,
+                assert.equal(projects.find((project: ProjectRow) => project.localId === child.localId)!.objects.length,
                     points === 2 ? 1 : 0, 'Escape after replacement stays scoped to the new project');
             }
             assert.deepEqual(page.errors, []);
@@ -845,8 +885,8 @@ for (const gesture of ['freehand', 'object drag']) {
         page.pointer('pointerup', 200, 200);
         assert.equal(page.markCount(), 0);
         assert.equal(page.overlay.querySelector('.drawing-preview'), null);
-        const projects: Page = await readPhotoStore(page.win, 'projects');
-        const outgoing = projects.find((project: Page) => project.objects.length);
+        const projects = await readPhotoStore(page.win, 'projects');
+        const outgoing = projects.find((project: ProjectRow) => project.objects.length)!;
         if (gesture === 'object drag') assert.equal(outgoing.objects[0].geometry.x, 300);
         else assert.equal(outgoing, undefined, 'an uncommitted freehand preview is not transferred');
         assert.deepEqual(page.errors, []);
@@ -857,7 +897,7 @@ test('Edit has one owner across rapid same-card and cross-card actions', async t
     const indexedDB = new IDBFactory();
     await seedUploadedLibraryPhoto(indexedDB, { localId: 'first-version' });
     await seedUploadedLibraryPhoto(indexedDB, { localId: 'second-version', sourceSha256: 'c'.repeat(64) });
-    let deferred: Page;
+    let deferred!: ReturnType<typeof deferNextDraftCompletion>;
     const page = await loadEditor({
         indexedDB,
         pickPhoto: false,
@@ -871,7 +911,7 @@ test('Edit has one owner across rapid same-card and cross-card actions', async t
         page.dom.window.close();
     });
     const edits = [...page.doc.querySelectorAll('.photo-card button')]
-        .filter((button: Page) => button.dataset.action === 'edit');
+        .filter((button: PageElement) => button.dataset.action === 'edit');
     assert.equal(edits.length, 2);
 
     edits[0].click();
@@ -883,8 +923,8 @@ test('Edit has one owner across rapid same-card and cross-card actions', async t
     deferred.restore();
     deferred.release();
 
-    const photos: Page = await waitForPhotoStore(page.win, 'photos', (records: Page) => records.length === 3);
-    const children = photos.filter((photo: Page) => photo.lineage.parentLocalId);
+    const photos = await waitForPhotoStore(page.win, 'photos', (records) => records.length === 3);
+    const children = photos.filter((photo: CatalogRow) => photo.lineage.parentLocalId);
     assert.equal(children.length, 1, 'one action owner creates at most one child draft');
     await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false);
     assert.deepEqual(page.errors, []);
@@ -892,22 +932,22 @@ test('Edit has one owner across rapid same-card and cross-card actions', async t
 
 test('editing an older report URL resumes the latest source draft after historical pixels are reclaimed', async t => {
     const indexedDB = new IDBFactory();
-    const published: Page = await seedUploadedLibraryPhoto(indexedDB);
+    const published = (await seedUploadedLibraryPhoto(indexedDB))!;
     const store = await Store.createPhotoStore({ indexedDB });
     const bundle = await store.getBundle(published.localId);
-    const latest: Page = (Library.createDraft as Page)({ localId: 'current-version', title: 'Current title',
+    const latest = (Library.createDraft as unknown as CreateDraft)({ localId: 'current-version', title: 'Current title',
         source: published.source, parentLocalId: published.localId, now: '2026-08-03T00:00:00Z' });
     await store.putDraft({ ...bundle, photo: latest, project: { ...bundle.project, localId: latest.localId } });
     store.close();
     const page = await loadEditor({ indexedDB, pickPhoto: false, nativeBlobs: true,
-        returnToReport: true, imageUrl: published.remote.url,
+        returnToReport: true, imageUrl: (published.remote as { url: string }).url,
         fetchImpl: () => { throw new Error('must reuse local original'); } });
     t.after(() => page.dom.window.close());
     await waitFor(page.dom, () => !page.doc.getElementById('editor-workspace').hidden);
     assert.equal(page.doc.getElementById('photo-title').value, 'Current title');
-    const photos: Page = await readPhotoStore(page.win, 'photos');
+    const photos = await readPhotoStore(page.win, 'photos');
     assert.equal(photos.length, 2, 'opening the old public link creates no extra draft');
-    assert.equal(photos.find((photo: Page) => photo.localId === published.localId).assets.originalRetained, false);
+    assert.equal(photos.find((photo: CatalogRow) => photo.localId === published.localId)!.assets.originalRetained, false);
     assert.deepEqual(page.errors, []);
 });
 
@@ -919,13 +959,13 @@ test('Edit closes its fallback bitmap after successful ownership transfer', asyn
     });
     const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
     Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
-    const deferred: Page = deferNextDraftCompletion(indexedDB, (names: Page) => names.includes('operations'));
+    const deferred = deferNextDraftCompletion(indexedDB, (names: string[]) => names.includes('operations'));
     t.after(() => { deferred.restore(); deferred.release(); page.dom.window.close(); });
     const edit = [...page.doc.querySelectorAll('.photo-card button')]
-        .find((button: Page) => button.dataset.action === 'edit');
+        .find((button: PageElement) => button.dataset.action === 'edit')!;
 
     edit.click();
-    await waitForPhotoStore(page.win, 'photos', (records: Page) => records.length === 2).catch(error => {
+    await waitForPhotoStore(page.win, 'photos', (records) => records.length === 2).catch(error => {
         error.message += `; toast=${JSON.stringify(page.doc.getElementById('toast-message').textContent)}`
             + ` decoded=${page.decodedBitmaps.length} errors=${JSON.stringify(page.errors)}`;
         throw error;
@@ -954,9 +994,9 @@ test('Edit releases decoded pixels and its owner when thumbnailing or storage fa
         });
         const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
         Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
-        page.win.HTMLCanvasElement.prototype.toBlob = (callback: Page) => callback(null);
+        page.win.HTMLCanvasElement.prototype.toBlob = (callback: BlobCallback) => callback(null);
         const edit = [...page.doc.querySelectorAll('.photo-card button')]
-            .find((button: Page) => button.dataset.action === 'edit');
+            .find((button: PageElement) => button.dataset.action === 'edit')!;
 
         edit.click();
         await waitFor(page.dom, () => /could not be saved/i.test(
@@ -976,7 +1016,7 @@ test('Edit releases decoded pixels and its owner when thumbnailing or storage fa
             localId: 'storage-failure',
             withoutThumbnail: true,
         });
-        let quotaFailure: Page;
+        let quotaFailure!: ReturnType<typeof failNextDraftTransactionWithQuota>;
         const page = await loadEditor({
             indexedDB,
             pickPhoto: false,
@@ -985,7 +1025,7 @@ test('Edit releases decoded pixels and its owner when thumbnailing or storage fa
         });
         Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
         const edit = [...page.doc.querySelectorAll('.photo-card button')]
-            .find((button: Page) => button.dataset.action === 'edit');
+            .find((button: PageElement) => button.dataset.action === 'edit')!;
 
         edit.click();
         await waitFor(page.dom, () => /could not be saved/i.test(
@@ -1012,20 +1052,20 @@ test('a committed new version stays recoverable when its editor load fails', asy
     t.after(() => page.dom.window.close());
     const decode = page.win.createImageBitmap;
     let decodeAttempts = 0;
-    page.win.createImageBitmap = (...args: Page[]) => {
+    page.win.createImageBitmap = ((...args: Parameters<typeof createImageBitmap>) => {
         decodeAttempts += 1;
         if (decodeAttempts > 1) return Promise.reject(new Error('injected editor decode failure'));
-        return decode(...args);
-    };
+        return (decode as (...input: Parameters<typeof createImageBitmap>) => Promise<ImageBitmap>)(...args);
+    }) as typeof page.win.createImageBitmap;
     const edit = [...page.doc.querySelectorAll('.photo-card button')]
-        .find((button: Page) => button.dataset.action === 'edit');
+        .find((button: PageElement) => button.dataset.action === 'edit')!;
 
     edit.click();
     await waitFor(page.dom, () => /new version was saved.*reopen it from the library/i.test(
         page.doc.getElementById('toast-message').textContent));
-    const photos: Page = await readPhotoStore(page.win, 'photos');
+    const photos = await readPhotoStore(page.win, 'photos');
     assert.equal(photos.length, 2);
-    assert.equal(photos.filter((photo: Page) => photo.lineage.parentLocalId === 'editor-load-failure').length, 1);
+    assert.equal(photos.filter((photo: CatalogRow) => photo.lineage.parentLocalId === 'editor-load-failure').length, 1);
     assert.equal(page.decodedBitmaps.length, 1);
     assert.equal(page.decodedBitmaps[0].closed, true);
     assert.equal(page.doc.getElementById('library-view').hidden, false);
@@ -1038,7 +1078,7 @@ test('a photo-store version change retires the editor and asks for a reload', as
     const page = await loadEditor({ indexedDB });
     t.after(() => page.dom.window.close());
 
-    const upgraded: Page = await new Promise((resolve, reject) => {
+    const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(Store.DATABASE_NAME, Store.DATABASE_VERSION + 1);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -1075,7 +1115,7 @@ const imgbbSuccess = {
     status: 200,
 };
 
-const transferEvent = (win: Page, type: Page, property: Page, transfer: Page) => {
+const transferEvent = (win: TestWindow, type: string, property: string, transfer: object) => {
     const event = new win.Event(type, { bubbles: true, cancelable: true });
     Object.defineProperty(event, property, { value: transfer });
     return event;
@@ -1084,18 +1124,18 @@ const transferEvent = (win: Page, type: Page, property: Page, transfer: Page) =>
 const annotationTransfer = (text = '') => {
     const values = new Map([['text/plain', text]]);
     return {
-        getData: (type: Page) => values.get(type) || '',
-        setData: (type: Page, value: Page) => values.set(type, value),
+        getData: (type: string) => values.get(type) || '',
+        setData: (type: string, value: string) => values.set(type, value),
     };
 };
 
-const dispatchClipboard = (page: Page, type: Page, transfer: Page, node = page.doc) => {
+const dispatchClipboard = (page: EditorPage, type: string, transfer: object, node: EventTarget = page.doc as unknown as EventTarget) => {
     const event = transferEvent(page.win, type, 'clipboardData', transfer);
     node.dispatchEvent(event);
     return event;
 };
 
-const photoTransfer = (file: Page) => ({
+const photoTransfer = (file: File) => ({
     types: ['Files'],
     items: [{
         kind: 'file',
@@ -1106,11 +1146,11 @@ const photoTransfer = (file: Page) => ({
     dropEffect: 'none',
 });
 
-const selectPhotoFile = (page: Page, {
+const selectPhotoFile = (page: EditorPage, {
     size = null,
     name = 'north-face.jpg',
     type = 'image/jpeg',
-}: Page = {}) => {
+}: { size?: number | null; name?: string; type?: string } = {}) => {
     const input = page.doc.getElementById('photo-file');
     const file = new page.win.File(['pixels'], name, { type });
     if (size != null) Object.defineProperty(file, 'size', { value: size });
@@ -1176,7 +1216,7 @@ test('pasting imports an image only while the editor is empty and leaves text pa
 
 test('a late autosave completion cannot replace a newer editor revision', async t => {
     const indexedDB = new IDBFactory();
-    let deferred: Page;
+    let deferred!: ReturnType<typeof deferNextDraftCompletion>;
     const page = await loadEditor({
         indexedDB,
         onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
@@ -1199,9 +1239,9 @@ test('a late autosave completion cannot replace a newer editor revision', async 
     await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
         === 'Saved on this device').catch(error => {
         throw new Error(`${error.message}; status=${page.doc.getElementById('save-status').textContent}; `
-            + `pageErrors=${page.errors.map((value: Page) => value?.message || value).join(' | ')}`);
+            + `pageErrors=${page.errors.map((value: string) => value).join(' | ')}`);
     });
-    const projects: Page = await waitForPhotoStore(page.win, 'projects', (records: Page) =>
+    const projects = await waitForPhotoStore(page.win, 'projects', (records) =>
         records[0]?.objects.length === 1);
     assert.equal(projects[0].objects.length, 1);
     assert.equal(page.markCount(), 1);
@@ -1216,9 +1256,9 @@ test('a conflicting autosave keeps local edits and replaces the newer draft only
     const otherTab = await Store.createPhotoStore({ indexedDB });
     t.after(() => otherTab.close());
     const [initial] = await otherTab.listPhotos();
-    const referenced: Page = await otherTab.putPhoto(Library.addReference(initial, {
+    const referenced = (await otherTab.putPhoto(Library.addReference(initial, {
         kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: new Date().toISOString(),
-    }));
+    }))) as CatalogRow;
     await otherTab.putPhoto(Library.cleanPhoto({
         ...referenced, title: 'Other tab title', updatedAt: new Date().toISOString(),
     }));
@@ -1241,7 +1281,7 @@ test('a conflicting autosave keeps local edits and replaces the newer draft only
             + `toast=${page.doc.getElementById('toast-message').textContent}; `
             + `errors=${page.errors.join(' | ')}`);
     });
-    const saved: Page = await otherTab.getBundle(initial.localId);
+    const saved = (await otherTab.getBundle(initial.localId)) as unknown as { project: ProjectRow; photo: CatalogRow };
     assert.equal(saved.project.objects.length, 1);
     assert.equal(saved.photo.title, 'My unsaved title');
     assert.deepEqual(saved.photo.references, referenced.references,
@@ -1260,14 +1300,14 @@ test('pagehide flushes an edit before its autosave debounce expires', async t =>
     const clearTimeout = win.clearTimeout.bind(win);
     const heldTimer = 987654;
     let heldAutosave = false;
-    win.setTimeout = (callback: Page, delay: Page, ...args: Page[]) => {
+    win.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
         if (delay === 500 && !heldAutosave) {
             heldAutosave = true;
             return heldTimer;
         }
         return setTimeout(callback, delay, ...args);
-    };
-    win.clearTimeout = (timer: Page) => {
+    }) as typeof win.setTimeout;
+    win.clearTimeout = (timer?: Parameters<typeof win.clearTimeout>[0]) => {
         if (timer !== heldTimer) clearTimeout(timer);
     };
     t.after(() => {
@@ -1281,7 +1321,7 @@ test('pagehide flushes an edit before its autosave debounce expires', async t =>
     assert.equal(doc.getElementById('save-status').textContent, 'Unsaved changes');
     win.dispatchEvent(new win.PageTransitionEvent('pagehide'));
 
-    const projects: Page = await waitForPhotoStore(win, 'projects', (records: Page) =>
+    const projects = await waitForPhotoStore(win, 'projects', (records) =>
         records[0]?.objects.length === 1);
     assert.equal(projects[0].objects.length, 1,
         'pagehide, not the held debounce callback, persists the annotation');
@@ -1362,7 +1402,7 @@ test('PNG can stay lossless or switch to a quality-controlled JPEG with real siz
     await page.settle();
     assert.doesNotMatch(note.textContent, /GitHub/i, 'the GitHub size note belongs to report sessions');
     assert.equal(doc.getElementById('finish-note').hidden, true);
-    assert.equal(estimate.parentElement.classList.contains('is-warning'), false);
+    assert.equal(estimate.parentElement!.classList.contains('is-warning'), false);
     assert.match(doc.getElementById('output-summary').textContent, /^PNG · 6\.0 MB$/);
 
     format.value = 'jpeg';
@@ -1414,7 +1454,7 @@ test('with no key the editor shows no key form until Upload asks for one', async
     assert.equal(upload.textContent.trim(), 'Upload to ImgBB…');
     assert.ok(upload.classList.contains('quiet'));
     assert.ok(doc.getElementById('export-image').classList.contains('primary'));
-    const actions = [...doc.getElementById('finish-actions').querySelectorAll('button')].map((button: Page) => button.id);
+    const actions = [...doc.getElementById('finish-actions').querySelectorAll('button')].map((button: PageElement) => button.id);
     assert.deepEqual(actions, ['upload-insert', 'copy-image', 'export-image'], 'standalone ends on Export');
 
     page.click(upload);
@@ -1444,11 +1484,11 @@ test('a device-saved key uploads without a form and offers no tab-only escape ha
 });
 
 test('a key typed for this tab is held until ImgBB has seen it, then kept with a way to forget it', async () => {
-    const saved: Page[] = [];
+    const saved: string[] = [];
     const page = await loadEditor({
         imgbbStatus: { ok: true, configured: false, permissionGranted: true },
-        runtimeHandler: async (message: Page) => {
-            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(message.key);
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(String(message.key));
             return { ok: true };
         },
         fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
@@ -1475,7 +1515,7 @@ test('a key typed for this tab is held until ImgBB has seen it, then kept with a
     assert.deepEqual(page.errors, []);
 });
 
-const submitKey = (page: Page, key: string, { remember = true } = {}) => {
+const submitKey = (page: EditorPage, key: string, { remember = true } = {}) => {
     page.doc.getElementById('imgbb-key').value = key;
     page.doc.getElementById('remember-key').checked = remember;
     page.doc.getElementById('imgbb-dialog').querySelector('form')
@@ -1484,12 +1524,12 @@ const submitKey = (page: Page, key: string, { remember = true } = {}) => {
 
 test('a remembered key is saved once ImgBB has the image, and the page never drops back to no key meanwhile', async () => {
     const saved: string[] = [];
-    let finishSave!: (value: Page) => void;
+    let finishSave!: (value: unknown) => void;
     const page = await loadEditor({
         imgbbStatus: { ok: true, configured: false, permissionGranted: true },
-        runtimeHandler: async (message: Page) => {
+        runtimeHandler: async (message: StubMessage) => {
             if (message?.type !== 'PHOTO_IMGBB_SAVE_KEY') return { ok: true };
-            saved.push(message.key);
+            saved.push(String(message.key));
             return new Promise(resolve => { finishSave = resolve; });
         },
         fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
@@ -1512,8 +1552,8 @@ test('ImgBB rejecting the key itself drops the held key and reopens the dialog w
     const saved: string[] = [];
     const page = await loadEditor({
         imgbbStatus: { ok: true, configured: false, permissionGranted: true },
-        runtimeHandler: async (message: Page) => {
-            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(message.key);
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(String(message.key));
             return { ok: true };
         },
         fetchImpl: async () => ({
@@ -1542,12 +1582,12 @@ test('offline stops Upload before any journal entry, and a held key that never r
     let online = true;
     const page = await loadEditor({
         imgbbStatus: status,
-        runtimeHandler: async (message: Page) => {
-            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(message.key);
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(String(message.key));
             return { ok: true };
         },
-        fetchImpl: async (_url: Page, init: Page) => {
-            sentKeys.push(String(init?.body?.get?.('key') ?? _url));
+        fetchImpl: async (_url: string, init?: RequestInit) => {
+            sentKeys.push(String((init?.body as FormData | undefined)?.get?.('key') ?? _url));
             return { ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) };
         },
     });
@@ -1586,7 +1626,7 @@ test('Export ignores a second activation while it is still encoding', async () =
     const { doc } = page;
     await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
     const clicks: string[] = [];
-    page.win.HTMLAnchorElement.prototype.click = function click(this: Page) { clicks.push(this.download); };
+    page.win.HTMLAnchorElement.prototype.click = function click(this: HTMLAnchorElement) { clicks.push(this.download); };
     const exportButton = doc.getElementById('export-image');
     exportButton.focus();
     page.click(exportButton);
@@ -1600,10 +1640,10 @@ test('Export ignores a second activation while it is still encoding', async () =
 });
 
 test('Copy writes PNG without disturbing the JPEG estimate that Upload reuses', async () => {
-    const written: Page[] = [];
+    const written: { types: string[]; items: Record<string, Promise<Blob>> }[][] = [];
     const page = await loadEditor({
         clipboardItem: true,
-        clipboard: { write: async (items: Page[]) => { written.push(items); await items[0].items['image/png']; } },
+        clipboard: { write: async (items: { types: string[]; items: Record<string, Promise<Blob>> }[]) => { written.push(items); await items[0].items['image/png']; } },
     });
     const { doc, encodeCalls } = page;
     await waitFor(page.dom, () => /JPEG/.test(doc.getElementById('upload-estimate').textContent));
@@ -1612,7 +1652,7 @@ test('Copy writes PNG without disturbing the JPEG estimate that Upload reuses', 
     assert.equal(written.length, 1, 'write() ran inside the click');
     assert.deepEqual(written[0][0].types, ['image/png']);
     await waitFor(page.dom, () => doc.getElementById('copy-image').textContent.trim() === 'Copied');
-    assert.equal(encodeCalls.at(-1).mime, 'image/png');
+    assert.equal(encodeCalls.at(-1)!.mime, 'image/png');
     assert.equal(doc.getElementById('upload-estimate').textContent, estimate);
     assert.match(doc.getElementById('output-summary').textContent, /^JPEG · /);
     assert.deepEqual(page.errors, []);
@@ -1622,13 +1662,13 @@ test('a confirmed report insertion shows Inserted and retires New photo', async 
     const page = await loadEditor({
         returnToReport: true,
         imgbbStatus: { ok: true, configured: true, permissionGranted: true },
-        runtimeHandler: async (message: Page) => message?.type === 'PHOTO_INSERT_COMMIT'
+        runtimeHandler: async (message: StubMessage) => message?.type === 'PHOTO_INSERT_COMMIT'
             ? { ok: true, identity: { cid: 1, aid: 2, pid: 3 } } : { ok: true },
         fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
     });
     const { doc } = page;
     await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
-    const actions = [...doc.getElementById('finish-actions').children].map((node: Page) => node.id || node.className);
+    const actions = [...doc.getElementById('finish-actions').children].map((node: Element) => node.id || node.className);
     assert.deepEqual(actions, ['copy-image', 'export-image', 'finish-gap', 'upload-insert', 'finish-status'],
         'report sessions end on the upload, set apart by the gap');
     page.click(doc.getElementById('upload-insert'));
@@ -1662,9 +1702,9 @@ test('rejects limit-plus-one encoded bytes before decoding or hashing a small im
     const page = await loadEditor({
         pickPhoto: false,
         subtle: {
-            digest: async (...args: Page[]) => {
+            digest: async (...args: Parameters<SubtleCrypto['digest']>) => {
                 hashCalls += 1;
-                return (globalThis.crypto.subtle.digest as Page)(...args);
+                return globalThis.crypto.subtle.digest(...args);
             },
         },
     });
@@ -1745,7 +1785,7 @@ test('a hashing failure closes prepared pixels and leaves the editor ready for a
 
 test('a persistence quota failure writes no partial bundle and can retry', async t => {
     const indexedDB = new IDBFactory();
-    let quotaFailure: Page;
+    let quotaFailure!: ReturnType<typeof failNextDraftTransactionWithQuota>;
     const page = await loadEditor({
         indexedDB,
         pickPhoto: false,
@@ -1757,7 +1797,7 @@ test('a persistence quota failure writes no partial bundle and can retry', async
         page.doc.getElementById('save-status').textContent));
     assert.equal(quotaFailure.triggered(), true);
     for (const storeName of ['photos', 'projects', 'originals', 'thumbnails']) {
-        assert.deepEqual(await readPhotoStore(page.win, storeName), [], storeName);
+        assert.deepEqual(await readPhotoStore(page.win, storeName as keyof StoreRows), [], storeName);
     }
     assert.match(page.doc.getElementById('toast-message').textContent,
         /editable copy could not be saved.*original file was not changed/i);
@@ -1778,9 +1818,9 @@ test('a large source below the encoded ceiling can flatten to an accepted upload
     const page = await loadEditor({
         pickedFileSize: 32 * 1024 * 1024 + 1,
         imgbbStatus: { ok: true, configured: true, permissionGranted: true },
-        fetchImpl: async (_url: Page, options: Page) => {
+        fetchImpl: async (_url: string, options?: RequestInit) => {
             uploaded = true;
-            const image = options.body.get('image');
+            const image = (options?.body as FormData).get('image') as File;
             assert.ok(image.size < 32 * 1024 * 1024,
                 'the provider receives the flattened export, not the larger source');
             return {
@@ -1799,7 +1839,7 @@ test('a large source below the encoded ceiling can flatten to an accepted upload
 
     const [catalog] = await readPhotoStore(page.win, 'photos');
     assert.equal(catalog.source.bytes, 32 * 1024 * 1024 + 1);
-    assert.ok(catalog.export.bytes < catalog.source.bytes);
+    assert.ok(catalog.export!.bytes < catalog.source.bytes);
     assert.equal(catalog.remote.state, 'uploaded');
     assert.deepEqual(page.errors, []);
 });
@@ -1807,14 +1847,14 @@ test('a large source below the encoded ceiling can flatten to an accepted upload
 test('project import rejects valid matching hashes when decoded dimensions disagree', async () => {
     const original = new Blob(['pixels'], { type: 'image/jpeg' });
     const sourceSha256 = await Renderer.sha256(original);
-    const project: Page = Project.createProject({
+    const project = Project.createProject({
         localId: 'mismatched-dimensions',
         width: IMAGE.height,
         height: IMAGE.width,
         sourceSha256,
         updatedAt: '2026-07-30T18:00:00.000Z',
-    });
-    const photo = (Library.createDraft as Page)({
+    })!;
+    const photo = (Library.createDraft as unknown as CreateDraft)({
         localId: project.localId,
         title: 'Mismatched dimensions',
         source: {
@@ -1849,19 +1889,19 @@ test('project import rejects valid matching hashes when decoded dimensions disag
 test('imported annotations enter the same semantic keyboard selection list', async () => {
     const original = new Blob(['pixels'], { type: 'image/jpeg' });
     const sourceSha256 = await Renderer.sha256(original);
-    let project: Page = Project.createProject({
+    let project = Project.createProject({
         localId: 'accessible-import',
         width: IMAGE.width,
         height: IMAGE.height,
         sourceSha256,
         updatedAt: '2026-08-08T12:00:00.000Z',
-    });
+    })!;
     project = Project.addObject(project, {
         id: 'imported-anchor',
         type: 'anchor',
         geometry: { x: 500, y: 400, rotation: 0 },
         style: { color: '#e53935', scale: 1, opacity: 1 },
-    });
+    })!;
     project = Project.addObject(project, {
         id: 'imported-route',
         type: 'route',
@@ -1869,8 +1909,8 @@ test('imported annotations enter the same semantic keyboard selection list', asy
         style: {
             color: '#1e88e5', width: 12, stroke: 'solid', end: 'none', opacity: 1, smooth: false,
         },
-    });
-    const photo = (Library.createDraft as Page)({
+    })!;
+    const photo = (Library.createDraft as unknown as CreateDraft)({
         localId: project.localId,
         title: 'Accessible import',
         source: {
@@ -1886,7 +1926,7 @@ test('imported annotations enter the same semantic keyboard selection list', asy
     const page = await loadEditor({
         indexedDB,
         pickPhoto: false,
-        onStoreReady: async ({ win }: Page) => {
+        onStoreReady: async ({ win }: { win: EditorWindow }) => {
             await new Promise<void>((resolve, reject) => {
                 const opened = win.indexedDB.open(
                     'betterPeakbaggerPhotos', Store.DATABASE_VERSION);
@@ -1922,9 +1962,9 @@ test('imported annotations enter the same semantic keyboard selection list', asy
     Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
     page.doc.getElementById('show-library').click();
     await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
-        .some((button: Page) => button.dataset.action === 'edit'));
+        .some((button: PageElement) => button.dataset.action === 'edit'));
     const editImported = [...page.doc.querySelectorAll('.photo-card button')]
-        .find((button: Page) => button.dataset.action === 'edit');
+        .find((button: PageElement) => button.dataset.action === 'edit')!;
     editImported.focus();
     editImported.click();
     await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false)
@@ -1952,7 +1992,7 @@ test('remote thumbnail presentation failures never rewrite catalog health or bac
     const exported = {
         mime: 'image/jpeg', bytes: 8, width: 1600, height: 1200, sha256: 'b'.repeat(64),
     };
-    const draft: Page = (Library.createDraft as Page)({
+    const draft = (Library.createDraft as unknown as CreateDraft)({
         localId: 'remote-thumbnail',
         title: 'Remote-only topo',
         source: {
@@ -1967,7 +2007,7 @@ test('remote thumbnail presentation failures never rewrite catalog health or bac
         height: 1200,
         sourceSha256,
         updatedAt: now,
-    });
+    })!;
     const published = Library.completeUpload(draft, exported, {
         providerId: 'provider-1',
         url: 'https://i.ibb.co/a/topo.jpg',
@@ -1989,7 +2029,7 @@ test('remote thumbnail presentation failures never rewrite catalog health or bac
 
     const page = await loadEditor({ indexedDB, pickPhoto: false });
     const before = await readPhotoStore(page.win, 'photos');
-    let previous: Page = null;
+    let previous: Element | null = null;
     for (const simulatedFailure of ['offline', 'CSP refusal', 'timeout', 'transient 5xx']) {
         await waitFor(page.dom, () => {
             const candidate = page.doc.querySelector('.photo-card img[src^="https://i.ibb.co/"]');
@@ -2032,10 +2072,10 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
                 referenced = false,
                 backedUp = false,
                 prune = false,
-            }: Page) => {
+            }: { localId: string; title: string; deletedAt: string | null; remoteState?: string; referenced?: boolean; backedUp?: boolean; prune?: boolean }) => {
                 const sourceSha256 = 'a'.repeat(64);
                 const input = {
-                    photo: (Library.createDraft as Page)({
+                    photo: (Library.createDraft as unknown as CreateDraft)({
                         localId,
                         title,
                         source: {
@@ -2058,7 +2098,7 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
                     original: new Blob(['source'], { type: 'image/jpeg' }),
                     thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
                 };
-                let photo: Page = await seedStore.putDraft(input);
+                let photo = await seedStore.putDraft(input);
                 if (remoteState !== 'draft') {
                     photo = Library.completeUpload(photo, {
                         mime: 'image/jpeg',
@@ -2098,8 +2138,8 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
                         },
                     }));
                 }
-                photo = await seedStore.putPhoto(Library.markDeleted(photo, deletedAt));
-                if (prune) await seedStore.removeLocalAssets(photo.localId, fixedNow);
+                photo = await seedStore.putPhoto(Library.markDeleted(photo, deletedAt ?? undefined));
+                if (prune) await seedStore.removeLocalAssets(photo!.localId, fixedNow);
             };
 
             await seed({
@@ -2140,8 +2180,8 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
     filter.value = 'recently-deleted';
     filter.dispatchEvent(new page.win.Event('change', { bubbles: true }));
     await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 5);
-    const card = (title: Page) => [...page.doc.querySelectorAll('.photo-card')]
-        .find(candidate => candidate.querySelector('h3')?.textContent === title);
+    const card = (title: string) => [...page.doc.querySelectorAll('.photo-card')]
+        .find(candidate => candidate.querySelector('h3')?.textContent === title)!;
 
     assert.match(card('Local editing data').textContent, /Editing data is available/);
     assert.match(card('Local editing data').textContent, /Local: original, project, thumbnail retained/);
@@ -2163,7 +2203,7 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
         /record restored.*Editing data is no longer available/i);
 
     const [restored] = (await readPhotoStore(page.win, 'photos'))
-        .filter((photo: Page) => photo.localId === 'exact-expiry');
+        .filter((photo: CatalogRow) => photo.localId === 'exact-expiry');
     assert.equal(restored.deletedAt, null);
     assert.deepEqual(restored.assets, {
         originalRetained: false,
@@ -2176,8 +2216,8 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
 test('removing a photo states the 30-day editing-data window before and after confirmation', async t => {
     let confirmation = '';
     const page = await loadEditor({
-        confirmImpl: (message: Page) => {
-            confirmation = message;
+        confirmImpl: (message?: string) => {
+            confirmation = message ?? '';
             return true;
         },
     });
@@ -2188,7 +2228,7 @@ test('removing a photo states the 30-day editing-data window before and after co
     await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
         .some(button => button.textContent === 'Remove…'));
     page.click([...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Remove…'));
+        .find(button => button.textContent === 'Remove…')!);
     await waitFor(page.dom, () => /Moved to Recently Deleted/.test(
         page.doc.getElementById('toast-message').textContent));
 
@@ -2206,7 +2246,7 @@ test('library URL copy falls back to the complete selected value for every clipb
         ['synchronous throw', { writeText: () => { throw new Error('blocked'); } }],
         ['rejected promise', { writeText: async () => { throw new Error('denied'); } }],
     ];
-    for (const [name, clipboard] of cases as Page[]) {
+    for (const [name, clipboard] of cases as [string, object | undefined][]) {
         await t.test(name, async () => {
             const indexedDB = new IDBFactory();
             await seedUploadedLibraryPhoto(indexedDB, { url: longUrl });
@@ -2217,7 +2257,7 @@ test('library URL copy falls back to the complete selected value for every clipb
                 clipboard,
             });
             const copy = [...page.doc.querySelectorAll('.photo-card button')]
-                .find(button => button.textContent === 'Copy URL');
+                .find(button => button.textContent === 'Copy URL')!;
             copy.click();
             await waitFor(page.dom, () => page.doc.getElementById('toast-copy-value').hidden === false);
 
@@ -2237,21 +2277,21 @@ test('library URL copy falls back to the complete selected value for every clipb
 
 test('library URL copy recovers after lost focus and a repeated click', async () => {
     const indexedDB = new IDBFactory();
-    const copied: Page[] = [];
+    const copied: string[] = [];
     await seedUploadedLibraryPhoto(indexedDB);
     const page = await loadEditor({
         indexedDB,
         pickPhoto: false,
         startMode: 'library',
         clipboard: {
-            writeText: async (value: Page) => {
+            writeText: async (value: string) => {
                 copied.push(value);
                 if (copied.length <= 2) throw new Error('clipboard denied');
             },
         },
     });
     const copy = [...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Copy URL');
+        .find(button => button.textContent === 'Copy URL')!;
     copy.click();
     await waitFor(page.dom, () => page.doc.getElementById('toast-copy-value').hidden === false);
     page.doc.getElementById('library-search').focus();
@@ -2277,13 +2317,13 @@ test('library URL copy recovers after lost focus and a repeated click', async ()
 });
 
 test('a failed report insertion keeps the real page catalog at its committed ImgBB success', async () => {
-    const messages: Page[] = [];
+    const messages: StubMessage[] = [];
     const indexedDB = new IDBFactory();
     const page = await loadEditor({
         returnToReport: true,
         imgbbStatus: { ok: true, configured: true, permissionGranted: true },
         indexedDB,
-        runtimeHandler: async (message: Page) => {
+        runtimeHandler: async (message: StubMessage) => {
             messages.push(structuredClone(message));
             if (message?.type === 'PHOTO_INSERT_COMMIT') {
                 return {
@@ -2318,7 +2358,7 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     assert.equal(messages.filter(message => message.type === 'PHOTO_INSERT_COMMIT').length, 1);
     assert.equal(catalog.length, 1);
     assert.equal(catalog[0].remote.state, 'uploaded');
-    assert.equal(catalog[0].remote.url, 'https://i.ibb.co/a/topo.jpg');
+    assert.equal((catalog[0].remote as { url: string }).url, 'https://i.ibb.co/a/topo.jpg');
     assert.ok(catalog[0].export?.sha256);
     assert.equal(catalog[0].references.length, 0);
     assert.deepEqual(secrets, [{
@@ -2331,15 +2371,15 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     assert.doesNotMatch(doc.getElementById('toast-message').textContent, /outcome unknown|cataloging failed/i);
     const recoveryUrl = doc.getElementById('toast-copy-value');
     assert.equal(recoveryUrl.hidden, false);
-    assert.equal(recoveryUrl.value, catalog[0].remote.url);
+    assert.equal(recoveryUrl.value, (catalog[0].remote as { url: string }).url);
     doc.getElementById('toast-action').click();
     await waitFor(page.dom, () => /complete URL is selected/i.test(
         doc.getElementById('toast-copy-status').textContent));
     assert.equal(doc.activeElement, recoveryUrl);
     assert.equal(recoveryUrl.selectionStart, 0);
-    assert.equal(recoveryUrl.selectionEnd, catalog[0].remote.url.length);
+    assert.equal(recoveryUrl.selectionEnd, (catalog[0].remote as { url: string }).url.length);
 
-    let finishCopy: Page;
+    let finishCopy!: (value?: unknown) => void;
     let recoveryCopyCalls = 0;
     const pendingCopy = new Promise(resolve => { finishCopy = resolve; });
     Object.defineProperty(page.win.navigator, 'clipboard', {
@@ -2370,13 +2410,13 @@ test('a failed report insertion keeps the real page catalog at its committed Img
 
     page.win.dispatchEvent(new page.win.Event('beforeunload'));
     page.dom.window.close();
-    const recoveryMessages: Page[] = [];
+    const recoveryMessages: StubMessage[] = [];
     const recoveredPage = await loadEditor({
         returnToReport: true,
         pickPhoto: false,
         indexedDB,
         imgbbStatus: { ok: true, configured: true, permissionGranted: true },
-        runtimeHandler: async (message: Page) => {
+        runtimeHandler: async (message: StubMessage) => {
             recoveryMessages.push(structuredClone(message));
             if (message?.type === 'PHOTO_INSERT_COMMIT') {
                 return { ok: true, identity: { cid: 10, aid: 20, pid: 30 } };
@@ -2441,17 +2481,17 @@ test('an accepted but uncataloged upload keeps its last-resort URL visible and s
 });
 
 test('export and upload hold one immutable snapshot behind every editor mutation path', async () => {
-    let releaseExport: Page;
+    let releaseExport!: (value?: unknown) => void;
     const exportGate = new Promise(resolve => { releaseExport = resolve; });
     let exportStarted = false;
-    let resolveUpload: Page;
+    let resolveUpload!: (value?: unknown) => void;
     let uploadStarted = false;
     const uploadGate = new Promise(resolve => { resolveUpload = resolve; });
-    const insertionMessages: Page[] = [];
+    const insertionMessages: StubMessage[] = [];
     const page = await loadEditor({
         returnToReport: true,
         imgbbStatus: { ok: true, configured: true, permissionGranted: true },
-        imageLoader: (image: Page) => {
+        imageLoader: (image: { onload?: (() => void) | null; currentSrc?: string }) => {
             exportStarted = true;
             void exportGate.then(() => image.onload?.());
         },
@@ -2464,7 +2504,7 @@ test('export and upload hold one immutable snapshot behind every editor mutation
                 text: async () => JSON.stringify(imgbbSuccess),
             };
         },
-        runtimeHandler: async (message: Page) => {
+        runtimeHandler: async (message: StubMessage) => {
             if (message?.type === 'PHOTO_INSERT_COMMIT') {
                 insertionMessages.push(structuredClone(message));
                 return { ok: true, identity: { cid: 10, aid: 20, pid: 30 } };
@@ -2481,9 +2521,9 @@ test('export and upload hold one immutable snapshot behind every editor mutation
     page.emit(alt, 'input');
     page.tool('bolt');
     page.pointer('pointerdown', 100, 100);
-    await waitForPhotoStore(win, 'photos', (records: Page) =>
+    await waitForPhotoStore(win, 'photos', (records) =>
         records[0]?.title === 'Snapshot title' && records[0]?.caption === 'Snapshot caption');
-    await waitForPhotoStore(win, 'projects', (records: Page) => records[0]?.objects.length === 1);
+    await waitForPhotoStore(win, 'projects', (records) => records[0]?.objects.length === 1);
 
     page.tool('select'); doc.getElementById('photo-viewport').focus();
     const snapshotClipboard = annotationTransfer(); dispatchClipboard(page, 'copy', snapshotClipboard);
@@ -2674,16 +2714,16 @@ test('rotation is offered only for tools and selected marks with a visible orien
         for (const type of ['anchor', 'bolt', 'belay', 'piton', 'rappel', 'pitch', 'text', 'route', 'drawing']) {
             const hidden = ['anchor', 'belay', 'route', 'drawing'].includes(type);
             page.tool(type);
-            assert.equal(rotation.hidden, hidden, `${type} preset rotation visibility`);
+            assert.equal(rotation!.hidden, hidden, `${type} preset rotation visibility`);
             if (type === 'route' || type === 'drawing') continue;
             page.pointer('pointerdown', 100, 100);
-            assert.equal(rotation.hidden, hidden, `${type} placed rotation visibility`);
+            assert.equal(rotation!.hidden, hidden, `${type} placed rotation visibility`);
             const mark = doc.querySelector('#annotation-list li:last-child button');
             const id = mark.dataset.objectId;
             page.tool(hidden ? 'piton' : 'belay');
             page.click(doc.querySelector(`#annotation-list [data-object-id="${id}"]`));
-            assert.equal(rotation.hidden, hidden, `${type} reselected rotation visibility`);
-            assert.equal(doc.getElementById('object-scale').closest('label').hidden, false,
+            assert.equal(rotation!.hidden, hidden, `${type} reselected rotation visibility`);
+            assert.equal(doc.getElementById('object-scale').closest('label')!.hidden, false,
                 `${type} still offers size`);
         }
         assert.deepEqual(page.errors, []);
@@ -2860,7 +2900,7 @@ test('Library keyboard input cannot mutate the hidden editor project', async () 
     page.tool('bolt');
     page.pointer('pointerdown', 100, 100);
     page.tool('select');
-    await waitForPhotoStore(win, 'projects', (records: Page) => records[0]?.objects.length === 1);
+    await waitForPhotoStore(win, 'projects', (records) => records[0]?.objects.length === 1);
     const before = JSON.parse(JSON.stringify((await readPhotoStore(win, 'projects'))[0]));
 
     page.click(doc.getElementById('show-library'));
@@ -2923,11 +2963,11 @@ test('leaving the editor ends the current coalesced keyboard or control gesture'
 test('keyboard controls add, select, reorder, duplicate, nudge, delete, and undo marks', async () => {
     const page = await loadEditor();
     const { doc, win } = page;
-    const activate = (node: Page) => {
+    const activate = (node: HTMLElement) => {
         node.focus();
         node.click();
     };
-    const press = (node: Page, key: Page, init = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
+    const press = (node: EventTarget, key: string, init: KeyboardEventInit = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
         key, bubbles: true, cancelable: true, ...init,
     }));
     const annotationButtons = () => [...doc.querySelectorAll('#annotation-list [data-object-id]')];
@@ -2956,9 +2996,9 @@ test('keyboard controls add, select, reorder, duplicate, nudge, delete, and undo
     assert.deepEqual(annotationButtons().map(button => button.textContent), ['Anchor', 'Bolt']);
     activate(doc.getElementById('duplicate-object'));
     assert.equal(page.markCount(), 3);
-    assert.equal(annotationButtons().at(-1).getAttribute('aria-pressed'), 'true');
+    assert.equal(annotationButtons().at(-1)!.getAttribute('aria-pressed'), 'true');
 
-    activate(annotationButtons().at(-1));
+    activate(annotationButtons().at(-1)!);
     const removedId = doc.activeElement.dataset.objectId;
     press(doc.activeElement, 'Delete');
     assert.equal(page.markCount(), 2);
@@ -2975,11 +3015,11 @@ test('keyboard controls add, select, reorder, duplicate, nudge, delete, and undo
 test('keyboard controls add a centered route and edit one focusable vertex', async () => {
     const page = await loadEditor();
     const { doc, win } = page;
-    const activate = (node: Page) => {
+    const activate = (node: HTMLElement) => {
         node.focus();
         node.click();
     };
-    const press = (node: Page, key: Page, init = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
+    const press = (node: EventTarget, key: string, init: KeyboardEventInit = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
         key, bubbles: true, cancelable: true, ...init,
     }));
 
@@ -3078,10 +3118,10 @@ test('Select copies a snapshot and pastes independently selected, undoable annot
         'clipboard content does not track edits or deletion of the original');
     assert.equal(doc.activeElement, doc.getElementById('photo-viewport'));
     // Inspect without another copy command, which would start a new paste run.
-    assert.match(page.overlay.querySelector('.selected').getAttribute('transform'), /translate\(224 224\)/);
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform') || '', /translate\(224 224\)/);
     assert.equal(dispatchClipboard(page, 'paste', transfer).defaultPrevented, true);
     assert.equal(page.markCount(), 2);
-    assert.match(page.overlay.querySelector('.selected').getAttribute('transform'), /translate\(248 248\)/);
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform') || '', /translate\(248 248\)/);
     const second = readSelection();
     assert.notEqual(second.id, payload.object.id);
     page.click(doc.getElementById('undo'));
@@ -3119,7 +3159,7 @@ test('clipboard round trips text wrapping, route controls, and freehand geometry
         assert.equal(dispatchClipboard(source, 'copy', transfer).defaultPrevented, true);
         const original = JSON.parse(transfer.getData('text/plain')).object;
         // Each jsdom page otherwise restarts the same deterministic id counter.
-        target.win.crypto.randomUUID = () => `pasted-${type}`;
+        target.win.crypto.randomUUID = (() => `pasted-${type}`) as typeof target.win.crypto.randomUUID;
         target.doc.getElementById('photo-viewport').focus();
         assert.equal(dispatchClipboard(target, 'paste', transfer).defaultPrevented, true);
         const pastedTransfer = annotationTransfer(); dispatchClipboard(target, 'copy', pastedTransfer);
@@ -3132,10 +3172,10 @@ test('clipboard round trips text wrapping, route controls, and freehand geometry
             assert.equal(pasted.geometry.width, 275);
             assert.equal(pasted.geometry.x, original.geometry.x + 24);
         } else {
-            assert.deepEqual(pasted.geometry.points, original.geometry.points.map(([x, y]: Page) => [x + 24, y + 24]));
-            assert.deepEqual(pasted.geometry.controls, original.geometry.controls.map((control: Page) => control && ({
-                in: control.in && control.in.map((value: Page) => value + 24),
-                out: control.out && control.out.map((value: Page) => value + 24),
+            assert.deepEqual(pasted.geometry.points, original.geometry.points.map(([x, y]: [number, number]) => [x + 24, y + 24]));
+            assert.deepEqual(pasted.geometry.controls, original.geometry.controls.map((control: { in?: number[]; out?: number[] } | null) => control && ({
+                in: control.in && control.in.map((value: number) => value + 24),
+                out: control.out && control.out.map((value: number) => value + 24),
             })));
         }
         assert.equal(target.markCount(), 1);
@@ -3212,7 +3252,7 @@ test('pasting at a geometry boundary preserves a valid annotation without its of
     payload.object.geometry.y = IMAGE.height * 2;
     assert.equal(dispatchClipboard(page, 'paste', annotationTransfer(JSON.stringify(payload))).defaultPrevented, true);
     assert.equal(page.markCount(), 2);
-    assert.match(page.overlay.querySelector('.selected').getAttribute('transform'), /translate\(3200 2400\)/);
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform') || '', /translate\(3200 2400\)/);
     assert.deepEqual(page.errors, []);
 });
 
@@ -3303,7 +3343,7 @@ test('native Undo remains available in every editable photo control', async () =
     editable.append(nested);
     doc.body.append(editable);
 
-    const dispatchUndo = (node: Page, init = {}) => {
+    const dispatchUndo = (node: EventTarget, init: KeyboardEventInit = {}) => {
         const event = new win.KeyboardEvent('keydown', {
             key: 'z', metaKey: true, bubbles: true, cancelable: true, ...init,
         });
@@ -3491,7 +3531,7 @@ test('dragging one route vertex moves only that vertex', async () => {
 
     const after = page.routePath();
     assert.notEqual(after, before, 'the dragged vertex moved');
-    const moved = [...after.matchAll(/-?\d+(?:\.\d+)?/g)].map(Number);
+    const moved = [...after!.matchAll(/-?\d+(?:\.\d+)?/g)].map(Number);
     // First and last vertices keep their x; only the middle one gained height.
     assert.ok(moved.length >= 6, `expected at least three coordinate pairs, got ${after}`);
     assert.equal(page.vertexCount(), 3, 'no vertex was added or lost');
@@ -3508,7 +3548,7 @@ test('dragging one route vertex moves only that vertex', async () => {
 
 test('tools share color and opacity but keep their other preferences after reopening', async () => {
     const page = await loadEditor();
-    const change = (id: Page, value: Page, event = 'input') => {
+    const change = (id: string, value: string | number | boolean, event = 'input') => {
         const control = page.doc.getElementById(id);
         if (typeof value === 'boolean') control.checked = value;
         else control.value = String(value);
@@ -3627,7 +3667,7 @@ test('zoom and pan are view-only and drawing uses zoomed image coordinates', asy
     page.pointer('pointerup', 280, 240);
     assert.notEqual(stage.style.transform, original);
     assert.equal(page.markCount(), 0, 'Hand must never draw a mark');
-    page.overlay.getBoundingClientRect = () => ({ left: -1120, top: -860, width: 3200, height: 2400 });
+    page.overlay.getBoundingClientRect = () => ({ left: -1120, top: -860, width: 3200, height: 2400 }) as DOMRect;
     page.tool('drawing');
     page.pointer('pointerdown', 80, 140);
     page.pointer('pointermove', 180, 240);
@@ -3746,12 +3786,12 @@ test('text resize fixes the opposite edge at every alignment and rotation and is
     page.emit(doc.getElementById('text-width'), 'change');
     const textGeometry = () => {
         const transform = overlay.querySelector('[data-bpb-object]').getAttribute('transform');
-        return transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
+        return transform!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
     };
     for (const align of ['left', 'center', 'right']) {
         doc.getElementById('text-align').value = align; page.emit(doc.getElementById('text-align'), 'change');
         for (const rotation of [0, 45, 90, -135]) {
-            doc.getElementById('object-rotation').value = rotation;
+            doc.getElementById('object-rotation').value = String(rotation);
             page.emit(doc.getElementById('object-rotation'), 'input');
             page.emit(doc.getElementById('object-rotation'), 'change');
             for (const side of ['left', 'right']) {
@@ -3985,12 +4025,11 @@ test('undoing every pending route point preserves the previous project Redo', as
 });
 
 // Fail the page's own transaction, leaving independent inspection reads usable.
-const failNextPhotoTransaction = (indexedDB: Page, name: Page, mode = 'readwrite') => {
-    const database = indexedDB._databases.get('betterPeakbaggerPhotos').connections
-        .find((connection: Page) => !connection._closed);
+const failNextPhotoTransaction = (indexedDB: IDBFactory, name: string, mode = 'readwrite') => {
+    const database = fakeDatabase(indexedDB)!;
     const transaction = database.transaction.bind(database);
     let attempted = false;
-    database.transaction = (names: Page, requestedMode: Page, options: Page) => {
+    database.transaction = (names: string | string[], requestedMode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
         const stores = typeof names === 'string' ? [names] : [...names];
         if (!attempted && requestedMode === mode && stores.includes('photos')) {
             attempted = true;
@@ -4005,8 +4044,8 @@ const failNextPhotoTransaction = (indexedDB: Page, name: Page, mode = 'readwrite
     };
     return { restore: () => { database.transaction = transaction; }, attempted: () => attempted };
 };
-const libraryButton = (page: Page, label: Page) => [...page.doc.querySelectorAll('.photo-card button')]
-    .find(button => button.textContent === label);
+const libraryButton = (page: EditorPage, label: string) => [...page.doc.querySelectorAll('.photo-card button')]
+    .find(button => button.textContent === label)!;
 
 for (const errorName of ['QuotaExceededError', 'AbortError', 'InvalidStateError']) {
     for (const action of ['Remove…', 'Restore with editing data', 'Undo', 'Download project']) {
@@ -4062,7 +4101,7 @@ test('library bookkeeping failure preserves the successful report insertion outc
     await seedUploadedLibraryPhoto(indexedDB);
     let insertions = 0;
     const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library', returnToReport: true,
-        runtimeHandler: async (message: Page) => {
+        runtimeHandler: async (message: StubMessage) => {
             if (message.type === 'PHOTO_INSERT_COMMIT') {
                 insertions++;
                 return { ok: true, identity: { cid: 900001, aid: 1234567 } };
@@ -4096,8 +4135,8 @@ test('a pending library action keeps focus and rejects repeated activation', asy
     assert.deepEqual(page.errors, []);
 });
 
-const photoCard = (page: Page, localId: Page) => [...page.doc.querySelectorAll('.photo-card')]
-    .find(card => card.dataset.localId === localId);
+const photoCard = (page: EditorPage, localId: string) => [...page.doc.querySelectorAll('.photo-card')]
+    .find(card => card.dataset.localId === localId)!;
 
 test('library redraw retains the same photo and action after reordering', async t => {
     const indexedDB = new IDBFactory();
@@ -4132,23 +4171,23 @@ test('library removal chooses a nearby action, empty state, and restored Undo ta
 });
 
 test('an asynchronous library redraw does not reclaim focus moved to Search', async t => {
-    const indexedDB: Page = new IDBFactory(); await seedUploadedLibraryPhoto(indexedDB);
+    const indexedDB = new IDBFactory(); await seedUploadedLibraryPhoto(indexedDB);
     const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
     t.after(() => page.dom.window.close());
     const old = page.doc.querySelector('.photo-card [data-action="remove"]'); old.focus();
-    const database = indexedDB._databases.get('betterPeakbaggerPhotos').connections.find((connection: Page) => !connection._closed);
+    const database = fakeDatabase(indexedDB)!;
     const transaction = database.transaction.bind(database);
-    let release: Page; let started = false;
+    let release!: (value?: unknown) => void; let started = false;
     let armed = true;
-    database.transaction = (names: Page, mode: Page, options: Page) => {
+    database.transaction = (names: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
         const pending = transaction(names, mode, options);
         if (armed && mode === 'readonly' && Array.isArray(names) && names.includes('photos') && names.includes('metadata')) {
             armed = false;
             const released = new Promise(resolve => { release = resolve; });
-            let completion: Page;
+            let completion: ((event: Event) => void) | undefined;
             Object.defineProperty(pending, 'oncomplete', {
                 configurable: true, get: () => completion,
-                set: handler => { completion = (event: Page) => { started = true; void released.then(() => handler.call(pending, event)); }; },
+                set: (handler: (this: IDBTransaction, event: Event) => void) => { completion = (event: Event) => { started = true; void released.then(() => handler.call(pending, event)); }; },
             });
         }
         return pending;
@@ -4171,14 +4210,14 @@ test('expired-asset maintenance retains the focused restore action', async t => 
     const old = page.doc.querySelector('[data-action="restore"]'); old.focus();
     await waitFor(page.dom, () => !old.isConnected);
     assert.equal(page.doc.activeElement.dataset.action, 'restore');
-    assert.equal(page.doc.activeElement.closest('.photo-card').dataset.localId, 'expired-photo-000');
+    assert.equal(page.doc.activeElement.closest('.photo-card')!.dataset.localId, 'expired-photo-000');
 });
 
 test('library pagination keeps a usable control when Next becomes disabled', async t => {
     const indexedDB = new IDBFactory();
     // Metadata-only entries keep this pagination fixture cheap and realistic.
     const store = await Store.createPhotoStore({ indexedDB });
-    for (let index = 0; index < 49; index++) await store.putPhoto((Library.createDraft as Page)({
+    for (let index = 0; index < 49; index++) await store.putPhoto((Library.createDraft as unknown as CreateDraft)({
         localId: `page-${index}`, title: `Topo ${index}`,
         source: { fileName: 'photo.jpg', mime: 'image/jpeg', bytes: 6, width: 1600, height: 1200, sha256: index.toString(16).padStart(64, '0') },
     }));
@@ -4196,12 +4235,12 @@ for (const placement of ['photo', 'center']) {
         const page = await loadEditor(); t.after(() => page.dom.window.close());
         Object.defineProperty(page.win, 'innerWidth', { value: 390, writable: true });
         const input = page.doc.getElementById('object-text');
-        const inspector = input.closest('#inspector');
+        const inspector = input.closest('#inspector')!;
         const dock = page.doc.getElementById('photo-text-editor');
         let wideAligned = 0;
-        input.scrollIntoView = (options: Page) => { assert.equal(options.block, 'nearest'); wideAligned++; };
+        input.scrollIntoView = (options?: ScrollIntoViewOptions | boolean) => { assert.equal((options as ScrollIntoViewOptions).block, 'nearest'); wideAligned++; };
         let aligned = 0;
-        dock.scrollIntoView = (options: Page) => { assert.equal(options.block, 'end'); aligned++; };
+        dock.scrollIntoView = (options?: ScrollIntoViewOptions | boolean) => { assert.equal((options as ScrollIntoViewOptions).block, 'end'); aligned++; };
         page.tool('text');
         if (placement === 'photo') { page.pointer('pointerdown', 100, 100); page.pointer('pointerup', 100, 100); }
         else page.click(page.doc.getElementById('add-at-center'));
@@ -4251,11 +4290,11 @@ test('report-photo editing keeps its accepted image and does not dirty an unchan
     const indexedDB = new IDBFactory(), store = await Store.createPhotoStore({ indexedDB });
     const localId = crypto.randomUUID(), sha256 = 'a'.repeat(64);
     const source = { ...IMAGE, sha256, mime: 'image/jpeg', bytes: 6, fileName: 'report.jpg' };
-    const photo = (Library.createDraft as Page)({ localId, title: 'Report photo', caption: 'Existing caption', source });
+    const photo = (Library.createDraft as unknown as CreateDraft)({ localId, title: 'Report photo', caption: 'Existing caption', source });
     await store.putDraft({ photo, project: Project.createProject({ localId, ...IMAGE, sourceSha256: sha256 }),
         original: new Blob(['pixels'], { type: 'image/jpeg' }), thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }) });
     const otherId = crypto.randomUUID();
-    await store.putDraft({ photo: (Library.createDraft as Page)({ localId: otherId, title: 'Other photo', source: { ...source, sha256: 'b'.repeat(64) } }),
+    await store.putDraft({ photo: (Library.createDraft as unknown as CreateDraft)({ localId: otherId, title: 'Other photo', source: { ...source, sha256: 'b'.repeat(64) } }),
         project: Project.createProject({ localId: otherId, ...IMAGE, sourceSha256: 'b'.repeat(64) }),
         original: new Blob(['pixels'], { type: 'image/jpeg' }), thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }) });
     store.close();

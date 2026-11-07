@@ -1035,7 +1035,7 @@ try {
             ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.reportImageWidth === 320,
         null, { timeout: 5000 });
         const reportSizeState = await photoPage.evaluate(() => {
-            const rect = (node: PageResult) => {
+            const rect = (node: Element | null | undefined) => {
                 const bounds = node?.getBoundingClientRect();
                 return bounds ? {
                     top: bounds.top,
@@ -1103,7 +1103,8 @@ try {
                     document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
         });
-        const aligned = (first: PageResult, second: PageResult, edge: string, tolerance = 1) =>
+        type Edge = 'top' | 'right' | 'bottom' | 'left' | 'width' | 'height';
+        const aligned = (first: Record<Edge, number> | null, second: Record<Edge, number> | null, edge: Edge, tolerance = 1) =>
             Math.abs((first?.[edge] ?? Number.NaN) - (second?.[edge] ?? Number.NaN)) <= tolerance;
         check(reportSizeState.choices.length === 2
             && reportSizeState.choices.every(choice => choice.value === '320')
@@ -1120,8 +1121,9 @@ try {
         `the report display choice changed pixels or failed to resize the stage: ${
             JSON.stringify(reportSizeState)
         }`);
-        check(reportSizeState.footer.estimate?.top >= (reportSizeState.footer.actions?.bottom as number)
-            && (reportSizeState.footer.summary?.top as number) >= (reportSizeState.footer.actions?.bottom as number)
+        const actionsBottom = reportSizeState.footer.actions?.bottom ?? Number.NaN;
+        check((reportSizeState.footer.estimate?.top ?? Number.NaN) >= actionsBottom
+            && (reportSizeState.footer.summary?.top ?? Number.NaN) >= actionsBottom
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'left')
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'right')
             && aligned(reportSizeState.footer.format, reportSizeState.footer.reportSize, 'left')
@@ -1192,10 +1194,10 @@ try {
             // rather than pinning a literal here: this check is about the page
             // honoring the setting, and a hardcoded colour would have to be
             // re-pinned — silently, and possibly wrongly — on every repaint.
-            const probe: PageResult = document.createElement('div');
+            const probe = document.createElement('div');
             probe.style.color = 'var(--dark-bg)';
             document.body.append(probe);
-            const panelDark = getComputedStyle(probe!).color;
+            const panelDark = getComputedStyle(probe).color;
             probe.remove();
             return {
                 theme,
@@ -1236,20 +1238,23 @@ try {
             window.__bpbBuddyRequestTimes = [];
             window.__bpbBuddyHelperReads = [];
             window.__bpbNativeTabMessage = chrome.tabs.sendMessage;
-            (chrome.tabs as PageResult).sendMessage = function (...args: PageResult[]) {
-                if (args[1]?.type !== 'BUDDY_PAGE_READ' || typeof args.at(-1) !== 'function') {
-                    return (window.__bpbNativeTabMessage as PageResult).apply(chrome.tabs, args);
+            type Forward = (...args: unknown[]) => unknown;
+            interface BuddyReadResponse { url?: string; cache?: { fetchedAt?: string; ownerCid?: number; entries?: unknown[] } }
+            (chrome.tabs as unknown as { sendMessage: Forward }).sendMessage = function (...args: unknown[]) {
+                const forward = window.__bpbNativeTabMessage as unknown as Forward;
+                if ((args[1] as { type?: string } | undefined)?.type !== 'BUDDY_PAGE_READ' || typeof args.at(-1) !== 'function') {
+                    return forward.apply(chrome.tabs, args);
                 }
-                const callback: PageResult = args.at(-1);
+                const callback = args.at(-1) as (response?: BuddyReadResponse) => void;
                 const record = { at: Date.now(), tabId: args[0] };
                 window.__bpbBuddyHelperReads.push(record);
-                args[args.length - 1] = (response: PageResult) => {
+                args[args.length - 1] = (response?: BuddyReadResponse) => {
                     Object.assign(record, { done: Date.now(), error: chrome.runtime.lastError?.message,
                         url: response?.url, fetchedAt: response?.cache?.fetchedAt,
                         ownerCid: response?.cache?.ownerCid, entries: response?.cache?.entries?.length });
                     callback(response);
                 };
-                return (window.__bpbNativeTabMessage as PageResult).apply(chrome.tabs, args);
+                return forward.apply(chrome.tabs, args);
             };
             (window as PageResult).fetch = async (input: PageResult, init: PageResult) => {
                 if (String(input) !== signedInBuddyUrl) return window.__bpbNativeFetch(input, init);

@@ -5,24 +5,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadOptions as untypedLoadOptions, registerCleanup } from '../helpers/options-helpers.mjs';
 import { waitFor } from '../helpers/load-page.mjs';
+import type { LoadPage, StubMessage } from '../helpers/page-types.mts';
 
 registerCleanup();
 
-type Page = Awaited<ReturnType<typeof JSON.parse>>;
-// The helper's option bag is inferred from JavaScript defaults, not its contract.
-const loadOptions: Page = untypedLoadOptions;
+const loadOptions = untypedLoadOptions as unknown as LoadPage;
 
 // Firefox refuses permissions.request() once the click handler has awaited
 // anything, including permissions.contains(). The request must be the first
 // call the Save click makes.
 test('Save key asks for the ImgBB permission before anything awaits', async () => {
     const order: string[] = [];
-    const dom: Page = await loadOptions({}, { prepareChrome: (chrome: Page) => {
+    const dom = await loadOptions({}, { prepareChrome: chrome => {
         chrome.permissions = {
             contains: async () => { order.push('contains'); return false; },
             request: () => { order.push('request'); return Promise.resolve(true); },
         };
-        chrome.runtime.sendMessage = async (message: Page) => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'PHOTO_IMGBB_SAVE_KEY') { order.push('save'); return { ok: true }; }
             return { ok: true, configured: false, permissionGranted: false };
         };
@@ -39,10 +38,10 @@ test('Save key asks for the ImgBB permission before anything awaits', async () =
 
 test('a declined permission leaves the key unsaved with a way to retry', async () => {
     const saved: string[] = [];
-    const dom: Page = await loadOptions({}, { prepareChrome: (chrome: Page) => {
+    const dom = await loadOptions({}, { prepareChrome: chrome => {
         chrome.permissions = { contains: async () => false, request: () => Promise.resolve(false) };
-        chrome.runtime.sendMessage = async (message: Page) => {
-            if (message.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(message.key);
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
+            if (message.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(String(message.key));
             return { ok: true, configured: false, permissionGranted: false };
         };
     } });
