@@ -25,7 +25,13 @@ main { padding: 16px; }
 
 h2, p { margin: 0; }
 h2 { font-size: 14px; }
-.brand p { margin-top: 2px; color: var(--sub); font-size: 12px; }
+.brand p { color: var(--sub); font-size: 12px; }
+/* The subtitle doubles as the photo editor's status. The hidden copy reserves
+   the longest message, so a wrapped failure never moves the header. */
+.brand-status { display: grid; margin-top: 2px; }
+.brand-status > p { grid-area: 1 / 1; }
+.brand-status > [aria-hidden="true"] { visibility: hidden; }
+.brand-status:has(#photo-editor-status:not(:empty)) #provider-label { visibility: hidden; }
 
 .state-card { padding: 14px; }
 
@@ -69,22 +75,23 @@ button.primary, button.secondary { width: 100%; }
    action starts a new line, where an indent reads as a misalignment. */
 .state-card button.secondary + button.secondary { margin-left: 8px; }
 
-/* An icon button in the header: no chrome until it is pointed at. */
-.settings-button {
+/* Icon buttons in the header: no chrome until they are pointed at. */
+.header-actions { display: flex; flex: 0 0 auto; gap: 4px; margin-left: auto; }
+.header-button {
   display: flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   width: 32px;
   min-height: 32px;
-  margin: 0 0 0 auto;
+  margin: 0;
   padding: 6px;
   border: 0;
   border-radius: 8px;
   color: var(--sub);
   background: transparent;
 }
-.settings-button:hover {
+.header-button:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 8%, transparent);
 }
@@ -152,7 +159,7 @@ button.primary, button.secondary { width: 100%; }
 .timestamp-choice input { margin: 3px 0 0; flex: 0 0 auto; }
 .timestamp-choice small { display: block; font-size: 12px; color: var(--sub); }
 /* Persistent inbox navigation stays anchored above capture progress. */
-.inbox-entry, .photo-entry {
+.inbox-entry {
   margin: 16px 0;
   padding: 12px;
   background: var(--card);
@@ -162,11 +169,7 @@ button.primary, button.secondary { width: 100%; }
 .inbox-heading { display: flex; align-items: center; gap: 8px; }
 .inbox-icon { flex: 0 0 auto; color: var(--sub); }
 #inbox-heading { font-size: 14px; }
-#activity-inbox, #open-photo-editor { flex: 0 0 auto; width: auto; margin: 0 0 0 auto; }
-/* Two navigation cards read as one group above the capture task. */
-.inbox-entry:not([hidden]) + .photo-entry { margin-top: -8px; }
-/* Reviewing detected peaks needs the whole 600px popup for Open drafts. */
-body:has(#results:not([hidden])) .photo-entry { display: none; }
+#activity-inbox { flex: 0 0 auto; width: auto; margin: 0 0 0 auto; }
 /* Reserve the badge even for an empty inbox so arriving counts never move the
    heading or action. Empty badges are unpainted and noninteractive. */
 #inbox-count { flex: 0 0 30px; min-height: calc(1.4em + 4px); justify-content: center; padding-inline: 3px; font-variant-numeric: tabular-nums; }

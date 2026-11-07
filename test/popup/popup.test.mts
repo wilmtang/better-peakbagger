@@ -1562,7 +1562,9 @@ test('the photo editor entry stays available with the inbox off and closes the p
     try {
         await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(popup.dom.window.document.querySelector('.inbox-entry').hidden, true);
-        assert.equal(popup.dom.window.document.querySelector('.photo-entry').hidden, false);
+        assert.equal(popup.control.parentElement, popup.dom.window.document.getElementById('open-settings').parentElement, 'the editor sits beside Settings');
+        assert.equal(popup.dom.window.document.querySelector('.photo-entry'), null, 'the editor is not a card');
+        assert.equal(popup.control.title, 'Photo editor');
         assert.equal(popup.control.getAttribute('aria-label'), 'Open photo editor');
         popup.control.focus();
         popup.control.click(); popup.control.click();

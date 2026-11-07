@@ -14,14 +14,28 @@
       <img src="../icons/icon-32.png" width="28" height="28" alt="">
       <div>
         <h1>Peakbagger Drafts</h1>
-        <p id="provider-label">Capture this activity</p>
+        <div class="brand-status">
+          <p aria-hidden="true">Couldn’t open the editor. Try again.</p>
+          <p id="provider-label">Capture this activity</p>
+          <p id="photo-editor-status" role="status" aria-atomic="true"></p>
+        </div>
       </div>
-      <button id="open-settings" class="settings-button" type="button" aria-label="Open Settings" title="Settings">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
-          <path d="M10.06 4.76 10.44 2.12 13.56 2.12 13.94 4.76 15.75 5.50 17.88 3.91 20.09 6.12 18.50 8.25 19.24 10.06 21.88 10.44 21.88 13.56 19.24 13.94 18.50 15.75 20.09 17.88 17.88 20.09 15.75 18.50 13.94 19.24 13.56 21.88 10.44 21.88 10.06 19.24 8.25 18.50 6.12 20.09 3.91 17.88 5.50 15.75 4.76 13.94 2.12 13.56 2.12 10.44 4.76 10.06 5.50 8.25 3.91 6.12 6.12 3.91 8.25 5.50Z"/>
-          <circle cx="12" cy="12" r="3.25"/>
-        </svg>
-      </button>
+      <div class="header-actions">
+        <button id="open-photo-editor" class="header-button" type="button" aria-label="Open photo editor" title="Photo editor">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4"/>
+            <circle cx="15.5" cy="8.5" r="1.5"/>
+            <path d="M3 17.5 8 10l4.5 6"/>
+            <path d="M19.6 12.9a1.9 1.9 0 0 1 2.7 2.7l-6.4 6.4-3.6.8.8-3.6Z"/>
+          </svg>
+        </button>
+        <button id="open-settings" class="header-button" type="button" aria-label="Open Settings" title="Settings">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.06 4.76 10.44 2.12 13.56 2.12 13.94 4.76 15.75 5.50 17.88 3.91 20.09 6.12 18.50 8.25 19.24 10.06 21.88 10.44 21.88 13.56 19.24 13.94 18.50 15.75 20.09 17.88 17.88 20.09 15.75 18.50 13.94 19.24 13.56 21.88 10.44 21.88 10.06 19.24 8.25 18.50 6.12 20.09 3.91 17.88 5.50 15.75 4.76 13.94 2.12 13.56 2.12 10.44 4.76 10.06 5.50 8.25 3.91 6.12 6.12 3.91 8.25 5.50Z"/>
+            <circle cx="12" cy="12" r="3.25"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
     <nav hidden class="inbox-entry" aria-labelledby="inbox-heading">
@@ -35,18 +49,6 @@
         <button id="activity-inbox" class="panel-button secondary" type="button" aria-label="Open inbox, pending count unavailable">Open inbox</button>
       </div>
       <div class="inbox-feedback"><span aria-hidden="true">Your Garmin activities, imported automatically.</span><span aria-hidden="true">Garmin needs a new key. Open inbox to reconnect.</span><span aria-hidden="true">200 waiting for peak checks. Open inbox to resume.</span><span id="activity-inbox-status" role="status" aria-atomic="true">Your Garmin activities, imported automatically.</span></div>
-    </nav>
-    <nav class="photo-entry" aria-labelledby="photo-entry-heading">
-      <div class="inbox-heading">
-        <svg class="inbox-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="16" rx="2"/>
-          <circle cx="8.5" cy="9.5" r="1.5"/>
-          <path d="m21 16-4.5-4.5L7 20"/>
-        </svg>
-        <h2 id="photo-entry-heading">Photo editor</h2>
-        <button id="open-photo-editor" class="panel-button secondary" type="button" aria-label="Open photo editor">Open editor</button>
-      </div>
-      <div class="inbox-feedback"><span aria-hidden="true">Couldn’t open the editor. Try again.</span><span id="photo-editor-status" role="status" aria-atomic="true">Mark up route photos on this device.</span></div>
     </nav>
     <section id="state" aria-live="polite"></section>
     <section id="results" hidden>

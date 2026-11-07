@@ -24,7 +24,7 @@ const dist = path.join(root, 'dist');
 const screenshots = process.env.BPB_POPUP_SCREENSHOTS;
 const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-popup-photo-verification-'));
 const ENTRY = '#open-photo-editor', STATUS = '#photo-editor-status';
-const ANCHORS = [ENTRY, '.photo-entry', '.brand', '#state'];
+const ANCHORS = [ENTRY, '#open-settings', '.brand', '#state'];
 let context: BrowserContext | undefined;
 
 const geometry = (page: Page) => page.evaluate(selectors => selectors.map(selector => {
@@ -116,9 +116,9 @@ try {
         await page.locator(STATUS).filter({ hasText: 'Couldn’t open the editor' }).waitFor();
         assert.equal(await entry.getAttribute('aria-busy'), null);
         await stable('error');
-        // Results own the popup's height, so the entry steps aside and leaves the tab order.
+        // The header button costs results no height, so it stays reachable beside them.
         await page.evaluate(() => { document.querySelector<HTMLElement>('#results')!.hidden = false; });
-        assert(await entry.isHidden(), 'The entry must not compete with capture results');
+        assert(await entry.isVisible(), 'The entry must stay available beside capture results');
         await page.close();
     }
 
@@ -151,7 +151,7 @@ try {
         for (const deadline = Date.now() + 5000; Date.now() < deadline; await new Promise(resolve => setTimeout(resolve, 50))) {
             const popup = chrome.extension.getViews({ type: 'popup' })[0];
             const inbox = popup?.document.querySelector('.inbox-entry') as HTMLElement | null;
-            const entry = popup?.document.querySelector('.photo-entry') as HTMLElement | null;
+            const entry = popup?.document.querySelector('#open-photo-editor') as HTMLElement | null;
             if (!entry || inbox?.hidden !== false || !popup!.document.querySelector('#state')!.textContent) continue;
             const box = entry.getBoundingClientRect();
             const layout = { width: popup!.innerWidth, height: popup!.innerHeight, entryRight: box.right, entryBottom: box.bottom,

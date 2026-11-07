@@ -12,9 +12,9 @@
   Plain, preview and save. Photo Topos' Caption field stays plain text, and leaves
   a formatted caption alone unless you change its words.
 
-- **Open the photo editor from the toolbar.** The popup's new Photo editor card
-  opens Photo Topos without starting from a report, and returns to an editor tab
-  you already have open. Tabs editing a report's photo keep their place.
+- **Open the photo editor from the toolbar.** The popup's new Photo editor button,
+  beside Settings, opens Photo Topos without starting from a report, and returns
+  to an editor tab you already have open. Tabs editing a report's photo keep their place.
 
 - **Count only what is waiting.** The popup's Activity inbox number now shows
   activities waiting for peak checks, so reviewed activities such as “No matching

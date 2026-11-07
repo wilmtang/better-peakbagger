@@ -112,16 +112,14 @@ theme, and it is listed in `web_accessible_resources` for Peakbagger so the
 popover — a content script — can link to it. Its symbol legend is painted from
 `photo-renderer`, so what it teaches cannot drift from what the export draws.
 
-The toolbar popup's **Photo editor** card opens the editor without a report.
-It sits beside the Activity inbox and stays available when that inbox is off.
+The toolbar popup's **Photo editor** header button, beside Settings, opens the
+editor without a report. It stays available when the Activity inbox is off.
 The worker's `PHOTO_STANDALONE_OPEN` route accepts only the packaged popup. It
 focuses an open photo tab that has no report context, preferring one that opened
 on the editor, and otherwise opens a new tab. A tab carrying `returnToken`,
 `localPhotoId` or `imageUrl` belongs to its report's return flow and is never
-reused, so the card cannot redirect a report's Save and return. The card steps
-aside while detected peaks are on screen, because reviewing them needs the
-popup's full 600px for **Open drafts**. Focused hidden check:
-`npm run verify -- popup-photo-entry`. It uses the real worker and tabs, checks
+reused, so the button cannot redirect a report's Save and return. Focused hidden
+check: `npm run verify -- popup-photo-entry`. It uses the real worker and tabs, checks
 state geometry with the popup loaded as a tab, then opens the real toolbar popup
 to check its sizing and tab-less sender. Window focus stays outside a hidden run.
 
