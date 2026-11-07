@@ -98,6 +98,7 @@ independent of the existing targets.
 ## Maps, terrain and GPX
 
 - [terrain-dem-fixture.mjs](terrain-dem-fixture.mjs)
+- [terrain-lod-criteria.mts](terrain-lod-criteria.mts)
 - [terrain-lod-probe.mjs](terrain-lod-probe.mjs)
 - [terrain-readiness-diagnostics.mjs](terrain-readiness-diagnostics.mjs)
 - [verify-gpx-header.mjs](verify-gpx-header.mjs)

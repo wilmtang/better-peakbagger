@@ -41,6 +41,7 @@ import {
 } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { installTerrainLodProbe } from './terrain-lod-probe.mjs';
+import { tiltTransientFailure } from './terrain-lod-criteria.mts';
 
 // CDP responses are arbitrary protocol JSON, parsed at one boundary below.
 type CdpResult = ReturnType<typeof JSON.parse>;
@@ -110,10 +111,6 @@ const SETTLE_POLL_MS = 20;
 // never gives that work a chance to run, and would measure the code with its
 // central mechanism disabled. Stated in the output for the same reason.
 const DWELL_MS = 1200;
-// How long a fallback deeper than one level may persist before it stops being a
-// soft edge and starts being a blink. See the criterion-1 comment below for why
-// the bar is a duration and not only a depth.
-const TRANSIENT_BUDGET_MS = 120;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -532,11 +529,12 @@ try {
         const start = Date.now();
         let worst = { levels: 0, share: 0 };
         let worstTiles = { levels: 0, share: 0 };
-        // When the shortfall was last still present. How deep a fallback goes is
+        // When each shortfall was last still present. How deep a fallback goes is
         // MapLibre's business — it drops to whatever it has already loaded — but
         // how long it lasts is the download wait, which is what warming removes,
         // and how long it lasts is what decides whether it reads as a blink.
-        let shortUntilMs = 0;
+        let visibleShortUntilMs = 0;
+        let tileShortUntilMs = 0;
         let sample = null;
         for (;;) {
             sample = await evaluate(cdp, PROBE);
@@ -545,13 +543,14 @@ try {
                 const currentTiles = worstTileShortfall(sample);
                 worst = keepWorst(worst, current);
                 worstTiles = keepWorst(worstTiles, currentTiles);
-                if (current.levels > 0 || currentTiles.levels > 0) shortUntilMs = Date.now() - start;
+                if (current.levels > 0) visibleShortUntilMs = Date.now() - start;
+                if (currentTiles.levels > 0) tileShortUntilMs = Date.now() - start;
                 if (current.levels === 0 && sample.idle) break;
             }
             if (Date.now() - start > SETTLE_TIMEOUT_MS) break;
             await delay(SETTLE_POLL_MS);
         }
-        return { settleMs: Date.now() - start, worst, worstTiles, shortUntilMs, sample };
+        return { settleMs: Date.now() - start, worst, worstTiles, visibleShortUntilMs, tileShortUntilMs, sample };
     };
 
     const demAtBoot = demRequests;
@@ -585,7 +584,8 @@ try {
             settleMs: result.settleMs,
             worst: result.worst,
             worstTiles: result.worstTiles,
-            shortUntilMs: result.shortUntilMs,
+            visibleShortUntilMs: result.visibleShortUntilMs,
+            tileShortUntilMs: result.tileShortUntilMs,
             demTiles: demRequests - demBefore,
             reversal: pitch < fromPitch
         };
@@ -593,7 +593,8 @@ try {
         console.log(`  ${step.from} -> ${step.to}: settled ${String(step.settleMs).padStart(5)} ms`
             + `, worst ${describeShortfall(step.worst)}`
             + ` (per tile: ${describeTileShortfall(step.worstTiles)})`
-            + `, short until ${String(step.shortUntilMs).padStart(4)} ms`
+            + `, short until ${String(step.visibleShortUntilMs).padStart(4)} ms visible`
+            + ` / ${String(step.tileShortUntilMs).padStart(4)} ms per tile`
             + `, ${step.demTiles} DEM tiles`);
         fromPitch = pitch;
     }
@@ -607,23 +608,17 @@ try {
             continue;
         }
         // A fallback deeper than one level is allowed only if it is gone inside
-        // the transient budget. This is not a softened criterion, it is the one
-        // the code can actually govern: MapLibre falls back to whatever it has
-        // already loaded, and nothing outside MapLibre can hand it an ancestor it
-        // never requested — a warmed HTTP cache shortens the wait for the tile
-        // that *was* requested. So depth belongs to the detail ladder (which
-        // criterion 2 pins) and duration belongs to the warming. The budget
-        // itself is a judgement, not a measurement: a few frames reads as a soft
-        // edge, half a second reads as a blink.
-        //
-        // Tiles are held to the same bar as visible pixels. A tile that wants a
-        // level it has not got is a collapse waiting for the ridge in front of it
-        // to move; excusing it because this fixture's terrain happens to hide it
-        // would make the criterion depend on the test's own scenery.
-        const deep = Math.max(step.worst.levels, step.worstTiles.levels) > 1;
-        if (deep && step.shortUntilMs > TRANSIENT_BUDGET_MS) {
-            failures.push(`Tilt ${step.from} -> ${step.to} collapsed for ${step.shortUntilMs} ms`
-                + ` (budget ${TRANSIENT_BUDGET_MS} ms): ${describeShortfall(step.worst)}`
+        // its transient budget; terrain-lod-criteria.mts owns both budgets and why
+        // visible pixels and hidden tiles have different ones.
+        const transient = tiltTransientFailure({
+            visibleLevels: step.worst.levels,
+            visibleShortUntilMs: step.visibleShortUntilMs,
+            tileLevels: step.worstTiles.levels,
+            tileShortUntilMs: step.tileShortUntilMs,
+        });
+        if (transient) {
+            failures.push(`Tilt ${step.from} -> ${step.to} collapsed for ${transient.durationMs} ms`
+                + ` (${transient.scope} budget ${transient.budgetMs} ms): ${describeShortfall(step.worst)}`
                 + `, per tile ${describeTileShortfall(step.worstTiles)}`);
         }
     }

@@ -653,7 +653,11 @@ band from an ancestor it has already loaded. Warming the HTTP cache shortens the
 wait for the tile that *was* requested; nothing outside MapLibre can hand it an
 ancestor it never requested. So how *deep* a momentary fallback goes belongs to
 the detail ladder below, and how *long* it lasts belongs to warming.
-`npm run verify -- terrain lod` measures both.
+`npm run verify -- terrain lod` measures both. A fallback deeper than one level
+must clear within 120 ms on screen and 250 ms on tiles a nearer ridge hides.
+Hidden tiles stay bounded because the ridge can move, but nobody sees that wait
+until it does. [`terrain-lod-criteria.mts`](../scripts/terrain-lod-criteria.mts)
+owns both budgets.
 
 ### Why a small tilt can change resolution a lot
 
