@@ -247,6 +247,9 @@ let uploadInFlight = false;
 // Each Connect click gets a token, so a permission answer that arrives after
 // the dialog was cancelled or resubmitted cannot start an upload.
 let keySubmission = 0;
+// A remembered key is on its way to the device: it is not a tab-only key, so
+// the tab-only note and its Forget stay hidden until the save settles.
+let keySaving = false;
 let insertedLocalId: string | null = null;
 let configuredKey = false;
 let permissionGranted = false;
@@ -854,7 +857,7 @@ const renderFinish = () => {
         remoteState: photo?.remote.state ?? null,
         insertionConfirmed: insertionConfirmed && insertedLocalId === photo?.localId,
         localReturned: localPhotoReturned,
-        pendingKey: !!pendingKey,
+        pendingKey: !!pendingKey || keySaving,
         overGithubLimit: overGithubLimit(),
         uploadInFlight,
     });
@@ -1012,18 +1015,23 @@ const settlePendingKey = async ({ reached, keyRejected }: { reached: boolean; ke
     // Usable for this tab at once, so the page never flickers back to "no key"
     // while the status check and save are in flight.
     sessionKey = held.value;
+    keySaving = held.remember;
     renderFinish();
-    await refreshCredential();
-    if (configuredKey) { renderFinish(); return; }
-    if (held.remember) {
-        const response = await send({ type: 'PHOTO_IMGBB_SAVE_KEY', key: held.value });
-        if (response?.ok) {
-            configuredKey = true;
-            sessionKey = '';
+    try {
+        await refreshCredential();
+        if (configuredKey) return;
+        if (held.remember) {
+            const response = await send({ type: 'PHOTO_IMGBB_SAVE_KEY', key: held.value });
+            if (response?.ok) {
+                configuredKey = true;
+                sessionKey = '';
+            }
+            // Otherwise it stays usable here; the finish note says it lasts for this tab.
         }
-        // Otherwise it stays usable here; the finish note says it lasts for this tab.
+    } finally {
+        keySaving = false;
+        renderFinish();
     }
-    renderFinish();
 };
 
 const onFinishSlot = () => {
@@ -3894,6 +3902,10 @@ const bindEvents = () => {
     ui.imgbbClose.addEventListener('click', closeKeyDialog);
     ui.imgbbCancel.addEventListener('click', closeKeyDialog);
     ui.imgbbDialog.addEventListener('close', () => {
+        // Esc closes natively, past closeKeyDialog: a permission answer still
+        // pending must not start an upload or leave Connect busy.
+        keySubmission += 1;
+        ui.saveKey.removeAttribute('aria-busy');
         ui.key.value = '';
         dialogError('');
         if (dialogReturnFocus?.isConnected && !dialogReturnFocus.hidden) dialogReturnFocus.focus({ preventScroll: true });

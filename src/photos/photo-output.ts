@@ -79,7 +79,10 @@ export const finishState = ({
                 ? { kind: 'status', label: 'Inserted', sizingLabel, emphasis: 'primary' }
                 : { kind: 'copy-link', label: 'Copy link', sizingLabel, emphasis: standalone ? 'quiet' : 'primary' };
         } else {
-            const unresolved = !!remoteState && UNRESOLVED.has(remoteState);
+            // This tab's own upload in progress keeps the button the user pressed
+            // as it was; only an outcome nobody here is waiting on demotes it.
+            const unresolved = !!remoteState && UNRESOLVED.has(remoteState)
+                && !(remoteState === 'uploading' && uploadInFlight);
             slot = {
                 kind: 'upload',
                 label: keyAvailable ? base : `${base}…`,

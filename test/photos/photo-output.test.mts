@@ -73,6 +73,9 @@ test('an unresolved upload demotes the slot and outranks every other note', () =
         "this tab's own upload in progress is not an unknown outcome");
     assert.equal(state({ remoteState: 'uploading' }).note?.kind, 'outcome-unknown',
         'an upload left running by another tab or a crash is');
+    const ownUpload = state({ context: 'report-insert', keyMode: 'device', remoteState: 'uploading', uploadInFlight: true });
+    assert.equal(ownUpload.slot.emphasis, 'primary', "this tab's own upload keeps the pressed button as it was");
+    assert.equal(state({ context: 'report-insert', keyMode: 'device', remoteState: 'uploading' }).slot.emphasis, 'secondary');
 });
 
 test('export names keep the title readable and safe on every file system', () => {

@@ -1542,9 +1542,52 @@ test('a remembered key is saved once ImgBB has the image, and the page never dro
     // Mid-save the key already counts: no keyless label, no dialog.
     assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Copy link');
     assert.equal(doc.getElementById('imgbb-dialog').open, false);
+    // Nor is it a tab-only key while it is on its way to the device: no note
+    // row comes and goes, and no Forget races the save.
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(doc.getElementById('forget-key').hidden, true);
+    page.win.dispatchEvent(new page.win.Event('focus'));
+    await page.settle();
+    assert.equal(doc.getElementById('finish-note').hidden, true, 'a redraw mid-save keeps the note away');
     finishSave({ ok: true });
-    await waitFor(page.dom, () => doc.getElementById('finish-note').hidden);
+    await page.settle();
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(doc.getElementById('forget-key').hidden, true);
     assert.deepEqual(saved, ['remembered-key']);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Esc while the browser asks for ImgBB access leaves Connect usable and starts nothing', async () => {
+    const answers: ((granted: boolean) => void)[] = [];
+    let uploads = 0;
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: false },
+        fetchImpl: async () => { uploads++; return { ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }; },
+    });
+    const { doc } = page;
+    let granted = false;
+    page.win.chrome.permissions!.contains = async () => granted;
+    page.win.chrome.permissions!.request = () => new Promise<boolean>(resolve => {
+        answers.push(answer => { granted ||= answer; resolve(answer); });
+    });
+    const dialog = doc.getElementById('imgbb-dialog');
+    const connect = doc.getElementById('save-key');
+    page.click(doc.getElementById('upload-insert'));
+    submitKey(page, 'first-key');
+    assert.equal(connect.getAttribute('aria-busy'), 'true');
+    // Esc closes a modal dialog natively, without going through Cancel.
+    dialog.close();
+    assert.equal(connect.hasAttribute('aria-busy'), false);
+    page.click(doc.getElementById('upload-insert'));
+    assert.equal(dialog.open, true);
+    submitKey(page, 'second-key');
+    assert.equal(answers.length, 2, 'the reopened dialog asks again instead of ignoring Connect');
+    answers[0](true);
+    await page.settle();
+    assert.equal(uploads, 0, 'the abandoned request starts no upload');
+    assert.equal(dialog.open, true);
+    answers[1](true);
+    await waitFor(page.dom, () => uploads === 1);
     assert.deepEqual(page.errors, []);
 });
 

@@ -287,7 +287,7 @@ try {
 
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({
-        browser: context.browser()?.version(), hidden: true, viewports: ['1440×790', '1280×680'],
+        browser: context.browser()?.version(), hidden: true, viewports: ['1440×790', '1280×680', '900×800', '600×800', '360×800', '1440×800 at 200%'],
         offline: true, clipboard: 'round trip in headless Chrome; the OS pasteboard is not exercised', passed: true,
     }));
 } finally {
