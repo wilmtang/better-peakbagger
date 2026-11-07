@@ -124,6 +124,14 @@ test('every npm command is described in the development guide', async () => {
     );
 });
 
+test('the default test command caps local concurrency and leaves CI at the Node default', async () => {
+    const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
+    assert.match(
+        packageJson.scripts.test,
+        /^npm run build && node --test --test-concurrency=3 \$\{CI:\+--test-concurrency=\$\(node -p 'os\.availableParallelism\(\)-1'\)\} "/,
+    );
+});
+
 test('development reload logs include a local timestamp', () => {
     const localTime = new Date(2026, 6, 19, 13, 4, 5);
     assert.match(
