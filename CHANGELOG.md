@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Format painter for trip reports.** Copy the formatting from one selection and
+  apply it to the next with the new roller button. Double-click it to keep painting,
+  press Esc to stop, or use Ctrl/Cmd+Alt+C and Ctrl/Cmd+Alt+V from the keyboard. It
+  works in image captions too.
+
 - **Format image captions.** Bold, italic, links, color and the other inline tools
   now work on selected caption text, and the formatting carries through Markdown,
   Plain, preview and save. Photo Topos' Caption field stays plain text, and leaves

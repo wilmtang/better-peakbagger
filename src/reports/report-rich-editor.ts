@@ -17,6 +17,7 @@
 
 import { canonicalInstagramUrl, instagramParagraphUrl, instagramPasteUrl } from './instagram-url.js';
 import { Editor, Extension, Mark, Node, getStyleProperty, mergeAttributes } from '@tiptap/core';
+import type { ChainedCommands } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
@@ -31,6 +32,7 @@ import { Fragment } from '@tiptap/pm/model';
 import type { Mark as PMMark, Node as PMNode, Schema } from '@tiptap/pm/model';
 import type { ImageOptions } from '@tiptap/extension-image';
 import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state';
+import type { Transaction } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import {
@@ -76,7 +78,7 @@ interface ReportImageOptions extends ImageOptions {
 }
 interface RichEditorOptions {
     element: HTMLElement; placeholder: string; ariaLabel: string;
-    onUpdate: () => void; onStateChange: () => void;
+    onUpdate: () => void; onStateChange: (event: { transaction: Transaction }) => void;
     shortcuts: Record<string, () => unknown>;
     resolveLocalImage?: ReportImageOptions['resolveLocalImage'];
     editLocalImage?: ReportImageOptions['editLocalImage'];
@@ -986,6 +988,61 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
     return editor;
 };
 
+export interface CopiedFormat { marks: readonly PMMark[]; block: string | null }
+
+// A link is a destination rather than a format, so it is neither copied nor
+// removed. A caption has no block style of its own to copy.
+const copyFormat = (editor: Editor): CopiedFormat | null => {
+    const { selection, storedMarks, doc } = editor.state;
+    if (selection instanceof NodeSelection) return null;
+    let marks: readonly PMMark[] | null = selection.empty ? storedMarks || selection.$from.marks() : null;
+    if (!marks) {
+        doc.nodesBetween(selection.from, selection.to, node => {
+            if (!marks && node.isText) marks = node.marks;
+            return !marks;
+        });
+    }
+    return {
+        marks: (marks || []).filter(mark => mark.type.name !== 'link'),
+        block: selection.$from.parent.type.name === 'reportCaption' ? null : richState(editor).block,
+    };
+};
+
+const blockChain = (chain: ChainedCommands, editor: Editor, value: string) => {
+    if (/^h[1-6]$/.test(value)) return chain.setHeading({ level: Number(value[1]) as 1 | 2 | 3 | 4 | 5 | 6 });
+    if (value === 'pre') return chain.setCodeBlock();
+    if (value === 'blockquote') return chain.setParagraph().setBlockquote();
+    return editor.isActive('blockquote') ? chain.setParagraph().unsetBlockquote() : chain.setParagraph();
+};
+
+// Text takes the copied marks exactly. The block style follows only when the
+// selection covers whole blocks, because a word cannot become a heading.
+const paintFormat = (editor: Editor, format: CopiedFormat) => {
+    // The browser's selection changes before the editor hears about it. Without
+    // reading it first, a click would repaint the text selected before that click.
+    (editor.view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+    const { selection } = editor.state;
+    if (selection.empty || selection instanceof NodeSelection) return false;
+    const { $from, $to } = selection;
+    const wholeBlocks = $from.parentOffset === 0 && $to.parentOffset === $to.parent.content.size;
+    const inCaption = [$from, $to].some($pos => $pos.parent.type.name === 'reportCaption');
+    const chain = editor.chain().focus().command(({ tr, state }) => {
+        closeHistory(tr);
+        for (const { $from: start, $to: end } of selection.ranges) {
+            for (const type of Object.values(state.schema.marks)) {
+                if (type.name !== 'link') tr.removeMark(start.pos, end.pos, type);
+            }
+            for (const mark of format.marks) tr.addMark(start.pos, end.pos, mark);
+        }
+        return true;
+    });
+    if (format.block && wholeBlocks && !inCaption && richState(editor).block !== format.block) {
+        blockChain(chain, editor, format.block);
+    }
+    chain.run();
+    return true;
+};
+
 const MARKS = ['bold', 'italic', 'underline', 'strike', 'code', 'highlight',
     'subscript', 'superscript', 'small', 'inlineQuote'];
 
@@ -1035,15 +1092,9 @@ export const richCommands = {
     }).run(),
     // The block dropdown: a heading/code choice converts the current block; a
     // quote choice wraps a fresh paragraph; Paragraph unwraps an active quote.
-    setBlock: (editor: Editor, value: string) => {
-        const chain = editor.chain().focus();
-        if (/^h[1-6]$/.test(value)) return chain.setHeading({ level: Number(value[1]) as 1 | 2 | 3 | 4 | 5 | 6 }).run();
-        if (value === 'pre') return chain.setCodeBlock().run();
-        if (value === 'blockquote') return chain.setParagraph().setBlockquote().run();
-        return (editor.isActive('blockquote')
-            ? chain.setParagraph().unsetBlockquote()
-            : chain.setParagraph()).run();
-    }
+    setBlock: (editor: Editor, value: string) => blockChain(editor.chain().focus(), editor, value).run(),
+    copyFormat,
+    paintFormat,
 };
 
 // One snapshot per transaction; report-editor.ts paints the toolbar from this

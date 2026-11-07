@@ -34,6 +34,7 @@ import { reportDrafts as ReportDrafts } from './report-drafts.js';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.js';
 import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.ts';
+import { createFormatPainter } from './report-format-painter.ts';
 import { createMarkdownEditor } from './report-md-editor.js';
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
@@ -211,6 +212,11 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         underline: button('bpb-re-tool', 'U', 'Underline (Ctrl/Cmd+U)', formattedLabel('u', 'U')),
         strike: button('bpb-re-tool', 'S', 'Strikethrough', formattedLabel('s', 'S')),
         more: button('bpb-re-tool', 'Aa', 'More formats'),
+        formatPainter: button('bpb-re-tool', 'Format painter', 'Format painter (Ctrl/Cmd+Alt+C)',
+            svg(svgElement('path', {
+                fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+                d: 'M3 2.5h8a1 1 0 011 1V6a1 1 0 01-1 1H3a1 1 0 01-1-1V3.5a1 1 0 011-1zM12 4.7h2v3.8H7.5v2M6.6 10.5h1.8v3.2H6.6z'
+            }))),
         link: button('bpb-re-tool', 'Link', 'Link (Ctrl/Cmd+K)',
             svg(svgElement('path', {
                 fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round',
@@ -550,6 +556,20 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     swatches.append(...swatchButtons, swatchClear);
     moreBox.append(...Object.values(moreButtons), swatches);
 
+    // Floats with the other popovers, so arming the painter moves nothing. The
+    // armed state lives only while this box is open: anything that closes the
+    // popovers, including Escape and a press outside the editor, also cancels it.
+    const painterBox = el('div', 'bpb-re-box bpb-re-painterbox');
+    painterBox.hidden = true;
+    const painterStatus = el('span', 'bpb-re-painter-status');
+    painterStatus.setAttribute('role', 'status');
+    painterBox.append(painterStatus);
+    const PAINTER_HINTS = {
+        once: 'Select text to apply this format, or press Ctrl/Cmd+Alt+V.',
+        locked: 'Select text to apply this format. It keeps applying until you press Esc.',
+    };
+    toolButtons.formatPainter.setAttribute('aria-keyshortcuts', 'Control+Alt+C Meta+Alt+C');
+
     const richWrap = el('div', 'bpb-re-richwrap');
 
     const mdSplit = el('div', 'bpb-re-mdsplit');
@@ -642,7 +662,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     // cover either recovery actions or the writing surface.
     const toolbar = el('div', 'bpb-re-toolbar');
     const contextual = el('div', 'bpb-re-contextual');
-    contextual.append(tableBar, captionBar, linkBox, imageBox, videoBox, moreBox);
+    contextual.append(tableBar, captionBar, linkBox, imageBox, videoBox, moreBox, painterBox);
     toolbar.append(conversionBar, draftBar, bar, contextual);
     ui.append(toolbar, richWrap, mdSplit, saveRecovery, foot);
 
@@ -695,8 +715,9 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     });
 
     const boxes = [tableBar, captionBar, linkBox, imageBox, videoBox, moreBox];
-    const manualBoxes = [linkBox, imageBox, videoBox, moreBox];
+    const manualBoxes = [linkBox, imageBox, videoBox, moreBox, painterBox];
     const closeBoxes = () => {
+        painter.cancel();
         hideInstagramHelp();
         for (const box of boxes) box.hidden = true;
         fieldErrors.forEach((error, input) => clearFieldError(input));
@@ -1193,7 +1214,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
 
     // ---- Rich toolbar ---------------------------------------------------------
 
-    const CAPTION_TOOLS = new Set(['bold', 'italic', 'underline', 'strike', 'more', 'link']);
+    const CAPTION_TOOLS = new Set(['bold', 'italic', 'underline', 'strike', 'more', 'link', 'formatPainter']);
 
     // Painted from a richState snapshot on every editor transaction, so active
     // states, the block dropdown, undo/redo, and the table bar always reflect
@@ -1209,6 +1230,11 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
                 control.disabled = snapshot.captionActive && !(snapshot.captionText && CAPTION_TOOLS.has(name));
             }
         }
+        // A selected photo has no text format to copy, but an armed painter can always be ended here.
+        const painterMode = painter.mode();
+        toolButtons.formatPainter.disabled = painterMode === 'idle' && snapshot.imageSelected && !snapshot.captionText;
+        toolButtons.formatPainter.setAttribute('aria-pressed', String(painterMode !== 'idle'));
+        toolButtons.formatPainter.classList.toggle('bpb-re-tool-locked', painterMode === 'locked');
         for (const name of ['bold', 'italic', 'underline', 'strike']) {
             (toolButtons as Record<string, HTMLElement>)[name].setAttribute('aria-pressed', String(snapshot.marks[name]));
         }
@@ -1229,6 +1255,28 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         editCaption.title = editCaption.textContent;
         removeCaption.hidden = !snapshot.captionActive;
         tableBar.hidden = !snapshot.inTable || !captionBar.hidden || manualBoxes.some(box => !box.hidden);
+    };
+
+    const painter = createFormatPainter({
+        surface: richWrap,
+        copy: () => richEditor && richCommands.copyFormat(richEditor),
+        paint: format => richCommands.paintFormat(richEditor!, format),
+        onChange: mode => {
+            ui.classList.toggle('bpb-re-painting', mode !== 'idle');
+            painterBox.hidden = mode === 'idle';
+            if (mode !== 'idle') painterStatus.textContent = PAINTER_HINTS[mode];
+            refreshToolbar();
+        },
+    });
+    // Opening any other popover cancels the painter; arming it replaces them.
+    const hideOtherBoxes = () => { for (const box of boxes) if (box !== painterBox) box.hidden = true; };
+    const armFormatPainter = () => { hideOtherBoxes(); painter.arm('once'); refreshToolbar(); };
+    const pressFormatPainter = (event: MouseEvent) => {
+        hideOtherBoxes();
+        painter.press(event);
+        refreshToolbar();
+        // A keyboard press hands focus to the text the format is headed for.
+        if (!event.detail) richEditor?.commands.focus();
     };
 
     const openLinkBox = () => {
@@ -1384,7 +1432,8 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     for (const [name, control] of Object.entries({ ...toolButtons, ...moreButtons, ...tableButtons })) {
         // mousedown would steal the selection the command needs.
         control.addEventListener('mousedown', event => event.preventDefault());
-        control.addEventListener('click', () => {
+        control.addEventListener('click', event => {
+            if (name === 'formatPainter') return pressFormatPainter(event);
             if (name === 'more') return toggleBox(moreBox);
             if (name === 'link') return linkBox.hidden ? openLinkBox() : closeBoxAndRestoreEditor();
             if (name === 'image') return imageBox.hidden ? openImageBox() : closeBoxAndRestoreEditor();
@@ -1469,8 +1518,12 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
             placeholder: isProfile ? 'Write your biography…' : 'Write your trip report…',
             ariaLabel: editorLabel,
             onUpdate: () => { state.richDirty = true; state.creditScaffold = false; scheduleSync(); },
-            onStateChange: () => refreshToolbar(),
-            shortcuts: { 'Mod-k': openLinkBox },
+            onStateChange: ({ transaction }) => { painter.noteTransaction(transaction); refreshToolbar(); },
+            shortcuts: {
+                'Mod-k': openLinkBox,
+                'Mod-Alt-c': armFormatPainter,
+                'Mod-Alt-v': () => painter.apply(),
+            },
             resolveLocalImage: (src: string) => localPhotos ? localPhotos.resolvePreview(src) : Promise.resolve(src),
             editLocalImage: isProfile ? undefined : (event: Event, src: string, getPos: () => number | undefined) => {
                 if (localPhotos!.busy()) return;
@@ -1801,6 +1854,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
                 state.nativeHandoff = true;
                 showNative(true);
                 localPhotos?.handoffToNative();
+                painter.cancel();
                 if (richEditor) richEditor.destroy();
                 mdEditor.destroy();
                 instagramPresentation?.destroy();

@@ -449,6 +449,33 @@ inline quote, and a named-color text palette — sit one click away behind the
 "Aa" control. While the caret is inside a table, a contextual row offers
 add/delete row and column, header-row toggle, and table removal.
 
+### Format painter
+
+The roller button copies formatting from the selection or caret, in Rich text
+only. The other modes edit source text, which has no formatted selection to copy.
+
+| Do this | What happens |
+| --- | --- |
+| Click, or Ctrl/Cmd+Alt+C | Copies the format. The next selection receives it and the painter ends. |
+| Double-click, or Shift+Enter on the button | Stays armed for as many selections as you make. The button shows a short bar. |
+| Select text with the pointer | Applies when the selection ends, including double- and triple-click. |
+| Select text with the keyboard, then Ctrl/Cmd+Alt+V | Applies. A keyboard selection grows a key at a time, so it never applies by itself. |
+| Esc, the button, or the × | Cancels. So do typing, opening another popover, changing mode, and pressing outside the editor. |
+
+While armed, the button is pressed, the pointer over the text becomes a roller, and
+a popover states what to do next. It floats like the other popovers, so nothing
+moves. A plain click that selects nothing leaves the painter armed.
+
+Painting replaces the target's inline formatting with the copied marks, which may
+mean removing them, and is one Undo step. Undo does not end a double-click run.
+The copied marks come from the first text selected. Links are neither copied nor
+removed, since a link is a destination rather than a format.
+The block style (paragraph, heading, quote or preformatted) follows only when the
+selection covers whole blocks. Captions can be the source or target of inline
+formatting but never give or take a block style. A selected photo has no format to
+copy. `npm run verify -- layout-stability --surface=captions` drives these gestures
+with a real pointer and keyboard, hidden, in Chrome and Firefox.
+
 ### Image captions
 
 Click **Write a caption…** beneath any image in Rich text to start typing.

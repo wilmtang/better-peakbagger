@@ -180,4 +180,152 @@ export async function verifyReportCaptionStability(page: Page, origin: string, v
         executed++;
     }
     assert.equal(executed, 6, 'caption verifier must execute every layout and text scale');
+    await verifyFormatPainter(page, origin, variant, { asset, capture });
+}
+
+// Real pointer and keyboard gestures, because the editor reads a drag's selection
+// from the browser and the fixture DOM cannot stand in for that.
+async function verifyFormatPainter(page: Page, origin: string, variant: LayoutVariant, { asset, capture }: { asset: (file: string) => Promise<Buffer>; capture: (page: Page, label: string, reference?: boolean) => Promise<unknown> }) {
+    await page.goto(`${origin}/climber/ascentedit.aspx?cid=900001`);
+    await page.evaluate((origin: string) => {
+        (document.getElementById('JournalText') as FixtureElement)!.value = [
+            '[b][i]Source[/i][/b] then alpha beta gamma delta',
+            'Keyboard epsilon',
+            'A whole paragraph to paint',
+            `[figure][img src="${origin}/caption-ridge.svg" width="240" height="150"][figcaption]Caption words here[/figcaption][/figure]`,
+            'After the photo',
+        ].join('\n\n');
+    }, origin);
+    await page.addStyleTag({ content: (await asset('css/report-editor.css')).toString() });
+    for (const file of ['vendor/marked.umd.js', 'content/ascent-editor.js']) {
+        await page.addScriptTag({ content: (await asset(file)).toString() });
+    }
+    await page.locator('.bpb-re-surface').waitFor();
+    await page.waitForFunction(() => document.querySelector<FixtureElement>('.bpb-re-image-resize img')?.naturalWidth === 800);
+    const painter = page.getByRole('button', { name: /^Format painter/ });
+    const box = page.locator('.bpb-re-painterbox');
+    const wordBox = (word: string) => page.evaluate((word: string) => {
+        const walker = document.createTreeWalker(document.querySelector('.bpb-re-surface')!, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const at = node.nodeValue!.indexOf(word);
+            if (at < 0) continue;
+            const range = document.createRange();
+            range.setStart(node, at);
+            range.setEnd(node, at + word.length);
+            const { left, right, top, height } = range.getBoundingClientRect();
+            return { left, right, y: top + height / 2 };
+        }
+        throw new Error(`Missing word: ${word}`);
+    }, word);
+    // The editor re-syncs the browser selection in a task after each mouse-up, and
+    // a press arriving first would be reverted. No person clicks that quickly.
+    const settled = () => page.evaluate(() => new Promise(resolve =>
+        requestAnimationFrame(() => setTimeout(() => requestAnimationFrame(resolve), 0))));
+    const dragOver = async (word: string) => {
+        const { left, right, y } = await wordBox(word);
+        await page.mouse.move(left + 1, y);
+        await page.mouse.down();
+        await page.mouse.move(right - 1, y, { steps: 4 });
+        await page.mouse.move(right + 1, y);
+        await page.mouse.up();
+        await settled();
+    };
+    const pressed = (value: string) => page.waitForFunction((value: string) =>
+        document.querySelector('[aria-label^="Format painter"]')!.getAttribute('aria-pressed') === value, value);
+    const formatted = (word: string) => page.waitForFunction((word: string) =>
+        [...document.querySelectorAll('.bpb-re-surface strong em, .bpb-re-surface em strong')].some(node => node.textContent!.includes(word)), word);
+    const anchors = ['.bpb-re-bar', '.bpb-re-surface', '.bpb-re-foot', '[aria-label^="Format painter"]'];
+    const measure = () => page.evaluate((anchors: string[]) => anchors.map(selector => {
+        const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
+        return { selector, x, y, width, height };
+    }), anchors);
+    const expectStable = async (before: unknown, label: string) => assert.deepEqual(await measure(), before, `${variant.name} painter ${label} moved the layout`);
+
+    // Single use, from a drag: the armed state and its release move nothing.
+    await dragOver('Source');
+    const idle = await measure();
+    await painter.click();
+    await pressed('true');
+    assert.ok(await box.isVisible());
+    const hover = await wordBox('alpha');
+    await page.mouse.move(hover.left, hover.y);
+    assert.notEqual(await page.locator('.bpb-re-surface').evaluate((element: FixtureElement) => getComputedStyle(element).cursor), 'text');
+    await expectStable(idle, 'arming');
+    const contrast = await box.evaluate((element: FixtureElement) => {
+        const channels = (value: string) => value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(channel => {
+            const unit = channel / 255;
+            return unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+        });
+        const luminance = (value: string) => { const [r, g, b] = channels(value); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+        const [light, dark] = [luminance(getComputedStyle(element.querySelector('.bpb-re-painter-status')!).color),
+            luminance(getComputedStyle(element).backgroundColor)].sort((a, b) => b - a);
+        return (light + 0.05) / (dark + 0.05);
+    });
+    assert.ok(contrast >= 4.5, `${variant.name}: painter hint contrast ${contrast}`);
+    await capture(page, `${variant.name}-format-painter-armed`);
+    await dragOver('alpha');
+    await formatted('alpha');
+    await pressed('false');
+    assert.ok(await box.isHidden());
+    await expectStable(idle, 'applying');
+
+    // A double-click stays armed through several selections and Escape ends it.
+    await dragOver('Source');
+    await painter.dblclick();
+    await page.locator('.bpb-re-tool-locked').waitFor();
+    await dragOver('beta');
+    await formatted('beta');
+    await dragOver('gamma');
+    await formatted('gamma');
+    await pressed('true');
+    await capture(page, `${variant.name}-format-painter-locked`);
+    await page.keyboard.press('Escape');
+    await pressed('false');
+    await expectStable(idle, 'Escape');
+    await dragOver('delta');
+    assert.equal(await page.locator('.bpb-re-surface strong em', { hasText: 'delta' }).count(), 0, 'a cancelled painter must not apply');
+
+    // A triple-click paints the paragraph, not the word its second press selected.
+    await dragOver('Source');
+    await painter.click();
+    const paragraph = await wordBox('paragraph');
+    await page.mouse.click(paragraph.left + 2, paragraph.y, { clickCount: 3, delay: 20 });
+    await formatted('A whole paragraph to paint');
+    await pressed('false');
+
+    // Keyboard only: copy, extend the selection, then apply on request.
+    await dragOver('Source');
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.keyboard.press(`${modifier}+Alt+C`);
+    await pressed('true');
+    const epsilon = await wordBox('epsilon');
+    await page.mouse.click(epsilon.left, epsilon.y);
+    // This click selects nothing: it must move the caret and leave the painter armed.
+    await page.waitForFunction(() => getSelection()!.isCollapsed && getSelection()!.anchorNode?.nodeValue === 'Keyboard epsilon');
+    await settled();
+    await pressed('true');
+    assert.equal(await page.evaluate(() => getSelection()!.anchorNode?.nodeValue), 'Keyboard epsilon', 'the click must keep its caret');
+    for (let index = 0; index < 'epsilon'.length; index++) await page.keyboard.press('Shift+ArrowRight');
+    assert.equal(await page.locator('.bpb-re-surface strong em', { hasText: 'epsilon' }).count(), 0, 'a keyboard selection must not apply by itself');
+    await page.keyboard.press(`${modifier}+Alt+V`);
+    await formatted('epsilon');
+    await pressed('false');
+
+    // Captions take the format through the same gesture and keep the photo steady.
+    await dragOver('Source');
+    await painter.click();
+    // Centered, because a drag held near the window's edge scrolls the page under the pointer.
+    await page.locator('.bpb-re-surface figcaption').evaluate((element: FixtureElement) => element.scrollIntoView({ block: 'center' }));
+    const caption = await page.locator('.bpb-re-surface figcaption').boundingBox();
+    await dragOver('words');
+    await formatted('words');
+    const after = await page.locator('.bpb-re-surface figcaption').boundingBox();
+    assert.deepEqual({ x: after!.x, width: after!.width }, { x: caption!.x, width: caption!.width });
+    await capture(page, `${variant.name}-format-painter-caption`);
+    await page.locator('.bpb-re-surface figcaption strong').click();
+    assert.equal(await page.getByRole('button', { name: /^Bold/ }).isDisabled(), false);
+    assert.equal(await page.getByRole('button', { name: 'Insert image' }).isDisabled(), true);
+    await capture(page, `${variant.name}-format-painter-caption-tools`);
+    await page.locator('.bpb-re-mode', { hasText: 'Plain' }).click();
+    assert.match(await page.locator('#JournalText').inputValue(), /\[figcaption\]Caption \[b\]\[i\]words\[\/i\]\[\/b\] here\[\/figcaption\]/);
 }
