@@ -524,7 +524,9 @@ try {
                 heading: (document.getElementById('library-heading') as PageElement | null)?.textContent,
                 backup: document.querySelector<PageElement>('.backup-card')?.textContent,
                 status,
-                credentialHidden: (document.getElementById('credential-card') as PageElement | null)?.hidden,
+                // No key form sits in the page; key setup is a modal opened only by Upload.
+                credentialHidden: !document.getElementById('credential-card')
+                    && !(document.getElementById('imgbb-dialog') as HTMLDialogElement | null)?.open,
                 horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
         }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
@@ -604,7 +606,7 @@ try {
             return {
                 saved,
                 route: route.getAttribute('d'),
-                upload: (document.getElementById('upload-insert') as PageElement | null)?.textContent,
+                upload: (document.getElementById('upload-insert') as PageElement | null)?.textContent?.trim(),
                 viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
             };
         }, null, { timeout: 5000 }).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
@@ -744,7 +746,7 @@ try {
         })}`);
         const originalUploadState = await photoPage.waitForFunction(() => {
             const estimate = (document.getElementById('upload-estimate') as PageElement | null)?.textContent || '';
-            if (!/^Estimated upload ·/.test(estimate)) return false;
+            if (!/^[\d.]+ (?:B|KB|MB) (?:PNG|JPEG)$/.test(estimate)) return false;
             const format = (document.getElementById('upload-format') as PageElement | null);
             return {
                 format: format?.value,
@@ -762,7 +764,7 @@ try {
             && originalUploadState.qualityHidden === true
             && /PNG$/.test(originalUploadState.estimate || '')
             && originalUploadState.note === `${originalUploadState.sourceWidth} × ${
-                originalUploadState.sourceHeight} · full resolution`,
+                originalUploadState.sourceHeight} · full resolution · no metadata`,
         `the original-format PNG estimate was wrong: ${JSON.stringify({
             originalUploadState,
             photoErrors,
@@ -777,7 +779,7 @@ try {
         const jpegUploadState = await photoPage.waitForFunction(() => {
             const estimate = (document.getElementById('upload-estimate') as PageElement | null)?.textContent || '';
             const saved = (document.getElementById('save-status') as PageElement | null)?.textContent || '';
-            if (!/^Estimated upload ·/.test(estimate) || !/Saved on this device/.test(saved)) return false;
+            if (!/^[\d.]+ (?:B|KB|MB) (?:PNG|JPEG)$/.test(estimate) || !/Saved on this device/.test(saved)) return false;
             const footer = document.querySelector<PageElement>('.editor-footer')?.getBoundingClientRect();
             return {
                 format: (document.getElementById('upload-format') as PageElement | null)?.value,
@@ -797,7 +799,7 @@ try {
             && jpegUploadState.qualityLabel === '70%'
             && /JPEG$/.test(jpegUploadState.estimate || '')
             && jpegUploadState.note === `${jpegUploadState.sourceWidth} × ${
-                jpegUploadState.sourceHeight} · full resolution`
+                jpegUploadState.sourceHeight} · full resolution · no metadata`
             && jpegUploadState.footerHeight < 260,
         `the JPEG quality or encoded estimate was wrong: ${JSON.stringify({
             jpegUploadState,
@@ -826,7 +828,7 @@ try {
                 const saved = (document.getElementById('save-status') as PageElement | null)?.textContent || '';
                 const estimate = (document.getElementById('upload-estimate') as PageElement | null)?.textContent || '';
                 return /Saved on this device/.test(saved)
-                    && /^Estimated upload ·/.test(estimate)
+                    && /^[\d.]+ (?:B|KB|MB) (?:PNG|JPEG)$/.test(estimate)
                     && document.querySelectorAll<PageElement>('#photo-overlay [data-bpb-object]').length >= 6;
             }, null, { timeout: 10_000 });
         }
@@ -1103,8 +1105,6 @@ try {
         });
         const aligned = (first: PageResult, second: PageResult, edge: string, tolerance = 1) =>
             Math.abs((first?.[edge] ?? Number.NaN) - (second?.[edge] ?? Number.NaN)) <= tolerance;
-        const actionGap = (reportSizeState.footer.primary?.left as number)
-            - reportSizeState.footer.clear?.right;
         check(reportSizeState.choices.length === 2
             && reportSizeState.choices.every(choice => choice.value === '320')
             && reportSizeState.choices.every(choice =>
@@ -1125,11 +1125,8 @@ try {
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'left')
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'right')
             && aligned(reportSizeState.footer.format, reportSizeState.footer.reportSize, 'left')
-            && aligned(reportSizeState.footer.estimate, reportSizeState.footer.primary, 'right')
             && aligned(reportSizeState.footer.reportSize, reportSizeState.footer.clear, 'bottom')
-            && aligned(reportSizeState.footer.clear, reportSizeState.footer.primary, 'bottom')
-            && actionGap >= 7
-            && actionGap <= 9
+            && (reportSizeState.footer.primary?.bottom as number) <= (reportSizeState.footer.box?.top as number)
             && reportSizeState.estimateColors.warning.strong
                 === reportSizeState.estimateColors.neutral.strong
             && reportSizeState.estimateColors.warning.note

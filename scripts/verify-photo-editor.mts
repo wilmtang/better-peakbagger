@@ -257,7 +257,7 @@ try {
     await page.locator('#undo').click();
     await page.locator('#undo').click();
     // Wait for the user-visible estimate after the final undo, not a stale blob.
-    await page.waitForFunction(() => (document.getElementById('upload-estimate') as PageElement).textContent.startsWith('Estimated upload')
+    await page.waitForFunction(() => /^[\d.]+ (?:B|KB|MB) (?:PNG|JPEG)$/.test((document.getElementById('upload-estimate') as PageElement).textContent)
         && (globalThis as unknown as PhotoProbes).photoVerificationExport);
     if (screenshots) {
         const base64 = await page.evaluate(async () => {

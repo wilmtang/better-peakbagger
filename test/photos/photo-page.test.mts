@@ -116,7 +116,7 @@ test('every extension panel paints from the one shared design language', async (
         'author layout rules must not override the native hidden state');
 });
 
-test('the API key is a password field and upload remains one explicit primary action', () => {
+test('the API key is a password field inside a modal outside the editor, and finish actions share one group', () => {
     const key = doc.getElementById('imgbb-key');
     const credentialForm = doc.getElementById('credential-form');
     const credentialHelp = doc.getElementById('credential-help');
@@ -135,12 +135,21 @@ test('the API key is a password field and upload remains one explicit primary ac
         /never exposed to\s+Peakbagger, another website, GitHub, browser sync, or status UI/i);
     assert.match(credentialText,
         /packaged photo page for the direct ImgBB upload/i);
-    assert.equal(doc.getElementById('remove-key').textContent.trim(), 'Forget for this tab');
-    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload and insert');
+    const dialog = doc.getElementById('imgbb-dialog');
+    assert.equal(dialog.tagName, 'DIALOG');
+    assert.equal(dialog.parentElement, doc.body, 'editor shortcuts never see keys typed into the dialog');
+    assert.ok(dialog.contains(credentialForm));
+    assert.equal(doc.getElementById('credential-card'), null, 'no key form sits above the editor');
+    assert.equal(doc.getElementById('forget-key').textContent.trim(), 'Forget');
+    const finish = doc.getElementById('finish-actions');
+    assert.equal(finish.getAttribute('role'), 'group');
+    assert.ok(finish.closest('.editor-topbar'), 'finish actions stay in the top bar');
+    assert.deepEqual([...finish.querySelectorAll('button')].map(button => button.textContent.trim()),
+        ['Upload to ImgBB…', 'Copy image', 'Export image']);
     assert.equal(doc.querySelectorAll('#upload-insert').length, 1);
 });
 
-test('upload format, JPEG quality, and the encoded estimate stay beside the upload action', () => {
+test('file format, JPEG quality, and the encoded size are summarized beside the canvas', () => {
     const format = doc.getElementById('upload-format');
     assert.deepEqual([...format.options].map(option => [option.value, option.textContent.trim()]), [
         ['original', 'Follow original format'],
@@ -159,9 +168,12 @@ test('upload format, JPEG quality, and the encoded estimate stay beside the uplo
     assert.equal(estimate.getAttribute('role'), 'status');
     assert.equal(estimate.getAttribute('aria-live'), 'polite');
     assert.match(estimate.textContent, /full resolution.+annotations included/is);
-    assert.equal(format.closest('.editor-footer'), doc.getElementById('upload-insert').closest('.editor-footer'));
-    assert.match(source, /ascentBackupEnabled && encoded\.bytes > GITHUB_CAMO_PREVIEW_BYTES/);
-    assert.match(source, /GitHub may not show this image in backed-up reports/);
+    assert.ok(format.closest('.editor-footer'));
+    assert.match(doc.querySelector('label.upload-option > span').textContent, /^File format$/);
+    const summary = doc.getElementById('output-summary');
+    assert.ok(summary.closest('.viewport-actions'), 'the format summary stays in view beside the photo');
+    assert.equal(summary.tagName, 'BUTTON');
+    assert.match(source, /ascentBackupEnabled\s+&& cachedExport\.encoded\.bytes > GITHUB_CAMO_PREVIEW_BYTES/);
     assert.doesNotMatch(styles, /\.upload-estimate\.is-warning/,
         'a GitHub preview limitation is descriptive context, not an upload error');
 });

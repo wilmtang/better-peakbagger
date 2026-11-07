@@ -26,7 +26,6 @@ body {
 
 .app-header h1,
 .app-header p,
-.credential-card h2,
 .inspector h2,
 .library-heading h2 {
   margin: 0;
@@ -78,26 +77,8 @@ main {
   padding: 20px clamp(14px, 3vw, 42px) 54px;
 }
 
-.credential-card {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  justify-content: space-between;
-  margin-bottom: 18px;
-  padding: 16px 18px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
-  box-shadow: var(--shadow);
-}
 
-.credential-card.configured {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-}
 
-.credential-card p {
-  margin: 4px 0 0;
-}
 
 .credential-form {
   display: grid;
@@ -226,7 +207,9 @@ textarea {
 }
 
 .editor-workspace {
-  overflow: hidden;
+  /* clip, not hidden: hidden makes this the scroll container and would stop
+     the top bar sticking to the window. */
+  overflow: clip;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card);
@@ -650,7 +633,7 @@ kbd {
   display: grid;
   grid-column: 1 / -1;
   grid-row: 2;
-  grid-template-columns: minmax(210px, 0.8fr) 1fr auto auto;
+  grid-template-columns: minmax(210px, 0.8fr) 1fr auto;
   align-items: end;
   gap: 8px;
 }
@@ -924,7 +907,6 @@ kbd {
 }
 
 @media (max-width: 900px) {
-  .credential-card,
   .editor-topbar,
   .library-heading {
     align-items: stretch;
@@ -1343,6 +1325,133 @@ kbd {
   .upload-options > .upload-option:first-child, #jpeg-quality-control, .upload-estimate { grid-column: auto; }
   .footer-actions { grid-template-columns: 1fr 1fr; }
   .editor-footer .report-width-control { grid-column: 1 / -1; }
-  #clear-annotations { grid-column: 1; justify-self: stretch; }
-  #upload-insert { grid-column: 2; justify-self: stretch; }
+  #clear-annotations { grid-column: 1 / -1; justify-self: start; }
 }
+
+/* ---- Finish actions: Copy, Export and the optional upload ----
+   They sit in the top bar, which stays in view while the photo scrolls, so
+   getting the picture out never needs a trip below the canvas. */
+.editor-topbar { background: var(--card); }
+.new-photo { align-self: end; }
+.new-photo.is-retired { visibility: hidden; }
+.finish-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  align-self: end;
+}
+/* Publishing stands apart from the local actions, whichever side it is on. */
+.finish-gap { width: 8px; }
+.finish-actions.upload-first .finish-gap { order: 0; }
+.finish-status {
+  display: inline-grid;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  color: var(--sub);
+  font-size: 13px;
+  font-weight: 600;
+}
+.finish-status::after {
+  content: attr(data-sizing-label);
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.finish-actions .panel-button[aria-disabled="true"],
+.finish-actions .panel-button[aria-busy="true"] { cursor: default; opacity: 0.6; }
+.finish-actions .panel-button[aria-busy="true"] { opacity: 0.85; cursor: progress; }
+
+@container photo-editor (min-width: 1051px) {
+  @media (min-height: 600px) {
+    .editor-topbar {
+      position: sticky;
+      top: var(--photo-header-height, 0px);
+      z-index: 3;
+      border-radius: 12px 12px 0 0;
+    }
+  }
+}
+@container photo-editor (max-width: 1050px) {
+  .editor-topbar { flex-wrap: wrap; }
+  .finish-actions { flex: 1 0 100%; justify-content: flex-end; }
+}
+@container photo-editor (max-width: 560px) {
+  .finish-actions { flex-wrap: wrap; }
+  .finish-actions > .panel-button { flex: 1 1 calc(50% - 4px); }
+  .finish-actions > .panel-button.primary { flex-basis: 100%; }
+  .finish-gap { display: none; }
+}
+@media (max-width: 900px) {
+  .finish-actions { align-self: stretch; justify-content: flex-end; }
+  .new-photo { align-self: flex-start; }
+}
+
+/* A workspace in view gives the canvas the main column's top padding. */
+main:has(#editor-view:not([hidden]) #editor-workspace:not([hidden])) { padding-top: 4px; }
+
+/* ---- Status row beneath the photo ---- */
+.viewport-actions .status-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.finish-note {
+  flex: 0 1 auto;
+  max-width: 46ch;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.finish-note .panel-button.link { margin-left: 4px; color: var(--dark-link, var(--link)); }
+.viewport-actions .output-summary {
+  flex: none;
+  min-height: 28px;
+  margin-left: auto;
+  padding: 3px 8px;
+  color: inherit;
+  border-color: var(--dark-border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.viewport-actions .output-summary:hover:not([aria-disabled="true"]) {
+  border-color: currentColor;
+  background: transparent;
+}
+@container photo-canvas (max-width: 460px) {
+  .summary-report-size { display: none; }
+}
+
+/* ---- Resume line in the empty editor ---- */
+.resume-draft {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  color: var(--sub);
+  font-size: 13px;
+}
+
+/* ---- Upload dialog ---- */
+.imgbb-dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: 0;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.imgbb-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.imgbb-dialog-body { display: grid; gap: 12px; padding: 18px 20px 20px; }
+.imgbb-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.imgbb-dialog-heading h2 { margin: 0; font-size: 17px; }
+.imgbb-dialog p { margin: 0; }
+.imgbb-dialog .credential-form { display: grid; gap: 10px; }
+.imgbb-dialog label:not(.check-row) { display: grid; gap: 4px; font-weight: 600; }
+.imgbb-error { color: var(--danger); font-size: 13px; }
+.imgbb-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }

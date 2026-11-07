@@ -154,6 +154,13 @@ const loadEditor = async ({
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
     if (fetchImpl) win.fetch = fetchImpl;
+    // jsdom has HTMLDialogElement but neither showModal() nor close().
+    win.HTMLDialogElement.prototype.showModal = function showModal(this: Page) { this.open = true; };
+    win.HTMLDialogElement.prototype.close = function close(this: Page) {
+        if (!this.open) return;
+        this.open = false;
+        this.dispatchEvent(new win.Event('close'));
+    };
     const chrome: Page = makeChromeStub({ bpbSettings: { reportImageWidth: 640, ...syncedPreferences } }, localPreferences);
     chrome.runtime.sendMessage = async (message: Page) => {
         if (message?.type === 'PHOTO_IMGBB_STATUS') return imgbbStatus;
@@ -711,7 +718,7 @@ for (const destination of ['new file', 'new version']) {
             page.click(page.doc.getElementById('show-library'));
             await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
             [...page.doc.querySelectorAll('.photo-card button')]
-                .find(button => button.textContent === 'Edit').click();
+                .find((button: Page) => button.dataset.action === 'edit').click();
             await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false && title.value === 'important outgoing edit');
         }
         const photos: Page = await readPhotoStore(page.win, 'photos');
@@ -739,7 +746,7 @@ for (const destination of ['new file', 'new version']) {
             page.click(page.doc.getElementById('show-library'));
             await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
             [...page.doc.querySelectorAll('.photo-card button')]
-                .find(button => button.textContent === 'Edit').click();
+                .find((button: Page) => button.dataset.action === 'edit').click();
         }
         await waitFor(page.dom, () => /Resolve the save problem/.test(
             page.doc.getElementById('toast-message').textContent));
@@ -788,7 +795,7 @@ for (const destination of ['new file', 'new version']) {
                 page.click(page.doc.getElementById('show-library'));
                 await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
                 [...page.doc.querySelectorAll('.photo-card button')]
-                    .find(button => button.textContent === 'Edit').click();
+                    .find((button: Page) => button.dataset.action === 'edit').click();
                 await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false);
             }
             assert.equal(page.drawing(), false);
@@ -856,7 +863,7 @@ test('Edit has one owner across rapid same-card and cross-card actions', async t
         page.dom.window.close();
     });
     const edits = [...page.doc.querySelectorAll('.photo-card button')]
-        .filter(button => button.textContent === 'Edit');
+        .filter((button: Page) => button.dataset.action === 'edit');
     assert.equal(edits.length, 2);
 
     edits[0].click();
@@ -907,7 +914,7 @@ test('Edit closes its fallback bitmap after successful ownership transfer', asyn
     const deferred: Page = deferNextDraftCompletion(indexedDB, (names: Page) => names.includes('operations'));
     t.after(() => { deferred.restore(); deferred.release(); page.dom.window.close(); });
     const edit = [...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Edit');
+        .find((button: Page) => button.dataset.action === 'edit');
 
     edit.click();
     await waitForPhotoStore(page.win, 'photos', (records: Page) => records.length === 2).catch(error => {
@@ -941,7 +948,7 @@ test('Edit releases decoded pixels and its owner when thumbnailing or storage fa
         Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
         page.win.HTMLCanvasElement.prototype.toBlob = (callback: Page) => callback(null);
         const edit = [...page.doc.querySelectorAll('.photo-card button')]
-            .find(button => button.textContent === 'Edit');
+            .find((button: Page) => button.dataset.action === 'edit');
 
         edit.click();
         await waitFor(page.dom, () => /could not be saved/i.test(
@@ -970,7 +977,7 @@ test('Edit releases decoded pixels and its owner when thumbnailing or storage fa
         });
         Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
         const edit = [...page.doc.querySelectorAll('.photo-card button')]
-            .find(button => button.textContent === 'Edit');
+            .find((button: Page) => button.dataset.action === 'edit');
 
         edit.click();
         await waitFor(page.dom, () => /could not be saved/i.test(
@@ -1003,7 +1010,7 @@ test('a committed new version stays recoverable when its editor load fails', asy
         return decode(...args);
     };
     const edit = [...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Edit');
+        .find((button: Page) => button.dataset.action === 'edit');
 
     edit.click();
     await waitFor(page.dom, () => /new version was saved.*reopen it from the library/i.test(
@@ -1344,8 +1351,11 @@ test('PNG can stay lossless or switch to a quality-controlled JPEG with real siz
         'an ascent-backup warning is noise while that feature is off');
 
     await chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { enableGithubBackup: true } });
-    await waitFor(page.dom, () => /GitHub may not show.+backed-up reports/i.test(note.textContent));
-    assert.equal(estimate.parentElement.classList.contains('is-warning'), true);
+    await page.settle();
+    assert.doesNotMatch(note.textContent, /GitHub/i, 'the GitHub size note belongs to report sessions');
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(estimate.parentElement.classList.contains('is-warning'), false);
+    assert.match(doc.getElementById('output-summary').textContent, /^PNG · 6\.0 MB$/);
 
     format.value = 'jpeg';
     page.emit(format, 'change');
@@ -1385,34 +1395,75 @@ test('unsupported source formats expose JPEG fallback instead of a false origina
     assert.deepEqual(page.errors, []);
 });
 
-test('a device-saved ImgBB key is managed in Settings instead of a photo-page removal card', async () => {
-    const page = await loadEditor({
-        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
-    });
-    assert.equal(page.doc.getElementById('credential-card').hidden, true);
-    assert.equal(page.doc.getElementById('remove-key').hidden, true);
+test('with no key the editor shows no key form until Upload asks for one', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const dialog = doc.getElementById('imgbb-dialog');
+    assert.equal(doc.getElementById('credential-card'), null);
+    assert.equal(dialog.open, false);
+    assert.equal(dialog.closest('#editor-view'), null, 'the dialog lives outside the editor');
+    const upload = doc.getElementById('upload-insert');
+    assert.equal(upload.textContent.trim(), 'Upload to ImgBB…');
+    assert.ok(upload.classList.contains('quiet'));
+    assert.ok(doc.getElementById('export-image').classList.contains('primary'));
+    const actions = [...doc.getElementById('finish-actions').querySelectorAll('button')].map((button: Page) => button.id);
+    assert.deepEqual(actions, ['upload-insert', 'copy-image', 'export-image'], 'standalone ends on Export');
+
+    page.click(upload);
+    assert.equal(dialog.open, true);
+    assert.equal(doc.activeElement, doc.getElementById('imgbb-key'));
+    // Keys typed while the dialog is open never reach the editor behind it.
+    page.key('keydown', { key: 'b' });
+    assert.notEqual(doc.querySelector('[data-tool="bolt"]').getAttribute('aria-pressed'), 'true');
+    doc.getElementById('imgbb-key').value = 'not a key';
+    doc.getElementById('imgbb-dialog').querySelector('form').dispatchEvent(new page.win.Event('submit', { cancelable: true }));
+    assert.match(doc.getElementById('imgbb-error').textContent, /no spaces/);
+    assert.equal(dialog.open, true);
+    page.click(doc.getElementById('imgbb-cancel'));
+    assert.equal(dialog.open, false);
+    assert.equal(doc.getElementById('imgbb-key').value, '');
+    assert.equal(doc.activeElement, upload);
     assert.deepEqual(page.errors, []);
 });
 
-test('a tab-only ImgBB key keeps its one local escape hatch', async () => {
+test('a device-saved key uploads without a form and offers no tab-only escape hatch', async () => {
+    const page = await loadEditor({ imgbbStatus: { ok: true, configured: true, permissionGranted: true } });
+    const { doc } = page;
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload to ImgBB');
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(doc.getElementById('forget-key').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a key typed for this tab is held until ImgBB has seen it, then kept with a way to forget it', async () => {
+    const saved: Page[] = [];
     const page = await loadEditor({
         imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+        runtimeHandler: async (message: Page) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(message.key);
+            return { ok: true };
+        },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
     });
     const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
     doc.getElementById('imgbb-key').value = 'tab-only-key';
     doc.getElementById('remember-key').checked = false;
-    page.click(doc.getElementById('save-key'));
-    await page.settle();
+    doc.getElementById('imgbb-dialog').querySelector('form').dispatchEvent(new page.win.Event('submit', { cancelable: true }));
+    await waitFor(page.dom, () => /Uploaded to ImgBB/.test(page.status())).catch(error => {
+        error.message += `; status=${JSON.stringify(page.status())} toast=${JSON.stringify(doc.getElementById('toast-message').textContent)}`;
+        throw error;
+    });
+    await waitFor(page.dom, () => !doc.getElementById('forget-key').hidden);
+    assert.deepEqual(saved, [], 'a tab-only key is never saved');
+    assert.match(doc.getElementById('finish-note').textContent, /ImgBB key for this tab only/);
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Copy link',
+        'a published standalone photo offers its link in the same place');
 
-    assert.equal(doc.getElementById('credential-card').hidden, false);
-    assert.equal(doc.getElementById('credential-form').hidden, true);
-    assert.equal(doc.getElementById('remove-key').hidden, false);
-    assert.equal(doc.getElementById('remove-key').textContent.trim(), 'Forget for this tab');
-
-    page.click(doc.getElementById('remove-key'));
+    page.click(doc.getElementById('forget-key'));
     await page.settle();
-    assert.equal(doc.getElementById('credential-form').hidden, false);
-    assert.equal(doc.getElementById('remove-key').hidden, true);
+    assert.equal(doc.getElementById('finish-note').hidden, true);
     assert.deepEqual(page.errors, []);
 });
 
@@ -1699,9 +1750,9 @@ test('imported annotations enter the same semantic keyboard selection list', asy
     Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
     page.doc.getElementById('show-library').click();
     await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
-        .some(button => button.textContent === 'Edit'));
+        .some((button: Page) => button.dataset.action === 'edit'));
     const editImported = [...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Edit');
+        .find((button: Page) => button.dataset.action === 'edit');
     editImported.focus();
     editImported.click();
     await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false)
@@ -2131,13 +2182,12 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     const recoveryAction = doc.getElementById('toast-action');
     recoveryAction.click();
     await waitFor(page.dom, () => recoveryCopyCalls === 1);
-    doc.getElementById('imgbb-key').value = '';
-    doc.getElementById('save-key').click();
-    await waitFor(page.dom, () => /Enter a valid ImgBB API key/.test(
+    doc.getElementById('forget-key').click();
+    await waitFor(page.dom, () => /forgotten for this tab/.test(
         doc.getElementById('toast-message').textContent));
     finishCopy();
     await page.settle();
-    assert.match(doc.getElementById('toast-message').textContent, /Enter a valid ImgBB API key/);
+    assert.match(doc.getElementById('toast-message').textContent, /forgotten for this tab/);
     assert.doesNotMatch(doc.getElementById('toast-message').textContent, /copied/i);
     assert.equal(recoveryUrl.hidden, true);
     assert.equal(recoveryUrl.value, '');
