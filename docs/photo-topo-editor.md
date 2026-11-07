@@ -93,7 +93,10 @@ unrelated image.
 From the report editor's image popover, the user can:
 
 - keep the existing direct-URL workflow; or
-- choose **Upload a photo…** to open the photo tab.
+- choose **Open Photo Topos…** to open the photo tab.
+
+Markdown and Plain have no image popover and cannot take an insertion back, so
+their bar carries **Photo Topos ↗**, which opens the standalone editor.
 
 There is deliberately one photo action rather than two. *Upload and edit…*
 beside *Choose from library…* read as two different features when they are one
@@ -114,7 +117,9 @@ popover — a content script — can link to it. Its symbol legend is painted fr
 
 The toolbar popup's **Photo editor** header button, beside Settings, opens the
 editor without a report. It stays available when the Activity inbox is off.
-The worker's `PHOTO_STANDALONE_OPEN` route accepts only the packaged popup. It
+The worker's `PHOTO_STANDALONE_OPEN` route accepts the packaged popup, and a
+Peakbagger report tab only with a fresh `photo-editor` trusted activation; neither
+receives report context. It
 focuses an open photo tab that has no report context, preferring one that opened
 on the editor, and otherwise opens a new tab. A tab carrying `returnToken`,
 `localPhotoId` or `imageUrl` belongs to its report's return flow and is never
@@ -138,7 +143,7 @@ points finishes on the outgoing photo; incomplete single-point/freehand/resize
 previews end there. If persistence fails, the current edits stay open and the
 replacement stops. A local draft reopens in place. Editing a published image
 starts one current draft with the same title and caption; later edits resume it.
-The standalone photo workflow uploads only when the user chooses **Upload and insert**.
+The standalone photo workflow uploads only when the user chooses **Upload to ImgBB** (or **Upload and insert** from a report).
 A photo pasted into a Rich text TR follows a deferred workflow: double-click opens
 an editable copy here, **Save and return** updates it locally, and saving the TR
 uploads it. See [TR local photos](trip-report-editor.md#photo-topo-editor-and-library-handoff).
@@ -153,11 +158,57 @@ unavailable estimate is not treated as a failure because IndexedDB remains the
 authoritative quota gate. A failed preparation or write never changes the
 original file outside the extension.
 
+## Copy, export, and the optional upload
+
+Photo Topos works without an ImgBB key. No key form sits in the page; the top
+bar holds three finish actions whose order and emphasis follow the entry
+context, not the key (`src/photos/photo-output.ts`, `finishState`):
+
+| Context | Actions, in order | Primary |
+| --- | --- | --- |
+| Standalone | Upload to ImgBB · Copy image · Export image | Export image |
+| From a report | Copy image · Export image · Upload and insert (or replace) | Upload |
+| Pasted TR photo | Copy image · Export image · Save and return | Save and return |
+
+A missing key only adds an ellipsis to the upload label; its width is reserved
+so the actions never move. Once published, a standalone session's slot becomes
+**Copy link**, and a report session's shows **Inserted** only after the report
+confirmed the insertion. One note line beside the canvas explains, in priority
+order, an unresolved upload, a report waiting without a key, the GitHub size
+warning (report sessions only) and a tab-only key with **Forget**. A summary
+button there shows the file type and size and focuses **File format**.
+
+**Copy image** writes a PNG `ClipboardItem` whose blob is the pending encode,
+calling `clipboard.write()` inside the click so a long encode cannot outlast the
+user activation. It is hidden where `ClipboardItem` is missing. **Export image**
+downloads the flattened file in the chosen format, named
+`<title>-topo.<ext>` (Unicode kept, at most 200 UTF-8 bytes, Windows-reserved
+names avoided). Both read a snapshot taken in the click after gestures settle,
+share one encode per revision and type with the size estimate, and change no
+catalog state. The Library offers **Export image** for any record whose original
+and project are retained; editing a published record is labelled **Edit as new
+version** because it forks a draft.
+
+Upload without a key opens a modal outside `#editor-view`, so editor shortcuts
+and paste never see its keystrokes. Its primary button calls
+`permissions.request()` before anything awaits: Firefox refuses the request
+after an await. The key is then held in memory. It is saved (when remembered) or
+kept for the tab only after the request reached ImgBB and was not refused for
+the key itself (provider code 100), which reopens the dialog with an inline
+error. A request that never left the page keeps the held key for the next try,
+and a key saved in Settings meanwhile wins. When the browser reports offline,
+Upload stops before any journal entry and offers Export.
+
+The empty editor appears after the drafts read settles or 400 ms pass, so its
+**Continue** line for the newest draft never moves **Choose photo**. **New photo**
+opens the picker from the click; it is hidden in report-photo sessions and
+retired after a confirmed insertion, whose return token is spent.
+
 On upload, Better Peakbagger:
 
 1. flattens the original and annotations into a fresh JPEG or PNG;
 2. hashes and validates the export and records its encoded size;
-3. requests the optional ImgBB API permission if it is not already granted;
+3. confirms the optional ImgBB API permission, which the click requested;
 4. leases the device-local API key to the extension page for this request;
 5. posts the exported bytes directly to ImgBB, which applies the upload limit
    for that key;

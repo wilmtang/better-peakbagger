@@ -1057,7 +1057,7 @@ shows the exact bracket source.
   test handle.
 - `test/reports/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
   compatibility record validation, fallback titles, and expiry arithmetic.
-- `test/options/options-github.test.mjs` pins manager ordering, labels, exact Markdown copy
+- `test/options/options-github.test.mts` pins manager ordering, labels, exact Markdown copy
   versus bracket conversion, expiry cleanup, live refresh, and reversible
   single/bulk deletion.
 - `test/project/manifest-capture.test.mts` pins the vendored parser before the converter

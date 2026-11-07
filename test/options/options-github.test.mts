@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
-import {
+import * as helpers from '../helpers/options-helpers.mjs';
+
+// The options helpers hand back jsdom pages, which ship no types, and their
+// option bags are inferred from JavaScript defaults rather than their contract.
+type Page = Awaited<ReturnType<typeof JSON.parse>>;
+const {
     loadOptions, loadDraftsPage, el, draftRow, waitFor,
-    withGithubBackground, registerCleanup, favoriteKey, favoriteStore
-} from '../helpers/options-helpers.mjs';
+    withGithubBackground, registerCleanup, favoriteKey, favoriteStore,
+}: Page = helpers;
 
 registerCleanup();
 
@@ -39,18 +44,18 @@ test('draft refresh does not steal focus from a field outside the list', async (
 
 test('expired manager snapshot cannot delete a newer editor save', async () => {
     const key = 'bpbReportDraft:900001:new';
-    let releaseRead;
-    let chrome;
-    let signalRead;
+    let releaseRead: Page;
+    let chrome: Page;
+    let signalRead: Page;
     const readStarted = new Promise(resolve => { signalRead = resolve; });
     const fresh = { text: 'newer editor content', mode: 'rich', savedAt: Date.now() };
     const page = loadDraftsPage({}, {
         local: { [key]: { text: 'expired snapshot', savedAt: Date.now() - 15 * 86400000 } },
-        prepareChrome: api => {
+        prepareChrome: (api: Page) => {
             chrome = api;
             const get = api.storage.local.get;
             let held = false;
-            api.storage.local.get = async keys => {
+            api.storage.local.get = async (keys: Page) => {
                 const result = await get(keys);
                 if (keys === null && !held) {
                     held = true;
@@ -73,16 +78,16 @@ test('expired manager snapshot cannot delete a newer editor save', async () => {
 test('connected GitHub actions work with ascent and TR backup off and restore with Undo', async () => {
     const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
     const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
-    const messages = [];
+    const messages: Page[] = [];
     const status = {
         enabled: true, connected: true, hasToken: true,
         repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
     const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: false, autoFavoritesBackup: false }, {
         local: { [favoriteKey]: favoriteStore([original]) },
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 messages.push(JSON.parse(JSON.stringify(message)));
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
@@ -170,18 +175,18 @@ test('a failed favorites restore retries the reviewed backup without downloading
     const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
     const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
     let restoreReads = 0;
-    let rejectFirstWrite;
+    let rejectFirstWrite: Page;
     let favoriteWriteAttempts = 0;
     const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
         local: { [favoriteKey]: favoriteStore([original]) },
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
             const nativeSet = chrome.storage.local.set;
-            chrome.storage.local.set = patch => {
+            chrome.storage.local.set = (patch: Page) => {
                 if (!(favoriteKey in patch) || favoriteWriteAttempts++ > 0) return nativeSet(patch);
                 return new Promise((resolve, reject) => { rejectFirstWrite = reject; });
             };
-            chrome.runtime.sendMessage = message => {
+            chrome.runtime.sendMessage = (message: Page) => {
                 if (message.type === 'GITHUB_FAVORITES_RESTORE') {
                     restoreReads++;
                     return Promise.resolve({
@@ -234,9 +239,9 @@ test('a restore from Backup & sync confirms and undoes without the list page ope
     const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
     const dom = await loadOptions({ favoritesSource: 'buddies' }, {
         local: { [favoriteKey]: favoriteStore([original]) },
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') {
                     reply = {
@@ -302,9 +307,9 @@ test('favorites restore fails closed on an unknown backup schema', async () => {
     const original = { cid: 900002, name: 'Keep Me', addedAt: 10, source: 'manual' };
     const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
         local: { [favoriteKey]: favoriteStore([original]) },
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 const reply = message.type === 'GITHUB_FAVORITES_RESTORE'
                     ? { ok: true, content: JSON.stringify({ schemaVersion: 2, entries: [] }) }
                     : {
@@ -334,9 +339,9 @@ test('favorites restore rejects a backup above the 1,500-entry bound', async () 
     }));
     const dom = await loadOptions({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([original]) },
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 const reply = message.type === 'GITHUB_FAVORITES_RESTORE'
                     ? { ok: true, content: JSON.stringify({ schemaVersion: 1, entries: oversized }) }
                     : {
@@ -357,9 +362,9 @@ test('favorites restore rejects a backup above the 1,500-entry bound', async () 
 
 test('favorites points disconnected users to the GitHub connection above it', async () => {
     const dom = await loadOptions({ favoritesSource: 'custom' }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 const reply = message.type === 'GITHUB_AUTH_STATUS'
                     ? { enabled: false, connected: false, hasToken: false }
                     : {};
@@ -400,15 +405,15 @@ test('report drafts render newest-first with labels, fallbacks, and edit links',
     const dom = await loadDraftsPage({}, { local });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.draft-item').length === 3);
 
-    const rows = Array.from(dom.window.document.querySelectorAll('.draft-item'));
-    assert.deepEqual(rows.map(row => row.querySelector('.draft-title').textContent), [
+    const rows: Page = Array.from<Page>(dom.window.document.querySelectorAll('.draft-item'));
+    assert.deepEqual(rows.map((row: Page) => row.querySelector('.draft-title').textContent), [
         'Glacier Peak · 7/12/2026',
         'New ascent · peak #456',
         'New ascent'
     ]);
-    assert.deepEqual(rows.map(row => row.querySelector('.draft-mode').textContent), ['Rich', 'Rich', 'Markdown']);
+    assert.deepEqual(rows.map((row: Page) => row.querySelector('.draft-mode').textContent), ['Rich', 'Rich', 'Markdown']);
     assert.equal(rows[0].querySelector('.draft-excerpt').textContent, '**Newest report**');
-    assert.deepEqual(rows.map(row => row.querySelector('a.secondary').href), [
+    assert.deepEqual(rows.map((row: Page) => row.querySelector('a.secondary').href), [
         'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123&cid=900001',
         'https://www.peakbagger.com/climber/ascentedit.aspx?pid=456&cid=900001',
         'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001'
@@ -448,10 +453,10 @@ test('copy Markdown preserves exact source or converts the stored bracket report
             text: '[b]normalized[/b]', mode: 'markdown', source: 'exact  **source**', savedAt: now - 1
         }
     } });
-    const writes = [];
+    const writes: Page[] = [];
     Object.defineProperty(dom.window.navigator, 'clipboard', {
         configurable: true,
-        value: { writeText: async value => { writes.push(value); } }
+        value: { writeText: async (value: Page) => { writes.push(value); } }
     });
 
     draftRow(dom, markdownKey).querySelector('[data-action="copy"]').click();
@@ -479,7 +484,7 @@ test('copy Markdown exposes and selects the complete source for every clipboard 
     const fallback = el(dom, 'drafts-copy-fallback');
     const value = el(dom, 'drafts-copy-fallback-value');
     const dismiss = el(dom, 'drafts-copy-fallback-dismiss');
-    const copy = key => draftRow(dom, key).querySelector('[data-action="copy"]');
+    const copy = (key: Page) => draftRow(dom, key).querySelector('[data-action="copy"]');
 
     const cases = [
         [richKey, 'Rich **recovery**', { writeText: () => { throw new Error('blocked'); } }],
@@ -498,7 +503,7 @@ test('copy Markdown exposes and selects the complete source for every clipboard 
         assert.equal(value.getAttribute('aria-label'), 'Markdown to copy manually');
         assert.equal(dom.window.document.activeElement, value);
         assert.equal(value.selectionStart, 0);
-        assert.equal(value.selectionEnd, expected.length);
+        assert.equal(value.selectionEnd, (expected as string).length);
         dismiss.click();
         assert.equal(fallback.hidden, true);
         assert.equal(dom.window.document.activeElement, control);
@@ -568,7 +573,7 @@ test('a failed single-draft Undo keeps its recovery snapshot available for retry
 
     const originalSet = dom.chrome.storage.local.set;
     let failOnce = true;
-    dom.chrome.storage.local.set = async patch => {
+    dom.chrome.storage.local.set = async (patch: Page) => {
         if (failOnce) {
             failOnce = false;
             throw new Error('transient storage failure');
@@ -590,12 +595,12 @@ test('a failed single-draft Undo keeps its recovery snapshot available for retry
 test('draft deletion stays busy until storage settles and Undo preserves newer same-key edits', async () => {
     const key = 'bpbReportDraft:900001:a123';
     const record = { text: 'older recovery', mode: 'rich', savedAt: Date.now() };
-    let releaseDelete;
+    let releaseDelete: Page;
     const dom = await loadDraftsPage({}, {
         local: { [key]: record },
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             const nativeSet = chrome.storage.local.set;
-            chrome.storage.local.set = async patch => {
+            chrome.storage.local.set = async (patch: Page) => {
                 if (patch[key]?.deletedGeneration && !releaseDelete) {
                     await new Promise(resolve => { releaseDelete = resolve; });
                 }
@@ -634,7 +639,7 @@ test('delete all states the count, requires confirmation, and retains a failed U
     };
     const dom = await loadDraftsPage({}, {
         local: records,
-        prepareWindow: window => {
+        prepareWindow: (window: Page) => {
             window.confirm = () => {
                 throw new Error('the draft manager must not use the native confirm dialog');
             };
@@ -679,7 +684,7 @@ test('delete all states the count, requires confirmation, and retains a failed U
 
     const originalSet = dom.chrome.storage.local.set;
     let failOnce = true;
-    dom.chrome.storage.local.set = async patch => {
+    dom.chrome.storage.local.set = async (patch: Page) => {
         if (failOnce) {
             failOnce = false;
             throw new Error('transient storage failure');
@@ -722,16 +727,16 @@ test('the drafts manager shows an empty state and refreshes when another tab aut
 // can configure it through the same worker routes the photo page uses, but the
 // value never round-trips back into the page.
 const loadImgbb = ({ status = { ok: true, configured: false, permissionGranted: false }, grant = true } = {}) => {
-    const messages = [];
-    let saved = null;
+    const messages: Page[] = [];
+    let saved: Page = null;
     const load = loadOptions({}, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = {
                 request: async () => grant,
                 contains: async () => status.permissionGranted,
                 remove: async () => true,
             };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 messages.push(structuredClone(message));
                 let reply = {};
                 if (message.type === 'PHOTO_IMGBB_STATUS') reply = { ...status, configured: saved != null || status.configured };
@@ -750,7 +755,8 @@ test('the ImgBB key setting explains the service and links its key page and term
     const dom = await load;
     const desc = el(dom, 'imgbb-key-desc');
     assert.equal(desc.textContent.replace(/\s+/g, ' ').trim(),
-        'The photo topo editor uploads your image to ImgBB, a free image hosting site, and puts the public link in your trip report. '
+        'Needed only to upload: Photo Topos copies and exports without it. '
+        + 'The photo topo editor uploads your image to ImgBB, a free image hosting site, and puts the public link in your trip report. '
         + 'Sign in there, choose Get API key, and paste the key here. Uploads are yours and follow ImgBB’s terms of service. '
         + 'The saved key remains in device-local extension storage. Read the photo guide for more info.');
     assert.deepEqual([...desc.querySelectorAll('a')].map(link => ({
@@ -833,12 +839,12 @@ test('the shared GitHub connection stays visible while ascent and TR backup is o
 });
 
 test('enabling ascent and TR backup persists only the ascent gate and leaves GitHub connection separate', async () => {
-    let requested = null;
+    let requested: Page = null;
     const dom = await loadOptions({}, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             withGithubBackground({ enabled: true, connected: false, hasToken: false })(chrome);
             const request = chrome.permissions.request;
-            chrome.permissions.request = async arg => { requested = arg; return request(arg); };
+            chrome.permissions.request = async (arg: Page) => { requested = arg; return request(arg); };
         }
     });
     const toggle = el(dom, 'enable-github-backup');
@@ -854,16 +860,16 @@ test('enabling ascent and TR backup persists only the ascent gate and leaves Git
 
 test('the shared Connect GitHub action requests host permission and keeps denial actionable', async () => {
     const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ enabled: false }, { grant: false }) });
-    const connect = Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Connect GitHub');
+    const connect: Page = Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Connect GitHub');
     connect.click();
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(el(dom, 'enable-github-backup').checked, false);
     assert.notEqual(dom.chrome._localStore.bpbDeviceSettings?.settings.enableGithubBackup, true);
     assert.equal(el(dom, 'github-detail').hidden, false);
     assert.match(el(dom, 'github-panel').textContent, /GitHub access wasn’t granted/);
-    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Try again'));
+    assert.ok(Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Try again'));
 
     dom.window.dispatchEvent(new dom.window.Event('focus'));
     await new Promise(r => dom.window.setTimeout(r, 10));
@@ -873,20 +879,20 @@ test('the shared Connect GitHub action requests host permission and keeps denial
 
 test('the shared Connect GitHub action grants permission without enabling ascent and TR backup', async () => {
     let permissionGranted = false;
-    let requested = null;
+    let requested: Page = null;
     let began = false;
     const dom = await loadOptions({}, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = {
                 contains: async () => permissionGranted,
-                request: async value => {
+                request: async (value: Page) => {
                     requested = value;
                     permissionGranted = true;
                     return true;
                 },
                 remove: async () => true,
             };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') {
                     reply = { enabled: false, connected: false, hasToken: false };
@@ -903,8 +909,8 @@ test('the shared Connect GitHub action grants permission without enabling ascent
         },
     });
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Connect GitHub').click();
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Connect GitHub').click();
     await waitFor(dom, () => el(dom, 'github-panel').querySelector('.github-code'));
 
     assert.equal(JSON.stringify(requested), JSON.stringify({
@@ -918,10 +924,10 @@ test('the shared Connect GitHub action grants permission without enabling ascent
 test('a lost device flow stops polling and offers to reconnect', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
         accelerateGithubPoll: true,
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
-                let reply;
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
+                let reply: Page;
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = { enabled: true, connected: false, hasToken: false };
                 else if (message.type === 'GITHUB_AUTH_BEGIN') reply = {
                     phase: 'polling', userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device', expiresIn: 900,
@@ -934,23 +940,23 @@ test('a lost device flow stops polling and offers to reconnect', async () => {
         },
     });
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Connect GitHub').click();
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Connect GitHub').click();
     await waitFor(dom, () => /connection was lost/i.test(el(dom, 'github-panel').textContent), 3000);
 
     assert.deepEqual([...new Set(dom.githubPollDelays)], [2000]);
-    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Reconnect GitHub'));
+    assert.ok(Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Reconnect GitHub'));
 });
 
 test('opening the GitHub device page uses tabs.create and reports a failure', async () => {
-    const created = [];
+    const created: Page[] = [];
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.tabs = { create: async details => { created.push(details.url); } };
-            chrome.runtime.sendMessage = (message, callback) => {
-                let reply;
+            chrome.tabs = { create: async (details: Page) => { created.push(details.url); } };
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
+                let reply: Page;
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = { enabled: true, connected: false, hasToken: false };
                 else if (message.type === 'GITHUB_AUTH_BEGIN') reply = {
                     phase: 'polling', userCode: 'ABCD-EFGH',
@@ -962,19 +968,19 @@ test('opening the GitHub device page uses tabs.create and reports a failure', as
                 return Promise.resolve(reply);
             };
         },
-        prepareWindow: window => {
+        prepareWindow: (window: Page) => {
             window.open = () => {
                 throw new Error('a popup-blocked window.open must never be the path taken');
             };
         },
     });
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Connect GitHub').click();
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Connect GitHub').click();
     await waitFor(dom, () => el(dom, 'github-panel').querySelector('.github-code'));
 
-    const openButton = Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Open github.com/login/device');
+    const openButton: Page = Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Open github.com/login/device');
     assert.ok(openButton, 'the device flow depends on this single action');
     openButton.click();
     await waitFor(dom, () => created.length === 1);
@@ -993,10 +999,10 @@ test('opening the GitHub device page uses tabs.create and reports a failure', as
 test('the device code is copyable and shows its remaining lifetime', async () => {
     const startedAt = Date.now();
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
-                let reply;
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
+                let reply: Page;
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = { enabled: true, connected: false, hasToken: false };
                 else if (message.type === 'GITHUB_AUTH_BEGIN') reply = {
                     phase: 'polling', userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device',
@@ -1011,11 +1017,11 @@ test('the device code is copyable and shows its remaining lifetime', async () =>
     let copied = '';
     Object.defineProperty(dom.window.navigator, 'clipboard', {
         configurable: true,
-        value: { writeText: async value => { copied = value; } },
+        value: { writeText: async (value: Page) => { copied = value; } },
     });
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Connect GitHub').click();
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Connect GitHub').click();
     await waitFor(dom, () => el(dom, 'github-panel').querySelector('.github-code'));
     const codeButton = el(dom, 'github-panel').querySelector('.github-code');
     assert.match(codeButton.getAttribute('aria-label'), /Copy device code ABCD-EFGH/);
@@ -1034,41 +1040,41 @@ test('repository setup offers a prefilled private GitHub repository', async () =
     };
     const repo = { owner: 'ada', name: 'existing', fullName: 'ada/existing', defaultBranch: 'main', installationId: 11 };
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 const reply = message.type === 'GITHUB_AUTH_DISCOVER' ? { repos: [repo] } : status;
                 if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
                 return Promise.resolve(reply);
             };
         },
     });
-    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Create repository on GitHub'));
-    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'ada/existing'), 'a sole granted repository must still be inspected by an explicit choice');
+    await waitFor(dom, () => Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Create repository on GitHub'));
+    assert.ok(Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'ada/existing'), 'a sole granted repository must still be inspected by an explicit choice');
 
-    let opened = null;
-    dom.window.open = url => { opened = url; };
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Create repository on GitHub').click();
+    let opened: Page = null;
+    dom.window.open = (url: Page) => { opened = url; };
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Create repository on GitHub').click();
     const url = new URL(opened);
     assert.equal(url.origin + url.pathname, 'https://github.com/new');
     assert.equal(url.searchParams.get('name'), 'better-peakbagger-backup');
     assert.equal(url.searchParams.get('owner'), 'ada');
     assert.equal(url.searchParams.get('visibility'), 'private');
-    assert.match(url.searchParams.get('description'), /Backups and transfers/);
+    assert.match(url.searchParams.get('description')!, /Backups and transfers/);
 });
 
 test('a populated repository requires an explicit confirmation before connection', async () => {
     const repo = { owner: 'ada', name: 'project', fullName: 'ada/project', defaultBranch: 'main', installationId: 11 };
     let connected = false;
-    const selectMessages = [];
+    const selectMessages: Page[] = [];
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
-                let reply;
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
+                let reply: Page;
                 if (message.type === 'GITHUB_AUTH_STATUS') {
                     reply = {
                         enabled: true, connected, hasToken: true, account: { login: 'ada' },
@@ -1095,10 +1101,10 @@ test('a populated repository requires an explicit confirmation before connection
         },
     });
 
-    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'ada/project'));
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'ada/project').click();
+    await waitFor(dom, () => Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'ada/project'));
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'ada/project').click();
     await waitFor(dom, () => /already contains files/.test(el(dom, 'github-panel').textContent));
     assert.match(el(dom, 'github-panel').textContent, /Existing files will stay in place/);
     assert.equal(connected, false);
@@ -1113,8 +1119,8 @@ test('a populated repository requires an explicit confirmation before connection
     assert.match(el(dom, 'github-panel').textContent, /already contains files/,
         'an auth notification must not replace the repository safety confirmation');
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Use this repository').click();
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Use this repository').click();
     await waitFor(dom, () => /Repository ada\/project/.test(el(dom, 'github-panel').textContent));
     assert.deepEqual(selectMessages.map(message => !!message.confirmExisting), [false, true]);
     assert.equal(selectMessages[1].authorizationEpoch, 7);
@@ -1127,10 +1133,10 @@ test('repository setup shows the specific GitHub failure instead of generic copy
     };
     const repo = { owner: 'ada', name: 'backup', fullName: 'ada/backup', defaultBranch: 'main', installationId: 11 };
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
-                let reply = status;
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
+                let reply: Page = status;
                 if (message.type === 'GITHUB_AUTH_DISCOVER') reply = { repos: [repo] };
                 if (message.type === 'GITHUB_AUTH_SELECT_REPO') {
                     reply = { connected: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } };
@@ -1141,14 +1147,14 @@ test('repository setup shows the specific GitHub failure instead of generic copy
         },
     });
 
-    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'ada/backup'));
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'ada/backup').click();
+    await waitFor(dom, () => Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'ada/backup'));
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'ada/backup').click();
     await waitFor(dom, () => /Repository service is temporarily unavailable/.test(el(dom, 'github-panel').textContent));
     assert.doesNotMatch(el(dom, 'github-panel').textContent, /something went wrong/i);
-    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Try again'));
+    assert.ok(Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Try again'));
 });
 
 test('a superseded repository choice refreshes access instead of replaying the stale choice', async () => {
@@ -1160,10 +1166,10 @@ test('a superseded repository choice refreshes access instead of replaying the s
     let discoveries = 0;
     let selections = 0;
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
-                let reply = status;
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
+                let reply: Page = status;
                 if (message.type === 'GITHUB_AUTH_DISCOVER') {
                     discoveries += 1;
                     reply = { repos: [repo] };
@@ -1182,18 +1188,18 @@ test('a superseded repository choice refreshes access instead of replaying the s
         },
     });
 
-    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'ada/backup'));
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'ada/backup').click();
+    await waitFor(dom, () => Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'ada/backup'));
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'ada/backup').click();
     await waitFor(dom, () => /connection changed/.test(el(dom, 'github-panel').textContent));
     assert.equal(selections, 1);
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Try again').click();
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Try again').click();
     await waitFor(dom, () => discoveries >= 2
-        && Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-            .some(button => button.textContent === 'ada/backup'));
+        && Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+            .some((button: Page) => button.textContent === 'ada/backup'));
     assert.equal(selections, 1, 'retry must not replay a selection inspected under old credentials');
 });
 
@@ -1221,7 +1227,7 @@ test('a connected status renders the account and repository', async () => {
 
 test('an auth-storage read failure is not presented as a disconnected account', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
             chrome.runtime.sendMessage = () => Promise.resolve({
                 phase: 'error',
@@ -1232,8 +1238,8 @@ test('an auth-storage read failure is not presented as a disconnected account', 
 
     await waitFor(dom, () => /Local authorization storage could not be read/.test(
         el(dom, 'github-panel').textContent));
-    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Try again'));
+    assert.ok(Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Try again'));
     assert.doesNotMatch(el(dom, 'github-panel').textContent, /Connect a GitHub account/);
 });
 
@@ -1243,9 +1249,9 @@ test('a failed GitHub disconnect stays connected and does not announce success',
         account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 const reply = message.type === 'GITHUB_AUTH_DISCONNECT'
                     ? { phase: 'error', error: { code: 'unexpected', message: 'Local credential removal failed.' } }
                     : connected;
@@ -1272,9 +1278,9 @@ test('the connected ascent panel keeps a fresh repository-backed count across or
         account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
                 if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') {
@@ -1309,7 +1315,7 @@ test('the connected ascent panel keeps a fresh repository-backed count across or
         'the cached summary stays painted, with no Checking… flash');
 
     // The explicit control is still a forced refetch.
-    dom.chrome.runtime.sendMessage = (message, callback) => {
+    dom.chrome.runtime.sendMessage = (message: Page, callback: Page) => {
         let reply = {};
         if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
         if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') {
@@ -1327,17 +1333,17 @@ test('the connected ascent panel keeps a fresh repository-backed count across or
 test('returning from My Ascents refreshes the backup count once inside its TTL', async () => {
     let ascentCount = 0;
     let summaryReads = 0;
-    let opened = null;
+    let opened: Page = null;
     const target = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999&sort=AscentDate';
     const status = {
         enabled: true, connected: true, hasToken: true, permissionGranted: true,
         account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.tabs = { create: async details => { opened = details.url; } };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.tabs = { create: async (details: Page) => { opened = details.url; } };
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
                 if (message.type === 'PEAKBAGGER_MY_ASCENTS') reply = { ok: true, url: target };
@@ -1351,8 +1357,8 @@ test('returning from My Ascents refreshes the backup count once inside its TTL',
         },
     });
     await waitFor(dom, () => /No ascent and TR backups yet/.test(el(dom, 'github-ascent-panel').textContent));
-    Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Open My Ascents').click();
+    Array.from<Page>(el(dom, 'github-ascent-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Open My Ascents').click();
     await waitFor(dom, () => opened === target);
 
     ascentCount = 4;
@@ -1368,23 +1374,23 @@ test('an expired visible summary refreshes once without blanking the old count',
     let now = 1_000;
     let summaryReads = 0;
     let ascentCount = 2;
-    let finishRefresh = null;
+    let finishRefresh: Page = null;
     let visibility = 'visible';
     const status = {
         enabled: true, connected: true, hasToken: true, permissionGranted: true,
         account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareWindow: window => {
+        prepareWindow: (window: Page) => {
             window.Date.now = () => now;
             Object.defineProperty(window.document, 'visibilityState', {
                 configurable: true,
                 get: () => visibility,
             });
         },
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
                 if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') {
@@ -1420,17 +1426,17 @@ test('an expired visible summary refreshes once without blanking the old count',
 test('the GitHub panel re-checks access only after an actual round trip to GitHub', async () => {
     // GITHUB_AUTH_DISCOVER is the repository-listing GitHub API call; the local
     // GITHUB_AUTH_STATUS read is not what this finding is about.
-    let repos = [];
+    let repos: Page[] = [];
     let discoveries = 0;
     const status = {
         enabled: true, connected: false, hasToken: true, permissionGranted: true,
         account: { login: 'ada' }, installUrl: 'https://github.com/settings/installations/1',
     };
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
             chrome.tabs = { create: async () => {} };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
                 if (message.type === 'GITHUB_AUTH_DISCOVER') { discoveries++; reply = { repos }; }
@@ -1440,8 +1446,8 @@ test('the GitHub panel re-checks access only after an actual round trip to GitHu
         },
     });
 
-    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Grant repository access'));
+    await waitFor(dom, () => Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Grant repository access'));
     await new Promise(resolve => setTimeout(resolve, 60));
 
     // Unarmed: alt-tabbing back to the browser costs nothing.
@@ -1451,8 +1457,8 @@ test('the GitHub panel re-checks access only after an actual round trip to GitHu
     assert.equal(discoveries, before, 'an unarmed focus must not re-query GitHub');
 
     // Armed by actually sending the user to GitHub's access page.
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Grant repository access').click();
+    Array.from<Page>(el(dom, 'github-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Grant repository access').click();
     await new Promise(resolve => setTimeout(resolve, 60));
     repos = [{ owner: 'ada', name: 'peaks', fullName: 'ada/peaks' }];
     dom.window.dispatchEvent(new dom.window.Event('focus'));
@@ -1466,13 +1472,13 @@ test('the GitHub panel re-checks access only after an actual round trip to GitHu
 });
 
 test('the connected state opens the signed-in climber\'s all-years My Ascents page', async () => {
-    let opened = null;
+    let opened: Page = null;
     const target = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999&sort=AscentDate';
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.tabs = { create: async details => { opened = details.url; } };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.tabs = { create: async (details: Page) => { opened = details.url; } };
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 const reply = message.type === 'PEAKBAGGER_MY_ASCENTS'
                     ? { ok: true, url: target }
                     : {
@@ -1484,23 +1490,23 @@ test('the connected state opens the signed-in climber\'s all-years My Ascents pa
             };
         },
     });
-    await waitFor(dom, () => Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Open My Ascents'));
+    await waitFor(dom, () => Array.from<Page>(el(dom, 'github-ascent-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Open My Ascents'));
     assert.match(el(dom, 'github-ascent-panel').textContent, /covers every year/);
 
-    Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Open My Ascents').click();
+    Array.from<Page>(el(dom, 'github-ascent-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Open My Ascents').click();
     await waitFor(dom, () => opened);
     assert.equal(opened, target);
 });
 
 test('the My Ascents action explains when Peakbagger is signed out', async () => {
-    const opened = [];
+    const opened: Page[] = [];
     const dom = await loadOptions({ enableGithubBackup: true }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: Page) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.tabs = { create: async details => { opened.push(details.url); } };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.tabs = { create: async (details: Page) => { opened.push(details.url); } };
+            chrome.runtime.sendMessage = (message: Page, callback: Page) => {
                 const reply = message.type === 'PEAKBAGGER_MY_ASCENTS'
                     ? {
                         ok: false,
@@ -1518,16 +1524,16 @@ test('the My Ascents action explains when Peakbagger is signed out', async () =>
             };
         },
     });
-    await waitFor(dom, () => Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Open My Ascents'));
-    Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Open My Ascents').click();
+    await waitFor(dom, () => Array.from<Page>(el(dom, 'github-ascent-panel').querySelectorAll('button'))
+        .some((button: Page) => button.textContent === 'Open My Ascents'));
+    Array.from<Page>(el(dom, 'github-ascent-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Open My Ascents').click();
     await waitFor(dom, () => /could not find a signed-in account/i.test(el(dom, 'github-ascent-panel').textContent));
 
     assert.match(el(dom, 'github-ascent-panel').textContent, /Sign in to Peakbagger, then try again/);
     assert.doesNotMatch(el(dom, 'github-ascent-panel').textContent, /something went wrong/i);
-    const signIn = Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
-        .find(button => button.textContent === 'Sign in to Peakbagger');
+    const signIn: Page = Array.from<Page>(el(dom, 'github-ascent-panel').querySelectorAll('button'))
+        .find((button: Page) => button.textContent === 'Sign in to Peakbagger');
     assert.ok(signIn, 'the signed-out error offers a direct recovery action');
     signIn.click();
     await waitFor(dom, () => opened.length > 0);
@@ -1561,11 +1567,11 @@ test('the connected state makes enabled ascent backup automatic and keeps deleti
 });
 
 test('an unverified My Ascents session offers a site check without claiming sign-out', async t => {
-    const opened = [];
-    const dom = await loadOptions({ enableGithubBackup: true }, { prepareChrome: chrome => {
+    const opened: Page[] = [];
+    const dom = await loadOptions({ enableGithubBackup: true }, { prepareChrome: (chrome: Page) => {
         chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-        chrome.tabs = { create: async details => { opened.push(details.url); } };
-        chrome.runtime.sendMessage = (message, callback) => {
+        chrome.tabs = { create: async (details: Page) => { opened.push(details.url); } };
+        chrome.runtime.sendMessage = (message: Page, callback: Page) => {
             const reply = message.type === 'PEAKBAGGER_MY_ASCENTS'
                 ? { ok: false, error: { code: 'peakbagger-unverified', message: 'Your Peakbagger account could not be verified. Open Peakbagger, check your session, then try again.' } }
                 : { enabled: true, connected: true, hasToken: true, account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' } };

@@ -379,7 +379,7 @@ TTL, but that freshness check runs only during panel rendering at lines
 380–389. `openMyAscents()` at lines 335–355 opens Peakbagger without arming a
 return refresh. The focus listener at lines 627–638 is intentionally restricted
 to GitHub authorization/repository trips. As a result, the existing test at
-`test/options/options-github.test.mjs` (lines 1174–1210) proves repeated focus
+`test/options/options-github.test.mts` (lines 1174–1210) proves repeated focus
 leaves “No ascents backed up yet,” while `docs/github-ascent-backup.md` (lines
 321–325) promises refresh on return.
 

@@ -158,6 +158,8 @@ up where you left off; Plain mode remains available for legacy markup.
 
 **Paste photos directly into Rich text.** With your own ImgBB key configured,
 photos stay local until you save the report, then upload with visible progress.
+Without a key, open Photo Topos from any editor mode, then copy or export the
+result.
 [Report editor guide](docs/trip-report-editor.md)
 
 ![Rich-text trip report editor with formatting controls and local draft recovery](store-assets/showcase-5-trip-report-editor-light.png)
@@ -165,9 +167,12 @@ photos stay local until you save the report, then upload with visible progress.
 ### Show the line with photo topos
 
 Make route beta easier to follow. Draw routes, freehand lines, labels, and
-climbing symbols over a photo, then download it or upload a flattened,
-metadata-free JPEG or PNG to ImgBB with your own API key. Your original stays
-unchanged, and a searchable local library keeps projects ready to edit and reuse.
+climbing symbols over a photo, then copy it, export it as a file, or upload a
+flattened, metadata-free JPEG or PNG to ImgBB with your own API key. No account
+or key is needed to copy or export, and nothing leaves the device until you
+upload. Open it from the toolbar popup or the trip report editor. Your original
+stays unchanged, and a searchable local library keeps projects ready to edit and
+reuse.
 
 Download and import project bundles to preserve originals and annotations
 together. Your saved ImgBB key stays in device-local extension storage.

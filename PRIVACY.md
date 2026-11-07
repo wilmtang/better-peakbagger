@@ -30,7 +30,8 @@ Data leaves the browser only when a feature requires it:
   date range, and satellite tile requests when Sentinel-2 is selected in 2D or 3D.
 - **GitHub** receives only the data types the user explicitly or automatically
   backs up or opts to synchronize to their selected repository.
-- **ImgBB** receives a flattened image only when the user uploads it.
+- **ImgBB** receives a flattened image only when the user uploads it. Copy image
+  and Export image in Photo Topos stay on the device.
 - **AllTrails, CalTopo, Gaia GPS, and onX Backcountry** receive the saved
   Peakbagger GPX for preview or parsing only when the user clicks the matching
   **Send** button. Final Upload, Import, and Save actions remain manual.
@@ -425,7 +426,8 @@ project JSON, local/report identity, API key, and delete URL.
 | Topic | Policy |
 | --- | --- |
 | Local limits | TR pasted images and flattened local report snapshots: at most 16 MiB each. Decodable images: at most 64 megapixels and 16,384 pixels per side. Source processing/storage: at most 128 MiB. Editable bundles: at most 40 MiB. The original file is never changed. |
-| Upload | After **Upload and insert** in the standalone photo editor, or after the user saves a TR containing pasted local photos, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
+| Copy and export | **Copy image** writes the flattened PNG to the system clipboard and **Export image** saves it through the browser's download. Neither sends anything to a network service. |
+| Upload | After **Upload to ImgBB** or **Upload and insert** in the photo editor, or after the user saves a TR containing pasted local photos, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
 | API key | The saved key remains in device-local extension storage. The background worker uses it directly for user-initiated TR photo uploads and gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Settings → Report photos → Disconnect removes the saved key even with the report editor off. Earlier uploads and local projects stay; an upload already submitted may finish. |
 | Catalog | Stores public URLs, source/export metadata and hashes, upload/reachability state, lineage, report references, and local asset availability because ImgBB's v1 API has no account-gallery listing operation. |
 | Delete URL | Stored separately in device-local IndexedDB. It is never placed in a report or GitHub backup. Removing a local entry or report reference does not delete the remote ImgBB image. |

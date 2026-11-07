@@ -1723,7 +1723,7 @@ The focused automated evidence is deliberately split by boundary:
   identity-checked add, live totals and fuzzy search, reversible delete/mirror/restore,
   Buddy refresh, merge, and the default-off removal preference.
 - `test/options/options-ui.test.mts` covers distance-aware sidebar navigation;
-  `test/options/options-github.test.mjs` covers the explicit GitHub messages.
+  `test/options/options-github.test.mts` covers the explicit GitHub messages.
 - `test/favorites/climber-favorite.test.mjs` covers manual add/remove, self exclusion,
   Buddy-mode absence, live source/list changes, native action detection, owner
   validation, and both Buddy-removal policies.

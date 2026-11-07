@@ -57,16 +57,20 @@
     <section id="start" aria-labelledby="start-heading">
       <h2 id="start-heading">Two ways to add a photo</h2>
       <p>
-        In the trip report editor, the image button offers both:
+        Photo Topos needs no account or key to draw on a photo and get it back out.
+        Open it from the toolbar popup's photo button, or from the trip report editor:
+        the image button in Rich text, or <strong>Photo Topos ↗</strong> in Markdown and Plain.
+        In a report, the image button offers both of these:
       </p>
       <ul>
         <li>
-          <strong>Upload a photo…</strong> — opens Photo Topos. Choose a picture from
-          this device, drag one onto the page, or paste one; then mark the route and
-          upload it. This needs a free
+          <strong>Open Photo Topos…</strong> — choose a picture from this device, drag one
+          onto the page, or paste one; then mark the route. <strong>Copy image</strong> and
+          <strong>Export image</strong> work right away. Inserting into the report uploads
+          the photo, which needs a free
           <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">ImgBB</a>
-          key, set up once. Photos you have already uploaded are in the same place,
-          under <strong>Library</strong>, ready to insert again.
+          key, set up the first time you upload. Photos you have already uploaded are in
+          the same place, under <strong>Library</strong>, ready to insert again.
         </li>
         <li>
           <strong>Paste a direct image link</strong> — if the picture is already online
@@ -76,12 +80,18 @@
       </ul>
       <p class="guide-note">
         Better Peakbagger never uploads anything on its own. A photo leaves this device
-        only when you choose <strong>Upload</strong>.
+        only when you choose <strong>Upload</strong>. Copy and Export stay on this device.</p>
+      <p class="guide-note" id="output">
+        <strong>Copy image</strong> puts the finished topo on the clipboard as a PNG, for
+        pasting into a message or another app. <strong>Export image</strong> downloads it
+        as a file in the format you chose, named after its title. Both carry the photo and
+        your marks only, with no camera metadata or location.
       </p>
     </section>
 
     <section id="key" aria-labelledby="key-heading">
       <h2 id="key-heading">Setting up an ImgBB key</h2>
+      <p>You only need this to upload. Copy and Export work without it.</p>
       <p>
         With Google or another third-party sign-in, the whole setup usually takes about
         15 seconds.
@@ -205,8 +215,9 @@
         that ImgBB decides. Photo Topos never changes your original file.
       </p>
       <p>
-        <strong>Upload and insert</strong> flattens the photo and your marks into one new
-        image and sends that to ImgBB. The uploaded file carries the picture only: no
+        <strong>Upload to ImgBB</strong>, or <strong>Upload and insert</strong> from a report,
+        flattens the photo and your marks into one new image and sends that to ImgBB. The
+        first time, it asks for your key; a key you type is saved only after ImgBB accepts it. The uploaded file carries the picture only: no
         camera metadata, no location, no original file name, and nothing about the
         report it came from.
       </p>
@@ -214,8 +225,9 @@
         Choose <strong>Follow original format</strong> to keep a JPEG or PNG as that
         format, <strong>PNG</strong> for lossless compression, or <strong>JPEG</strong>
         for a smaller file. JPEG adds a quality control: lower quality usually means
-        a smaller upload. The size shown beside these choices is estimated by encoding
-        the full-resolution photo with its annotations on this device. When
+        a smaller file. The size shown beside these choices, and beside the photo, is
+        estimated by encoding the full-resolution photo with its annotations on this
+        device; the same choice applies to Export and Upload. When a report is waiting and
         <strong>Ascent and report backup</strong> is on, an estimate over 5 MB warns that GitHub
         may not show the image in the rendered backed-up report. The photo can still
         upload to ImgBB.
@@ -232,7 +244,8 @@
         that report for you, so you can close this tab and keep writing there. If the
         report tab has gone away in the meantime, the upload
         still succeeds — find the photo under <strong>Library</strong> and use
-        <strong>Copy URL</strong>.
+        <strong>Copy URL</strong>. Without a report, the button turns into
+        <strong>Copy link</strong> once the photo is on ImgBB.
       </p>
       <p class="guide-note">
         An uploaded photo is never edited in place. Changing it makes a new version and

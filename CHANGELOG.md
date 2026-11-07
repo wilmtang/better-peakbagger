@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Use Photo Topos without an ImgBB key.** Copy image and Export image get a
+  finished topo out with no account, key or connection. Upload stays one click
+  away and asks for a key only then, saving it after ImgBB accepts it. Open
+  Photo Topos from Markdown and Plain too, start a new photo or pick up a draft
+  from the empty editor, and export any saved topo from the Library.
+
+- **Save an ImgBB key from Settings in Firefox.** Saving the first key there no
+  longer fails because Firefox refused the access prompt.
+
 - **Format painter for trip reports.** Copy the formatting from one selection and
   apply it to the next with the new roller button. Double-click it to keep painting,
   press Esc to stop, or use Ctrl/Cmd+Alt+C and Ctrl/Cmd+Alt+V from the keyboard. It
