@@ -112,7 +112,7 @@ independent of the existing targets.
 - [verify-peak-link-order.mjs](verify-peak-link-order.mjs)
 - [verify-peak-map-layout.mjs](verify-peak-map-layout.mjs)
 - [verify-terrain-cache-owners.mjs](verify-terrain-cache-owners.mjs)
-- [verify-terrain-lod.mjs](verify-terrain-lod.mjs)
+- [verify-terrain-lod.mts](verify-terrain-lod.mts)
 - [verify-terrain-popup.mjs](verify-terrain-popup.mjs)
 - [verify-terrain-provider-ui.mjs](verify-terrain-provider-ui.mjs)
 - [verify-terrain-visual.mts](verify-terrain-visual.mts)

@@ -16,7 +16,7 @@
 // anything about native focus or window placement. A live spot-check through
 // `npm run verify -- terrain` is still required before release.
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:https';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -42,11 +42,21 @@ import {
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { installTerrainLodProbe } from './terrain-lod-probe.mjs';
 
+// CDP responses are arbitrary protocol JSON, parsed at one boundary below.
+type CdpResult = ReturnType<typeof JSON.parse>;
+type RequestListener = NonNullable<Parameters<typeof createServer>[1]>;
+type IncomingMessage = Parameters<RequestListener>[0];
+type ServerResponse = Parameters<RequestListener>[1];
+interface Cdp { call(method: string, params?: object): Promise<CdpResult>; on(method: string, listener: (params: CdpResult) => void): void; close(): void; }
+// The serialized probe's sample, and the worst fallback read out of it.
+type ProbeSample = CdpResult;
+interface Shortfall { levels: number; share: number; }
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const chromePath = process.env.CHROME_BIN || ({
+const chromePath = process.env.CHROME_BIN || (({
     darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
-}[process.platform] || 'google-chrome');
+} as Partial<Record<NodeJS.Platform, string>>)[process.platform] || 'google-chrome');
 
 const FIXTURE_HOST = 'www.peakbagger.com';
 const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
@@ -65,11 +75,10 @@ const DRAPE_SPECS = {
     L_OS: { host: 'tile.openstreetmap.org', label: 'full drape LOD, maxzoom 18' },
     L_OT: { host: 'a.tile.opentopomap.org', label: 'thrifty drape LOD, maxzoom 15' }
 };
-if (process.argv.length !== 2) throw new Error('Usage: node scripts/verify-terrain-lod.mjs');
+if (process.argv.length !== 2) throw new Error('Usage: node scripts/verify-terrain-lod.mts');
 const DRAPE_CODE = process.env.BPB_LOD_DRAPE || 'L_OS';
 if (!Object.hasOwn(DRAPE_SPECS, DRAPE_CODE)) throw new Error(`Unknown LOD drape: ${DRAPE_CODE}`);
-const DRAPE_HOST = DRAPE_SPECS[DRAPE_CODE].host;
-const DRAPE_LABEL = DRAPE_SPECS[DRAPE_CODE].label;
+const { host: DRAPE_HOST, label: DRAPE_LABEL } = DRAPE_SPECS[DRAPE_CODE as keyof typeof DRAPE_SPECS];
 // The plan measured at 1100x700 with 140 ms per tile; keep both so the numbers
 // here and the numbers in the plan are comparable.
 const FRAME_WIDTH = 1100;
@@ -106,7 +115,7 @@ const DWELL_MS = 1200;
 // the bar is a duration and not only a depth.
 const TRANSIENT_BUDGET_MS = 120;
 
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ---------------------------------------------------------------------------
 // Synthetic DEM tiles
@@ -125,13 +134,13 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const drapeTilePng = (await readFile(path.join(root, 'scripts/showcase/terrain-basemap-tile.png'))).toString('base64');
 
 const demTileCache = new Map();
-const demTile = (z, x, y) => {
+const demTile = (z: number, x: number, y: number) => {
     const key = `${z}/${x}/${y}`;
     if (!demTileCache.has(key)) demTileCache.set(key, syntheticDemWebp(z, x, y));
     return demTileCache.get(key);
 };
 
-const boundedMapterhornTile = value => {
+const boundedMapterhornTile = (value: string) => {
     try {
         const url = new URL(value);
         if (url.origin !== MAPTERHORN_TILE_ORIGIN) return null;
@@ -156,16 +165,16 @@ const boundedMapterhornTile = value => {
 // makes the extension refuse its own fixture and the 3D toggle never enables.
 // Self-signed for this host only, deleted in teardown.
 const resources = createResourceStack();
-let primaryError = null;
+let primaryError: Error | null = null;
 const certificate = await resources.guard(() =>
     createFixtureCertificate({ host: FIXTURE_HOST, label: 'lod' }));
 resources.defer('terrain LOD certificate', () => certificate.remove());
 const { key: fixtureKey, cert: fixtureCert } = certificate;
 
-const handleRequest = async (request, response) => {
+const handleRequest = async (request: IncomingMessage, response: ServerResponse) => {
     try {
-        const url = new URL(request.url, `https://${FIXTURE_HOST}`);
-        const showcaseRoutes = {
+        const url = new URL(request.url!, `https://${FIXTURE_HOST}`);
+        const showcaseRoutes: Record<string, string> = {
             '/climber/ascent.aspx': '/scripts/showcase/terrain.html',
             '/map/mastermap.aspx': '/scripts/showcase/terrain-native-map.html'
         };
@@ -188,17 +197,17 @@ const handleRequest = async (request, response) => {
         // offers a code the extension carries a spec for, so the frame resolves
         // a known layer rather than the live-Leaflet path, whose host and terms
         // are unknown by construction.
-        let transform = null;
+        let transform: ((html: string) => string) | null = null;
         if (url.pathname === '/dist/terrain/terrain.html') {
             transform = instrumentTerrainFrameHtml;
         } else if (url.pathname === '/dist/terrain/terrain-frame.js') {
             transform = instrumentTerrainFrameModule;
         } else if (file.endsWith('terrain-native-map.html')) {
-            transform = html => html.replace(
+            transform = (html: string) => html.replace(
                 '<option value="L_FIX" selected>Synthetic topographic map</option>',
                 `<option value="${DRAPE_CODE}" selected>Synthetic topographic map</option>`);
         }
-        await sendFixtureFile(response, file, { transform });
+        await sendFixtureFile(response, file, { transform } as unknown as Parameters<typeof sendFixtureFile>[2]);
     } catch (error) {
         sendFixtureError(response, error);
     }
@@ -211,7 +220,7 @@ resources.defer('terrain LOD server', () => closeServer(server));
 // CDP plumbing
 // ---------------------------------------------------------------------------
 
-const waitForDebugPort = async (profile, child, childState, timeoutMs = 10000) => {
+const waitForDebugPort = async (profile: string, child: ChildProcess, childState: { error?: Error | null }, timeoutMs = 10000) => {
     const activePortFile = path.join(profile, 'DevToolsActivePort');
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -228,7 +237,7 @@ const waitForDebugPort = async (profile, child, childState, timeoutMs = 10000) =
     throw new Error('Timed out waiting for Chrome DevToolsActivePort');
 };
 
-const connectCdp = async url => {
+const connectCdp = async (url: string): Promise<Cdp> => {
     if (typeof WebSocket !== 'function') {
         throw new Error('This verification script requires a Node.js runtime with global WebSocket support');
     }
@@ -239,8 +248,8 @@ const connectCdp = async url => {
     });
 
     let nextId = 1;
-    const pending = new Map();
-    const listeners = new Map();
+    const pending = new Map<number, { method: string; resolve: (value: CdpResult) => void; reject: (reason: Error) => void }>();
+    const listeners = new Map<string, Array<(params: CdpResult) => void>>();
     socket.addEventListener('message', event => {
         const message = JSON.parse(String(event.data));
         if (message.id) {
@@ -262,13 +271,13 @@ const connectCdp = async url => {
         },
         on(method, listener) {
             if (!listeners.has(method)) listeners.set(method, []);
-            listeners.get(method).push(listener);
+            listeners.get(method)!.push(listener);
         },
         close() { socket.close(); }
     };
 };
 
-const evaluate = async (cdp, expression) => {
+const evaluate = async (cdp: Cdp, expression: string) => {
     const result = await cdp.call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'Runtime evaluation failed');
     return result.result.value;
@@ -276,7 +285,7 @@ const evaluate = async (cdp, expression) => {
 
 // Gate on the condition, never on a fixed sleep, and report the live value at
 // failure time rather than a snapshot taken earlier.
-const waitForPageState = async (cdp, expression, timeoutMs = 40000) => {
+const waitForPageState = async (cdp: Cdp, expression: string, timeoutMs = 40000) => {
     const deadline = Date.now() + timeoutMs;
     let lastValue;
     while (Date.now() < deadline) {
@@ -298,7 +307,7 @@ const PROBE = 'window.__bpbReadLodProbe()';
 
 // 'none' — no DEM tile at any level — is worse than any finite shortfall.
 const NO_DATA = 99;
-const worstOf = (counts, total) => {
+const worstOf = (counts: Record<string, number> | undefined, total: number): Shortfall => {
     let levels = 0, share = 0;
     for (const [key, count] of Object.entries(counts || {})) {
         const value = key === 'none' ? NO_DATA : Number(key);
@@ -309,35 +318,35 @@ const worstOf = (counts, total) => {
     return { levels, share };
 };
 
-const worstShortfall = sample => worstOf(sample.shortfalls, sample.surface);
+const worstShortfall = (sample: ProbeSample) => worstOf(sample.shortfalls, sample.surface);
 // The same shortfall counted per render-to-texture tile, including tiles that
 // happen to contribute no pixels because a nearer ridge hides them.
-const worstTileShortfall = sample => worstOf(sample.tiles, Math.max(1, sample.rttTiles));
+const worstTileShortfall = (sample: ProbeSample) => worstOf(sample.tiles, Math.max(1, sample.rttTiles));
 
-const describeShortfall = worst => worst.levels === 0
+const describeShortfall = (worst: Shortfall) => worst.levels === 0
     ? 'none'
     : `${worst.levels === NO_DATA ? 'no DEM data' : `${worst.levels} levels too coarse`}`
         + ` over ${(worst.share * 100).toFixed(0)}% of the surface`;
 
-const describeTileShortfall = worst => worst.levels === 0
+const describeTileShortfall = (worst: Shortfall) => worst.levels === 0
     ? 'none'
     : `${worst.levels === NO_DATA ? 'no DEM data' : `${worst.levels} levels`} on `
         + `${(worst.share * 100).toFixed(0)}% of tiles`;
 
-const levelShares = sample => Object.entries(sample.levels || {})
+const levelShares = (sample: ProbeSample) => Object.entries<number>(sample.levels || {})
     .map(([key, count]) => ({ level: key === 'none' ? null : Number(key), share: count / sample.surface }))
     .sort((a, b) => (b.level ?? -1) - (a.level ?? -1));
 
-const describeLevels = sample => levelShares(sample)
+const describeLevels = (sample: ProbeSample) => levelShares(sample)
     .map(entry => `${entry.level === null ? 'no data' : `level ${entry.level}`} (${(entry.share * 100).toFixed(0)}%)`)
     .join(', ');
 
 // The widest gap between adjacent levels present in one frame, ignoring shares
 // small enough to be a tile-boundary seam rather than a band of the picture.
-const widestLevelGap = sample => {
+const widestLevelGap = (sample: ProbeSample) => {
     const present = levelShares(sample)
         .filter(entry => entry.level !== null && entry.share >= LEVEL_SHARE_FLOOR)
-        .map(entry => entry.level);
+        .map(entry => entry.level as number);
     let widest = 0;
     for (let i = 1; i < present.length; i++) widest = Math.max(widest, present[i - 1] - present[i]);
     return widest;
@@ -370,14 +379,13 @@ const chromeState = manageChildProcess(resources, chrome, 'terrain LOD Chrome');
 let chromeStderr = '';
 chrome.stderr.on('data', chunk => { chromeStderr = `${chromeStderr}${chunk}`.slice(-20000); });
 
-let cdp;
 const failures = [];
 try {
     const debugPort = await waitForDebugPort(profile, chrome, chromeState);
     const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
-    const page = pages.find(candidate => candidate.type === 'page');
+    const page = pages.find((candidate: { type: string }) => candidate.type === 'page');
     if (!page) throw new Error('Chrome opened no debuggable page');
-    cdp = await connectCdp(page.webSocketDebuggerUrl);
+    const cdp = await connectCdp(page.webSocketDebuggerUrl);
     resources.defer('terrain LOD CDP socket', () => cdp.close());
     await Promise.all([cdp.call('Page.enable'), cdp.call('Runtime.enable')]);
 
@@ -397,7 +405,7 @@ try {
 
     let demRequests = 0;
     let drapeRequests = 0;
-    const unexpected = [];
+    const unexpected: string[] = [];
     cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
         const serve = async () => {
             if (request.url.includes(DRAPE_HOST)) {
@@ -508,7 +516,7 @@ try {
 
     await evaluate(cdp, `window.__bpbReadLodProbe = (${installTerrainLodProbe.toString()})(document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap); true;`);
 
-    const moveCamera = async body => evaluate(cdp, `(() => {
+    const moveCamera = async (body: string) => evaluate(cdp, `(() => {
         const map = document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap;
         const renders = map.__bpbRenders || 0;
         ${body}
@@ -518,9 +526,9 @@ try {
     // Poll the live shortfall until the new camera has painted, every tile it
     // wants has arrived, and nothing on screen is below its intended detail —
     // recording the worst state seen on the way and how long it took.
-    const keepWorst = (worst, current) => current.levels > worst.levels
+    const keepWorst = (worst: Shortfall, current: Shortfall) => current.levels > worst.levels
         || (current.levels === worst.levels && current.share > worst.share) ? current : worst;
-    const settle = async renderBaseline => {
+    const settle = async (renderBaseline: number) => {
         const start = Date.now();
         let worst = { levels: 0, share: 0 };
         let worstTiles = { levels: 0, share: 0 };
@@ -669,7 +677,7 @@ try {
         for (const entry of census) {
             const drape = entry.sample.drape;
             if (!drape) continue;
-            const loaded = Object.entries(drape.levels)
+            const loaded = Object.entries<number>(drape.levels)
                 .map(([level, count]) => ({ level: Number(level), count }))
                 .sort((a, b) => b.level - a.level);
             if (!loaded.length) continue;
@@ -714,7 +722,7 @@ try {
         console.log('\nAll four tilt criteria and 20 fixed-angle zoom cases passed.');
     }
 } catch (error) {
-    if (chromeStderr) error.message += `\nChrome stderr (tail):\n${chromeStderr}`;
-    primaryError = error;
+    primaryError = error as Error;
+    if (chromeStderr) primaryError.message += `\nChrome stderr (tail):\n${chromeStderr}`;
 }
-await resources.dispose(primaryError);
+await resources.dispose(primaryError as Parameters<typeof resources.dispose>[0]);

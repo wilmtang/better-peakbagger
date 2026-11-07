@@ -56,7 +56,7 @@ const terrainTargets = {
     chrome: [['verify-terrain-visual.mts']],
     firefox: [['verify-firefox-terrain.mjs']],
     'cache-owners': [['verify-terrain-cache-owners.mjs']],
-    lod: [['verify-terrain-lod.mjs']],
+    lod: [['verify-terrain-lod.mts']],
 };
 
 export const verificationUsage = [

@@ -19,7 +19,7 @@ test('synthetic DEM WebP preserves every Terrarium channel losslessly', () => {
 });
 
 test('the actual LOD response reaches the strict production DEM cache without weakening validation', async () => {
-    const source = await readFile(new URL('../../scripts/verify-terrain-lod.mjs', import.meta.url), 'utf8');
+    const source = await readFile(new URL('../../scripts/verify-terrain-lod.mts', import.meta.url), 'utf8');
     const start = source.indexOf("cdp.on('Fetch.requestPaused'");
     const end = source.indexOf("await cdp.call('Fetch.enable'", start);
     assert.ok(start >= 0 && end > start, 'LOD request-handler boundaries are missing');

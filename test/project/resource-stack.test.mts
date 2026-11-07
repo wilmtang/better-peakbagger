@@ -45,7 +45,7 @@ test('Chrome fixture verifiers use shared launch trust instead of late or broad 
         'verify-map-handoffs', 'verify-report-photos', 'verify-ascent-backup-lifecycle',
         'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase', 'verify-map-controls',
     ]) {
-        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${['verify-terrain-visual', 'verify-extension'].includes(name) ? '.mts' : '.mjs'}`), 'utf8');
+        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${['verify-terrain-visual', 'verify-terrain-lod', 'verify-extension'].includes(name) ? '.mts' : '.mjs'}`), 'utf8');
         assert.match(source, /\.\.\.(?:fixture|certificate|cert)!?\.chromeTrustArgs/, name);
         assert.doesNotMatch(source, /['"]--ignore-certificate-errors['"]/, name);
         assert.doesNotMatch(source, /ignoreHTTPSErrors:\s*true/, name);
@@ -220,7 +220,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         'scripts/verify-extension.mts',
         'scripts/verify-firefox-extension.mts',
         'scripts/verify-firefox-terrain.mjs',
-        'scripts/verify-terrain-lod.mjs',
+        'scripts/verify-terrain-lod.mts',
         'scripts/verify-terrain-visual.mts',
         'scripts/render-showcase.mjs',
     ];
@@ -376,7 +376,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(firefoxVerifier,
         /'Firefox ascent 3D extension frame',[\s\S]{0,120}TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS \+ 5_000/,
         'the Firefox frame check must allow the product transaction to reach a terminal state');
-    for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mts']) {
+    for (const verifierPath of ['scripts/verify-terrain-lod.mts', 'scripts/verify-terrain-visual.mts']) {
         const source = sources.find(entry => entry.verifierPath === verifierPath)!.source;
         assert.match(source, /manageChildProcess\(resources, chrome/,
             `${verifierPath} must attach a child error boundary before awaiting startup`);

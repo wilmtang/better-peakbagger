@@ -40,7 +40,7 @@ test('the LOD probe counts painted DEM provenance, missing data, and tile defici
 test('LOD verification rejects unknown selections before launching a browser', () => {
     for (const [args, env, message] of [[['unknown'], {}, /Usage:/],
         [[], { BPB_LOD_DRAPE: 'unknown' }, /Unknown LOD drape/]]) {
-        const result = spawnSync(process.execPath, ['scripts/verify-terrain-lod.mjs', ...args], {
+        const result = spawnSync(process.execPath, ['scripts/verify-terrain-lod.mts', ...args], {
             encoding: 'utf8', env: { ...process.env, ...env },
         });
         assert.notEqual(result.status, 0); assert.match(result.stderr, message);
