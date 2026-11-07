@@ -129,7 +129,7 @@ independent of the existing targets.
 - [verify-climber-membership.mjs](verify-climber-membership.mjs)
 - [verify-climber-transitions.mjs](verify-climber-transitions.mjs)
 - [verify-inline-buddies.mjs](verify-inline-buddies.mjs)
-- [verify-profile-editor.mjs](verify-profile-editor.mjs)
+- [verify-profile-editor.mts](verify-profile-editor.mts)
 - [verify-profile-preparation.mjs](verify-profile-preparation.mjs)
 - [verify-profile-units.mjs](verify-profile-units.mjs)
 
@@ -187,7 +187,7 @@ independent of the existing targets.
 - [verify-instagram.mjs](verify-instagram.mjs) — packaged per-post grants, native captions, bounded player sizing, compact placeholders, consent, error/retry/cancel geometry and Rich paste in hidden Chrome/Firefox. Includes same-origin lazy-video playback and sandbox isolation. `npm run verify -- instagram`; `--live` checks public post/Reel samples and all slides plus decoded video playback in the reported mixed carousel. `--display` pregrants the optional host only in a disposable test copy, then checks native terminal navigation, identical pending/loaded viewport widths and live light/dark transitions with unchanged media colors/geometry. It does not prove the native permission prompt. `BPB_INSTAGRAM_LIVE_POST` adds one validated public sample.
 - [verify-report-image-help.mjs](verify-report-image-help.mjs) — image-popover Instagram help: hover, keyboard dismissal, tooltip bounds and stable geometry at desktop/narrow widths in both themes and enlarged text; invoked by the Instagram verifier.
 - [verify-report-draft-ownership.mjs](verify-report-draft-ownership.mjs)
-- [verify-report-photos.mjs](verify-report-photos.mjs)
+- [verify-report-photos.mts](verify-report-photos.mts)
 - [verify-climber-files.mjs](verify-climber-files.mjs) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
 - [verify-settings-actions.mjs](verify-settings-actions.mjs) — held Settings actions and restore focus, run by `layout-stability`.
 - [settings-fragment-verification.mjs](settings-fragment-verification.mjs) — shared assertions for the packaged Settings anchor verifier.

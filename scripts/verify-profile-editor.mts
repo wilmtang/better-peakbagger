@@ -1,3 +1,6 @@
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+/* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Chrome loads the real unpacked extension. Firefox renders the same shipped
@@ -8,25 +11,29 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium, firefox } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
+declare global { interface Window { profileProbe: { submissions: Record<string, FormDataEntryValue>[] } } }
+type SettingsListener = (changes: { bpbSettings: { newValue: object } }, area: string) => void;
+
 const [browserName, ...extra] = process.argv.slice(2);
 if (!['chrome', 'firefox'].includes(browserName) || extra.length) {
-    throw new Error('Usage: node scripts/verify-profile-editor.mjs chrome|firefox');
+    throw new Error('Usage: node scripts/verify-profile-editor.mts chrome|firefox');
 }
 const output = process.env.BPB_PROFILE_EDITOR_OUTPUT;
 if (output) await mkdir(output, { recursive: true });
 const resources = createResourceStack();
-let failure;
+let failure: unknown = null;
 try {
     const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-profile-editor-'));
     resources.defer('profile editor test profile', () => rm(profile, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
+    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
     resources.defer('profile editor HTTPS fixture', () => fixture.close());
-    let context;
-    let settingsPage;
+    let context: BrowserContext;
+    let settingsPage: Page | undefined;
     if (browserName === 'chrome') {
         assertChromeLaunchAllowed();
         context = await chromium.launchPersistentContext(profile, {
@@ -40,7 +47,7 @@ try {
         const registry = await context.newPage();
         await registry.goto('chrome://extensions-internals/');
         const record = await registry.waitForFunction(() => {
-            try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); }
+            try { return JSON.parse(document.body.innerText).find((item: { name: string; id: string }) => item.name === 'Better Peakbagger'); }
             catch { return false; }
         }).then(handle => handle.jsonValue());
         await registry.goto(`chrome-extension://${record.id}/options/options.html`);
@@ -54,7 +61,7 @@ try {
         });
         resources.defer('profile editor draft isolation', async () => {
             const draft = await registry.evaluate(async () => (await chrome.storage.local.get('bpbReportDraft:900001:new'))['bpbReportDraft:900001:new']);
-            assert.equal(draft.text, 'Private ascent draft must stay separate');
+            assert.equal((draft as { text: string }).text, 'Private ascent draft must stay separate');
         });
     } else {
         const browser = await firefox.launch({ headless: true,
@@ -62,20 +69,20 @@ try {
         resources.defer('profile editor Firefox', () => browser.close());
         context = await browser.newContext({ viewport: { width: 1280, height: 900 }, ignoreHTTPSErrors: true });
         await context.addInitScript(() => {
-            const listeners = [];
+            const listeners: SettingsListener[] = [];
             let settings = { enableReportEditor: true, reportEditorMode: 'rich', addReportCredit: true, enableGithubBackup: true };
             window.chrome = {
-                storage: { sync: { get: async () => ({ bpbSettings: settings }) }, local: {},
-                    onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
-                runtime: { getURL: value => `https://extension.invalid/${value}`,
+                storage: { sync: { get: async () => ({ bpbSettings: settings }) }, local: { get: async () => ({}) },
+                    onChanged: { addListener: (listener: SettingsListener) => listeners.push(listener), removeListener() {} } },
+                runtime: { getURL: (value: string) => `https://extension.invalid/${value}`,
                     onMessage: { addListener() {}, removeListener() {} },
-                    sendMessage: async message => {
+                    sendMessage: async (message: { type: string; patch?: object }) => {
                         if (message.type !== 'SETTINGS_PATCH') throw new Error(`Unexpected profile message: ${message.type}`);
                         settings = { ...settings, ...message.patch };
                         for (const listener of listeners) listener({ bpbSettings: { newValue: settings } }, 'sync');
                         return { ok: true, settings };
                     } },
-            };
+            } as unknown as typeof chrome;
         });
     }
     const html = await readFile('test/fixtures/pages/climber-climberedit.html', 'utf8');
@@ -96,14 +103,14 @@ try {
         .catch(() => assert.fail('The account biography has no rich editor; ClimberText remains a native textarea.'));
     await page.evaluate(() => {
         window.profileProbe = { submissions: [] };
-        document.getElementById('Form1').addEventListener('submit', event => {
+        document.getElementById('Form1')!.addEventListener('submit', event => {
             event.preventDefault();
-            window.profileProbe.submissions.push(Object.fromEntries(new FormData(event.target)));
+            window.profileProbe.submissions.push(Object.fromEntries(new FormData(event.target as HTMLFormElement)));
         });
     });
     const geometry = () => page.evaluate(() => {
-        const rect = selector => {
-            const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
+        const rect = (selector: string) => {
+            const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
             if (!width && !height) return { x: 0, y: 0, width: 0, height: 0 };
             return { x: x + scrollX, y: y + scrollY, width, height };
         };
@@ -111,13 +118,13 @@ try {
             editor: rect('#bpb-report-editor'), following: rect('#following-native'),
             imageAction: rect('.bpb-re-imagebox .bpb-re-linkapply'), scrollX, scrollY };
     });
-    const stable = async (before, checkScroll = true) => {
+    const stable = async (before: Awaited<ReturnType<typeof geometry>>, checkScroll = true) => {
         const after = await geometry();
-        for (const node of ['save', 'heading', 'editor', 'following', 'imageAction']) for (const dimension of ['x', 'y', 'width', 'height']) {
+        for (const node of ['save', 'heading', 'editor', 'following', 'imageAction'] as const) for (const dimension of ['x', 'y', 'width', 'height'] as const) {
             assert.ok(Math.abs(before[node][dimension] - after[node][dimension]) <= 1,
                 `${node}.${dimension} shifted: ${JSON.stringify({ before, after })}`);
         }
-        if (checkScroll) for (const axis of ['scrollX', 'scrollY']) {
+        if (checkScroll) for (const axis of ['scrollX', 'scrollY'] as const) {
             assert.ok(Math.abs(before[axis] - after[axis]) <= 1, 'the reading position moved');
         }
     };
@@ -135,7 +142,7 @@ try {
         await rich.click();
         const surface = page.locator('.bpb-re-surface');
         await surface.fill('Biography for this climber.');
-        await page.waitForFunction(() => document.getElementById('ClimberText').value === 'Biography for this climber.');
+        await page.waitForFunction(() => (document.getElementById('ClimberText') as HTMLTextAreaElement).value === 'Biography for this climber.');
         await page.locator('#biography-heading').scrollIntoViewIfNeeded();
         const before = await geometry();
         await page.getByRole('button', { name: 'Insert image', exact: true }).click();
@@ -165,7 +172,7 @@ try {
         await rich.click();
         assert.equal(await page.locator('#native-hints').isVisible(), false);
         const layout = await page.evaluate(() => {
-            const element = document.getElementById('bpb-report-editor');
+            const element = document.getElementById('bpb-report-editor')!;
             return { width: element.getBoundingClientRect().width, viewport: innerWidth,
                 alignment: getComputedStyle(element).textAlign,
                 overflow: element.scrollWidth - element.clientWidth };
@@ -192,4 +199,4 @@ try {
         accountPosts: 0, fixtureSubmissions: submitted.length,
         extension: browserName === 'chrome' ? 'real unpacked dist' : 'shipped bundle; settings APIs stubbed' }));
 } catch (error) { failure = error; }
-await resources.dispose(failure);
+await resources.dispose(failure as null);

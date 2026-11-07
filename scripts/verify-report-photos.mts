@@ -1,3 +1,6 @@
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+/* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global chrome, document, window, ClipboardItem, getComputedStyle, getSelection */
@@ -15,11 +18,11 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 const resources = createResourceStack();
 const root = process.cwd();
 const rateLimit = process.argv.includes('--rate-limit');
-let failure = null;
+let failure: unknown = null;
 try {
     const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-report-photos-'));
     resources.defer('report photo profile', () => rm(profile, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
+    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
     resources.defer('report photo HTTPS fixture', () => fixture.close());
     assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(profile, {
@@ -32,7 +35,7 @@ try {
     const registry = await context.newPage();
     await registry.goto('chrome://extensions-internals/');
     const record = await registry.waitForFunction(() => {
-        try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); }
+        try { return JSON.parse(document.body.innerText).find((item: { name: string; id: string }) => item.name === 'Better Peakbagger'); }
         catch { return false; }
     }).then(handle => handle.jsonValue());
     await registry.close();
@@ -45,11 +48,11 @@ try {
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     await worker.evaluate(() => { chrome.permissions.contains = async () => true; });
     let uploads = 0;
-    const posts = [];
-    let markUploadStarted;
-    let releaseUpload;
-    const uploadStarted = new Promise(resolve => { markUploadStarted = resolve; });
-    const uploadReleased = new Promise(resolve => { releaseUpload = resolve; });
+    const posts: (string | null)[] = [];
+    let markUploadStarted: () => void = () => {};
+    let releaseUpload: () => void = () => {};
+    const uploadStarted = new Promise<void>(resolve => { markUploadStarted = resolve; });
+    const uploadReleased = new Promise<void>(resolve => { releaseUpload = resolve; });
     resources.defer('report photo upload gate', () => releaseUpload());
     await context.route('https://api.imgbb.com/**', async route => {
         uploads++;
@@ -88,21 +91,21 @@ try {
     await report.evaluate(async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 800; canvas.height = 500;
-        const paint = canvas.getContext('2d');
+        const paint = canvas.getContext('2d')!;
         const sky = paint.createLinearGradient(0, 0, 0, 500);
         sky.addColorStop(0, '#a4c9df'); sky.addColorStop(1, '#eff5f8');
         paint.fillStyle = sky; paint.fillRect(0, 0, 800, 500);
         paint.fillStyle = '#647c81'; paint.beginPath(); paint.moveTo(0, 500); paint.lineTo(280, 120);
         paint.lineTo(480, 340); paint.lineTo(640, 180); paint.lineTo(800, 500); paint.fill();
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob as Blob })]);
     });
     await report.locator('.bpb-re-surface').click();
     await report.keyboard.press('Meta+V');
     await report.locator('.bpb-re-local-photo-status').filter({ hasText: 'until you save' }).waitFor();
     assert.equal(uploads, 0);
     await report.locator('.bpb-re-local-photo-actions button').waitFor();
-    await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.naturalWidth === 800);
+    await report.waitForFunction(() => document.querySelector<HTMLImageElement>('.bpb-re-image-resize img')?.naturalWidth === 800);
     await report.getByRole('button', { name: 'Write a caption', exact: true }).waitFor();
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'caption-placeholder.png') });
     await report.setViewportSize({ width: 720, height: 900 });
@@ -110,7 +113,7 @@ try {
     await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'dark'; });
     const placeholderGeometry = await report.locator('.bpb-re-caption-placeholder').evaluate(element => {
         const placeholder = element.getBoundingClientRect();
-        const photo = element.parentElement.querySelector('img').getBoundingClientRect();
+        const photo = element.parentElement!.querySelector('img')!.getBoundingClientRect();
         return { width: placeholder.width, imageWidth: photo.width, below: placeholder.top >= photo.bottom };
     });
     assert.ok(placeholderGeometry.below && Math.abs(placeholderGeometry.width - placeholderGeometry.imageWidth) <= 2,
@@ -124,7 +127,7 @@ try {
     await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
     await report.locator('.bpb-re-surface figcaption').click();
     const emptyCaptionState = await report.locator('.bpb-re-surface figcaption').evaluate(element => ({
-        active: element.contains(getSelection()?.anchorNode),
+        active: element.contains(getSelection()?.anchorNode ?? null),
         editing: element.classList.contains('bpb-re-caption-editing'),
         placeholder: getComputedStyle(element, '::before').content,
     }));
@@ -137,7 +140,7 @@ try {
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
     const captionPresentation = await report.locator('.bpb-re-surface figcaption').evaluate(element => {
         const style = getComputedStyle(element);
-        const surface = getComputedStyle(element.closest('.bpb-re-surface'));
+        const surface = getComputedStyle(element.closest('.bpb-re-surface')!);
         return { color: style.color, surfaceColor: surface.color, fontSize: parseFloat(style.fontSize),
             surfaceFontSize: parseFloat(surface.fontSize), fontStyle: style.fontStyle, textAlign: style.textAlign };
     });
@@ -161,7 +164,7 @@ try {
     await report.locator('.bpb-re-surface figcaption').waitFor({ state: 'detached' });
     await report.getByRole('button', { name: 'Undo (Ctrl/Cmd+Z)', exact: true }).click();
     await report.waitForFunction(expected => document.querySelector('.bpb-re-surface figcaption')?.textContent === expected, beforeRemoval);
-    await report.locator('.bpb-re-surface figcaption').fill(beforeRemoval.slice(0, -literalSuffix.length));
+    await report.locator('.bpb-re-surface figcaption').fill(beforeRemoval!.slice(0, -literalSuffix.length));
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
     const captionText = await report.locator('.bpb-re-surface figcaption').textContent();
     await report.locator('.bpb-re-surface figcaption').fill('x');
@@ -171,7 +174,7 @@ try {
     await report.getByRole('button', { name: 'Write a caption', exact: true }).waitFor();
     await report.getByRole('button', { name: 'Undo (Ctrl/Cmd+Z)', exact: true }).click();
     await report.waitForFunction(() => !!document.querySelector('.bpb-re-surface figcaption')?.textContent);
-    await report.locator('.bpb-re-surface figcaption').fill(captionText);
+    await report.locator('.bpb-re-surface figcaption').fill(captionText!);
     await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
     await report.keyboard.press('ArrowUp');
     await report.keyboard.type('Normal text before the image.');
@@ -214,13 +217,13 @@ try {
     // in JournalText, and the library resolves the same persisted reference.
     await report.reload();
     await report.locator('.bpb-re-draft-restore').click();
-    await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.naturalWidth === 800);
+    await report.waitForFunction(() => document.querySelector<HTMLImageElement>('.bpb-re-image-resize img')?.naturalWidth === 800);
     assert.match(await report.locator('.bpb-re-surface figcaption').innerText(), /Looking north/);
     const opened = context.waitForEvent('page').catch(error => { console.error('Open editor failed:', error.message); return null; });
     await report.locator('.bpb-re-image-resize img').dblclick();
-    const editor = await opened;
+    const editor = (await opened)!;
     await editor.locator('#upload-insert').filter({ hasText: 'Save and return' }).waitFor();
-    await editor.waitForFunction(() => document.querySelector('#editor-workspace')?.hidden === false);
+    await editor.waitForFunction(() => document.querySelector<HTMLElement>('#editor-workspace')?.hidden === false);
     assert.equal(await editor.locator('#photo-caption').inputValue(), captionText);
 
     // Selection must not let the inspector dictate the canvas row's height.
@@ -228,10 +231,10 @@ try {
     // targets: a plain circle used to respond only on its thin outline.
     const editorOverlay = await editor.locator('#photo-overlay').boundingBox();
     assert.ok(editorOverlay);
-    const placeAnnotation = async (tool, x, y) => {
+    const placeAnnotation = async (tool: string, x: number, y: number) => {
         await editor.locator(`[data-tool="${tool}"]`).click();
-        await editor.mouse.click(editorOverlay.x + editorOverlay.width * x,
-            editorOverlay.y + editorOverlay.height * y);
+        await editor.mouse.click(editorOverlay!.x + editorOverlay!.width * x,
+            editorOverlay!.y + editorOverlay!.height * y);
     };
     await placeAnnotation('belay', 0.3, 0.35);
     await placeAnnotation('text', 0.7, 0.65);
@@ -239,10 +242,10 @@ try {
     const belayControl = editor.getByRole('button', { name: /^Belay, layer / });
     const textControl = editor.getByRole('button', { name: /^Text: Aiming here, layer / });
     const canvasLayout = () => editor.evaluate(() => {
-        const viewport = document.getElementById('photo-viewport').getBoundingClientRect();
-        const stage = document.getElementById('photo-stage').getBoundingClientRect();
-        const body = document.querySelector('.editor-body').getBoundingClientRect();
-        const rounded = value => Math.round(value * 100) / 100;
+        const viewport = document.getElementById('photo-viewport')!.getBoundingClientRect();
+        const stage = document.getElementById('photo-stage')!.getBoundingClientRect();
+        const body = document.querySelector('.editor-body')!.getBoundingClientRect();
+        const rounded = (value: number) => Math.round(value * 100) / 100;
         return {
             bodyHeight: rounded(body.height),
             stageTop: rounded(stage.top - viewport.top),
@@ -263,10 +266,10 @@ try {
     const belayHitBox = await editor.locator(
         `#photo-overlay [data-bpb-object="${belayId}"] [data-bpb-hit-target]`
     ).boundingBox();
-    assert.ok(belayHitBox?.width >= 20 && belayHitBox?.height >= 20,
+    assert.ok(belayHitBox!.width >= 20 && belayHitBox!.height >= 20,
         `Belay hit target was too small: ${JSON.stringify(belayHitBox)}`);
-    await editor.mouse.click(belayHitBox.x + belayHitBox.width / 2,
-        belayHitBox.y + belayHitBox.height / 2);
+    await editor.mouse.click(belayHitBox!.x + belayHitBox!.width / 2,
+        belayHitBox!.y + belayHitBox!.height / 2);
     assert.equal(await belayControl.getAttribute('aria-pressed'), 'true',
         'clicking the open center of Belay must select it');
 
@@ -286,9 +289,9 @@ try {
     const originalCaption = await report.locator('.bpb-re-surface figcaption').innerText();
     await report.locator('.bpb-re-surface figcaption').fill('North ridge '.repeat(30) + 'x'.repeat(100));
     const geometry = await report.evaluate(() => {
-        const root = document.querySelector('.bpb-re-surface');
-        const image = root.querySelector('img').getBoundingClientRect();
-        const caption = root.querySelector('figcaption').getBoundingClientRect();
+        const root = document.querySelector('.bpb-re-surface')!;
+        const image = root.querySelector('.bpb-re-image-resize img')!.getBoundingClientRect();
+        const caption = root.querySelector('figcaption')!.getBoundingClientRect();
         return { imageWidth: image.width, captionWidth: caption.width, captionHeight: caption.height,
             clipped: root.scrollWidth > root.clientWidth + 1, captionBelow: caption.top >= image.bottom };
     });
@@ -299,15 +302,20 @@ try {
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'caption-narrow-dark.png') });
     await report.locator('.bpb-re-surface figcaption').fill(originalCaption);
     await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'light'; });
+    // The upload's source rewrite must leave caption formatting in the saved report.
+    await report.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End');
+    for (let index = 0; index < 'Topos.'.length; index++) await report.keyboard.press('Shift+ArrowLeft');
+    await report.getByRole('button', { name: 'Bold (Ctrl/Cmd+B)', exact: true }).click();
+    await report.locator('.bpb-re-surface figcaption strong', { hasText: 'Topos.' }).waitFor();
     const saveGeometry = () => report.locator('#SaveButton, #SaveButton2').evaluateAll(elements => elements.map(element => {
         const rect = element.getBoundingClientRect();
         return { x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: rect.width, height: rect.height };
     }));
     const beforeSave = await saveGeometry();
-    const assertSaveStable = async state => {
+    const assertSaveStable = async (state: string) => {
         const after = await saveGeometry();
         beforeSave.forEach((rect, index) => {
-            for (const key of Object.keys(rect)) assert.ok(Math.abs(rect[key] - after[index][key]) <= 1,
+            for (const key of Object.keys(rect) as (keyof typeof rect)[]) assert.ok(Math.abs(rect[key] - after[index][key]) <= 1,
                 `${state}: Save ${index + 1} ${key}: ${rect[key]} → ${after[index][key]}`);
         });
     };
@@ -338,7 +346,7 @@ try {
     releaseUpload();
     if (rateLimit) {
         await uploadStatus.filter({ hasText: 'ImgBB request limit reached' }).waitFor();
-        assert.match(await uploadStatus.textContent(), /Try again after/);
+        assert.match((await uploadStatus.textContent())!, /Try again after/);
         await assertSaveStable('upload failed');
         assert.equal(await report.locator('#SaveButton').isEnabled(), true);
         assert.equal(posts.length, 0);
@@ -362,17 +370,17 @@ try {
         while (!posts.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
         assert.equal(posts.length, 1);
         assert.equal(uploads, 1);
-        const reportText = /name="JournalText"\r\n\r\n([\s\S]*?)\r\n--/.exec(posts[0])?.[1]
-        ?? new URLSearchParams(posts[0]).get('JournalText');
-        assert.match(reportText, /https:\/\/i\.ibb\.co\/fixture\/photo\.png/);
-        assert.match(reportText, /\[figcaption\]Looking north — caption edited in Photo Topos\./);
-        assert.doesNotMatch(reportText, /bpb-photo\.invalid|data:image|blob:/);
+        const reportText = /name="JournalText"\r\n\r\n([\s\S]*?)\r\n--/.exec(posts[0]!)?.[1]
+        ?? new URLSearchParams(posts[0]!).get('JournalText');
+        assert.match(reportText!, /https:\/\/i\.ibb\.co\/fixture\/photo\.png/);
+        assert.match(reportText!, /\[figcaption\]Looking north — caption edited in Photo \[b\]Topos\.\[\/b\]\[\/figcaption\]/);
+        assert.doesNotMatch(reportText!, /bpb-photo\.invalid|data:image|blob:/);
         const library = await context.newPage();
         await library.goto(`chrome-extension://${record.id}/photos/photos.html?mode=library`);
         await library.locator('#library-list').getByText('In report', { exact: true }).first().waitFor();
         assert.equal(await library.locator('#library-list').getByText('Not inserted', { exact: true }).count(), 0);
         await library.screenshot({ path: path.join(output, 'report-photo-library-reference.png') });
     }
-    console.log(JSON.stringify({ browser: context.browser().version(), rateLimit, mode: 'hidden', viewports: ['1280x900', '720x900'], uploads, posts: posts.length, output }));
+    console.log(JSON.stringify({ browser: context.browser()!.version(), rateLimit, mode: 'hidden', viewports: ['1280x900', '720x900'], uploads, posts: posts.length, output }));
 } catch (error) { console.error('Primary failure:', error); failure = error; }
-await resources.dispose(failure);
+await resources.dispose(failure as null);

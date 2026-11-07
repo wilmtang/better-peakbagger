@@ -6570,7 +6570,7 @@ try {
                     name: 'Rich text', exact: true
                 }).click();
                 const richImageLoaded = await editorPage.waitForFunction(() => {
-                    const image = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-surface img');
+                    const image = document.querySelector<PageElement>('#bpb-report-editor .bpb-re-image-resize img');
                     return image?.complete && image.naturalWidth > 0;
                 }, null, { timeout: 5000 }).then(() => true).catch(() => false);
                 check(richImageLoaded, 'the rich-text showcase image did not load');

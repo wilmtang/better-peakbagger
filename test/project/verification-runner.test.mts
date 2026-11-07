@@ -9,20 +9,21 @@ import { fileURLToPath } from 'node:url';
 import { runVerification } from '../../scripts/verify.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const script = name => path.join(root, 'scripts', name);
+const script = (name: string) => path.join(root, 'scripts', name);
 
 test('verification targets preserve the existing checks and browser order with one build', async t => {
-    const cases = [
+    const cases: [string[], string[][]][] = [
         [['chrome'], [['verify-extension.mts']]],
         [['firefox'], [['verify-firefox-extension.mts']]],
         [['browsers'], [['verify-extension.mts'], ['verify-firefox-extension.mts']]],
         [['capture-popup'], [['verify-capture-popup.mts']]],
+        [['popup-photo-entry'], [['verify-popup-photo-entry.mts']]],
         [['gpx-header'], [['verify-gpx-header.mjs']]],
         [['layout-stability', '--firefox-only', '--surface=maps'],
             [['verify-layout-stability.mts', '--firefox-only', '--surface=maps']]],
         [['multi-summit'], [['verify-multi-summit.mjs']]],
         [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
-        [['profile-editor'], [['verify-profile-editor.mjs', 'chrome'], ['verify-profile-editor.mjs', 'firefox']]],
+        [['profile-editor'], [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']]],
         [['instagram'], [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']]],
         [['report-security'], [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox']]],
         [['inline-buddies'], [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']]],
@@ -53,7 +54,7 @@ test('verification targets preserve the existing checks and browser order with o
     ];
     for (const [args, expected] of cases) {
         await t.test(args.join(' '), async () => {
-            const calls = [];
+            const calls: unknown[][] = [];
             await runVerification(args, { execute: async (...call) => { calls.push(call); } });
             assert.deepEqual(calls, [['build.mjs'], ...expected].map(([name, ...options]) =>
                 [process.execPath, [script(name), ...options], { cwd: root }]));
@@ -62,7 +63,7 @@ test('verification targets preserve the existing checks and browser order with o
 });
 
 test('package verification uses the supplied archives without rebuilding production bytes', async () => {
-    const calls = [];
+    const calls: unknown[][] = [];
     await runVerification(['packages', '/tmp/Chrome archive.zip', '/tmp/Firefox archive.zip'], {
         execute: async (...call) => { calls.push(call); },
     });
@@ -117,7 +118,7 @@ test('draft recovery rejects missing, unknown and extra selections before openin
 
 test('profile editor rejects missing, unknown and extra selections before opening a browser', () => {
     for (const args of [[], ['chromee'], ['chrome', '--unknown']]) {
-        const result = spawnSync(process.execPath, [script('verify-profile-editor.mjs'), ...args], { encoding: 'utf8' });
+        const result = spawnSync(process.execPath, [script('verify-profile-editor.mts'), ...args], { encoding: 'utf8' });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: node scripts\/verify-profile-editor/);
     }

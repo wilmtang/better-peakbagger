@@ -609,7 +609,7 @@ through `requestSubmit`; the extension never clicks Save or bypasses validation 
 provider refusals allow correction, and uncertain outcomes require reconciliation
 in the photo library/ImgBB rather than automatic duplicate uploads.
 
-`node scripts/verify-report-photos.mjs` checks the real packaged extension in
+`node scripts/verify-report-photos.mts` checks the real packaged extension in
 hidden Chrome over an HTTPS Peakbagger fixture, including clipboard paste, draft
 restoration, double-click editing, local return, and the final native form POST.
 It mocks ImgBB and optional permission status, so it does not prove live uploads,

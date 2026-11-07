@@ -428,7 +428,7 @@ Each numbered implementation unit gets a focused commit after its checks pass.
 Run focused tests beside `test/photos`, `test/reports`, `test/options`, and
 `test/settings`, plus appropriate manifest/build/privacy guards. Before closure,
 run `npm test`, `npm run lint`, and `npm run verify -- browsers`; extend
-`scripts/verify-report-photos.mjs` or add a small media-focused verifier as needed.
+`scripts/verify-report-photos.mts` or add a small media-focused verifier as needed.
 
 Visually inspect Settings, the photo uploader, video uploader, and report
 playback at 1280×900 and 720×900 in light/dark contexts, in hidden dedicated

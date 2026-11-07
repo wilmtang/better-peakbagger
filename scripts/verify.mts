@@ -22,7 +22,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'gpx-header': [['verify-gpx-header.mjs']],
     'multi-summit': [['verify-multi-summit.mjs']],
     'draft-recovery': [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']],
-    'profile-editor': [['verify-profile-editor.mjs', 'chrome'], ['verify-profile-editor.mjs', 'firefox']],
+    'profile-editor': [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']],
     'profile-units': [['verify-profile-units.mjs', 'chrome'], ['verify-profile-units.mjs', 'firefox']],
     instagram: [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']],
     'report-security': [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox']],

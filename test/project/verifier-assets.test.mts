@@ -39,3 +39,16 @@ test('the terrain verifier retries removing a profile Chrome may still be writin
     const source = await readFile(new URL('../../scripts/verify-terrain-visual.mts', import.meta.url), 'utf8');
     assert.match(source, /'terrain Chrome profile', \(\) => rm\(profile, \{[^}]*maxRetries: [1-9]/);
 });
+
+test('report verifiers measure the photo, not the separator image ProseMirror adds beside it', async () => {
+    for (const name of ['verify-report-photos.mts', 'verify-extension.mts']) {
+        const source = await readFile(new URL(`../../scripts/${name}`, import.meta.url), 'utf8');
+        assert.doesNotMatch(source, /querySelector(?:<\w+>)?\(['"][^'"]*\.bpb-re-surface img['"]\)/, name);
+        assert.doesNotMatch(source, /root\.querySelector\('img'\)/, name);
+    }
+});
+
+test('the Firefox profile fixture provides the device settings read that settings need', async () => {
+    const source = await readFile(new URL('../../scripts/verify-profile-editor.mts', import.meta.url), 'utf8');
+    assert.match(source, /local: \{ get: async \(\) => \(\{\}\) \}/);
+});
