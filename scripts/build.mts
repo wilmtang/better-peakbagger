@@ -36,6 +36,7 @@ import { existsSync, watch as fsWatch, type FSWatcher } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
+    AUTHORED_SOURCE_ROOTS,
     ENTRIES,
     COPY_FILES,
     COPY_DIRS,
@@ -75,18 +76,33 @@ async function copyDir(from: string, to: string) {
     }
 }
 
-async function copyAssets(outputDir: string) {
-    for (const [from, to] of COPY_FILES) {
+export interface BuildLayout {
+    projectRoot?: string;
+    distDir?: string;
+    entries?: readonly BundleEntry[];
+    authoredSourceRoots?: readonly string[];
+    copyFiles?: readonly (readonly string[])[];
+    copyDirs?: readonly (readonly string[])[];
+    vendorCopy?: readonly (readonly string[])[];
+}
+
+async function copyAssets(outputDir: string, {
+    projectRoot = root,
+    copyFiles = COPY_FILES,
+    copyDirs = COPY_DIRS,
+    vendorCopy = VENDOR_COPY,
+}: BuildLayout = {}) {
+    for (const [from, to] of copyFiles) {
         const dest = path.join(outputDir, to);
         await mkdir(path.dirname(dest), { recursive: true });
-        await copyFile(path.join(root, from), dest);
+        await copyFile(path.join(projectRoot, from), dest);
     }
-    for (const [from, to] of COPY_DIRS) {
-        const source = path.join(root, from);
+    for (const [from, to] of copyDirs) {
+        const source = path.join(projectRoot, from);
         if (existsSync(source)) await copyDir(source, path.join(outputDir, to));
     }
     // Vendor browser builds come from npm (node_modules), not a committed dir.
-    for (const [from, to] of VENDOR_COPY) {
+    for (const [from, to] of vendorCopy) {
         const dest = path.join(outputDir, to);
         await mkdir(path.dirname(dest), { recursive: true });
         if (from === 'maplibre-gl/dist/maplibre-gl.mjs') {
@@ -112,12 +128,16 @@ function browserImportPlugins(imports: Record<string, string> = {}): Plugin[] {
     }];
 }
 
-function esbuildOptions(entry: BundleEntry, { minify = MINIFY, outputDir = distDir }: { minify?: boolean; outputDir?: string } = {}): BuildOptions & { metafile: true } {
-    const imports = entrySources(entry).map(f => `import ${JSON.stringify(f)};`).join('\n');
+function esbuildOptions(entry: BundleEntry, {
+    minify = MINIFY,
+    outputDir = distDir,
+    projectRoot = root,
+}: { minify?: boolean; outputDir?: string; projectRoot?: string } = {}): BuildOptions & { metafile: true } {
+    const imports = entrySources(entry, projectRoot).map(f => `import ${JSON.stringify(f)};`).join('\n');
     return {
         stdin: {
             contents: imports + '\n',
-            resolveDir: root,
+            resolveDir: projectRoot,
             sourcefile: path.join('build-entry', entry.out),
             loader: 'js',
         },
@@ -135,8 +155,8 @@ function esbuildOptions(entry: BundleEntry, { minify = MINIFY, outputDir = distD
     };
 }
 
-function newBuildTreePath() {
-    return path.join(root,
+function newBuildTreePath(projectRoot = root) {
+    return path.join(projectRoot,
         `${BUILD_TREE_PREFIX}${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 }
 
@@ -168,12 +188,18 @@ export async function cleanupAbandonedBuildTrees({ directory = root, keep = null
         }));
 }
 
-export async function validateBuildTree(outputDir: string, { minify = MINIFY }: { minify?: boolean } = {}) {
+export async function validateBuildTree(outputDir: string, {
+    minify = MINIFY,
+    entries = ENTRIES,
+    copyFiles = COPY_FILES,
+    copyDirs = COPY_DIRS,
+    vendorCopy = VENDOR_COPY,
+}: { minify?: boolean } & BuildLayout = {}) {
     const required = [
-        ...ENTRIES.flatMap(entry => [entry.out, ...(!minify ? [`${entry.out}.map`] : [])]),
-        ...COPY_FILES.map(([, to]) => to),
-        ...COPY_DIRS.map(([, to]) => to),
-        ...VENDOR_COPY.map(([, to]) => to),
+        ...entries.flatMap(entry => [entry.out, ...(!minify ? [`${entry.out}.map`] : [])]),
+        ...copyFiles.map(([, to]) => to),
+        ...copyDirs.map(([, to]) => to),
+        ...vendorCopy.map(([, to]) => to),
         'THIRD_PARTY_NOTICES.txt',
     ];
     for (const relative of required) await access(path.join(outputDir, relative));
@@ -248,18 +274,44 @@ export async function buildOnce({ minify = MINIFY }: { minify?: boolean } = {}) 
     }
 }
 
-function watchDirectories() {
-    const directories = new Set([
-        ...ENTRIES.flatMap(entry => entrySources(entry).map(file => path.dirname(file))),
-        ...COPY_FILES
-            .map(([file]) => path.dirname(path.join(root, file)))
-            .filter(directory => directory !== root),
-        ...COPY_DIRS.map(([directory]) => path.join(root, directory)),
+// Watch mode recursively watches every existing directory in AUTHORED_SOURCE_ROOTS
+// alongside the copied asset directories and root files, deduplicating
+// overlapping child directories under already-watched parents. Creating new
+// nested subdirectories or files inside an already-watched root works live.
+// Restart the watcher after adding a new top-level root, creating a configured
+// top-level directory that did not exist at startup, or changing entry/compiler
+// configuration (scripts/build-config.mts, scripts/build.mts, tsconfig*.json)
+// or installed dependencies (package.json, package-lock.json, node_modules/).
+export function watchDirectories({
+    projectRoot = root,
+    authoredSourceRoots = AUTHORED_SOURCE_ROOTS,
+    copyFiles = COPY_FILES,
+    copyDirs = COPY_DIRS,
+}: BuildLayout = {}) {
+    const resolvedRoot = path.resolve(projectRoot);
+    const candidates = new Set([
+        ...authoredSourceRoots.map(directory => path.resolve(resolvedRoot, directory)),
+        ...copyFiles
+            .map(([file]) => path.dirname(path.resolve(resolvedRoot, file)))
+            .filter(directory => directory !== resolvedRoot),
+        ...copyDirs
+            .map(([directory]) => path.resolve(resolvedRoot, directory))
+            .filter(directory => directory !== resolvedRoot),
     ]);
-    return [...directories].filter(existsSync);
+    const sorted = [...candidates]
+        .filter(existsSync)
+        .sort((left, right) => left.length - right.length || left.localeCompare(right));
+    const deduplicated: string[] = [];
+    for (const directory of sorted) {
+        if (deduplicated.some(parent => directory === parent || directory.startsWith(parent + path.sep))) {
+            continue;
+        }
+        deduplicated.push(directory);
+    }
+    return deduplicated;
 }
 
-export interface WatchAllOptions {
+export interface WatchAllOptions extends BuildLayout {
     reloadFile?: string;
     afterBuild?: (info: { sequence: number }) => Promise<void> | void;
     debounceMs?: number;
@@ -275,17 +327,34 @@ export interface WatchHandle {
 // finishes would expose a mixed runtime tree. The signal file is therefore
 // written only after every bundle and copied asset has completed successfully.
 export async function watchAll({
-    reloadFile = path.join(distDir, RELOAD_SIGNAL),
+    projectRoot = root,
+    distDir: targetDistDir = path.join(projectRoot, 'dist'),
+    entries = ENTRIES,
+    authoredSourceRoots = AUTHORED_SOURCE_ROOTS,
+    copyFiles = COPY_FILES,
+    copyDirs = COPY_DIRS,
+    vendorCopy = VENDOR_COPY,
+    reloadFile = path.join(targetDistDir, RELOAD_SIGNAL),
     afterBuild = async () => {},
     debounceMs = 80,
 }: WatchAllOptions = {}): Promise<WatchHandle> {
-    const stagingRoot = newBuildTreePath();
+    const layout: BuildLayout = {
+        projectRoot,
+        distDir: targetDistDir,
+        entries,
+        authoredSourceRoots,
+        copyFiles,
+        copyDirs,
+        vendorCopy,
+    };
+    const stagingRoot = newBuildTreePath(projectRoot);
     const outputDir = path.join(stagingRoot, 'working');
-    await cleanupAbandonedBuildTrees({ keep: stagingRoot });
+    await cleanupAbandonedBuildTrees({ directory: projectRoot, keep: stagingRoot });
     await mkdir(outputDir, { recursive: true });
-    const contexts = await Promise.all(ENTRIES.map(e => context(esbuildOptions(e, {
+    const contexts = await Promise.all(entries.map(e => context(esbuildOptions(e, {
         minify: false,
         outputDir,
+        projectRoot,
     }))));
     const watchers: FSWatcher[] = [];
     let sequence = 0;
@@ -303,8 +372,8 @@ export async function watchAll({
             metafiles: results.map(({ metafile }) => metafile),
             outputDir,
         });
-        await copyAssets(outputDir);
-        await validateBuildTree(outputDir, { minify: false });
+        await copyAssets(outputDir, layout);
+        await validateBuildTree(outputDir, { minify: false, ...layout });
 
         // Preserve the prior token through the tree publication. The new token
         // is written only after the complete generation is visible at dist/.
@@ -316,7 +385,7 @@ export async function watchAll({
         const candidateDir = path.join(stagingRoot, `generation-${nextSequence}`);
         await rm(candidateDir, { recursive: true, force: true });
         await rename(outputDir, candidateDir);
-        await publishBuildTree({ candidateDir });
+        await publishBuildTree({ candidateDir, targetDir: targetDistDir });
         await afterBuild({ sequence: nextSequence });
         await writeFile(reloadFile, `${nextSequence}\n`);
         sequence = nextSequence;
@@ -351,19 +420,23 @@ export async function watchAll({
         // Fail startup rather than launching a browser with a partial build.
         await rebuild();
 
-        for (const directory of watchDirectories()) {
+        for (const directory of watchDirectories(layout)) {
             watchers.push(fsWatch(directory, { recursive: true }, requestRebuild));
         }
+        const resolvedRoot = path.resolve(projectRoot);
         const rootFiles = new Set(
-            COPY_FILES
-                .map(([file]) => path.join(root, file))
-                .filter(file => path.dirname(file) === root)
+            copyFiles
+                .map(([file]) => path.resolve(projectRoot, file))
+                .filter(file => path.dirname(file) === resolvedRoot)
                 .map(file => path.basename(file)),
         );
-        watchers.push(fsWatch(root, (_event, filename) => {
-            if (filename && rootFiles.has(filename)) requestRebuild();
-        }));
+        if (rootFiles.size > 0) {
+            watchers.push(fsWatch(resolvedRoot, (_event, filename) => {
+                if (filename && rootFiles.has(filename.toString())) requestRebuild();
+            }));
+        }
     } catch (error) {
+        for (const watcher of watchers) watcher.close();
         await Promise.all(contexts.map(buildContext => buildContext.dispose()));
         await rm(stagingRoot, { recursive: true, force: true });
         throw error;

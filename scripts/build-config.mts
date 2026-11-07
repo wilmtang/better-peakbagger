@@ -21,29 +21,32 @@ import { fileURLToPath } from 'node:url';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const distDir = path.join(root, 'dist');
-export const srcFile = (f: string) => path.join(root, 'src', f);
+export const srcFile = (f: string, projectRoot?: string | number) =>
+    path.join(typeof projectRoot === 'string' ? projectRoot : root, 'src', f);
 
 // Page bundles (options, popup) mix shared src/ modules with page-local files.
 // Page-local names resolve here; every other name falls back to src/.
-const PAGE_LOCAL: Record<string, string> = {
-    'options-main.js': path.join(root, 'options', 'options.js'),
-    'garmin-settings-page.js': path.join(root, 'options', 'garmin.js'),
-    'garmin-inbox-page.js': path.join(root, 'options', 'inbox.js'),
-    'inbox-toolbar-setting-page.js': path.join(root, 'options', 'inbox-toolbar-setting.ts'),
-    'options-drafts.js': path.join(root, 'options', 'drafts.js'),
-    'options-drafts-page.js': path.join(root, 'options', 'drafts-page.js'),
-    'options-favorites.js': path.join(root, 'options', 'favorites.js'),
-    'options-favorites-page.js': path.join(root, 'options', 'favorites-page.js'),
-    'options-buddy-refresh.js': path.join(root, 'options', 'buddy-refresh.js'),
-    'options-ignored.js': path.join(root, 'options', 'ignored.js'),
-    'options-favorites-backup.js': path.join(root, 'options', 'favorites-backup.js'),
-    'options-utils.js': path.join(root, 'options', 'options-utils.js'),
-    'popup-main.js': path.join(root, 'popup', 'popup.ts'),
-    'photos-main.js': path.join(root, 'photos', 'photos.ts'),
-    'photos-guide.js': path.join(root, 'photos', 'guide.js'),
+const PAGE_LOCAL_RELATIVE: Record<string, readonly [string, string]> = {
+    'options-main.js': ['options', 'options.js'],
+    'garmin-settings-page.js': ['options', 'garmin.js'],
+    'garmin-inbox-page.js': ['options', 'inbox.js'],
+    'inbox-toolbar-setting-page.js': ['options', 'inbox-toolbar-setting.ts'],
+    'options-drafts.js': ['options', 'drafts.js'],
+    'options-drafts-page.js': ['options', 'drafts-page.js'],
+    'options-favorites.js': ['options', 'favorites.js'],
+    'options-favorites-page.js': ['options', 'favorites-page.js'],
+    'options-buddy-refresh.js': ['options', 'buddy-refresh.js'],
+    'options-ignored.js': ['options', 'ignored.js'],
+    'options-favorites-backup.js': ['options', 'favorites-backup.js'],
+    'options-utils.js': ['options', 'options-utils.js'],
+    'popup-main.js': ['popup', 'popup.ts'],
+    'photos-main.js': ['photos', 'photos.ts'],
+    'photos-guide.js': ['photos', 'guide.js'],
 };
-export function resolvePageSource(name: string) {
-    return PAGE_LOCAL[name] || srcFile(name);
+export function resolvePageSource(name: string, projectRoot?: string | number) {
+    const base = typeof projectRoot === 'string' ? projectRoot : root;
+    const relative = PAGE_LOCAL_RELATIVE[name];
+    return relative ? path.join(base, ...relative) : srcFile(name, base);
 }
 
 // One record per bundle. `out` is the dist-relative output path; `sources` are
@@ -137,9 +140,11 @@ export interface BundleEntry {
     out: string; sources: string[]; page?: boolean; format?: string; browserImports?: Record<string, string>; [field: string]: unknown;
 }
 
-export function entrySources(entry: Pick<BundleEntry, 'page' | 'sources'>) {
-    const resolve = entry.page ? resolvePageSource : srcFile;
-    return entry.sources.map(resolve);
+export function entrySources(entry: Pick<BundleEntry, 'page' | 'sources'>, projectRoot?: string | number) {
+    const base = typeof projectRoot === 'string' ? projectRoot : root;
+    return entry.sources.map(source => entry.page
+        ? resolvePageSource(source, base)
+        : srcFile(source, base));
 }
 
 // Reviewer metadata must name every authored top-level source root. Derive the
