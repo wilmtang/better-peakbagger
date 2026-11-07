@@ -307,7 +307,7 @@ kbd {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: 44px minmax(0, 1fr) 66px;
+  grid-template-rows: 44px minmax(0, 1fr) minmax(66px, auto);
   background: var(--dark-bg);
 }
 
@@ -941,7 +941,7 @@ kbd {
   }
 
   .viewport-column.editing-text {
-    grid-template-rows: 44px minmax(0, 1fr) auto 66px;
+    grid-template-rows: 44px minmax(0, 1fr) auto minmax(66px, auto);
   }
 
   .photo-text-editor {
@@ -1348,10 +1348,13 @@ kbd {
   padding: 6px 10px;
   /* Matches the button it replaces, border included, so nothing shifts. */
   border: 1px solid transparent;
+  justify-items: center;
+  line-height: 1.4;
   color: var(--sub);
   font-size: 13px;
   font-weight: 600;
 }
+.finish-status > span { grid-area: 1 / 1; }
 .finish-status::after {
   content: attr(data-sizing-label);
   grid-area: 1 / 1;
@@ -1378,7 +1381,8 @@ kbd {
 @container photo-editor (max-width: 560px) {
   .finish-actions { flex-wrap: wrap; }
   .finish-actions > .panel-button { flex: 1 1 calc(50% - 4px); }
-  .finish-actions > .panel-button.primary { flex-basis: 100%; }
+  .finish-actions > .panel-button.primary,
+  .finish-actions > .finish-status { flex-basis: 100%; }
   .finish-gap { display: none; }
 }
 @media (max-width: 900px) {

@@ -7,7 +7,7 @@
 // broader browser fixtures are shared with the Chrome verifier.
 /* global document, location, window */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -218,6 +218,13 @@ async function main() {
                 'services.arcgisonline.com',
             ].join(','))
             .windowSize(verificationViewport);
+        // Photo Topos Export lands here instead of a save dialog.
+        const downloadDir = path.join(temporaryRoot, 'downloads');
+        await mkdir(downloadDir);
+        options.setPreference('browser.download.folderList', 2);
+        options.setPreference('browser.download.dir', downloadDir);
+        options.setPreference('browser.download.useDownloadDir', true);
+        options.setPreference('browser.download.always_ask_before_handling_new_types', false);
         options.setAcceptInsecureCerts(true);
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
@@ -462,8 +469,11 @@ async function main() {
             firefoxPhotoEditor,
         );
 
-        // Gecko is the strict one about clipboard activation: the write must
-        // start inside the click even though the PNG encode finishes later.
+        // Copy resolves with an image/png item in Gecko. An instrumented run
+        // found this packaged page may write to the clipboard with no user
+        // gesture at all under WebDriver, so no browser check here can tell a
+        // write started inside the click from one started after the encode;
+        // test/photos/photo-output.test.mts guards that ordering instead.
         await driver.findElement(By.id('copy-image')).click();
         const firefoxCopy = await waitForScript(
             driver,
@@ -479,6 +489,23 @@ async function main() {
             value => !!value,
         );
         assertState(firefoxCopy.label === 'Copied', 'Firefox refused the Copy image clipboard write', firefoxCopy);
+        // Only that write() resolved with an image/png item; the clipboard's
+        // contents and the OS pasteboard are not read back here.
+
+        // Export saves the flattened file under the title-derived name.
+        const exportTitle = await driver.executeScript('return document.getElementById("photo-title").value') as string;
+        await driver.findElement(By.id('export-image')).click();
+        const exported = await waitForCondition(async () => {
+            const names = await readdir(downloadDir).catch(() => []);
+            return names.find(name => /-topo\.(png|jpg)$/.test(name) && !name.endsWith('.part')) || null;
+        }, { timeoutMs: 15_000, description: 'the Firefox Export image download' });
+        const exportedBytes = await readFile(path.join(downloadDir, exported as string));
+        const exportedSignature = exportedBytes.subarray(0, 4).toString('hex');
+        const exportedOk = /-topo\.(png|jpg)$/.test(exported as string)
+            && (exportedSignature === '89504e47' || exportedSignature.startsWith('ffd8'))
+            && (exported as string).startsWith(exportTitle.trim().split(/\s+/)[0]);
+        assertState(exportedOk, 'Firefox did not download the flattened topo under its title',
+            { exported, exportTitle, bytes: exportedBytes.length });
 
         // The drawing tools, in Gecko's own pointer and SVG implementation. Every
         // assertion here is a behaviour a user reported broken, so a regression

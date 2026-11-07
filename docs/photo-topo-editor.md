@@ -660,6 +660,20 @@ its own record, and that the guide's legend paints from the renderer. They prove
 DOM behavior, not the native permission prompt, browser focus/window placement,
 or toolbar chrome.
 
+`npm run verify -- photo-output` runs the packaged editor offline in hidden
+Chrome for Testing: a clipboard round trip of the flattened PNG, PNG and JPEG
+downloads without metadata, the key dialog, the Continue line, finish-action
+geometry through every label change, and visibility at 1440×790, 1280×680, 900,
+600 and 360 px and 200% zoom. `verify -- layout-stability --surface=photos`
+holds the finish group still through estimate, note, Copying, Exporting and
+Upload→Inserted in report order. `verify -- firefox` clicks Copy and Export in
+Gecko. Not covered: Firefox clipboard contents are not read back, and "Copied"
+there proves only that `write()` resolved with an `image/png` item. Under
+WebDriver both browsers let this page write to the clipboard without a user
+gesture, so the write-inside-the-click ordering is guarded by
+`test/photos/photo-output.test.mts`, not a browser run. The OS pasteboard and pasting
+into other apps remain manual checks in both browsers.
+
 A live ImgBB upload with a real user key and a scratch GitHub repository write
 remain manual release checks. Stubbed fetch and repository tests do not prove
 provider retention, account-profile behavior, or a live remote merge.

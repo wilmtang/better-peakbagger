@@ -870,7 +870,8 @@ const renderFinish = () => {
             (ui.copyImage.hidden ? ui.exportImage : ui.copyImage).focus({ preventScroll: true });
         }
         ui.upload.hidden = true;
-        ui.finishStatus.textContent = slot.label;
+        // The label shares one grid cell with the reserved width, as in a button.
+        ui.finishStatus.replaceChildren(element('span', '', slot.label));
         ui.finishStatus.hidden = false;
     } else {
         setButtonLabel(ui.upload, slot.label);

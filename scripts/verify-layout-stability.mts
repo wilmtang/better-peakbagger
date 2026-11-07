@@ -785,23 +785,72 @@ async function photoCase(page: Page, origin: string, variant: LayoutVariant) {
         document.querySelector<FixtureElement>('.editor-footer')!.closest<FixtureElement>('[hidden]')?.removeAttribute('hidden');
         (document.getElementById('jpeg-quality-control') as FixtureElement)!.hidden = false;
     }, variant);
+    // Report context: the finish group ends on Upload, set apart by the gap,
+    // the arrangement arrangeFinishActions() makes once for a report session.
+    await page.evaluate(() => {
+        const group = document.getElementById('finish-actions')!;
+        group.append(group.querySelector('.finish-gap')!, document.getElementById('upload-insert')!,
+            document.getElementById('finish-status')!);
+        const upload = document.getElementById('upload-insert')!;
+        upload.dataset.sizingLabel = 'Upload and insert…';
+        upload.querySelector('span')!.textContent = 'Upload and insert…';
+        upload.classList.replace('quiet', 'primary');
+        document.getElementById('finish-status')!.dataset.sizingLabel = 'Upload and insert…';
+    });
     const upload = '#upload-insert';
     await page.locator(upload).scrollIntoViewIfNeeded();
     // Page coordinates exclude deliberate scrolling to reach a recovery field.
     const rect = async (selector: string) => page.locator(selector).evaluate((element: FixtureElement) => {
         const r = element.getBoundingClientRect(); return { x: r.x + globalThis.scrollX, y: r.y + globalThis.scrollY, width: r.width, height: r.height };
     });
-    const before = await rect(upload);
-    for (const message of ['Estimating upload…', 'Estimated upload · 25.6 MB · JPEG', 'Upload estimate unavailable']) {
-        await page.locator('#upload-estimate').evaluate((element: FixtureElement, message: string) => { element.textContent = message; }, message);
-        await page.locator('#upload-estimate-note').evaluate((element: FixtureElement) => { element.textContent = 'A long image warning and recovery message that wraps over several lines at a narrow viewport. '.repeat(3); });
-        await page.locator('#save-status').evaluate((element: FixtureElement) => { element.textContent = 'The draft could not be saved yet. Check local storage and retry. '.repeat(4); });
-        stable(before, await rect(upload), `photo estimate ${message}`);
+    const actions = ['#copy-image', '#export-image', upload];
+    const before = Object.fromEntries(await Promise.all(actions.map(async id => [id, await rect(id)] as const)));
+    const actionsStable = async (label: string, ids = actions) => {
+        for (const id of ids) stable(before[id], await rect(id), `${label}: ${id}`);
+    };
+    const exportRect = before['#export-image'], uploadRect = before[upload];
+    // Publishing stands apart from the local actions: more than the ordinary
+    // 8px between neighbours, unless the row has wrapped.
+    if (Math.abs(exportRect.y - uploadRect.y) < 1) {
+        const spacing = uploadRect.x - (exportRect.x + exportRect.width);
+        if (spacing < 20) throw new Error(`photo finish: Upload is not set apart from Export (${spacing}px)`);
+    }
+    for (const message of ['Estimating size…', '25.6 MB JPEG', 'Size unavailable']) {
+        await page.evaluate((message: string) => {
+            document.getElementById('upload-estimate')!.textContent = message;
+            document.getElementById('upload-estimate-note')!.textContent = 'A long image warning and recovery message that wraps on narrow layouts';
+            document.getElementById('output-summary')!.textContent = `JPEG · ${message}`;
+            document.getElementById('save-status')!.textContent = 'The draft could not be saved yet. Check local storage and try again.';
+        }, message);
+        await actionsStable(`photo estimate ${message}`);
+    }
+    await page.evaluate(() => {
+        const note = document.getElementById('finish-note')!;
+        note.hidden = false;
+        document.getElementById('finish-note-text')!.textContent
+            = 'Reports need a hosted image. Connect ImgBB to insert it, or export it and host it anywhere.';
+        document.getElementById('editor-status')!.textContent = 'Downloading a-very-long-photo-title-for-the-north-ridge-topo.jpg · 12.4 MB';
+    });
+    await actionsStable('photo finish note');
+    for (const [id, labels] of [['#copy-image', ['Copying…', 'Copied', 'Copy image']], ['#export-image', ['Exporting…', 'Export image']]] as const) {
+        for (const label of labels) {
+            await page.locator(`${id} > span`).evaluate((element: FixtureElement, label: string) => { element.textContent = label; }, label);
+            await actionsStable(`photo ${id} ${label}`);
+        }
     }
     await page.locator(upload).hover();
-    stable(before, await rect(upload), 'photo upload hover');
+    await actionsStable('photo upload hover');
     await page.locator(upload).evaluate((element: FixtureElement) => { element.dispatchEvent(new globalThis.PointerEvent('pointerdown')); });
-    stable(before, await rect(upload), 'photo upload pointerdown');
+    await actionsStable('photo upload pointerdown');
+    // Completion swaps the action for a plain status of the same footprint.
+    await page.evaluate(() => {
+        document.getElementById('upload-insert')!.hidden = true;
+        const status = document.getElementById('finish-status')!;
+        status.innerHTML = '<span>Inserted</span>';
+        status.hidden = false;
+    });
+    await actionsStable('photo Upload to Inserted', ['#copy-image', '#export-image']);
+    stable(uploadRect, await rect('#finish-status'), 'photo Inserted status takes the upload footprint', ['x', 'y', 'height']);
     await capture(page, `${variant.name}-photo-footer`);
     await page.evaluate(() => {
         const toast = (document.getElementById('toast') as FixtureElement); toast!.hidden = false;

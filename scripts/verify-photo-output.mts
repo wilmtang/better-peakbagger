@@ -100,10 +100,7 @@ try {
     await context.setOffline(true);
     await page.goto(url);
     await page.locator('#editor-empty').waitFor({ state: 'visible' });
-    const chooseBefore = await box(page, '#editor-empty .file-button');
     assert.equal(await page.locator('#resume-draft').isHidden(), true, 'a fresh profile has no draft to continue');
-    await page.waitForFunction(() => document.getElementById('library-empty') !== null);
-    same(chooseBefore, await box(page, '#editor-empty .file-button'), 'Choose photo after the drafts read');
     assert.equal(await page.locator('#credential-card').count(), 0, 'no key form sits in the page');
     await capture('empty');
 
@@ -139,6 +136,37 @@ try {
         }
         await capture(`editor-${viewport.width}x${viewport.height}`);
     }
+    // Narrow windows and 200% zoom: no sideways scroll, and a long note wraps
+    // inside the status row instead of being clipped to a sliver.
+    await page.evaluate(() => {
+        document.getElementById('finish-note')!.hidden = false;
+        document.getElementById('finish-note-text')!.textContent
+            = 'Reports need a hosted image. Connect ImgBB to insert it, or export it and host it anywhere.';
+    });
+    for (const [width, zoom] of [[900, 1], [600, 1], [360, 1], [1440, 2]] as const) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.evaluate(zoom => { document.body.style.zoom = String(zoom); }, zoom);
+        const fit = await page.evaluate(() => {
+            const row = document.querySelector<HTMLElement>('.viewport-actions')!;
+            const note = document.getElementById('finish-note')!.getBoundingClientRect();
+            return {
+                overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+                rowClipped: row.scrollHeight > row.clientHeight + 1,
+                noteWidth: note.width,
+                actions: ['copy-image', 'export-image', 'upload-insert'].map(id => document.getElementById(id)!.getBoundingClientRect().width),
+            };
+        });
+        assert.equal(fit.overflow, false, `sideways scroll at ${width}px ×${zoom}`);
+        assert.equal(fit.rowClipped, false, `status row clips its note at ${width}px ×${zoom}`);
+        assert.ok(fit.noteWidth >= 150, `the note is squeezed to ${fit.noteWidth}px at ${width}px ×${zoom}`);
+        assert.ok(fit.actions.every(value => value > 40), `a finish action collapsed at ${width}px ×${zoom}`);
+        await capture(`narrow-${width}-zoom${zoom}`);
+    }
+    await page.evaluate(() => {
+        document.body.style.zoom = '';
+        document.getElementById('finish-note')!.hidden = true;
+    });
+    await page.setViewportSize({ width: 1440, height: 790 });
     // The top bar stays under the page header while the page scrolls.
     await page.setViewportSize({ width: 1440, height: 790 });
     await page.evaluate(() => scrollTo(0, 500));
@@ -230,6 +258,23 @@ try {
     const chooser = page.waitForEvent('filechooser', { timeout: 5000 });
     await page.locator('#new-photo').click();
     await chooser;
+
+    // With a saved draft, a fresh tab offers to continue it, and the line is in
+    // place from the first paint: Choose photo does not move once the library
+    // has finished loading.
+    const resumed = await context.newPage();
+    resumed.on('pageerror', error => errors.push(String(error)));
+    await resumed.goto(url);
+    await resumed.locator('#editor-empty').waitFor({ state: 'visible' });
+    assert.equal(await resumed.locator('#resume-draft').isVisible(), true, 'the saved draft is offered');
+    assert.match(await resumed.locator('#resume-draft-open').textContent() || '', /^Continue Mount Hood$/);
+    const chooseFirstPaint = await box(resumed, '#editor-empty .file-button');
+    await resumed.waitForFunction(() => document.getElementById('library-list')!.children.length > 0);
+    same(chooseFirstPaint, await box(resumed, '#editor-empty .file-button'), 'Choose photo after the drafts read');
+    await resumed.locator('#resume-draft-open').click();
+    await resumed.locator('#editor-workspace').waitFor({ state: 'visible' });
+    assert.equal(await resumed.locator('#photo-title').inputValue(), 'Mount Hood', 'Continue reopens the draft in place');
+    await resumed.close();
 
     // Dark theme renders the same layout.
     await page.evaluate(async () => {
