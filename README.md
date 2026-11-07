@@ -380,10 +380,12 @@ Run `npm ci` first. Load and package the built extension from `dist/`.
 
 ```sh
 npm test
-npm run test:scale
+npm run typecheck
 npm run lint
-npm run verify -- browsers
 ```
+
+Add `npm run test:scale` and the browser verifiers when your change needs them;
+see [local check discipline](docs/development.md#local-check-discipline).
 
 ## License
 

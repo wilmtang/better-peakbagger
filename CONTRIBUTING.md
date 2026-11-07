@@ -104,9 +104,15 @@ For code changes, run the standard checks:
 
 ```sh
 npm test
-npm run test:scale
+npm run typecheck
 npm run lint
 ```
+
+Also run `npm run test:scale` when changing capture analysis, provider parsing,
+large ascent tables, or the favorite manager, search or backup scale paths. CI
+runs it on every pull request and push to `main`. See
+[local check discipline](docs/development.md#local-check-discipline) for the
+narrower checks to use while iterating.
 
 `npm test` builds the extension and runs the automated suite, but it cannot
 prove that the real manifest, execution worlds, and worker lifecycle work in a

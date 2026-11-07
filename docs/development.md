@@ -199,8 +199,9 @@ dependency visible.
 
 ## Everyday workflow
 
-For test-driven work, edit source and run `npm test`; the command creates a
-fresh development build before the suite.
+For test-driven work, edit source and run the affected domain's tests; see
+[local check discipline](#local-check-discipline). `npm test` creates a fresh
+development build before the suite.
 
 For interactive browser work, use one of the managed development commands:
 
@@ -276,6 +277,34 @@ running Node process has already loaded those inputs.
 
 Do **not** load the repo root — `manifest.json` there names bundle files that
 only exist under `dist/` after a build.
+
+### Local check discipline
+
+While iterating, build and run the affected domain:
+
+```bash
+npm run build && node --test --test-concurrency=3 "test/<domain>/*.test.m[jt]s"
+npx eslint <changed source files>
+```
+
+Keep the glob quoted, and confirm the summary reports more than zero tests:
+Node exits 0 when a glob matches nothing. Include `test/project` when changing
+package scripts, workflows, docs or repository policy.
+
+Before committing a completed unit, run the checks it needs, in this order:
+`npm test`, `npm run typecheck`, `npm run lint`, then the verifiers for the
+touched surface. Skip unrelated surfaces, but follow each touched surface's
+Chrome and Firefox requirement. Run `npm run verify -- chrome` or `browsers`
+after manifest, build-configuration, worker, execution-world or content-script
+load changes. Run `npm run test:scale` when changing what it covers. Stage the
+files before `npm run check:typescript-policy`, which reads staged paths.
+
+A pass stays valid until something it covers changes. After a failure, rerun
+the failing check, then any earlier check that covers what the fix changed.
+
+Run build-owning commands sequentially in a worktree. Run browser verifiers
+one at a time with nothing else heavy beside them, in any worktree: see
+[the load-flake measurements](verify-extension-load-flake.md).
 
 ## Browser failure evidence
 

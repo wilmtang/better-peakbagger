@@ -54,6 +54,13 @@ readings, distinguish no data from zero, and keep popup geometry stable while
 asynchronous results arrive. Legends must match the renderer/service actually
 used, with readable swatches and source/date attribution.
 
+## Local check load
+
+Follow [local check discipline](docs/development.md#local-check-discipline).
+Use the narrowest check that covers the edit, and rerun a check only when
+something it covers has changed. These rules cut repetition; they never remove
+a check the change requires.
+
 ## Repository skills
 
 Before adding or changing a peak-page card, saved-ascent card, or embedded ascent-form panel, read [card implementation conventions](docs/card-conventions.md). Follow the owning surface: peak cards use the shared peak layout owner; ascent cards use their existing column/drag or embedded-feature owners. Keep this guide current when the common contract changes.
