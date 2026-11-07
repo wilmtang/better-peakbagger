@@ -55,7 +55,7 @@ Svelte, and Svelte is not installed.
 | M0 | Done | Strict browser and Node checking, TS lint scopes, adoption policy in hooks/CI/release, and shared discovery for all seven source guards. |
 | M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`. Results are in the [follow-up ledger](follow-ups.md). |
 | M2 | Done | `src/ui/latest-read.ts` and `src/ui/page-lifecycle.ts` are converted. |
-| M3 | Not started | `scripts/build-config.mts` is converted (`bc5fa3b3`), but `scripts/build.mjs` is not. The watcher still derives directories from entries and misses `src/storage/`. |
+| M3 | In progress | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` are converted. The watcher still derives directories from entries and misses `src/storage/`. |
 | M4 | Not started | `src/ui/runtime-message.js` is still JavaScript. No Units panel contract exists. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
 | M6 | Not started, **blocked for release** | `options/unit-settings.js` is unchanged. `npm run audit:ci` fails on addons-linter, deepmerge and web-ext (run November 6). The deepmerge chain has no patched release and its exception has expired. |
@@ -139,7 +139,7 @@ watcher. Run real-extension checks for changed content-script load dependencies.
 
 ### M3 — Complete build/watch support
 
-1. Convert [build.mjs](../../scripts/build.mjs) to `.mts` without changing build
+1. Convert [build.mts](../../scripts/build.mts) to `.mts` without changing build
    behavior. Update command/workflow references, imports, literal source readers,
    inventories and docs together. Compare the development
    output inventory and hashes against the pre-conversion build.

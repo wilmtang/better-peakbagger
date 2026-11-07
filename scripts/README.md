@@ -26,7 +26,7 @@ independent of the existing targets.
 ## Build and local development
 
 - [build-config.mts](build-config.mts)
-- [build.mjs](build.mjs)
+- [build.mts](build.mts)
 - [generate-map-overlay-regions.mjs](generate-map-overlay-regions.mjs)
 - [install-git-hooks.mjs](install-git-hooks.mjs)
 - [maplibre-terrain-lod-patch.mts](maplibre-terrain-lod-patch.mts)

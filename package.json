@@ -13,9 +13,9 @@
   },
   "scripts": {
     "prepare": "node scripts/install-git-hooks.mjs",
-    "build": "node scripts/build.mjs",
-    "build:release": "node scripts/build.mjs --minify",
-    "watch": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mts",
+    "build:release": "node scripts/build.mts --minify",
+    "watch": "node scripts/build.mts --watch",
     "start": "node scripts/run-development.mjs",
     "test": "npm run build && node --test \"test/**/*.test.mjs\" \"test/**/*.test.mts\"",
     "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.mjs\"",

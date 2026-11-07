@@ -593,7 +593,7 @@ token unchanged.
 
 `scripts/build-config.mts` is the **single source of truth** for how the
 extension is assembled—which source roots belong to each bundle and which
-assets/vendor distributions are copied. `scripts/build.mjs` turns that config
+assets/vendor distributions are copied. `scripts/build.mts` turns that config
 into esbuild calls. The manifest names only generated bundle paths; tests
 cross-check those references against the config.
 

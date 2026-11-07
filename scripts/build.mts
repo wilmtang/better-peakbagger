@@ -10,16 +10,16 @@
 // dist/ is the unpacked extension: it is what you load, what the release
 // packagers zip, and what the real-extension checks exercise.
 //
-// The bundle composition and asset list live in scripts/build-config.mjs (the
+// The bundle composition and asset list live in scripts/build-config.mts (the
 // single source of truth, shared with the test suite). This file only turns
 // that config into esbuild calls and copies.
 //
 // Usage:
-//   node scripts/build.mjs            one-off development build (sourcemaps)
-//   node scripts/build.mjs --minify   production build (minified, no sourcemap)
-//   node scripts/build.mjs --watch    rebuild on source/asset change
+//   node scripts/build.mts            one-off development build (sourcemaps)
+//   node scripts/build.mts --minify   production build (minified, no sourcemap)
+//   node scripts/build.mts --watch    rebuild on source/asset change
 
-import { build, context } from 'esbuild';
+import { build, context, type BuildOptions, type Plugin } from 'esbuild';
 import { jsZipCspPlugin } from './jszip-csp-patch.mjs';
 import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mts';
 import {
@@ -32,7 +32,7 @@ import {
     rm,
     writeFile,
 } from 'node:fs/promises';
-import { existsSync, watch as fsWatch } from 'node:fs';
+import { existsSync, watch as fsWatch, type FSWatcher } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
@@ -43,7 +43,8 @@ import {
     nodeModule,
     entrySources,
     root,
-    distDir
+    distDir,
+    type BundleEntry,
 } from './build-config.mts';
 import { writeThirdPartyNotices } from './third-party-notices.mjs';
 
@@ -54,8 +55,8 @@ const WATCH = args.has('--watch');
 export const RELOAD_SIGNAL = '.better-peakbagger-reload';
 export const BUILD_TREE_PREFIX = '.better-peakbagger-build-';
 
-export function formatReloadLog(sequence, date = new Date()) {
-    const pad = value => String(value).padStart(2, '0');
+export function formatReloadLog(sequence: number, date = new Date()) {
+    const pad = (value: number) => String(value).padStart(2, '0');
     const timestamp = [
         date.getFullYear(),
         pad(date.getMonth() + 1),
@@ -64,7 +65,7 @@ export function formatReloadLog(sequence, date = new Date()) {
     return `[${timestamp}] Rebuilt ${ENTRIES.length} bundles (development reload ${sequence})`;
 }
 
-async function copyDir(from, to) {
+async function copyDir(from: string, to: string) {
     await mkdir(to, { recursive: true });
     for (const entry of await readdir(from, { withFileTypes: true })) {
         const s = path.join(from, entry.name);
@@ -74,7 +75,7 @@ async function copyDir(from, to) {
     }
 }
 
-async function copyAssets(outputDir) {
+async function copyAssets(outputDir: string) {
     for (const [from, to] of COPY_FILES) {
         const dest = path.join(outputDir, to);
         await mkdir(path.dirname(dest), { recursive: true });
@@ -90,7 +91,7 @@ async function copyAssets(outputDir) {
         await mkdir(path.dirname(dest), { recursive: true });
         if (from === 'maplibre-gl/dist/maplibre-gl.mjs') {
             const source = await readFile(nodeModule(from), 'utf8');
-            const { version } = JSON.parse(await readFile(nodeModule('maplibre-gl/package.json'), 'utf8'));
+            const { version } = JSON.parse(await readFile(nodeModule('maplibre-gl/package.json'), 'utf8')) as { version: string };
             await writeFile(dest, patchMapLibreTerrainLod(source, version));
         } else await copyFile(nodeModule(from), dest);
     }
@@ -98,20 +99,20 @@ async function copyAssets(outputDir) {
 
 // esbuild takes one entry file per output. For a multi-module bundle we feed it
 // a generated stub that imports each source in order.
-function browserImportPlugins(imports = {}) {
+function browserImportPlugins(imports: Record<string, string> = {}): Plugin[] {
     if (Object.keys(imports).length === 0) return [];
     return [{
         name: 'extension-browser-imports',
         setup(buildContext) {
-            buildContext.onResolve({ filter: /.*/ }, args => {
-                if (!Object.hasOwn(imports, args.path)) return undefined;
-                return { path: imports[args.path], external: true };
+            buildContext.onResolve({ filter: /.*/ }, resolveArgs => {
+                if (!Object.hasOwn(imports, resolveArgs.path)) return undefined;
+                return { path: imports[resolveArgs.path], external: true };
             });
-        }
+        },
     }];
 }
 
-function esbuildOptions(entry, { minify = MINIFY, outputDir = distDir } = {}) {
+function esbuildOptions(entry: BundleEntry, { minify = MINIFY, outputDir = distDir }: { minify?: boolean; outputDir?: string } = {}): BuildOptions & { metafile: true } {
     const imports = entrySources(entry).map(f => `import ${JSON.stringify(f)};`).join('\n');
     return {
         stdin: {
@@ -122,7 +123,7 @@ function esbuildOptions(entry, { minify = MINIFY, outputDir = distDir } = {}) {
         },
         outfile: path.join(outputDir, entry.out),
         bundle: true,
-        format: entry.format || 'iife',
+        format: (entry.format as 'iife' | 'esm' | 'cjs' | undefined) || 'iife',
         target: ['chrome128', 'firefox152'],
         platform: 'browser',
         legalComments: 'none',
@@ -130,7 +131,7 @@ function esbuildOptions(entry, { minify = MINIFY, outputDir = distDir } = {}) {
         minify,
         sourcemap: minify ? false : 'linked',
         logLevel: 'warning',
-        plugins: [...browserImportPlugins(entry.browserImports), ...(entry.patchJsZip ? [jsZipCspPlugin()] : [])],
+        plugins: [...browserImportPlugins(entry.browserImports), ...(entry.patchJsZip ? [jsZipCspPlugin() as Plugin] : [])],
     };
 }
 
@@ -139,17 +140,22 @@ function newBuildTreePath() {
         `${BUILD_TREE_PREFIX}${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 }
 
-function processIsAlive(pid) {
+function processIsAlive(pid: number) {
     if (!Number.isSafeInteger(pid) || pid <= 0) return false;
     try {
         process.kill(pid, 0);
         return true;
     } catch (error) {
-        return error?.code === 'EPERM';
+        return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'EPERM');
     }
 }
 
-export async function cleanupAbandonedBuildTrees({ directory = root, keep = null } = {}) {
+export interface CleanupBuildTreesOptions {
+    directory?: string;
+    keep?: string | null;
+}
+
+export async function cleanupAbandonedBuildTrees({ directory = root, keep = null }: CleanupBuildTreesOptions = {}) {
     const entries = await readdir(directory, { withFileTypes: true });
     await Promise.all(entries
         .filter(entry => entry.isDirectory() && entry.name.startsWith(BUILD_TREE_PREFIX))
@@ -162,7 +168,7 @@ export async function cleanupAbandonedBuildTrees({ directory = root, keep = null
         }));
 }
 
-export async function validateBuildTree(outputDir, { minify = MINIFY } = {}) {
+export async function validateBuildTree(outputDir: string, { minify = MINIFY }: { minify?: boolean } = {}) {
     const required = [
         ...ENTRIES.flatMap(entry => [entry.out, ...(!minify ? [`${entry.out}.map`] : [])]),
         ...COPY_FILES.map(([, to]) => to),
@@ -173,11 +179,17 @@ export async function validateBuildTree(outputDir, { minify = MINIFY } = {}) {
     for (const relative of required) await access(path.join(outputDir, relative));
 }
 
+export interface PublishBuildTreeOptions {
+    candidateDir?: string;
+    targetDir?: string;
+    renameTree?: typeof rename;
+}
+
 export async function publishBuildTree({
     candidateDir,
     targetDir = distDir,
     renameTree = rename,
-} = {}) {
+}: PublishBuildTreeOptions = {}) {
     if (!candidateDir || path.resolve(candidateDir) === path.resolve(targetDir)) {
         throw new Error('Build publication requires a distinct candidate tree.');
     }
@@ -203,8 +215,9 @@ export async function publishBuildTree({
                     throw new AggregateError([publishError, rollbackError, retryError],
                         'Build publication and rollback both failed.');
                 }
+                const message = publishError instanceof Error ? publishError.message : String(publishError);
                 throw new AggregateError([publishError, rollbackError],
-                    `Build publication failed (${publishError.message}); rollback recovered after retry.`);
+                    `Build publication failed (${message}); rollback recovered after retry.`);
             }
         }
         throw publishError;
@@ -212,7 +225,7 @@ export async function publishBuildTree({
     await rm(previousDir, { recursive: true, force: true });
 }
 
-export async function buildOnce({ minify = MINIFY } = {}) {
+export async function buildOnce({ minify = MINIFY }: { minify?: boolean } = {}) {
     const stagingRoot = newBuildTreePath();
     const candidateDir = path.join(stagingRoot, 'generation');
     await cleanupAbandonedBuildTrees({ keep: stagingRoot });
@@ -246,6 +259,17 @@ function watchDirectories() {
     return [...directories].filter(existsSync);
 }
 
+export interface WatchAllOptions {
+    reloadFile?: string;
+    afterBuild?: (info: { sequence: number }) => Promise<void> | void;
+    debounceMs?: number;
+}
+
+export interface WatchHandle {
+    reloadFile: string;
+    close(): Promise<void>;
+}
+
 // Watch mode rebuilds every bundle as one transaction. A shared module can
 // feed several independent esbuild contexts; reloading after the first context
 // finishes would expose a mixed runtime tree. The signal file is therefore
@@ -254,7 +278,7 @@ export async function watchAll({
     reloadFile = path.join(distDir, RELOAD_SIGNAL),
     afterBuild = async () => {},
     debounceMs = 80,
-} = {}) {
+}: WatchAllOptions = {}): Promise<WatchHandle> {
     const stagingRoot = newBuildTreePath();
     const outputDir = path.join(stagingRoot, 'working');
     await cleanupAbandonedBuildTrees({ keep: stagingRoot });
@@ -263,10 +287,10 @@ export async function watchAll({
         minify: false,
         outputDir,
     }))));
-    const watchers = [];
+    const watchers: FSWatcher[] = [];
     let sequence = 0;
-    let timer = null;
-    let building = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let building: Promise<void> | null = null;
     let pending = false;
     let closed = false;
 
@@ -287,7 +311,7 @@ export async function watchAll({
         try {
             await writeFile(path.join(outputDir, RELOAD_SIGNAL), await readFile(reloadFile));
         } catch (error) {
-            if (error?.code !== 'ENOENT') throw error;
+            if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error;
         }
         const candidateDir = path.join(stagingRoot, `generation-${nextSequence}`);
         await rm(candidateDir, { recursive: true, force: true });
@@ -365,6 +389,6 @@ const isCli = process.argv[1]
     && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isCli) {
-    const run = WATCH ? watchAll : buildOnce;
+    const run = WATCH ? () => watchAll() : () => buildOnce();
     run().catch(err => { console.error(err); process.exit(1); });
 }

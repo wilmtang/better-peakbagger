@@ -56,7 +56,7 @@ test('verification targets preserve the existing checks and browser order with o
         await t.test(args.join(' '), async () => {
             const calls: unknown[][] = [];
             await runVerification(args, { execute: async (...call) => { calls.push(call); } });
-            assert.deepEqual(calls, [['build.mjs'], ...expected].map(([name, ...options]) =>
+            assert.deepEqual(calls, [['build.mts'], ...expected].map(([name, ...options]) =>
                 [process.execPath, [script(name), ...options], { cwd: root }]));
         });
     }

@@ -134,7 +134,7 @@ Three files divide assembly responsibility:
   loaded vendor order, and browser entry points.
 - `scripts/build-config.mts` owns bundle composition, entry-point roots, copied
   files, and packaged vendor assets.
-- `scripts/build.mjs` performs the build. Generated files under `dist/` are
+- `scripts/build.mts` performs the build. Generated files under `dist/` are
   never edited directly.
 
 Classic browser entry points become self-contained IIFE bundles. ES imports

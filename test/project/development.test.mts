@@ -21,7 +21,7 @@ import {
     formatReloadLog,
     publishBuildTree as publishBuildTreeJS,
     RELOAD_SIGNAL,
-} from '../../scripts/build.mjs';
+} from '../../scripts/build.mts';
 import { AUTHORED_SOURCE_ROOTS, root as projectRoot } from '../../scripts/build-config.mts';
 import { webExtArguments } from '../../scripts/run-development.mjs';
 import {

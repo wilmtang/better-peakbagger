@@ -5,7 +5,7 @@
 //
 // This module is the authority on how the extension is assembled: which source
 // modules go into which bundle, in what order, and which static assets are
-// copied. scripts/build.mjs consumes it to produce dist/, and the test suite
+// copied. scripts/build.mts consumes it to produce dist/, and the test suite
 // imports it to assert bundle composition, load order, and execution world
 // without re-encoding the layout in each test.
 //
