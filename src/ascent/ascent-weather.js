@@ -7,7 +7,7 @@ import { createWeatherIcon } from '../weather/weather-icon.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
-import { createCardReadGate } from '../ui/card-read-gate.js';
+import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.js';
 import { createCardDrag } from '../ui/card-drag.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';

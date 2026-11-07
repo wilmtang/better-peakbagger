@@ -21,7 +21,7 @@
     "src/theme/theme-resolve.js",
     "src/time/mountain-time.js",
     "src/ui/card-pointer-drag.js",
-    "src/ui/card-read-gate.js",
+    "src/ui/card-read-gate.ts",
     "src/ui/column-resize.js",
     "src/ui/dom.js",
     "src/ui/latest-read.js",

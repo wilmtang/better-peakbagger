@@ -7,7 +7,7 @@ import { units } from '../ui/units.js';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
-import { createCardReadGate } from '../ui/card-read-gate.js';
+import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { createStableText } from '../ui/stable-text.js';

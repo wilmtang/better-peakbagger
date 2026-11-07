@@ -21,7 +21,7 @@ These shared modules already exist:
 | --- | --- | --- |
 | Safe DOM and feedback | [`dom.js`](../src/ui/dom.js), [`stable-text.js`](../src/ui/stable-text.js) | Labels, status alternatives, deliberate expansion and retained content |
 | Page lifetime and cooldown UI | [`page-lifecycle.js`](../src/ui/page-lifecycle.js), [`retry-cooldown.js`](../src/ui/retry-cooldown.js) | Eligible reads, cancellation, TTL, resume and remote-write reconciliation |
-| Read eligibility and lazy start | [`card-read-gate.js`](../src/ui/card-read-gate.js) | Feature/date eligibility, optional collapse, freshness, retained results and cancellation |
+| Read eligibility and lazy start | [`card-read-gate.ts`](../src/ui/card-read-gate.ts) | Feature/date eligibility, optional collapse, freshness, retained results and cancellation |
 | Latest read ownership | [`latest-read.js`](../src/ui/latest-read.js) | Request identity, validation, cache/TTL, retained labels and pending UI |
 | Movement | [`card-drag.js`](../src/ui/card-drag.js), [`layout-menu.js`](../src/ui/layout-menu.js) | Native anchors, valid destinations, order, persistence and preview strategy |
 | Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.js`](../src/time/mountain-time.js) | Forecast versus historical endpoint, date range, model capabilities and freshness |

@@ -3,11 +3,26 @@
 
 // Read eligibility only. Callers retain request ownership, cached results and
 // freshness policy; leaving the viewport never aborts an already-started read.
-export function createCardReadGate({ card, enabled, active, collapsed = () => false, onChange = () => {} }) {
-    const doc = card.ownerDocument, view = doc.defaultView;
-    let disposed = false, observer = null, waitGeneration = 0;
+interface CardReadGateOptions {
+    card: HTMLElement;
+    enabled: () => boolean;
+    active: () => boolean;
+    collapsed?: () => boolean;
+    onChange?: (eligible: boolean) => void;
+}
+
+export function createCardReadGate({ card, enabled, active, collapsed = () => false, onChange = () => {} }: CardReadGateOptions) {
+    const doc = card.ownerDocument, view = doc.defaultView!;
+    let disposed = false, observer: IntersectionObserver | null = null, waitGeneration = 0;
+    // The layout applies a toggle to the card at once, but the saved preference only
+    // arrives when settings echo back. The applied state wins, or a Refresh right
+    // after expanding would be silently ignored.
+    const isCollapsed = () => {
+        const applied = card.dataset.bpbCardCollapsed;
+        return applied === undefined ? collapsed() : applied === 'true';
+    };
     const eligible = () => !disposed && enabled() && active() && doc.visibilityState === 'visible'
-        && !card.hidden && !collapsed() && card.dataset.bpbCardCollapsed !== 'true';
+        && !card.hidden && !isCollapsed();
     let previous = eligible();
     const cancelWait = () => { waitGeneration++; observer?.disconnect(); observer = null; };
     const refresh = () => {
@@ -22,16 +37,16 @@ export function createCardReadGate({ card, enabled, active, collapsed = () => fa
         // mutations/settings refreshes notify only on eligibility transitions.
         if (!refresh()) onChange(eligible());
     };
-    const mutations = new view.MutationObserver(refresh);
+    const mutations = new (view as unknown as typeof globalThis).MutationObserver(refresh);
     mutations.observe(card, { attributes: true, attributeFilter: ['hidden', 'data-bpb-card-collapsed'] });
     doc.addEventListener('visibilitychange', visibility);
     return {
         eligible, refresh, cancelWait,
-        waitForViewport(onVisible) {
+        waitForViewport(onVisible: () => void) {
             if (!eligible() || observer) return;
-            if (typeof view.IntersectionObserver !== 'function') { onVisible(); return; }
+            if (typeof (view as unknown as typeof globalThis).IntersectionObserver !== 'function') { onVisible(); return; }
             const owner = ++waitGeneration;
-            observer = new view.IntersectionObserver(entries => {
+            observer = new (view as unknown as typeof globalThis).IntersectionObserver(entries => {
                 if (owner !== waitGeneration || !eligible() || !entries.some(entry => entry.isIntersecting)) return;
                 cancelWait(); onVisible();
             }, { rootMargin: '200px' });
