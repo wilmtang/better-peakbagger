@@ -3,7 +3,7 @@
 
 import { settings } from '../settings/settings.js';
 import { units } from '../ui/units.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 
 (() => {
     const stats = document.getElementById('StatsLabel');

@@ -38,7 +38,7 @@ Evidence: [peak weather load/visibility](../../src/weather/peak-weather.js#L363)
 [cloud eligibility](../../src/weather/summit-cloud.js#L77),
 [snow enablement](../../src/snow/peak-snow.js#L138),
 [ascent lazy loading](../../src/ascent/ascent-weather.js#L614),
-[existing lifecycle helper](../../src/ui/page-lifecycle.js#L9).
+[existing lifecycle helper](../../src/ui/page-lifecycle.ts#L9).
 
 **Extraction:** a small read-eligibility/observer helper composed with the existing
 lifecycle. Inputs should include settings readiness, feature enablement, card,

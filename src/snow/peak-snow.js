@@ -5,7 +5,7 @@ import { dom } from '../ui/dom.js';
 import { units } from '../ui/units.js';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { createStableText } from '../ui/stable-text.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { settings } from '../settings/settings.js';

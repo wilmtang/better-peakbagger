@@ -6,7 +6,7 @@ import { createStableText } from '../ui/stable-text.js';
 import { createWeatherIcon } from '../weather/weather-icon.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';
 import { createCardDrag } from '../ui/card-drag.js';

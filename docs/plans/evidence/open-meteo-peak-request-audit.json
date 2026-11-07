@@ -26,7 +26,7 @@
     "src/ui/dom.js",
     "src/ui/latest-read.ts",
     "src/ui/layout-menu.js",
-    "src/ui/page-lifecycle.js",
+    "src/ui/page-lifecycle.ts",
     "src/ui/peak-card-layout.js",
     "src/ui/peak-table-split.js",
     "src/ui/retry-cooldown.js",

@@ -8,7 +8,7 @@ import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { nearbySnotelStations } from '../snow/snotel-data.js';
 import { mountPeakSnow } from '../snow/peak-snow.js';
 import { overlayBounds, viewportStations } from './map-overlay-providers.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { readLayerSnapshot } from './map-layer-protocol.ts';
 import { readBCTileCoordinates } from './bc-land-client.js';
 

@@ -54,7 +54,7 @@ Svelte, and Svelte is not installed.
 | --- | --- | --- |
 | M0 | Done | Strict browser and Node checking, TS lint scopes, adoption policy in hooks/CI/release, and shared discovery for all seven source guards. |
 | M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`. Results are in the [follow-up ledger](follow-ups.md). |
-| M2 | In progress | `src/ui/latest-read.ts` is converted; `src/ui/page-lifecycle.js` is still JavaScript. |
+| M2 | Done | `src/ui/latest-read.ts` and `src/ui/page-lifecycle.ts` are converted. |
 | M3 | Not started | `scripts/build-config.mts` is converted (`bc5fa3b3`), but `scripts/build.mjs` is not. The watcher still derives directories from entries and misses `src/storage/`. |
 | M4 | Not started | `src/ui/runtime-message.js` is still JavaScript. No Units panel contract exists. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
@@ -127,7 +127,7 @@ does not forbid independent local work, but blocks a claim that M6 is releasable
 1. Convert [latest-read.ts](../../src/ui/latest-read.ts) to `.ts`, preserving
    abort ordering, stale-result rejection and reentrant cancellation behavior.
    Update exact caller references and retain its existing focused tests.
-2. Convert [page-lifecycle.js](../../src/ui/page-lifecycle.js) to `.ts` with
+2. Convert [page-lifecycle.ts](../../src/ui/page-lifecycle.ts) to `.ts` with
    typed callbacks/events and the existing idempotent active/suspended/disposed
    state machine. Keep the public `create` alias and default window behavior.
    Extend its focused tests only where typed usage reveals a missing case.
@@ -498,7 +498,7 @@ a JSON-only messaging stub as proof of Firefox clone compatibility.
 | Standalone floating widget | Shadow DOM can be evaluated separately, with explicit theme, focus and accessibility handling. It is not a prerequisite for first adoption. |
 
 Follow [card conventions](../card-conventions.md) and
-[createPageLifecycle](../../src/ui/page-lifecycle.js). A persisted `pagehide`
+[createPageLifecycle](../../src/ui/page-lifecycle.ts). A persisted `pagehide`
 suspends external work without unmounting; `pageshow` resumes it. Final disposal,
 feature removal or disabling unmounts the island and cancels its outstanding
 work. These latter removals can occur while the document is still active.

@@ -3,7 +3,7 @@
 
 import { createLayoutMenu } from './layout-menu.js';
 import { mountPeakTableSplit } from './peak-table-split.js';
-import { createPageLifecycle } from './page-lifecycle.js';
+import { createPageLifecycle } from './page-lifecycle.ts';
 import { createCardPointerDrag } from './card-pointer-drag.js';
 
 // Only standalone extension cards participate. Native map, legend, links and

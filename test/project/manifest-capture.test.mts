@@ -248,7 +248,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     assert.deepEqual(analyzerEntry.js, ['vendor/chart.umd.min.js', 'content/gpx-analyzer.js']);
     assert.deepEqual(analyzerEntry.css, ['css/sun-calculator.css']);
     assert.deepEqual(bundleSources('content/gpx-analyzer.js'),
-        ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.js', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.ts', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js']);
+        ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.ts', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.ts', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js']);
 
     const terrainEntry = manifest.content_scripts.find(entry =>
         entry.js.includes('content/terrain-map.js') && entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
@@ -329,7 +329,7 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     assert.deepEqual(pageEntry.js, ['content/big-map.js']);
     assert.equal(pageEntry.world, 'MAIN');
     assert.deepEqual(bundleSources('content/big-map.js'),
-        ['ui/page-lifecycle.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'maps/big-map.js']);
+        ['ui/page-lifecycle.ts', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'maps/big-map.js']);
     assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
 
     // The shared 3D terrain bridge is injected on BigMap too (isolated world,
@@ -371,7 +371,7 @@ test('ascent editor integration is isolated to Peakbagger and capture never auto
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
-        ['ui/units.js', 'ui/page-lifecycle.js', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
+        ['ui/units.js', 'ui/page-lifecycle.ts', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
     const timezoneConsumers = await Promise.all([
         'src/ascent/ascent-upload.js',
         'src/time/mountain-time.js'
@@ -454,7 +454,7 @@ test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated
     assert.deepEqual(pageCoordinator.js, ['content/peak-map.js']);
     assert.deepEqual(pageCoordinator.css, ['css/sun-calculator.css']);
     assert.deepEqual(bundleSources('content/peak-map.js'),
-        ['ui/page-lifecycle.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'maps/peak-map.js']);
+        ['ui/page-lifecycle.ts', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'maps/peak-map.js']);
     assert.equal(pageCoordinator.run_at, 'document_end');
     assert.equal(pageCoordinator.world, 'MAIN');
 
@@ -522,7 +522,7 @@ test('saved map handoffs share one independent isolated-world surface', () => {
         'gpx/saved-gpx-source.js',
         'onx/onx-import.js',
         'ui/dom.js',
-        'ui/page-lifecycle.js',
+        'ui/page-lifecycle.ts',
         'ui/runtime-message.js',
         'ui/trusted-action.js',
         'ui/stable-text.js',

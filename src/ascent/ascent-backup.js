@@ -17,7 +17,7 @@ import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-err
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
-import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 
 (() => {
     'use strict';

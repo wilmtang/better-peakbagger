@@ -15,7 +15,7 @@ import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js'
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
-import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 
 // Kept as an IIFE for early-exit control flow (non-Full-Screen-Map pages);
 // dependencies are ES imports and the module publishes no globals.
