@@ -6,13 +6,17 @@ import { fileURLToPath } from 'node:url';
 import { runChildProcess } from './resource-stack.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const targets = {
+type VerifierCommand = string[];
+type VerifierExecute = (command: string, args: string[], options: { cwd: string }) => unknown;
+
+const targets: Record<string, VerifierCommand[]> = {
     garmin: [['verify-garmin-ui.mts']],
     connections: [['verify-connections.mjs']],
     chrome: [['verify-extension.mts']],
     firefox: [['verify-firefox-extension.mts']],
     browsers: [['verify-extension.mts'], ['verify-firefox-extension.mts']],
     'capture-popup': [['verify-capture-popup.mts']],
+    'popup-photo-entry': [['verify-popup-photo-entry.mts']],
     'layout-stability': [['verify-layout-stability.mts']],
     'fixture-preflight': [['verify-fixture-preflight.mjs']],
     'gpx-header': [['verify-gpx-header.mjs']],
@@ -52,7 +56,7 @@ const targets = {
     'weather-interactions': [['verify-ascent-weather.mjs', '--interactions'], ['verify-ascent-weather.mjs', '--interactions', '--firefox']],
     packages: [['verify-packaged-extensions.mjs']],
 };
-const terrainTargets = {
+const terrainTargets: Record<string, VerifierCommand[]> = {
     chrome: [['verify-terrain-visual.mts']],
     firefox: [['verify-firefox-terrain.mjs']],
     'cache-owners': [['verify-terrain-cache-owners.mjs']],
@@ -70,8 +74,8 @@ export const verificationUsage = [
     'Arguments are forwarded to each selected verifier. See docs/development.md for coverage.',
 ].join('\n');
 
-export function verificationPlan([target, ...args]) {
-    let commands;
+export function verificationPlan([target, ...args]: string[]) {
+    let commands: VerifierCommand[];
     if (target === 'terrain') {
         const terrain = args.shift() ?? 'chrome';
         if (!Object.hasOwn(terrainTargets, terrain)) {
@@ -93,7 +97,7 @@ export function verificationPlan([target, ...args]) {
     };
 }
 
-export async function runVerification(args, { execute = runChildProcess } = {}) {
+export async function runVerification(args: string[], { execute = runChildProcess as unknown as VerifierExecute } = {}) {
     const plan = verificationPlan(args);
     if (plan.build) await execute(process.execPath, [path.join(root, 'scripts/build.mjs')], { cwd: root });
     for (const command of plan.commands) {

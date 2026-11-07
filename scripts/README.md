@@ -73,7 +73,7 @@ independent of the existing targets.
 - [resource-stack.mjs](resource-stack.mjs)
 - [verification-browser-identity.mjs](verification-browser-identity.mjs)
 - [verification-repetitions.mjs](verification-repetitions.mjs)
-- [verify.mjs](verify.mjs)
+- [verify.mts](verify.mts)
 - [verify-fixture-preflight.mjs](verify-fixture-preflight.mjs) — Early locale, evidence, worker authorization and shipped-fixture checks.
 
 ## Complete extension and package verification

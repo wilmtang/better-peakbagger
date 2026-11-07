@@ -84,7 +84,7 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.equal(job.env.BPB_VERIFY_SCREENSHOTS, 'references');
     assert.ok(job.steps.find((step: WorkflowStep) => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
-    assert.equal(packageJson.scripts.verify, 'node scripts/verify.mjs');
+    assert.equal(packageJson.scripts.verify, 'node scripts/verify.mts');
     const verifier = await readFile(new URL('../../scripts/verify-layout-stability.mts', import.meta.url), 'utf8');
     assert.match(verifier, /'weather-models':.*verifyPeakWeatherRefresh/,
         'ordinary CI must exercise summit model loading, not just hourly readings');

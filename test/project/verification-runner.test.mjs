@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runVerification } from '../../scripts/verify.mjs';
+import { runVerification } from '../../scripts/verify.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const script = name => path.join(root, 'scripts', name);
@@ -95,13 +95,13 @@ test('a failed build or verifier stops the sequence and preserves the failure', 
 });
 
 test('CLI help lists the targets and invalid selections exit unsuccessfully', () => {
-    const help = spawnSync(process.execPath, [script('verify.mjs'), '--help'], { encoding: 'utf8', timeout: 5_000 });
+    const help = spawnSync(process.execPath, [script('verify.mts'), '--help'], { encoding: 'utf8', timeout: 5_000 });
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /Usage: npm run verify -- TARGET/);
     assert.match(help.stdout, /packages CHROME.zip FIREFOX.zip \(no build\)/);
     assert.match(help.stdout, /terrain \[chrome\|firefox\|cache-owners\|lod\]/);
     for (const args of [[], ['chromee'], ['terrain', 'firefoxx']]) {
-        const result = spawnSync(process.execPath, [script('verify.mjs'), ...args], { encoding: 'utf8', timeout: 5_000 });
+        const result = spawnSync(process.execPath, [script('verify.mts'), ...args], { encoding: 'utf8', timeout: 5_000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Unknown .*target/);
     }

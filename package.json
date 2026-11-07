@@ -19,7 +19,7 @@
     "start": "node scripts/run-development.mjs",
     "test": "npm run build && node --test \"test/**/*.test.mjs\" \"test/**/*.test.mts\"",
     "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.mjs\"",
-    "verify": "node scripts/verify.mjs",
+    "verify": "node scripts/verify.mts",
     "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs",
     "audit:ci": "node scripts/check-npm-audit.mts",
     "release:verify-packages": "node scripts/verify-store-packages.mjs",

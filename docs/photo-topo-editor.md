@@ -120,8 +120,8 @@ on the editor, and otherwise opens a new tab. A tab carrying `returnToken`,
 `localPhotoId` or `imageUrl` belongs to its report's return flow and is never
 reused, so the card cannot redirect a report's Save and return. The card steps
 aside while detected peaks are on screen, because reviewing them needs the
-popup's full 600px for **Open drafts**. Focused hidden check: build, then run
-`node scripts/verify-popup-photo-entry.mts`. It uses the real worker and tabs,
+popup's full 600px for **Open drafts**. Focused hidden check:
+`npm run verify -- popup-photo-entry`. It uses the real worker and tabs,
 with the popup loaded as a tab, so native popup sizing and window focus remain
 unverified by it.
 
