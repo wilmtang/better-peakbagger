@@ -435,7 +435,7 @@ TipTap's `ResizableNodeView` in `src/reports/report-rich-editor.js` (lines
 146–185 and 320–360). The lockfile pins TipTap core 3.30.1 in
 `package-lock.json` (lines 1507–1509); its installed implementation registers
 touch start/move but completes only on mouseup. Existing tests cover mouse and
-keyboard in `test/reports/report-editor-media.test.mjs` (lines 371–495). A touch
+keyboard in `test/reports/report-editor-media.test.mts` (lines 371–495). A touch
 probe visibly changed an 800×450 video to 600×337.5, but `touchend` left the
 serialized report at 800×450 and the node in resize state.
 

@@ -336,7 +336,12 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     );
     markdownHint.hidden = true;
 
-    bar.append(tools, plainHint, markdownHint, modes);
+    // Markdown and Plain have no image popover and cannot take an insertion
+    // back, so here Photo Topos opens on its own: copy or export the result.
+    const topoLaunch = button('bpb-re-topo-launch', 'Photo Topos ↗',
+        'Open Photo Topos in a tab of its own to mark up a photo, then copy or export it');
+    topoLaunch.hidden = true;
+    bar.append(tools, plainHint, markdownHint, topoLaunch, modes);
 
     // Contextual table controls, shown only while the caret is inside a table.
     const tableBar = el('div', 'bpb-re-box bpb-re-tablebar');
@@ -403,7 +408,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     // as two different features when they are one page with two tabs, and
     // neither name said that the library is this browser's own record.
     const imageActions = el('div', 'bpb-re-image-actions');
-    const imageEdit = button('bpb-re-photo-launch', 'Upload a photo…');
+    const imageEdit = button('bpb-re-photo-launch', 'Open Photo Topos…');
     imageActions.append(imageEdit);
     const imageLaunchStatus = el('div', 'bpb-re-image-status');
     imageLaunchStatus.setAttribute('role', 'status');
@@ -416,8 +421,8 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         return link;
     };
     const imageEditHint = el('div', 'bpb-re-image-hosting',
-        'Mark the route on it, upload with your own ImgBB key, and reuse photos you have '
-        + 'uploaded before. ');
+        'Mark up a photo and insert it with your ImgBB key, reuse one from your library, '
+        + 'or export it. ');
     // Packaged-page URL resolution is not guaranteed in every embedding, and a
     // link with nowhere to go is worse than no link.
     const guideUrl = ext.runtime?.getURL?.('photos/guide.html');
@@ -1381,6 +1386,26 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         }
     };
 
+    let topoLaunchBusy = false;
+    const launchStandaloneTopos = async (event: Event) => {
+        if (isProfile || topoLaunchBusy) return;
+        topoLaunchBusy = true;
+        try {
+            const generation = nextTrustedActionGeneration('photos');
+            const activation = await TrustedAction.issue(ext, event, 'photo-editor', generation);
+            if (!activation) return;
+            const response = await RuntimeMessage.send(ext, {
+                type: 'PHOTO_STANDALONE_OPEN', generation, activationToken: activation.token,
+            });
+            topoLaunch.title = response?.ok
+                ? 'Open Photo Topos in a tab of its own to mark up a photo, then copy or export it'
+                : 'Couldn’t open Photo Topos. Try again.';
+        } finally {
+            topoLaunchBusy = false;
+        }
+    };
+    topoLaunch.addEventListener('click', event => { void launchStandaloneTopos(event); });
+
     const applyImage = () => {
         const value = imageSrcInput.value.trim();
         const src = Markup.sanitizeImageSrc(value);
@@ -1557,6 +1582,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         markdownHint.hidden = !markdown;
         foot.hidden = mode === 'plain';
         plainHint.hidden = mode !== 'plain';
+        topoLaunch.hidden = rich || isProfile;
         if (mode === 'plain') {
             textarea.value = Markup.breakTagsToNewlines(textarea.value);
         }

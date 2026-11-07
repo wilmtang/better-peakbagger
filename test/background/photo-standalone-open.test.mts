@@ -10,8 +10,8 @@ const popupSender = { id: 'test-extension', url: 'chrome-extension://test-extens
 
 interface FakeTab { id: number; windowId?: number; url?: string }
 
-const harness = (tabs: FakeTab[], overrides: { query?: () => Promise<FakeTab[]> } = {}) => {
-    const calls = { created: [] as unknown[], updated: [] as unknown[], focused: [] as unknown[], queries: 0 };
+const harness = (tabs: FakeTab[], overrides: { query?: () => Promise<FakeTab[]>; grant?: boolean } = {}) => {
+    const calls = { created: [] as unknown[], updated: [] as unknown[], focused: [] as unknown[], grants: [] as string[], queries: 0 };
     const ext = {
         runtime: { id: 'test-extension', getURL: (path: string) => `chrome-extension://test-extension/${path}` },
         permissions: { contains: async () => false },
@@ -23,12 +23,19 @@ const harness = (tabs: FakeTab[], overrides: { query?: () => Promise<FakeTab[]> 
         windows: { update: async (id: number, options: unknown) => { calls.focused.push([id, options]); } },
     };
     const routes = createPhotoRoutes({
-        ext, storage: () => ({}), now: () => 0, isPeakbaggerSender: () => false,
+        ext, storage: () => ({}), now: () => 0,
+        isPeakbaggerSender: (sender: { url?: string }) => /^https:\/\/www\.peakbagger\.com\//.test(sender.url || ''),
         mutateMap: async () => null, readMap: async () => ({}), randomToken: () => 'token',
-        keyStore: {}, trustedActions: {}, buildOpenResponse: () => ({}), logCleanupFailure() {},
+        keyStore: {}, buildOpenResponse: () => ({}), logCleanupFailure() {},
+        trustedActions: {
+            consumeCapability: (message: { activationToken?: string }, _sender: object, action: string) => {
+                calls.grants.push(action);
+                return overrides.grant === true && message.activationToken === 'activation';
+            },
+        },
     } as never);
     const open = routes.handlers.PHOTO_STANDALONE_OPEN as (message: object, sender: object) => unknown;
-    return { calls, open: (sender: object = popupSender) => open({ type: 'PHOTO_STANDALONE_OPEN' }, sender) };
+    return { calls, open: (sender: object = popupSender, message: object = {}) => open({ type: 'PHOTO_STANDALONE_OPEN', ...message }, sender) };
 };
 
 test('the popup opens a fresh standalone editor when no photo tab exists', async () => {
@@ -86,4 +93,22 @@ test('repeated activation shares one open, and a browser failure reports rather 
     assert.equal(first.calls.created.length, 1);
     const failing = harness([], { query: async () => { throw new Error('browser unavailable'); } });
     assert.deepEqual(await failing.open(), { ok: false });
+});
+
+test('a Peakbagger report opens it only with a fresh trusted click, and never with report context', async () => {
+    const reportSender = { url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=1', tab: { id: 12 }, frameId: 0 };
+    const refused = harness([]);
+    assert.deepEqual(await refused.open(reportSender, { activationToken: 'activation' }),
+        { ok: false, error: { code: 'forbidden' } });
+    assert.deepEqual(refused.calls.grants, ['photo-editor']);
+    assert.equal(refused.calls.queries, 0);
+
+    const granted = harness([], { grant: true });
+    assert.deepEqual(await granted.open(reportSender, { activationToken: 'activation' }), { ok: true, tabId: 77 });
+    assert.deepEqual(granted.calls.created, [{ url: PAGE, active: true }],
+        'the report gets the plain standalone page, with no return token');
+
+    const tablessSender = harness([], { grant: true });
+    assert.deepEqual(await tablessSender.open({ url: reportSender.url }, { activationToken: 'activation' }),
+        { ok: false, error: { code: 'forbidden' } });
 });

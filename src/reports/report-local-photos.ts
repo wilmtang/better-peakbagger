@@ -126,7 +126,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
             pasteQueue = pasteQueue.then(async () => {
                 try {
                     await send({ type: 'PHOTO_REPORT_STATUS' }).then(result => {
-                        if (!result.configured || !result.permissionGranted) throw new Error('Set up ImgBB in Settings before pasting photos.');
+                        if (!result.configured || !result.permissionGranted) throw new Error('Pasted photos need an ImgBB key to publish with your report. Set one up in Settings, or paste a link to an image hosted elsewhere.');
                     });
                     const prepared = await prepare(file!);
                     const actionGeneration = generation();

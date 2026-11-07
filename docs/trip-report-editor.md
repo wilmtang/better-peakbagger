@@ -1042,7 +1042,7 @@ shows the exact bracket source.
   TipTap color-token revalidation, and round trips.
 - `test/reports/report-editor-mount.test.mjs`,
   `test/reports/report-editor-modes.test.mjs`,
-  `test/reports/report-editor-media.test.mjs`, and
+  `test/reports/report-editor-media.test.mts`, and
   `test/reports/report-editor-drafts.test.mjs` pin the native-textarea source of
   truth, untouched-value preservation, expanded rich DOM, toolbar active
   states, image-source validation, hex-color preservation after Rich and

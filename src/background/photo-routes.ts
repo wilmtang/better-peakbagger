@@ -165,7 +165,7 @@ export function createPhotoRoutes({
             throw new Error('Paste a photo into the report to add it.');
         }
         if (!await keyStore.read() || !await permissionGranted()) {
-            throw new Error('Set up ImgBB in Settings before pasting photos.');
+            throw new Error('Pasted photos need an ImgBB key to publish with your report. Set one up in Settings, or paste a link to an image hosted elsewhere.');
         }
         return reportPhotos.create(owner, message);
     });
@@ -232,8 +232,13 @@ export function createPhotoRoutes({
         } catch { return null; }
     };
     let openingStandalone: Promise<{ ok: boolean; tabId?: number }> | null = null;
-    const openStandaloneEditor = (_message: PhotoMessage, sender: chrome.runtime.MessageSender) => {
-        if (!isPopup(sender)) return { ok: false, error: { code: 'forbidden' } };
+    // The toolbar popup opens it directly. A Peakbagger report in Markdown or
+    // Plain mode may too, but only from a fresh trusted click, like the
+    // report's own photo button; it gets no return context.
+    const openStandaloneEditor = (message: PhotoMessage, sender: chrome.runtime.MessageSender) => {
+        const fromReport = !isPopup(sender) && isPeakbaggerSender(sender) && Number.isInteger(sender.tab?.id)
+            && trustedActions.consumeCapability(message, sender, TrustedActions.ACTIONS.PHOTO_EDITOR);
+        if (!isPopup(sender) && !fromReport) return { ok: false, error: { code: 'forbidden' } };
         openingStandalone ||= (async () => {
             try {
                 const tabs = await ext.tabs.query({});

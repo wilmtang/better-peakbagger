@@ -5661,7 +5661,7 @@ try {
             // Library tabs, so offering both here asked the user to understand
             // the implementation before they could choose.
             check(JSON.stringify(imageHostingHelp?.photoActions)
-                === JSON.stringify(['Upload a photo…']),
+                === JSON.stringify(['Open Photo Topos…']),
             `the integrated photo-editor action was missing (state=${JSON.stringify(imageHostingHelp)})`);
             check(JSON.stringify(imageHostingHelp?.links) === JSON.stringify([
                 {
