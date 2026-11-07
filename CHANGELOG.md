@@ -6,6 +6,10 @@
   activities waiting for peak checks, so reviewed activities such as “No matching
   summits” no longer keep it lit.
 
+- **See waiting activities from the toolbar.** The extension icon shows the same
+  waiting count. Turn it off in Settings → General; the choice syncs, exports and
+  backs up with your other settings.
+
 - **Keep the next climber's card closed.** When a climber row disappears from an
   open card, keyboard focus still moves to the next person, without opening their
   card uninvited.

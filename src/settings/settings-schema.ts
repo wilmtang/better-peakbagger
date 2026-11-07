@@ -105,6 +105,8 @@ const DEFAULTS = {
     // "URL Link to External Trip Report" field when it is empty.
     fillExternalUrl: true,
     enableGarminInbox: true,
+    // Mirror the waiting-for-peak-checks count on the toolbar icon.
+    showInboxToolbarCount: true,
     garminCheckHours: 4,
     garminRecentDays: 30,
     garminHistoryStart: '',
@@ -281,7 +283,7 @@ const clean = (raw: unknown): typeof DEFAULTS => {
     if (!['auto', 'imperial', 'metric'].includes(s.units as string)) s.units = DEFAULTS.units;
     for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
     if (!['system', 'light', 'dark'].includes(s.theme as string)) s.theme = DEFAULTS.theme;
-    for (const key of ['showSunMoon', 'showWeather', 'showSummitCloud', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakCloudCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'loadInstagramAutomatically', 'enableGarminInbox', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSummitCloud', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakCloudCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'loadInstagramAutomatically', 'enableGarminInbox', 'showInboxToolbarCount', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = defaults[key];
     }
     // SNOTEL previously shared the weather gate. Preserve legacy opt-outs

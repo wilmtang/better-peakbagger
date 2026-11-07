@@ -1,6 +1,6 @@
 # Settings storage, export, and sync
 
-Maintained report, updated **2026-10-25** for the implementation following the
+Maintained report, updated **2026-11-06** for the implementation following the
 storage audit (package version **4.0.2**, unreleased changes). This describes the
 repository, not necessarily the extension installed in a particular browser.
 The [remediation ledger](archive/settings-portability-remediation.md) records
@@ -10,7 +10,7 @@ records the centralized manager and version 6 backup/restore audit.
 
 ## Current policy
 
-- **67 portable preferences** live in `storage.sync.bpbSettings`, travel in
+- **68 portable preferences** live in `storage.sync.bpbSettings`, travel in
   settings JSON files, and can be backed up to GitHub's `settings.json`.
 - **Ten device settings** live in `storage.local.bpbDeviceSettings`. Map size,
   terrain cache budget, GitHub transfer choices and automatic Instagram loading stay on this installation;
@@ -48,7 +48,7 @@ computer. “Settings file” means **Export settings**, not a complete profile 
 
 | Data | Storage | Browser sync | Settings file | GitHub / separate file |
 | --- | --- | --- | --- | --- |
-| 67 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
+| 68 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
 | Ten device settings | `storage.local.bpbDeviceSettings` | No | No | No |
 | Custom map sources and opacity | `storage.local.bpbCustomMapOverlaysV1`, `bpbCustomMapOverlayPreferencesV1` | No | Yes, `customLayers` | `settings.json`: push and explicit restore |
 | ImgBB API key | `storage.local.bpbImgbbAuth` | No | Credential opt-in only | Never in GitHub settings backup |
@@ -77,7 +77,7 @@ This limitation is distinct from the guarded GitHub file replacement below.
 ## Complete portable-settings inventory
 
 Every key below is browser-sync eligible, settings-file exportable, and
-GitHub-settings-backup eligible. The inventory is the 67-key `PORTABLE_KEYS`
+GitHub-settings-backup eligible. The inventory is the 68-key `PORTABLE_KEYS`
 allowlist in the [single settings schema](../src/settings/settings-schema.ts).
 
 | Group | Exact keys |
@@ -85,7 +85,7 @@ allowlist in the [single settings schema](../src/settings/settings-schema.ts).
 | Theme and units (7) | `theme`, `units`, `distanceUnits`, `elevationUnits`, `temperatureUnits`, `precipitationUnits`, `windUnits` |
 | Peak cards (8) | `showSunMoon`, `showWeather`, `showSnotel`, `peakCardOrder`, `peakCardColumns`, `peakSunCollapsed`, `peakWeatherCollapsed`, `peakSnowCollapsed` |
 | Capture and draft filling (6) | `retainWaypoints`, `removeGpxTimestamps`, `fillAscentDetails`, `fillTripInfo`, `fillWildernessNights`, `fillExternalUrl` |
-| Garmin inbox preferences (5) | `enableGarminInbox`, `garminCheckHours`, `garminRecentDays`, `garminHistoryStart`, `garminActivityTypes` |
+| Garmin inbox preferences (6) | `enableGarminInbox`, `showInboxToolbarCount`, `garminCheckHours`, `garminRecentDays`, `garminHistoryStart`, `garminActivityTypes` |
 | GPX chart (1) | `chartDefaultSeries` |
 | Report editor (4) | `enableReportEditor`, `addReportCredit`, `reportEditorMode`, `reportImageWidth` |
 | Route appearance (4) | `mapRouteColor`, `mapRouteWidth`, `mapRouteCasingColor`, `mapRouteCasingWidth` |
@@ -101,6 +101,8 @@ allowlist in the [single settings schema](../src/settings/settings-schema.ts).
 
 These preferences contain bounded identifiers, style values and choices, not
 weather coordinates/results, activity data, annotations or credentials.
+`showInboxToolbarCount` is a display choice with no data or consent attached, so
+it travels like the other inbox preferences; the count itself stays local.
 Garmin's synced feature gate does not replace its local key, Peakbagger account
 binding or processing consent. Active overlays and selected weather map points
 remain page state. Photo styles already applied to a project also travel with

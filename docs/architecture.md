@@ -282,7 +282,7 @@ context without becoming a delay.
 The distance calculation uses current bounding rectangles rather than list
 length, so it covers any dynamically tall section, browser zoom level, and
 viewport size. A zero-height test environment falls back to ordinary anchor
-behavior. `test/options/options-ui.test.mjs` pins the threshold, initial deep-link
+behavior. `test/options/options-ui.test.mts` pins the threshold, initial deep-link
 override, nav lock, scroll spy, bottom clamp, and modified-click boundary; the
 real browser verifier exercises a 1,500-row favorite list and a long jump in
 both browser families.
@@ -1722,7 +1722,7 @@ The focused automated evidence is deliberately split by boundary:
 - `test/options/options-favorites.test.mjs` covers source switching, provenance counts/filtering,
   identity-checked add, live totals and fuzzy search, reversible delete/mirror/restore,
   Buddy refresh, merge, and the default-off removal preference.
-- `test/options/options-ui.test.mjs` covers distance-aware sidebar navigation;
+- `test/options/options-ui.test.mts` covers distance-aware sidebar navigation;
   `test/options/options-github.test.mjs` covers the explicit GitHub messages.
 - `test/favorites/climber-favorite.test.mjs` covers manual add/remove, self exclusion,
   Buddy-mode absence, live source/list changes, native action detection, owner

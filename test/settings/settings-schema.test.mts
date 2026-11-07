@@ -325,3 +325,11 @@ test('automatic Instagram loading is explicit device-local consent and defaults 
     assert(Schema.DEVICE_KEYS.includes('loadInstagramAutomatically'));
     assert(!Schema.PORTABLE_KEYS.includes('loadInstagramAutomatically'));
 });
+
+test('the toolbar count choice is a portable boolean that defaults on', () => {
+    assert(Schema.PORTABLE_KEYS.includes('showInboxToolbarCount'), 'it travels through sync, settings files and GitHub');
+    assert(!Schema.DEVICE_KEYS.includes('showInboxToolbarCount'));
+    assert.equal(Schema.DEFAULTS.showInboxToolbarCount, true);
+    assert.equal(Schema.clean({ showInboxToolbarCount: false }).showInboxToolbarCount, false);
+    assert.equal(Schema.clean({ showInboxToolbarCount: 'no' }).showInboxToolbarCount, true);
+});

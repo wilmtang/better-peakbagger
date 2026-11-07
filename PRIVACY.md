@@ -107,6 +107,10 @@ automatic backups, diagnostics and URLs. A manual settings export includes it
 only when **Include saved credentials** is checked; that file is not encrypted.
 Access tokens stay in worker memory and are never exported.
 
+The popup and toolbar icon can show how many activities are waiting for peak
+checks. That number is computed on this device and is never sent anywhere. Only
+the **Activity count on toolbar icon** choice travels with your portable settings.
+
 The General **Automatically detect Garmin activities** switch defaults on.
 Turning it off hides the activity inbox and stops imports and queued peak checks,
 preserving the key, drafts and import history. Settings keeps the Garmin

@@ -23,6 +23,17 @@ device; the master switch alone never creates a connection.
    Peakbagger tab available for peak matching; activities wait locally until then.
 4. Open **Activity inbox** from the extension popup to review activities.
 
+## See what is waiting
+
+The number beside **Activity inbox** in the popup and on the toolbar icon counts
+activities **waiting for peak checks**. Activities that already have a result,
+including **No matching summits**, stay in the inbox but are not counted, so a
+reviewable inbox can show no number. Capture warnings on a tab take priority over
+the toolbar count. To hide the toolbar number, turn off **Settings → General →
+Activity count on toolbar icon**; the popup keeps its number. The choice follows
+your other portable settings through browser sync, settings files and GitHub
+settings backups.
+
 ## Choose when and how far back to check
 
 | Setting | What it does |

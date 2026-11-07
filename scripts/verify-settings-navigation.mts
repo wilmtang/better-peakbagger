@@ -90,7 +90,7 @@ const featureSaved = async () => {
 };
 
 async function verifyFeatureSwitches({ evaluate, wait, toggle }: Pick<NavigationDriver, 'evaluate' | 'wait' | 'toggle'>) {
-    for (const [id, key] of [['enable-garmin-inbox', 'enableGarminInbox'], ['show-sun-moon', 'showSunMoon'],
+    for (const [id, key] of [['enable-garmin-inbox', 'enableGarminInbox'], ['show-inbox-toolbar-count', 'showInboxToolbarCount'], ['show-sun-moon', 'showSunMoon'],
         ['show-weather', 'showWeather'], ['show-summit-cloud', 'showSummitCloud'], ['show-snotel', 'showSnotel'], ['enable-3d-map', 'enable3dMap']]) {
         await evaluate(({ inputId, settingKey }) => {
             const input = document.getElementById(inputId) as HTMLInputElement;

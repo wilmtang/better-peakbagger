@@ -1,5 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { createGarminBadge } from './garmin-badge.ts';
 import { createGarminStore, garminPublicSummary } from './garmin-store.js';
 import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.js';
 import { decodeGarminRecording } from './fit-activity.js';
@@ -73,10 +74,15 @@ export function importRange(settings: GarminPreferences, connectionDate: string 
     const catchup = lastCheck ? new Date(lastCheck - DAY).toISOString().slice(0, 10) : lookback;
     return { from: full ? scope : [scope, [lookback, catchup].sort()[0]].sort().at(-1) as string, to: date };
 }
-export function createGarminImports({ ext, settings, store = createGarminStore() as unknown as GarminStore,
+export function createGarminImports({ ext, settings, store: durableStore = createGarminStore() as unknown as GarminStore,
     clientFactory = createGarminClient as unknown as NonNullable<GarminImportDependencies['clientFactory']>,
     decode = decodeGarminRecording as unknown as NonNullable<GarminImportDependencies['decode']>,
     prepare, binding, openDrafts, clock = Date.now, date = today }: GarminImportDependencies) {
+    const badge = createGarminBadge({ ext, settings, summary: () => durableStore.summary() });
+    // Every inbox write, including the worker's draft handoffs, can change the queue.
+    const store: GarminStore = { ...durableStore, async mutate(mutate) {
+        try { return await durableStore.mutate(mutate); } finally { void badge.sync(); }
+    } };
     const trusted = createPackagedPageMatcher(ext, ['options/options.html', 'options/inbox.html']);
     const popup = createPackagedPageMatcher(ext, ['popup/popup.html']);
     let visiting: Promise<void> | null = null; let running: Promise<void> | null = null; let queuedFull: Promise<void> | null = null;
@@ -100,6 +106,7 @@ export function createGarminImports({ ext, settings, store = createGarminStore()
         return { ...account, owner: account.owner || previous?.owner || null };
     };
     const reconcile = async () => {
+        void badge.sync();
         await ext.alarms.clear(GARMIN_ALARM);
         const [state, prefs] = await Promise.all([store.read(), settings.requireCurrent()]);
         if (!prefs.enableGarminInbox || !state.connection?.key || state.error?.code === 'key-rejected' || !await permission()

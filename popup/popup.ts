@@ -6,6 +6,7 @@ import { captureErrorPolicy } from '../src/capture/capture-error-policy.js';
 import { matchLabel } from '../src/capture/match-confidence.js';
 import { providerFromUrl } from '../src/capture/provider-url.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
+import { waitingCountLabel } from '../src/garmin/garmin-badge.ts';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
 import { createStableText } from '../src/ui/stable-text.js';
@@ -670,7 +671,7 @@ interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: b
         // the toolbar badge; reviewed outcomes such as no-match do not count.
         const count = inboxSummary.queued;
         if (!Number.isInteger(count) || count < 0) return;
-        (document.getElementById('inbox-count') as HTMLElement).textContent = count > 99 ? '99+' : count ? String(count) : '';
+        (document.getElementById('inbox-count') as HTMLElement).textContent = waitingCountLabel(count);
         inboxButton.setAttribute('aria-label', `Open inbox, ${count} waiting for peak checks`);
         inboxStatus.textContent = inboxSummary.error?.code === 'key-rejected' ? 'Garmin needs a new key. Open inbox to reconnect.'
             : inboxSummary.queued > 0 ? `${inboxSummary.queued} waiting for peak checks. Open inbox to resume.`
