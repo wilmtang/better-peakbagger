@@ -31,7 +31,7 @@ Data leaves the browser only when a feature requires it:
 - **GitHub** receives only the data types the user explicitly or automatically
   backs up or opts to synchronize to their selected repository.
 - **ImgBB** receives a flattened image only when the user uploads it. Copy image
-  and Export image in Photo Topos stay on the device.
+  and Export image in Photo Topos send nothing to a network service.
 - **AllTrails, CalTopo, Gaia GPS, and onX Backcountry** receive the saved
   Peakbagger GPX for preview or parsing only when the user clicks the matching
   **Send** button. Final Upload, Import, and Save actions remain manual.

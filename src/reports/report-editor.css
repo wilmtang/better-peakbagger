@@ -1629,3 +1629,14 @@ html[data-bpb-theme="dark"] .bpb-re-topo-launch {
 html[data-bpb-theme="dark"] .bpb-re-topo-launch:hover {
     background: #2c3036;
 }
+
+.bpb-re-topo-status {
+    flex: 0 1 auto;
+    min-width: 0;
+    color: #8a2d1f;
+    font-size: x-small;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-topo-status {
+    color: #f0a99d;
+}

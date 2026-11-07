@@ -341,7 +341,10 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     const topoLaunch = button('bpb-re-topo-launch', 'Photo Topos ↗',
         'Open Photo Topos in a tab of its own to mark up a photo, then copy or export it');
     topoLaunch.hidden = true;
-    bar.append(tools, plainHint, markdownHint, topoLaunch, modes);
+    const topoLaunchStatus = el('span', 'bpb-re-topo-status');
+    topoLaunchStatus.setAttribute('role', 'status');
+    topoLaunchStatus.hidden = true;
+    bar.append(tools, plainHint, markdownHint, topoLaunch, topoLaunchStatus, modes);
 
     // Contextual table controls, shown only while the caret is inside a table.
     const tableBar = el('div', 'bpb-re-box bpb-re-tablebar');
@@ -1387,21 +1390,25 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     };
 
     let topoLaunchBusy = false;
+    const showTopoLaunchStatus = (message: string) => {
+        topoLaunchStatus.textContent = message;
+        topoLaunchStatus.hidden = !message;
+    };
     const launchStandaloneTopos = async (event: Event) => {
         if (isProfile || topoLaunchBusy) return;
         topoLaunchBusy = true;
+        topoLaunch.setAttribute('aria-busy', 'true');
+        showTopoLaunchStatus('');
         try {
             const generation = nextTrustedActionGeneration('photos');
             const activation = await TrustedAction.issue(ext, event, 'photo-editor', generation);
-            if (!activation) return;
-            const response = await RuntimeMessage.send(ext, {
+            const response = activation ? await RuntimeMessage.send(ext, {
                 type: 'PHOTO_STANDALONE_OPEN', generation, activationToken: activation.token,
-            });
-            topoLaunch.title = response?.ok
-                ? 'Open Photo Topos in a tab of its own to mark up a photo, then copy or export it'
-                : 'Couldn’t open Photo Topos. Try again.';
+            }) : null;
+            if (!response?.ok) showTopoLaunchStatus('Couldn’t open Photo Topos. Try again.');
         } finally {
             topoLaunchBusy = false;
+            topoLaunch.removeAttribute('aria-busy');
         }
     };
     topoLaunch.addEventListener('click', event => { void launchStandaloneTopos(event); });
@@ -1583,6 +1590,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         foot.hidden = mode === 'plain';
         plainHint.hidden = mode !== 'plain';
         topoLaunch.hidden = rich || isProfile;
+        topoLaunchStatus.hidden = topoLaunch.hidden || !topoLaunchStatus.textContent;
         if (mode === 'plain') {
             textarea.value = Markup.breakTagsToNewlines(textarea.value);
         }

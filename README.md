@@ -169,8 +169,8 @@ result.
 Make route beta easier to follow. Draw routes, freehand lines, labels, and
 climbing symbols over a photo, then copy it, export it as a file, or upload a
 flattened, metadata-free JPEG or PNG to ImgBB with your own API key. No account
-or key is needed to copy or export, and nothing leaves the device until you
-upload. Open it from the toolbar popup or the trip report editor. Your original
+or key is needed to copy or export, and the image leaves the device only when
+you upload it. Open it from the toolbar popup or the trip report editor. Your original
 stays unchanged, and a searchable local library keeps projects ready to edit and
 reuse.
 

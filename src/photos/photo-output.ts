@@ -18,6 +18,9 @@ export interface FinishInput {
     localReturned?: boolean;
     pendingKey?: boolean;
     overGithubLimit?: boolean;
+    // This tab's own upload is running; `uploading` then means in progress,
+    // not an earlier attempt whose outcome is unknown.
+    uploadInFlight?: boolean;
 }
 
 export interface FinishSlot {
@@ -57,7 +60,7 @@ export const NOTES = Object.freeze({
 
 export const finishState = ({
     context, keyMode, remoteState, insertionConfirmed = false, localReturned = false,
-    pendingKey = false, overGithubLimit = false,
+    pendingKey = false, overGithubLimit = false, uploadInFlight = false,
 }: FinishInput): FinishState => {
     const standalone = context === 'standalone';
     const report = context === 'report-insert' || context === 'report-replace';
@@ -85,7 +88,7 @@ export const finishState = ({
             };
         }
     }
-    const note = remoteState === 'outcome-unknown' || remoteState === 'uploading'
+    const note = remoteState === 'outcome-unknown' || (remoteState === 'uploading' && !uploadInFlight)
         ? 'outcome-unknown'
         : report && !keyAvailable && !(remoteState && PUBLISHED.has(remoteState))
             ? 'needs-host'
@@ -131,8 +134,10 @@ export const exportFileName = (title: string | null | undefined, mime: string) =
         .replace(/-{2,}/g, '-')
         .replace(/^[-.]+|[-. ]+$/g, '');
     stem = clampBytes(stem, FILE_NAME_MAX_BYTES - utf8Length(suffix)).replace(/[-. ]+$/g, '');
-    if (!stem || WINDOWS_RESERVED.test(stem)) return `photo${suffix}`;
-    return `${stem}${suffix}`;
+    const name = `${stem}${suffix}`;
+    // Windows reserves a device name before the first dot of the whole name.
+    if (!stem || WINDOWS_RESERVED.test(name.split('.')[0])) return `photo${suffix}`;
+    return name;
 };
 
 interface ClipboardLike { write(items: ClipboardItem[]): Promise<void> }

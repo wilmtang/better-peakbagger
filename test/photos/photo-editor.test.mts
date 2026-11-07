@@ -58,6 +58,7 @@ const loadEditor = async ({
     fixedNow = null,
     confirmImpl = null,
     clipboard = undefined,
+    clipboardItem = false,
     storageEstimate = undefined,
     subtle = globalThis.crypto.subtle,
     imageSize = IMAGE,
@@ -92,6 +93,13 @@ const loadEditor = async ({
         win.Date = FixedDate;
     }
     if (confirmImpl) win.confirm = confirmImpl;
+    if (clipboardItem) {
+        win.ClipboardItem = class ClipboardItem {
+            items: Page;
+            types: string[];
+            constructor(items: Page) { this.items = items; this.types = Object.keys(items); }
+        };
+    }
     if (clipboard !== undefined) {
         Object.defineProperty(win.navigator, 'clipboard', {
             value: clipboard,
@@ -1464,6 +1472,170 @@ test('a key typed for this tab is held until ImgBB has seen it, then kept with a
     page.click(doc.getElementById('forget-key'));
     await page.settle();
     assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+const submitKey = (page: Page, key: string, { remember = true } = {}) => {
+    page.doc.getElementById('imgbb-key').value = key;
+    page.doc.getElementById('remember-key').checked = remember;
+    page.doc.getElementById('imgbb-dialog').querySelector('form')
+        .dispatchEvent(new page.win.Event('submit', { cancelable: true }));
+};
+
+test('a remembered key is saved once ImgBB has the image, and the page never drops back to no key meanwhile', async () => {
+    const saved: string[] = [];
+    let finishSave!: (value: Page) => void;
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+        runtimeHandler: async (message: Page) => {
+            if (message?.type !== 'PHOTO_IMGBB_SAVE_KEY') return { ok: true };
+            saved.push(message.key);
+            return new Promise(resolve => { finishSave = resolve; });
+        },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    submitKey(page, 'remembered-key');
+    await waitFor(page.dom, () => saved.length === 1);
+    // Mid-save the key already counts: no keyless label, no dialog.
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Copy link');
+    assert.equal(doc.getElementById('imgbb-dialog').open, false);
+    finishSave({ ok: true });
+    await waitFor(page.dom, () => doc.getElementById('finish-note').hidden);
+    assert.deepEqual(saved, ['remembered-key']);
+    assert.deepEqual(page.errors, []);
+});
+
+test('ImgBB rejecting the key itself drops the held key and reopens the dialog without a toast', async () => {
+    const saved: string[] = [];
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+        runtimeHandler: async (message: Page) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(message.key);
+            return { ok: true };
+        },
+        fetchImpl: async () => ({
+            ok: false, status: 400,
+            text: async () => JSON.stringify({ status_code: 400, error: { message: 'Invalid API v1 key.', code: 100 }, status_txt: 'Bad Request' }),
+        }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    submitKey(page, 'mistyped-key');
+    await waitFor(page.dom, () => doc.getElementById('imgbb-dialog').open
+        && /didn’t accept that key/.test(doc.getElementById('imgbb-error').textContent));
+    assert.deepEqual(saved, []);
+    assert.equal(doc.getElementById('toast').hidden, true);
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload to ImgBB…');
+    const [catalog] = await readPhotoStore(page.win, 'photos');
+    assert.equal(catalog.remote.state, 'draft', 'a clear refusal leaves a retryable draft');
+    assert.deepEqual(page.errors, []);
+});
+
+test('offline stops Upload before any journal entry, and a held key that never reached ImgBB waits for the next try', async () => {
+    const saved: string[] = [];
+    const sentKeys: string[] = [];
+    const status = { ok: true, configured: false, permissionGranted: true };
+    let online = true;
+    const page = await loadEditor({
+        imgbbStatus: status,
+        runtimeHandler: async (message: Page) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(message.key);
+            return { ok: true };
+        },
+        fetchImpl: async (_url: Page, init: Page) => {
+            sentKeys.push(String(init?.body?.get?.('key') ?? _url));
+            return { ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) };
+        },
+    });
+    const { doc } = page;
+    Object.defineProperty(page.win.navigator, 'onLine', { get: () => online, configurable: true });
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    online = false;
+    page.click(doc.getElementById('upload-insert'));
+    assert.match(doc.getElementById('toast-message').textContent, /offline/i);
+    assert.equal(doc.getElementById('imgbb-dialog').open, false, 'offline never asks for a key');
+    assert.equal((await readPhotoStore(page.win, 'operations')).length, 0);
+
+    online = true;
+    page.click(doc.getElementById('upload-insert'));
+    online = false;
+    submitKey(page, 'held-key');
+    await waitFor(page.dom, () => !doc.getElementById('imgbb-dialog').open);
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload to ImgBB', 'the held key counts');
+    assert.equal((await readPhotoStore(page.win, 'operations')).length, 0);
+    assert.deepEqual(saved, []);
+
+    // A key saved in Settings meanwhile wins over the one still held here.
+    online = true;
+    status.configured = true;
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /Uploaded to ImgBB/.test(page.status()));
+    assert.equal(sentKeys.length, 1);
+    assert.match(sentKeys[0], /test-imgbb-key/);
+    assert.doesNotMatch(sentKeys[0], /held-key/);
+    assert.deepEqual(saved, [], 'the held key is dropped, not saved over the device key');
+    assert.deepEqual(page.errors, []);
+});
+
+test('Export ignores a second activation while it is still encoding', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    const clicks: string[] = [];
+    page.win.HTMLAnchorElement.prototype.click = function click(this: Page) { clicks.push(this.download); };
+    const exportButton = doc.getElementById('export-image');
+    exportButton.focus();
+    page.click(exportButton);
+    assert.equal(exportButton.getAttribute('aria-disabled'), 'true');
+    assert.equal(doc.activeElement, exportButton, 'focus stays on the busy action');
+    page.click(exportButton);
+    await waitFor(page.dom, () => clicks.length === 1 && !exportButton.hasAttribute('aria-busy'));
+    await page.settle();
+    assert.deepEqual(clicks, ['north-face-topo.jpg']);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Copy writes PNG without disturbing the JPEG estimate that Upload reuses', async () => {
+    const written: Page[] = [];
+    const page = await loadEditor({
+        clipboardItem: true,
+        clipboard: { write: async (items: Page[]) => { written.push(items); await items[0].items['image/png']; } },
+    });
+    const { doc, encodeCalls } = page;
+    await waitFor(page.dom, () => /JPEG/.test(doc.getElementById('upload-estimate').textContent));
+    const estimate = doc.getElementById('upload-estimate').textContent;
+    page.click(doc.getElementById('copy-image'));
+    assert.equal(written.length, 1, 'write() ran inside the click');
+    assert.deepEqual(written[0][0].types, ['image/png']);
+    await waitFor(page.dom, () => doc.getElementById('copy-image').textContent.trim() === 'Copied');
+    assert.equal(encodeCalls.at(-1).mime, 'image/png');
+    assert.equal(doc.getElementById('upload-estimate').textContent, estimate);
+    assert.match(doc.getElementById('output-summary').textContent, /^JPEG · /);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a confirmed report insertion shows Inserted and retires New photo', async () => {
+    const page = await loadEditor({
+        returnToReport: true,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        runtimeHandler: async (message: Page) => message?.type === 'PHOTO_INSERT_COMMIT'
+            ? { ok: true, identity: { cid: 1, aid: 2, pid: 3 } } : { ok: true },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    const actions = [...doc.getElementById('finish-actions').children].map((node: Page) => node.id || node.className);
+    assert.deepEqual(actions, ['copy-image', 'export-image', 'finish-gap', 'upload-insert', 'finish-status'],
+        'report sessions end on the upload, set apart by the gap');
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => !doc.getElementById('finish-status').hidden);
+    assert.equal(doc.getElementById('finish-status').textContent, 'Inserted');
+    assert.equal(doc.getElementById('upload-insert').hidden, true);
+    assert.ok(doc.getElementById('new-photo').classList.contains('is-retired'));
     assert.deepEqual(page.errors, []);
 });
 

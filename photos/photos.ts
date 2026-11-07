@@ -243,6 +243,11 @@ const outputBusy = { copy: false, export: false };
 let outputEncode: { key: string; promise: Promise<EncodedExport> } | null = null;
 let copyResetTimer: Timer | null = null;
 let emptyStateRevealed = false;
+let uploadInFlight = false;
+// Each Connect click gets a token, so a permission answer that arrives after
+// the dialog was cancelled or resubmitted cannot start an upload.
+let keySubmission = 0;
+let insertedLocalId: string | null = null;
 let configuredKey = false;
 let permissionGranted = false;
 let busy = false;
@@ -620,7 +625,7 @@ const updateEditorControls = () => {
     ui.showLibrary.disabled = storeReloadRequired || busy;
     ui.file.disabled = storeReloadRequired || busy || !!LOCAL_PHOTO_ID;
     ui.importProject.disabled = storeReloadRequired || busy;
-    ui.newPhoto.disabled = storeReloadRequired || busy;
+    setAvailable(ui.newPhoto, !storeReloadRequired && !busy);
     for (const select of ui.reportWidthSelects) select.disabled = busy;
     ui.viewport.setAttribute('aria-busy', String(busy));
     ui.overlay.setAttribute('aria-disabled', String(locked));
@@ -847,10 +852,11 @@ const renderFinish = () => {
         context: FINISH_CONTEXT,
         keyMode: keyMode(),
         remoteState: photo?.remote.state ?? null,
-        insertionConfirmed,
+        insertionConfirmed: insertionConfirmed && insertedLocalId === photo?.localId,
         localReturned: localPhotoReturned,
         pendingKey: !!pendingKey,
         overGithubLimit: overGithubLimit(),
+        uploadInFlight,
     });
     const { slot } = state;
     ui.upload.dataset.kind = slot.kind;
@@ -945,14 +951,17 @@ const openKeyDialog = (error = '') => {
     ui.key.value = '';
     dialogError(error);
     ui.imgbbReportHint.hidden = FINISH_CONTEXT === 'standalone';
-    setButtonLabel(ui.saveKey, FINISH_CONTEXT === 'standalone' ? 'Connect and upload' : 'Connect and insert');
-    ui.saveKey.dataset.sizingLabel = 'Connect and upload';
+    setButtonLabel(ui.saveKey, FINISH_CONTEXT === 'standalone' ? 'Connect and upload'
+        : FINISH_CONTEXT === 'report-replace' ? 'Connect and replace' : 'Connect and insert');
+    ui.saveKey.dataset.sizingLabel = 'Connect and replace';
     dismissToast();
     ui.imgbbDialog.showModal();
     ui.key.focus();
 };
 
 const closeKeyDialog = () => {
+    keySubmission += 1;
+    ui.saveKey.removeAttribute('aria-busy');
     ui.key.value = '';
     if (ui.imgbbDialog.open) ui.imgbbDialog.close();
 };
@@ -968,9 +977,16 @@ const submitKeyDialog = () => {
         ui.key.focus();
         return;
     }
+    if (ui.saveKey.getAttribute('aria-busy') === 'true') return;
     const remember = ui.rememberKey.checked;
+    const submission = ++keySubmission;
+    ui.saveKey.setAttribute('aria-busy', 'true');
     void requestPermissionInGesture().then(granted => {
         permissionGranted = granted;
+        ui.saveKey.removeAttribute('aria-busy');
+        // Cancelled, closed or resubmitted while the browser asked: record the
+        // answer, start nothing.
+        if (submission !== keySubmission || !ui.imgbbDialog.open) return;
         if (!granted) {
             dialogError('Allow Better Peakbagger to reach api.imgbb.com, then choose Connect again.');
             return;
@@ -992,6 +1008,10 @@ const settlePendingKey = async ({ reached, keyRejected }: { reached: boolean; ke
     pendingKey = null;
     pendingKeyReachedProvider = false;
     if (keyRejected) { renderFinish(); return; }
+    // Usable for this tab at once, so the page never flickers back to "no key"
+    // while the status check and save are in flight.
+    sessionKey = held.value;
+    renderFinish();
     await refreshCredential();
     if (configuredKey) { renderFinish(); return; }
     if (held.remember) {
@@ -999,12 +1019,8 @@ const settlePendingKey = async ({ reached, keyRejected }: { reached: boolean; ke
         if (response?.ok) {
             configuredKey = true;
             sessionKey = '';
-        } else {
-            // Still usable here; the finish note shows it lasts for this tab.
-            sessionKey = held.value;
         }
-    } else {
-        sessionKey = held.value;
+        // Otherwise it stays usable here; the finish note says it lasts for this tab.
     }
     renderFinish();
 };
@@ -1061,8 +1077,9 @@ const encodeForOutput = (snapshot: TopoProject, source: ImageBitmap, mime: strin
             }
             return encoded;
         }, error => {
-            if (current && revision === exportRevision && source === sourceBitmap && !exportEstimateJob) {
-                void refreshExportEstimate(revision);
+            if (current && revision === exportRevision && source === sourceBitmap) {
+                if (exportEstimateJob) exportEstimatePending = true;
+                else void refreshExportEstimate(revision);
             }
             throw error;
         });
@@ -2730,9 +2747,12 @@ const saveLocalAndReturn = async () => {
 
 const uploadAndInsert = async () => {
     const outcome = { reached: false, keyRejected: false, needsKey: false };
+    uploadInFlight = true;
     try {
         await runUpload(outcome);
     } finally {
+        uploadInFlight = false;
+        renderFinish();
         await settlePendingKey(outcome);
         if (outcome.keyRejected) openKeyDialog('ImgBB didn’t accept that key. Check it and try again.');
         else if (outcome.needsKey) openKeyDialog();
@@ -2870,7 +2890,7 @@ const runUpload = async (outcome: { reached: boolean; keyRejected: boolean; need
         } as never) as { photo: TopoPhoto; inserted?: boolean };
         photo = finished.photo;
         committedPhoto = photo;
-        if (RETURN_TOKEN && finished.inserted) insertionConfirmed = true;
+        if (RETURN_TOKEN && finished.inserted) { insertionConfirmed = true; insertedLocalId = photo!.localId; }
         if (RETURN_TOKEN) {
             setEditorStatus('Uploaded and inserted. You can close this tab.');
             toast('Photo uploaded and inserted into the report. You can close this tab.');
@@ -3094,6 +3114,8 @@ const insertFromLibrary = async (item: TopoPhoto, control: HTMLButtonElement | n
         return;
     }
     notifyBackupChanged();
+    // The token is spent either way; the slot says Inserted only for this photo.
+    insertedLocalId = item.localId;
     insertionConfirmed = true;
     renderFinish();
     toast('Photo inserted into the report. You can close this tab.');
@@ -3885,7 +3907,7 @@ const bindEvents = () => {
         ui.uploadFormat.focus({ preventScroll: true });
     });
     ui.newPhoto.addEventListener('click', () => {
-        if (ui.newPhoto.disabled || insertionConfirmed) return;
+        if (unavailable(ui.newPhoto) || insertionConfirmed) return;
         // Opened inside the click so the picker keeps its user activation;
         // the current topo is settled and saved once a file is chosen.
         ui.file.value = '';
@@ -4120,7 +4142,7 @@ const bindEvents = () => {
         void flushDraftPersistence();
         // A remembered key that ImgBB may already have seen must not vanish
         // with the tab before its upload settles.
-        if (pendingKey?.remember && pendingKeyReachedProvider) {
+        if (pendingKey?.remember && pendingKeyReachedProvider && !configuredKey) {
             void send({ type: 'PHOTO_IMGBB_SAVE_KEY', key: pendingKey.value });
         }
     });
@@ -4178,7 +4200,8 @@ const trackHeaderHeight = () => {
 const arrangeFinishActions = () => {
     if (!Output.clipboardImageSupported()) ui.copyImage.hidden = true;
     const state = Output.finishState({ context: FINISH_CONTEXT, keyMode: 'none', remoteState: null });
-    if (!state.uploadFirst) ui.finishActions.append(ui.upload, ui.finishStatus);
+    const gap = ui.finishActions.querySelector('.finish-gap')!;
+    if (!state.uploadFirst) ui.finishActions.append(gap, ui.upload, ui.finishStatus);
     ui.finishActions.classList.toggle('upload-first', state.uploadFirst);
     renderFinish();
 };

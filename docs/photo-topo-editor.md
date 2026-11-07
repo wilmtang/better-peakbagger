@@ -196,6 +196,8 @@ after an await. The key is then held in memory. It is saved (when remembered) or
 kept for the tab only after the request reached ImgBB and was not refused for
 the key itself (provider code 100), which reopens the dialog with an inline
 error. A request that never left the page keeps the held key for the next try,
+and a remembered key whose request was still in flight is saved if the tab
+closes, unless a device key already exists,
 and a key saved in Settings meanwhile wins. When the browser reports offline,
 Upload stops before any journal entry and offers Export.
 

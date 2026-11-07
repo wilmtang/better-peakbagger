@@ -4,7 +4,8 @@
 
 - **Use Photo Topos without an ImgBB key.** Copy image and Export image get a
   finished topo out with no account, key or connection. Upload stays one click
-  away and asks for a key only then, saving it after ImgBB accepts it. Open
+  away and asks for a key only then, saving it once ImgBB has received it
+  unless ImgBB says the key is wrong. Open
   Photo Topos from Markdown and Plain too, start a new photo or pick up a draft
   from the empty editor, and export any saved topo from the Library.
 

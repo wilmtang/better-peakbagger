@@ -39,7 +39,6 @@ body {
   text-transform: uppercase;
 }
 
-
 .view-tabs {
   display: flex;
   gap: 4px;
@@ -76,9 +75,6 @@ main {
   margin: 0 auto;
   padding: 20px clamp(14px, 3vw, 42px) 54px;
 }
-
-
-
 
 .credential-form {
   display: grid;
@@ -423,8 +419,10 @@ kbd {
 
 .viewport-actions {
   display: flex;
-  height: 66px;
-  overflow: auto;
+  flex-wrap: wrap;
+  min-height: 66px;
+  container-type: inline-size;
+  container-name: photo-actions;
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
@@ -1343,12 +1341,13 @@ kbd {
 }
 /* Publishing stands apart from the local actions, whichever side it is on. */
 .finish-gap { width: 8px; }
-.finish-actions.upload-first .finish-gap { order: 0; }
 .finish-status {
   display: inline-grid;
   align-items: center;
   min-height: 34px;
   padding: 6px 10px;
+  /* Matches the button it replaces, border included, so nothing shifts. */
+  border: 1px solid transparent;
   color: var(--sub);
   font-size: 13px;
   font-weight: 600;
@@ -1421,8 +1420,10 @@ main:has(#editor-view:not([hidden]) #editor-workspace:not([hidden])) { padding-t
   border-color: currentColor;
   background: transparent;
 }
-@container photo-canvas (max-width: 460px) {
+@container photo-actions (max-width: 520px) {
   .summary-report-size { display: none; }
+  /* A narrow row gives the note a line of its own instead of a sliver. */
+  .finish-note { flex-basis: 100%; max-width: none; order: 3; }
 }
 
 /* ---- Resume line in the empty editor ---- */

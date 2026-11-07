@@ -285,6 +285,53 @@ test('an open popover is dismissible by control, Escape, and a press on the form
     assert.equal(imageBox.hidden, false, 'a press inside the popover must not close it');
 });
 
+test('Markdown and Plain open Photo Topos on its own, from a trusted click, with visible failure', async () => {
+    const messages: Page[] = [];
+    let reply: Page = { ok: false };
+    const dom = await loadEditor({
+        prepare: (d: Page) => {
+            d.chrome.runtime.sendMessage = (message: Page) => {
+                messages.push(message);
+                if (message?.type === 'TRUSTED_ACTION_ISSUE') return Promise.resolve({ ok: true, token: 'topo-token' });
+                if (message?.type === 'PHOTO_STANDALONE_OPEN') return Promise.resolve(reply);
+                return Promise.resolve(undefined);
+            };
+        },
+    });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const launch = ui.querySelector('.bpb-re-topo-launch');
+    const status = ui.querySelector('.bpb-re-topo-status');
+    assert.equal(launch.hidden, true, 'Rich text uses the image popover instead');
+    modeButton(doc, 'Markdown').click();
+    assert.equal(launch.hidden, false);
+    assert.equal(launch.textContent, 'Photo Topos ↗');
+
+    launch.click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.equal(messages.filter(message => message.type === 'PHOTO_STANDALONE_OPEN').length, 0,
+        'a synthetic host-page click opens nothing');
+    fireTrustedEvent(launch, 'click');
+    await waitFor(dom, () => !status.hidden);
+    const open = messages.find(message => message.type === 'PHOTO_STANDALONE_OPEN');
+    const issue = messages.find(message => message.type === 'TRUSTED_ACTION_ISSUE');
+    assert.deepEqual(JSON.parse(JSON.stringify(open)), {
+        type: 'PHOTO_STANDALONE_OPEN', generation: issue.generation, activationToken: 'topo-token',
+    });
+    assert.equal(issue.action, 'photo-editor');
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.match(status.textContent, /Couldn’t open Photo Topos/);
+
+    reply = { ok: true, tabId: 9 };
+    fireTrustedEvent(launch, 'click');
+    await waitFor(dom, () => status.hidden && !launch.hasAttribute('aria-busy'));
+    modeButton(doc, 'Plain').click();
+    assert.equal(launch.hidden, false);
+    modeButton(doc, 'Rich text').click();
+    assert.equal(launch.hidden, true);
+    assert.equal(status.hidden, true);
+});
+
 test('the image popover launches editor and library modes with the report identity', async () => {
     const messages: Page[] = [];
     let release: Page;

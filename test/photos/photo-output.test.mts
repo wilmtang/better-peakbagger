@@ -69,6 +69,10 @@ test('an unresolved upload demotes the slot and outranks every other note', () =
     assert.equal(state({ keyMode: 'none', overGithubLimit: true }).note, null, 'the GitHub size warning is report-only');
     assert.equal(state({ keyMode: 'tab' }).note?.kind, 'tab-key');
     assert.equal(state({ keyMode: 'tab', pendingKey: true }).note, null, 'no tab-only note while a key waits to be saved');
+    assert.equal(state({ remoteState: 'uploading', uploadInFlight: true }).note, null,
+        "this tab's own upload in progress is not an unknown outcome");
+    assert.equal(state({ remoteState: 'uploading' }).note?.kind, 'outcome-unknown',
+        'an upload left running by another tab or a crash is');
 });
 
 test('export names keep the title readable and safe on every file system', () => {
@@ -76,7 +80,9 @@ test('export names keep the title readable and safe on every file system', () =>
     assert.equal(exportFileName('雪山 / 北壁', 'image/jpeg'), '雪山-北壁-topo.jpg');
     assert.equal(exportFileName('  ', 'image/png'), 'photo-topo.png');
     assert.equal(exportFileName(null, 'image/jpeg'), 'photo-topo.jpg');
-    assert.equal(exportFileName('CON', 'image/png'), 'photo-topo.png');
+    assert.equal(exportFileName('CON', 'image/png'), 'CON-topo.png', 'CON-topo is not a device name');
+    assert.equal(exportFileName('con.x', 'image/png'), 'photo-topo.png', 'Windows reads the part before the first dot');
+    assert.equal(exportFileName('aux', 'image/png'), 'aux-topo.png');
     assert.equal(exportFileName('trailing dots...', 'image/png'), 'trailing-dots-topo.png');
     assert.equal(exportFileName('a:b*c?"d<e>f|g\u0001h', 'image/png'), 'a-b-c-d-e-f-g-h-topo.png');
     const long = exportFileName('山'.repeat(300), 'image/png');
