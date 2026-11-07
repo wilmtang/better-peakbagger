@@ -112,8 +112,8 @@ in those sections are historical, not the current implementation status.
 
 | Boundary | Current behavior | Consequence |
 | --- | --- | --- |
-| Rich/Markdown authoring | [report-markup.js](../../src/reports/report-markup.js), especially `safeOpening`, `markedInlines`, and the AST serializers, rebuild allowlisted markup; unknown HTML becomes inert text | Existing authoring protections should remain the foundation |
-| Embedded media | `sanitizeYouTubeEmbedSrc` permits only a canonical YouTube player; [report-rich-editor.js](../../src/reports/report-rich-editor.js) has a matching media node | Instagram is currently unsupported; widening the general iframe allowlist would be the wrong change |
+| Rich/Markdown authoring | [report-markup.js](../../src/reports/report-markup.ts), especially `safeOpening`, `markedInlines`, and the AST serializers, rebuild allowlisted markup; unknown HTML becomes inert text | Existing authoring protections should remain the foundation |
+| Embedded media | `sanitizeYouTubeEmbedSrc` permits only a canonical YouTube player; [report-rich-editor.js](../../src/reports/report-rich-editor.ts) has a matching media node | Instagram is currently unsupported; widening the general iframe allowlist would be the wrong change |
 | Plain authoring | [report-editor.js](../../src/reports/report-editor.ts) preserves the native textarea and conversion guard; [the guide](../trip-report-editor.md#deliberate-restrictions) documents verbatim unsupported markup | Opening an editor does not sanitize or rewrite the server value; Plain can still submit unsupported active markup |
 | Reading a saved report | [ascent-report-visibility.js](../../src/ascent/ascent-report-visibility.js) hides ignored reports and suspends their players | Visibility and media suspension do not constitute a script firewall |
 | Report identification | [report-adapters.js](../../src/favorites/report-adapters.js), `ascentReport`, validates the native author/report boundary | Useful for presentation, but intentionally returns no match for some unexpected forms/controls; security cannot silently allow an unrecognized report |

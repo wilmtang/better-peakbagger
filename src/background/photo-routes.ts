@@ -5,7 +5,7 @@
 
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { photoLibrary as Library } from '../photos/photo-library.js';
-import { sanitizeReportDimension } from '../reports/report-markup.js';
+import { sanitizeReportDimension } from '../reports/report-markup.ts';
 import { createPackagedPageMatcher } from './sender-policy.js';
 import { createReportPhotoService, reportPhotoOwner } from './report-photo-service.js';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';

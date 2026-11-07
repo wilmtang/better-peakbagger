@@ -9,7 +9,7 @@
 // accept a response based on HTTP status alone.
 
 import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';
-import { reportMarkup as Markup } from '../reports/report-markup.js';
+import { reportMarkup as Markup } from '../reports/report-markup.ts';
 import {
     fetchPeakbaggerDocument,
     fetchPeakbaggerResource,

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
-import { reportMarkup as Markup } from '../../src/reports/report-markup.js';
+import { reportMarkup as Markup } from '../../src/reports/report-markup.ts';
 
 const browserDom = new JSDOM('');
 globalThis.DOMParser = browserDom.window.DOMParser;

@@ -84,7 +84,7 @@ exception is an exact Markdown-source sidecar described below.
 | Markdown source | [CodeMirror 6](https://codemirror.net) | GFM Markdown string plus allowlisted inline HTML | Editable Markdown-mode state only |
 | Markdown source sidecar | `state.mdSource`, and `source` in a Markdown draft | Exact Markdown string | Preserves the user's Markdown spelling when a round trip through bracket markup would rewrite it |
 | Preview | A preview `<div>` | Generated safe HTML string | Read-only view of the current Markdown source; never parsed back |
-| Report AST | `src/reports/report-markup.js` | Plain JavaScript block/inline objects | Temporary common semantic form used only inside a conversion |
+| Report AST | `src/reports/report-markup.ts` | Plain JavaScript block/inline objects | Temporary common semantic form used only inside a conversion |
 | Plain editor | The original `JournalText` textarea | The same bracket-markup string that will be submitted | Verbatim editing with no converter |
 
 One report can therefore have several equivalent spellings:
@@ -101,9 +101,9 @@ These values are semantically related, not byte-for-byte mirrors. Only
 `JournalText` has submission authority.
 
 Module ownership follows the same boundary: `src/reports/report-editor.ts` orchestrates
-mode switches, dirty state, drafts, and `JournalText`; `src/reports/report-rich-editor.js`
+mode switches, dirty state, drafts, and `JournalText`; `src/reports/report-rich-editor.ts`
 owns the TipTap schema and commands; `src/reports/report-md-editor.js` owns only the
-CodeMirror surface; and `src/reports/report-markup.js` owns every format conversion,
+CodeMirror surface; and `src/reports/report-markup.ts` owns every format conversion,
 sanitizer, and canonical serializer.
 
 ## Exact conversion paths

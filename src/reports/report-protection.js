@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { protectedReportDocument } from './report-security-policy.js';
 import { createInstagramPresentation } from './instagram-ui.js';
-import { reportMarkup } from './report-markup.js';
+import { reportMarkup } from './report-markup.ts';
 
 export function sanitizeReportCells(doc) {
     const cells = new Set();

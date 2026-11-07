@@ -50,7 +50,7 @@ for the standard setup, not merely an advanced configuration check.
 
 | Boundary | Current behavior | Required change |
 | --- | --- | --- |
-| [Report markup](../../src/reports/report-markup.js), [Rich editor](../../src/reports/report-rich-editor.js), [editor UI](../../src/reports/report-editor.ts) | Direct HTTPS MP4 URLs already become native video controls and Peakbagger bracket markup. The video popover currently accepts URLs. | Add file-upload entry and typed return handling; preserve existing video semantics. |
+| [Report markup](../../src/reports/report-markup.ts), [Rich editor](../../src/reports/report-rich-editor.ts), [editor UI](../../src/reports/report-editor.ts) | Direct HTTPS MP4 URLs already become native video controls and Peakbagger bracket markup. The video popover currently accepts URLs. | Add file-upload entry and typed return handling; preserve existing video semantics. |
 | [ImgBB client](../../src/photos/imgbb-client.js) | Accepts image blobs, posts to a fixed endpoint, validates ImgBB-specific response fields, distinguishes refusals from unknown outcomes. | Add a separate Imgur adapter; share only provider-independent contracts. |
 | [Photo catalog](../../src/photos/photo-library.js) | Schema version 1 accepts only image metadata and `provider: 'imgbb'`. Transitions rewrite the provider to ImgBB. | Preserve the selected provider across every transition and introduce an explicit image/video discriminator. |
 | [Photo store](../../src/photos/photo-store.js) | IndexedDB version 4; upload commit requires a valid ImgBB-style delete URL. | Version deletion capabilities and journals; an Imgur delete hash is not a browser delete URL. |

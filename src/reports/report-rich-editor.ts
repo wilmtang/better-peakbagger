@@ -3,15 +3,15 @@
 //
 // Better Peakbagger — TipTap document model for the rich trip-report surface.
 //
-// The schema is locked to the same allowlist src/reports/report-markup.js serializes:
+// The schema is locked to the same allowlist src/reports/report-markup.ts serializes:
 // a node or mark exists here only if the converter has a Peakbagger bracket
 // representation for it. Live-server verification gaps are recorded in the
 // editor guide and active plan. Anything typed, pasted, or dropped is normalized
-// by this schema before it can enter the document, and report-editor.js still
+// by this schema before it can enter the document, and report-editor.ts still
 // reads the document back out through domToBracket, so the converter's
 // sanitizers remain the single authority on what reaches the form.
 //
-// This module owns no toolbar or popover DOM. report-editor.js drives the
+// This module owns no toolbar or popover DOM. report-editor.ts drives the
 // editor exclusively through richCommands/richState so the TipTap API surface
 // stays contained in one file.
 
@@ -28,6 +28,8 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
 import { Fragment } from '@tiptap/pm/model';
+import type { Mark as PMMark, Node as PMNode } from '@tiptap/pm/model';
+import type { ImageOptions } from '@tiptap/extension-image';
 import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -37,11 +39,11 @@ import {
     sanitizeVideoSrc,
     sanitizeYouTubeEmbedSrc,
     figureFromElement
-} from './report-markup.js';
+} from './report-markup.ts';
 
 // TipTap parses a raw hex token correctly, but its DOM serializer can still
 // canonicalize the rendered style to rgb(). Carry the parsed token in an
-// extension-owned data attribute so report-markup.js can revalidate and
+// extension-owned data attribute so report-markup.ts can revalidate and
 // serialize the original accepted form after a Rich edit.
 const ReportColor = Color.extend({
     addGlobalAttributes() {
@@ -63,6 +65,22 @@ const ReportColor = Color.extend({
         }];
     }
 });
+
+interface FigureTarget { node: PMNode; pos: number }
+interface MediaSize { width: number; height: number }
+interface InstagramPresentation { create(url: string, actions: { useLink(): void }): { element: HTMLElement; destroy(): void } }
+interface ReportImageOptions extends ImageOptions {
+    resolveLocalImage?: (src: string) => Promise<string>;
+    editLocalImage?: (event: Event, src: string, getPos: () => number | undefined) => void;
+}
+interface RichEditorOptions {
+    element: HTMLElement; placeholder: string; ariaLabel: string;
+    onUpdate: () => void; onStateChange: () => void;
+    shortcuts: Record<string, () => unknown>;
+    resolveLocalImage?: ReportImageOptions['resolveLocalImage'];
+    editLocalImage?: ReportImageOptions['editLocalImage'];
+    instagramPresentation?: InstagramPresentation | null;
+}
 
 // Peakbagger renders [small] and [q]; TipTap has no stock mark for either.
 const Small = Mark.create({
@@ -93,6 +111,14 @@ const createPointerResizableNodeView = ({
     min,
     max,
     className,
+}: {
+    element: HTMLElement;
+    onCommit: (width: number, height: number) => void;
+    onUpdate: (node: PMNode) => boolean;
+    createHandle: () => HTMLElement;
+    min: MediaSize;
+    max: MediaSize;
+    className: { container: string; wrapper: string; resizing: string };
 }) => {
     const container = document.createElement('div');
     container.dataset.resizeContainer = '';
@@ -110,10 +136,10 @@ const createPointerResizableNodeView = ({
 
     const handle = createHandle();
     wrapper.append(handle);
-    let drag = null;
+    let drag: { pointerId: number; startX: number; startWidth: number; startHeight: number; aspectRatio: number; changed: boolean } | null = null;
 
-    const pointerIdOf = event => Number.isInteger(event.pointerId) ? event.pointerId : 1;
-    const releasePointer = pointerId => {
+    const pointerIdOf = (event: Event) => Number.isInteger((event as PointerEvent).pointerId) ? (event as PointerEvent).pointerId : 1;
+    const releasePointer = (pointerId: number) => {
         try {
             if (!handle.releasePointerCapture) return;
             if (!handle.hasPointerCapture || handle.hasPointerCapture(pointerId)) {
@@ -127,7 +153,7 @@ const createPointerResizableNodeView = ({
         doc.removeEventListener('pointerup', finishPointer);
         doc.removeEventListener('pointercancel', finishPointer);
     };
-    const finishPointer = event => {
+    const finishPointer = (event: Event) => {
         if (!drag || pointerIdOf(event) !== drag.pointerId) return;
         const { pointerId, changed } = drag;
         const width = Number.parseFloat(element.style.width) || element.offsetWidth;
@@ -139,7 +165,7 @@ const createPointerResizableNodeView = ({
         releasePointer(pointerId);
         if (changed && width > 0 && height > 0) onCommit(width, height);
     };
-    function movePointer(event) {
+    function movePointer(event: PointerEvent) {
         if (!drag || pointerIdOf(event) !== drag.pointerId) return;
         let width = drag.startWidth + event.clientX - drag.startX;
         let height = width / drag.aspectRatio;
@@ -170,7 +196,7 @@ const createPointerResizableNodeView = ({
         const startWidth = element.offsetWidth;
         const startHeight = element.offsetHeight;
         if (!(startWidth > 0) || !(startHeight > 0)) return;
-        drag = {
+        const started = {
             pointerId: pointerIdOf(event),
             startX: event.clientX,
             startWidth,
@@ -178,13 +204,14 @@ const createPointerResizableNodeView = ({
             aspectRatio: startWidth / startHeight,
             changed: false,
         };
+        drag = started;
         container.dataset.resizeState = 'true';
         container.classList.add(className.resizing);
         const doc = handle.ownerDocument;
         doc.addEventListener('pointermove', movePointer);
         doc.addEventListener('pointerup', finishPointer);
         doc.addEventListener('pointercancel', finishPointer);
-        try { handle.setPointerCapture?.(drag.pointerId); }
+        try { handle.setPointerCapture?.(started.pointerId); }
         catch { /* Document listeners still keep the gesture bounded. */ }
         event.preventDefault();
         event.stopPropagation();
@@ -193,10 +220,10 @@ const createPointerResizableNodeView = ({
 
     return {
         dom: container,
-        update: (...args) => onUpdate(...args),
+        update: (node: PMNode) => onUpdate(node),
         selectNode: () => container.classList.add('ProseMirror-selectednode'),
         deselectNode: () => container.classList.remove('ProseMirror-selectednode'),
-        stopEvent: event => event.target === handle || handle.contains(event.target),
+        stopEvent: (event: Event) => event.target === handle || handle.contains(event.target as globalThis.Node),
         ignoreMutation: () => true,
         destroy: () => {
             drag = null;
@@ -210,12 +237,12 @@ const createPointerResizableNodeView = ({
 // TipTap's resizable node view. Resizes stay aspect-locked and within the same
 // bound the converter accepts, so a drag cannot produce a dimension that is
 // silently discarded when JournalText is serialized.
-const ReportImage = Image.extend({
+const ReportImage = Image.extend<ReportImageOptions>({
     addAttributes() {
-        const dimension = name => ({
+        const dimension = (name: string) => ({
             default: null,
-            parseHTML: element => sanitizeReportDimension(element.getAttribute(name)),
-            renderHTML: attributes => (attributes[name] ? { [name]: attributes[name] } : {})
+            parseHTML: (element: HTMLElement) => sanitizeReportDimension(element.getAttribute(name)),
+            renderHTML: (attributes: Record<string, unknown>) => (attributes[name] ? { [name]: attributes[name] } : {})
         });
         return { ...this.parent?.(), width: dimension('width'), height: dimension('height') };
     },
@@ -229,9 +256,9 @@ const ReportImage = Image.extend({
             image.referrerPolicy = 'no-referrer';
 
             let previewGeneration = 0;
-            let previewSource = null;
-            let localControls;
-            const applyImageAttributes = updatedNode => {
+            let previewSource: string | null = null;
+            let localControls: HTMLElement | undefined;
+            const applyImageAttributes = (updatedNode: PMNode) => {
                 const pending = PendingPhoto.id(updatedNode.attrs.src);
                 const changedSource = previewSource !== updatedNode.attrs.src;
                 previewSource = updatedNode.attrs.src;
@@ -240,7 +267,7 @@ const ReportImage = Image.extend({
                 if (pending && changedSource) {
                     image.removeAttribute('src');
                     image.alt = updatedNode.attrs.alt || 'Local photo';
-                    void this.options.resolveLocalImage?.(updatedNode.attrs.src).then(src => {
+                    void this.options.resolveLocalImage?.(updatedNode.attrs.src).then((src: string) => {
                         if (generation === previewGeneration) image.src = src;
                     }).catch(() => { image.alt = 'Local photo unavailable — restore it or remove it'; });
                 }
@@ -261,7 +288,7 @@ const ReportImage = Image.extend({
             }
             applyImageAttributes(node);
 
-            const commitSize = (width, height) => {
+            const commitSize = (width: number, height: number) => {
                 const pos = getPos();
                 if (pos === undefined) return;
                 editor.chain().setNodeSelection(pos).updateAttributes(this.name, {
@@ -270,7 +297,7 @@ const ReportImage = Image.extend({
                 }).run();
             };
 
-            const resizeByKeyboard = event => {
+            const resizeByKeyboard = (event: KeyboardEvent) => {
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
                 event.preventDefault();
                 event.stopPropagation();
@@ -297,7 +324,7 @@ const ReportImage = Image.extend({
             const nodeView = createPointerResizableNodeView({
                 element: image,
                 onCommit: commitSize,
-                onUpdate: updatedNode => {
+                onUpdate: (updatedNode: PMNode) => {
                     if (updatedNode.type !== currentNode.type) return false;
                     currentNode = updatedNode;
                     applyImageAttributes(updatedNode);
@@ -332,7 +359,7 @@ const ReportImage = Image.extend({
             const edit = document.createElement('button');
             edit.type = 'button';
             edit.textContent = 'Edit photo';
-            const open = event => {
+            const open = (event: Event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 this.options.editLocalImage?.(event, currentNode.attrs.src, getPos);
@@ -341,7 +368,7 @@ const ReportImage = Image.extend({
             image.addEventListener('dblclick', open);
             image.addEventListener('click', () => {
                 const pos = getPos();
-                if (!Number.isInteger(pos)) return;
+                if (pos === undefined) return;
                 const $pos = editor.state.doc.resolve(pos);
                 for (let depth = $pos.depth; depth > 0; depth--) {
                     if ($pos.node(depth).type.name === 'reportFigure') {
@@ -351,7 +378,7 @@ const ReportImage = Image.extend({
                 }
             });
             localControls.append(label, edit);
-            nodeView.dom.querySelector('[data-resize-wrapper]').append(localControls);
+            nodeView.dom.querySelector('[data-resize-wrapper]')!.append(localControls);
             // This affordance belongs to the node view, never to report markup.
             // A real figure already supplies its editable figcaption below it.
             const captionPlaceholder = document.createElement('button');
@@ -364,12 +391,12 @@ const ReportImage = Image.extend({
                 event.preventDefault();
                 event.stopPropagation();
                 const pos = getPos();
-                if (Number.isInteger(pos)) changeImageCaption(editor, false, { node: currentNode, pos });
+                if (pos !== undefined) changeImageCaption(editor, false, { node: currentNode, pos });
             });
             nodeView.dom.append(captionPlaceholder);
             const stopResizeEvent = nodeView.stopEvent;
-            nodeView.stopEvent = event => localControls.contains(event.target)
-                || captionPlaceholder.contains(event.target) || stopResizeEvent(event);
+            nodeView.stopEvent = (event: Event) => localControls!.contains(event.target as globalThis.Node)
+                || captionPlaceholder.contains(event.target as globalThis.Node) || stopResizeEvent(event);
             const destroy = nodeView.destroy;
             nodeView.destroy = () => { previewGeneration++; destroy(); };
             return nodeView;
@@ -389,9 +416,12 @@ const ReportFigureMedia = Node.create({
     renderHTML: () => ['div', { 'data-bpb-figure-media': '' }, 0],
 });
 
-const selectedFigure = editor => {
+const nodeOfSelection = (editor: Editor) => (editor.state.selection as NodeSelection).node as PMNode | undefined;
+
+const selectedFigure = (editor: Editor): FigureTarget | null => {
     const { selection } = editor.state;
-    if (selection.node?.type.name === 'reportFigure') return { node: selection.node, pos: selection.from };
+    const selected = nodeOfSelection(editor);
+    if (selected?.type.name === 'reportFigure') return { node: selected, pos: selection.from };
     for (let depth = selection.$from.depth; depth > 0; depth--) {
         if (selection.$from.node(depth).type.name === 'reportFigure') {
             return { node: selection.$from.node(depth), pos: selection.$from.before(depth) };
@@ -400,7 +430,7 @@ const selectedFigure = editor => {
     return null;
 };
 
-const textBesideImage = (editor, before = false, { reuse = false, target: explicitTarget = null } = {}) => {
+const textBesideImage = (editor: Editor, before = false, { reuse = false, target: explicitTarget = null as FigureTarget | null } = {}) => {
     const target = explicitTarget || selectedReportImage(editor);
     if (!target) return false;
     const { state, view } = editor;
@@ -428,7 +458,7 @@ const textBesideImage = (editor, before = false, { reuse = false, target: explic
     return true;
 };
 
-const navigateImageArrow = (editor, key) => {
+const navigateImageArrow = (editor: Editor, key: string) => {
     const { state, view } = editor;
     const { selection } = state;
     if (selection.$head.parent.type.name === 'reportCaption') return false;
@@ -449,16 +479,16 @@ const navigateImageArrow = (editor, key) => {
     const atEdge = vertical ? view.endOfTextblock(before ? 'up' : 'down')
         : $head.parentOffset === (before ? 0 : $head.parent.content.size);
     if (!atEdge) return false;
-    if ($head.parent.childCount === 1 && $head.parent.firstChild.type.name === 'image') {
+    if ($head.parent.childCount === 1 && $head.parent.firstChild!.type.name === 'image') {
         return textBesideImage(editor, before, { reuse: true,
-            target: { node: $head.parent.firstChild, pos: $head.start() } });
+            target: { node: $head.parent.firstChild!, pos: $head.start() } });
     }
     const boundary = before ? $head.before() : $head.after();
     const $boundary = state.doc.resolve(boundary);
     const neighbor = before ? $boundary.nodeBefore : $boundary.nodeAfter;
     const pos = boundary - (before ? neighbor?.nodeSize || 0 : 0);
     const imagePos = neighbor?.type.name === 'reportFigure' ? pos
-        : neighbor?.isTextblock && neighbor.childCount === 1 && neighbor.firstChild.type.name === 'image' ? pos + 1 : null;
+        : neighbor?.isTextblock && neighbor.childCount === 1 && neighbor.firstChild!.type.name === 'image' ? pos + 1 : null;
     if (imagePos === null) return false;
     view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, imagePos)));
     return true;
@@ -510,7 +540,7 @@ const ReportCaption = Node.create({
                 const { $from, empty } = state.selection;
                 if (!empty || $from.parent.type.name !== this.name || $from.parentOffset !== 0) return false;
                 const target = selectedFigure(this.editor);
-                view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, target.pos)));
+                view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, target!.pos)));
                 return true;
             },
         };
@@ -528,7 +558,7 @@ const ReportFigure = Node.create({
     addKeyboardShortcuts() {
         const deleteImage = () => {
             const target = selectedFigure(this.editor);
-            if (!target || !['image', 'reportFigure'].includes(this.editor.state.selection.node?.type.name)) return false;
+            if (!target || !['image', 'reportFigure'].includes(nodeOfSelection(this.editor)?.type.name as string)) return false;
             this.editor.view.dispatch(closeHistory(this.editor.state.tr)
                 .delete(target.pos, target.pos + target.node.nodeSize));
             return true;
@@ -536,7 +566,7 @@ const ReportFigure = Node.create({
         return { Backspace: deleteImage, Delete: deleteImage,
             ...Object.fromEntries(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
                 .map(key => [key, () => navigateImageArrow(this.editor, key)])),
-            Enter: () => this.editor.state.selection.node?.type.name === this.name ? textBesideImage(this.editor) : false };
+            Enter: () => nodeOfSelection(this.editor)?.type.name === this.name ? textBesideImage(this.editor) : false };
     },
     addProseMirrorPlugins() {
         return [new Plugin({
@@ -550,7 +580,7 @@ const ReportFigure = Node.create({
                 },
                 handleDOMEvents: {
                     mousedown(view, event) {
-                        const caption = event.target.closest?.('figcaption');
+                        const caption = (event.target as Element).closest?.('figcaption');
                         if (!caption || !view.dom.contains(caption) || caption.textContent) return false;
                         // The placeholder is generated content, so the browser can
                         // resolve its click to the nearest real text above the figure.
@@ -563,7 +593,7 @@ const ReportFigure = Node.create({
                     },
                 },
                 handleClick(view, pos, event) {
-                    const caption = event.target.closest?.('figcaption');
+                    const caption = (event.target as Element).closest?.('figcaption');
                     if (!caption || !view.dom.contains(caption)) return false;
                     const start = view.posAtDOM(caption, 0);
                     const end = start + view.state.doc.resolve(start).parent.content.size;
@@ -575,19 +605,19 @@ const ReportFigure = Node.create({
             },
             appendTransaction(transactions, oldState, state) {
                 if (!transactions.some(transaction => transaction.docChanged)) return null;
-                const repairs = [];
+                const repairs: { pos: number; node: PMNode; replacement: PMNode | null }[] = [];
                 state.doc.descendants((node, pos) => {
                     if (node.type.name !== 'reportFigure') return;
-                    const image = node.firstChild.firstChild;
+                    const image = node.firstChild!.firstChild;
                     if (!image?.attrs.src) {
                         repairs.push({ pos, node, replacement: null });
-                    } else if (!node.lastChild.textContent.trim()) {
+                    } else if (!node.lastChild!.textContent.trim()) {
                         const oldPos = transactions.reduceRight((position, transaction) =>
                             transaction.mapping.invert().map(position, -1), pos);
                         const oldFigure = oldState.doc.nodeAt(oldPos);
                         // Keep the initial empty field created by Add caption, but
                         // clearing an existing caption is the same as Remove caption.
-                        if (oldFigure?.type.name === 'reportFigure' && oldFigure.lastChild.textContent) {
+                        if (oldFigure?.type.name === 'reportFigure' && oldFigure.lastChild!.textContent) {
                             repairs.push({ pos, node, replacement: state.schema.nodes.paragraph.create(null, image) });
                         }
                     }
@@ -605,9 +635,9 @@ const ReportFigure = Node.create({
     parseHTML() {
         return [{ tag: 'figure', getAttrs: element => figureFromElement(element) ? {} : false,
             getContent: (element, schema) => {
-                const figure = figureFromElement(element);
-                const media = figure.t === 'figure' ? figure.media : figure;
-                const image = media.t === 'a' ? media.kids[0] : media;
+                const figure = figureFromElement(element as HTMLElement)!;
+                const media = (figure.t === 'figure' ? figure.media : figure)!;
+                const image = media.t === 'a' ? media.kids![0] : media;
                 const marks = media.t === 'a' ? [schema.marks.link.create({
                     href: media.href, target: media.blank ? '_blank' : null
                 })] : [];
@@ -620,7 +650,7 @@ const ReportFigure = Node.create({
     renderHTML: () => ['figure', {}, 0],
 });
 
-const selectedReportImage = editor => {
+const selectedReportImage = (editor: Editor): FigureTarget | null => {
     const figure = selectedFigure(editor);
     if (figure) return figure;
     const { selection } = editor.state;
@@ -628,7 +658,7 @@ const selectedReportImage = editor => {
         ? { node: selection.node, pos: selection.from } : null;
 };
 
-const changeImageCaption = (editor, remove = false, explicitTarget = null, caption = '') => {
+const changeImageCaption = (editor: Editor, remove = false, explicitTarget: FigureTarget | null = null, caption = '') => {
     const target = explicitTarget || selectedReportImage(editor);
     if (!target) return false;
     const { node, pos } = target;
@@ -636,10 +666,10 @@ const changeImageCaption = (editor, remove = false, explicitTarget = null, capti
     const transaction = state.tr;
     if (node.type.name === 'reportFigure') {
         if (!remove) {
-            transaction.setSelection(TextSelection.create(state.doc, pos + node.firstChild.nodeSize + 2));
+            transaction.setSelection(TextSelection.create(state.doc, pos + node.firstChild!.nodeSize + 2));
         } else {
-            const image = node.firstChild.firstChild;
-            transaction.replaceWith(pos, pos + node.nodeSize, state.schema.nodes.paragraph.create(null, image));
+            const image = node.firstChild!.firstChild;
+            transaction.replaceWith(pos, pos + node.nodeSize, state.schema.nodes.paragraph.create(null, image!));
             transaction.setSelection(NodeSelection.create(transaction.doc, pos + 1));
         }
     } else {
@@ -647,7 +677,7 @@ const changeImageCaption = (editor, remove = false, explicitTarget = null, capti
         if (!$pos.parent.isTextblock || $pos.parent.type.name === 'codeBlock') return false;
         const parent = $pos.parent;
         const figure = state.schema.nodes.reportFigure.create(null, [
-            state.schema.nodes.reportFigureMedia.create(null, node.mark(node.marks.filter(mark => mark.type.name === 'link'))),
+            state.schema.nodes.reportFigureMedia.create(null, node.mark(node.marks.filter((mark: PMMark) => mark.type.name === 'link'))),
             state.schema.nodes.reportCaption.create(null, caption ? state.schema.text(caption) : null),
         ]);
         const before = parent.content.cut(0, $pos.parentOffset);
@@ -664,7 +694,7 @@ const changeImageCaption = (editor, remove = false, explicitTarget = null, capti
         const replacement = Fragment.fromArray(blocks);
         if (!$pos.node(-1).canReplace($pos.index(-1), $pos.index(-1) + 1, replacement)) return false;
         transaction.replaceWith($pos.before(), $pos.after(), replacement);
-        transaction.setSelection(TextSelection.create(transaction.doc, figurePos + figure.firstChild.nodeSize + 2));
+        transaction.setSelection(TextSelection.create(transaction.doc, figurePos + figure.firstChild!.nodeSize + 2));
     }
     // Removing a caption is a separate action from the typing just before it.
     if (remove) closeHistory(transaction);
@@ -673,7 +703,7 @@ const changeImageCaption = (editor, remove = false, explicitTarget = null, capti
     return true;
 };
 
-const figureAtImage = (editor, pos) => {
+const figureAtImage = (editor: Editor, pos: number): FigureTarget | null => {
     const $pos = editor.state.doc.resolve(pos);
     for (let depth = $pos.depth; depth > 0; depth--) {
         if ($pos.node(depth).type.name === 'reportFigure') return { node: $pos.node(depth), pos: $pos.before(depth) };
@@ -681,11 +711,11 @@ const figureAtImage = (editor, pos) => {
     return null;
 };
 
-const setImageCaption = (editor, pos, caption) => {
+const setImageCaption = (editor: Editor, pos: number, caption: string) => {
     const target = figureAtImage(editor, pos);
     if (target) {
-        const start = target.pos + target.node.firstChild.nodeSize + 2;
-        editor.view.dispatch(editor.state.tr.replaceWith(start, start + target.node.lastChild.content.size,
+        const start = target.pos + target.node.firstChild!.nodeSize + 2;
+        editor.view.dispatch(editor.state.tr.replaceWith(start, start + target.node.lastChild!.content.size,
             caption ? editor.state.schema.text(caption) : Fragment.empty));
         return true;
     }
@@ -695,7 +725,7 @@ const setImageCaption = (editor, pos, caption) => {
 };
 
 // Direct media URLs use a native video element. The only embed in the schema
-// is a canonical YouTube player URL produced by report-markup.js; arbitrary
+// is a canonical YouTube player URL produced by report-markup.ts; arbitrary
 // iframe sources remain outside the schema.
 const ReportVideo = Node.create({
     name: 'reportVideo',
@@ -706,10 +736,10 @@ const ReportVideo = Node.create({
     draggable: true,
 
     addAttributes() {
-        const dimension = name => ({
+        const dimension = (name: string) => ({
             default: null,
-            parseHTML: element => sanitizeReportDimension(element.getAttribute(name)),
-            renderHTML: attributes => (attributes[name] ? { [name]: attributes[name] } : {})
+            parseHTML: (element: HTMLElement) => sanitizeReportDimension(element.getAttribute(name)),
+            renderHTML: (attributes: Record<string, unknown>) => (attributes[name] ? { [name]: attributes[name] } : {})
         });
         return {
             src: {
@@ -755,7 +785,8 @@ const ReportVideo = Node.create({
         return ({ node, getPos, HTMLAttributes, editor }) => {
             let currentNode = node;
             const youtube = node.attrs.provider === 'youtube';
-            const media = document.createElement(youtube ? 'iframe' : 'video');
+            // Each provider branch below sets only the properties of its own element.
+            const media = document.createElement(youtube ? 'iframe' : 'video') as HTMLIFrameElement & HTMLVideoElement;
             media.draggable = false;
             if (youtube) {
                 media.loading = 'lazy';
@@ -770,7 +801,7 @@ const ReportVideo = Node.create({
                 media.referrerPolicy = 'no-referrer';
             }
 
-            const applyMediaAttributes = updatedNode => {
+            const applyMediaAttributes = (updatedNode: PMNode) => {
                 const src = updatedNode.attrs.src;
                 if (src === null || src === undefined) media.removeAttribute('src');
                 else media.setAttribute('src', src);
@@ -785,7 +816,7 @@ const ReportVideo = Node.create({
             }
             applyMediaAttributes(node);
 
-            const commitSize = (width, height) => {
+            const commitSize = (width: number, height: number) => {
                 const pos = getPos();
                 if (pos === undefined) return;
                 editor.chain().setNodeSelection(pos).updateAttributes(this.name, {
@@ -794,7 +825,7 @@ const ReportVideo = Node.create({
                 }).run();
             };
 
-            const resizeByKeyboard = event => {
+            const resizeByKeyboard = (event: KeyboardEvent) => {
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
                 event.preventDefault();
                 event.stopPropagation();
@@ -826,7 +857,7 @@ const ReportVideo = Node.create({
             return createPointerResizableNodeView({
                 element: media,
                 onCommit: commitSize,
-                onUpdate: updatedNode => {
+                onUpdate: (updatedNode: PMNode) => {
                     if (updatedNode.type !== currentNode.type
                         || updatedNode.attrs.provider !== currentNode.attrs.provider) return false;
                     currentNode = updatedNode;
@@ -856,7 +887,7 @@ const ReportVideo = Node.create({
     }
 });
 
-const shortcutExtension = handlers => Extension.create({
+const shortcutExtension = (handlers: Record<string, () => unknown>) => Extension.create({
     name: 'bpbShortcuts',
     addKeyboardShortcuts() {
         return Object.fromEntries(Object.entries(handlers)
@@ -870,7 +901,7 @@ const shortcutExtension = handlers => Extension.create({
 // but make the editing boundary explicit and predictable.
 const ReportLink = Link.extend({ inclusive: false });
 
-const instagramNode = presentation => Node.create({
+const instagramNode = (presentation: InstagramPresentation) => Node.create({
     name: 'reportInstagram', group: 'block', atom: true,
     addAttributes: () => ({ url: { default: null, parseHTML: instagramParagraphUrl } }),
     parseHTML: () => [{tag:'p', priority:1100, getAttrs: element => {
@@ -880,17 +911,17 @@ const instagramNode = presentation => Node.create({
     renderHTML: ({node}) => ['p', {}, ['a', {href:node.attrs.url}, node.attrs.url]],
     addNodeView: () => ({node,getPos,editor}) => {
         const card=presentation.create(node.attrs.url,{useLink:()=>{
-            const pos=getPos();if(!Number.isInteger(pos))return;
+            const pos=getPos();if(pos===undefined)return;
             editor.chain().setNodeSelection(pos).insertContent({type:'paragraph',content:[{
                 type:'text',text:'Instagram post',marks:[{type:'link',attrs:{href:node.attrs.url}}],
             }]}).focus().run();
         }});
         return {dom:card.element,update:next=>next.type===node.type&&next.attrs.url===node.attrs.url,
-            stopEvent:event=>card.element.contains(event.target),ignoreMutation:()=>true,destroy:card.destroy};
+            stopEvent:event=>card.element.contains(event.target as globalThis.Node),ignoreMutation:()=>true,destroy:card.destroy};
     },
 });
 
-export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, onStateChange, shortcuts, resolveLocalImage, editLocalImage, instagramPresentation }) => {
+export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, onStateChange, shortcuts, resolveLocalImage, editLocalImage, instagramPresentation }: RichEditorOptions) => {
     const editor = new Editor({
         element,
         extensions: [
@@ -943,54 +974,54 @@ const MARKS = ['bold', 'italic', 'underline', 'strike', 'code', 'highlight',
     'subscript', 'superscript', 'small', 'inlineQuote'];
 
 export const richCommands = {
-    bold: editor => editor.chain().focus().toggleBold().run(),
-    italic: editor => editor.chain().focus().toggleItalic().run(),
-    underline: editor => editor.chain().focus().toggleUnderline().run(),
-    strike: editor => editor.chain().focus().toggleStrike().run(),
-    code: editor => editor.chain().focus().toggleCode().run(),
-    highlight: editor => editor.chain().focus().toggleHighlight().run(),
-    subscript: editor => editor.chain().focus().toggleSubscript().run(),
-    superscript: editor => editor.chain().focus().toggleSuperscript().run(),
-    small: editor => editor.chain().focus().toggleMark('small').run(),
-    inlineQuote: editor => editor.chain().focus().toggleMark('inlineQuote').run(),
-    bulletList: editor => editor.chain().focus().toggleBulletList().run(),
-    orderedList: editor => editor.chain().focus().toggleOrderedList().run(),
-    horizontalRule: editor => editor.chain().focus().setHorizontalRule().run(),
-    undo: editor => editor.chain().focus().undo().run(),
-    redo: editor => editor.chain().focus().redo().run(),
-    insertTable: editor => editor.chain().focus()
+    bold: (editor: Editor) => editor.chain().focus().toggleBold().run(),
+    italic: (editor: Editor) => editor.chain().focus().toggleItalic().run(),
+    underline: (editor: Editor) => editor.chain().focus().toggleUnderline().run(),
+    strike: (editor: Editor) => editor.chain().focus().toggleStrike().run(),
+    code: (editor: Editor) => editor.chain().focus().toggleCode().run(),
+    highlight: (editor: Editor) => editor.chain().focus().toggleHighlight().run(),
+    subscript: (editor: Editor) => editor.chain().focus().toggleSubscript().run(),
+    superscript: (editor: Editor) => editor.chain().focus().toggleSuperscript().run(),
+    small: (editor: Editor) => editor.chain().focus().toggleMark('small').run(),
+    inlineQuote: (editor: Editor) => editor.chain().focus().toggleMark('inlineQuote').run(),
+    bulletList: (editor: Editor) => editor.chain().focus().toggleBulletList().run(),
+    orderedList: (editor: Editor) => editor.chain().focus().toggleOrderedList().run(),
+    horizontalRule: (editor: Editor) => editor.chain().focus().setHorizontalRule().run(),
+    undo: (editor: Editor) => editor.chain().focus().undo().run(),
+    redo: (editor: Editor) => editor.chain().focus().redo().run(),
+    insertTable: (editor: Editor) => editor.chain().focus()
         .insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
-    addRowAfter: editor => editor.chain().focus().addRowAfter().run(),
-    addColumnAfter: editor => editor.chain().focus().addColumnAfter().run(),
-    deleteRow: editor => editor.chain().focus().deleteRow().run(),
-    deleteColumn: editor => editor.chain().focus().deleteColumn().run(),
-    toggleHeaderRow: editor => editor.chain().focus().toggleHeaderRow().run(),
-    deleteTable: editor => editor.chain().focus().deleteTable().run(),
-    setColor: (editor, color) => editor.chain().focus().setColor(color).run(),
-    unsetColor: (editor) => editor.chain().focus().unsetColor().run(),
-    setLink: (editor, href) => editor.chain().focus().extendMarkRange('link').setLink({ href }).run(),
-    unsetLink: editor => editor.chain().focus().extendMarkRange('link').unsetLink().run(),
-    insertImage: (editor, { caption, ...attrs }) => caption
+    addRowAfter: (editor: Editor) => editor.chain().focus().addRowAfter().run(),
+    addColumnAfter: (editor: Editor) => editor.chain().focus().addColumnAfter().run(),
+    deleteRow: (editor: Editor) => editor.chain().focus().deleteRow().run(),
+    deleteColumn: (editor: Editor) => editor.chain().focus().deleteColumn().run(),
+    toggleHeaderRow: (editor: Editor) => editor.chain().focus().toggleHeaderRow().run(),
+    deleteTable: (editor: Editor) => editor.chain().focus().deleteTable().run(),
+    setColor: (editor: Editor, color: string) => editor.chain().focus().setColor(color).run(),
+    unsetColor: (editor: Editor) => editor.chain().focus().unsetColor().run(),
+    setLink: (editor: Editor, href: string) => editor.chain().focus().extendMarkRange('link').setLink({ href }).run(),
+    unsetLink: (editor: Editor) => editor.chain().focus().extendMarkRange('link').unsetLink().run(),
+    insertImage: (editor: Editor, { caption, ...attrs }: { src: string; alt?: string; caption?: string; [attribute: string]: unknown }) => caption
         ? editor.chain().focus().insertContent({ type: 'reportFigure', content: [
             { type: 'reportFigureMedia', content: [{ type: 'image', attrs }] },
             { type: 'reportCaption', content: [{ type: 'text', text: caption }] },
         ] }).run()
         : editor.chain().focus().setImage(attrs).run(),
-    imageCaption: (editor, pos) => figureAtImage(editor, pos)?.node.lastChild.textContent || '',
+    imageCaption: (editor: Editor, pos: number) => figureAtImage(editor, pos)?.node.lastChild!.textContent || '',
     setImageCaption,
-    editCaption: editor => changeImageCaption(editor),
-    removeCaption: editor => changeImageCaption(editor, true),
-    insertVideo: (editor, src) => editor.chain().focus().insertContent({
+    editCaption: (editor: Editor) => changeImageCaption(editor),
+    removeCaption: (editor: Editor) => changeImageCaption(editor, true),
+    insertVideo: (editor: Editor, src: string) => editor.chain().focus().insertContent({
         type: 'reportVideo', attrs: { src }
     }).run(),
-    insertYouTube: (editor, src) => editor.chain().focus().insertContent({
+    insertYouTube: (editor: Editor, src: string) => editor.chain().focus().insertContent({
         type: 'reportVideo', attrs: { src, provider: 'youtube', width: 640, height: 360 }
     }).run(),
     // The block dropdown: a heading/code choice converts the current block; a
     // quote choice wraps a fresh paragraph; Paragraph unwraps an active quote.
-    setBlock: (editor, value) => {
+    setBlock: (editor: Editor, value: string) => {
         const chain = editor.chain().focus();
-        if (/^h[1-6]$/.test(value)) return chain.setHeading({ level: Number(value[1]) }).run();
+        if (/^h[1-6]$/.test(value)) return chain.setHeading({ level: Number(value[1]) as 1 | 2 | 3 | 4 | 5 | 6 }).run();
         if (value === 'pre') return chain.setCodeBlock().run();
         if (value === 'blockquote') return chain.setParagraph().setBlockquote().run();
         return (editor.isActive('blockquote')
@@ -999,9 +1030,9 @@ export const richCommands = {
     }
 };
 
-// One snapshot per transaction; report-editor.js paints the toolbar from this
+// One snapshot per transaction; report-editor.ts paints the toolbar from this
 // instead of querying TipTap from UI code.
-export const richState = editor => {
+export const richState = (editor: Editor) => {
     const headingLevel = [1, 2, 3, 4, 5, 6].find(level => editor.isActive('heading', { level }));
     return {
         imageSelected: !!selectedReportImage(editor),

@@ -767,7 +767,7 @@ The field-level data disclosure is canonical in [PRIVACY.md](../PRIVACY.md).
 
 `src/reports/report-editor.ts` owns Rich, Markdown, and Plain views over
 Peakbagger's submitted `JournalText`. Conversions pass through the allowlisted
-model in `src/reports/report-markup.js`; the active view flushes before Preview,
+model in `src/reports/report-markup.ts`; the active view flushes before Preview,
 Save, postback, page exit, or feature disablement. Final Save remains native.
 
 `src/reports/report-drafts.js` defines bounded, expiring recovery identities.

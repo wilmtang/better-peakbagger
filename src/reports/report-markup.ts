@@ -27,6 +27,21 @@
 
 import { instagramBlocks, instagramPasteUrl } from './instagram-url.js';
 
+// The allowlisted AST. Node kinds share one shape because the converters walk
+// them generically; each reader knows which fields its `t` or `type` carries.
+export interface InlineNode { t: string; text?: string; kids?: InlineNode[]; href?: string; blank?: boolean; src?: string; alt?: string; width?: number | null; height?: number | null; color?: string; media?: InlineNode; caption?: string }
+export interface TableRow { header: boolean; cells: BlockNode[][] }
+export interface BlockNode { type: string; kids?: InlineNode[]; level?: number; blocks?: BlockNode[]; ordered?: boolean; items?: BlockNode[][]; rows?: TableRow[]; text?: string; url?: string }
+export interface ConversionDiagnostic { action: string; code: string; tag: string; attribute?: string; parent?: string | null; count?: number }
+interface SafeTag { tag: string; html: string; self: boolean; ast?: InlineNode | null }
+interface SourceToken { start: number; end: number; raw: string; bracket?: boolean; closing: boolean; name: string; attrs: string; safe: SafeTag | null; paired: boolean; pair?: number | null; rejectedOpening?: boolean; rejectedPair?: boolean }
+interface ExtensionNode extends InlineNode { raw: string; closing: boolean; self: boolean; pair: number | null; tag?: string; safe: SafeTag | null }
+interface OpenExtension extends ExtensionNode { kids: InlineNode[] }
+interface MarkdownExtensions { source: string; markers: Omit<ExtensionNode, 't'>[]; markerPattern: RegExp }
+interface MarkedToken { type?: string; raw?: string; text?: string; tokens?: MarkedToken[]; href?: string; depth?: number; items?: MarkedToken[]; ordered?: boolean; task?: boolean; checked?: boolean; header?: MarkedToken[]; rows?: MarkedToken[][] }
+type MarkedLexer = (source: string, options: { gfm: boolean; breaks: boolean }) => MarkedToken[];
+type LooseInlines = (InlineNode | InlineNode[] | null | undefined)[];
+
 const INLINE_TAGS = new Map([
     ['b', 'b'], ['strong', 'b'],
     ['i', 'i'], ['em', 'i'],
@@ -49,11 +64,11 @@ const DROP_DOM = new Set([
     'SCRIPT', 'STYLE', 'TEMPLATE', 'AUDIO', 'OBJECT',
     'EMBED', 'FORM', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'
 ]);
-const BREAK = Object.freeze({ t: 'br' });
+const BREAK: InlineNode = Object.freeze({ t: 'br' });
 
-const text = value => ({ t: 'text', text: String(value ?? '') });
+const text = (value: unknown): InlineNode => ({ t: 'text', text: String(value ?? '') });
 
-const cleanUrlText = raw => {
+const cleanUrlText = (raw: unknown) => {
     if (typeof raw !== 'string') return null;
     const value = raw.trim();
     if (!value || /[\u0000-\u0020"'<>\[\]\\]/.test(value)) return null;
@@ -62,7 +77,7 @@ const cleanUrlText = raw => {
 
 // Links can be web/mail links, root-relative Peakbagger links, or a local
 // fragment. Protocol-relative URLs are rejected so the scheme is explicit.
-const sanitizeHref = raw => {
+const sanitizeHref = (raw: unknown) => {
     const href = cleanUrlText(raw);
     if (!href) return null;
     if (/^\/(?!\/)[^\s]*$/.test(href) || /^#[^\s]*$/.test(href)) return href;
@@ -74,7 +89,7 @@ const sanitizeHref = raw => {
 };
 
 // Scheme-less Markdown link targets ("example.com/photos") get HTTPS.
-const resolveLinkTarget = raw => {
+const resolveLinkTarget = (raw: unknown) => {
     const direct = sanitizeHref(raw);
     if (direct) return direct;
     const href = cleanUrlText(String(raw || ''));
@@ -85,7 +100,7 @@ const resolveLinkTarget = raw => {
 
 // Images are more restrictive than links: no HTTP mixed content, data
 // URLs, protocol-relative hosts, or filesystem/browser schemes.
-const sanitizeImageSrc = raw => {
+const sanitizeImageSrc = (raw: unknown) => {
     const src = cleanUrlText(raw);
     if (!src) return null;
     if (/^\/(?!\/)[^\s]*$/.test(src)) return src;
@@ -99,20 +114,20 @@ const sanitizeImageSrc = raw => {
 export const sanitizeVideoSrc = sanitizeImageSrc;
 
 const VIDEO_FILE = /\.(?:m3u8|mp4|og[gv]|webm)(?:[?#]|$)/i;
-const isDirectVideoSrc = src => VIDEO_FILE.test(src);
+const isDirectVideoSrc = (src: string) => VIDEO_FILE.test(src);
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 
 // This is deliberately not a general iframe sanitizer. The one allowed
 // embed is a canonical YouTube player, derived from a recognized YouTube
 // URL and stripped of user-controlled player options.
-export const sanitizeYouTubeEmbedSrc = raw => {
+export const sanitizeYouTubeEmbedSrc = (raw: unknown) => {
     const source = cleanUrlText(raw);
     if (!source) return null;
     try {
         const url = new URL(source);
         if (url.protocol !== 'https:') return null;
         const host = url.hostname.toLowerCase().replace(/\.$/, '');
-        let id = null;
+        let id: string | null = null;
         if (host === 'youtu.be' || host === 'www.youtu.be') {
             const [candidate, ...rest] = url.pathname.split('/').filter(Boolean);
             if (!rest.length) id = candidate;
@@ -125,12 +140,12 @@ export const sanitizeYouTubeEmbedSrc = raw => {
     } catch (error) { return null; }
 };
 
-const youtubeWatchUrl = embed => {
+const youtubeWatchUrl = (embed: string) => {
     const id = /^https:\/\/www\.youtube\.com\/embed\/([A-Za-z0-9_-]{11})$/.exec(embed)?.[1];
     return id ? `https://www.youtube.com/watch?v=${id}` : null;
 };
 
-const sanitizeColor = raw => {
+const sanitizeColor = (raw: unknown) => {
     if (typeof raw !== 'string') return null;
     const color = raw.trim().toLowerCase();
     const named = /^[a-z]{3,}$/.test(color) && color.length <= 20;
@@ -153,35 +168,35 @@ const YOUTUBE_RUNTIME_ATTRIBUTES =
         ' title="YouTube video" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"'
         + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen';
 
-export const sanitizeReportDimension = raw => {
+export const sanitizeReportDimension = (raw: unknown) => {
     if (raw === null || raw === undefined || raw === '') return null;
     const value = Number(raw);
     return Number.isInteger(value) && value >= 1 && value <= MAX_REPORT_IMAGE_DIMENSION ? value : null;
 };
 const sanitizeDimension = sanitizeReportDimension;
 
-const escapeHtml = value => String(value)
+const escapeHtml = (value: unknown) => String(value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-const escapeAttribute = value => escapeHtml(value)
+const escapeAttribute = (value: unknown) => escapeHtml(value)
     .replace(/\[/g, '&#91;').replace(/\]/g, '&#93;');
 
 // JournalText becomes HTML on Peakbagger. Encode ordinary text as HTML,
 // and additionally neutralize square-bracket strings that look like tags.
-const escapeBracketText = value => String(value)
+const escapeBracketText = (value: unknown) => String(value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\[(\/?[a-z][a-z0-9]*(?:\s[^\]\r\n]*)?)\]/gi, '&#91;$1&#93;');
 
-const readAttr = (attrs, name) => {
+const readAttr = (attrs: string | null | undefined, name: string) => {
     const pattern = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s]+))`, 'i');
     const hit = pattern.exec(attrs || '');
     return hit ? (hit[1] ?? hit[2] ?? hit[3]) : null;
 };
 
-const normalizedTag = name => {
+const normalizedTag = (name: unknown): string | null => {
     const lower = String(name || '').toLowerCase();
-    if (INLINE_TAGS.has(lower)) return INLINE_TAGS.get(lower);
+    if (INLINE_TAGS.has(lower)) return INLINE_TAGS.get(lower) as string;
     if (lower === 'font') return 'span';
     if (BLOCK_TAGS.has(lower) || VOID_TAGS.has(lower) || lower === 'a' || lower === 'span'
             || lower === 'video' || lower === 'iframe') return lower;
@@ -191,7 +206,7 @@ const normalizedTag = name => {
 // Build one safe HTML opening tag. Returning null means the source token
 // must remain text. The closing token is converted only when paired with a
 // successfully validated opening token.
-const safeOpening = (name, attrs) => {
+const safeOpening = (name: string, attrs: string): SafeTag | null => {
     const sourceName = String(name || '').toLowerCase();
     const tag = normalizedTag(sourceName);
     if (!tag) return null;
@@ -271,10 +286,10 @@ const safeOpening = (name, attrs) => {
 
 const TAG_TOKEN = /\[(\/?)([a-z][a-z0-9]*)([^\]\r\n]*)\]|<(\/?)([a-z][a-z0-9]*)([^>\r\n]*)>/gi;
 
-const attributeEntries = raw => {
+const attributeEntries = (raw: unknown) => {
     const source = String(raw || '').replace(/\/\s*$/, '').trim();
     if (!source) return [];
-    const entries = [];
+    const entries: { name: string; value: string | null }[] = [];
     const pattern = /([a-z][a-z0-9:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+)))?/gi;
     for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
         entries.push({ name: match[1].toLowerCase(), value: match[2] ?? match[3] ?? match[4] ?? null });
@@ -282,7 +297,7 @@ const attributeEntries = raw => {
     return entries;
 };
 
-const acceptedAttributeNames = tag => {
+const acceptedAttributeNames = (tag: string) => {
     if (INLINE_TAGS.has(tag)) return new Set();
     if (tag === 'a') return new Set(['href', 'target']);
     if (tag === 'img') return new Set(['src', 'alt', 'width', 'height']);
@@ -298,12 +313,12 @@ const acceptedAttributeNames = tag => {
     return new Set();
 };
 
-const droppedAttributes = (tag, attrs) => {
+const droppedAttributes = (tag: string, attrs: string) => {
     const entries = attributeEntries(attrs);
     const accepted = acceptedAttributeNames(tag);
     const dropped = entries.filter(entry => !accepted.has(entry.name));
-    const byName = name => entries.find(entry => entry.name === name);
-    const dropIf = (name, invalid) => {
+    const byName = (name: string) => entries.find(entry => entry.name === name);
+    const dropIf = (name: string, invalid: (value: string | null) => boolean) => {
         const entry = byName(name);
         if (entry && invalid(entry.value)) dropped.push(entry);
     };
@@ -328,29 +343,29 @@ const droppedAttributes = (tag, attrs) => {
     return [...new Map(dropped.map(entry => [entry.name, entry])).values()];
 };
 
-const invalidStructuralParent = (tag, ancestors) => {
+const invalidStructuralParent = (tag: string, ancestors: string[]) => {
     const parent = ancestors.at(-1) || null;
     if (tag === 'figcaption') return parent !== 'figure';
     if (ancestors.includes('figcaption')) return true;
     if (tag === 'figure' && ancestors.some(ancestor => ['figure', 'a'].includes(ancestor))) return true;
     if (tag === 'li') return parent !== 'ul' && parent !== 'ol';
-    if (tag === 'tr') return !['table', 'thead', 'tbody', 'tfoot'].includes(parent);
+    if (tag === 'tr') return !['table', 'thead', 'tbody', 'tfoot'].includes(parent as string);
     if (tag === 'th' || tag === 'td') return parent !== 'tr';
     if (['thead', 'tbody', 'tfoot'].includes(tag)) return parent !== 'table';
     if (tag === 'a') return ancestors.includes('a');
     return BLOCK_TAGS.has(tag) && ancestors.includes('p');
 };
 
-const addDiagnostic = (diagnostics, diagnostic) => {
+const addDiagnostic = (diagnostics: ConversionDiagnostic[] | null, diagnostic: ConversionDiagnostic) => {
     if (!diagnostics) return;
     diagnostics.push(diagnostic);
 };
 
 // Convert only balanced, validated allowlisted tags to detached HTML. Raw
 // source newlines become <br>, exactly as Peakbagger renders them.
-const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = null } = {}) => {
+const bracketSourceToSafeHtml = (source: unknown, { inlineOnly = false, diagnostics = null as ConversionDiagnostic[] | null } = {}) => {
     const input = String(source ?? '').replace(/\r\n?/g, '\n');
-    const tokens = [];
+    const tokens: SourceToken[] = [];
     for (let hit = TAG_TOKEN.exec(input); hit; hit = TAG_TOKEN.exec(input)) {
         const bracket = hit[1] !== undefined;
         const closing = (bracket ? hit[1] : hit[4]) === '/';
@@ -370,8 +385,8 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
     }
 
     const closingNames = new Set(tokens.filter(token => token.closing).map(token => token.name));
-    let tagDocument;
-    const literalBracketWord = token => {
+    let tagDocument: Document | undefined;
+    const literalBracketWord = (token: SourceToken) => {
         if (!token.bracket || token.attrs.trim() || closingNames.has(token.name)
             || token.name === 'svg' || token.name === 'math') return false;
         // A bare unknown word such as [this] is prose, not a markup feature
@@ -381,7 +396,7 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
         tagDocument ||= getParserDocument('');
         return tagDocument.createElement(token.name).constructor.name === 'HTMLUnknownElement';
     };
-    const stack = [];
+    const stack: SourceToken[] = [];
     for (const token of tokens) {
         if (!token.closing) {
             const safe = safeOpening(token.name, token.attrs);
@@ -410,7 +425,7 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
         if (token.attrs.trim()) continue;
         const closeTag = normalizedTag(token.name);
         const open = stack[stack.length - 1];
-        if (open && closeTag && open.safe.tag === closeTag) {
+        if (open && closeTag && open.safe!.tag === closeTag) {
             stack.pop();
             open.paired = true;
             token.safe = { tag: closeTag, html: `</${closeTag}>`, self: false };
@@ -419,10 +434,10 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
     }
 
     if (!inlineOnly) {
-        const rejectedStack = [];
+        const rejectedStack: string[] = [];
         for (const token of tokens) {
             if (!token.closing && token.rejectedOpening
-                && !['br', 'hr', 'img'].includes(normalizedTag(token.name))) {
+                && !['br', 'hr', 'img'].includes(normalizedTag(token.name) as string)) {
                 rejectedStack.push(token.name);
             } else if (token.closing && !token.paired
                 && rejectedStack[rejectedStack.length - 1] === token.name) {
@@ -430,11 +445,11 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
                 token.rejectedPair = true;
             }
         }
-        const structuralStack = [];
+        const structuralStack: SourceToken[] = [];
         for (const token of tokens) {
             if (!token.safe || !token.paired || token.safe.self) continue;
             if (!token.closing) {
-                const ancestors = structuralStack.map(item => item.safe.tag);
+                const ancestors = structuralStack.map(item => item.safe!.tag);
                 const parent = ancestors.at(-1) || null;
                 if (invalidStructuralParent(token.safe.tag, ancestors)) {
                     addDiagnostic(diagnostics, {
@@ -458,7 +473,7 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
         }
     }
 
-    const appendText = value => value
+    const appendText = (value: string) => value
         .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     let html = '';
     let at = 0;
@@ -470,7 +485,7 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = nul
     return html + appendText(input.slice(at));
 };
 
-const getParserDocument = html => {
+const getParserDocument = (html: string) => {
     if (typeof DOMParser === 'undefined') {
         throw new Error('BPBReportMarkup requires DOMParser');
     }
@@ -479,25 +494,25 @@ const getParserDocument = html => {
 
 // ---- DOM -> AST --------------------------------------------------------
 
-const compactInlines = nodes => {
-    const out = [];
+const compactInlines = (nodes: LooseInlines) => {
+    const out: InlineNode[] = [];
     for (const node of nodes.flat()) {
         if (!node) continue;
         if (node.t === 'text' && !node.text) continue;
         const last = out[out.length - 1];
-        if (node.t === 'text' && last && last.t === 'text') last.text += node.text;
+        if (node.t === 'text' && last && last.t === 'text') last.text! += node.text;
         else out.push(node);
     }
     return out;
 };
 
-const trimInlines = nodes => {
+const trimInlines = (nodes: LooseInlines) => {
     const out = compactInlines(nodes).slice();
     while (out[0] === BREAK) out.shift();
     while (out[out.length - 1] === BREAK) out.pop();
-    if (out[0]?.t === 'text') out[0] = text(out[0].text.replace(/^ +/, ''));
+    if (out[0]?.t === 'text') out[0] = text(out[0].text!.replace(/^ +/, ''));
     if (out[out.length - 1]?.t === 'text') {
-        out[out.length - 1] = text(out[out.length - 1].text.replace(/ +$/, ''));
+        out[out.length - 1] = text(out[out.length - 1].text!.replace(/ +$/, ''));
     }
     return out.filter(node => node.t !== 'text' || node.text);
 };
@@ -506,7 +521,7 @@ const trimInlines = nodes => {
 // which canonicalizes hex into rgb(). This is intentionally not a general
 // style parser: sanitizeColor rejects every value form that could contain
 // a declaration separator, function, quote, escape, or comment.
-const rawInlineColor = element => {
+const rawInlineColor = (element: Element) => {
     const style = element.getAttribute('style');
     if (!style) return null;
     const declarations = style.split(';');
@@ -521,7 +536,7 @@ const rawInlineColor = element => {
     return null;
 };
 
-const colorFromElement = element => {
+const colorFromElement = (element: Element) => {
     const preserved = element.getAttribute('data-bpb-report-color');
     const raw = element.tagName === 'FONT'
         ? element.getAttribute('color')
@@ -529,7 +544,7 @@ const colorFromElement = element => {
     return sanitizeColor(raw);
 };
 
-const styleWraps = element => {
+const styleWraps = (element: HTMLElement) => {
     const style = element.style;
     const wraps = [];
     if (style && /^(bold|bolder|[6-9]00)$/.test(style.fontWeight)) wraps.push('b');
@@ -540,12 +555,13 @@ const styleWraps = element => {
     return wraps;
 };
 
-const inlineFromNode = node => {
-    if (node.nodeType === 3) {
-        const value = node.nodeValue.replace(/[\t\n\f\r \u00a0]+/g, ' ');
+const inlineFromNode = (source: Node): InlineNode[] => {
+    if (source.nodeType === 3) {
+        const value = source.nodeValue!.replace(/[\t\n\f\r \u00a0]+/g, ' ');
         return value ? [text(value)] : [];
     }
-    if (node.nodeType !== 1) return [];
+    if (source.nodeType !== 1) return [];
+    const node = source as HTMLElement;
     const tag = node.tagName;
     if (tag === 'FIGURE') {
         const figure = figureFromElement(node);
@@ -598,25 +614,25 @@ const inlineFromNode = node => {
     return kids;
 };
 
-const inlinesFrom = element => compactInlines([...element.childNodes].flatMap(inlineFromNode));
+const inlinesFrom = (element: Element) => compactInlines([...element.childNodes].flatMap(inlineFromNode));
 
 // Only explicit figures carry captions. Never infer them from adjacent prose.
 // Caption text follows the same whitespace convention as ordinary report text.
-export const figureFromElement = element => {
+export const figureFromElement = (element: Element): InlineNode | null => {
     const children = [...element.childNodes].filter(node =>
-        node.nodeName !== 'BR' && !(node.nodeType === 3 && !node.nodeValue.trim()));
+        node.nodeName !== 'BR' && !(node.nodeType === 3 && !node.nodeValue!.trim()));
     if (children.length !== 2 || children[1].nodeName !== 'FIGCAPTION') return null;
-    let media = children[0];
+    let media = children[0] as Element;
     const caption = children[1];
     // Rich HTML has a schema-owned media block. Revalidate its image/link as
     // usual; the marker never grants access to additional tags or attributes.
     if (media.nodeName === 'DIV' && media.hasAttribute('data-bpb-figure-media') && media.childNodes.length === 1) {
-        media = media.firstChild;
+        media = media.firstChild as Element;
     }
     if ([...caption.childNodes].some(node => node.nodeType !== 3 && node.nodeName !== 'BR')) return null;
     const linked = media.nodeName === 'A';
     const image = linked && media.childNodes.length === 1 ? media.firstChild : media;
-    if (image.nodeName !== 'IMG') return null;
+    if (image?.nodeName !== 'IMG') return null;
     const kids = inlineFromNode(media);
     if (kids.length !== 1 || (linked && kids[0].t !== 'a') || (!linked && kids[0].t !== 'img')) return null;
     const value = [...caption.childNodes].map(node => node.nodeName === 'BR' ? ' ' : node.nodeValue)
@@ -626,9 +642,9 @@ export const figureFromElement = element => {
 
 // Two consecutive <br> elements are Peakbagger's paragraph separator. A
 // single <br> stays in the paragraph. Empty editor scaffolding is dropped.
-const looseInlinesToParagraphs = stream => {
-    const blocks = [];
-    let current = [];
+const looseInlinesToParagraphs = (stream: LooseInlines) => {
+    const blocks: BlockNode[] = [];
+    let current: InlineNode[] = [];
     const flush = () => {
         const kids = trimInlines(current);
         if (kids.length) blocks.push({ type: 'p', kids });
@@ -650,20 +666,20 @@ const looseInlinesToParagraphs = stream => {
     return blocks;
 };
 
-const preformattedText = element => {
+const preformattedText = (element: Element) => {
     let value = '';
-    const visit = node => {
-        if (node.nodeType === 3) value += node.nodeValue.replace(/\u00a0/g, ' ');
-        else if (node.nodeType === 1 && node.tagName === 'BR') value += '\n';
-        else if (node.nodeType === 1 && !DROP_DOM.has(node.tagName)) [...node.childNodes].forEach(visit);
+    const visit = (node: Node) => {
+        if (node.nodeType === 3) value += node.nodeValue!.replace(/\u00a0/g, ' ');
+        else if (node.nodeType === 1 && (node as Element).tagName === 'BR') value += '\n';
+        else if (node.nodeType === 1 && !DROP_DOM.has((node as Element).tagName)) [...node.childNodes].forEach(visit);
     };
     [...element.childNodes].forEach(visit);
     return value.replace(/^\n|\n$/g, '');
 };
 
-const tableRows = table => {
-    const rows = [];
-    const addRow = row => {
+const tableRows = (table: Element) => {
+    const rows: TableRow[] = [];
+    const addRow = (row: Element) => {
         const cells = [...row.children].filter(cell => cell.tagName === 'TH' || cell.tagName === 'TD');
         if (!cells.length) return;
         rows.push({
@@ -680,7 +696,7 @@ const tableRows = table => {
     return rows;
 };
 
-const blockFromElement = element => {
+const blockFromElement = (element: Element): BlockNode[] => {
     const tag = element.tagName;
     if (tag === 'FIGURE') return looseInlinesToParagraphs(inlineFromNode(element));
     if (tag === 'P' || tag === 'DIV') return looseInlinesToParagraphs(inlinesFrom(element));
@@ -708,18 +724,18 @@ const blockFromElement = element => {
     return looseInlinesToParagraphs(inlinesFrom(element));
 };
 
-function domChildrenToBlocks(root) {
-    const blocks = [];
-    let pending = [];
+function domChildrenToBlocks(root: Element): BlockNode[] {
+    const blocks: BlockNode[] = [];
+    let pending: InlineNode[] = [];
     const flush = () => {
         blocks.push(...looseInlinesToParagraphs(pending));
         pending = [];
     };
     for (const child of root.childNodes) {
-        if (child.nodeType === 1 && DOM_BLOCKS.has(child.tagName)) {
+        if (child.nodeType === 1 && DOM_BLOCKS.has((child as Element).tagName)) {
             flush();
-            blocks.push(...blockFromElement(child));
-        } else if (child.nodeType === 3 && !child.nodeValue.trim() && !pending.length) {
+            blocks.push(...blockFromElement(child as Element));
+        } else if (child.nodeType === 3 && !child.nodeValue!.trim() && !pending.length) {
             continue;
         } else pending.push(...inlineFromNode(child));
     }
@@ -727,45 +743,45 @@ function domChildrenToBlocks(root) {
     return blocks;
 }
 
-const domToAst = root => instagramBlocks(domChildrenToBlocks(root));
+const domToAst = (root: Element) => instagramBlocks(domChildrenToBlocks(root)) as BlockNode[];
 
 // The first editor release serialized visual lists as literal "- "/"1. "
 // lines. Continue recognizing those reports on import while emitting real
 // Peakbagger list tags from now on.
-const upgradeLegacyLists = blocks => blocks.map(block => {
-    if (block.type === 'blockquote') return { ...block, blocks: upgradeLegacyLists(block.blocks) };
+const upgradeLegacyLists = (blocks: BlockNode[]): BlockNode[] => blocks.map(block => {
+    if (block.type === 'blockquote') return { ...block, blocks: upgradeLegacyLists(block.blocks!) };
     if (block.type === 'list') {
-        return { ...block, items: block.items.map(item => upgradeLegacyLists(item)) };
+        return { ...block, items: block.items!.map(item => upgradeLegacyLists(item)) };
     }
     if (block.type !== 'p') return block;
-    const lines = [[]];
-    for (const node of block.kids) {
+    const lines: InlineNode[][] = [[]];
+    for (const node of block.kids!) {
         if (node === BREAK) lines.push([]);
         else lines[lines.length - 1].push(node);
     }
     if (!lines.length || lines.some(line => !line.length || line[0].t !== 'text')) return block;
-    const matches = lines.map(line => /^(?:([-*+•])|(\d{1,3})[.)])\s+/.exec(line[0].text));
+    const matches = lines.map(line => /^(?:([-*+•])|(\d{1,3})[.)])\s+/.exec(line[0].text!));
     if (matches.some(match => !match)) return block;
-    const ordered = !!matches[0][2];
-    if (matches.some(match => !!match[2] !== ordered)) return block;
+    const ordered = !!matches[0]![2];
+    if (matches.some(match => !!match![2] !== ordered)) return block;
     const items = lines.map((line, index) => {
         const kids = line.slice();
-        kids[0] = text(kids[0].text.slice(matches[index][0].length));
+        kids[0] = text(kids[0].text!.slice(matches[index]![0].length));
         return [{ type: 'p', kids: trimInlines(kids) }];
     });
     return { type: 'list', ordered, items };
 });
 
-const parseBracketWithDiagnostics = source => {
-    const diagnostics = [];
+const parseBracketWithDiagnostics = (source: unknown) => {
+    const diagnostics: ConversionDiagnostic[] = [];
     const doc = getParserDocument(bracketSourceToSafeHtml(source, { diagnostics }));
     for (const element of doc.querySelectorAll('figure')) {
         if (!figureFromElement(element)) addDiagnostic(diagnostics, {
             action: 'unwrap', code: 'unsupported-nesting', tag: 'figure'
         });
     }
-    const ast = upgradeLegacyLists(domToAst(doc.getElementById('bpb-report-root')));
-    const unique = new Map();
+    const ast = upgradeLegacyLists(domToAst(doc.getElementById('bpb-report-root')!));
+    const unique = new Map<string, ConversionDiagnostic & { count: number }>();
     for (const diagnostic of diagnostics) {
         const key = [diagnostic.action, diagnostic.code, diagnostic.tag,
             diagnostic.attribute || '', diagnostic.parent || ''].join(':');
@@ -776,13 +792,13 @@ const parseBracketWithDiagnostics = source => {
     return { ast, diagnostics: [...unique.values()] };
 };
 
-const parseBracket = source => parseBracketWithDiagnostics(source).ast;
+const parseBracket = (source: unknown) => parseBracketWithDiagnostics(source).ast;
 
-const parseBracketInline = source => {
+const parseBracketInline = (source: unknown) => {
     const doc = getParserDocument(bracketSourceToSafeHtml(source, { inlineOnly: true }));
     // Do not trim here: Marked splits "text **bold** text" into three
     // tokens, and the spaces live at the edges of the two text tokens.
-    return compactInlines(inlinesFrom(doc.getElementById('bpb-report-root')));
+    return compactInlines(inlinesFrom(doc.getElementById('bpb-report-root')!));
 };
 
 // ---- Marked tokens -> AST ---------------------------------------------
@@ -791,13 +807,13 @@ const parseBracketInline = source => {
 // lexing so adjacent Markdown delimiters keep their CommonMark context.
 // Peakbagger's bracket extensions are not Markdown, so protect only those
 // before lexing and fold both token forms into the same allowlisted AST.
-const protectMarkdownExtensions = source => {
+const protectMarkdownExtensions = (source: unknown): MarkdownExtensions => {
     const input = String(source ?? '');
     let markerPrefix = '\uE000BPB';
     while (input.includes(markerPrefix)) markerPrefix += '_';
 
     TAG_TOKEN.lastIndex = 0;
-    const tokens = [];
+    const tokens: SourceToken[] = [];
     for (let hit = TAG_TOKEN.exec(input); hit; hit = TAG_TOKEN.exec(input)) {
         const bracket = hit[1] !== undefined;
         if (!bracket) continue;
@@ -817,7 +833,7 @@ const protectMarkdownExtensions = source => {
         });
     }
 
-    const stack = [];
+    const stack: SourceToken[] = [];
     let pair = 0;
     for (const token of tokens) {
         if (!token.closing) {
@@ -833,7 +849,7 @@ const protectMarkdownExtensions = source => {
         if (token.attrs.trim()) continue;
         const closeTag = normalizedTag(token.name);
         const open = stack[stack.length - 1];
-        if (open && closeTag && open.safe.tag === closeTag) {
+        if (open && closeTag && open.safe!.tag === closeTag) {
             stack.pop();
             open.paired = true;
             token.paired = true;
@@ -843,7 +859,7 @@ const protectMarkdownExtensions = source => {
         }
     }
 
-    const markers = [];
+    const markers: MarkdownExtensions['markers'] = [];
     let protectedSource = '';
     let at = 0;
     for (const token of tokens) {
@@ -854,7 +870,7 @@ const protectMarkdownExtensions = source => {
                 raw: token.raw,
                 closing: token.closing,
                 self: token.safe.self,
-                pair: token.pair,
+                pair: token.pair!,
                 safe: token.safe
             });
             protectedSource += `${markerPrefix}${index}\uE001`;
@@ -870,26 +886,26 @@ const protectMarkdownExtensions = source => {
     };
 };
 
-const makeMarkdownExtensionNode = (safe, kids = []) => {
+const makeMarkdownExtensionNode = (safe: SafeTag, kids: InlineNode[] = []): InlineNode | null => {
     if (safe.ast === BREAK) return BREAK;
-    if (safe.ast.t === 'img') return { ...safe.ast };
-    if (safe.ast.t === 'figcaption') return { t: 'figcaption', kids };
-    if (safe.ast.t === 'figure') {
-        const meaningful = kids.filter(kid => kid !== BREAK && !(kid.t === 'text' && !kid.text.trim()));
+    if (safe.ast!.t === 'img') return { ...safe.ast! };
+    if (safe.ast!.t === 'figcaption') return { t: 'figcaption', kids };
+    if (safe.ast!.t === 'figure') {
+        const meaningful = kids.filter(kid => kid !== BREAK && !(kid.t === 'text' && !kid.text!.trim()));
         const [media, caption] = meaningful;
         if (meaningful.length !== 2 || caption.t !== 'figcaption'
-            || !(media.t === 'img' || (media.t === 'a' && media.kids.length === 1 && media.kids[0].t === 'img'))
-            || caption.kids.some(kid => kid.t !== 'text')) return null;
-        const value = caption.kids.map(kid => kid.text).join('').replace(/\s+/g, ' ').trim();
+            || !(media.t === 'img' || (media.t === 'a' && media.kids!.length === 1 && media.kids![0].t === 'img'))
+            || caption.kids!.some(kid => kid.t !== 'text')) return null;
+        const value = caption.kids!.map(kid => kid.text).join('').replace(/\s+/g, ' ').trim();
         return value ? { t: 'figure', media, caption: value } : media;
     }
-    return kids.length ? { ...safe.ast, kids } : null;
+    return kids.length ? { ...safe.ast!, kids } : null;
 };
 
 // Marked emits an inline HTML wrapper and its Markdown children as
 // separate tokens. Convert only a single validated tag token here; block
 // HTML and unsupported/unsafe tags continue through the inert text path.
-const markdownHtmlExtension = raw => {
+const markdownHtmlExtension = (raw: string): ExtensionNode | null => {
     const match = /^<(\/?)\s*([a-z][a-z0-9]*)([^>\r\n]*)>$/i.exec(String(raw || ''));
     if (!match) return null;
     const closing = match[1] === '/';
@@ -910,21 +926,22 @@ const markdownHtmlExtension = raw => {
     } : null;
 };
 
-const foldMarkdownExtensions = nodes => {
-    const root = [];
-    const stack = [];
-    const append = node => {
+const foldMarkdownExtensions = (nodes: InlineNode[]) => {
+    const root: InlineNode[] = [];
+    const stack: OpenExtension[] = [];
+    const append = (node: InlineNode | null) => {
         if (!node) return;
         (stack[stack.length - 1]?.kids || root).push(node);
     };
 
-    for (const node of nodes) {
-        if (node.t !== 'markdown-extension') {
-            append(node);
+    for (const candidate of nodes) {
+        if (candidate.t !== 'markdown-extension') {
+            append(candidate);
             continue;
         }
+        const node = candidate as ExtensionNode;
         if (node.self) {
-            append(makeMarkdownExtensionNode(node.safe));
+            append(makeMarkdownExtensionNode(node.safe!));
             continue;
         }
         if (!node.closing) {
@@ -941,9 +958,9 @@ const foldMarkdownExtensions = nodes => {
             continue;
         }
         stack.pop();
-        const folded = makeMarkdownExtensionNode(open.safe, compactInlines(open.kids));
+        const folded = makeMarkdownExtensionNode(open.safe!, compactInlines(open.kids));
         if (folded) append(folded);
-        else if (open.safe.ast.t === 'figure') {
+        else if (open.safe!.ast!.t === 'figure') {
             append(text(open.raw));
             open.kids.forEach(append);
             append(text(node.raw));
@@ -951,28 +968,28 @@ const foldMarkdownExtensions = nodes => {
     }
 
     while (stack.length) {
-        const open = stack.pop();
+        const open = stack.pop()!;
         const target = stack[stack.length - 1]?.kids || root;
         target.push(text(open.raw), ...open.kids);
     }
     return compactInlines(root);
 };
 
-const markdownText = (value, extensions) => {
+const markdownText = (value: unknown, extensions: MarkdownExtensions) => {
     const input = String(value ?? '');
-    const nodes = [];
+    const nodes: InlineNode[] = [];
     let at = 0;
     extensions.markerPattern.lastIndex = 0;
     for (let hit = extensions.markerPattern.exec(input); hit; hit = extensions.markerPattern.exec(input)) {
         nodes.push(...parseBracketInline(input.slice(at, hit.index)));
-        nodes.push({ t: 'markdown-extension', ...extensions.markers[Number(hit[1])] });
+        nodes.push({ t: 'markdown-extension', ...extensions.markers[Number(hit[1])] } as ExtensionNode);
         at = hit.index + hit[0].length;
     }
     nodes.push(...parseBracketInline(input.slice(at)));
     return nodes;
 };
 
-const textWithBreaks = (value, extensions) => compactInlines(String(value ?? '').split('\n')
+const textWithBreaks = (value: unknown, extensions: MarkdownExtensions) => compactInlines(String(value ?? '').split('\n')
     .flatMap((part, index) => index
         ? [BREAK, ...markdownText(part, extensions)]
         : markdownText(part, extensions)));
@@ -981,7 +998,7 @@ const textWithBreaks = (value, extensions) => compactInlines(String(value ?? '')
 // ![alt|width](url) or ![alt|widthxheight](url). Treat the suffix as size
 // metadata only when every supplied dimension passes the same bounds as
 // bracket markup; otherwise it remains ordinary alt text.
-const markdownImageAttributes = token => {
+const markdownImageAttributes = (token: MarkedToken) => {
     const rawAlt = String(token.text || '');
     const sized = /^(.*)\|(\d+)(?:x(\d+))?$/i.exec(rawAlt);
     if (!sized) return { alt: rawAlt, width: null, height: null };
@@ -994,7 +1011,7 @@ const markdownImageAttributes = token => {
 
 // `|xheight` exists only to preserve already-supported height-only video
 // and iframe markup. Do not reinterpret an ordinary image alt suffix.
-const markdownMediaAttributes = token => {
+const markdownMediaAttributes = (token: MarkedToken) => {
     const rawAlt = String(token.text || '');
     const heightOnly = /^(.*)\|x(\d+)$/i.exec(rawAlt);
     if (!heightOnly) return markdownImageAttributes(token);
@@ -1007,9 +1024,9 @@ const markdownMediaAttributes = token => {
 // Marked's ordinary `(destination)` form closes on an unmatched `)` in a
 // signed media URL. Its angle-delimited destination preserves every URL
 // character accepted by cleanUrlText (which already excludes `<`/`>`).
-const markdownMediaDestination = src => /[()]/.test(src) ? `<${src}>` : src;
+const markdownMediaDestination = (src: string) => /[()]/.test(src) ? `<${src}>` : src;
 
-const markedInlines = (tokens, extensions) => foldMarkdownExtensions((tokens || []).flatMap(token => {
+const markedInlines = (tokens: MarkedToken[] | undefined, extensions: MarkdownExtensions): InlineNode[] => foldMarkdownExtensions((tokens || []).flatMap((token): InlineNode[] => {
     if (!token || typeof token !== 'object') return [];
     if (token.type === 'text' || token.type === 'escape') {
         return token.tokens && token.tokens !== tokens
@@ -1061,7 +1078,7 @@ const markedInlines = (tokens, extensions) => foldMarkdownExtensions((tokens || 
         : textWithBreaks(token.raw || token.text || '', extensions);
 }));
 
-const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
+const markedBlocks = (tokens: MarkedToken[] | undefined, extensions: MarkdownExtensions): BlockNode[] => (tokens || []).flatMap((token): BlockNode[] => {
     if (!token || typeof token !== 'object' || token.type === 'space' || token.type === 'def') return [];
     if (token.type === 'paragraph' || token.type === 'text') {
         const kids = trimInlines(markedInlines(
@@ -1070,18 +1087,18 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
     }
     if (token.type === 'heading') {
         const kids = trimInlines(markedInlines(token.tokens, extensions));
-        return kids.length ? [{ type: 'heading', level: Math.min(6, Math.max(1, token.depth)), kids }] : [];
+        return kids.length ? [{ type: 'heading', level: Math.min(6, Math.max(1, token.depth!)), kids }] : [];
     }
     if (token.type === 'blockquote') {
         const blocks = markedBlocks(token.tokens, extensions);
         return blocks.length ? [{ type: 'blockquote', blocks }] : [];
     }
     if (token.type === 'list') {
-        const items = token.items.map(item => {
+        const items = token.items!.map(item => {
             const blocks = markedBlocks(item.tokens, extensions);
             if (item.task) {
                 const marker = text(item.checked ? '☑ ' : '☐ ');
-                if (blocks[0]?.type === 'p') blocks[0].kids.unshift(marker);
+                if (blocks[0]?.type === 'p') blocks[0].kids!.unshift(marker);
                 else blocks.unshift({ type: 'p', kids: [marker] });
             }
             return blocks;
@@ -1092,9 +1109,9 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
         const rows = [
             {
                 header: true,
-                cells: token.header.map(cell => looseInlinesToParagraphs(markedInlines(cell.tokens, extensions)))
+                cells: token.header!.map(cell => looseInlinesToParagraphs(markedInlines(cell.tokens, extensions)))
             },
-            ...token.rows.map(row => ({
+            ...token.rows!.map(row => ({
                 header: false,
                 cells: row.map(cell => looseInlinesToParagraphs(markedInlines(cell.tokens, extensions)))
             }))
@@ -1124,8 +1141,8 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
     return fallback ? [{ type: 'p', kids: [text(fallback)] }] : [];
 });
 
-const parseMarkdown = source => {
-    const parser = globalThis.marked;
+const parseMarkdown = (source: unknown) => {
+    const parser = (globalThis as unknown as { marked?: { lexer?: MarkedLexer; marked?: { lexer?: MarkedLexer } } }).marked;
     const lexer = parser && (parser.lexer || parser.marked?.lexer);
     if (typeof lexer !== 'function') throw new Error('Vendored Marked parser is not loaded');
     // Marked recognizes the URL in a bracket video tag as an ordinary
@@ -1154,13 +1171,13 @@ const parseMarkdown = source => {
         }
     );
     const extensions = protectMarkdownExtensions(input);
-    return instagramBlocks(markedBlocks(lexer(extensions.source, { gfm: true, breaks: false }), extensions));
+    return instagramBlocks(markedBlocks(lexer(extensions.source, { gfm: true, breaks: false }), extensions)) as BlockNode[];
 };
 
 // ---- AST -> Peakbagger bracket markup ---------------------------------
 
-const inlinesToBracket = kids => (kids || []).map(node => {
-    if (node.t === 'figure') return `[figure]${inlinesToBracket([node.media])}[figcaption]${
+const inlinesToBracket = (kids: InlineNode[] | undefined): string => (kids || []).map(node => {
+    if (node.t === 'figure') return `[figure]${inlinesToBracket([node.media!])}[figcaption]${
         escapeBracketText(node.caption)}[/figcaption][/figure]`;
     if (node.t === 'text') return escapeBracketText(node.text);
     if (node.t === 'br') return '\n';
@@ -1184,14 +1201,14 @@ const inlinesToBracket = kids => (kids || []).map(node => {
     return `[${node.t}]${inner}[/${node.t}]`;
 }).join('');
 
-const blocksToBracket = blocks => (blocks || []).map(block => {
+const blocksToBracket = (blocks: BlockNode[] | undefined): string => (blocks || []).map(block => {
     if (block.type === 'instagram') return `[a href="${escapeAttribute(block.url)}"]${escapeBracketText(block.url)}[/a]`;
     if (block.type === 'p') return inlinesToBracket(block.kids);
     if (block.type === 'heading') return `[h${block.level}]${inlinesToBracket(block.kids)}[/h${block.level}]`;
     if (block.type === 'blockquote') return `[blockquote]${blocksToBracket(block.blocks)}[/blockquote]`;
     if (block.type === 'list') {
         const tag = block.ordered ? 'ol' : 'ul';
-        return `[${tag}]${block.items.map(item => {
+        return `[${tag}]${block.items!.map(item => {
             let contents = '';
             item.forEach((child, index) => {
                 if (index && child.type === 'p' && item[index - 1].type === 'p') contents += '\n\n';
@@ -1201,7 +1218,7 @@ const blocksToBracket = blocks => (blocks || []).map(block => {
         }).join('')}[/${tag}]`;
     }
     if (block.type === 'table') {
-        return `[table border="1"]${block.rows.map(row => `[tr]${row.cells.map(cell => {
+        return `[table border="1"]${block.rows!.map(row => `[tr]${row.cells.map(cell => {
             const tag = row.header ? 'th' : 'td';
             return `[${tag}]${blocksToBracket(cell)}[/${tag}]`;
         }).join('')}[/tr]`).join('')}[/table]`;
@@ -1215,8 +1232,8 @@ const astToBracket = blocksToBracket;
 
 // ---- AST -> safe editor/preview HTML ----------------------------------
 
-const inlinesToHtml = kids => (kids || []).map(node => {
-    if (node.t === 'figure') return `<figure>${inlinesToHtml([node.media])}<figcaption>${
+const inlinesToHtml = (kids: InlineNode[] | undefined): string => (kids || []).map(node => {
+    if (node.t === 'figure') return `<figure>${inlinesToHtml([node.media!])}<figcaption>${
         escapeHtml(node.caption)}</figcaption></figure>`;
     if (node.t === 'text') return escapeHtml(node.text);
     if (node.t === 'br') return '<br>';
@@ -1240,9 +1257,9 @@ const inlinesToHtml = kids => (kids || []).map(node => {
     return `<${node.t}>${inner}</${node.t}>`;
 }).join('');
 
-const blockToHtml = block => {
+const blockToHtml = (block: BlockNode): string => {
     if (block.type === 'instagram') return `<p><a href="${escapeAttribute(block.url)}">${escapeHtml(block.url)}</a></p>`;
-    if (block.type === 'p' && block.kids.length === 1 && block.kids[0].t === 'figure') {
+    if (block.type === 'p' && block.kids!.length === 1 && block.kids![0].t === 'figure') {
         return inlinesToHtml(block.kids);
     }
     if (block.type === 'p') return `<p>${inlinesToHtml(block.kids)}</p>`;
@@ -1250,7 +1267,7 @@ const blockToHtml = block => {
     if (block.type === 'blockquote') return `<blockquote>${blocksToHtml(block.blocks)}</blockquote>`;
     if (block.type === 'list') {
         const tag = block.ordered ? 'ol' : 'ul';
-        return `<${tag}>${block.items.map(item => {
+        return `<${tag}>${block.items!.map(item => {
             const contents = item.length === 1 && item[0].type === 'p'
                 ? inlinesToHtml(item[0].kids)
                 : blocksToHtml(item);
@@ -1258,9 +1275,9 @@ const blockToHtml = block => {
         }).join('')}</${tag}>`;
     }
     if (block.type === 'table') {
-        const headRows = block.rows.filter(row => row.header);
-        const bodyRows = block.rows.filter(row => !row.header);
-        const rowsHtml = rows => rows.map(row => `<tr>${row.cells.map(cell => `<${row.header ? 'th' : 'td'}>${
+        const headRows = block.rows!.filter(row => row.header);
+        const bodyRows = block.rows!.filter(row => !row.header);
+        const rowsHtml = (rows: TableRow[]) => rows.map(row => `<tr>${row.cells.map(cell => `<${row.header ? 'th' : 'td'}>${
             cell.length === 1 && cell[0].type === 'p' ? inlinesToHtml(cell[0].kids)
                 : blocksToHtml(cell)}</${row.header ? 'th' : 'td'}>`).join('')}</tr>`).join('');
         return `<table>${headRows.length ? `<thead>${rowsHtml(headRows)}</thead>` : ''}${
@@ -1271,30 +1288,30 @@ const blockToHtml = block => {
     return '';
 };
 
-function blocksToHtml(blocks) { return (blocks || []).map(blockToHtml).join(''); }
+function blocksToHtml(blocks: BlockNode[] | undefined): string { return (blocks || []).map(blockToHtml).join(''); }
 
-const astToHtml = (blocks, { editor = false } = {}) => {
+const astToHtml = (blocks: BlockNode[] | undefined, { editor = false } = {}) => {
     const html = blocksToHtml(blocks);
     return html || (editor ? '<p></p>' : '');
 };
 
 // ---- AST -> Markdown --------------------------------------------------
 
-const escapeMarkdownText = value => String(value)
+const escapeMarkdownText = (value: unknown) => String(value)
     .replace(/\\/g, '\\\\')
     .replace(/([`*_\[\]<>])/g, '\\$1');
 
-const codeSpan = value => {
+const codeSpan = (value: unknown) => {
     const longest = Math.max(0, ...(String(value).match(/`+/g) || []).map(run => run.length));
     const fence = '`'.repeat(longest + 1);
     return `${fence}${value}${fence}`;
 };
 
-const inlinesToMarkdown = kids => (kids || []).map(node => {
+const inlinesToMarkdown = (kids: InlineNode[] | undefined): string => (kids || []).map(node => {
     if (node.t === 'figure') {
         // Keep HTML as literal caption text, including Markdown delimiters.
         // Encode pipes so the same representation also survives GFM tables.
-        const media = inlinesToBracket([node.media]).replace(/\[([^\]]+)\]/g, '<$1>');
+        const media = inlinesToBracket([node.media!]).replace(/\[([^\]]+)\]/g, '<$1>');
         const caption = escapeAttribute(node.caption).replace(/[*_`|]/g,
             character => `&#${character.charCodeAt(0)};`);
         return `<figure>${media}<figcaption>${caption}</figcaption></figure>`;
@@ -1314,10 +1331,10 @@ const inlinesToMarkdown = kids => (kids || []).map(node => {
     if (node.t === 'video') {
         const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}`
             : node.height ? `|x${node.height}` : '';
-        return `![Video${size}](${markdownMediaDestination(node.src)})`;
+        return `![Video${size}](${markdownMediaDestination(node.src!)})`;
     }
     if (node.t === 'youtube') {
-        const watch = youtubeWatchUrl(node.src);
+        const watch = youtubeWatchUrl(node.src!);
         if (!watch) return '';
         const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}`
             : node.height ? `|x${node.height}` : '';
@@ -1337,8 +1354,8 @@ const inlinesToMarkdown = kids => (kids || []).map(node => {
     return `<${node.t}>${inner}</${node.t}>`;
 }).join('');
 
-const tableToMarkdown = block => {
-    const sourceRows = block.rows.slice();
+const tableToMarkdown = (block: BlockNode) => {
+    const sourceRows = block.rows!.slice();
     if (!sourceRows.length) return '';
     // GFM pipe cells contain inlines only. Preserve lists and other block
     // content as one allowlisted HTML table instead of flattening the cells.
@@ -1346,20 +1363,20 @@ const tableToMarkdown = block => {
     // breaks so blank lines cannot split Marked's HTML token mid-table.
     if (sourceRows.some(row => row.cells.some(cell => cell.length > 1 || cell.some(child => child.type !== 'p')))) {
         return blocksToBracket([block])
-            .replace(TAG_TOKEN, (raw, closing, tag, attrs) => tag ? `<${closing}${tag}${attrs}>` : raw)
+            .replace(TAG_TOKEN, (raw: string, closing: string, tag: string, attrs: string) => tag ? `<${closing}${tag}${attrs}>` : raw)
             .replace(/\n/g, '<br>');
     }
     const first = sourceRows[0];
     const header = first.header ? first : { header: true, cells: first.cells.map(() => []) };
     const body = first.header ? sourceRows.slice(1) : sourceRows;
-    const row = cells => `| ${cells.map(cell => inlinesToMarkdown(cell[0]?.kids)
+    const row = (cells: BlockNode[][]) => `| ${cells.map(cell => inlinesToMarkdown(cell[0]?.kids)
         .replace(/\n/g, '<br>')
         .replace(/\|/g, '\\|')).join(' | ')} |`;
     return [row(header.cells), `| ${header.cells.map(() => '---').join(' | ')} |`,
         ...body.map(item => row(item.cells))].join('\n');
 };
 
-const listToMarkdown = block => block.items.map((item, index) => {
+const listToMarkdown = (block: BlockNode) => block.items!.map((item, index) => {
     const rendered = blocksToMarkdown(item);
     const lines = rendered.split('\n');
     const marker = block.ordered ? `${index + 1}. ` : '- ';
@@ -1367,24 +1384,24 @@ const listToMarkdown = block => block.items.map((item, index) => {
     return marker + lines.map((line, lineIndex) => lineIndex ? indent + line : line).join('\n');
 }).join('\n');
 
-function blocksToMarkdown(blocks) {
+function blocksToMarkdown(blocks: BlockNode[] | undefined): string {
     return (blocks || []).map(block => {
         if (block.type === 'instagram') return block.url;
         if (block.type === 'p') return inlinesToMarkdown(block.kids);
-        if (block.type === 'heading') return `${'#'.repeat(block.level)} ${inlinesToMarkdown(block.kids)}`;
+        if (block.type === 'heading') return `${'#'.repeat(block.level!)} ${inlinesToMarkdown(block.kids)}`;
         if (block.type === 'blockquote') {
             return blocksToMarkdown(block.blocks).split('\n').map(line => `> ${line}`).join('\n');
         }
         if (block.type === 'list') return listToMarkdown(block);
         if (block.type === 'table') return tableToMarkdown(block);
         if (block.type === 'pre') {
-            const longest = Math.max(2, ...(block.text.match(/`+/g) || []).map(run => run.length));
+            const longest = Math.max(2, ...(block.text!.match(/`+/g) || []).map(run => run.length));
             const fence = '`'.repeat(longest + 1);
             return `${fence}\n${block.text}\n${fence}`;
         }
         if (block.type === 'hr') return '---';
         return '';
-    }).filter(rendered => rendered.trim()).join('\n\n');
+    }).filter(rendered => rendered!.trim()).join('\n\n');
 }
 
 const astToMarkdown = blocksToMarkdown;
@@ -1394,7 +1411,7 @@ const astToMarkdown = blocksToMarkdown;
 // identical to newlines but make the report appear as one long source line.
 // Keep this deliberately narrower than the AST normalizer: Plain mode must
 // preserve every other spelling, including break-shaped tags with attributes.
-const breakTagsToNewlines = source => {
+const breakTagsToNewlines = (source: unknown) => {
     const input = String(source ?? '');
     let output = '';
     let at = 0;
@@ -1424,12 +1441,12 @@ const API = {
     astToBracket,
     astToHtml,
     breakTagsToNewlines,
-    bracketToEditorHtml: source => astToHtml(parseBracket(source), { editor: true }),
-    bracketToPreviewHtml: source => astToHtml(parseBracket(source)),
-    bracketToMarkdown: source => astToMarkdown(parseBracket(source)),
-    markdownToBracket: source => astToBracket(parseMarkdown(source)),
-    markdownToPreviewHtml: source => astToHtml(parseMarkdown(source)),
-    domToBracket: root => astToBracket(domToAst(root))
+    bracketToEditorHtml: (source: unknown) => astToHtml(parseBracket(source), { editor: true }),
+    bracketToPreviewHtml: (source: unknown) => astToHtml(parseBracket(source)),
+    bracketToMarkdown: (source: unknown) => astToMarkdown(parseBracket(source)),
+    markdownToBracket: (source: unknown) => astToBracket(parseMarkdown(source)),
+    markdownToPreviewHtml: (source: unknown) => astToHtml(parseMarkdown(source)),
+    domToBracket: (root: Element) => astToBracket(domToAst(root))
 };
 
 export const reportMarkup = API;

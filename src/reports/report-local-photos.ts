@@ -4,7 +4,7 @@
 import { reportPhoto as Pending } from '../photos/report-photo.js';
 import { photoProject as Project } from '../photos/photo-project.js';
 import { trustedAction as Trusted } from '../ui/trusted-action.js';
-import { richCommands } from './report-rich-editor.js';
+import { richCommands } from './report-rich-editor.ts';
 import type { Editor } from '@tiptap/core';
 
 interface ImageEditTarget { src: string; alt?: string; caption?: string }

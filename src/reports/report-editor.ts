@@ -4,9 +4,9 @@
 // Better Peakbagger — bracket-markup editor for ascent reports and profiles.
 //
 // Replaces the bare JournalText (ascent) or ClimberText (profile) textarea with a rich-text surface (TipTap,
-// schema-locked in src/reports/report-rich-editor.js) or a Markdown source pane
+// schema-locked in src/reports/report-rich-editor.ts) or a Markdown source pane
 // (CodeMirror, src/reports/report-md-editor.js) beside a live preview, converting
-// everything through src/reports/report-markup.js into Peakbagger's square-bracket
+// everything through src/reports/report-markup.ts into Peakbagger's square-bracket
 // markup. The native textarea never leaves the form: it is the single
 // submitted source of truth, kept in sync on every edit and flushed
 // synchronously before any submit or postback, so Save, Cancel, GPS Preview,
@@ -28,11 +28,12 @@ import { createStableText } from '../ui/stable-text.js';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { reportMarkup as Markup } from './report-markup.js';
+import { reportMarkup as Markup } from './report-markup.ts';
+import type { ConversionDiagnostic } from './report-markup.ts';
 import { reportDrafts as ReportDrafts } from './report-drafts.js';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.js';
 import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
-import { createRichEditor, richCommands, richState } from './report-rich-editor.js';
+import { createRichEditor, richCommands, richState } from './report-rich-editor.ts';
 import { createMarkdownEditor } from './report-md-editor.js';
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
@@ -751,7 +752,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         else preview.replaceChildren(...parsed.body.childNodes);
     };
 
-    const diagnosticLabel = (diagnostic: { kind?: string; tag?: string; [field: string]: unknown }) => {
+    const diagnosticLabel = (diagnostic: ConversionDiagnostic) => {
         const tag = `[${diagnostic.tag}]`;
         if (diagnostic.code === 'unsupported-attribute') {
             return `${diagnostic.attribute} on ${tag}`;
@@ -1215,7 +1216,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         toolButtons.undo.disabled = !snapshot.canUndo;
         toolButtons.redo.disabled = !snapshot.canRedo;
         for (const control of swatchButtons) {
-            control.setAttribute('aria-pressed', String(snapshot.color === control.dataset.color));
+            control.setAttribute('aria-pressed', String(snapshot.color === control.dataset.color!));
         }
         captionBar.hidden = !snapshot.imageSelected || manualBoxes.some(box => !box.hidden);
         captionText.set(snapshot.captionActive ? 'Edit caption' : 'Add caption');
@@ -1264,14 +1265,14 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
                 .insertContent({ type: 'text', text: href, marks: [{ type: 'link', attrs: { href } }] })
                 .run();
         } else {
-            richCommands.setLink(richEditor, href);
+            richCommands.setLink(richEditor!, href);
         }
         closeBoxes();
         refreshToolbar();
     };
 
     const removeLink = () => {
-        richCommands.unsetLink(richEditor);
+        richCommands.unsetLink(richEditor!);
         closeBoxes();
         refreshToolbar();
     };
@@ -1340,7 +1341,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
             return;
         }
         clearFieldError(imageSrcInput);
-        richCommands.insertImage(richEditor, { src, caption: imageCaptionInput.value.trim() });
+        richCommands.insertImage(richEditor!, { src, caption: imageCaptionInput.value.trim() });
         closeBoxes();
         refreshToolbar();
     };
@@ -1369,8 +1370,8 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
             return;
         }
         clearFieldError(videoSrcInput);
-        if (youtubeSrc) richCommands.insertYouTube(richEditor, youtubeSrc);
-        else richCommands.insertVideo(richEditor, src);
+        if (youtubeSrc) richCommands.insertYouTube(richEditor!, youtubeSrc);
+        else richCommands.insertVideo(richEditor!, src);
         closeBoxes();
         refreshToolbar();
     };
@@ -1391,18 +1392,18 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         control.addEventListener('mousedown', event => event.preventDefault());
         control.addEventListener('click', () => {
             closeBoxes();
-            richCommands.setColor(richEditor, control.dataset.color);
+            richCommands.setColor(richEditor!, control.dataset.color!);
         });
     }
     swatchClear.addEventListener('mousedown', event => event.preventDefault());
     swatchClear.addEventListener('click', () => {
         closeBoxes();
-        richCommands.unsetColor(richEditor);
+        richCommands.unsetColor(richEditor!);
     });
 
     blockFormat.addEventListener('change', () => {
         closeBoxes();
-        richCommands.setBlock(richEditor, blockFormat.value);
+        richCommands.setBlock(richEditor!, blockFormat.value);
     });
 
     linkApply.addEventListener('click', applyLink);
@@ -1466,13 +1467,13 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
             onStateChange: () => refreshToolbar(),
             shortcuts: { 'Mod-k': openLinkBox },
             resolveLocalImage: (src: string) => localPhotos ? localPhotos.resolvePreview(src) : Promise.resolve(src),
-            editLocalImage: isProfile ? undefined : (event: Event, src: string, getPos: () => number) => {
+            editLocalImage: isProfile ? undefined : (event: Event, src: string, getPos: () => number | undefined) => {
                 if (localPhotos!.busy()) return;
                 const pos = getPos();
-                if (!Number.isInteger(pos)) return;
+                if (pos === undefined || !Number.isInteger(pos)) return;
                 void launchPhotoEditor(event, PendingPhoto.id(src), {
                     src, getPos, editor: richEditor, alt: richEditor!.state.doc.nodeAt(pos)?.attrs.alt || '',
-                    caption: richCommands.imageCaption(richEditor, pos),
+                    caption: richCommands.imageCaption(richEditor!, pos),
                 });
             }
         });
@@ -1635,10 +1636,10 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         }));
         // The report remains editable while Photo Topos is open. Apply the
         // returned caption only if that exact occurrence still has its old text.
-        if (typeof message.caption === 'string' && richCommands.imageCaption(richEditor, pos) === target.caption) {
+        if (typeof message.caption === 'string' && richCommands.imageCaption(richEditor!, pos) === target.caption) {
             const caption = message.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_TEXT_LIMIT);
             if (caption !== target.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_TEXT_LIMIT)) {
-                richCommands.setImageCaption(richEditor, pos, caption);
+                richCommands.setImageCaption(richEditor!, pos, caption);
             }
         }
         imageEditTargets.delete(message.imageEditId);
