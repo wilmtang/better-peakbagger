@@ -175,7 +175,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.ts` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
-| Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
+| Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
 | Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `src/theme/panel-theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
@@ -1133,7 +1133,7 @@ stable IDs, future-link compatibility, and the mixed-version sync limitation.
 
 ## Deep dive: ascent filtering and in-page sorting
 
-`src/ascent/ascent-filter.js` runs on `PeakAscents.aspx`, personal `ClimbListC.aspx`
+`src/ascent/ascent-filter.ts` runs on `PeakAscents.aspx`, personal `ClimbListC.aspx`
 views, and the Buddy List at `report/report.aspx?r=b`. It resolves columns from
 header text because Peakbagger serves different column sets for year, unit, and
 detail variants. Rows are modeled from the page that was actually returned; the
@@ -1212,7 +1212,7 @@ below remains independent of ignored membership.
 | `src/background/buddy-store.js` | Pending Buddy reservations in the shared climber-list lane; confirmed target cache reconciliation and configured custom-favorite updates, with partial-success recovery |
 | `src/favorites/buddy-cache.js`, `src/background/buddy-cache-store.js` | Versioned full-report publication through the worker list lane; stale responses and rendered reports cannot overwrite later confirmed Buddy changes |
 | `src/favorites/report-adapters.js`, `src/favorites/peak-report-filter.js` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
-| `src/ascent/ascent-filter.js` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
+| `src/ascent/ascent-filter.ts` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
 | `src/ascent/ascent-report-visibility.js` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
 | `src/background/climber-list-sync.js` | Device opt-in, scoped common baseline, reviewed transfer/setup/conflicts, durable proposals, restart recovery and post-upload local-edit rebase |
 | `options/ignored-backup.js` | Settings transfer/sync UI, scoped impact/version preview and guarded whole-list Undo |
@@ -1279,7 +1279,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | Module or surface | Runtime boundary | Owns | Does not own |
 | --- | --- | --- | --- |
 | `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, native Buddy-action labels, stable signatures, effective membership, comparators, and fuzzy scoring | Applying a mutation to the stored list, DOM globals, storage, fetch, extension messaging, or UI |
-| `src/ascent/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
+| `src/ascent/ascent-filter.ts` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
 | `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, full-navigation and in-place postback refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
 | `options/favorites.js` (on `options/favorites.html`) | Standalone list page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, and reversible bulk actions including the mirror confirm/undo | Direct custom-list persistence, GitHub token access, or repository writes |
 | `options/favorites-backup.js` | Settings → Backup & sync | The favorites GitHub backup, restore with its own confirm/undo, and the auto-backup gate | List rendering, source selection, or Buddy fetching |
@@ -1422,7 +1422,7 @@ means the synced mode can arrive on a second browser while its device-local
 custom list is empty; the user must populate it locally or explicitly restore
 `favorite-climbers.json`.
 
-On a full `PeakAscents.aspx` page, `src/ascent/ascent-filter.js` extracts the first
+On a full `PeakAscents.aspx` page, `src/ascent/ascent-filter.ts` extracts the first
 `climber.aspx?cid=...` profile identity from each ascent row. Rows without a
 valid climber id never match. It then marks each record by `Set.has(cid)`. The
 source-specific chip reads **Climbing buddies** or **Fav climbers** and shows

@@ -20,6 +20,90 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 import { beginBuddyCacheRead, publishBuddyCache } from '../favorites/buddy-cache.js';
 
+type BetaFilterKey = 'beta' | 'tr' | 'gps' | 'link' | 'fav';
+type SortDirection = 'asc' | 'desc';
+type SortValue = number | string | (number | string)[];
+
+interface SortTarget {
+    href: string;
+    columnIndex: number;
+    key: string;
+    dir: SortDirection | null;
+}
+
+interface SortableColumn {
+    id: string;
+    index: number;
+    key: string;
+    label: string;
+    defaultDir: SortDirection;
+    cell: HTMLTableCellElement;
+    control: HTMLButtonElement | null;
+    arrow: HTMLSpanElement | null;
+}
+
+interface AscentRecord {
+    row: HTMLTableRowElement;
+    climberId: number | null;
+    originalDisplay: string;
+    words: number;
+    gps: boolean;
+    link: boolean;
+    beta: boolean;
+    fav?: boolean;
+    visible: boolean;
+    sortIndex?: number;
+    sortValues?: Map<string, SortValue>;
+}
+
+interface AscentSection {
+    row: HTMLTableRowElement;
+    items: AscentRecord[];
+    visible: boolean;
+}
+
+interface FilterState {
+    beta: boolean;
+    tr: boolean;
+    minWords: number;
+    gps: boolean;
+    link: boolean;
+    fav: boolean;
+    peakOrder: BetaFilterKey[];
+    personalOrder: BetaFilterKey[];
+}
+
+interface IgnoredState {
+    list: { entries: { cid: number }[] } | null;
+    error: string;
+}
+
+interface FavoriteSourceState {
+    ids?: Set<number>;
+    mode?: 'buddies' | 'custom';
+    error?: string;
+    available?: boolean;
+    loading?: boolean;
+    accountRequired?: boolean;
+}
+
+interface PointerDragState {
+    pointerId: number;
+    key: BetaFilterKey;
+    item: HTMLSpanElement;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    startOffsetLeft: number;
+    startOffsetTop: number;
+    translateX: number;
+    translateY: number;
+    startOrder: BetaFilterKey[];
+    dragging: boolean;
+    chip: HTMLButtonElement;
+}
+
 const pageParams = new URLSearchParams(location.search);
 const pagePathname = location.pathname.toLowerCase();
 const isAscentListPage = /\/climber\/(?:peakascents|climblistc)\.aspx$/.test(pagePathname);
@@ -34,28 +118,46 @@ const isSorterOnlyPage = isBuddyListPage || isPeakListPage;
 // definition reuse it instead of adding a storage round-trip to the critical
 // path. Sorter-only pages do not need ascent settings. Resolves to the
 // cleaned settings, or null on any read failure.
-const settingsPromise = isAscentListPage
+const settingsPromise: Promise<Record<string, unknown> | null> = isAscentListPage
     ? S.requireCurrent().catch(() => null)
     : Promise.resolve(null);
-let ignoredState = { list: null, error: '' }, favoriteSourceState = null;
-let updateIgnored = () => {}, updateFavoriteSource = () => {};
-const ignoredReader = isPeakAscentsPage ? observeIgnored(chrome, state => {
+let ignoredState: IgnoredState = { list: null, error: '' };
+let favoriteSourceState: FavoriteSourceState | null = null;
+let updateIgnored = () => {};
+let updateFavoriteSource = () => {};
+const ignoredReader = isPeakAscentsPage ? observeIgnored(chrome, (state: IgnoredState) => {
     ignoredState = state; updateIgnored();
 }) : null;
 let favoriteSettings = settingsPromise;
-const favoriteSource = isPeakAscentsPage ? createFavoriteSource({ api: chrome, doc: document,
-    settings: { requireCurrent: () => favoriteSettings, subscribe: listener => S.subscribe(config => {
+const makeFavoriteSource = createFavoriteSource as (options: {
+    api: typeof chrome;
+    doc: Document;
+    settings: {
+        requireCurrent: () => Promise<Record<string, unknown> | null>;
+        subscribe: (listener: (config: Record<string, unknown>) => void) => unknown;
+    };
+    onState: (state: FavoriteSourceState) => void;
+}) => {
+    ready: Promise<unknown>;
+    reconcile: () => void;
+    refresh: (options?: { force?: boolean; active?: boolean }) => Promise<unknown>;
+    retry: () => Promise<unknown>;
+    resume: () => Promise<unknown>;
+    pause: () => void;
+};
+const favoriteSource = isPeakAscentsPage ? makeFavoriteSource({ api: chrome, doc: document,
+    settings: { requireCurrent: () => favoriteSettings, subscribe: (listener: (config: Record<string, unknown>) => void) => S.subscribe((config: Record<string, unknown>) => {
         favoriteSettings = Promise.resolve(config); listener(config);
     }) },
-    onState: state => { favoriteSourceState = state; updateFavoriteSource(); } }) : null;
+    onState: (state: FavoriteSourceState) => { favoriteSourceState = state; updateFavoriteSource(); } }) : null;
 
 // Chip toggles and the word threshold remain page-local. Order is synced;
 // existing page-local orders seed the settings on the first list visit.
 
 const STORAGE_KEY = 'pbAscentBetaFilter.v1';
-const PEAK_FILTER_ORDER = Schema.PEAK_FILTER_ORDER;
-const PERSONAL_FILTER_ORDER = Schema.PERSONAL_FILTER_ORDER;
-const defaultState = () => ({
+const PEAK_FILTER_ORDER = Schema.PEAK_FILTER_ORDER as readonly BetaFilterKey[];
+const PERSONAL_FILTER_ORDER = Schema.PERSONAL_FILTER_ORDER as readonly BetaFilterKey[];
+const defaultState = (): FilterState => ({
     beta: false,
     tr: false,
     minWords: 1,
@@ -66,47 +168,51 @@ const defaultState = () => ({
     personalOrder: [...PERSONAL_FILTER_ORDER],
 });
 
-const cleanOrder = (value, expected) => Array.isArray(value)
+const cleanOrder = (value: unknown, expected: readonly BetaFilterKey[]): BetaFilterKey[] => Array.isArray(value)
         && value.length === expected.length
         && new Set(value).size === expected.length
-        && value.every(key => expected.includes(key))
+        && value.every((key): key is BetaFilterKey => typeof key === 'string' && (expected as readonly string[]).includes(key))
     ? [...value]
     : [...expected];
 
-const cleanState = saved => {
+const cleanState = (saved: unknown): FilterState => {
     if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return defaultState();
+    const record = saved as Record<string, unknown>;
     const state = defaultState();
-    for (const key of ['beta', 'tr', 'gps', 'link', 'fav']) {
-        if (typeof saved[key] === 'boolean') state[key] = saved[key];
+    for (const key of ['beta', 'tr', 'gps', 'link', 'fav'] as const) {
+        if (typeof record[key] === 'boolean') state[key] = record[key];
     }
-    if (Number.isSafeInteger(saved.minWords) && saved.minWords > 0) state.minWords = saved.minWords;
-    state.peakOrder = cleanOrder(saved.peakOrder, PEAK_FILTER_ORDER);
-    state.personalOrder = cleanOrder(saved.personalOrder, PERSONAL_FILTER_ORDER);
+    if (typeof record.minWords === 'number' && Number.isSafeInteger(record.minWords) && record.minWords > 0) {
+        state.minWords = record.minWords;
+    }
+    state.peakOrder = cleanOrder(record.peakOrder, PEAK_FILTER_ORDER);
+    state.personalOrder = cleanOrder(record.personalOrder, PERSONAL_FILTER_ORDER);
     return state;
 };
 
-const loadState = () => {
+const loadState = (): FilterState => {
     try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const saved: unknown = raw ? JSON.parse(raw) : null;
         return cleanState(saved);
-    } catch (e) { /* corrupted state -> defaults */ }
+    } catch { /* corrupted state -> defaults */ }
     return defaultState();
 };
 
-const saveState = state => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+const saveState = (state: FilterState) => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* storage unavailable */ }
 };
 
 // Cells that "look empty" may contain a literal &nbsp; depending on column.
-const normalize = text => (text || '').replace(/\u00a0/g, ' ').trim();
-const canonicalSortKey = key => {
+const normalize = (text: string | null | undefined) => (text || '').replace(/\u00a0/g, ' ').trim();
+const canonicalSortKey = (key: string | null | undefined) => {
     const lower = (key || '').toLowerCase();
-    return {
+    return ({
         ascent: 'ascentdate',
         ascentdated: 'ascentdate',
         elev: 'elevft',
         prom: 'promft'
-    }[lower] || lower;
+    } as Record<string, string | undefined>)[lower] || lower;
 };
 
 // --- Early table-sort click guard -----------------------------------------
@@ -114,14 +220,15 @@ const canonicalSortKey = key => {
 // large ascent list the header is clickable well before then, so hold native
 // sort-link clicks until the sorter has decided whether it owns this table.
 // Links outside table headers (year jumps, unit toggles, etc.) are untouched.
-const tableSortTarget = target => {
+const tableSortTarget = (target: EventTarget | null): SortTarget | null => {
     if (!isAscentListPage && !isSorterOnlyPage) return null;
-    const anchor = target && target.closest ? target.closest('a[href]') : null;
+    const element = target instanceof Element ? target : null;
+    const anchor = element?.closest<HTMLAnchorElement>('a[href]') ?? null;
     if (!anchor) return null;
-    const header = anchor.closest('th');
+    const header = anchor.closest<HTMLTableCellElement>('th');
     if (!header) return null;
-    let url;
-    try { url = new URL(anchor.href, location.href); } catch (e) { return null; }
+    let url: URL;
+    try { url = new URL(anchor.href, location.href); } catch { return null; }
     const rawKey = url.searchParams.get('sort') || '';
     const isBuddyHeader = isBuddyListPage && !!header.closest('#RGridView');
     if (!rawKey && !isBuddyHeader) return null;
@@ -139,8 +246,8 @@ const tableSortTarget = target => {
 
 let sortReady = false;       // instant sorter is wired and owns these clicks
 let sortOptOut = false;      // page isn't a candidate: let clicks navigate
-let pendingSortTarget = null;// a click held before the sorter decided
-let applyInstantSort = null; // (target) => reorder in the DOM, set once ready
+let pendingSortTarget: SortTarget | null = null; // a click held before the sorter decided
+let applyInstantSort: ((target: { columnIndex: number; key: string; dir: SortDirection | null }) => void) | null = null;
 let userSorted = false;      // a header sort the user chose must beat the auto-flip
 
 // A modified click belongs to the browser. Until the sorter replaces them,
@@ -153,7 +260,7 @@ let userSorted = false;      // a header sort the user chose must beat the auto-
 // order is still the one Peakbagger served, so `userSorted` must stay false and
 // the newest-first flip must still apply here. src/ui/section-nav.js holds the
 // same bar for the settings sidebar.
-const isModifiedClick = event => event.defaultPrevented || event.button !== 0
+const isModifiedClick = (event: MouseEvent) => event.defaultPrevented || event.button !== 0
     || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 
 document.addEventListener('click', event => {
@@ -165,7 +272,7 @@ document.addEventListener('click', event => {
     // the newest-first auto-flip never fights a sort the user picked.
     userSorted = true;
     event.preventDefault();
-    if (sortReady) applyInstantSort(target);
+    if (sortReady && applyInstantSort) applyInstantSort(target);
     else pendingSortTarget = target;   // hold until the sorter decides
 }, true);
 
@@ -178,7 +285,7 @@ const optOutInstantSort = () => {
     if (pendingSortTarget) {
         const { href } = pendingSortTarget;
         pendingSortTarget = null;
-        try { location.href = href; } catch (e) { /* sandboxed */ }
+        try { location.href = href; } catch { /* sandboxed */ }
     }
 };
 
@@ -193,10 +300,20 @@ const setupInstantTableSort = ({
     headerRow, sections, preamble, rows, dataRows,
     sortEveryHeader = false, inferActiveSort = false, preserveUrl = false,
     defaultSortKey = 'ascentdate'
+}: {
+    headerRow: HTMLTableRowElement;
+    sections: AscentSection[];
+    preamble: AscentRecord[];
+    rows: HTMLTableRowElement[];
+    dataRows: AscentRecord[];
+    sortEveryHeader?: boolean;
+    inferActiveSort?: boolean;
+    preserveUrl?: boolean;
+    defaultSortKey?: string;
 }) => {
-    const keyOf = anchor => {
+    const keyOf = (anchor: HTMLAnchorElement) => {
         try { return new URL(anchor.href, location.href).searchParams.get('sort') || ''; }
-        catch (e) { return ''; }
+        catch { return ''; }
     };
     const numericKeys = new Set([
         'words', 'vertpeakft', 'tripupft', 'totalkm', 'tripkm',
@@ -208,8 +325,8 @@ const setupInstantTableSort = ({
     ]);
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-    const sortable = Array.from(headerRow.cells).flatMap((cell, index) => {
-        const anchors = Array.from(cell.querySelectorAll('a[href]'));
+    const sortable: SortableColumn[] = Array.from(headerRow.cells).flatMap((cell, index) => {
+        const anchors = Array.from(cell.querySelectorAll<HTMLAnchorElement>('a[href]'));
         const primary = anchors.find(anchor => keyOf(anchor).toLowerCase() !== 'ascentdated');
         const rawKey = primary ? keyOf(primary) : '';
         if (!rawKey && !sortEveryHeader) return [];
@@ -237,7 +354,7 @@ const setupInstantTableSort = ({
         record.sortIndex = index;
         record.sortValues = new Map();
     });
-    const readValueAt = (record, column) => {
+    const readValueAt = (record: AscentRecord, column: SortableColumn): SortValue => {
         const cell = record.row.cells[column.index];
         if (!cell) return '';
 
@@ -272,13 +389,14 @@ const setupInstantTableSort = ({
             normalize(image.title || image.alt || image.getAttribute('src'))
         ).join('|');
     };
-    const valueAt = (record, column) => {
-        if (!record.sortValues.has(column.id)) {
-            record.sortValues.set(column.id, readValueAt(record, column));
+    const valueAt = (record: AscentRecord, column: SortableColumn): SortValue => {
+        const map = record.sortValues!;
+        if (!map.has(column.id)) {
+            map.set(column.id, readValueAt(record, column));
         }
-        return record.sortValues.get(column.id);
+        return map.get(column.id)!;
     };
-    const compareValues = (left, right) => {
+    const compareValues = (left: SortValue, right: SortValue): number => {
         if (Array.isArray(left) && Array.isArray(right)) {
             for (let i = 0; i < Math.max(left.length, right.length); i++) {
                 const compared = compareValues(left[i] ?? '', right[i] ?? '');
@@ -289,12 +407,12 @@ const setupInstantTableSort = ({
         if (typeof left === 'number' && typeof right === 'number') return left - right;
         return collator.compare(String(left), String(right));
     };
-    const compareRecords = (left, right, column, dir, stable = true) => {
+    const compareRecords = (left: AscentRecord, right: AscentRecord, column: SortableColumn, dir: SortDirection, stable = true) => {
         const compared = compareValues(valueAt(left, column), valueAt(right, column));
         if (compared) return dir === 'asc' ? compared : -compared;
-        return stable ? left.sortIndex - right.sortIndex : 0;
+        return stable ? (left.sortIndex ?? 0) - (right.sortIndex ?? 0) : 0;
     };
-    const inferDirection = column => {
+    const inferDirection = (column: SortableColumn): SortDirection | null => {
         let ascending = true;
         let descending = true;
         let varied = false;
@@ -316,11 +434,11 @@ const setupInstantTableSort = ({
     const years = sections
         .map(section => parseInt(normalize(section.row.textContent), 10))
         .filter(Number.isFinite);
-    const servedDateDir = years.length > 1
+    const servedDateDir: SortDirection = years.length > 1
         ? (years[0] > years[years.length - 1] ? 'desc' : 'asc')
         : (requestedSortRaw === 'ascentdated' ? 'desc' : 'asc');
     const servedOrder = rows.slice(rows.indexOf(headerRow) + 1);
-    const reversedDateOrder = [];
+    const reversedDateOrder: HTMLTableRowElement[] = [];
     for (let i = sections.length - 1; i >= 0; i--) {
         reversedDateOrder.push(sections[i].row);
         for (let j = sections[i].items.length - 1; j >= 0; j--) {
@@ -335,17 +453,17 @@ const setupInstantTableSort = ({
     const otherRows = servedOrder.filter(row => !knownRows.has(row));
     reversedDateOrder.push(...otherRows);
 
-    const appendRecords = (records, showSections) => {
+    const appendRecords = (records: AscentRecord[], showSections: boolean) => {
         const fragment = document.createDocumentFragment();
         for (const section of sections) section.row.hidden = !showSections;
         for (const record of records) fragment.appendChild(record.row);
         for (const row of otherRows) fragment.appendChild(row);
         for (const section of sections) fragment.appendChild(section.row);
-        headerRow.parentNode.appendChild(fragment);
+        headerRow.parentNode?.appendChild(fragment);
     };
 
-    let currentColumn = null;
-    let currentDir = null;
+    let currentColumn: SortableColumn | null = null;
+    let currentDir: SortDirection | null = null;
     if (inferActiveSort) {
         // GridView pages do not expose their active sort in the URL. Mark a
         // column active only when its displayed values prove a direction;
@@ -369,7 +487,7 @@ const setupInstantTableSort = ({
         }
     }
 
-    const directionWords = (column, dir) => {
+    const directionWords = (column: SortableColumn, dir: SortDirection) => {
         if (column.key === 'ascentdate') return dir === 'asc' ? 'oldest first' : 'newest first';
         return dir === 'asc' ? 'ascending' : 'descending';
     };
@@ -377,23 +495,23 @@ const setupInstantTableSort = ({
         for (const column of sortable) {
             const active = currentColumn && currentColumn.id === column.id;
             column.cell.removeAttribute('aria-sort');
-            column.arrow.textContent = active ? (currentDir === 'asc' ? ' ▲' : ' ▼') : '';
-            if (active) {
+            column.arrow!.textContent = active ? (currentDir === 'asc' ? ' ▲' : ' ▼') : '';
+            if (active && currentDir) {
                 const current = directionWords(column, currentDir);
-                const nextDir = currentDir === 'asc' ? 'desc' : 'asc';
+                const nextDir: SortDirection = currentDir === 'asc' ? 'desc' : 'asc';
                 const next = directionWords(column, nextDir);
                 column.cell.setAttribute('aria-sort', currentDir === 'asc' ? 'ascending' : 'descending');
-                column.control.title = `Sorted ${current}. Click to sort ${next}.`;
-                column.control.setAttribute('aria-label', `${column.label}, sorted ${current}. Sort ${next}.`);
+                column.control!.title = `Sorted ${current}. Click to sort ${next}.`;
+                column.control!.setAttribute('aria-label', `${column.label}, sorted ${current}. Sort ${next}.`);
             } else {
                 const first = directionWords(column, column.defaultDir);
-                column.control.title = `Sort ${first}.`;
-                column.control.setAttribute('aria-label', `${column.label}. Sort ${first}.`);
+                column.control!.title = `Sort ${first}.`;
+                column.control!.setAttribute('aria-label', `${column.label}. Sort ${first}.`);
             }
         }
     };
 
-    const apply = (column, dir) => {
+    const apply = (column: SortableColumn | undefined, dir: SortDirection) => {
         if (!column || (currentColumn && currentColumn.id === column.id && currentDir === dir)) return;
 
         if (column.key === 'ascentdate' && dateServed) {
@@ -401,7 +519,7 @@ const setupInstantTableSort = ({
             const order = dir === servedDateDir ? servedOrder : reversedDateOrder;
             const fragment = document.createDocumentFragment();
             for (const row of order) fragment.appendChild(row);
-            headerRow.parentNode.appendChild(fragment);
+            headerRow.parentNode?.appendChild(fragment);
         } else {
             const sorted = dataRows.slice().sort((left, right) => compareRecords(left, right, column, dir));
             appendRecords(sorted, false);
@@ -418,7 +536,7 @@ const setupInstantTableSort = ({
                 const url = new URL(location.href);
                 url.searchParams.set('sort', dir === 'asc' ? 'ascentdate' : 'ascentdated');
                 history.replaceState(history.state, '', url.href);
-            } catch (e) { /* sandboxed */ }
+            } catch { /* sandboxed */ }
         }
     };
 
@@ -439,7 +557,7 @@ const setupInstantTableSort = ({
         column.cell.replaceChildren(control);
 
         const toggle = () => {
-            const dir = currentColumn && currentColumn.id === column.id
+            const dir: SortDirection = currentColumn && currentColumn.id === column.id
                 ? (currentDir === 'asc' ? 'desc' : 'asc')
                 : column.defaultDir;
             apply(column, dir);
@@ -516,7 +634,7 @@ html[data-bpb-theme="dark"] {
     --pbaf-chip-text: #d7d2c9;
     --pbaf-chip-off-text: #a29c92;
     --pbaf-chip-on-bg: #2f6b3f;
-    --pbaf-chip-on-border: #3f8a54;
+    --pbaf-chip-on-border: #69b58a;
     --pbaf-chip-on-text: #ffffff;
     --pbaf-count: #a29c92;
     --pbaf-count-on: #c9e8d4;
@@ -559,13 +677,20 @@ html[data-bpb-theme="dark"] {
 .pbaf-chip:disabled:hover { border-color: var(--pbaf-chip-border); color: var(--pbaf-chip-off-text); }
 .pbaf-chip .pbaf-count { font-size: 11px; color: var(--pbaf-count); font-variant-numeric: tabular-nums; }
 .pbaf-chip[aria-pressed="true"] .pbaf-count { color: var(--pbaf-count-on); }
-.pbaf-tick { visibility: hidden; font-weight: 700; }
-.pbaf-chip[aria-pressed="true"] .pbaf-tick { visibility: visible; }
-.pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; transition: opacity .12s; }
-.pbaf-settings-link { appearance: none; border: 0; background: none; padding: 0; color: var(--pbaf-link);
-    font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-.pbaf-settings-link:hover { color: var(--pbaf-hover-text); }
+.pbaf-beta-group { gap: 0; align-items: stretch; }
+.pbaf-beta-group > .pbaf-chip { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 9px; }
+.pbaf-beta-group[data-pbaf-dragging] > .pbaf-chip { border-radius: 999px; }
+.pbaf-beta-definition { display: inline-flex; align-items: stretch; color: var(--pbaf-muted); font-size: 11px; transition: opacity .12s; }
+.pbaf-settings-link { appearance: none; display: inline-flex; align-items: center; justify-content: center;
+    padding: 3px 9px 3px 7px; border: 1px solid var(--pbaf-chip-border); border-left: 0; border-radius: 0 999px 999px 0;
+    background: var(--pbaf-chip-bg); color: var(--pbaf-count); font: inherit; cursor: pointer;
+    transition: border-color .12s, background .12s, color .12s; }
+.pbaf-chip[aria-pressed="true"] + .pbaf-beta-definition .pbaf-settings-link {
+    background: var(--pbaf-chip-on-bg); border-color: var(--pbaf-chip-on-border); color: var(--pbaf-count-on); }
+.pbaf-settings-link:hover, .pbaf-chip[aria-pressed="true"] + .pbaf-beta-definition .pbaf-settings-link:hover {
+    border-color: var(--pbaf-hover-border); color: var(--pbaf-hover-text); }
 .pbaf-settings-link:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
+.pbaf-settings-icon { display: block; flex-shrink: 0; }
 .pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: var(--pbaf-muted); transition: opacity .12s; }
 .pbaf-words[hidden] { display: none; }
 .pbaf-words input { width: 4.6em; padding: 2px 5px; border: 1px solid var(--pbaf-chip-border); border-radius: 6px; font: inherit; color: var(--pbaf-input-text); background: var(--pbaf-chip-bg); }
@@ -595,7 +720,7 @@ html[data-bpb-theme="dark"] {
 .pbaf-reset:hover { color: var(--pbaf-hover-text); }
 .pbaf-reset:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-reset[hidden] { display: none; }
-.pbaf-order-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.pbaf-order-status, .pbaf-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .pbaf-note { color: var(--pbaf-muted); }
 /* The site sheet repaints every <a> with !important, and a link cannot carry
    the pbaf-control exemption without also opting out of the site's link
@@ -608,7 +733,7 @@ html[data-bpb-theme="dark"] {
 .pbaf-table-sort:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-sort-arrow { font-size: 10px; opacity: .85; }
 @media (prefers-reduced-motion: reduce) {
-    .pbaf-chip, .pbaf-beta-definition, .pbaf-words { transition: none; }
+    .pbaf-chip, .pbaf-beta-definition, .pbaf-settings-link, .pbaf-words { transition: none; }
 }
 `;
 
@@ -630,7 +755,7 @@ const buildBarShell = () => {
 
 // A wide revealed row must not widen the legacy page's enclosing table and
 // rewrap the introduction above the toolbar. Keep overflow within the list.
-const containAscentTable = table => {
+const containAscentTable = (table: HTMLTableElement) => {
     if (!isPeakAscentsPage) return;
     const scroller = document.createElement('div'); scroller.className = 'pbaf-table-scroll';
     scroller.tabIndex = 0; scroller.setAttribute('role', 'region'); scroller.setAttribute('aria-label', 'Ascent list');
@@ -639,7 +764,7 @@ const containAscentTable = table => {
 
 // Measure the complete, still-unfiltered list once. Native auto layout should
 // keep sizing to content, but hiding its widest row must not shrink a column.
-const preserveAscentColumnWidths = header => {
+const preserveAscentColumnWidths = (header: HTMLTableRowElement) => {
     const cells = Array.from(header.cells);
     const widths = cells.map(cell => cell.getBoundingClientRect().width);
     cells.forEach((cell, index) => {
@@ -651,7 +776,7 @@ const preserveAscentColumnWidths = header => {
 
 // Reserve only the caption's natural size. Hidden controls remain display:none,
 // unfocusable and absent from accessibility; the sizing copy is never announced.
-const reservedCaption = (element, caption, className) => {
+const reservedCaption = (element: HTMLElement, caption: string, className: string) => {
     const slot = document.createElement('span'); slot.className = className;
     const size = document.createElement('span'); size.className = 'pbaf-reservation';
     size.setAttribute('aria-hidden', 'true'); size.textContent = caption;
@@ -675,11 +800,12 @@ const readRenderedBuddyList = () => {
 
 // Options reads only its own helper tab. A storage notification from another
 // page is a wake-up cue, never proof that this navigation succeeded.
-if (isBuddyListPage) chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+if (isBuddyListPage) chrome.runtime.onMessage.addListener((message: { type?: string } | null, sender, sendResponse) => {
     // Chrome 128 omits the URL on tabs.sendMessage but authenticates the
     // extension origin. Keep the narrower page check whenever a URL exists.
+    const senderOrigin = (sender as chrome.runtime.MessageSender & { origin?: string }).origin;
     const ownPage = sender.url === undefined
-        ? sender.origin === chrome.runtime.getURL('').replace(/\/$/, '')
+        ? senderOrigin === chrome.runtime.getURL('').replace(/\/$/, '')
         : typeof sender.url === 'string' && sender.url.split(/[?#]/)[0] === chrome.runtime.getURL('options/favorites.html');
     if (message?.type !== F.BUDDY_PAGE_READ_TYPE || sender.id !== chrome.runtime.id || !ownPage) return;
     sendResponse({ url: location.href, cache: readRenderedBuddyList() });
@@ -688,19 +814,21 @@ if (isBuddyListPage) chrome.runtime.onMessage.addListener((message, sender, send
 const cacheRenderedBuddyList = async () => {
     const cache = readRenderedBuddyList();
     if (!cache) return;
-    const snapshot = await beginBuddyCacheRead(chrome, performance.timeOrigin);
+    const beginRead = beginBuddyCacheRead as (api: typeof chrome, observedAt?: number | null) => Promise<unknown>;
+    const snapshot = await beginRead(chrome, performance.timeOrigin);
     await publishBuddyCache(chrome, snapshot, cache);
 };
 
 // The compact view (no y= in the URL) only renders Climber + Date columns,
 // so there is nothing to filter on. Point the user at the full table instead.
-const renderCompactNotice = table => {
+const renderCompactNotice = (table: HTMLTableElement) => {
     const params = new URLSearchParams(location.search);
     const pid = params.get('pid');
     if (!pid) return;
 
     const target = new URLSearchParams({ pid, y: '9999', sort: params.get('sort') || 'ascentdate' });
-    if (params.get('u')) target.set('u', params.get('u'));
+    const unit = params.get('u');
+    if (unit) target.set('u', unit);
 
     const bar = buildBarShell();
     bar.style.position = 'static';
@@ -712,11 +840,11 @@ const renderCompactNotice = table => {
     link.textContent = 'Show all years with full details →';
     note.appendChild(link);
     bar.appendChild(note);
-    table.parentNode.insertBefore(bar, table);
+    table.parentNode?.insertBefore(bar, table);
     containAscentTable(table);
 };
 
-const mountCompactIgnores = (table, records, sections) => {
+const mountCompactIgnores = (table: HTMLTableElement, records: AscentRecord[], sections: AscentSection[]) => {
     reportStyle(document);
     const tools = document.createElement('span'); tools.className = 'bpb-report-tools';
     const status = document.createElement('span'); status.className = 'pbaf-status'; status.setAttribute('role', 'status');
@@ -727,12 +855,13 @@ const mountCompactIgnores = (table, records, sections) => {
     if (!table.id) table.id = 'bpb-ascent-list';
     const button = utilityButton(document, 'Show ignored', () => { reveal = !reveal; render(); });
     button.setAttribute('aria-controls', table.id);
-    const retry = utilityButton(document, 'Retry', () => { void ignoredReader.refresh(); });
-    tools.append(status, button, detail, error, retry); document.getElementById('pbaf-bar').append(tools);
+    const retry = utilityButton(document, 'Retry', () => { void ignoredReader?.refresh(); });
+    tools.append(status, button, detail, error, retry);
+    document.getElementById('pbaf-bar')?.append(tools);
     const render = () => {
         const ids = new Set(ignoredState.list?.entries.map(entry => entry.cid) || []);
         const result = I.visibility(records, ids, () => true, reveal);
-        const visible = new Set(result.visible);
+        const visible = new Set<AscentRecord>(result.visible);
         for (const record of records) {
             record.visible = visible.has(record);
             record.row.style.display = record.visible ? record.originalDisplay : 'none';
@@ -748,14 +877,14 @@ const mountCompactIgnores = (table, records, sections) => {
         error.textContent = ignoredState.error; retry.hidden = !ignoredState.error;
     };
     updateIgnored = render;
-    window.addEventListener('pageshow', event => { if (event.persisted) { reveal = false; render(); void ignoredReader.refresh(); } });
+    window.addEventListener('pageshow', event => { if (event.persisted) { reveal = false; render(); void ignoredReader?.refresh(); } });
     render();
 };
 
-let startupTable = null;
-let startupVisibility = null;
+let startupTable: HTMLTableElement | null = null;
+let startupVisibility: string | null = null;
 let startupVisibilityPriority = '';
-const concealStartupTable = table => {
+const concealStartupTable = (table: HTMLTableElement) => {
     if (!isAscentListPage || startupTable) return;
     startupTable = table;
     startupVisibility = table.style.getPropertyValue('visibility');
@@ -777,14 +906,14 @@ const init = async () => {
     if (!isAscentListPage && !isSorterOnlyPage) return optOutInstantSort();
 
     const table = isBuddyListPage
-        ? document.querySelector('#RGridView')
-        : Array.from(document.querySelectorAll('table.gray')).find(candidate => {
+        ? document.querySelector<HTMLTableElement>('#RGridView')
+        : Array.from(document.querySelectorAll<HTMLTableElement>('table.gray')).find(candidate => {
             const candidateHeader = Array.from(candidate.rows)
                 .find(row => row.cells.length > 1 && row.cells[0].tagName === 'TH');
-            return candidateHeader && Array.from(candidateHeader.querySelectorAll('a[href]'))
+            return candidateHeader && Array.from(candidateHeader.querySelectorAll<HTMLAnchorElement>('a[href]'))
                 .some(anchor => {
                     try { return new URL(anchor.href, location.href).searchParams.has('sort'); }
-                    catch (e) { return false; }
+                    catch { return false; }
                 });
         });
     if (!table) return optOutInstantSort();
@@ -802,7 +931,7 @@ const init = async () => {
     // Column order and presence vary by URL params (y=, u=, per-year views),
     // so columns must be resolved from header text on every load.
     const headerTexts = Array.from(headerRow.cells).map(cell => normalize(cell.textContent).toLowerCase());
-    const findColumn = matcher => {
+    const findColumn = (matcher: (text: string) => boolean) => {
         const index = headerTexts.findIndex(matcher);
         return index === -1 ? null : index;
     };
@@ -815,10 +944,10 @@ const init = async () => {
 
     injectStyle();
 
-    const dataRows = [];
-    const sections = [];
-    const preamble = []; // data rows before the first year separator
-    let currentSection = null;
+    const dataRows: AscentRecord[] = [];
+    const sections: AscentSection[] = [];
+    const preamble: AscentRecord[] = []; // data rows before the first year separator
+    let currentSection: AscentSection | null = null;
     let pastHeader = false;
     for (const row of rows) {
         if (!pastHeader) {
@@ -833,18 +962,24 @@ const init = async () => {
         }
         if (row.cells.length < 2) continue;
 
-        const cell = key => columns[key] === null ? null : (row.cells[columns[key]] || null);
-        const trMatch = /^TR-(\d+)/.exec(normalize(cell('tr') && cell('tr').textContent));
-        const record = {
+        const cell = (key: keyof typeof columns) => columns[key] === null ? null : (row.cells[columns[key]] || null);
+        const trCell = cell('tr');
+        const trMatch = /^TR-(\d+)/.exec(normalize(trCell && trCell.textContent));
+        const words = trMatch ? parseInt(trMatch[1], 10) : 0;
+        const gpsCell = cell('gps');
+        const gps = !!(gpsCell && gpsCell.querySelector('img'));
+        const linkCell = cell('link');
+        const link = !!(linkCell && linkCell.querySelector('a[href]'));
+        const record: AscentRecord = {
             row,
             climberId: columns.climber == null ? null : authorInCell(row.cells[columns.climber]),
             originalDisplay: row.style.display,
-            words: trMatch ? parseInt(trMatch[1], 10) : 0,
-            gps: !!(cell('gps') && cell('gps').querySelector('img')),
-            link: !!(cell('link') && cell('link').querySelector('a[href]')),
+            words,
+            gps,
+            link,
+            beta: words > 0 || gps || link,
             visible: true
         };
-        record.beta = record.words > 0 || record.gps || record.link;
         dataRows.push(record);
         if (currentSection) currentSection.items.push(record);
         else preamble.push(record);
@@ -900,7 +1035,7 @@ const init = async () => {
     }
 
     const total = dataRows.length;
-    const counts = {
+    const counts: Record<BetaFilterKey, number> = {
         beta: dataRows.filter(r => r.beta).length,
         tr: dataRows.filter(r => r.words > 0).length,
         gps: dataRows.filter(r => r.gps).length,
@@ -912,12 +1047,12 @@ const init = async () => {
     // the default matches any trip report, GPS track, or link.
     let betaCfg = Schema.betaDefinitionFromSettings({});
     const betaCfgFrom = Schema.betaDefinitionFromSettings;
-    const betaOf = record =>
+    const betaOf = (record: AscentRecord) =>
         (betaCfg.tr && record.words >= betaCfg.trMinWords) ||
             (betaCfg.gps && record.gps) ||
             (betaCfg.link && record.link);
-    const betaParts = article => {
-        const parts = [];
+    const betaParts = (article: boolean) => {
+        const parts: string[] = [];
         if (betaCfg.tr) {
             const report = betaCfg.trMinWords > 1
                 ? `trip report ≥ ${betaCfg.trMinWords} words`
@@ -928,7 +1063,7 @@ const init = async () => {
         if (betaCfg.link) parts.push(article ? 'a link' : 'link');
         return parts;
     };
-    const joinOr = parts => parts.length < 2
+    const joinOr = (parts: string[]) => parts.length < 2
         ? parts[0]
         : `${parts.slice(0, -1).join(', ')}${parts.length > 2 ? ',' : ''} or ${parts.at(-1)}`;
     const betaTooltip = () => `Only ascents with ${joinOr(betaParts(true))} — hides entries with no climb beta. `
@@ -940,7 +1075,8 @@ const init = async () => {
             if (record.beta) counts.beta++;
         }
         if (chips.beta) {
-            chips.beta.querySelector('.pbaf-count').textContent = String(counts.beta);
+            const countEl = chips.beta.querySelector('.pbaf-count');
+            if (countEl) countEl.textContent = String(counts.beta);
             chips.beta.title = betaTooltip();
         }
     };
@@ -949,35 +1085,38 @@ const init = async () => {
     // The Trip report chip's word threshold is per-page UI state and lives
     // in localStorage (state.minWords, above). The "has beta" definition is
     // centralized in extension settings.
-    let currentSettings = null;
+    let currentSettings: Record<string, unknown> | null = null;
     try {
         const s = await settingsPromise;
         if (s) {
             currentSettings = s;
             betaCfg = betaCfgFrom(s);
         }
-    } catch (e) { /* fall back to defaults */ }
+    } catch { /* fall back to defaults */ }
     const orderSetting = isPeakAscentsPage ? 'betaPeakFilterOrder' : 'betaPersonalFilterOrder';
     const localOrderKey = isPeakAscentsPage ? 'peakOrder' : 'personalOrder';
-    if (currentSettings?.[orderSetting]) state[localOrderKey] = [...currentSettings[orderSetting]];
+    const syncedOrder = currentSettings?.[orderSetting];
+    if (Array.isArray(syncedOrder)) {
+        state[localOrderKey] = cleanOrder(syncedOrder, isPeakAscentsPage ? PEAK_FILTER_ORDER : PERSONAL_FILTER_ORDER);
+    }
     // Migrate both lists together so exports also preserve the unvisited list.
-    const migrateOrders = {};
+    const migrateOrders: Record<string, BetaFilterKey[]> = {};
     if (currentSettings && !currentSettings.betaPeakFilterOrder) migrateOrders.betaPeakFilterOrder = [...state.peakOrder];
     if (currentSettings && !currentSettings.betaPersonalFilterOrder) migrateOrders.betaPersonalFilterOrder = [...state.personalOrder];
     if (Object.keys(migrateOrders).length) void S.set(migrateOrders, { onlyIfUnset: true }).catch(() => {});
     if (favoriteSource) { await favoriteSource.ready; favoriteSource.reconcile(); }
     let favoritesSource = favoriteSourceState?.mode || Schema.favoritesSource(currentSettings?.favoritesSource);
     let revealIgnored = false, fullList = false;
-    let renderFrame = null;
+    let renderFrame: number | null = null;
     const bar = buildBarShell();
-    const chips = {};
-    const filterItems = {};
+    const chips: Partial<Record<BetaFilterKey, HTMLButtonElement>> = {};
+    const filterItems: Partial<Record<BetaFilterKey, HTMLSpanElement>> = {};
     const orderKey = isPeakAscentsPage ? 'peakOrder' : 'personalOrder';
     let confirmedOrder = [...state[orderKey]];
-    let suppressChipClick = null;
-    let moveFilterByKeyboard = null;
+    let suppressChipClick: { key: BetaFilterKey; until: number } | null = null;
+    let moveFilterByKeyboard: ((key: BetaFilterKey, event: KeyboardEvent) => void) | null = null;
 
-    const makeChip = (key, label, tooltip) => {
+    const makeChip = (key: BetaFilterKey, label: string, tooltip: string) => {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'pbaf-chip pbaf-control';
@@ -988,20 +1127,17 @@ const init = async () => {
         button.setAttribute('aria-keyshortcuts',
             'Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown');
 
-        const tick = document.createElement('span');
-        tick.className = 'pbaf-tick';
-        tick.setAttribute('aria-hidden', 'true');
-        tick.textContent = '✓';
         const labelEl = document.createElement('span');
         labelEl.className = 'pbaf-chip-label';
         labelEl.textContent = label;
         const count = document.createElement('span');
         count.className = 'pbaf-count';
         count.textContent = String(counts[key]);
-        button.append(tick, labelEl, count);
+        button.append(labelEl, count);
 
         button.addEventListener('click', event => {
-            if (suppressChipClick?.key === key && Date.now() <= suppressChipClick.until) {
+            const suppressed = suppressChipClick;
+            if (suppressed && suppressed.key === key && Date.now() <= suppressed.until) {
                 event.preventDefault();
                 suppressChipClick = null;
                 return;
@@ -1017,7 +1153,7 @@ const init = async () => {
         return button;
     };
 
-    const makeFilterItem = (key, ...children) => {
+    const makeFilterItem = (key: BetaFilterKey, ...children: Node[]) => {
         const item = document.createElement('span');
         item.className = 'pbaf-filter-item';
         item.dataset.filterKey = key;
@@ -1027,7 +1163,7 @@ const init = async () => {
     };
 
     const refreshFavorites = () => {
-        const ids = favoriteSourceState?.ids || new Set();
+        const ids = favoriteSourceState?.ids || new Set<number>();
         favoritesSource = favoriteSourceState?.mode || favoritesSource;
         counts.fav = 0;
         for (const record of dataRows) {
@@ -1035,9 +1171,13 @@ const init = async () => {
             if (record.fav) counts.fav++;
         }
         if (chips.fav) {
-            chips.fav.querySelector('.pbaf-chip-label').textContent = favoritesSource === 'custom'
-                ? 'Fav climbers' : 'Climbing buddies';
-            chips.fav.querySelector('.pbaf-count').textContent = String(counts.fav);
+            const labelEl = chips.fav.querySelector('.pbaf-chip-label');
+            if (labelEl) {
+                labelEl.textContent = favoritesSource === 'custom'
+                    ? 'Fav climbers' : 'Climbing buddies';
+            }
+            const countEl = chips.fav.querySelector('.pbaf-count');
+            if (countEl) countEl.textContent = String(counts.fav);
             chips.fav.title = favoriteSourceState?.error || (favoriteSourceState?.available
                 ? 'Only ascents from your selected climber list. Remembered across visits.'
                 : 'Load your Peakbagger Buddy List to filter these ascents.');
@@ -1055,7 +1195,7 @@ const init = async () => {
     wordsInput.inputMode = 'numeric';
     wordsInput.className = 'pbaf-control';
     wordsInput.setAttribute('aria-label', 'Trip report filter minimum word count');
-    wordsInput.value = String(Math.max(1, parseInt(state.minWords, 10) || 1));
+    wordsInput.value = String(Math.max(1, parseInt(String(state.minWords), 10) || 1));
     wordsWrap.append('Trip report filter: ≥ ', wordsInput, ' words');
     wordsInput.addEventListener('input', () => {
         fullList = false;
@@ -1099,17 +1239,45 @@ const init = async () => {
     betaGroup.classList.add('pbaf-beta-group');
     const betaDefinitionEl = document.createElement('span');
     betaDefinitionEl.className = 'pbaf-beta-definition';
-    betaDefinitionEl.classList.add('pbaf-note');
     const betaSettingsLink = document.createElement('button');
     betaSettingsLink.type = 'button';
-    betaSettingsLink.className = 'pbaf-settings-link';
-    betaSettingsLink.textContent = 'Change what “Has beta” means →';
+    betaSettingsLink.className = 'pbaf-settings-link pbaf-control';
+    betaSettingsLink.title = 'Change what “Has beta” means in Settings';
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const betaSettingsIcon = document.createElementNS(svgNs, 'svg');
+    betaSettingsIcon.setAttribute('class', 'pbaf-settings-icon');
+    betaSettingsIcon.setAttribute('width', '12');
+    betaSettingsIcon.setAttribute('height', '12');
+    betaSettingsIcon.setAttribute('viewBox', '0 0 16 16');
+    betaSettingsIcon.setAttribute('fill', 'none');
+    betaSettingsIcon.setAttribute('stroke', 'currentColor');
+    betaSettingsIcon.setAttribute('stroke-width', '1.6');
+    betaSettingsIcon.setAttribute('stroke-linecap', 'round');
+    betaSettingsIcon.setAttribute('stroke-linejoin', 'round');
+    betaSettingsIcon.setAttribute('aria-hidden', 'true');
+    const gearCircle = document.createElementNS(svgNs, 'circle');
+    gearCircle.setAttribute('cx', '8');
+    gearCircle.setAttribute('cy', '8');
+    gearCircle.setAttribute('r', '2.2');
+    const gearPath = document.createElementNS(svgNs, 'path');
+    gearPath.setAttribute('d',
+        'M13.4 9.6a1.2 1.2 0 0 0 .24 1.32l.04.04a1.45 1.45 0 1 1-2.05 2.05l-.04-.04a1.2 1.2 0 0 0-1.32-.24 '
+        + '1.2 1.2 0 0 0-.72 1.1v.12a1.45 1.45 0 0 1-2.9 0v-.06a1.2 1.2 0 0 0-.78-1.1 1.2 1.2 0 0 0-1.32.24l-.04.04a1.45 '
+        + '1.45 0 1 1-2.05-2.05l.04-.04a1.2 1.2 0 0 0 .24-1.32 1.2 1.2 0 0 0-1.1-.72H1.5a1.45 1.45 0 0 1 0-2.9h.06a1.2 '
+        + '1.2 0 0 0 1.1-.78 1.2 1.2 0 0 0-.24-1.32l-.04-.04a1.45 1.45 0 1 1 2.05-2.05l.04.04a1.2 1.2 0 0 0 1.32.24h.06a1.2 '
+        + '1.2 0 0 0 .72-1.1V1.5a1.45 1.45 0 0 1 2.9 0v.06a1.2 1.2 0 0 0 .72 1.1 1.2 1.2 0 0 0 1.32-.24l.04-.04a1.45 1.45 '
+        + '0 1 1 2.05 2.05l-.04.04a1.2 1.2 0 0 0-.24 1.32v.06a1.2 1.2 0 0 0 1.1.72h.12a1.45 1.45 0 0 1 0 2.9h-.06a1.2 1.2 0 0 0-1.1.72z');
+    betaSettingsIcon.append(gearCircle, gearPath);
+    const betaSettingsLabel = document.createElement('span');
+    betaSettingsLabel.className = 'pbaf-sr-only';
+    betaSettingsLabel.textContent = 'Change what “Has beta” means →';
+    betaSettingsLink.append(betaSettingsIcon, betaSettingsLabel);
     let betaSettingsGeneration = 0;
     let suppressKeyboardClick = false;
-    const openBetaSettings = async event => {
-        if (event.type === 'auxclick' && event.button !== 1) return;
-        if (event.type === 'click' && event.button !== 0) return;
-        if (event.type === 'keydown' && !['Enter', ' '].includes(event.key)) return;
+    const openBetaSettings = async (event: MouseEvent | KeyboardEvent) => {
+        if (event.type === 'auxclick' && (event as MouseEvent).button !== 1) return;
+        if (event.type === 'click' && (event as MouseEvent).button !== 0) return;
+        if (event.type === 'keydown' && !['Enter', ' '].includes((event as KeyboardEvent).key)) return;
         if (event?.isTrusted !== true) return;
         event.preventDefault();
         const generation = `beta-${++betaSettingsGeneration}`;
@@ -1130,7 +1298,7 @@ const init = async () => {
                 generation,
                 activationToken: activation.token,
                 disposition,
-            });
+            }) as { ok?: boolean } | null;
             if (response?.ok) return;
         } catch { /* surface the same actionable failure for worker and transport errors */ }
         betaSettingsLink.textContent = 'Couldn’t open Settings — try again';
@@ -1166,12 +1334,12 @@ const init = async () => {
     makeFilterItem('link', makeChip('link', 'Link',
         'Only ascents with an external link (blog, Strava, forum, ...).'));
 
-    const reorderAnimations = new Map();
+    const reorderAnimations = new Map<HTMLElement, Animation>();
     const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
-    const applyFilterOrder = ({ animate = false, draggedItem = null } = {}) => {
+    const applyFilterOrder = ({ animate = false, draggedItem = null }: { animate?: boolean; draggedItem?: HTMLElement | null } = {}) => {
         const before = animate && !reducedMotion()
             ? new Map(Object.values(filterItems)
-                .filter(item => item !== draggedItem)
+                .filter((item): item is HTMLSpanElement => Boolean(item) && item !== draggedItem)
                 .map(item => [item, item.getBoundingClientRect()]))
             : null;
         if (before) {
@@ -1206,7 +1374,7 @@ const init = async () => {
             animation.addEventListener?.('cancel', forget, { once: true });
         }
     };
-    const announceFilterPosition = key => {
+    const announceFilterPosition = (key: BetaFilterKey) => {
         const order = state[orderKey];
         const label = chips[key]?.querySelector('.pbaf-chip-label')?.textContent || 'Filter';
         orderStatusEl.textContent = `${label} moved to position ${order.indexOf(key) + 1} of ${order.length}.`;
@@ -1217,11 +1385,16 @@ const init = async () => {
             orderStatusEl.textContent = 'Order could not be saved to Settings. Try moving a filter again.';
         });
     };
-    const setFilterOrder = (order, {
+    const setFilterOrder = (order: readonly BetaFilterKey[], {
         persist = true,
         announce = null,
         animate = false,
         draggedItem = null,
+    }: {
+        persist?: boolean;
+        announce?: BetaFilterKey | null;
+        animate?: boolean;
+        draggedItem?: HTMLElement | null;
     } = {}) => {
         if (order.length !== state[orderKey].length
                 || order.some((key, index) => state[orderKey][index] !== key)) {
@@ -1233,7 +1406,12 @@ const init = async () => {
         }
         return false;
     };
-    const moveFilterBeside = (key, targetKey, after, options) => {
+    const moveFilterBeside = (key: BetaFilterKey, targetKey: BetaFilterKey, after: boolean, options: {
+        persist?: boolean;
+        announce?: BetaFilterKey | null;
+        animate?: boolean;
+        draggedItem?: HTMLElement | null;
+    }) => {
         if (key === targetKey) return false;
         const order = state[orderKey];
         if (!order.includes(key) || !order.includes(targetKey)) return false;
@@ -1263,8 +1441,8 @@ const init = async () => {
         setFilterOrder(next, { announce: key, animate: true });
     };
 
-    let pointerDrag = null;
-    const updateDraggedItemPosition = (drag, clientX, clientY) => {
+    let pointerDrag: PointerDragState | null = null;
+    const updateDraggedItemPosition = (drag: PointerDragState, clientX: number, clientY: number) => {
         drag.lastX = clientX;
         drag.lastY = clientY;
         drag.translateX = clientX - drag.startX - (drag.item.offsetLeft - drag.startOffsetLeft);
@@ -1272,7 +1450,7 @@ const init = async () => {
         drag.item.style.setProperty('--pbaf-drag-x', `${drag.translateX}px`);
         drag.item.style.setProperty('--pbaf-drag-y', `${drag.translateY}px`);
     };
-    const settleDraggedItem = drag => {
+    const settleDraggedItem = (drag: PointerDragState) => {
         const item = drag.item;
         const from = `${drag.translateX || 0}px ${drag.translateY || 0}px`;
         item.removeAttribute('data-pbaf-dragging');
@@ -1295,7 +1473,7 @@ const init = async () => {
         animation.addEventListener?.('finish', finish, { once: true });
         animation.addEventListener?.('cancel', finish, { once: true });
     };
-    const finishPointerReorder = cancelled => {
+    const finishPointerReorder = (cancelled: boolean) => {
         if (!pointerDrag) return;
         const drag = pointerDrag;
         pointerDrag = null;
@@ -1318,10 +1496,11 @@ const init = async () => {
     bar.addEventListener('pointerdown', event => {
         if (pointerDrag || event.isPrimary === false
                 || (event.pointerType === 'mouse' && event.button !== 0)) return;
-        const chip = event.target.closest?.('.pbaf-chip');
-        const item = chip?.closest('.pbaf-filter-item');
-        const key = item?.dataset.filterKey;
-        if (!key || !state[orderKey].includes(key)) return;
+        const target = event.target instanceof Element ? event.target : null;
+        const chip = target?.closest<HTMLButtonElement>('.pbaf-chip');
+        const item = chip?.closest<HTMLSpanElement>('.pbaf-filter-item');
+        const key = item?.dataset.filterKey as BetaFilterKey | undefined;
+        if (!chip || !item || !key || !state[orderKey].includes(key)) return;
         pointerDrag = {
             pointerId: event.pointerId,
             key,
@@ -1353,10 +1532,10 @@ const init = async () => {
         }
         if (event.cancelable) event.preventDefault();
         updateDraggedItemPosition(drag, event.clientX, event.clientY);
-        const target = document.elementFromPoint(event.clientX, event.clientY)
-            ?.closest?.('.pbaf-filter-item');
-        const targetKey = target?.dataset.filterKey;
-        if (!targetKey || targetKey === drag.key) return;
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        const target = hit?.closest?.<HTMLSpanElement>('.pbaf-filter-item');
+        const targetKey = target?.dataset.filterKey as BetaFilterKey | undefined;
+        if (!target || !targetKey || targetKey === drag.key) return;
         const targetHasLayout = target.offsetWidth > 0 || target.offsetHeight > 0;
         const barRect = bar.getBoundingClientRect();
         const rect = targetHasLayout
@@ -1418,7 +1597,7 @@ const init = async () => {
     const statusSlot = reservedCaption(statusEl, `Showing ${total} of ${total} ascents`, 'pbaf-status-slot');
     statusSlot.style.setProperty('--pbaf-status-digits', `${String(total).length}ch`);
     const totalSize = document.createElement('b'); totalSize.textContent = String(total);
-    statusSlot.firstElementChild.replaceChildren('Showing ', totalSize, ' of ', totalSize.cloneNode(true), ` ascent${total === 1 ? '' : 's'}`);
+    statusSlot.firstElementChild?.replaceChildren('Showing ', totalSize, ' of ', totalSize.cloneNode(true), ` ascent${total === 1 ? '' : 's'}`);
     const resetSlot = reservedCaption(resetButton, resetButton.textContent, 'pbaf-reset-slot');
     const results = document.createElement('span'); results.className = 'pbaf-results';
     if (isPeakAscentsPage) {
@@ -1431,7 +1610,7 @@ const init = async () => {
     emptyRow.append(emptyCell); emptyBody.append(emptyRow);
     if (isPeakAscentsPage) table.append(emptyBody);
     bar.append(
-        ...state[orderKey].map(key => filterItems[key]).filter(Boolean),
+        ...state[orderKey].map(key => filterItems[key]).filter((item): item is HTMLSpanElement => Boolean(item)),
         spacer, ...(isPeakAscentsPage ? [results] : [statusSlot, resetSlot]), orderStatusEl,
     );
     refreshBeta();
@@ -1442,23 +1621,30 @@ const init = async () => {
             cancelAnimationFrame(renderFrame);
             renderFrame = null;
         }
-        for (const [key, chip] of Object.entries(chips)) {
+        for (const [key, chip] of Object.entries(chips) as [BetaFilterKey, HTMLButtonElement | undefined][]) {
+            if (!chip) continue;
             const active = !!state[key];
             chip.setAttribute('aria-pressed', String(active));
         }
         wordsWrap.hidden = !state.tr;
 
-        const minWords = Math.max(1, parseInt(state.minWords, 10) || 1);
+        const minWords = Math.max(1, parseInt(String(state.minWords), 10) || 1);
         // Both list types share saved toggles, but only peak lists expose and
         // load the climber filter. Preserve its preference without applying it
         // invisibly on a personal ascent list.
         const favoritesActive = isPeakAscentsPage && state.fav;
         const ids = new Set(ignoredState.list?.entries.map(entry => entry.cid) || []);
-        const ordinary = record => fullList || ((!state.beta || record.beta)
+        const ordinary = (record: AscentRecord) => fullList || ((!state.beta || record.beta)
             && (!state.tr || record.words >= minWords) && (!state.gps || record.gps)
-            && (!state.link || record.link) && (!favoritesActive || record.fav));
-        const result = I.visibility(dataRows, isPeakAscentsPage ? ids : new Set(), ordinary, revealIgnored);
-        const visibleRows = new Set(result.visible);
+            && (!state.link || record.link) && (!favoritesActive || Boolean(record.fav)));
+        const computeVisibility = I.visibility as unknown as (
+            items: AscentRecord[],
+            ignoredIds: Set<number>,
+            matches: (record: AscentRecord) => boolean,
+            reveal: boolean,
+        ) => { visible: AscentRecord[]; ignored: AscentRecord[]; ignoredMatches: number };
+        const result = computeVisibility(dataRows, isPeakAscentsPage ? ids : new Set(), ordinary, revealIgnored);
+        const visibleRows = new Set<AscentRecord>(result.visible);
         const shown = result.visible.length;
         for (const record of dataRows) {
             const visible = visibleRows.has(record);
@@ -1483,10 +1669,12 @@ const init = async () => {
             emptyBody.hidden = shown > 0;
             emptyCell.textContent = ignoreError.textContent || (result.ignored.length === total && !revealIgnored
                 ? `All ${total} loaded ascents are from ignored climbers.` : 'No ascents match your filters.');
-            for (const [key, chip] of Object.entries(chips)) {
-                const matches = dataRows.filter(record => key === 'tr' ? record.words > 0 : record[key]);
-                const count = matches.filter(record => revealIgnored || !ids.has(record.climberId)).length;
-                const badge = chip.querySelector('.pbaf-count');
+            for (const [key, chip] of Object.entries(chips) as [BetaFilterKey, HTMLButtonElement | undefined][]) {
+                if (!chip) continue;
+                const matches = dataRows.filter(record => key === 'tr' ? record.words > 0 : Boolean(record[key]));
+                const count = matches.filter(record => revealIgnored || (record.climberId == null || !ids.has(record.climberId))).length;
+                const badge = chip.querySelector<HTMLSpanElement>('.pbaf-count');
+                if (!badge) continue;
                 // A revealed ascent can cross a digit boundary. Keep chip widths
                 // stable so the toolbar cannot wrap onto a different line.
                 badge.style.inlineSize = `calc(${String(matches.length).length}ch + 1px)`;
@@ -1529,7 +1717,7 @@ const init = async () => {
 
     updateIgnored = render;
     updateFavoriteSource = () => { refreshFavorites(); render(); };
-    table.parentNode.insertBefore(bar, table);
+    table.parentNode?.insertBefore(bar, table);
     containAscentTable(table);
     preserveAscentColumnWidths(headerRow);
     render();
@@ -1547,8 +1735,9 @@ const init = async () => {
 
     // Re-apply the beta definition if it changes in the options page /
     // another tab. (The Trip report word threshold is local UI state.)
-    S.subscribe(settings => {
-        const nextOrder = settings[orderSetting] || (isPeakAscentsPage ? PEAK_FILTER_ORDER : PERSONAL_FILTER_ORDER);
+    S.subscribe((settings: Record<string, unknown>) => {
+        const rawOrder = settings[orderSetting];
+        const nextOrder = cleanOrder(rawOrder, isPeakAscentsPage ? PEAK_FILTER_ORDER : PERSONAL_FILTER_ORDER);
         if (nextOrder.some((key, index) => confirmedOrder[index] !== key)) {
             confirmedOrder = [...nextOrder];
             finishPointerReorder(true);

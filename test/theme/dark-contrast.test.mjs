@@ -76,7 +76,7 @@ const bg = sel => {
 // src/ascent/ascent-filter.js, as --pbaf-* tokens reassigned under the dark
 // scope. Resolving them here means the numbers checked below are the ones the
 // browser computes, from the one file that declares them.
-const filterSource = await readFile(path.join(root, 'src/ascent/ascent-filter.js'), 'utf8');
+const filterSource = await readFile(path.join(root, 'src/ascent/ascent-filter.ts'), 'utf8');
 const BAR_CSS = filterSource
     .match(/const STYLE = `([\s\S]*?)\n`;/)[1]
     .replace(/\/\*[\s\S]*?\*\//g, '');

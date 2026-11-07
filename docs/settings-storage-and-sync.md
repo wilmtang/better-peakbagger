@@ -127,7 +127,7 @@ Other local state has separate owners and does not belong in a settings file:
 | Ignored-list sync consent and baseline | `bpbIgnoredSyncState` in `storage.local`; [sync controller](../src/background/climber-list-sync.js) | Device connection, reviewed merge baseline and interrupted-transfer state; new consent defaults off |
 | Photo canvas dimensions | `bpbPhotoViewport` in `storage.local`; [photo editor](../photos/photos.ts) | Device layout |
 | Peak report favorites-only filter | `bpbPeakReportFilter.favoritesOnly` in `storage.local`; [ignored store](../src/background/ignored-store.js) | Current viewing preference, separate from list membership |
-| Active ascent chips and Trip report chip threshold | `pbAscentBetaFilter.v1` in Peakbagger `localStorage`; [ascent filter](../src/ascent/ascent-filter.js) | Current page-view state; chip order and “Has beta” definition are portable |
+| Active ascent chips and Trip report chip threshold | `pbAscentBetaFilter.v1` in Peakbagger `localStorage`; [ascent filter](../src/ascent/ascent-filter.ts) | Current page-view state; chip order and “Has beta” definition are portable |
 | Ascent and peak table splits | `pbAscentTableSplit.v1`, `pbPeakTableSplit.v1`; [column persistence](../src/ui/column-resize.js) | Device layout |
 | Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.js) | Device layout |
 | Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.js), [panel theme](../src/theme/panel-theme.js) | Mirror of portable `theme`, not a separate theme choice |

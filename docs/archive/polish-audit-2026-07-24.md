@@ -518,7 +518,7 @@ and `popup gives up on a sustained poll outage with recoverable, plain copy`
 
 Every ascent-list column control is a `<button class="pbaf-table-sort">`; the
 date column additionally gets `pbaf-date-sort`
-([ascent-filter.js:353](../../src/ascent/ascent-filter.js)). The dark
+([ascent-filter.js:353](../../src/ascent/ascent-filter.ts)). The dark
 stylesheet overrides only `button.pbaf-date-sort`
 ([site-dark-css.js:167](../../src/theme/site-dark-css.js)). Every other
 header falls through to the generic form-control rule at
@@ -551,7 +551,7 @@ same colour, background, and border.
 
 `.pbaf-chip:focus-visible`, `.pbaf-reset:focus-visible`,
 `.pbaf-table-sort:focus-visible`, and `.pbaf-words input:focus-visible` all use
-`outline: 2px solid #2f6b3f` ([ascent-filter.js:404](../../src/ascent/ascent-filter.js)
+`outline: 2px solid #2f6b3f` ([ascent-filter.js:404](../../src/ascent/ascent-filter.ts)
 and following). There is no dark override, so in dark mode that ring sits on the
 bar's `#23262a` background:
 
@@ -616,7 +616,7 @@ rule and watching the assertion fire.
 ### F13 — The beta-filter bar's theme has two owners in two files — **fixed**
 
 The light palette is a JS template string inside
-[`ascent-filter.js`](../../src/ascent/ascent-filter.js); the dark palette is
+[`ascent-filter.js`](../../src/ascent/ascent-filter.ts); the dark palette is
 a separate block of per-property `!important` overrides in
 [`site-dark-css.js`](../../src/theme/site-dark-css.js). Nothing binds them.
 Counting the classes each file defines:

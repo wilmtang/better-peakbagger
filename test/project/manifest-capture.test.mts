@@ -410,7 +410,7 @@ test('the ascent sorter also reaches the Buddy List and Peak List endpoints', ()
     assert.equal(sorter.run_at, 'document_start');
     assert.equal(sorter.world, undefined);
     assert.deepEqual(bundleSources('content/ascent-filter.js'),
-        ['settings/settings-schema.ts', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/trusted-action.js', 'ascent/ascent-filter.js']);
+        ['settings/settings-schema.ts', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/trusted-action.js', 'ascent/ascent-filter.ts']);
     for (const host of ['https://www.peakbagger.com', 'https://peakbagger.com']) {
         assert.ok(sorter.matches.includes(`${host}/report/report.aspx*`));
         assert.ok(sorter.matches.includes(`${host}/List.aspx*`));
