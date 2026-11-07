@@ -392,7 +392,7 @@ async function main() {
          heading: document.getElementById("library-heading")?.textContent,
          boundary: document.querySelector(".backup-card")?.textContent,
          status,
-         credentialHidden: document.getElementById("credential-card")?.hidden,
+         credentialHidden: !document.getElementById("credential-card") && !document.getElementById("imgbb-dialog")?.open,
          horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
        };`,
             'the Firefox photo-library recovery surface',
@@ -445,7 +445,7 @@ async function main() {
        const viewport = document.getElementById("photo-viewport")?.getBoundingClientRect();
        return {
          saved,
-         upload: document.getElementById("upload-insert")?.textContent,
+         upload: document.getElementById("upload-insert")?.textContent?.trim(),
          viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
          horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
        };`,
@@ -454,13 +454,31 @@ async function main() {
             value => !!value,
         );
         assertState(
-            firefoxPhotoEditor.upload === 'Upload to ImgBB'
+            /^Upload to ImgBB…?$/.test(firefoxPhotoEditor.upload)
         && firefoxPhotoEditor.viewport?.width > 300
         && firefoxPhotoEditor.viewport?.height > 300
         && !firefoxPhotoEditor.horizontalOverflow,
             'Firefox did not decode and autosave the packaged photo editor',
             firefoxPhotoEditor,
         );
+
+        // Gecko is the strict one about clipboard activation: the write must
+        // start inside the click even though the PNG encode finishes later.
+        await driver.findElement(By.id('copy-image')).click();
+        const firefoxCopy = await waitForScript(
+            driver,
+            `const label = document.getElementById("copy-image")?.textContent?.trim();
+       const toast = document.getElementById("toast");
+       if (label === "Copied") return { label };
+       if (toast && !toast.hidden && /copy/i.test(document.getElementById("toast-message")?.textContent || "")) {
+         return { label, failure: document.getElementById("toast-message").textContent };
+       }
+       return null;`,
+            'the Firefox Copy image result',
+            15_000,
+            value => !!value,
+        );
+        assertState(firefoxCopy.label === 'Copied', 'Firefox refused the Copy image clipboard write', firefoxCopy);
 
         // The drawing tools, in Gecko's own pointer and SVG implementation. Every
         // assertion here is a behaviour a user reported broken, so a regression
