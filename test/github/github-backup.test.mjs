@@ -10,7 +10,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { githubBackup as Backup } from '../../src/github/github-backup.js';
+import { githubBackup as Backup } from '../../src/github/github-backup.ts';
 
 // github-backup is browser-API-free: the report body arrives already resolved
 // to Markdown (the bracket→Markdown conversion runs in the content script,

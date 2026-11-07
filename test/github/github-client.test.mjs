@@ -20,7 +20,7 @@ vm.runInContext(await readFile(new URL('../../node_modules/marked/lib/marked.umd
 globalThis.marked = markedContext.marked;
 
 const { githubClient: Client } = await import('../../src/github/github-client.js');
-const { githubBackup: Backup } = await import('../../src/github/github-backup.js');
+const { githubBackup: Backup } = await import('../../src/github/github-backup.ts');
 const { githubErrors: GithubErrors } = await import('../../src/github/github-errors.js');
 const { ERROR_CODES } = GithubErrors;
 

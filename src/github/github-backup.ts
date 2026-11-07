@@ -14,7 +14,7 @@
 // payload without coupling the serialization to network, tokens, or messaging.
 // The report body arrives already as Markdown in `report.markdown` — the
 // content script, which does have a DOM and the Markdown parser, resolves the
-// exact Markdown sidecar vs a bracket-markup conversion (via src/reports/report-markup.js)
+// exact Markdown sidecar vs a bracket-markup conversion (via src/reports/report-markup.ts)
 // before the snapshot reaches here. See docs/github-ascent-backup.md for the
 // design and the snapshot contract summarized below.
 //
@@ -52,15 +52,32 @@ import {
 
 const SCHEMA_VERSION = 1;
 
+// The snapshot contract above. Form values stay unknown until coerced here.
+interface SnapshotAscent {
+    id?: unknown; date?: unknown; suffix?: unknown; type?: unknown; route?: unknown; routeDown?: unknown; externalUrl?: unknown;
+    gainFt?: unknown; lossFt?: unknown; distanceUpMi?: unknown; distanceDnMi?: unknown; extraGainFt?: unknown; extraLossFt?: unknown;
+    timeUp?: unknown; timeDn?: unknown; nightsOut?: unknown; startFt?: unknown; endFt?: unknown; pointFt?: unknown; quality?: unknown;
+    gear?: unknown; companions?: unknown; weather?: unknown;
+}
+interface SnapshotPeak { id?: unknown; name?: unknown; elevationFt?: unknown; location?: unknown }
+interface BackupSnapshot {
+    ascent?: SnapshotAscent; peak?: SnapshotPeak; report?: unknown;
+    backup?: { extensionVersion?: unknown; syncedAt?: unknown };
+}
+type MaybeSnapshot = BackupSnapshot | null | undefined;
+type JsonFields = Record<string, unknown>;
+interface EntityRule { id: unknown; pathname: string; parameter: string; build: (id: unknown) => string }
+interface BuildOptions { gpx?: unknown; existingFolders?: unknown }
+
 // Peakbagger's public URLs are deterministic from the numeric ids, so they
 // are derived here rather than trusted from the snapshot.
-const ascentUrl = id => `${PEAKBAGGER_ORIGIN}/climber/ascent.aspx?aid=${id}`;
-const peakUrl = id => `${PEAKBAGGER_ORIGIN}/peak.aspx?pid=${id}`;
+const ascentUrl = (id: unknown) => `${PEAKBAGGER_ORIGIN}/climber/ascent.aspx?aid=${id}`;
+const peakUrl = (id: unknown) => `${PEAKBAGGER_ORIGIN}/peak.aspx?pid=${id}`;
 
 // Backup links are derived navigation, not user-authored ascent data. Accept a
 // previously generated host/query spelling only after it still proves the same
 // Peakbagger entity; malformed, hostile, and wrong-id links remain different.
-const canonicalEntityUrl = (value, { id, pathname, parameter, build }) => {
+const canonicalEntityUrl = (value: unknown, { id, pathname, parameter, build }: EntityRule) => {
     if (id == null || typeof value !== 'string') return null;
     try {
         const url = new URL(value);
@@ -76,25 +93,25 @@ const canonicalEntityUrl = (value, { id, pathname, parameter, build }) => {
     }
 };
 
-const comparableAscentUrl = (value, id) => canonicalEntityUrl(value, {
+const comparableAscentUrl = (value: unknown, id: unknown) => canonicalEntityUrl(value, {
     id,
     pathname: '/climber/ascent.aspx',
     parameter: 'aid',
     build: ascentUrl,
 });
 
-const comparablePeakUrl = (value, id) => canonicalEntityUrl(value, {
+const comparablePeakUrl = (value: unknown, id: unknown) => canonicalEntityUrl(value, {
     id,
     pathname: '/peak.aspx',
     parameter: 'pid',
     build: peakUrl,
 });
 
-const trimString = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
+const trimString = (value: unknown) => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
 
 // A form value coerced to a finite number, or undefined when blank/garbage.
 // Commas and surrounding whitespace are stripped so "9,000" reads as 9000.
-const toNumber = value => {
+const toNumber = (value: unknown) => {
     if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
     const cleaned = trimString(value).replace(/,/g, '');
     if (!cleaned) return undefined;
@@ -103,12 +120,12 @@ const toNumber = value => {
 };
 
 // Set key only when the string is non-blank; never invent an empty field.
-const setString = (target, key, value) => {
+const setString = (target: JsonFields, key: string, value: unknown) => {
     const text = trimString(value);
     if (text) target[key] = text;
 };
 
-const setNumber = (target, key, value) => {
+const setNumber = (target: JsonFields, key: string, value: unknown) => {
     const num = toNumber(value);
     if (num !== undefined) target[key] = num;
 };
@@ -118,7 +135,7 @@ const setNumber = (target, key, value) => {
 // The known leading components of a possibly-partial Peakbagger date. A
 // zero month or day (Peakbagger's "unknown" marker) truncates the value so
 // partial dates degrade gracefully instead of pretending precision.
-const dateParts = date => {
+const dateParts = (date: unknown) => {
     const match = trimString(date).match(/^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/);
     if (!match) return [];
     const [, year, month, day] = match;
@@ -133,14 +150,14 @@ const dateParts = date => {
 
 // Folder-name date prefix: full 'YYYY-MM-DD', partial 'YYYY-MM'/'YYYY', or
 // the literal 'undated' when nothing is known.
-const datePrefix = date => {
+const datePrefix = (date: unknown) => {
     const parts = dateParts(date);
     return parts.length ? parts.join('-') : 'undated';
 };
 
 // The same value for machine fields, but undated becomes null rather than a
 // magic string.
-const isoDate = date => {
+const isoDate = (date: unknown) => {
     const parts = dateParts(date);
     return parts.length ? parts.join('-') : null;
 };
@@ -151,7 +168,7 @@ const isoDate = date => {
 // collapse every non-alphanumeric run to a single hyphen. Capped so an
 // unusually long name cannot dominate the folder path. Falls back to 'peak'
 // when a name is entirely non-Latin.
-const peakSlug = name => {
+const peakSlug = (name: unknown) => {
     const slug = trimString(name)
         .normalize('NFKD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -165,36 +182,36 @@ const peakSlug = name => {
 
 // The backup folder leaf: date first for human sorting, the a<ascentId>
 // suffix last as the stable identity across peak/date edits.
-const folderName = snapshot => {
-    const ascent = (snapshot && snapshot.ascent) || {};
-    const peak = (snapshot && snapshot.peak) || {};
+const folderName = (snapshot: MaybeSnapshot) => {
+    const ascent: SnapshotAscent = (snapshot && snapshot.ascent) || {};
+    const peak: SnapshotPeak = (snapshot && snapshot.peak) || {};
     return `${datePrefix(ascent.date)}-${peakSlug(peak.name)}-a${ascent.id}`;
 };
 
 const BACKUP_FOLDER_PATTERN = /^(?:undated|\d{4}(?:-\d{2}){0,2})-[a-z0-9](?:[a-z0-9-]{0,59})-a\d+$/;
-const isBackupFolderName = name => typeof name === 'string' && BACKUP_FOLDER_PATTERN.test(name);
+const isBackupFolderName = (name: unknown) => typeof name === 'string' && BACKUP_FOLDER_PATTERN.test(name);
 
 // Find an already-committed folder for this ascent regardless of its slug,
 // so a re-save after a date or peak edit re-syncs the same ascent instead
 // of leaving a stale duplicate. Matches only the exact a<ascentId> leaf
 // suffix, so ascent 123 never collides with 1234.
-const matchExistingFolder = (names, ascentId) => {
+const matchExistingFolder = (names: unknown, ascentId: unknown): string | null => {
     if (!Array.isArray(names) || ascentId == null) return null;
     const suffix = `-a${ascentId}`;
-    return names.find(name => isBackupFolderName(name) && name.endsWith(suffix)) || null;
+    return (names as unknown[]).find(name => isBackupFolderName(name) && (name as string).endsWith(suffix)) as string | undefined || null;
 };
 
 // ---- ascent.json -------------------------------------------------------
 
-const buildCompanions = companions => {
-    const source = companions && typeof companions === 'object' ? companions : {};
+const buildCompanions = (companions: unknown) => {
+    const source: { registered?: unknown; others?: unknown } = companions && typeof companions === 'object' ? companions : {};
     const registered = Array.isArray(source.registered)
-        ? source.registered
+        ? (source.registered as ({ name?: unknown; id?: unknown } | null)[])
             .map(entry => {
                 if (!entry || typeof entry !== 'object') return null;
                 const name = trimString(entry.name);
                 if (!name) return null;
-                const person = { name };
+                const person: JsonFields = { name };
                 const id = toNumber(entry.id);
                 if (id !== undefined) person.id = id;
                 return person;
@@ -203,15 +220,16 @@ const buildCompanions = companions => {
         : [];
     const others = trimString(source.others);
     if (!registered.length && !others) return undefined;
-    const result = {};
+    const result: JsonFields = {};
     if (registered.length) result.registered = registered;
     if (others) result.others = others;
     return result;
 };
 
-const buildWeather = weather => {
-    const source = weather && typeof weather === 'object' ? weather : {};
-    const result = {};
+const buildWeather = (weather: unknown) => {
+    const source: { precip?: unknown; temperature?: unknown; wind?: unknown; visibility?: unknown; description?: unknown } =
+        weather && typeof weather === 'object' ? weather : {};
+    const result: JsonFields = {};
     setString(result, 'precip', source.precip);
     setString(result, 'temperature', source.temperature);
     setString(result, 'wind', source.wind);
@@ -223,12 +241,12 @@ const buildWeather = weather => {
 // Serialize the snapshot into the versioned ascent.json object. Blank
 // scalars are omitted; only the identity fields (id, url, date, suffix) and
 // the peak/backup blocks are always present.
-const buildAscentJson = snapshot => {
-    const src = (snapshot && snapshot.ascent) || {};
-    const peakSrc = (snapshot && snapshot.peak) || {};
-    const backupSrc = (snapshot && snapshot.backup) || {};
+const buildAscentJson = (snapshot: MaybeSnapshot) => {
+    const src: SnapshotAscent = (snapshot && snapshot.ascent) || {};
+    const peakSrc: SnapshotPeak = (snapshot && snapshot.peak) || {};
+    const backupSrc: NonNullable<BackupSnapshot['backup']> = (snapshot && snapshot.backup) || {};
 
-    const ascent = {
+    const ascent: JsonFields = {
         id: src.id,
         url: ascentUrl(src.id),
         date: isoDate(src.date),
@@ -263,7 +281,7 @@ const buildAscentJson = snapshot => {
     const weather = buildWeather(src.weather);
     if (weather) ascent.weather = weather;
 
-    const peak = {
+    const peak: JsonFields = {
         id: peakSrc.id,
         url: peakSrc.id == null ? undefined : peakUrl(peakSrc.id),
         name: trimString(peakSrc.name) || undefined,
@@ -287,22 +305,22 @@ const buildAscentJson = snapshot => {
 
 // A double-quoted YAML scalar, escaping the two characters that would break
 // the quoting. Keeps the frontmatter valid for names with colons or quotes.
-const yamlString = value => `"${trimString(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const yamlString = (value: unknown) => `"${trimString(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 // The report body, already resolved to Markdown upstream: the exact
 // Markdown-source sidecar when the user authored in Markdown, otherwise the
-// submitted bracket markup converted through src/reports/report-markup.js. That
+// submitted bracket markup converted through src/reports/report-markup.ts. That
 // conversion needs a DOM, so it runs in the content script, not here.
-const reportBody = report => {
-    const markdown = report && typeof report === 'object' ? report.markdown : '';
+const reportBody = (report: unknown) => {
+    const markdown = report && typeof report === 'object' ? (report as { markdown?: unknown }).markdown : '';
     return typeof markdown === 'string' ? markdown : '';
 };
 
 // report.md: a short self-describing frontmatter block (peak, date,
 // Peakbagger URL) followed by the trip report as real Markdown.
-const buildReportMarkdown = snapshot => {
-    const ascent = (snapshot && snapshot.ascent) || {};
-    const peak = (snapshot && snapshot.peak) || {};
+const buildReportMarkdown = (snapshot: MaybeSnapshot) => {
+    const ascent: SnapshotAscent = (snapshot && snapshot.ascent) || {};
+    const peak: SnapshotPeak = (snapshot && snapshot.peak) || {};
     const front = ['---'];
     const name = trimString(peak.name);
     if (name) front.push(`peak: ${yamlString(name)}`);
@@ -321,7 +339,7 @@ const buildReportMarkdown = snapshot => {
 
 // The leaf files for one backup folder. track.gpx is included only when
 // Peakbagger stored a track for the ascent.
-const buildFiles = (snapshot, options = {}) => {
+const buildFiles = (snapshot: MaybeSnapshot, options: BuildOptions = {}) => {
     const files = [
         { name: 'report.md', content: buildReportMarkdown(snapshot) },
         { name: 'ascent.json', content: `${JSON.stringify(buildAscentJson(snapshot), null, 2)}\n` },
@@ -340,15 +358,15 @@ const buildFiles = (snapshot, options = {}) => {
 // links compare by validated entity identity; every user-owned report byte,
 // structured field, route/track GPX byte, other GPX metadata field, and
 // track-presence decision must still match.
-const stableJson = value => {
+const stableJson = (value: unknown): string => {
     if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
     if (value && typeof value === 'object') {
-        return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+        return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson((value as JsonFields)[key])}`).join(',')}}`;
     }
     return JSON.stringify(value);
 };
 
-const comparableAscentJson = content => {
+const comparableAscentJson = (content: string) => {
     try {
         const parsed = JSON.parse(content);
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
@@ -372,7 +390,7 @@ const comparableAscentJson = content => {
     }
 };
 
-const comparableReportMarkdown = (content, ascentId) => {
+const comparableReportMarkdown = (content: unknown, ascentId: unknown) => {
     if (typeof content !== 'string' || !content.startsWith('---\n')) return content;
     const frontmatterEnd = content.indexOf('\n---\n', 4);
     if (frontmatterEnd < 0) return content;
@@ -383,14 +401,14 @@ const comparableReportMarkdown = (content, ascentId) => {
         .filter(entry => entry.match);
     if (links.length !== 1) return content;
 
-    const canonical = comparableAscentUrl(links[0].match[1], ascentId);
+    const canonical = comparableAscentUrl(links[0].match![1], ascentId);
     if (!canonical) return content;
     lines[links[0].index] = `peakbagger: ${canonical}`;
     return `---\n${lines.join('\n')}${content.slice(frontmatterEnd)}`;
 };
 
-const replaceMatch = (source, match, replacement) =>
-    `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`;
+const replaceMatch = (source: string, match: RegExpMatchArray, replacement: string) =>
+    `${source.slice(0, match.index)}${replacement}${source.slice(match.index! + match[0].length)}`;
 
 // Peakbagger regenerates the GPX metadata author name from the climber's
 // current account name. A profile rename therefore changes this one generated
@@ -398,7 +416,7 @@ const replaceMatch = (source, match, replacement) =>
 // only the single, unprefixed metadata/author/name value Peakbagger emits; an
 // absent, duplicated, namespaced, or structurally ambiguous field remains an
 // exact-byte comparison so malformed or unfamiliar GPX fails closed.
-const comparableGpx = content => {
+const comparableGpx = (content: unknown) => {
     if (typeof content !== 'string') return content;
     const metadataMatches = Array.from(content.matchAll(
         /<metadata(?:\s[^<>]*)?>[\s\S]*?<\/metadata\s*>/gi,
@@ -426,7 +444,7 @@ const comparableGpx = content => {
     return replaceMatch(content, metadataMatch, normalizedMetadata);
 };
 
-const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
+const matchesBackupFiles = (snapshot: MaybeSnapshot, { gpx, contents }: { gpx?: unknown; contents?: unknown } = {}) => {
     if (!contents || typeof contents !== 'object' || Array.isArray(contents)) return false;
     const expected = buildFiles(snapshot, { gpx });
     const expectedNames = new Set(expected.map(file => file.name));
@@ -434,7 +452,7 @@ const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
     if (actualNames.length !== expectedNames.size
             || actualNames.some(name => !expectedNames.has(name))) return false;
     return expected.every(file => {
-        const actual = contents[file.name];
+        const actual = (contents as JsonFields)[file.name];
         if (typeof actual !== 'string') return false;
         if (file.name === 'report.md') {
             const ascentId = snapshot && snapshot.ascent ? snapshot.ascent.id : null;
@@ -451,16 +469,16 @@ const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
 
 // One human date for the commit subject; the folder prefix rules, minus the
 // 'undated' placeholder, which reads better simply omitted from a sentence.
-const commitDate = date => {
+const commitDate = (date: unknown) => {
     const prefix = datePrefix(date);
     return prefix === 'undated' ? '' : prefix;
 };
 
 // "Add ascent and TR: Mount Rainier, 2026-07-12" — or "Update ascent and TR: …" on a
 // re-sync. The date is dropped when unknown.
-const commitSubject = (snapshot, options = {}) => {
-    const ascent = (snapshot && snapshot.ascent) || {};
-    const peak = (snapshot && snapshot.peak) || {};
+const commitSubject = (snapshot: MaybeSnapshot, options: { update?: boolean } = {}) => {
+    const ascent: SnapshotAscent = (snapshot && snapshot.ascent) || {};
+    const peak: SnapshotPeak = (snapshot && snapshot.peak) || {};
     const verb = options.update ? 'Update' : 'Add';
     const name = trimString(peak.name) || 'ascent';
     const date = commitDate(ascent.date);
@@ -471,8 +489,8 @@ const commitSubject = (snapshot, options = {}) => {
 // is the list of backup leaf names already found by the client; a matching
 // a<ascentId> folder makes this an Update and, when its slug changed, names
 // the old root folder for atomic removal in the same commit.
-const buildBackup = (snapshot, options = {}) => {
-    const ascent = (snapshot && snapshot.ascent) || {};
+const buildBackup = (snapshot: MaybeSnapshot, options: BuildOptions = {}) => {
+    const ascent: SnapshotAscent = (snapshot && snapshot.ascent) || {};
     const leaf = folderName(snapshot);
     const folder = leaf;
     const existingLeaf = matchExistingFolder(options.existingFolders, ascent.id);

@@ -129,7 +129,7 @@ link, which automatically tracks endpoint query changes.
 | `src/background/background.js` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
 | `src/background/github-routes.js` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
 | `src/github/github-write-queue.js` | Pure write ordering: exclusive operations, root-file batching, last-write-wins squashing, superseded reporting | Network, storage, tokens, or what a commit contains |
-| `src/github/github-backup.js` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
+| `src/github/github-backup.ts` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
 | `src/github/github-errors.js` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
 | `src/github/github-api.js` | Every authenticated `api.github.com` request: origin validation, headers, no-cache policy, JSON parsing, and HTTP classification | OAuth device-flow form posts or repository algorithms |
 | `src/github/github-client.js` | Repository inspection, atomic Git Data writes, owned-file pruning, conflict retry | Peakbagger data acquisition or UI |

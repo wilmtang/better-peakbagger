@@ -23,7 +23,7 @@
 // so callers map one actionable sentence per case (see the error taxonomy in
 // docs/github-ascent-backup.md). Idempotent to inject more than once.
 
-import { githubBackup as Backup } from './github-backup.js';
+import { githubBackup as Backup } from './github-backup.ts';
 import { githubApi as GithubApi } from './github-api.js';
 import { githubErrors as GithubErrors } from './github-errors.js';
 
