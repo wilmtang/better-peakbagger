@@ -199,9 +199,10 @@ independent of the existing targets.
 
 - [verify-layer-inspection.mts](verify-layer-inspection.mts) — hidden Chrome/Firefox
   HTTPS fixtures for compact right-click overlay readings, pending/success/error
-  geometry, keyboard retry, layer invalidation and full-width legend swatches.
+  geometry, keyboard retry, layer invalidation and 18-pixel square legend
+  swatches beside complete depth ranges.
   Run with exactly `chrome` or `firefox`; `BPB_INSPECTION_SCREENSHOT_DIR` retains
   the desktop/narrow, light/dark and enlarged-text renders.
 
   `BPB_INSPECTION_CSS` can select a read-only historical stylesheet to prove that
-  the swatch regression assertion rejects the previous small samples.
+  the swatch regression assertion rejects the previous full-width bars.

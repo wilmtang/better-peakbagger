@@ -761,15 +761,16 @@ separate ArcGIS Snow Analysis depth renderer, whose published legend includes
 match the actual tiles, so copying the native map's labels would misrepresent
 this overlay. See the [NOAA ArcGIS legend](https://mapservices.weather.noaa.gov/raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer/legend?f=pjson)
 and [depth layer metadata](https://mapservices.weather.noaa.gov/raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer/3?f=pjson).
-Two equal-width legend columns now use full-width 18-pixel color bars instead
-of 10-pixel chips. The NOAA analysis time remains above the legend.
+The legend uses 18 × 18-pixel square swatches beside each complete depth range.
+Two equal-width columns become one when enlarged text needs more room. The
+NOAA analysis time remains above the legend.
 
 Run `node scripts/verify-layer-inspection.mts chrome` and the matching `firefox`
 command for hidden HTTPS component fixtures. They exercise pending, success,
-error, keyboard retry, layer invalidation and full-width color bars at desktop
-and narrow widths, both themes and enlarged text. Public provider replies and
-elevation are stubbed; real extension loading and rendering are checked
-separately by the browser and snow-depth verifiers.
+error, keyboard retry, layer invalidation, square swatches and single-line depth
+ranges at desktop and narrow widths, both themes and enlarged text. Public
+provider replies and elevation are stubbed; real extension loading and rendering
+are checked separately by the browser and snow-depth verifiers.
 
 ### Verification and boundaries (November 3, 2026)
 
