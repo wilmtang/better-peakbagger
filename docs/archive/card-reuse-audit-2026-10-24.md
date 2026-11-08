@@ -35,7 +35,7 @@ while the cloud card checks collapse before loading. The
 reproduced one GET with both peak cards saved collapsed.
 
 Evidence: [peak weather load/visibility](../../src/weather/peak-weather.js#L363),
-[cloud eligibility](../../src/weather/summit-cloud.js#L77),
+[cloud eligibility](../../src/weather/summit-cloud.ts#L77),
 [snow enablement](../../src/snow/peak-snow.js#L138),
 [ascent lazy loading](../../src/ascent/ascent-weather.js#L614),
 [existing lifecycle helper](../../src/ui/page-lifecycle.ts#L9).
@@ -162,7 +162,7 @@ surface-weather transport. Avoid adding another wrapper that copies them.
 
 Evidence: [ascent request ownership](../../src/ascent/ascent-weather.js#L478),
 [peak request ownership](../../src/weather/peak-weather.js#L362),
-[cloud request ownership](../../src/weather/summit-cloud.js#L147),
+[cloud request ownership](../../src/weather/summit-cloud.ts#L147),
 [ascent placement revision](../../src/ascent/ascent-weather.js#L675),
 [peak field-write revisions](../../src/ui/peak-card-layout.js#L53),
 [shared transport/cache](../../src/weather/open-meteo-client.js#L135).
