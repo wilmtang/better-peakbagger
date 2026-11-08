@@ -316,7 +316,7 @@ compose `src/ui/page-lifecycle.ts`. A persisted `pagehide` is suspension for the
 browser back/forward cache: durable UI and subscriptions stay mounted while
 transient deadlines and pending capture work pause. Persisted `pageshow`
 revalidates current iframe/document identity and refreshes settings. Only a
-non-persisted page exit performs terminal disposal. `src/gpx/map-viewport.js`
+non-persisted page exit performs terminal disposal. `src/gpx/map-viewport.ts`
 owns and releases its window resize listener, observer, timer, and scheduled
 invalidation as part of that terminal path.
 

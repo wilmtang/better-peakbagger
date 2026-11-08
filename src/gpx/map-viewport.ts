@@ -13,7 +13,18 @@
 
 import { dom as Dom } from '../ui/dom.js';
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, Math.round(value)));
+interface ViewportSize { width: number; height: number; }
+interface ViewportBounds { minWidth: number; maxWidth: number; minHeight: number; maxHeight: number; }
+interface ViewportMap { invalidateSize(options: { debounceMoveend: boolean }): unknown; }
+type MapFrameWindow = Window & { mapsPlaceholder?: ViewportMap; map?: ViewportMap };
+interface MapViewportOptions {
+    iframe: HTMLIFrameElement | null; size: ViewportSize; bounds: ViewportBounds; railHeight: number; targetSize?: number;
+    persistDelayMs: number; onPersist(size: ViewportSize): void; onInvalidated?(): void;
+    getResizeBoundary?(element: HTMLElement | null): HTMLElement | null | undefined;
+    ownerWindow?: Window & typeof globalThis; ResizeObserver?: typeof globalThis.ResizeObserver;
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(value)));
 
 export const createMapViewport = ({
     iframe: initialIframe,
@@ -27,20 +38,21 @@ export const createMapViewport = ({
     getResizeBoundary = element => element?.parentElement,
     ownerWindow = globalThis.window,
     ResizeObserver: Observer = globalThis.ResizeObserver,
-} = {}) => {
+}: MapViewportOptions) => {
     let current = {
         width: clamp(size.width, bounds.minWidth, bounds.maxWidth),
         height: clamp(size.height, bounds.minHeight, bounds.maxHeight),
     };
-    let element = null;
-    let handle = null;
-    let iframe = null;
+    // Null only before attach and after dispose; every entry point guards on them.
+    let element = null as unknown as HTMLElement;
+    let handle = null as unknown as HTMLElement;
+    let iframe = null as unknown as HTMLIFrameElement;
     const originalFrameStyles = new WeakMap();
-    let invalidateFrame = null;
-    let cancelInvalidate = null;
-    let persistTimer = null;
-    let resizeObserver = null;
-    let drag = null;
+    let invalidateFrame: number | ReturnType<typeof setTimeout> | null = null;
+    let cancelInvalidate: (() => void) | null = null;
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    let drag: Record<'pointerId' | 'startX' | 'startY' | 'startWidth' | 'startHeight' | 'parentWidth' | 'widthScale', number> | null = null;
     let disposed = false;
 
     const renderedWidth = () => {
@@ -78,10 +90,12 @@ export const createMapViewport = ({
             cancelInvalidate = null;
             syncHandleLabel();
             try {
-                const win = iframe.contentWindow;
+                const win = iframe.contentWindow as MapFrameWindow | null;
                 const map = win && [win.mapsPlaceholder, win.map]
                     .find(candidate => typeof candidate?.invalidateSize === 'function');
-                map?.invalidateSize(false);
+                // Debounced like Leaflet's own window resize: every drag step must not
+                // settle the map, which refetches the peak feed and overlays.
+                map?.invalidateSize({ debounceMoveend: true });
             } catch (e) { /* Peakbagger may replace or discard its map while resizing. */ }
             // Re-anchor the floating toggle: the native zoom's position (2D)
             // and the viewport size can change as the map settles or resizes.
@@ -89,14 +103,14 @@ export const createMapViewport = ({
         };
         if (typeof requestAnimationFrame === 'function') {
             invalidateFrame = requestAnimationFrame(invalidate);
-            cancelInvalidate = () => cancelAnimationFrame(invalidateFrame);
+            cancelInvalidate = () => cancelAnimationFrame(invalidateFrame as number);
         } else {
             invalidateFrame = setTimeout(invalidate, 0);
-            cancelInvalidate = () => clearTimeout(invalidateFrame);
+            cancelInvalidate = () => clearTimeout(invalidateFrame as ReturnType<typeof setTimeout>);
         }
     };
 
-    const applySize = next => {
+    const applySize = (next: ViewportSize) => {
         current = {
             width: clamp(next.width, bounds.minWidth, bounds.maxWidth),
             height: clamp(next.height, bounds.minHeight, bounds.maxHeight),
@@ -128,7 +142,7 @@ export const createMapViewport = ({
         }, persistDelayMs);
     };
 
-    const attach = nextIframe => {
+    const attach = (nextIframe: HTMLIFrameElement | null) => {
         if (disposed || !nextIframe || !nextIframe.parentElement) return element;
         const previousIframe = iframe;
         if (previousIframe && previousIframe !== nextIframe && previousIframe.parentElement === element) {
@@ -247,7 +261,7 @@ export const createMapViewport = ({
             });
             event.preventDefault();
         });
-        const finishDrag = event => {
+        const finishDrag = (event: PointerEvent) => {
             if (!drag || event.pointerId !== drag.pointerId) return;
             const pointerId = drag.pointerId;
             drag = null;

@@ -6,7 +6,9 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+// @ts-expect-error jsdom ships no type declarations, so page objects stay untyped here.
 import { JSDOM } from 'jsdom';
+type PageValue = JSDOM;
 import { makeChromeStub, waitFor } from '../helpers/load-page.mjs';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 
@@ -34,7 +36,7 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
     showSunMoon = true, legend,
     storedSize = null, storageBlocked = false, coarsePointer = false,
     includeCoordinates = true, fullMapOrigin = 'https://www.peakbagger.com',
-    nowMs = Date.parse('2026-08-25T18:45:00Z') } = {}) => {
+    nowMs = Date.parse('2026-08-25T18:45:00Z') }: PageValue = {}) => {
     const dom = new JSDOM(peakHtml({ mapPid, mapType, includeCoordinates, fullMapOrigin, legend }), {
         url: 'https://www.peakbagger.com/Peak.aspx?pid=2829',
         runScripts: 'outside-only',
@@ -46,15 +48,15 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
         get() { throw new window.DOMException('Storage blocked', 'SecurityError'); },
     });
     window.Date.now = () => nowMs;
-    const messages = [];
+    const messages: PageValue = [];
     window.chrome = makeChromeStub({ bpbSettings: {
         enable3dMap: enabled,
         showSunMoon,
         theme: 'dark',
         terrainCacheLimitMb: 384
     } });
-    window.matchMedia = query => ({ matches: coarsePointer && query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} });
-    const postMessage = message => {
+    window.matchMedia = (query: PageValue) => ({ matches: coarsePointer && query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} });
+    const postMessage = (message: PageValue) => {
         messages.push(structuredClone(message));
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
@@ -85,8 +87,8 @@ for (const [label, text, expected] of [
             const toggle = window.document.getElementById('bpb-terrain-toggle');
             await waitFor(dom, () => !toggle.disabled);
             toggle.click();
-            await waitFor(dom, () => messages.some(message => message.__bpbTerrain && message.type === 'init'));
-            const init = messages.find(message => message.__bpbTerrain && message.type === 'init');
+            await waitFor(dom, () => messages.some((message: PageValue) => message.__bpbTerrain && message.type === 'init'));
+            const init = messages.find((message: PageValue) => message.__bpbTerrain && message.type === 'init');
             assert.equal(init.focusPeak.name, expected);
             assert.equal(init.focusPeak.state, 'unknown');
             assert.equal(init.focusPeak.id, 2829);
@@ -119,13 +121,13 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     const mount = window.document.getElementById('bpb-map-viewport');
     const toggle = window.document.getElementById('bpb-terrain-toggle');
     const sun = window.document.querySelector('.bpb-sun-calculator');
-    const setViewCalls = [];
+    const setViewCalls: PageValue = [];
     iframe.contentWindow.mapsPlaceholder = {
         eachLayer() {},
         on() {},
         getCenter() { return { lat: 48.84, lng: -121.59 }; },
         getZoom() { return 15; },
-        setView(center, zoom, options) {
+        setView(center: PageValue, zoom: PageValue, options: PageValue) {
             setViewCalls.push({ center: [...center], zoom, options: { ...options } });
         }
     };
@@ -162,14 +164,14 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
 
     await waitFor(dom, () => toggle.dataset.theme === 'dark');
     assert.equal(sun.dataset.theme, 'dark');
-    const settingsReply = messages.find(message => message.__bpbPeakMap === true && message.dir === 'toPage');
+    const settingsReply = messages.find((message: PageValue) => message.__bpbPeakMap === true && message.dir === 'toPage');
     assert.deepEqual(Object.keys(settingsReply).sort(),
         ['__bpbPeakMap', 'dir', 'enable3dMap', 'showSunMoon', 'terrainCacheLimitMb', 'theme'],
         'the Peak-page bridge exposes only the read-only terrain and Sun display settings');
 
     toggle.click();
-    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
-    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    await waitFor(dom, () => messages.some((message: PageValue) => message.__bpbTerrain === true && message.type === 'init'));
+    const init = messages.find((message: PageValue) => message.__bpbTerrain === true && message.type === 'init');
     assert.deepEqual(init.focus, [48.83115, -121.60214]);
     assert.equal(init.focusZoom, 13, 'Leaflet z14 is translated to the equivalent MapLibre z13 view');
     assert.deepEqual(init.camera, { center: [48.84, -121.59], zoom: 14 },
@@ -231,7 +233,7 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(iframe.style.visibility, 'visible');
     assert.equal(iframe.hasAttribute('aria-hidden'), false);
     assert.equal(toggle.textContent, '3D');
-    assert.ok(messages.some(message => message.__bpbTerrain === true && message.type === 'destroy'));
+    assert.ok(messages.some((message: PageValue) => message.__bpbTerrain === true && message.type === 'destroy'));
     await new Promise(resolve => window.setTimeout(resolve, 0));
     window.dispatchEvent(new window.PageTransitionEvent('pagehide'));
     assert.equal(window.document.querySelector('.bpb-sun-calculator'), null,
@@ -245,9 +247,9 @@ test('Peak map survives repeated persisted traversal and adopts a replaced nativ
     const mount = window.document.getElementById('bpb-map-viewport');
     const calculator = window.document.querySelector('.bpb-sun-calculator');
     const original = window.document.getElementById('Gmap');
-    const settingsGets = () => messages.filter(message =>
+    const settingsGets = () => messages.filter((message: PageValue) =>
         message.__bpbPeakMap === true && message.dir === 'toCS' && message.type === 'get').length;
-    const settingsReplies = () => messages.filter(message =>
+    const settingsReplies = () => messages.filter((message: PageValue) =>
         message.__bpbPeakMap === true && message.dir === 'toPage').length;
     const initialGets = settingsGets();
     const initialReplies = settingsReplies();
@@ -287,7 +289,7 @@ test('Peak map resize supports keyboard, centered pointer drags, persistence, an
         const syncBefore = await window.chrome.storage.sync.get(null);
         iframe.contentWindow.map = {
             eachLayer() {}, on() {}, getCenter: () => ({ lat: 48.83115, lng: -121.60214 }), getZoom: () => 14,
-            invalidateSize(animate) { assert.equal(animate, false); invalidations++; },
+            invalidateSize(options: PageValue) { assert.equal(options?.debounceMoveend, true, 'A drag step must not settle the map'); invalidations++; },
             setView() { cameraChanges++; },
         };
         assert.equal(handle.type, 'button');
@@ -300,11 +302,11 @@ test('Peak map resize supports keyboard, centered pointer drags, persistence, an
         handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true }));
         assert.equal(mount.style.height, '491px');
         assert.equal(window.localStorage.getItem('pbPeakMapViewport.v1'), null, 'key repeats do not persist each step');
-        handle.dispatchEvent(pointerEvent(dom, 'pointerdown', { pointerId: 1, button: 0, clientX: 725, clientY: 491 }));
-        handle.dispatchEvent(pointerEvent(dom, 'pointermove', { pointerId: 1, clientX: 745, clientY: 511 }));
+        handle.dispatchEvent((pointerEvent as PageValue)(dom, 'pointerdown', { pointerId: 1, button: 0, clientX: 725, clientY: 491 }));
+        handle.dispatchEvent((pointerEvent as PageValue)(dom, 'pointermove', { pointerId: 1, clientX: 745, clientY: 511 }));
         assert.equal(mount.style.width, '490px', 'centered sizing keeps the edge under the pointer');
         assert.equal(mount.style.height, '511px');
-        handle.dispatchEvent(pointerEvent(dom, 'pointerup', { pointerId: 1 }));
+        handle.dispatchEvent((pointerEvent as PageValue)(dom, 'pointerup', { pointerId: 1 }));
         assert.deepEqual(JSON.parse(window.localStorage.getItem('pbPeakMapViewport.v1')), { width: 490, height: 495 });
         await waitFor(dom, () => invalidations > 0);
         handle.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
@@ -355,7 +357,7 @@ test('Peak-page 3D loading can be canceled and renderer failures are announced',
     await waitFor(dom, () => toggle.dataset.theme === 'dark');
 
     toggle.click();
-    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    await waitFor(dom, () => messages.some((message: PageValue) => message.__bpbTerrain === true && message.type === 'init'));
     assert.equal(toggle.disabled, false);
     assert.equal(toggle.getAttribute('aria-label'), 'Cancel loading 3D terrain');
     toggle.click();
@@ -363,7 +365,7 @@ test('Peak-page 3D loading can be canceled and renderer failures are announced',
     assert.equal(toggle.textContent, '3D');
 
     toggle.click();
-    await waitFor(dom, () => messages.filter(message => message.__bpbTerrain === true && message.type === 'init').length === 2);
+    await waitFor(dom, () => messages.filter((message: PageValue) => message.__bpbTerrain === true && message.type === 'init').length === 2);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -387,7 +389,7 @@ test('hovering the idle 3D toggle prefetches the peak DEM tiles once per window'
     // has been applied.
     await waitFor(dom, () => toggle.dataset.theme === 'dark');
 
-    const prefetches = () => messages.filter(message => message.__bpbTerrain === true && message.type === 'prefetch');
+    const prefetches = () => messages.filter((message: PageValue) => message.__bpbTerrain === true && message.type === 'prefetch');
     assert.equal(prefetches().length, 0, 'no prefetch merely because the page loaded');
 
     toggle.dispatchEvent(new window.Event('pointerenter'));
@@ -428,9 +430,9 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
 
     await waitFor(dom, () => toggle.dataset.theme === 'dark');
     toggle.click();
-    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    await waitFor(dom, () => messages.some((message: PageValue) => message.__bpbTerrain === true && message.type === 'init'));
 
-    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatchPage = (data: PageValue) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', ...data }
     }));
@@ -446,9 +448,9 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
     assert.equal(solarSummary.textContent, absoluteSummary,
         'absolute azimuth and elevation text do not change with map bearing');
     dispatchPage({ type: 'view', bearing: 350, pitch: 40 });
-    const beforeNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)[1]);
+    const beforeNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)![1]);
     dispatchPage({ type: 'view', bearing: 10, pitch: 40 });
-    const afterNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)[1]);
+    const afterNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)![1]);
     assert.ok(Math.abs(afterNorth - beforeNorth) < 180,
         'crossing north advances the transformed needle along the short arc');
     // A non-finite value is ignored — the disc keeps its last transform.
@@ -469,11 +471,11 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
 test('Peak-page 3D uses the extension-owned consent gate when the feature is off', async () => {
     const { dom, window, messages } = loadPeakMap({ enabled: false });
     const toggle = window.document.getElementById('bpb-terrain-toggle');
-    await waitFor(dom, () => messages.some(message => message.__bpbPeakMap === true && message.dir === 'toPage'));
+    await waitFor(dom, () => messages.some((message: PageValue) => message.__bpbPeakMap === true && message.dir === 'toPage'));
 
     toggle.click();
-    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'requestConsent'));
-    assert.equal(messages.some(message => message.__bpbTerrain === true && message.type === 'init'), false,
+    await waitFor(dom, () => messages.some((message: PageValue) => message.__bpbTerrain === true && message.type === 'requestConsent'));
+    assert.equal(messages.some((message: PageValue) => message.__bpbTerrain === true && message.type === 'init'), false,
         'the page cannot start third-party tile requests before consent');
 
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -481,7 +483,7 @@ test('Peak-page 3D uses the extension-owned consent gate when the feature is off
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: true }
     }));
-    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    await waitFor(dom, () => messages.some((message: PageValue) => message.__bpbTerrain === true && message.type === 'init'));
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
