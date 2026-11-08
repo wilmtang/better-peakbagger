@@ -134,7 +134,7 @@ should permanently exclude Canada or the rest of the world.
 | [settings-schema.ts](../../src/settings/settings-schema.ts), especially `MAP_OVERLAY_IDS` and its readers | Add the allowlisted wildfire state once. First release uses fixed styling, so normalize its opacity field to 100 and omit an opacity slider; do not introduce a second schema. |
 | [map-overlay-providers.js](../../src/maps/map-overlay-providers.js) | Add reviewed wildfire availability and a separate zoom policy. Existing `OVERLAY_MIN_ZOOM = 8` belongs to rasters and must not silently govern incidents. |
 | [map-overlay-leaflet.js](../../src/maps/map-overlay-leaflet.js) | Add extension-owned polygon/point groups independently of raster tiles. Existing native raster panes are at 250/260/270. Preserve host routes, markers and layers. |
-| [terrain-overlays.js](../../src/terrain/terrain-overlays.js) | Add bounded GeoJSON source(s), fill/outline/point layers and popup lifecycle. Existing terrain sources/protocol are raster-only. Keep terrain style and camera intact. |
+| [terrain-overlays.ts](../../src/terrain/terrain-overlays.ts) | Add bounded GeoJSON source(s), fill/outline/point layers and popup lifecycle. Existing terrain sources/protocol are raster-only. Keep terrain style and camera intact. |
 | [map-layer-protocol.ts](../../src/maps/map-layer-protocol.ts), [map-layer bridge](../../src/maps/map-layer-bridge.js), [terrain runtime](../../src/terrain/terrain-frame-runtime.ts) | Revalidate the new ID and typed counts, freshness and component outcomes, with the existing source/origin/generation/revision checks. No arbitrary service URL, filter expression, remote style or provider HTML crosses the bridge. |
 | [Full Screen handoff](../../src/background/map-layer-handoff.js) | Carry only validated selection and bounded provider cooldowns under the existing one-use, 30-second contract. Refetch in the destination; never hand off feature collections, bounds or route data. |
 | [build configuration](../../scripts/build-config.mts), [manifest](../../manifest.json), [privacy contract](../../PRIVACY.md) | Bundle shared imports into native and terrain entries; declare any genuinely necessary new packaged assets. Document viewed-area disclosure before shipping. Keep MAIN-world code free of extension APIs. |
@@ -163,7 +163,7 @@ licence/attribution and current service terms in its adapter gate.
 
 Proposed small modules, colocated with the existing map code: `wildfire-core.js`
 for pure normalization/validation, `wildfire-client.js` for fixed provider
-queries, and `wildfire-session.js` for viewport ownership and refresh. Names are
+queries, and `wildfire-session.ts` for viewport ownership and refresh. Names are
 proposed; no corresponding files exist yet. Avoid a general overlay-framework
 refactor.
 

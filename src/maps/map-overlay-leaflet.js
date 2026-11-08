@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createLeafletWildfires } from './wildfire-leaflet.js';
+import { createLeafletWildfires } from './wildfire-leaflet.ts';
 import { createOverlayTiles } from './map-overlay-tiles.js';
 import { createPageBCTileFetch } from './bc-land-client.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';

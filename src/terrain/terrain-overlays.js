@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { createTerrainWildfires } from './terrain-wildfires.js';
+import { createTerrainWildfires } from './terrain-wildfires.ts';
 import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
 import { createSentinelSession } from '../maps/sentinel-session.js';
 import { SNOW_DEPTH_MAX_ZOOM } from '../maps/snow-depth.js';
