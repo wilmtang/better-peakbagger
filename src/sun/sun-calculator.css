@@ -771,6 +771,9 @@
     font-size: 1em;
     line-height: 1.35rem;
 }
+/* The longest phase name fits the narrowest sidebar column at this ratio; wider
+   columns keep the regular size. */
+.bpb-sun-calculator--peak .bpb-sun-calculator__moon-value { gap: min(0.45rem, 4.6cqi); font-size: min(1em, 9.6cqi); }
 .bpb-sun-calculator--peak .bpb-sun-calculator__moon-icon { font-size: 1em; }
 .bpb-sun-calculator--peak .bpb-sun-calculator__fact-detail {
     block-size: 1.15rem;

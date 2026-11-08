@@ -111,7 +111,7 @@ independent of the existing targets.
 - [verify-vector-map.mts](verify-vector-map.mts)
 - [verify-map-location-cases.mjs](verify-map-location-cases.mjs)
 - [verify-peak-link-order.mjs](verify-peak-link-order.mjs)
-- [verify-peak-map-layout.mjs](verify-peak-map-layout.mjs)
+- [verify-peak-map-layout.mts](verify-peak-map-layout.mts)
 - [verify-terrain-cache-owners.mts](verify-terrain-cache-owners.mts)
 - [verify-terrain-lod.mts](verify-terrain-lod.mts)
 - [verify-terrain-popup.mjs](verify-terrain-popup.mjs)

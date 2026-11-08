@@ -44,7 +44,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'map-location': [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']],
     'api-rate-limits': [['verify-api-rate-limits.mjs']],
     'ascent-backup-lifecycle': [['verify-ascent-backup-lifecycle.mjs']],
-    'peak-map-layout': [['verify-peak-map-layout.mjs']],
+    'peak-map-layout': [['verify-peak-map-layout.mts']],
     'weather-intervals': [['verify-weather-intervals.mjs']],
     weather: [['verify-ascent-weather.mjs'], ['verify-ascent-weather.mjs', '--firefox']],
     'peak-weather': [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']],
