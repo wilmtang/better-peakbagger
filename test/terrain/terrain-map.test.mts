@@ -752,8 +752,16 @@ test('a real 3D request whose activation lapsed answers at once, and the analyze
         const open = issued;
         fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
         assert.equal(issued, open + 1, 'The trusted switch authorizes the restart it causes');
-        fireTrustedEvent(window.document.getElementById('bpb-terrain-toggle')!, 'click', { bubbles: true });
-        assert.equal(issued, open + 1, 'Leaving 3D mints nothing a forged message could spend');
+
+        // A second click while the restart's capability is still in flight.
+        dispatch('destroy'); await settle();
+        const held: ((value: unknown) => void)[] = [];
+        Object.defineProperty(window.chrome.runtime, 'sendMessage', { value: () => { issued++; return new Promise(resolve => held.push(resolve)); } });
+        armTerrain(window); dispatch('init');
+        const launching = issued;
+        fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
+        assert.equal(issued, launching + 1, 'A view switch during a launch authorizes its own restart');
+        for (const resolve of held) resolve(reply);
     } finally { dispatch('destroy'); dom.window.close(); }
 });
 
@@ -1514,6 +1522,8 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(markers.length, markersBeforeRefresh, 'An unchanged dot is reused, not rebuilt');
     assert.equal(focusMarker.removed, undefined, 'A reused dot keeps its element and keyboard focus');
+    assert.equal(popups.at(-1)!.removedPopup, undefined, 'An unchanged dot keeps its open popup');
+
 
     const rejectedPeaks = withResolvers();
     focused!.sourceDataOutcomes.set('bpb-peaks', [rejectedPeaks.promise]);
@@ -2063,6 +2073,34 @@ test('a lent 2D paint drapes above the loading vector map, retires once its tile
     } finally { delete (globalThis as { ImageBitmap?: unknown }).ImageBitmap; dom.window.close(); }
 });
 
+test('a repeated peak feed row is one dot and leaves nothing behind', async () => {
+    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
+    const { window } = dom, messages: TestMessage[] = [], created: { removed?: boolean }[] = [];
+    class MapStub {
+        declare layers: StubLayer[]; declare sources: Map<string, StubSource>; declare handlers: Map<string, Handler>;
+        constructor(options: StubOptions) { Object.assign(this, { layers: [...options.style.layers], sources: new Map(Object.entries(options.style.sources)), handlers: new Map() }); }
+        addControl() {} removeControl() {} once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, callback: Handler) { this.handlers.set(type, callback); } off() {} fitBounds() {} jumpTo() {} resize() {} remove() {} setTerrain() {} setLayoutProperty() {} setPaintProperty() {} setFilter() {}
+        getCanvas() { return { clientWidth: 800, clientHeight: 600, width: 800, height: 600 }; }
+        getBounds() { return { getWest: () => -122, getSouth: () => 46, getEast: () => -121, getNorth: () => 47 }; }
+        getZoom() { return 13; } getBearing() { return 0; } getPitch() { return 60; } getCenter() { return { lng: -121.5, lat: 46.5, wrap() { return this; } }; }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {} }); } getSource(id: string) { return this.sources.get(id); }
+        addLayer(layer: StubLayer) { this.layers.push(layer); } getLayer(id: string) { return this.layers.find(layer => layer.id === id); } queryTerrainElevation() { return null; }
+    }
+    class Marker { removed?: boolean; constructor() { created.push(this); } setLngLat() { return this; } addTo() { return this; } remove() { this.removed = true; } }
+    const dispatch = bootTerrainFrame(window, MapStub, { messages, maplibre: { Marker } });
+    try {
+        dispatch({ type: 'init', routeSegments: [[[46.85, -121.76], [46.86, -121.77]]] });
+        for (let attempt = 0; attempt < 200 && !messages.some(message => message.type === 'peaksRequest'); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+        const { requestId } = messages.findLast(message => message.type === 'peaksRequest')!;
+        const peak = { id: 77, name: 'Repeated Peak', lat: 46.5, lon: -121.5, state: 'climbed' };
+        dispatch({ type: 'peaks', requestId, peaks: [peak, peak] }); await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(created.length, 1, 'Two identical rows draw one dot');
+        dispatch({ type: 'peaks', requestId, peaks: [] }); await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(created.filter(marker => !marker.removed).length, 0, 'No dot survives the feed moving on');
+    } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
+});
+
 test('the bridge forwards peak-feed requests to the page and replies to the frame', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
@@ -2479,7 +2517,7 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         peaks: [{ id: 7, name: 'Fresh Peak', lat: 48.71, lon: -121.81, state: 'unclimbed' }]
     });
     assert.equal(popups.at(-1)!.removedPopup, true,
-        'refreshing the dots closes an open popup, like the native marker rebuild');
+        'a popup closes when its dot is no longer drawn');
 
     const beforeZoomOut = messages.filter(message => message.type === 'peaksRequest').length;
     camera.zoom = 9;

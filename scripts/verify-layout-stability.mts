@@ -1088,6 +1088,7 @@ async function mapCase(page: Page, origin: string, variant: LayoutVariant) {
     });
     await page.addScriptTag({ content: (await asset('content/map-layers.js')).toString() });
     await page.evaluate(() => {
+        window.postMessage({ __bpbTerrain: true, dir: 'toCS', type: 'init' }, location.origin);
         window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'loaded' }, location.origin);
         window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'layerView', bounds: [-122,46,-121,47], zoom: 16 }, location.origin);
     });

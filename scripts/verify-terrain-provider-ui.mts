@@ -83,7 +83,7 @@ const configureCredits = ({ width, theme, largeText, long }: { width: number; th
                 pickerFont: getComputedStyle(picker).fontSize, x: box.x, y: box.y, width: box.width, height: box.height };
             const signature = JSON.stringify(value);
             // The picker keeps a native select's size until page text outgrows it.
-            stable = value.theme === theme && value.font === expectedFont && parseFloat(value.pickerFont) >= Math.min(13, parseFloat(expectedFont))
+            stable = value.theme === theme && value.font === expectedFont && Math.abs(parseFloat(value.pickerFont) - Math.max(13.3333, parseFloat(expectedFont))) < .5
                 && signature === previous ? stable + 1 : 0;
             previous = signature;
             if (stable >= 3) resolve();

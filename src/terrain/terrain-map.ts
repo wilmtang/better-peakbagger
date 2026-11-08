@@ -87,13 +87,9 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
             || node?.classList?.contains('bpb-terrain-consent-primary')) || null;
     };
 
-    // Includes a launch still loading. A click on the open toggle leaves 3D, so it
-    // must not leave behind a live capability a forged message could spend.
+    // Includes a launch still loading. The toggle itself always mints: a re-open can
+    // land before this bridge has seen the cancel, so it cannot tell the two apart.
     const viewOpen = () => Boolean(pendingLaunch || frame && !suspended);
-    const launchControl = (event: Event) => {
-        const control = terrainControl(event) as Element | null;
-        return control && (control.id !== 'bpb-terrain-toggle' || !viewOpen()) ? control : null;
-    };
 
     // The analyzer's segment-view switch rebuilds the route, restarting an open
     // 3D view. That restart comes from this trusted click.
@@ -106,10 +102,10 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
     // trusted event here.
     window.addEventListener('click', event => {
         if (!event.isTrusted) return;
-        if (launchControl(event) || viewOpen() && viewSwitchControl(event)) void issueActivation('init');
+        if (terrainControl(event) || viewOpen() && viewSwitchControl(event)) void issueActivation('init');
     }, true);
     window.addEventListener('keydown', event => {
-        if (!event.isTrusted || !launchControl(event)
+        if (!event.isTrusted || !terrainControl(event)
             || (event.key !== 'Enter' && event.key !== ' ')
             || event.ctrlKey || event.metaKey || event.altKey) return;
         void issueActivation('init');
