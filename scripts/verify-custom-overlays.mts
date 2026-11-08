@@ -171,7 +171,8 @@ try {
         const reorderGeometry = async () => ({ button: await box(up), heading: await box(admin.locator('#custom-map-layers-heading')), following: await box(admin.locator('#beta')), scroll: await admin.locator('.content').evaluate(element => element.scrollTop) });
         const assertOrderGeometry = (start: Awaited<ReturnType<typeof reorderGeometry>>, current: Awaited<ReturnType<typeof reorderGeometry>>, state: string) => {
             for (const key of ['button', 'heading', 'following'] as const) for (const property of RECT_KEYS) assert.ok(Math.abs(start[key][property] - current[key][property]) <= 1, `${state} reorder preserves ${key} ${property}`);
-            assert.equal(start.scroll, current.scroll, `${state} reorder keeps the reading position`);
+            // Scroll anchoring rounds a fractional layout, so it shares the rects' 1px tolerance.
+            assert.ok(Math.abs(start.scroll - current.scroll) <= 1, `${state} reorder keeps the reading position: ${start.scroll} → ${current.scroll}`);
         };
         for (const fail of [true, false]) {
             await admin.evaluate(rejectWrite => { const runtime = chrome.runtime as unknown as MutableRuntime, send = runtime.sendMessage.bind(chrome.runtime); runtime.sendMessage = async (...args) => {
