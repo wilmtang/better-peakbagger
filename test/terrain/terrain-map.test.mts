@@ -1270,6 +1270,21 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.deepEqual(map.layout.at(-1), ['bpb-highlight', 'visibility', 'visible'],
         'the current successful source update restores its overlay');
 
+    // A scrub faster than worker acks must still show the dot: one update in
+    // flight, the newest queued, and every superseded position skipped.
+    const firstScrub = withResolvers(), lastScrub = withResolvers();
+    map.sourceDataOutcomes.set('bpb-highlight', [firstScrub.promise, lastScrub.promise]);
+    dispatch({ type: 'highlight', coordinates: [-121.801, 48.701], series: 'distance' });
+    dispatch({ type: 'highlight', coordinates: [-121.802, 48.702], series: 'distance' });
+    dispatch({ type: 'highlight', coordinates: [-121.803, 48.703], series: 'distance' });
+    assert.equal(map.sourceDataOutcomes.get('bpb-highlight')!.length, 1, 'Only the in-flight update reached the worker');
+    firstScrub.resolve();
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(map.sourceDataOutcomes.get('bpb-highlight')!.length, 0, 'The newest queued position follows its ack');
+    lastScrub.resolve();
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.deepEqual(map.layout.at(-1), ['bpb-highlight', 'visibility', 'visible'], 'The dot appears once the newest position lands');
+
     dispatch({
         type: 'update',
         routeStyle: { color: '#347a3f', width: 6, casingColor: '#ffffff', casingWidth: 10 },
@@ -1286,6 +1301,16 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(picker().value, '0', 'a drape that rendered a tile stays selected');
     assert.equal(picker().options[0].disabled, false, 'a working drape is not disabled');
     assert.equal(notice()!.hidden, true, 'no failure notice for a drape that rendered a tile');
+
+    // A parked frame stays idle through host resizes and catches up once on resume.
+    const sized: string[] = [], { resize: stubResize } = map as unknown as { resize: () => void };
+    Object.assign(map, { resize() { sized.push('resize'); stubResize.call(map); }, redraw() { sized.push('redraw'); }, fitBounds() { sized.push('camera'); } });
+    dispatch({ type: 'suspend' });
+    for (const observer of resizeObservers) observer.callback();
+    assert.deepEqual(sized, [], 'A parked frame does not redraw on host resize');
+    dispatch({ type: 'resume', routeSegments, theme: 'light' });
+    assert.deepEqual(sized, ['resize', 'camera', 'redraw'], 'Resume frames the route at the new size and refills the canvas');
+    Object.assign(map, { resize: stubResize, redraw: undefined, fitBounds() {} });
 
     const staleHighlight = withResolvers();
     const rejectedRoute = withResolvers();
@@ -1448,6 +1473,12 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         'the terrain-aware marker preserves the existing name-link popup');
     assert.equal(popups.at(-1)!.node.querySelector('a')!.href,
         'https://www.peakbagger.com/peak.aspx?pid=2829');
+
+    const markersBeforeRefresh = markers.length;
+    dispatch({ type: 'peaks', unavailable: true });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(markers.length, markersBeforeRefresh, 'An unchanged dot is reused, not rebuilt');
+    assert.equal(focusMarker.removed, undefined, 'A reused dot keeps its element and keyboard focus');
 
     const rejectedPeaks = withResolvers();
     focused!.sourceDataOutcomes.set('bpb-peaks', [rejectedPeaks.promise]);

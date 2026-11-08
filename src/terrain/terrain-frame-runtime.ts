@@ -273,6 +273,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     let vectorCooldownTimer: ReturnType<typeof setTimeout> | null = null;
     // The 2D paint lent for the moment before this renderer's own tiles arrive.
     let lentDrape: { bitmap: ImageBitmap; paint: VectorPaint; generation: unknown } | null = null;
+    let highlightBusy = false, highlightNext: { coordinates: unknown; series: string } | null = null;
     let drapeInstalled = false, drapeFading = false, drapeTimer: ReturnType<typeof setTimeout> | null = null;
     let vectorChoice: VectorBasemap | null = null, attributionControl: MapLibre.AttributionControl | null = null, attributionProvider: boolean | null = null, maptoolkitLogo: HTMLAnchorElement | null = null;
     let vectorSwapToken = 0;
@@ -300,6 +301,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // test, and the pointer's last position for the frame-throttled hover.
     let peakFeatures: PeakFeature[] = [];
     let peakMarkers: PeakMarker[] = [];
+    let peakMarkerIndex = new Map<string, PeakMarker>();
     // Peak pages pass their subject explicitly because Peakbagger's `t=P`
     // nearby-marker feed may exclude that same peak. Keep it independent of
     // each replace-style feed response so the summit never disappears.
@@ -405,6 +407,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
 
     const removeTerrain = () => {
         removeDrape();
+        highlightBusy = false; highlightNext = null;
         cancelVectorRequests();
         clearTimeout(vectorCooldownTimer!); vectorCooldownTimer = null;
         snowReveal.cancel();
@@ -439,6 +442,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
             try { marker.remove(); } catch (error) { /* Already detached with its map. */ }
         }
         peakMarkers = [];
+        peakMarkerIndex = new Map();
         focusPeakFeature = null;
         peakPointerPoint = null;
         if (peakPointerFrame !== null) {
@@ -511,6 +515,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // nothing.
     const suspendTerrain = () => {
         suspended = true;
+        highlightBusy = false; highlightNext = null;
         removeDrape(); dropLentDrape();
         showNotice('');
         if (routePopup) { routePopup.remove(); routePopup = null; }
@@ -1385,6 +1390,9 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         }, true);
     };
 
+    // One update in flight, newest wins. Each new update supersedes the one
+    // before it, so unthrottled chart hovers could otherwise keep the dot hidden
+    // for a whole scrub. A clear never waits.
     const setHighlight = (coordinates: unknown, series: string) => {
         if (!map || !loaded) return;
         const source = map.getSource('bpb-highlight');
@@ -1392,6 +1400,13 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         const valid = Array.isArray(coordinates) && coordinates.length === 2
             && Number.isFinite(coordinates[0]) && Math.abs(coordinates[0]) <= 180
             && Number.isFinite(coordinates[1]) && Math.abs(coordinates[1]) <= MAX_MERCATOR_LAT;
+        if (valid && highlightBusy) { highlightNext = { coordinates, series }; return; }
+        highlightNext = null;
+        const settle = () => {
+            highlightBusy = false;
+            const queued = highlightNext;
+            if (queued) setHighlight(queued.coordinates, queued.series);
+        };
         if (valid) {
             const color = Object.hasOwn(HIGHLIGHT_COLORS, series)
                 ? HIGHLIGHT_COLORS[series as keyof typeof HIGHLIGHT_COLORS]
@@ -1405,12 +1420,15 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         // unconfirmed. A successful current update restores it; an active
         // rejection leaves this optional overlay hidden without killing 3D.
         setLayerVisibility('bpb-highlight', false);
-        setSourceData('bpb-highlight', data, {
-            onSuccess: (terrainMap: MapLibreMap) => setLayerVisibility('bpb-highlight', valid, terrainMap),
+        highlightBusy = true;
+        const started = setSourceData('bpb-highlight', data, {
+            onSuccess: (terrainMap: MapLibreMap) => { setLayerVisibility('bpb-highlight', valid && !highlightNext, terrainMap); settle(); },
             onFailure: error => {
                 console.warn('Better Peakbagger: 3D highlight update failed', error);
+                settle();
             }
         });
+        if (started === false) highlightBusy = false;
     };
 
     // === Peak markers ===
@@ -1477,16 +1495,22 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // even though queryRenderedFeatures still reports it. MapLibre's DOM
     // Marker path has an explicit terrain-depth tolerance, so use it for the
     // fixed-size rings and keep the circle layer as the API-reduced fallback.
+    // The same dot refreshes in place, so an unchanged settle costs no DOM work
+    // and a focused marker keeps keyboard focus.
     const replacePeakMarkers = (features: PeakFeature[], terrainMap: MapLibreMap) => {
-        for (const marker of peakMarkers) {
-            try { marker.remove(); } catch (error) { /* Already detached. */ }
-        }
-        peakMarkers = [];
-
         const Marker = maplibre?.Marker;
-        if (typeof Marker !== 'function') return false;
+        const previous = peakMarkerIndex, next = new Map<string, PeakMarker>();
+        peakMarkerIndex = next;
+        const removeAll = (markers: Iterable<PeakMarker>) => {
+            for (const marker of markers) {
+                try { marker.remove(); } catch (error) { /* Already detached. */ }
+            }
+        };
+        if (typeof Marker !== 'function') { removeAll(previous.values()); peakMarkers = []; return false; }
         try {
             for (const feature of features) {
+                const key = JSON.stringify(feature), kept = previous.get(key);
+                if (kept) { previous.delete(key); next.set(key, kept); continue; }
                 const state = feature.properties.state;
                 const element = document.createElement('button');
                 element.type = 'button';
@@ -1511,15 +1535,15 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
                 })
                     .setLngLat(feature.geometry.coordinates)
                     .addTo(terrainMap);
-                peakMarkers.push(marker);
+                next.set(key, marker);
             }
         } catch (error) {
-            for (const marker of peakMarkers) {
-                try { marker.remove(); } catch (removeError) { /* Partially attached. */ }
-            }
-            peakMarkers = [];
+            removeAll(previous.values()); removeAll(next.values());
+            peakMarkerIndex = new Map(); peakMarkers = [];
             return false;
         }
+        removeAll(previous.values());
+        peakMarkers = [...next.values()];
         return true;
     };
 
@@ -2405,7 +2429,8 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
             loadTimer = setTimeout(() => fail('timeout'), TERRAIN_FRAME_LOAD_TIMEOUT_MS);
             if (typeof ResizeObserver === 'function') {
                 resizeObserver = new ResizeObserver(() => {
-                    if (!map) return;
+                    // A parked frame is invisible; resumeTerrain resizes it once.
+                    if (!map || suspended) return;
                     positionCreditControls();
                     map.resize();
                     // resize() re-allocates the canvas backing store, which the
@@ -2491,6 +2516,10 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         if (drapeBefore && drapedBasemapTiles === drapeBefore) basemapContentLoaded = drapeProven;
         installLentDrape();
 
+        // The host may have resized while parked, and fitting below reads this size.
+        if (typeof map.resize === 'function') map.resize();
+        positionCreditControls();
+
         // Camera: the live 2D camera wins; else frame the route; else center the
         // focus. Pitch/bearing reset to the fresh-boot defaults either way.
         if (requestedCamera) {
@@ -2512,7 +2541,8 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         // the resumed camera arms warming explicitly rather than relying on it.
         scheduleTiltWarm();
 
-        if (typeof map.resize === 'function') map.resize();
+        // Resizing clears the canvas until the next frame; refill it before reveal.
+        if (typeof map.redraw === 'function') map.redraw();
         // A parked renderer can preserve a user-selected base without swapping
         // it. Republish its choices before the outer menu switches back to 3D.
         renderPicker();
