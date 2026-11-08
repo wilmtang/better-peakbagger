@@ -12,7 +12,7 @@ import { gpxMetrics } from '../gpx/gpx-metrics.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
-import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
+import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';

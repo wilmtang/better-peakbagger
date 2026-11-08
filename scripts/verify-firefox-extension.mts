@@ -39,7 +39,7 @@ import {
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
-import { TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS } from '../src/terrain/terrain-coordinator.js';
+import { TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS } from '../src/terrain/terrain-coordinator.ts';
 import {
     isRetryableFirefoxStartup,
     quitFirefoxDriver,

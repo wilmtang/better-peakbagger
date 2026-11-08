@@ -24,7 +24,7 @@ import { peakMarkers } from '../maps/peak-markers.js';
 import { mountainTime as MountainTime } from '../time/mountain-time.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
-import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
+import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { units as Units } from '../ui/units.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';

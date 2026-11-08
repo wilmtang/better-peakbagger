@@ -5,10 +5,12 @@ import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, readVectorPaint, v
 import type { VectorBasemap, VectorView } from './vector-basemap.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { readRetryAt } from '../net/rate-limit.js';
+import { createVisibleDeadline } from '../ui/visible-deadline.ts';
+import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 
 interface BridgeEntry {
     id: string; basemap: VectorBasemap; frame: HTMLIFrameElement | null; view: VectorView | null; paused: boolean; revision: number;
-    drawFrame?: number | null; drawQueued?: boolean; timer?: number; expiry?: number; initializing?: boolean;
+    drawFrame?: number | null; drawQueued?: boolean; timer?: VisibleDeadline | null; expiry?: number; initializing?: boolean;
     loaded?: boolean; released?: boolean; generation?: number | null;
 }
 interface BridgeExtension {
@@ -27,7 +29,7 @@ export function installVectorMapBridge(win: Window & typeof globalThis = window,
     const key = (entry: BridgeEntry) => `${entry.id}:${entry.basemap.id}`;
     const remove = (entry: BridgeEntry) => {
         if (entry.drawFrame != null) win.cancelAnimationFrame(entry.drawFrame); entry.drawFrame = null; entry.drawQueued = false;
-        win.clearTimeout(entry.timer); win.clearTimeout(entry.expiry); entry.revision++; entry.initializing = false;
+        entry.timer?.clear(); win.clearTimeout(entry.expiry); entry.revision++; entry.initializing = false;
         entry.frame?.remove(); entry.frame = null; entry.loaded = false; entry.released = false;
         if (parked.get(key(entry)) === entry) parked.delete(key(entry));
     };
@@ -40,7 +42,7 @@ export function installVectorMapBridge(win: Window & typeof globalThis = window,
     }, origin);
     const release = (entry: BridgeEntry) => {
         if (entry.drawFrame != null) win.cancelAnimationFrame(entry.drawFrame); entry.drawFrame = null; entry.drawQueued = false;
-        win.clearTimeout(entry.timer); entry.revision++; entry.generation = null; entry.initializing = false; entry.paused = true;
+        entry.timer?.clear(); entry.revision++; entry.generation = null; entry.initializing = false; entry.paused = true;
         if (!entry.loaded) { remove(entry); return; }
         // The frame clears its style and aborts every provider request. Keep
         // only its GL/worker setup and accepted style for a bounded warm start.
@@ -72,7 +74,7 @@ export function installVectorMapBridge(win: Window & typeof globalThis = window,
         if (entry.frame) {
             if (entry.released) {
                 entry.released = false; delete entry.frame.dataset.bpbVectorParked; win.clearTimeout(entry.expiry);
-                entry.timer = win.setTimeout(() => fail(entry), 20000); void activate(entry, 'resume');
+                entry.timer = createVisibleDeadline(win.document, 20000, () => fail(entry)); void activate(entry, 'resume');
             }
             return;
         }
@@ -83,7 +85,7 @@ export function installVectorMapBridge(win: Window & typeof globalThis = window,
         frame.src = url; entry.frame = frame;
         const logo = win.document.getElementById(`bpb-vector-logo-${entry.id}`);
         if (logo && entry.basemap.id === 'maptoolkit') logo.style.backgroundImage = `url("${ext.runtime.getURL('images/maptoolkit-attribution.png')}")`;
-        entry.timer = win.setTimeout(() => fail(entry), 20000);
+        entry.timer = createVisibleDeadline(win.document, 20000, () => fail(entry));
         slot.append(frame);
     };
     const trusted = (event: Event) => {
@@ -116,7 +118,7 @@ export function installVectorMapBridge(win: Window & typeof globalThis = window,
                     || bitmap.width < 1 || bitmap.height < 1 || bitmap.width > 16384 || bitmap.height > 16384) { bitmap.close(); return; }
                 post(entry.id, 'painted', { ...paint, bitmap, basemap: entry.basemap.id }, [bitmap]);
                 entry.loaded = true;
-                win.clearTimeout(entry.timer);
+                entry.timer?.clear();
                 return;
             }
             if (!entry) return;

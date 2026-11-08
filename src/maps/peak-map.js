@@ -11,7 +11,7 @@ import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
-import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
+import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { mountainTime as MountainTime } from '../time/mountain-time.js';
 import { sunState as SunState } from '../sun/sun-state.js';

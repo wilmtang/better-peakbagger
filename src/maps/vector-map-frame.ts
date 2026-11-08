@@ -11,8 +11,10 @@ import type { VectorView } from './vector-basemap.ts';
 import { vectorMapAvailability, vectorMapReadyToPublish } from './vector-map-availability.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.ts';
 import { readRetryAt } from '../net/rate-limit.js';
+import { createVisibleDeadline } from '../ui/visible-deadline.ts';
+import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 
-let map: MapLibreMap | null = null, parentOrigin: string | null = null, attempted = false, disposed = false, timer: ReturnType<typeof setTimeout> | null = null, view: VectorView | null = null, settledView: string | null = null, lastSize = '', lastCamera = '';
+let map: MapLibreMap | null = null, parentOrigin: string | null = null, attempted = false, disposed = false, timer: VisibleDeadline | null = null, view: VectorView | null = null, settledView: string | null = null, lastSize = '', lastCamera = '';
 let active = false, style: VectorStyle | null = null, revision = 0, generation: number | null = null;
 let capturing = false, captureAgain = false;
 let drawRequested = false;
@@ -38,7 +40,7 @@ const publishPaint = () => {
     const canvas = map!.getCanvas(), width = canvas.clientWidth, height = canvas.clientHeight;
     if (!width || !height) return;
     if (!readVectorPaint({ view, width, height })) { fail(); return; }
-    if (timer === null) timer = setTimeout(fail, 15000);
+    timer ??= createVisibleDeadline(document, 15000, fail);
     const camera = structuredClone(view), owner = generation, renderer = map;
     capturing = true;
     let snapshot;
@@ -52,7 +54,7 @@ const publishPaint = () => {
         try {
             const key = JSON.stringify([camera, width, height]);
             if (key !== settledView) { settledView = key; post('loaded', { view: camera }); }
-            post('painted', { bitmap, view: camera, width, height }, [bitmap]); clearTimeout(timer!); timer = null;
+            post('painted', { bitmap, view: camera, width, height }, [bitmap]); timer?.clear(); timer = null;
         }
         catch (error) { bitmap.close(); fail(error); }
     }, error => { if (!disposed && active && generation === owner) fail(error); }).finally(() => {
@@ -62,11 +64,11 @@ const publishPaint = () => {
     });
 };
 const release = () => {
-    active = false; drawRequested = false; revision++; clearTimeout(timer!); timer = null;
+    active = false; drawRequested = false; revision++; timer?.clear(); timer = null;
     for (const controller of requests) controller.abort(); requests.clear();
     map?.stop?.(); map?.setStyle({ version: 8, sources: {}, layers: [] }, { diff: false });
 };
-const dispose = () => { disposed = true; active = false; revision++; clearTimeout(timer!); for (const controller of requests) controller.abort(); requests.clear(); map?.remove(); map = null; frames.clear(); };
+const dispose = () => { disposed = true; active = false; revision++; timer?.clear(); timer = null; for (const controller of requests) controller.abort(); requests.clear(); map?.remove(); map = null; frames.clear(); };
 const fail = (error?: unknown) => { if (!disposed) { post('error', { retryAt: readRetryAt((error as { retryAt?: number } | undefined)?.retryAt) }); dispose(); } };
 const update = () => {
     if (!active || !map || !view) return;
@@ -116,14 +118,14 @@ window.addEventListener('message', async event => {
             if (disposed || owner !== revision) return;
             if (reply?.ok !== true) { fail(); return; }
             active = true; settledView = null; lastSize = ''; lastCamera = '';
-            timer = setTimeout(fail, 15000); map!.setStyle(style as unknown as StyleSpecification, { diff: false }); update();
+            timer = createVisibleDeadline(document, 15000, fail); map!.setStyle(style as unknown as StyleSpecification, { diff: false }); update();
         } catch (error) { if (owner === revision) fail(error); }
         return;
     }
     const basemap = vectorBasemap(data.basemap);
     if (data.type !== 'init' || attempted || !validGeneration || !readVectorView(data.view) || !basemap) return;
     attempted = true; parentOrigin = event.origin; generation = data.generation; view = readVectorView(data.view);
-    timer = setTimeout(() => { console.warn('Better Peakbagger vector map: Initialization timed out.'); fail(); }, 15000);
+    timer = createVisibleDeadline(document, 15000, () => { console.warn('Better Peakbagger vector map: Initialization timed out.'); fail(); });
     try {
         const ext = (globalThis as unknown as { browser?: typeof chrome }).browser || globalThis.chrome;
         const reply = await ext.runtime.sendMessage({ type: 'VECTOR_MAP_ACTIVATION_CONSUME', token: data.activation, action: 'init' });

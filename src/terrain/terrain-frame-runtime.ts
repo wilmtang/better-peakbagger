@@ -12,6 +12,8 @@ import { terrainStyle as TerrainStyle } from './terrain-style.ts';
 import type { VectorSprite, VectorStyle } from './terrain-style.ts';
 import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, readVectorPaint, vectorBasemap, vectorPaintCorners } from '../maps/vector-basemap.ts';
 import type { VectorBasemap, VectorPaint } from '../maps/vector-basemap.ts';
+import { createVisibleDeadline } from '../ui/visible-deadline.ts';
+import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.ts';
 import { terrainCache as TerrainCache } from './terrain-cache.ts';
 import { terrainCamera } from './terrain-camera.js';
@@ -218,7 +220,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     let rendererCanvas: HTMLCanvasElement | null = null;
     let contextLostHandler: ((event: Event) => void) | null = null;
     let resizeObserver: ResizeObserver | null = null;
-    let loadTimer: ReturnType<typeof setTimeout> | null = null;
+    let loadTimer: VisibleDeadline | null = null;
     let gestureHintTimer: ReturnType<typeof setTimeout> | null = null;
     let gestureHintElement: HTMLElement | null = null;
     let loaded = false;
@@ -366,7 +368,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
 
     const removeLoadTimer = () => {
         if (loadTimer !== null) {
-            clearTimeout(loadTimer);
+            loadTimer.clear();
             loadTimer = null;
         }
     };
@@ -2426,7 +2428,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
                 scheduleTiltWarm();
             });
 
-            loadTimer = setTimeout(() => fail('timeout'), TERRAIN_FRAME_LOAD_TIMEOUT_MS);
+            loadTimer = createVisibleDeadline(document, TERRAIN_FRAME_LOAD_TIMEOUT_MS, () => fail('timeout'));
             if (typeof ResizeObserver === 'function') {
                 resizeObserver = new ResizeObserver(() => {
                     // A parked frame is invisible; resumeTerrain resizes it once.

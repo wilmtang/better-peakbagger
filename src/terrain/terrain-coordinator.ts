@@ -7,6 +7,8 @@
 // BigMap, Peak pages, and the GPX Analyzer cannot drift independently.
 
 import { terrainCamera as TerrainCamera } from './terrain-camera.js';
+import { createVisibleDeadline } from '../ui/visible-deadline.ts';
+import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 
 // The frame owns a separate 15-second renderer deadline. Leave enough time
 // around it for worker authorization, iframe startup, and the frame -> bridge
@@ -15,6 +17,17 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
 export const TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS = 25000;
 const DEFAULT_CAMERA_TIMEOUT_MS = 1000;
 
+interface CoordinatorCompass { element: HTMLElement; setVisible(visible: boolean): void; update(bearing: number, pitch: number): void; }
+interface CoordinatorSnapshot { state: string; navTop: number | null; stopPending: boolean; }
+interface CoordinatorMessage { type?: string; camera?: unknown; navTop?: unknown; bearing?: unknown; pitch?: unknown; requestId?: unknown; reason?: unknown; }
+interface CoordinatorOptions {
+    toggle: HTMLButtonElement; compass?: CoordinatorCompass | null; isEnabled(): boolean;
+    idleUi(): { disabled?: boolean; title: string; ariaLabel: string }; buildInit(): Record<string, unknown> | null | undefined;
+    nativeMap(): unknown; inheritNativeCamera?(): boolean; hideNativeMap(): void; restoreNativeMap(): void;
+    post(type: string, detail?: Record<string, unknown>): void; requestConsent(): void; clearFailure(): void; showFailure(reason: unknown): void;
+    setFailureTheme?(theme: string): void; onView?(bearing: number | null): void; theme(): string; position(snapshot: CoordinatorSnapshot): void;
+    loadTimeoutMs?: number; cameraTimeoutMs?: number;
+}
 const create = ({
     toggle,
     compass = null,
@@ -35,11 +48,11 @@ const create = ({
     position,
     loadTimeoutMs = TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS,
     cameraTimeoutMs = DEFAULT_CAMERA_TIMEOUT_MS
-}) => {
+}: CoordinatorOptions) => {
     let state = 'idle';
-    let loadTimer = null;
-    let navTop = null;
-    let viewCamera = null;
+    let loadTimer: VisibleDeadline | null = null;
+    let navTop: number | null = null;
+    let viewCamera: unknown = null;
     let stopPending = false;
     let cameraRequestId = 0;
 
@@ -47,7 +60,7 @@ const create = ({
 
     const clearLoadTimer = () => {
         if (loadTimer === null) return;
-        clearTimeout(loadTimer);
+        loadTimer.clear();
         loadTimer = null;
     };
 
@@ -97,7 +110,7 @@ const create = ({
         position(snapshot());
     };
 
-    const fail = reason => {
+    const fail = (reason: unknown) => {
         clearLoadTimer();
         state = 'idle';
         navTop = null;
@@ -124,9 +137,9 @@ const create = ({
             ...detail,
             ...(viewCamera ? { camera: viewCamera } : {})
         });
-        loadTimer = setTimeout(() => {
+        loadTimer = createVisibleDeadline(toggle.ownerDocument, loadTimeoutMs, () => {
             if (state === 'loading') fail('timeout');
-        }, loadTimeoutMs);
+        });
         return true;
     };
 
@@ -158,7 +171,9 @@ const create = ({
         update();
         cameraRequestId++;
         post('cameraRequest', { requestId: cameraRequestId });
-        loadTimer = setTimeout(finishStop, cameraTimeoutMs);
+        // The frame answers over messaging, which a hidden tab still delivers.
+        const answered = setTimeout(finishStop, cameraTimeoutMs);
+        loadTimer = { clear: () => clearTimeout(answered) };
     };
 
     // The native map identity can disappear underneath an open terrain view
@@ -178,25 +193,25 @@ const create = ({
         update();
     };
 
-    const handleMessage = data => {
+    const handleMessage = (data: CoordinatorMessage) => {
         if (data.type === 'loaded' && state === 'loading') {
             clearLoadTimer();
             const camera = TerrainCamera.clean(data.camera);
             if (camera) viewCamera = camera;
             state = 'active';
-            navTop = Number.isFinite(data.navTop) ? data.navTop : null;
+            navTop = typeof data.navTop === 'number' && Number.isFinite(data.navTop) ? data.navTop : null;
             hideNativeMap();
             clearFailure();
             update();
             return true;
         }
         if (data.type === 'metrics' && state === 'active') {
-            if (Number.isFinite(data.navTop)) navTop = data.navTop;
+            if (typeof data.navTop === 'number' && Number.isFinite(data.navTop)) navTop = data.navTop;
             position(snapshot());
             return true;
         }
         if (data.type === 'view' && state === 'active') {
-            if (!stopPending && Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
+            if (!stopPending && typeof data.bearing === 'number' && Number.isFinite(data.bearing) && typeof data.pitch === 'number' && Number.isFinite(data.pitch)) {
                 const bearing = ((data.bearing % 360) + 360) % 360;
                 const pitch = Math.min(85, Math.max(0, data.pitch));
                 if (compass) compass.update(bearing, pitch);

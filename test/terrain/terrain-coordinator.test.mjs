@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom';
 import {
     TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS,
     terrainCoordinator as TerrainCoordinator,
-} from '../../src/terrain/terrain-coordinator.js';
+} from '../../src/terrain/terrain-coordinator.ts';
 import { TERRAIN_FRAME_LOAD_TIMEOUT_MS } from '../../src/terrain/terrain-frame-runtime.ts';
 
 test('the outer terrain deadline leaves room for the renderer handoff', () => {
