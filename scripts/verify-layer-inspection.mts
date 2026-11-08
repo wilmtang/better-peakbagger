@@ -122,16 +122,32 @@ try {
         await page.evaluate(() => window.inspectionFixture.toggle());
         assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(element => (element as HTMLElement).hidden), true, 'changing layers cancels the open point');
         await page.evaluate(() => window.inspectionFixture.toggle());
-        // Readable full-width legend samples independently of the menu readings.
+        // Square samples stay beside complete labels, including enlarged text.
         await page.locator('.bpb-layers-trigger').click(); await page.locator('[data-layer="snow"] .bpb-layers-disclosure').click();
-        const samples = await page.locator('[data-overlay="snow"] .bpb-layers-legend-item i').evaluateAll(elements => elements.map(element => {
-            const r = element.getBoundingClientRect(), item = element.parentElement!.getBoundingClientRect();
-            return {width: r.width, height: r.height, item: item.width};
+        const samples = await page.locator('[data-overlay="snow"] .bpb-layers-legend-item').evaluateAll(elements => elements.map(element => {
+            const swatch = element.querySelector('i')!, r = swatch.getBoundingClientRect(), item = element.getBoundingClientRect();
+            const text = document.createRange(); text.selectNodeContents(element); text.setStartAfter(swatch);
+            const label = text.getBoundingClientRect();
+            return {width: r.width, height: r.height, column: item.left, gap: label.left - r.right,
+                centered: Math.abs(r.top + r.height / 2 - label.top - label.height / 2),
+                lines: text.getClientRects().length, fits: label.right <= item.right + 1};
         }));
-        assert.equal(samples.length, 12); assert.ok(samples.every(sample => sample.width > 50 && sample.height >= 18 && Math.abs(sample.width - sample.item) <= 1));
-        if (output) await page.screenshot({path: path.join(output, `${kind}-${width}-${theme}-${scale}-legend.png`)});
+        assert.equal(samples.length, 12);
+        for (const sample of samples) {
+            assert.ok(Math.abs(sample.width - 18) <= 1 && Math.abs(sample.height - 18) <= 1,
+                `snow legend needs 18px square swatches: ${JSON.stringify(sample)}`);
+            assert.ok(sample.gap >= 6 && sample.centered <= 1 && sample.lines === 1 && sample.fits,
+                `snow depth range must fit beside its swatch: ${JSON.stringify(sample)}`);
+        }
+        assert.equal(new Set(samples.map(sample => sample.column)).size, scale === 1 ? 2 : 1,
+            'enlarged text uses one column to keep every range readable');
+        if (output) {
+            await page.locator('[data-overlay="snow"] .bpb-layers-legend').scrollIntoViewIfNeeded();
+            await page.screenshot({path: path.join(output, `${kind}-${width}-${theme}-${scale}-legend.png`)});
+        }
         await page.evaluate(() => window.inspectionFixture.dispose()); cases++;
     }
+    assert.equal(cases, 8, 'all legend viewport, theme and text-size cases executed');
     assert.ok(requests >= cases * 9);
     // Exercise the actual coordinator bundle and trusted Leaflet binding too,
     // so passing isolated components cannot hide a broken state registration.
