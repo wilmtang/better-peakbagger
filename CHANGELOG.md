@@ -2,9 +2,59 @@
 
 ## Unreleased
 
-- **More accurate Summit Cloud Cover.** Saturated air in the cold at high summits no
+## 4.1.0 — 2026-11-08
+
+- **Prepare drafts from the Garmin activity inbox.** Connect with your Garmin
+  API key to discover mountain activities on a configurable schedule, including
+  older activities through full-history checks. Reduced routes and import history
+  stay on this device. Peak matching waits for a signed-in Peakbagger tab; review
+  Strong and Probable matches before opening drafts. No tabs open automatically,
+  and every ascent still needs your review and manual Save.
+
+- **Check nearby snow observations.** The new Nearby snow card shows western US
+  and Alaska SNOTEL snow depth, water equivalent and an interactive seven-day
+  trend. Enable station markers in 2D or supported 3D, open their observations,
+  or reveal nearby stations when none are visible. Show SNOTEL has its own setting;
+  station readings describe their location, not conditions on your route.
+
+- **Add slope, land and snow overlays.** Shared 2D and 3D controls offer slope
+  angle, public-land categories and NOAA modeled snow depth. Public lands includes
+  US ownership and partial BC and southwestern Alberta coverage, with category
+  filters. Ownership does not establish access; missing coverage stays unknown.
+  Snow-depth legends show the source's modeled bands and analysis date.
+
+- **See reported US wildfires.** Optional incident markers and mapped perimeters
+  show separately dated NIFC/WFIGS source details, reported acreage and containment
+  where available. These are reported fire records, not live safety boundaries.
+
+- **Bring your own map layers.** Add raster tiles, MVT/PBF, TileJSON and small GeoJSON
+  sources in Settings, reorder them, and enable up to three on a map in 2D or 3D.
+  Source order travels in settings backups. Private parameters use an explicit
+  provider-access and map-approval flow; settings-file export includes them only
+  when you choose Include saved credentials. GitHub backups exclude credentials.
+
+- **Inspect a point on the map.** Right-click for elevation, coordinates and
+  readings from applicable enabled snow-depth, slope and public-land overlays.
+  Queries respect selected land categories and coverage; missing readings remain
+  distinct from zero. Station and wildfire markers retain their own popups.
+
+- **Arrange your planning cards.** Resize the page's column divider, move peak
+  cards between columns, reorder or collapse them, and retain those choices.
+  Saved-ascent weather can also move within either column. Pointer and keyboard
+  controls are available.
+
+- **Read more hourly weather detail.** Summit weather adds cloud cover,
+  snowfall depth and freezing level. Compact Conditions and Air quality strips
+  support hourly inspection; Air quality loads regional US AQI and PM2.5 only
+  when requested, with estimates distinguished from summit measurements.
+
+- **Estimate summit cloud cover.** A new experimental card compares atmospheric
+  profiles to estimate cloud at summit height and nearby view obstruction. Browse
+  a mountain-local hourly timeline with explicit dates, confidence and supporting
+  evidence. These are model estimates with uncalibrated thresholds.
+  Saturated air in the cold at high summits no
   longer reads as clear on HRRR, HRDPS, ICON and GEM. The card now says **Uncertain**
-  far less often: models that broadly agree show the cloud both support, one missing
+  far less often: models that broadly agree show the cloud state both support, one missing
   forecast leaves the other's reading at low confidence, and Colorado's highest peaks
   have HRRR data. Tomorrow's late hours on Automatic are now forecast too.
 
@@ -13,8 +63,25 @@
   over the terrain until the 3D tiles arrive, and returning to 2D is immediate.
   The base map menu also looks the same in 2D and 3D.
 
-- **Retired OSM Vector.** The experimental OpenFreeMap layer is gone from the 2D and
-  3D base map menus. Maptoolkit Hiking is now labelled as a BPB experiment.
+- **Keep maps responsive through changes.** Hidden tabs can finish loading maps,
+  3D can restart after an expired activation, and existing overlays remain visible
+  while replacements load. Resizing settles after the drag, idle 3D work is reduced,
+  and elevation-cache hits avoid scanning the full cache.
+
+- **Read Instagram posts in trip reports.** Standalone post and Reel links become
+  compact placeholders that open captioned players on demand. No Instagram content
+  loads until you choose Load post or enable automatic loading. Optional theme
+  matching follows BPB after browser permission; availability depends on Instagram.
+
+- **Block executable code in saved reports.** Saved-ascent pages block scripts
+  before parsing and rebuild report content through an allowlist. A collapsed
+  scripts-blocked disclosure shows captured original source as inert text, with
+  inspection limits labelled. Native search, maps and supported video players
+  retain their supported paths.
+
+- **Edit climber biographies with the report tools.** Rich text, Markdown and
+  Plain modes now work on the profile form too. Profile elevation and prominence
+  tables also follow your BPB elevation-unit preference.
 
 - **Use Photo Topos without an ImgBB key.** Copy image and Export image get a
   finished topo out with no account, key or connection. Upload stays one click
@@ -52,12 +119,12 @@
   open card, keyboard focus still moves to the next person, without opening their
   card uninvited.
 
-- **Stable 2D vector zooms.** Maptoolkit and OSM Vector keep cartography aligned
+- **Stable 2D vector zooms.** Maptoolkit keeps cartography aligned
   with native peaks and routes through animated zooms and delayed rendering.
   Late images after a camera reversal cannot replace better current coverage.
 
 - **Maptoolkit Hiking in 2D and 3D.** Both basemap pickers offer a keyless hiking
-  map with contours, labels and relief alongside OSM Vector. Native routes and
+  map with contours, labels and relief, labelled as a BPB experiment. Native routes and
   markers remain interactive, provider limits retain their own cooldowns, and
   the required logo and copyright links remain visible. The 3D view retains
   its terrain, route and overlays while displaying the Hiking cartography.
@@ -126,6 +193,9 @@
 
 - **Restore peak map links.** Gaia GPS, AllTrails and onX Backcountry remain
   available when the resizable peak columns initialize before the link feature.
+
+- **Recover onX GPX exports.** A cold onX session can authenticate before import;
+  oversized or invalid exports fail clearly and cancellation remains available.
 
 - **Keep keyboard actions steady.** Capture, map access, GPX transfers, Settings
   and photo backup retain focus through progress, failures and retries. Repeated
