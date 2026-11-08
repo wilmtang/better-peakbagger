@@ -54,7 +54,7 @@
     {
       "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
       "js": ["content/report-protection.js"],
-      "css": ["css/instagram.css"],
+      "css": ["css/instagram.css", "css/report-protection.css"],
       "run_at": "document_start",
       "all_frames": false
     },

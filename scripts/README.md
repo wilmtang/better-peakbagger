@@ -40,7 +40,7 @@ independent of the existing targets.
 - [check-changelog-history.mjs](check-changelog-history.mjs)
 - [check-npm-audit.mts](check-npm-audit.mts)
 - [dependabot-queue-sweep.mts](dependabot-queue-sweep.mts)
-- [check-web-ext-lint.mjs](check-web-ext-lint.mjs)
+- [check-web-ext-lint.mts](check-web-ext-lint.mts)
 - [copied-runtime-impact.mjs](copied-runtime-impact.mjs)
 - [create-amo-metadata.mts](create-amo-metadata.mts)
 - [create-chrome-description.mjs](create-chrome-description.mjs)

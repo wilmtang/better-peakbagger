@@ -20,7 +20,7 @@
     "test": "npm run build && node --test --test-concurrency=3 ${CI:+--test-concurrency=$(node -p 'os.availableParallelism()-1')} \"test/**/*.test.mjs\" \"test/**/*.test.mts\"",
     "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.mjs\"",
     "verify": "node scripts/verify.mts",
-    "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs",
+    "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mts",
     "audit:ci": "node scripts/check-npm-audit.mts",
     "release:verify-packages": "node scripts/verify-store-packages.mjs",
     "showcase:render": "npm run build && node scripts/render-showcase.mjs",

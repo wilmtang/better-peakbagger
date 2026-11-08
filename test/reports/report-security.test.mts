@@ -7,7 +7,7 @@ import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbag
 import { createFirefoxManifest } from '../../scripts/build-firefox-package.mjs';
 import { REPORT_CSP, protectedReportDocument, protectReportHeaders } from '../../src/reports/report-security-policy.ts';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { JSDOM } from '../helpers/test-dom.mts';
 import { evalBundle } from '../helpers/load-page.mjs';
 
 test('report response policy covers route variants and nested documents without weakening site CSP', () => {
@@ -36,8 +36,9 @@ test('reader rebuilds hostile report DOM even when it contains controls and pres
         await evalBundle(dom.window, 'content/report-protection.js');
         const cell = dom.window.document.querySelector('[data-bpb-report-protected]');
         assert(cell); assert.match(cell.textContent, /Safe prose/);
-        assert.equal(cell.querySelector('h2').textContent,'Ascent Trip Report');
+        assert.equal(cell.querySelector('h2')!.textContent,'Ascent Trip Report');
         assert.equal(cell.querySelector('script,form,input,svg,[onclick],[onload],[id],iframe'),null);
+        assert.match(cell.querySelector('.bpb-rs-title')!.textContent,/3 scripts blocked/);
         assert(cell.querySelector('figure figcaption'));
         assert(dom.window.document.getElementById('Gmap'), 'native map remains outside the report');
     } finally {dom.window.close();}
@@ -51,21 +52,22 @@ test('native saved-report hostname links become post blocks while the external-r
     const dom=new JSDOM(html,{url:'https://www.peakbagger.com/climber/ascent.aspx?aid=1',runScripts:'outside-only'});
     try{
         await evalBundle(dom.window,'content/report-protection.js');
-        const cell=dom.window.document.querySelector('[data-bpb-report-protected]');
+        const cell=dom.window.document.querySelector('[data-bpb-report-protected]'); assert(cell);
         const post=[...cell.querySelectorAll('p')].find(p=>p.textContent===url);
         assert(post,'the standalone hostname link must produce a recognizable canonical post paragraph');
-        assert.equal(post.querySelector('a').href,url);
+        assert.equal(post.querySelector('a')!.href,url);
         assert.match(cell.textContent,/URL Link: instagram\.com/);
         assert.match(cell.textContent,/Before the post/);assert.match(cell.textContent,/After the post/);
     }finally{dom.window.close();}
 });
 
 test('packaged rules and Firefox transport retain one challenge marker and policy', async () => {
-    for (const rule of rules.filter(rule => rule.action.type === 'modifyHeaders')) {
+    for (const rule of rules.filter(candidate => candidate.action.type === 'modifyHeaders')) {
         assert.deepEqual(rule.condition.excludedResponseHeaders, [{header:Cloudflare.CHALLENGE_HEADER,values:[Cloudflare.CHALLENGE_VALUE]}]);
-        assert.equal(rule.action.responseHeaders[0].value, REPORT_CSP);
+        assert.equal(rule.action.responseHeaders![0].value, REPORT_CSP);
     }
-    const source=JSON.parse(await readFile('manifest.json','utf8'));const firefox=createFirefoxManifest(source);
+    type Manifest = { permissions:string[]; declarative_net_request:{rule_resources:{id:string;enabled:boolean}[]} };
+    const source=JSON.parse(await readFile('manifest.json','utf8')) as Manifest;const firefox=createFirefoxManifest(source) as Manifest;
     assert(source.declarative_net_request.rule_resources.some(rule=>rule.id==='report-protection'&&rule.enabled));
     assert(!firefox.declarative_net_request.rule_resources.some(rule=>rule.id==='report-protection'));
     assert(firefox.declarative_net_request.rule_resources.some(rule=>rule.id==='report-media'&&rule.enabled));

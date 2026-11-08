@@ -25,6 +25,31 @@ of scope.
 - Independent code review approved the route unit with no remaining findings;
   compiler/priority verification is wired into the browser CI jobs. Remote CI
   itself has not run for these local changes.
+- The notice starts collapsed and displays only original report source as text.
+  Script-free BPB Rich/Markdown output, quoted examples, inert types, callback
+  properties and non-JavaScript sanitizer removals produce no alarm. Tests cover
+  hostile BPB markers, URL/type/namespace precedence, overlapping roots, repeat
+  mounting, source limits, long labels and whitespace-prefix omissions.
+- Final implementation checks: 4,013 tests passed, typecheck passed, lint passed
+  with the eight existing warnings plus two narrowly reviewed detached-template
+  assignments, and staged TypeScript policy passed. Both six-case security
+  fixtures and the real unpacked Chrome extension verifier pass again after the
+  manifest/TypeScript conversion. Independent source and design review has no
+  remaining findings.
+- Hidden Chrome 156 and Firefox 159 pass the native script-type/count comparison,
+  bounded/partial/frame-source cases, and eight layout states each: light/dark,
+  normal/doubled inspector text, desktop/narrow. Content widths: Chrome 360/1000,
+  Firefox 500/1000 (its native minimum); height 760 for those layouts. Source
+  switching preserves summary, report heading, notice, following content,
+  document scroll and the actual focused source button. No horizontal overflow
+  or external-script/frame-resource requests occurred. Disclosure expansion and
+  collapse deliberately change report height; native focus reveal is distinct
+  from source-switch jitter. Dark native-control repainting is overridden only
+  for this surface's source-choice buttons.
+- Final collapsed/expanded and doubled-text screenshots were inspected in both
+  engines. Task-owned browser/helper processes exited and disposable report
+  profiles/certificates were absent after teardown. Native browser chrome,
+  onscreen window placement and assistive-technology speech were not exercised.
 
 ## Intentionally not changed
 
@@ -40,9 +65,14 @@ of scope.
 
 ## Changed but not fully proven
 
-- Compact notice/collector: design approved; implementation pending the route
-  unit's verified commit. Count only original executable report source, with
-  type/context checks, overlapping-root deduplication, bounded records and
-  private idempotence state.
+- Native picker keyboard navigation could not be established through hidden
+  Chrome/Firefox automation. Chrome's select-option API and Firefox's native
+  option-click path prove source switching and unchanged geometry/scroll;
+  Firefox's automated option click focuses BODY, so native popup focus return
+  remains unproven. A separate change event on the focused picker proves the
+  product's change handler preserves focus and geometry in both engines.
+- Browser chrome zoom was not tested; doubled inspector text was tested instead.
+  No historical pre-fix UI regression proof exists for this newly added surface;
+  the old-bundle route regression proof above is separate.
 - Native assistive-technology speech, live provider playback and arbitrary
   server-side rewrite/recursive-decoding behavior remain outside local proof.

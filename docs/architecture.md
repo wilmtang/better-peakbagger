@@ -839,7 +839,12 @@ Cloudflare response-header exclusion. Existing site CSP is preserved. A separate
 static rule blocks Instagram resources initiated by Peakbagger; user activation
 does not unlock the tab. The first document-start content entry rebuilds native
 report cells through the allowlisted AST at DOM readiness, before visibility
-controls mount, and supplies a fixed native Quick Search replacement. Native
+controls mount, and supplies a fixed native Quick Search replacement. Before
+rebuilding, `report-script-source.ts` snapshots bounded original executable
+source; `report-script-notice.ts` renders it only through text nodes in a compact
+native disclosure. Detached frame-source parsing never inserts or fetches its
+contents. Private WeakSet ownership and outer-root selection prevent repeated
+sanitization or overlapping cells from counting BPB's own controls. Native
 MasterMap frames retain their scripts; unrelated top-level lists retain their
 native behavior. The boundary does not protect readers without BPB or documents
 synthesized by a pre-existing hostile site service worker outside the network

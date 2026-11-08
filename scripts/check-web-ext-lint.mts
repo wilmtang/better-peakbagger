@@ -7,6 +7,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+interface Warning { code:string;file:string;line?:number;column?:number }
+interface OwnedWarning extends Warning { count:number;owner:string;reason:string;packageName?:string }
+interface LintReport { summary?:{errors?:number;notices?:number;warnings?:number}; errors?:unknown[];notices?:unknown[];warnings?:Warning[] }
+interface PackageLock { packages?:Record<string,{version?:unknown}> }
 
 // Reviewed upper limits per warning code and output file. Generated positions
 // drift with bundling, and upstream fixes may remove warnings. Neither is a
@@ -14,7 +18,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // These limits cannot distinguish a removed warning from a replacement of the
 // same type in the same file; dependency source review remains necessary.
 // Package versions come from package-lock.json for reporting only.
-export const WEB_EXT_WARNING_BASELINE = Object.freeze([
+export const WEB_EXT_WARNING_BASELINE: readonly OwnedWarning[] = Object.freeze([
     {
         code: 'BACKGROUND_SERVICE_WORKER_IGNORED',
         file: 'manifest.json',
@@ -69,18 +73,25 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
         owner: 'TipTap core',
         packageName: '@tiptap/core',
         reason: 'same shared editor dependency writes its generated stylesheet into a style element'
+    },
+    {
+        code: 'UNSAFE_VAR_ASSIGNMENT',
+        file: 'content/report-protection.js',
+        count: 2,
+        owner: 'report source inspector and allowlisted report renderer',
+        reason: 'raw srcdoc is parsed only in a detached template with bounded input and is never inserted; rendered report markup comes from the existing allowlisted AST; inspector output uses textContent'
     }
 ]);
 
-const fingerprint = warning => JSON.stringify({
+const fingerprint = (warning: Warning) => JSON.stringify({
     code: warning.code,
     file: warning.file
 });
 
 // Occurrences per (code, file). Baseline entries that share a fingerprint —
 // two different vendored owners inside one bundle — add their allowances up.
-const tally = (items, countOf) => {
-    const counts = new Map();
+const tally = <T extends Warning>(items:readonly T[], countOf:(warning:T)=>number) => {
+    const counts = new Map<string,number>();
     for (const item of items) {
         const key = fingerprint(item);
         counts.set(key, (counts.get(key) || 0) + countOf(item));
@@ -88,12 +99,12 @@ const tally = (items, countOf) => {
     return counts;
 };
 
-const describeKey = key => {
+const describeKey = (key:string) => {
     const { code, file } = JSON.parse(key);
     return `${code} ${file}`;
 };
 
-export function evaluateWebExtLint(report, baseline = WEB_EXT_WARNING_BASELINE) {
+export function evaluateWebExtLint(report:LintReport, baseline:readonly OwnedWarning[] = WEB_EXT_WARNING_BASELINE) {
     if (report.summary?.errors !== 0 || (report.errors || []).length !== 0) {
         throw new Error(`web-ext lint reported ${report.summary?.errors ?? 'unknown'} errors`);
     }
@@ -124,14 +135,14 @@ export function evaluateWebExtLint(report, baseline = WEB_EXT_WARNING_BASELINE) 
     return [...actual].map(([key, count]) => {
         const owners = baseline.filter(warning => fingerprint(warning) === key);
         return {
-            ...JSON.parse(key), count, maxCount: expected.get(key),
+            ...JSON.parse(key) as Warning, count, maxCount: expected.get(key),
             owner: owners.map(warning => warning.owner).join('; '),
             reason: owners.map(warning => warning.reason).join('; '),
         };
     });
 }
 
-export function resolveWarningDependencyVersions(packageLock, baseline = WEB_EXT_WARNING_BASELINE) {
+export function resolveWarningDependencyVersions(packageLock:PackageLock, baseline:readonly OwnedWarning[] = WEB_EXT_WARNING_BASELINE) {
     return baseline.map((warning) => {
         if (!warning.packageName) return warning;
         const resolved = packageLock.packages?.[`node_modules/${warning.packageName}`]?.version;
@@ -182,7 +193,7 @@ if (isCli) {
     try {
         main();
     } catch (error) {
-        console.error(error.message);
+        console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;
     }
 }

@@ -54,7 +54,7 @@ export function resolvePageSource(name: string, projectRoot?: string | number) {
 export const ENTRIES: BundleEntry[] = [
     { out: 'reports/instagram-frame.js', sources: ['reports/instagram-frame.js'] },
     { out: 'content/instagram-provider.js', sources: ['reports/instagram-provider.js'] },
-    { out: 'content/report-protection.js', sources: ['reports/report-protection.js'] },
+    { out: 'content/report-protection.js', sources: ['reports/report-protection.ts'] },
     { out: 'content/map-discovery.js', sources: ['maps/map-discovery.js'] },
     { out: 'custom-overlay/worker.js', sources: ['maps/custom-overlay-worker.js'] },
     { out: 'custom-overlay/editor.js', sources: ['maps/custom-overlay-editor.js'] },
@@ -177,6 +177,7 @@ export const COPY_FILES = [
     ['third_party/betacreator-LICENSE.txt', 'vendor/betacreator-LICENSE.txt'],
     ['manifest.json', 'manifest.json'],
     ['src/reports/instagram.css', 'css/instagram.css'],
+    ['src/reports/report-protection.css', 'css/report-protection.css'],
     ['src/reports/instagram-provider.css', 'css/instagram-provider.css'],
     ['src/reports/instagram.html', 'reports/instagram.html'],
     ['src/reports/instagram-frame.css', 'reports/instagram-frame.css'],

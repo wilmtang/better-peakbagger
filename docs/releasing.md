@@ -261,7 +261,7 @@ visible in the AMO Developer Hub.
    `image-size` exception. Rehearsals use the same policy as publication.
    `npm run lint`
    likewise permits only the owner-annotated warnings checked into
-   `scripts/check-web-ext-lint.mjs`, up to the reviewed per-file occurrence limits
+   `scripts/check-web-ext-lint.mts`, up to the reviewed per-file occurrence limits
    recorded there.
 
    Release scale tests retain the 15-second capture CPU ceiling on the same

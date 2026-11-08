@@ -20,7 +20,7 @@ import {
     dependencyVersionsFromLock,
     validateReviewedDependencyMetadata,
 } from '../../scripts/dependency-metadata.mjs';
-import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mjs';
+import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mts';
 import {
     ChromeWebStoreRequestError,
     publishChrome,

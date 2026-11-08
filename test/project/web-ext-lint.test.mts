@@ -9,7 +9,7 @@ import {
     evaluateWebExtLint,
     resolveWarningDependencyVersions,
     WEB_EXT_WARNING_BASELINE
-} from '../../scripts/check-web-ext-lint.mjs';
+} from '../../scripts/check-web-ext-lint.mts';
 
 // web-ext reports one object per occurrence; the baseline collapses repeats of
 // one (code, file) into a count. Expand it back, and give each occurrence a
@@ -24,7 +24,7 @@ const occurrences = (baseline = WEB_EXT_WARNING_BASELINE) => baseline.flatMap(
     }))
 );
 
-const reportFor = warnings => ({
+const reportFor = (warnings: {code:string;file:string;line?:number;column?:number}[]) => ({
     summary: { errors: 0, notices: 0, warnings: warnings.length },
     errors: [],
     notices: [],
@@ -33,8 +33,8 @@ const reportFor = warnings => ({
 
 test('the web-ext lint gate accepts warnings within the reviewed per-file limits', async () => {
     const accepted = evaluateWebExtLint(reportFor(occurrences()));
-    assert.equal(accepted.length, 5);
-    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 9);
+    assert.equal(accepted.length, 6);
+    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 11);
     assert.ok(accepted.every(warning => warning.owner && warning.reason));
 
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
@@ -44,7 +44,7 @@ test('the web-ext lint gate accepts warnings within the reviewed per-file limits
     ));
     const resolved = resolveWarningDependencyVersions(packageLock);
     assert.equal(
-        resolved.find(warning => warning.packageName === '@tiptap/core').owner,
+        resolved.find(warning => warning.packageName === '@tiptap/core')!.owner,
         `TipTap core (@tiptap/core ${
             packageLock.packages['node_modules/@tiptap/core'].version})`,
     );
@@ -52,7 +52,7 @@ test('the web-ext lint gate accepts warnings within the reviewed per-file limits
     driftedLock.packages['node_modules/@tiptap/core'].version = '3.30.0';
     assert.match(
         resolveWarningDependencyVersions(driftedLock)
-            .find(warning => warning.packageName === '@tiptap/core').owner,
+            .find(warning => warning.packageName === '@tiptap/core')!.owner,
         /TipTap core \(@tiptap\/core 3\.30\.0\)/,
     );
     const missingLock = structuredClone(packageLock);
@@ -60,7 +60,7 @@ test('the web-ext lint gate accepts warnings within the reviewed per-file limits
     assert.throws(() => resolveWarningDependencyVersions(missingLock),
         /no resolved version for @tiptap\/core/);
     assert.equal(packageJson.scripts.lint,
-        'eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs');
+        'eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mts');
 });
 
 // The point of dropping line/column: a bundle whose byte offsets moved is not
@@ -71,7 +71,7 @@ test('the web-ext lint gate ignores generated line and column drift', () => {
         line: warning.line + 4173,
         column: warning.column + 91
     }));
-    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 5);
+    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 6);
 });
 
 test('the web-ext lint gate rejects new, extra, error, and notice output', () => {
@@ -99,17 +99,17 @@ test('the web-ext lint gate rejects new, extra, error, and notice output', () =>
     assert.throws(() => evaluateWebExtLint({
         ...reportFor(occurrences()),
         summary: { errors: 0, notices: 0, warnings: 5 }
-    }), /warning count mismatch: summary 5, reported 9/);
+    }), /warning count mismatch: summary 5, reported 11/);
 });
 
 test('the web-ext lint gate accepts removed warnings and reports actual counts', () => {
     const partial = reportFor(occurrences().filter((_warning, index) => index !== 3));
     const accepted = evaluateWebExtLint(partial);
-    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 8);
+    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 10);
     const maplibre = accepted.find(warning => warning.file === 'vendor/maplibre-gl.mjs');
-    assert.equal(maplibre.count, 1);
-    assert.equal(maplibre.maxCount, 2);
-    assert.equal(evaluateWebExtLint(reportFor(occurrences().slice(1))).length, 4);
+    assert.equal(maplibre!.count, 1);
+    assert.equal(maplibre!.maxCount, 2);
+    assert.equal(evaluateWebExtLint(reportFor(occurrences().slice(1))).length, 5);
     assert.deepEqual(evaluateWebExtLint(reportFor([])), []);
     // Unused allowance in a different file cannot excuse a new warning.
     assert.throws(() => evaluateWebExtLint(reportFor([

@@ -1216,7 +1216,7 @@ consent. No link/image toolbar tool or Instagram API key is required.
 The shared URL/label/standalone-line rules live in
 [instagram-url.js](../src/reports/instagram-url.js), with regression examples in
 [instagram-url.test.mjs](../test/reports/instagram-url.test.mjs) and the native
-reader case in [report-security.test.mjs](../test/reports/report-security.test.mjs).
+reader case in [report-security.test.mts](../test/reports/report-security.test.mts).
 
 ### Loading and privacy
 
@@ -1317,6 +1317,29 @@ escapes, and residual dot/trailing-dot ambiguities remain conservatively
 restricted on the path, including literal or encoded trailing dots on any
 segment. Percent values in the query do not trigger that guard.
 This does not assert how an unknown server recursively decodes or rewrites URLs.
+
+When original report source contains executable script elements, supported event
+attributes or navigable JavaScript URLs, a compact **scripts blocked** disclosure
+appears beneath the report heading. It starts collapsed. **View code** shows the
+source captured before sanitization as inert text, with a warning against running
+or pasting it into the console. Blocked does not mean malicious: harmless Plain
+mode scripts are disabled too. BPB Rich/Markdown output, escaped code examples,
+data scripts and extension event listeners do not create a notice.
+
+External scripts show their source tag only; BPB does not download their code.
+The collector inspects at most 3,000 elements, 64 attributes per element and 64
+sources, retaining at most 8,192 characters per source and 65,536 in total. Labels
+are bounded separately. Detached `srcdoc` inspection shares those budgets, with
+32,768 input characters and three levels of nesting. Partial inspection and
+truncated source are labelled explicitly; no-source partial inspection says
+**Script inspection limited**, without claiming the report is safe. Source stays
+in page memory and is neither stored nor transmitted.
+
+The native Chrome/Firefox fixtures pin script-type and namespace semantics,
+including Gecko's whitespace-wrapped module compatibility difference. Its
+extension-origin API selects this narrow quirk; report markers cannot grant
+trust. A future browser change that aligns those semantics will require updating
+the compatibility behavior and native-count fixture together.
 
 Instagram resources initiated by Peakbagger are blocked before network contact,
 including native embedded images and scripts. Loading a post requires the
