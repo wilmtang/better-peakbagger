@@ -1,16 +1,18 @@
 # Settings storage, export, and sync
 
-Maintained report, updated **2026-11-06** for the implementation following the
+Maintained report, updated **2026-11-08** for the implementation following the
 storage audit (package version **4.0.2**, unreleased changes). This describes the
 repository, not necessarily the extension installed in a particular browser.
 The [remediation ledger](archive/settings-portability-remediation.md) records
 commits, verification, intentional boundaries and remaining live checks.
 The [custom-layer follow-up](archive/custom-layer-settings-audit-2026-10-25.md)
 records the centralized manager and version 6 backup/restore audit.
+The [custom-layer private relay](archive/custom-layer-private-relay-2026-10-26.md)
+records the schema 7 private parameter transfer and validation audit.
 
 ## Current policy
 
-- **68 portable preferences** live in `storage.sync.bpbSettings`, travel in
+- **71 portable preferences** live in `storage.sync.bpbSettings`, travel in
   settings JSON files, and can be backed up to GitHub's `settings.json`.
 - **Ten device settings** live in `storage.local.bpbDeviceSettings`. Map size,
   terrain cache budget, GitHub transfer choices and automatic Instagram loading stay on this installation;
@@ -25,12 +27,14 @@ records the centralized manager and version 6 backup/restore audit.
 - **Credentials remain local.** Manual settings files include them only with
   the unchecked-by-default **Include saved credentials (ImgBB, GitHub and Garmin)**
   option. GitHub settings backups never include credentials.
-- **Custom map sources are backed up with settings.** Their definitions,
-  attribution, zoom ranges, appearance and opacity stay in a separate local
-  registry and travel in settings files and GitHub settings backups. They do
-  not use browser sync: the registry can exceed its per-item quota. Saved public
-  URLs and any public keys in them are included; private tokens do not belong
-  in custom source URLs. Saving/restoring never enables layers on a map.
+- **Custom map sources are backed up with settings.** Public definitions and
+  opacity stay in a separate local registry (`storage.local`) and travel in
+  settings files and GitHub settings backups. Private definitions and query
+  parameters live in extension-origin IndexedDB (`bpb-private-map-sources-v1`)
+  and travel by default in manual settings files (`privateCustomLayers`), but
+  are excluded from GitHub backups and browser sync. Restoring a backup or an
+  older file without private parameters marks those sources reconnect-only.
+  Saving/restoring never enables layers on a map or grants host permissions.
 
 ## Settings links and navigation
 
@@ -48,9 +52,10 @@ computer. “Settings file” means **Export settings**, not a complete profile 
 
 | Data | Storage | Browser sync | Settings file | GitHub / separate file |
 | --- | --- | --- | --- | --- |
-| 68 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
+| 71 portable preferences | `storage.sync.bpbSettings` | Eligible | Yes | `settings.json`: push and explicit restore |
 | Ten device settings | `storage.local.bpbDeviceSettings` | No | No | No |
 | Custom map sources and opacity | `storage.local.bpbCustomMapOverlaysV1`, `bpbCustomMapOverlayPreferencesV1` | No | Yes, `customLayers` | `settings.json`: push and explicit restore |
+| Private map definitions and query parameters | IndexedDB `bpb-private-map-sources-v1` (`records`) | No | Yes, `privateCustomLayers` by default | Excluded from GitHub settings backup (restores require local reconnection) |
 | ImgBB API key | `storage.local.bpbImgbbAuth` | No | Credential opt-in only | Never in GitHub settings backup |
 | GitHub token and repository | `storage.local.bpbGithubAuth` | No | Credential opt-in and complete connection only | Never in GitHub settings backup |
 | Garmin Personal API key | IndexedDB `bpb-garmin-v1` | No | Credential opt-in only | Never in GitHub settings backup |
@@ -77,13 +82,13 @@ This limitation is distinct from the guarded GitHub file replacement below.
 ## Complete portable-settings inventory
 
 Every key below is browser-sync eligible, settings-file exportable, and
-GitHub-settings-backup eligible. The inventory is the 68-key `PORTABLE_KEYS`
+GitHub-settings-backup eligible. The inventory is the 71-key `PORTABLE_KEYS`
 allowlist in the [single settings schema](../src/settings/settings-schema.ts).
 
 | Group | Exact keys |
 | --- | --- |
 | Theme and units (7) | `theme`, `units`, `distanceUnits`, `elevationUnits`, `temperatureUnits`, `precipitationUnits`, `windUnits` |
-| Peak cards (8) | `showSunMoon`, `showWeather`, `showSnotel`, `peakCardOrder`, `peakCardColumns`, `peakSunCollapsed`, `peakWeatherCollapsed`, `peakSnowCollapsed` |
+| Peak cards (10) | `showSunMoon`, `showWeather`, `showSummitCloud`, `showSnotel`, `peakCardOrder`, `peakCardColumns`, `peakSunCollapsed`, `peakWeatherCollapsed`, `peakCloudCollapsed`, `peakSnowCollapsed` |
 | Capture and draft filling (6) | `retainWaypoints`, `removeGpxTimestamps`, `fillAscentDetails`, `fillTripInfo`, `fillWildernessNights`, `fillExternalUrl` |
 | Garmin inbox preferences (6) | `enableGarminInbox`, `showInboxToolbarCount`, `garminCheckHours`, `garminRecentDays`, `garminHistoryStart`, `garminActivityTypes` |
 | GPX chart (1) | `chartDefaultSeries` |
@@ -95,12 +100,14 @@ allowlist in the [single settings schema](../src/settings/settings-schema.ts).
 | Ascent-list ordering (3) | `betaPeakFilterOrder`, `betaPersonalFilterOrder`, `betaSortDateDesc` |
 | Favorites behavior (2) | `favoritesSource`, `removeFavoriteWhenBuddyRemoved` |
 | Definition of “Has beta” (4) | `betaTr`, `betaTrMinWords`, `betaGps`, `betaLink` |
-| Weather model, metric and placement (6) | `bpbPeakWeatherModelPast`, `bpbPeakWeatherModelForecast`, `bpbPeakWeatherHourlyMetric`, `bpbAscentWeatherModel`, `bpbAscentWeatherColumn`, `bpbAscentWeatherSlot` |
+| Weather model, metric and placement (7) | `bpbPeakWeatherModelPast`, `bpbPeakWeatherModelForecast`, `bpbSummitCloudModel`, `bpbPeakWeatherHourlyMetric`, `bpbAscentWeatherModel`, `bpbAscentWeatherColumn`, `bpbAscentWeatherSlot` |
 | Overlay opacity and public-land categories (1) | `bpbMapOverlayOpacityV1` |
 | Photo-tool appearance defaults (10) | `bpbPhotoSharedStyle`, `bpbPhotoTool:route`, `bpbPhotoTool:drawing`, `bpbPhotoTool:bolt`, `bpbPhotoTool:anchor`, `bpbPhotoTool:piton`, `bpbPhotoTool:rappel`, `bpbPhotoTool:belay`, `bpbPhotoTool:pitch`, `bpbPhotoTool:text` |
 
 These preferences contain bounded identifiers, style values and choices, not
 weather coordinates/results, activity data, annotations or credentials.
+`showSummitCloud` is a portable boolean that inherits legacy `showWeather` when
+unset, preserving existing weather opt-outs.
 `showInboxToolbarCount` is a display choice with no data or consent attached, so
 it travels like the other inbox preferences; the count itself stays local.
 Garmin's synced feature gate does not replace its local key, Peakbagger account
@@ -132,6 +139,8 @@ Other local state has separate owners and does not belong in a settings file:
 | Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.js) | Device layout |
 | Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.js), [panel theme](../src/theme/panel-theme.js) | Mirror of portable `theme`, not a separate theme choice |
 | Garmin consent and account | `connection.enabled`, `connection.cid` in [Garmin store](../src/garmin/garmin-store.js) | Per-device authorization; key transfer does not copy it |
+| Custom overlay cleanup debt | `bpbCustomOverlayCleanup` in `storage.local`; [custom overlay store](../src/background/custom-overlay-store.js) | Pending source IDs for deferred private record cleanup on deletion |
+| Provider request budgets | `budget:<host>` in IndexedDB `bpb-private-map-sources-v1`; [custom private store](../src/background/custom-private-store.js) | Device-local hourly/daily request counters |
 
 ## Migration and settings files
 
@@ -154,10 +163,10 @@ map dimensions/cache budget seed the device record; later sync changes cannot
 replace it. [Settings migration](../src/settings/settings.js) and
 [connection selection](../src/background/github-routes.js) enforce this boundary.
 
-[Settings transfer schema v6](../src/settings/settings-transfer.js) exports
-portable keys plus a separate `customLayers` envelope. It still reads supported
-v1–v5 files, but strips their old device
-and transfer values too. Import replaces the portable snapshot after
+[Settings transfer schema v7](../src/settings/settings-transfer.js) exports
+portable keys, a `customLayers` envelope, and (for manual settings file exports)
+matching `privateCustomLayers`. It still reads supported v1–v6 files, stripping
+their old device and transfer values. Import replaces the portable snapshot after
 confirmation: missing portable keys receive cleaned defaults, unknown keys are
 excluded, and destination device settings stay unchanged. Applied portable
 settings can subsequently propagate through browser sync.
@@ -178,22 +187,37 @@ activation; it never opens an inline setup form. **Check source** reads TileJSON
 in Options. Actual tile availability and CORS status appear when the user
 enables the source on a map.
 
-Version 6 writes `customLayers: {schemaVersion: 1, sources, preferences}` beside
+Schema 7 writes `customLayers: {schemaVersion: 1, sources, preferences}` beside
 `settings`, using the [shared source schema](../src/maps/custom-overlay-schema.js).
 It includes configured URLs/public keys, bounds, native zoom/provenance,
 coordinate scheme, raster size, attribution, simple style rules and saved
 opacity. It excludes selections, previews, tile/feature bytes and probe locations.
 Local source revisions are normalized for transfer and rebased on restore.
 
+For manual settings file exports from Options, Schema 7 additionally writes
+`privateCustomLayers: [{ source, parameters }]` by default, containing the
+private provider definitions and query parameters from IndexedDB
+`bpb-private-map-sources-v1`. These are unencrypted parameters; GitHub settings
+backups deliberately exclude `privateCustomLayers` so remote repositories keep
+their credential-free contract.
+
 File import and GitHub restore preview the replacement layer count before
-confirmation. An included empty library deliberately clears saved layers;
-v1–v5 files and other files without `customLayers` leave the destination library
-alone. Malformed sources reject the entire file before writes. Registry
-replacement and opacity commit together through the worker's serialized store;
-concurrent edits block replacement, and a later credential failure attempts a
-conditional rollback that preserves newer edits. Restore increments the library
+confirmation. When private layers are present in a settings file, the import
+dialog explicitly notes: *"Includes private map URLs and request parameters.
+Loading still requires provider access and a fresh map approval."* An included
+empty library deliberately clears saved layers; v1–v5 files and other files
+without `customLayers` leave the destination library alone. Restoring a v6 file
+or GitHub backup removes existing private definitions for restored sources,
+marking them reconnect-only. Schema 7 validates that each private entry matches
+a restored public descriptor. Malformed sources reject the entire file before
+writes. Registry replacement, opacity, and private definitions commit together
+through the worker's serialized store; concurrent edits block replacement, and
+a later credential failure attempts a conditional rollback that preserves newer
+edits and restores prior private definitions. Restore increments the library
 generation so open maps clear their selections and cannot silently request a
-restored provider. It does not fetch providers or enable layers.
+restored provider. It does not fetch providers, grant browser host permissions,
+or enable layers on a map. Provider request budgets (`budget:<host>`) and
+in-session map approvals never transfer.
 
 GitHub signatures and overwrite reviews include definitions and opacity;
 source-only changes schedule automatic settings backup when that device's
@@ -280,6 +304,9 @@ the prior worker. Deterministic tests cover remote conflicts, snapshot-bound
 review, migration, old-file exclusions and guarded list imports. Hidden Chrome
 and Firefox checks cover the changed Settings and list-file controls, both themes,
 narrow/desktop layouts, enlarged text, keyboard focus and asynchronous geometry.
+`npm run verify -- settings-navigation` and `npm run verify -- private-layers`
+exercise settings deep-linking and the private settings export, import preview,
+and validation flow in packaged Chrome and Firefox.
 
 Real browser-account synchronization across physical devices, simultaneous live
 GitHub writers, native file chooser appearance, and native window/focus behavior
