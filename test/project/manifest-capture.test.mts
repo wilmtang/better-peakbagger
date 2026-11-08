@@ -131,7 +131,7 @@ test('summit cloud loads before its shared layout owner without new network perm
     assert.equal(entry!.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry!.all_frames, false);
     assert.ok(entry!.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
     assert.deepEqual(entry!.js, ['content/summit-cloud.js', 'content/peak-cards.js']);
-    assert.deepEqual(bundleSources('content/summit-cloud.js'), ['weather/summit-cloud.js']);
+    assert.deepEqual(bundleSources('content/summit-cloud.js'), ['weather/summit-cloud.ts']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/weather/summit-cloud.css' && output === 'css/summit-cloud.css'));
     assert.ok(!manifest.host_permissions.some(pattern => /open-meteo/.test(pattern)));
 });

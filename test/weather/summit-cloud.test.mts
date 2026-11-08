@@ -131,8 +131,43 @@ test('freshness, unavailable comparison and model disagreement downgrade the pre
     const stale = cloudDataset(); stale.metadata.lastUpdate -= 24 * 3600000; assert.equal(predict(stale).key, 'uncertain');
     const cma = cloudDataset({ model: summitCloudModel('cma_grapes_global') }); Object.assign(cma, { metadata: null }); assert.equal(predict(cma).key, 'uncertain');
     assert.equal(predictSummitCloud([asDataset(cloudDataset()), asDataset(cloudDataset({ cloud: 95, humidity: 95 }))], subject, time, time).key, 'uncertain');
-    assert.equal(predictSummitCloud([asDataset(cloudDataset())], subject, time, time, 2).key, 'uncertain');
     assert.equal(predictSummitCloud([], subject, time, time, 2).key, 'unavailable');
+});
+test('two models resolve to what both can support, never to a hidden clear', () => {
+    const labelled = (label: string, values: Record<string, unknown>) => {
+        const base = cloudDataset(), data = { ...base, model: { ...base.model, label } };
+        if (values.neighbors) data.points.slice(1).forEach(point => setProfile(point, { cloud: 90, humidity: 95 }));
+        else if (values.summit) setProfile(data.points[0]!, { cloud: 95, humidity: 98 });
+        else if (values.patchy) setProfile(data.points[1]!, { cloud: 45, humidity: 82 });
+        else if (values.unknown) Object.assign(data, { metadata: { lastUpdate: time - 100 * 3600000, updateIntervalSeconds: 21600 } });
+        return asDataset(data as unknown as Dataset);
+    };
+    const inside = labelled('A', { summit: true }), blocked = labelled('B', { neighbors: true }), partial = labelled('C', { patchy: true }), clear = labelled('D', {}), unknown = labelled('E', { unknown: true });
+    const merge = (...items: CloudDataset[]) => predictSummitCloud(items, subject, time, time);
+    assert.equal(merge(inside, blocked).key, 'blocked');
+    assert.equal(merge(inside, partial).key, 'partial');
+    assert.equal(merge(blocked, partial).key, 'partial');
+    assert.equal(merge(clear, partial).key, 'partial');
+    assert.equal(merge(clear, inside).key, 'uncertain');
+    assert.equal(merge(clear, blocked).key, 'uncertain');
+    assert.equal(merge(unknown, clear).key, 'uncertain');
+    assert.equal(merge(unknown, inside).key, 'uncertain');
+    assert.equal(merge(clear, clear).key, 'clear');
+    const named = merge(partial, inside);
+    assert.equal(named.confidence, 'Low confidence');
+    assert.match(named.reason, /A says .*inside cloud.*C says .*partly block/);
+});
+test('one unresolved or failed comparison leaves the other model, named and low confidence', () => {
+    const data = cloudDataset(), lost = cloudDataset({ model: summitCloudModel('ecmwf_ifs025') });
+    lost.points[0]!.grid.elevation = 3000;
+    const compared = predictSummitCloud([asDataset(data), asDataset(lost)], subject, time, time, 2);
+    assert.equal(compared.key, 'clear'); assert.equal(compared.confidence, 'Low confidence');
+    assert.match(compared.reason, /^Only GFS could be evaluated for this hour\. /);
+    assert.equal(compared.estimates.length, 2);
+    const failed = predictSummitCloud([asDataset(cloudDataset({ cloud: 95, humidity: 95 }))], subject, time, time, 2);
+    assert.equal(failed.key, 'inside'); assert.equal(failed.confidence, 'Low confidence');
+    assert.equal(predictSummitCloud([asDataset(lost)], subject, time, time, 2).key, 'unavailable');
+    assert.equal(predictSummitCloud([asDataset(data)], subject, time, time, 1).reason.startsWith('Only'), false);
 });
 test('bounded multi-point requests preserve 23/25 hour UTC identities and missing units', () => {
     for (const hours of [23, 25]) {

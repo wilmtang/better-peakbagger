@@ -78,7 +78,7 @@ export const ENTRIES: BundleEntry[] = [
     { out: 'content/ascent-layout.js', sources: ['ui/dom.js', 'ascent/ascent-table-split.js', 'ascent/ascent-layout.js'] },
     { out: 'content/ascent-weather.js', sources: ['ascent/ascent-weather.js'] },
     { out: 'content/peak-weather.js', sources: ['weather/peak-weather.js'] },
-    { out: 'content/summit-cloud.js', sources: ['weather/summit-cloud.js'] },
+    { out: 'content/summit-cloud.js', sources: ['weather/summit-cloud.ts'] },
     { out: 'content/peak-snow.js', sources: ['snow/peak-snow.js', 'maps/map-layer-bridge.js'] },
     { out: 'content/peak-cards.js', sources: ['maps/peak-cards.js'] },
     { out: 'content/theme-early.js', sources: ['theme/theme-resolve.js', 'theme/theme-bootstrap.js', 'theme/theme-early.js'] },

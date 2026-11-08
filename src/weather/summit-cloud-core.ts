@@ -19,7 +19,7 @@ export interface CloudReading { cloud: number; humidity: number; saturation: num
 interface Place { latitude: number; longitude: number }
 export interface CloudSubject extends Place { elevation: number }
 interface CloudPoint { bearing: number | null; grid: Place & { elevation: number }; samples: CloudSample[] }
-interface CloudModelInfo { gridKm: number; requireFreshness: boolean; humidityBasis?: HumidityBasis; [key: string]: unknown }
+interface CloudModelInfo { label: string; gridKm: number; requireFreshness: boolean; humidityBasis?: HumidityBasis; [key: string]: unknown }
 export interface CloudDataset { model: CloudModelInfo; metadata?: { lastUpdate: number; updateIntervalSeconds: number } | null; points: CloudPoint[]; [key: string]: unknown }
 type CloudStateKey = keyof typeof CLOUD_STATES;
 
@@ -152,13 +152,29 @@ export function predictModelCloud(data: CloudDataset, subject: CloudSubject, tim
     return result('clear', { ...evidence, reason: 'The summit and sampled surroundings are relatively dry at summit height. Lower valleys may still contain cloud.' });
 }
 
+const SEVERITY = { clear: 0, partial: 1, blocked: 2, inside: 3 };
+type RankedKey = keyof typeof SEVERITY;
+const ranked = (key: CloudStateKey): key is RankedKey => key in SEVERITY;
+
 export function predictSummitCloud(datasets: CloudDataset[], subject: CloudSubject, time: number, now = Date.now(), expectedModels = datasets.length) {
     const estimates = datasets.map(data => predictModelCloud(data, subject, time, now));
     const available = estimates.filter(item => item.key !== 'unavailable');
     if (!available.length) return result('unavailable', { reason: 'No complete cloud profile is available for this hour.', estimates, confidence: 'Unavailable' });
-    if (available.length < expectedModels || new Set(available.map(item => item.key)).size > 1) return result('uncertain', {
-        reason: available.length < expectedModels ? 'One of the selected forecasts is unavailable for this hour.' : 'The models disagree about cloud at or around summit height.',
-        estimates, confidence: 'Low confidence' });
-    const estimate = available[0]!;
-    return { ...estimate, estimates, confidence: estimate.key === 'uncertain' || available.some(item => item.limited) ? 'Low confidence' : 'Experimental estimate' };
+    const [first] = available as [typeof available[number]];
+    // A missing comparison is not disagreement, and one model is enough for a
+    // manual choice. The basis is named and the estimate stays low confidence.
+    if (available.length === 1 && expectedModels > 1) return { ...first, estimates, confidence: 'Low confidence',
+        reason: `Only ${first.model.label} could be evaluated for this hour. ${first.reason}` };
+    const keys = available.map(item => item.key);
+    if (keys.every(key => key === first.key)) return { ...first, estimates,
+        confidence: first.key === 'uncertain' || available.some(item => item.limited) ? 'Low confidence' : 'Experimental estimate' };
+    const order = keys.every(ranked) ? [...available].sort((a, b) => SEVERITY[a.key as RankedKey] - SEVERITY[b.key as RankedKey]) : [];
+    const least = order[0], most = order.at(-1);
+    // A clear model against one placing cloud at or all around the summit is a
+    // real conflict. Otherwise report only the obstruction both can support,
+    // never clear, and name what each model said.
+    if (!least || !most || least.key === 'clear' && SEVERITY[most.key as RankedKey] > SEVERITY.partial) return result('uncertain', {
+        reason: 'The models disagree about cloud at or around summit height.', estimates, confidence: 'Low confidence' });
+    return result(least.key === 'clear' ? 'partial' : least.key, { estimates, confidence: 'Low confidence',
+        reason: `Models differ: ${most.model.label} says “${most.title}”; ${least.model.label} says “${least.title}”.` });
 }
