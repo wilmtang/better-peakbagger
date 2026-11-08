@@ -439,6 +439,13 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
+    const githubSettingsDesc = Array.from<PageValue>(github.querySelectorAll('#github-settings-backup .desc'))
+        .find(node => node.textContent?.includes('custom layers'));
+    assert.match(
+        githubSettingsDesc?.textContent || '',
+        /saved account credentials are never backed up to github/i,
+        'GitHub settings backup must explicitly state that credentials are never backed up'
+    );
     // Favorites backup is a Backup & sync concern, not part of the list editor.
     assert.equal(favorites.querySelector('#favorites-backup'), null);
     for (const id of ['favorites-github-status', 'favorites-backup', 'favorites-restore', 'favorites-auto-backup']) {
@@ -1093,6 +1100,9 @@ test('General groups feature switches under Feature switch and keeps Theme outsi
     assert.equal(features.getAttribute('role'), 'group');
     assert.deepEqual([...features.querySelectorAll('input[type="checkbox"]')].map(input => input.id),
         ['enable-garmin-inbox', 'show-inbox-toolbar-count', 'show-sun-moon', 'show-weather', 'show-summit-cloud', 'show-snotel', 'enable-3d-map']);
+    const garminDescLink = features.querySelector('#enable-garmin-inbox-desc a');
+    assert.equal(garminDescLink?.getAttribute('href'), '#capture-garmin');
+    assert.equal(garminDescLink?.textContent, 'Garmin connection');
     assert.equal(general.querySelector('#theme').closest('.subsection'), null);
     assert.equal(general.querySelector(':scope > .card .row').querySelector('select').id, 'theme');
     assert.equal(general.querySelectorAll(':scope > .card .row').length, 1);
