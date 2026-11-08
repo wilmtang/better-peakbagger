@@ -4,13 +4,13 @@ Audit of the experimental card and its cloud decision, reviewed by a second agen
 before and after implementation. Method and limits now live in
 [weather.md](../weather.md#summit-cloud-cover). Evidence:
 [saved probe](../plans/evidence/summit-cloud-humidity-basis.json). Live checks covered
-one day on about 17 peaks, so they show field structure, not forecast skill.
+one day on 9 peaks, so they show field structure, not forecast skill.
 
 ## Findings
 
 | Finding | Live evidence | Resolution |
 | --- | --- | --- |
-| Water-referenced humidity read saturated cold air as dry, so clear was possible and inside effectively unreachable | ICON/GEM max humidity tracks ice saturation; captured Rainier HRRR at −10 °C read partial | `humidityBasis`, mixed-phase saturation, cloud re-derived below 0 °C |
+| Water-referenced humidity read saturated cold air as dry, so clear was possible and inside effectively unreachable | GEM max humidity tracks ice saturation and ICON stays well below 100%; captured Rainier HRRR at −10 °C read partial | `humidityBasis`, mixed-phase saturation, cloud re-derived below 0 °C |
 | Any model difference read as uncertain | Mount Washington 19/24 hours uncertain, mostly partial + inside | Two models report what both support |
 | One unresolved model made every hour uncertain | Mount Stuart GFS + IFS 24/24 | Survivor's reading, named and low confidence |
 | HRRR levels left Colorado's high peaks unbracketed | Longs 24/24 and Elbert 12/24 unavailable | HRRR gains 675 and 625 hPa |
@@ -24,12 +24,10 @@ one day on about 17 peaks, so they show field structure, not forecast skill.
 
 **Fixed and verified**
 
-- Every finding above, by regression tests. The cold-air and no-rise cases were shown
-  failing on the old implementation.
-- Rendered Automatic, sole-survivor, merged and cold-air states had no layout shift in
-  hidden Chrome for Testing 156 and Firefox 159 at 1440, 390 and 320 px, with provider
-  and settings responses stubbed. That check extended the committed verifier
-  temporarily; the committed one still covers only its original states.
+- The decision, level-list and Automatic-selection findings, by regression tests. The
+  cold-air and no-rise cases were shown failing on the old implementation.
+- Removed flags: no remaining readers. The reservation fix has a UI test that the real
+  label and confidence strings are reserved.
 
 **Intentionally not changed**
 
@@ -41,9 +39,13 @@ one day on about 17 peaks, so they show field structure, not forecast skill.
 
 **Changed but not fully proven**
 
+- Layout stability of the new states. Automatic, sole-survivor, merged and cold-air
+  renders had no layout shift in hidden Chrome for Testing 156 and Firefox 159 at 1440,
+  390 and 320 px with stubbed provider and settings responses, but through a temporary
+  extension of the verifier. The committed verifier covers only its original states.
 - Forecast skill: nothing here is validated against summit observations.
 - False “inside” in clear supersaturated air below −20 °C on HRRR, HRDPS and ICON. No
-  flagged model had a summit colder than −13 °C in the saved profiles.
+  flagged model had a summit colder than about −13 °C in the saved profiles.
 - The humidity classification rests on one day. Level capability was checked at one
   point per model.
 - Re-derived cloud matches the provider on captured HRRR values and at GEM bucket

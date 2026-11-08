@@ -1,10 +1,11 @@
 // Audit probe only: no live network, runtime changes, or browser launches.
-// Run npm run build first, then node docs/plans/evidence/open-meteo-peak-request-audit.mjs.
+// Run npm run build first, then node docs/plans/evidence/open-meteo-peak-request-audit.mts.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
+// @ts-expect-error jsdom ships no declarations in this repository.
 import { JSDOM } from 'jsdom';
 import { settingsSchema } from '../../../src/settings/settings-schema.ts';
 import { weatherFixture, weatherModelFixture } from '../../../test/helpers/weather-fixture.mjs';
@@ -22,31 +23,36 @@ const sourceHash = createHash('sha256');
 for (const input of inputs) sourceHash.update(input).update('\0').update(await readFile(input)).update('\0');
 const html = await readFile('test/fixtures/pages/peak-rainier.html', 'utf8');
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-const wait = async condition => {
+const wait = async (condition: () => unknown) => {
     const end = Date.now() + 5000;
     while (!condition()) { if (Date.now() > end) throw new Error('Audit condition did not settle'); await tick(); }
 };
-const results = [];
-function setup(preferences = {}, { limitedCloud = false } = {}) {
+interface AuditCall { kind: string; url: string; cache?: RequestCache }
+interface AuditObserver { fn: (entries: { isIntersecting: boolean }[]) => void; target?: { id: string }; connected?: boolean }
+type Preferences = Record<string, unknown>;
+type Listener = (changes: unknown, area: string) => void;
+const results: Record<string, unknown>[] = [];
+function setup(preferences: Preferences = {}, { limitedCloud = false } = {}) {
     const dom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
-    const win = dom.window, doc = win.document, calls = [], observers = [], listeners = new Set();
+    const win = dom.window, doc = win.document, calls: AuditCall[] = [], observers: AuditObserver[] = [], listeners = new Set<Listener>();
     let clock = Date.parse('2026-10-24T18:00:00Z'), stored = settingsSchema.clean(preferences);
     const NativeDate = win.Date;
-    win.Date = class extends NativeDate { constructor(...args) { super(...(args.length ? args : [clock])); } static now() { return clock; } };
+    win.Date = class extends NativeDate { constructor(...args: unknown[]) { super(...(args.length ? args : [clock])); } static now() { return clock; } };
     Object.assign(win, { AbortController, TextDecoder, TextEncoder, scrollBy() {} });
     win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: stored }) }, local: { get: async () => ({}) }, onChanged: {
-        addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn),
-    } }, runtime: { sendMessage: async message => {
+        addListener: (fn: Listener) => listeners.add(fn), removeListener: (fn: Listener) => listeners.delete(fn),
+    } }, runtime: { sendMessage: async (message: { patch: Preferences }) => {
         const oldValue = stored; stored = settingsSchema.clean({ ...stored, ...message.patch });
         listeners.forEach(fn => fn({ bpbSettings: { oldValue, newValue: stored } }, 'sync'));
         return { ok: true, settings: stored };
     } } };
-    win.IntersectionObserver = class {
-        constructor(fn) { this.fn = fn; observers.push(this); }
-        observe(target) { this.target = target; this.connected = true; }
+    win.IntersectionObserver = class implements AuditObserver {
+        fn; target?: { id: string }; connected?: boolean;
+        constructor(fn: AuditObserver['fn']) { this.fn = fn; observers.push(this); }
+        observe(target: { id: string }) { this.target = target; this.connected = true; }
         disconnect() { this.connected = false; }
     };
-    win.fetch = async (input, init) => {
+    win.fetch = async (input: string, init: RequestInit) => {
         const url = new URL(input), q = url.searchParams;
         const kind = url.pathname.startsWith('/data/') ? 'metadata' : url.hostname.startsWith('air-quality-api.') ? 'airQuality'
             : q.get('hourly')?.includes('hPa') ? 'cloud' : 'weather';
@@ -56,37 +62,37 @@ function setup(preferences = {}, { limitedCloud = false } = {}) {
         if (kind === 'metadata') body = { last_run_initialisation_time: clock / 1000 - 3600, last_run_availability_time: clock / 1000 - 600, update_interval_seconds: 21600 };
         else if (kind === 'cloud') body = cloudResponseForUrl(url.href);
         else if (kind === 'airQuality') body = airQualityFixture({ now: clock });
-        else body = weatherModelFixture(weatherFixture({ startDate: q.get('start_date'),
-            hours: (Date.parse(q.get('end_date')) - Date.parse(q.get('start_date'))) / 3600000 + 24,
-            latitude: Number(q.get('latitude')), longitude: Number(q.get('longitude')), elevation: Number(q.get('elevation')) }), q.get('models').split(','));
+        else body = weatherModelFixture(weatherFixture({ startDate: q.get('start_date')!,
+            hours: (Date.parse(q.get('end_date')!) - Date.parse(q.get('start_date')!)) / 3600000 + 24,
+            latitude: Number(q.get('latitude')), longitude: Number(q.get('longitude')), elevation: Number(q.get('elevation')) }), q.get('models')!.split(','));
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     };
     for (const bundle of bundles) win.eval(bundle);
     return { win, doc, calls, observers,
         async ready() { await wait(() => doc.querySelectorAll('.bpb-peak-card-toggle').length === 2); await tick(); },
-        async enter(id) {
-            for (const observer of [...observers]) if (observer.connected && (!id || observer.target.id === id)) observer.fn([{ isIntersecting: true }]);
-            await wait(() => [...doc.querySelectorAll('[aria-busy]')].every(node => node.getAttribute('aria-busy') !== 'true'));
+        async enter(id?: string) {
+            for (const observer of [...observers]) if (observer.connected && (!id || observer.target!.id === id)) observer.fn([{ isIntersecting: true }]);
+            await wait(() => [...doc.querySelectorAll('[aria-busy]')].every((node: Element) => node.getAttribute('aria-busy') !== 'true'));
             await tick();
         },
-        async change(id, value) { const node = doc.getElementById(id); node.value = value; node.dispatchEvent(new win.Event('change')); await this.settle(); },
-        async click(selector) { doc.querySelector(selector).click(); await this.settle(); },
-        async settle() { await tick(); await wait(() => [...doc.querySelectorAll('[aria-busy]')].every(node => node.getAttribute('aria-busy') !== 'true')); await tick(); },
-        advance(ms) { clock += ms; },
+        async change(id: string, value: string) { const node = doc.getElementById(id); node.value = value; node.dispatchEvent(new win.Event('change')); await this.settle(); },
+        async click(selector: string) { doc.querySelector(selector).click(); await this.settle(); },
+        async settle() { await tick(); await wait(() => [...doc.querySelectorAll('[aria-busy]')].every((node: Element) => node.getAttribute('aria-busy') !== 'true')); await tick(); },
+        advance(ms: number) { clock += ms; },
         close() { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); },
     };
 }
-const summarize = calls => Object.fromEntries(['weather', 'cloud', 'metadata', 'airQuality', 'total'].map(kind => [kind, kind === 'total' ? calls.length : calls.filter(call => call.kind === kind).length]));
-function record(name, env, expected, start = 0) {
+const summarize = (calls: AuditCall[]) => Object.fromEntries(['weather', 'cloud', 'metadata', 'airQuality', 'total'].map(kind => [kind, kind === 'total' ? calls.length : calls.filter(call => call.kind === kind).length]));
+function record(name: string, env: ReturnType<typeof setup>, expected: number[], start = 0) {
     const observed = summarize(env.calls.slice(start));
     assert.deepEqual(Object.values(observed), expected, name);
     results.push({ name, ...observed });
 }
-async function scenario(preferences, name, expected, options) {
+async function scenario(preferences: Preferences, name: string, expected: number[], options?: { limitedCloud?: boolean }) {
     const env = setup(preferences, options);
     try {
         await env.ready(); await env.enter(); record(name, env, expected);
-        if (preferences.bpbPeakWeatherModelForecast) assert.equal(new URL(env.calls.find(call => call.kind === 'weather').url).searchParams.get('models'), 'gfs_global,icon_global');
+        if (preferences.bpbPeakWeatherModelForecast) assert.equal(new URL(env.calls.find(call => call.kind === 'weather')!.url).searchParams.get('models'), 'gfs_global,icon_global');
         if (preferences.peakWeatherCollapsed) assert.equal(env.doc.querySelector('#bpb-peak-weather').dataset.bpbCardCollapsed, 'true');
     }
     finally { env.close(); }
@@ -99,13 +105,13 @@ try {
     await env.enter('bpb-peak-weather'); record('Only weather intersects', env, [1, 0, 0, 0, 1]);
     await env.enter('bpb-summit-cloud'); record('Default: both cards intersect', env, [1, 2, 2, 0, 5]);
     defaultRequests = [...env.calls];
-    const weatherQuery = new URL(defaultRequests[0].url).searchParams;
-    assert.equal(weatherQuery.get('hourly').split(',').length, 10);
-    assert.equal((Date.parse(weatherQuery.get('end_date')) - Date.parse(weatherQuery.get('start_date'))) / 86400000 + 1, 32);
-    for (const call of defaultRequests.filter(call => call.kind === 'cloud')) {
+    const weatherQuery = new URL(defaultRequests[0]!.url).searchParams;
+    assert.equal(weatherQuery.get('hourly')!.split(',').length, 10);
+    assert.equal((Date.parse(weatherQuery.get('end_date')!) - Date.parse(weatherQuery.get('start_date')!)) / 86400000 + 1, 32);
+    for (const call of defaultRequests.filter(item => item.kind === 'cloud')) {
         const query = new URL(call.url).searchParams;
-        assert.equal(query.get('latitude').split(',').length, 5);
-        assert.equal(query.get('hourly').split(',').length, 72);
+        assert.equal(query.get('latitude')!.split(',').length, 5);
+        assert.equal(query.get('hourly')!.split(',').length, query.get('models') === 'gfs_hrrr' ? 84 : 72);
     }
     let start = env.calls.length;
     await env.click('#bpb-peak-weather-past'); await env.click('#bpb-peak-weather-forecast');
@@ -117,7 +123,7 @@ try {
     start = env.calls.length;
     await env.click('.bpb-cloud-refresh'); record('Cloud Refresh within cache TTL: additional', env, [0, 2, 0, 0, 2], start);
     start = env.calls.length;
-    await env.change('bpb-summit-cloud-date', '2026-10-25'); record('Tomorrow, same models: additional', env, [0, 2, 0, 0, 2], start);
+    await env.change('bpb-summit-cloud-date', '2026-10-25'); record('Tomorrow, GFS replaces HRDPS: additional', env, [0, 2, 1, 0, 3], start);
     start = env.calls.length;
     await env.change('bpb-summit-cloud-date', '2026-10-24'); record('Return to cached day: additional', env, [0, 0, 0, 0, 0], start);
     start = env.calls.length;

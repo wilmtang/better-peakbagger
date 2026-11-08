@@ -178,6 +178,16 @@ test('a failed comparison request names only the forecast shown and keeps its es
         assert.equal(env.doc.querySelector('.bpb-cloud-prediction')!.textContent, 'Summit likely clear of cloud');
     } finally { env.close(); }
 });
+test('reserved lines cover the real Automatic source and every confidence label', async () => {
+    const env = setup();
+    try {
+        await settled(env);
+        const reserved = (selector: string) => [...env.doc.querySelectorAll(`${selector} [data-sizing-text]`)].map((node: { dataset: { sizingText: string } }) => node.dataset.sizingText);
+        const source = reserved('.bpb-cloud-source');
+        for (const label of ['HRRR + HRDPS Continental', 'HRRR + GFS', 'GFS + IFS']) assert.ok(source.some(text => text.startsWith(`Showing: ${label}`)), `${label} in ${source.join(' | ')}`);
+        assert.deepEqual(reserved('.bpb-cloud-confidence'), ['Experimental estimate', 'Low confidence', 'Unavailable']);
+    } finally { env.close(); }
+});
 test('evidence says when cold-air adjustment changed the reading', async () => {
     const env = setup({ preferences: { bpbSummitCloudModel: 'gem_global' } });
     try {

@@ -11,6 +11,7 @@ living docs in [`docs/`](../).
 Items these records left open now live in the
 [follow-up ledger](../plans/follow-ups.md).
 
+- [Summit Cloud Cover audit — 2026-11-08](summit-cloud-audit-2026-11-08.md) — cold-air humidity scales, two-model results, HRRR levels and the closure ledger.
 - [Report protection remediation — 2026-11-07](report-protection-remediation-2026-11-07.md) — encoded-route compatibility, bounded original-source inspection and the compact blocked-script notice, with independent review and retained native/live verification limits.
 - [Modern stack adoption evidence — 2026-11-06](modern-stack-adoption-evidence-2026-11-06.md) — dated tooling, policy and source-walker results and their limits, moved from the active plan.
 - [Map code audit — 2026-11-08](map-audit-2026-11-08.md) — 2D→3D transition, DEM cache cost, overlays, wildfire retention and the closure ledger

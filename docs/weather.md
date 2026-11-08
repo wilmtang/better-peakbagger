@@ -42,6 +42,7 @@ the selected cloud date and downloaded forecasts remain in the current page.
 | Changes cloud model to an uncached manual model | **1–2** | 1 profile download; +1 if that model's update-time record is not fresh in this card's cache |
 | Changes cloud model to Automatic, with uncached profiles | **2–4** | 2 profile downloads; +0–2 update-time checks depending on cached records |
 | Selects another uncached cloud date with the same Automatic models | **2 while update records are fresh; otherwise 4** | Loads that selected day's hourly profiles, rather than all dates offered by the menu |
+| Moves to an uncached Automatic date that changes one model, such as today to tomorrow or tomorrow to day three on high-resolution peaks | **3 while the shared update record is fresh; otherwise 4** | 2 profile downloads + 1 update-time check for the newly used model |
 | Selects another uncached date with a manual cloud model | **1 while its update record is fresh; otherwise 2** | Loads one model's selected day |
 | Returns to a cloud model/date still cached within five minutes | **0** | Uses the downloaded result; cache holds up to 6 model/date entries |
 | Clicks cloud **Earlier**, **Later**, an hour, or **Why this prediction** | **0** | Changes the view/explanation of already-loaded data |
@@ -561,7 +562,7 @@ MAIN-world GPX/Sun ownership and worker-owned mutations remain distinct.
 | Layout / movement / pending feedback | `npm run verify -- peak-cards`, `npm run verify -- weather-interactions` |
 | 3D point-weather integration | `node scripts/verify-peak-weather-3d.mjs` |
 | Real manifest startup | `npm run verify -- chrome` |
-| Request-count / axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mjs`; `node docs/plans/evidence/card-reuse-audit.mjs` |
+| Request-count / axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mts`; `node docs/plans/evidence/card-reuse-audit.mjs` |
 | Documentation integrity | `node --test test/project/documentation.test.mjs`; `git diff --check` |
 
 Follow [development](development.md) and AGENTS for hidden HTTPS Peakbagger fixtures,
