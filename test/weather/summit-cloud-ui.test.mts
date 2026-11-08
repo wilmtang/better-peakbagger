@@ -43,7 +43,7 @@ function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false, manu
         if (request.mode === 'error') return new Response('', { status: 503 });
         if (request.mode === 'fail-hrdps' && new URL(url).searchParams.get('models') === 'gem_hrdps_continental') return new Response('', { status: 503 });
         if (request.mode === 'limited') return new Response('', { status: 429, headers: { 'retry-after': '60' } });
-        return new Response(JSON.stringify(cloudResponseForUrl(url, request.mode === 'cloudy' ? { cloud: 95, humidity: 98 } : undefined)), { headers: { 'content-type': 'application/json' } });
+        return new Response(JSON.stringify(cloudResponseForUrl(url, request.mode === 'cloudy' ? { cloud: 95, humidity: 98 } : request.mode === 'icy' ? { cloud: 40, humidity: 88 } : undefined)), { headers: { 'content-type': 'application/json' } });
     };
     win.eval(bundle); win.eval(layout);
     const doc = win.document, card = () => doc.querySelector('#bpb-summit-cloud');
@@ -176,6 +176,18 @@ test('a failed comparison request names only the forecast shown and keeps its es
         assert.match(env.doc.querySelector('.bpb-cloud-reason')!.textContent!, /^Only HRRR could be evaluated/);
         assert.equal(env.doc.querySelector('.bpb-cloud-confidence')!.textContent, 'Low confidence');
         assert.equal(env.doc.querySelector('.bpb-cloud-prediction')!.textContent, 'Summit likely clear of cloud');
+    } finally { env.close(); }
+});
+test('evidence says when cold-air adjustment changed the reading', async () => {
+    const env = setup({ preferences: { bpbSummitCloudModel: 'gem_global' } });
+    try {
+        env.mode('icy');
+        await settled(env);
+        const evidence = env.doc.querySelector('.bpb-cloud-evidence').textContent;
+        assert.match(evidence, /88% humidity \(\d+% after cold-air adjustment\) and \d+% estimated cloud/);
+        assert.match(env.doc.querySelector('.bpb-cloud-prediction').textContent, /inside cloud/);
+        env.mode('complete'); env.choose('model', 'gfs_global'); await settled(env);
+        assert.match(env.doc.querySelector('.bpb-cloud-evidence').textContent, /55% humidity and 5% modeled cloud/);
     } finally { env.close(); }
 });
 test('DST days keep distinct hourly identities and BFCache suspension aborts without duplicating the card', async () => {

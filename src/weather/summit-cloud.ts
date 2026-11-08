@@ -55,9 +55,13 @@ export function mountSummitCloud() {
     titleText.reserve(Object.values(CLOUD_STATES).map(value => value.title));
     const confidence = element('span', { class: 'bpb-cloud-confidence' });
     const reason = element('p', { class: 'bpb-cloud-reason' }), reasonText = createStableText(reason);
-    reasonText.reserve(['Moist air approaching higher terrain could form cloud on the ridge.',
-        'The summit and sampled surroundings are relatively dry at summit height. Lower valleys may still contain cloud.',
-        'The model has no complete atmospheric layers bracketing this summit.']);
+    const reserveReasons = (labels: string[]) => {
+        const longest = 'The summit and sampled surroundings are relatively dry at summit height. Lower valleys may still contain cloud.';
+        const [first = '', second = first] = [...labels].sort((left, right) => right.length - left.length);
+        reasonText.reserve([longest, 'Moist air approaching higher terrain could form cloud on the ridge.', 'The model has no complete atmospheric layers bracketing this summit.',
+            `Models differ: ${first} says “${CLOUD_STATES.blocked.title}”; ${second} says “${CLOUD_STATES.partial.title}”.`,
+            `Only ${first} could be evaluated for this hour. ${longest}`]);
+    };
     const evidence = element('ul', { class: 'bpb-cloud-evidence' });
     const details = element('details', { class: 'bpb-cloud-details' }, [element('summary', { text: 'Why this prediction' }), reason, evidence,
         element('p', { text: 'We compare cloud and moisture at summit height, four surrounding profiles and moist air blowing toward higher terrain. Most model cloud values are derived from humidity. Small cap clouds and valley fog may be missed; this is not an exact view in every direction.' })]);
@@ -110,6 +114,7 @@ export function mountSummitCloud() {
         dateSelect.replaceChildren(...dates.map(date => element('option', { value: date, text: relativeDate(date) })));
         dateSelect.value = requestedDate;
         sourceText.reserve(['Showing: HRRR + GEM HRDPS · Summit 29,029 ft', ...models.map(model => `Showing: ${model.label} · Summit 29,029 ft`)]);
+        reserveReasons(models.map(model => model.label));
     }
     function placeholder(): CloudDisplay {
         const day = weatherDayWindow(requestedDate, zone, Date.now(), { forecast: true });
@@ -194,9 +199,10 @@ export function mountSummitCloud() {
             headingText.reserve(Object.values(CLOUD_STATES).map(state => `${model.label}: ${state.title}`));
             headingText.set(`${model.label}: ${(estimate || CLOUD_STATES.unavailable).title}`);
             const measurements = element('p'), measurementsText = createStableText(measurements);
-            const measurementLabel = (humidity: number, cloud: number, nearby: number, total: number, lower: string, upper: string) => `${humidity}% humidity and ${cloud}% modeled cloud at summit height; ${nearby}/${total} surrounding profiles cloudy. Layers ${lower}–${upper}; grid ~${model.gridKm} km.`;
-            measurementsText.reserve([measurementLabel(100, 100, 4, 4, elevation(19999), elevation(19999)), 'No complete atmospheric profile is available for this model and hour.']);
-            measurementsText.set(estimate?.summit ? measurementLabel(Math.round(estimate.summit.humidity), Math.round(estimate.summit.cloud), estimate.cloudyNeighbors, estimate.neighbors,
+            const measurementLabel = (humidity: number, saturation: number, cloud: number, nearby: number, total: number, lower: string, upper: string) => `${humidity}% humidity ${saturation === humidity
+                ? `and ${cloud}% modeled cloud` : `(${saturation}% after cold-air adjustment) and ${cloud}% estimated cloud`} at summit height; ${nearby}/${total} surrounding profiles cloudy. Layers ${lower}–${upper}; grid ~${model.gridKm} km.`;
+            measurementsText.reserve([measurementLabel(100, 100, 100, 4, 4, elevation(19999), elevation(19999)), measurementLabel(99, 100, 100, 4, 4, elevation(19999), elevation(19999)), 'No complete atmospheric profile is available for this model and hour.']);
+            measurementsText.set(estimate?.summit ? measurementLabel(Math.round(estimate.summit.humidity), Math.round(estimate.summit.saturation), Math.round(estimate.summit.cloud), estimate.cloudyNeighbors, estimate.neighbors,
                 elevation(estimate.summit.lower), elevation(estimate.summit.upper)) : 'No complete atmospheric profile is available for this model and hour.');
             return element('li', {}, [heading, measurements]);
         }));
