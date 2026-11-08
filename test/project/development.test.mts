@@ -496,6 +496,37 @@ test('watchDirectories covers all authored source roots and copied asset roots w
     );
 });
 
+test('watchAll publishes an edit made during its first build, with no watcher event to report it', async () => {
+    const temporaryRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'bpb-watch-startup-')));
+    const targetDistDir = path.join(temporaryRoot, 'dist'), entryFile = path.join(temporaryRoot, 'src', 'entry.ts');
+    await mkdir(path.dirname(entryFile), { recursive: true });
+    await writeFile(entryFile, "console.log('startup-v1');\n");
+    await writeFile(path.join(temporaryRoot, 'manifest.json'), JSON.stringify({ manifest_version: 3, name: 'watch-startup', options_ui: { page: 'options/options.html', open_in_tab: true } }) + '\n');
+    const log = console.log;
+    console.log = () => {};
+    let watcher: Awaited<ReturnType<typeof watchAll>> | null = null;
+    try {
+        watcher = await watchAll({
+            projectRoot: temporaryRoot, distDir: targetDistDir, authoredSourceRoots: ['src'],
+            entries: [{ out: 'content/app.js', sources: ['entry.ts'] }],
+            copyFiles: [['manifest.json', 'manifest.json']], copyDirs: [], vendorCopy: [], debounceMs: 20,
+            // A watcher the OS has not armed yet delivers nothing.
+            watch: (() => ({ close() {} })) as unknown as typeof import('node:fs').watch,
+            afterBuild: async ({ sequence }) => {
+                if (sequence === 1) await writeFile(entryFile, "console.log('startup-v2');\n");
+            },
+        });
+        await pollUntil(async () => {
+            const bundle = await readFile(path.join(targetDistDir, 'content', 'app.js'), 'utf8').catch(() => null);
+            return { ok: Boolean(bundle?.includes('startup-v2')), value: true, live: bundle };
+        }, 'an edit from the first build to publish', 8_000);
+    } finally {
+        console.log = log;
+        await watcher?.close();
+        await rm(temporaryRoot, { recursive: true, force: true });
+    }
+});
+
 test('watchAll rebuilds imported src/storage/, new nested domains and page-local roots, syncs Firefox reload state, preserves dist/ on syntax error, recovers and cleans up when closed mid-rebuild', async () => {
     const temporaryRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'bpb-watch-fixture-')));
     const targetDistDir = path.join(temporaryRoot, 'dist');
@@ -554,6 +585,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
     };
 
     let watcher: Awaited<ReturnType<typeof watchAll>> | null = null;
+    let releaseRebuild = () => {};
     try {
         watcher = await watchAll({
             projectRoot: temporaryRoot,
@@ -578,7 +610,10 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
                     sourceDir: firefoxPrepared.sourceDir,
                     reloadToken: sequence,
                 });
-                if (holdGate) {
+                // Hold only the rebuild carrying the closing edit. A late event from an
+                // earlier edit can start a rebuild first, and closing during that one
+                // would legitimately drop the newer edit.
+                if (holdGate && (await readFile(appOutFile, 'utf8').catch(() => '')).includes('storage-v4-closing')) {
                     const currentGate = holdGate;
                     holdGate = null;
                     currentGate.started();
@@ -664,11 +699,20 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             value: true,
             live: { errors: errors.slice(errorCountBefore), state: await readLiveState() },
         }), 'syntax error rebuild failure to be logged');
+        // A rebuild from the popup edit's late event can publish before that first
+        // failure. Builds are serial, so from here every build sees broken source.
+        const beforeFailure = await readLiveState(), secondErrorCount = errors.length;
+        await writeFile(storageFile, 'export function readStorageValue(: number {\n');
+        await pollUntil(async () => ({
+            ok: errors.length > secondErrorCount,
+            value: true,
+            live: { errors: errors.slice(secondErrorCount), state: await readLiveState() },
+        }), 'second syntax error rebuild failure to be logged');
         const duringFailure = await readLiveState();
-        assert.equal(duringFailure.token, afterPopupEdit.token, 'failed rebuild must not advance the reload token');
-        assert.equal(duringFailure.firefoxToken, afterPopupEdit.firefoxToken, 'failed rebuild must not advance the Firefox reload token');
-        assert.equal(duringFailure.bundle, afterPopupEdit.bundle, 'failed rebuild must preserve the published bundle');
-        assert.equal(duringFailure.firefoxBundle, afterPopupEdit.firefoxBundle, 'failed rebuild must preserve the Firefox bundle');
+        assert.equal(duringFailure.token, beforeFailure.token, 'failed rebuild must not advance the reload token');
+        assert.equal(duringFailure.firefoxToken, beforeFailure.firefoxToken, 'failed rebuild must not advance the Firefox reload token');
+        assert.equal(duringFailure.bundle, beforeFailure.bundle, 'failed rebuild must preserve the published bundle');
+        assert.equal(duringFailure.firefoxBundle, beforeFailure.firefoxBundle, 'failed rebuild must preserve the Firefox bundle');
 
         // Correct the syntax error and verify watch mode recovers and advances both tokens.
         await writeFile(storageFile, 'export function readStorageValue(): string { return \'storage-v3-recovered\'; }\n');
@@ -708,7 +752,6 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
 
         // Close while a rebuild is in flight; verify close() waits for the rebuild and removes staging trees.
         let markRebuildStarted!: () => void;
-        let releaseRebuild!: () => void;
         const rebuildStarted = new Promise<void>(resolve => { markRebuildStarted = resolve; });
         const releasePromise = new Promise<void>(resolve => { releaseRebuild = resolve; });
         holdGate = { started: markRebuildStarted, release: releasePromise };
@@ -741,6 +784,9 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
         const finalState = await readLiveState();
         assert.equal(finalState.token, tokenAtClose, 'closed watcher must ignore subsequent file changes');
     } finally {
+        // A failed wait must not leave close() waiting on the held rebuild.
+        holdGate = null;
+        releaseRebuild();
         console.error = originalError;
         await watcher?.close();
         await firefoxPrepared.cleanup();

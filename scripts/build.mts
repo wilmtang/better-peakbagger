@@ -30,6 +30,7 @@ import {
     readdir,
     rename,
     rm,
+    stat,
     writeFile,
 } from 'node:fs/promises';
 import { existsSync, watch as fsWatch, type FSWatcher } from 'node:fs';
@@ -315,12 +316,30 @@ export interface WatchAllOptions extends BuildLayout {
     reloadFile?: string;
     afterBuild?: (info: { sequence: number }) => Promise<void> | void;
     debounceMs?: number;
+    watch?: typeof fsWatch;
 }
 
 export interface WatchHandle {
     reloadFile: string;
     close(): Promise<void>;
 }
+
+const STARTUP_CHECK_DELAYS_MS = [250, 1000, 3000];
+async function sourceSnapshot(layout: BuildLayout): Promise<Map<string, string>> {
+    const snapshot = new Map<string, string>();
+    const record = async (file: string) => {
+        const info = await stat(file).catch(() => null);
+        if (info?.isFile()) snapshot.set(file, `${info.mtimeMs}:${info.size}`);
+    };
+    for (const directory of watchDirectories(layout)) {
+        const names = await readdir(directory, { recursive: true }).catch(() => [] as string[]);
+        await Promise.all(names.map(name => record(path.join(directory, name))));
+    }
+    await Promise.all((layout.copyFiles || []).map(([file]) => record(path.resolve(layout.projectRoot || root, file))));
+    return snapshot;
+}
+const sameSnapshot = (left: Map<string, string>, right: Map<string, string>) => left.size === right.size
+    && [...left].every(([file, signature]) => right.get(file) === signature);
 
 // Watch mode rebuilds every bundle as one transaction. A shared module can
 // feed several independent esbuild contexts; reloading after the first context
@@ -337,6 +356,7 @@ export async function watchAll({
     reloadFile = path.join(targetDistDir, RELOAD_SIGNAL),
     afterBuild = async () => {},
     debounceMs = 80,
+    watch = fsWatch,
 }: WatchAllOptions = {}): Promise<WatchHandle> {
     const layout: BuildLayout = {
         projectRoot,
@@ -363,8 +383,25 @@ export async function watchAll({
     let pending = false;
     let closed = false;
 
+    // An edit made during the first build, or before the OS has armed the watchers,
+    // produces no event. Until they have had time to arm, compare the sources with
+    // what the last build started from.
+    let startupBaseline = await sourceSnapshot(layout), checkingStartup = true;
+    const startupChecks: ReturnType<typeof setTimeout>[] = [];
+    const checkStartupEdits = async (last: boolean) => {
+        if (closed || !checkingStartup) return;
+        const baseline = startupBaseline, current = await sourceSnapshot(layout);
+        if (last) checkingStartup = false;
+        // A rebuild that re-baselined meanwhile has already covered this comparison.
+        if (!closed && baseline === startupBaseline && !sameSnapshot(baseline, current)) requestRebuild();
+    };
+
     const rebuild = async () => {
         const nextSequence = sequence + 1;
+        if (checkingStartup && sequence > 0) {
+            const baseline = await sourceSnapshot(layout);
+            startupBaseline = baseline;
+        }
         await rm(outputDir, { recursive: true, force: true });
         await mkdir(outputDir, { recursive: true });
         const results = await Promise.all(contexts.map(buildContext => buildContext.rebuild()));
@@ -421,7 +458,7 @@ export async function watchAll({
         await rebuild();
 
         for (const directory of watchDirectories(layout)) {
-            watchers.push(fsWatch(directory, { recursive: true }, requestRebuild));
+            watchers.push(watch(directory, { recursive: true }, requestRebuild));
         }
         const resolvedRoot = path.resolve(projectRoot);
         const rootFiles = new Set(
@@ -431,7 +468,7 @@ export async function watchAll({
                 .map(file => path.basename(file)),
         );
         if (rootFiles.size > 0) {
-            watchers.push(fsWatch(resolvedRoot, (_event, filename) => {
+            watchers.push(watch(resolvedRoot, (_event, filename) => {
                 if (filename && rootFiles.has(filename.toString())) requestRebuild();
             }));
         }
@@ -442,6 +479,10 @@ export async function watchAll({
         throw error;
     }
 
+    STARTUP_CHECK_DELAYS_MS.forEach((delay, index, delays) => {
+        startupChecks.push(setTimeout(() => void checkStartupEdits(index === delays.length - 1), delay));
+    });
+
     console.log('Watching for changes… (Ctrl+C to stop)');
 
     return {
@@ -450,6 +491,7 @@ export async function watchAll({
             if (closed) return;
             closed = true;
             clearTimeout(timer);
+            startupChecks.forEach(clearTimeout);
             for (const watcher of watchers) watcher.close();
             if (building) await building;
             await Promise.all(contexts.map(buildContext => buildContext.dispose()));
