@@ -54,7 +54,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
     let touched = false, preferencesReady = false, revision = 1, capture: unknown = null, landTypes = Schema.mapLandTypes();
     let binding: MapBinding | null = null, polling: number | null = null, frameMode = false, active = true, disposed = false;
     let terrainView: TerrainView | null = null, snotelAllowed = false, requestId = 0, stations: { id: string }[] = [], coverage: Record<string, boolean> | null = null;
-    let stationTimer: number | null = null, relayFrame: number | null = null;
+    let stationTimer: number | null = null, relayFrame: number | null = null, relayed = '';
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
     let revealPending = false, terrainMoving = false;
     let landViewKey = '', landInfo: OverlayStatus | null = null;
@@ -120,7 +120,12 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
         if (relayFrame !== null) return;
         // Keep the parked bridge current too. Otherwise its loaded replay could
         // briefly reactivate an overlay the user turned off while in 2D.
-        relayFrame = win.requestAnimationFrame(() => { relayFrame = null; terrain('layers', { snapshot: snapshot() }); });
+        relayFrame = win.requestAnimationFrame(() => {
+            relayFrame = null;
+            // Every 3D settle lands here; an unchanged menu has nothing to tell the frame.
+            const next = snapshot(), key = JSON.stringify(next);
+            if (key !== relayed) { relayed = key; terrain('layers', { snapshot: next }); }
+        });
     };
     const save = () => post({ type: 'save', preferences: { ...Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id, state[id].opacity])), landTypes } });
     const stationView = () => {

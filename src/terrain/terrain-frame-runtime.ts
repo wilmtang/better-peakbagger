@@ -16,7 +16,7 @@ import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../ma
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
-import { createTerrainOverlays } from './terrain-overlays.js';
+import { createTerrainOverlays } from './terrain-overlays.ts';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.ts';
 import { rateLimitMessage, readRetryAt } from '../net/rate-limit.js';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';

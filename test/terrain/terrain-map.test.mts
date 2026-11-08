@@ -2890,7 +2890,7 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
         getLayer(id: string) { return this.layers.find(layer => layer.id === id); }
         removeLayer(id: string) { this.layers = this.layers.filter(layer => layer.id !== id); }
         getSource(id: string) { return this.sources.get(id); } removeSource(id: string) { this.sources.delete(id); }
-        getStyle() { return { layers: this.layers }; } moveLayer() {}
+        getStyle() { return { layers: this.layers }; } getLayersOrder() { return this.layers.map(layer => layer.id); } moveLayer() {}
         getBounds() { return { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 }; }
         getZoom() { return 13; } setPaintProperty() {} fitBounds() {} resize() {} remove() {}
     }
