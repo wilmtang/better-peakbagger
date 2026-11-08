@@ -2023,7 +2023,7 @@ try {
     const releaseVectorStyles = async () => {
         for (const requestId of pendingVectorStyles.splice(0)) await cdp.call('Fetch.fulfillRequest', { requestId, responseCode: 200,
             responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'application/json' }],
-            body: Buffer.from(JSON.stringify({ version: 8, sources: { fixture: { type: 'vector', tiles: ['https://tiles.maptoolkit.org/fixture/{z}/{x}/{y}.pbf'] } }, layers: [] })).toString('base64') });
+            body: Buffer.from(JSON.stringify({ version: 8, sources: { fixture: { type: 'vector', tiles: ['https://tiles.maptoolkit.org/fixture/{z}/{x}/{y}.pbf'] } }, layers: [{ id: 'fixture', type: 'fill', source: 'fixture', 'source-layer': 'fixture', minzoom: 24 }] })).toString('base64') });
     };
     // Engine status events are injected; transport classification is covered
     // separately. The catalog uses the runtime's fetch path with a 429 stub.

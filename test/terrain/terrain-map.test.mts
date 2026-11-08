@@ -752,6 +752,8 @@ test('a real 3D request whose activation lapsed answers at once, and the analyze
         const open = issued;
         fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
         assert.equal(issued, open + 1, 'The trusted switch authorizes the restart it causes');
+        fireTrustedEvent(window.document.getElementById('bpb-terrain-toggle')!, 'click', { bubbles: true });
+        assert.equal(issued, open + 1, 'Leaving 3D mints nothing a forged message could spend');
     } finally { dispatch('destroy'); dom.window.close(); }
 });
 
@@ -2045,8 +2047,16 @@ test('a lent 2D paint drapes above the loading vector map, retires once its tile
         assert.equal(invalid.closed, true, 'An invalid camera cannot place pixels');
         send({ type: 'drape', generation: 1, bitmap: { width: 640 }, ...paint }); assert.equal(map.getLayer('bpb-drape-2d'), undefined, 'Only a real bitmap is accepted');
 
-        framePick.value = 'maptoolkit'; framePick.dispatchEvent(new window.Event('change')); await tick();
-        const held = lent(); send({ type: 'drape', generation: 1, bitmap: held, ...paint }); await tick();
+        // Re-entry after a 2D pan: parked sources report loaded for the old view.
+        framePick.value = 'maptoolkit'; framePick.dispatchEvent(new window.Event('change')); await tick(); sourcesLoaded = true;
+        send({ type: 'suspend', generation: 1 });
+        const reentry = lent(); send({ type: 'drape', generation: 2, bitmap: reentry, ...paint });
+        send({ type: 'resume', generation: 2, routeSegments: [[[46.85, -121.76], [46.86, -121.77]]], basemap: { kind: 'vector', provider: 'maptoolkit' } }); await tick();
+        assert.ok(map.getLayer('bpb-drape-2d'), 'The stand-in covers the new camera until the next settle');
+        map.fire('idle'); await new Promise(resolve => setTimeout(resolve, 300));
+        assert.equal(map.getLayer('bpb-drape-2d'), undefined); sourcesLoaded = false;
+
+        const held = lent(); send({ type: 'drape', generation: 2, bitmap: held, ...paint }); await tick();
         assert.ok(map.getLayer('bpb-drape-2d'));
         framePick.value = 'terrain'; framePick.dispatchEvent(new window.Event('change'));
         assert.equal(map.getLayer('bpb-drape-2d'), undefined, 'Choosing another map removes the stand-in at once');

@@ -54,7 +54,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
     let touched = false, preferencesReady = false, revision = 1, capture: unknown = null, landTypes = Schema.mapLandTypes();
     let binding: MapBinding | null = null, polling: number | null = null, frameMode = false, active = true, disposed = false;
     let terrainView: TerrainView | null = null, snotelAllowed = false, requestId = 0, stations: { id: string }[] = [], coverage: Record<string, boolean> | null = null;
-    let stationTimer: number | null = null, relayFrame: number | null = null, relayed = '';
+    let stationTimer: number | null = null, relayFrame: number | null = null, relayed = '', terrainLaunching = false;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
     let revealPending = false, terrainMoving = false;
     let landViewKey = '', landInfo: OverlayStatus | null = null;
@@ -430,8 +430,13 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
         if (data.dir === 'toPage' && data.type === 'customLayerStatus') { custom?.status(data.id, data.status); return; }
         if (data.dir === 'toCS' && data.type === 'init') {
             // The native map stays up, overlays included, until 3D covers it.
-            locationMenu.close();
+            locationMenu.close(); terrainLaunching = true;
+        } else if (data.dir === 'toCS' && data.type === 'destroy') {
+            terrainLaunching = false;
         } else if (data.dir === 'toPage' && data.type === 'loaded') {
+            // A 'loaded' already queued when the user cancels can arrive after destroy.
+            if (!terrainLaunching) return;
+            terrainLaunching = false;
             stopPolling();
             custom?.mode(true);
             // Recreate the native adapter only when returning to 2D.

@@ -34,7 +34,7 @@ function setup(terrain = false, { preferences = true } = {}) {
     const send = (detail: PageValue, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
         source: win, origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
     if (preferences) send({ type: 'preferences', snotel: true });
-    if (terrain) { send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
+    if (terrain) { win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type: 'init' } })); send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input').click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
     const panStart = () => { for (const handler of events.get('movestart') || []) handler({ target: map }); };
@@ -276,5 +276,7 @@ test('native adapter stays up through terrain boot, detaches once 3D covers the 
         assert.equal(env.events.get('moveend').size, 0, '3D owning the map releases the native adapter');
         env.send({ type: 'destroyed' }, '__bpbTerrain');
         assert.equal(env.events.get('moveend').size, 1, 'returning to 2D restores exactly one adapter');
+        env.send({ type: 'init', dir: 'toCS' }, '__bpbTerrain'); env.send({ type: 'destroy', dir: 'toCS' }, '__bpbTerrain'); env.send({ type: 'loaded' }, '__bpbTerrain');
+        assert.equal(env.events.get('moveend').size, 1, 'a loaded queued behind a cancel cannot take the map from 2D');
     } finally { env.close(); }
 });

@@ -691,6 +691,17 @@ try {
             await page.setViewportSize({ width: 1280, height: 800 }); mode = 'ready'; await open(); await readyToggle();
             await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
             await page.waitForFunction(() => document.querySelector<FixtureElement>('.bpb-vector-slot')?.style.opacity === '1');
+            // A 'loaded' queued behind a cancel arrives with no launch open.
+            const parked = await page.evaluate(() => new Promise<boolean>(resolve => {
+                window.postMessage({ __bpbTerrain: true, dir: 'toPage', type: 'loaded' }, window.location.origin);
+                window.postMessage({ __bpbTerrainProbe: true }, window.location.origin);
+                window.addEventListener('message', function done(event) {
+                    if (!event.data?.__bpbTerrainProbe) return;
+                    window.removeEventListener('message', done);
+                    setTimeout(() => resolve(document.querySelector<HTMLElement>('.bpb-vector-slot iframe')?.dataset.bpbVectorParked === 'true'), 100);
+                });
+            }));
+            assert.equal(parked, false, 'A stale loaded must not release the 2D renderer');
             const nativeRequests: string[] = [], track = (request: { url(): string }) => { if (request.url().includes('/vector-native/')) nativeRequests.push(request.url()); };
             page.on('request', track); mode = 'hold';
             const entering = sampleTransition(); await toggle.click();

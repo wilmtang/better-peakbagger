@@ -303,7 +303,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // test, and the pointer's last position for the frame-throttled hover.
     let peakFeatures: PeakFeature[] = [];
     let peakMarkers: PeakMarker[] = [];
-    let peakMarkerIndex = new Map<string, PeakMarker>();
+    let peakMarkerIndex = new Map<string, PeakMarker>(), peakPopupKey: string | null = null;
     // Peak pages pass their subject explicitly because Peakbagger's `t=P`
     // nearby-marker feed may exclude that same peak. Keep it independent of
     // each replace-style feed response so the summit never disappears.
@@ -506,6 +506,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         userPickedBasemap = false;
         pendingBasemapSelection = null;
         pickerElement = null;
+        reservedLabels = null;
         noticeElement = null;
         loaded = false;
         suspended = false;
@@ -922,9 +923,12 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
 
     // The same reservation the native picker uses (src/maps/vector-map.ts): the
     // longest label plus its arrow, so a choice never resizes the control.
+    let reservedLabels: string | null = null;
     const reservePickerWidth = () => {
         const picker = pickerElement, metrics = document.createElement('canvas').getContext('2d');
-        if (!picker?.isConnected || !metrics) return;
+        const labels = [...picker?.options || []].map(option => option.textContent || '').join('\n');
+        if (!picker?.isConnected || !metrics || labels === reservedLabels) return;
+        reservedLabels = labels;
         const style = getComputedStyle(picker);
         metrics.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
         // Text scales with the font and the arrow does not, so enlarged text stays reserved.
@@ -1003,8 +1007,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         if (!lent || !map || !loaded || suspended || !authorized || lent.generation !== activeGeneration) return;
         lentDrape = null;
         const corners = vectorPaintCorners(lent.paint);
-        const settled = vectorActive && vectorSourceIds.every(id => map!.isSourceLoaded(id));
-        const canvas = corners && vectorChoice && !settled ? document.createElement('canvas') : null;
+        const canvas = corners && vectorChoice ? document.createElement('canvas') : null;
         const context = canvas?.getContext('2d');
         if (!canvas || !context || !corners) { lent.bitmap.close(); return; }
         canvas.width = lent.bitmap.width; canvas.height = lent.bitmap.height;
@@ -1392,9 +1395,9 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         }, true);
     };
 
-    // One update in flight, newest wins. Each new update supersedes the one
-    // before it, so unthrottled chart hovers could otherwise keep the dot hidden
-    // for a whole scrub. A clear never waits.
+    // One update in flight, newest wins, so unthrottled chart hovers cannot queue
+    // work in the worker. The dot reappears once the newest position lands, and a
+    // clear never waits.
     const setHighlight = (coordinates: unknown, series: string) => {
         if (!map || !loaded) return;
         const source = map.getSource('bpb-highlight');
@@ -1512,6 +1515,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         try {
             for (const feature of features) {
                 const key = JSON.stringify(feature), kept = previous.get(key);
+                if (next.has(key)) continue; // The feed can repeat a row; it is one dot.
                 if (kept) { previous.delete(key); next.set(key, kept); continue; }
                 const state = feature.properties.state;
                 const element = document.createElement('button');
@@ -1758,10 +1762,9 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
                 peakFeatures = nextPeakFeatures;
                 const hasDomMarkers = replacePeakMarkers(nextPeakFeatures, terrainMap);
                 setLayerVisibility(PEAK_MARKERS.layerId, !hasDomMarkers, terrainMap);
-                // The native map rebuilds its markers on every settle, which
-                // closes any open marker popup; mirror that so a popup never
-                // outlives the dot it points at.
-                if (peakPopup) {
+                // A popup never outlives the dot it points at. An unchanged dot
+                // survives a settle, so its popup does too.
+                if (peakPopup && !(peakPopupKey && peakMarkerIndex.has(peakPopupKey))) {
                     try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
                     peakPopup = null;
                 }
@@ -1945,6 +1948,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // validated fields only: the link target is derived from the integer peak
     // id, never from received markup.
     const showPeakPopup = (feature: PeakFeature) => {
+        peakPopupKey = JSON.stringify(feature);
         const properties = (feature && feature.properties) || {};
         const id = properties.id;
         const name = properties.name;
@@ -2516,7 +2520,6 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         // A retained drape loads no new tile to prove itself; one later gap must
         // not read as a layer that never worked.
         if (drapeBefore && drapedBasemapTiles === drapeBefore) basemapContentLoaded = drapeProven;
-        installLentDrape();
 
         // The host may have resized while parked, and fitting below reads this size.
         if (typeof map.resize === 'function') map.resize();
@@ -2543,6 +2546,9 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         // the resumed camera arms warming explicitly rather than relying on it.
         scheduleTiltWarm();
 
+        // After the camera: a pan in 2D leaves the parked sources loaded for the old
+        // view, so only the next settle can say whether the stand-in is still needed.
+        installLentDrape();
         // Resizing clears the canvas until the next frame; refill it before reveal.
         if (typeof map.redraw === 'function') map.redraw();
         // A parked renderer can preserve a user-selected base without swapping

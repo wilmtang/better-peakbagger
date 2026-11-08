@@ -77,7 +77,7 @@ the extension-origin frame never contacts peakbagger.com itself:
    colors above the route, with a click popup carrying the peak name as a link
    built from the validated integer id only. The button owns pointer, click,
    and keyboard activation; MapLibre's layer-scoped events are never used.
-   Refreshing the dots closes an open popup, matching the native marker rebuild.
+   A refresh keeps unchanged dots and closes a popup only if its own dot changed.
    The validated Peak-page subject is merged back after each replace-style
    feed reply; everything else fails closed to "no dots" — the terrain view
    never breaks because of markers.

@@ -658,7 +658,7 @@ much of the visible map falls within the satellite images. Clouds or gaps may
 still obscure covered areas. Cloud cover describes the full satellite images
 and can differ from the area shown.
 
-For the vector basemap, deselection or entry into 3D removes provider
+For the vector basemap, deselection or 3D finishing loading removes provider
 sources and aborts in-flight requests. Initialized renderer/worker setup and its validated style
 may stay in memory for up to 60 seconds per provider for faster reselection;
 reactivation requires a fresh one-use capability. Unloading or navigating away

@@ -82,7 +82,8 @@ const configureCredits = ({ width, theme, largeText, long }: { width: number; th
             const value = { theme: surface.dataset.theme, font: getComputedStyle(surface).fontSize,
                 pickerFont: getComputedStyle(picker).fontSize, x: box.x, y: box.y, width: box.width, height: box.height };
             const signature = JSON.stringify(value);
-            stable = value.theme === theme && value.font === expectedFont && value.pickerFont === expectedFont
+            // The picker keeps a native select's size until page text outgrows it.
+            stable = value.theme === theme && value.font === expectedFont && parseFloat(value.pickerFont) >= Math.min(13, parseFloat(expectedFont))
                 && signature === previous ? stable + 1 : 0;
             previous = signature;
             if (stable >= 3) resolve();
