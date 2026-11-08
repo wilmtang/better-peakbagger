@@ -256,7 +256,7 @@ download. Remove the wait and there is nothing left to see.
 - [terrain-tiles.js](../../src/terrain/terrain-tiles.js) already works out which
   tiles a given view needs, as pure arithmetic with no browser dependency, and
   already returns the target level plus its parent.
-- [terrain-cache.js](../../src/terrain/terrain-cache.js) already stores fetched
+- [terrain-cache.js](../../src/terrain/terrain-cache.ts) already stores fetched
   elevation tiles in a persistent, size-limited cache keyed by tile address, and
   is already what MapLibre reads through inside the 3D frame. Anything we warm
   is automatically a cache hit for MapLibre later.

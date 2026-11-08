@@ -740,7 +740,7 @@ fired. `gpx-analyzer.js` goes from **1,445 lines to 1,084**.
 | one string, two literals | one `COPY_HINT` constant |
 | typography drift | `Analyzing GPX data…` takes the polished ellipsis |
 | two theming systems | `src/gpx/gpx-panel-css.js` — see below |
-| the 1,190-line closure | `src/gpx/map-viewport.js` (214) and `src/gpx/map-overlay.js` (287) extracted |
+| the 1,190-line closure | `src/gpx/map-viewport.ts` (214) and `src/gpx/map-overlay.js` (287) extracted |
 
 On the panel's theme: it is a stylesheet-as-a-JS-string
 (`src/gpx/gpx-panel-css.js`), not a manifest `css` entry. The analyzer's

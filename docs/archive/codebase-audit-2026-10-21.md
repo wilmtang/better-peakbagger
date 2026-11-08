@@ -40,7 +40,7 @@ Source evidence:
   `src/snow/snotel-client.js`, `src/maps/sentinel-core.js`,
   `src/maps/canadian-land.js`, `src/background/bc-land-routes.js`,
   `src/maps/map-overlay-tiles.js`, `src/maps/peak-markers.js`,
-  `src/terrain/terrain-style.js`, and `src/terrain/terrain-cache.js`.
+  `src/terrain/terrain-style.js`, and `src/terrain/terrain-cache.ts`.
   Their pre-read response checks could exit after clearing a deadline while
   leaving the body unread. The shared bounded text reader already cleaned up
   streams it acquired; rejection before acquiring that reader was the gap.

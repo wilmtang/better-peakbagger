@@ -210,7 +210,7 @@ or persistent setting.
    `src/terrain/terrain-frame-runtime.js` (lines 2022–2034)). The isolated bridge
    forwards only the current frame generation (`src/terrain/terrain-map.js`
    (lines 500–528)), and the page coordinator normalizes finite view values only
-   while terrain is active (`src/terrain/terrain-coordinator.js` (lines
+   while terrain is active (`src/terrain/terrain-coordinator.ts` (lines
    170–193)). The solar UI needs an optional callback from that accepted branch,
    not another message listener.
 
@@ -454,7 +454,7 @@ required at each commit, followed by the complete matrix before archiving.
 | Pure mountain-time tests | Civil-to-instant conversion, DST gap/fold policy, unusual offsets, local dates, and longitude fallback pass independently of the machine timezone |
 | Pure Sun/state tests | Reference azimuth/elevation, rise/set/polar states, date sources, asymmetric scrubbers, bearing math, invalid inputs, and route reset pass |
 | `test/gpx/gpx-analyzer.test.mjs` | Every selection path drives Sun state; manual Sun time never drives route state; degraded GPX cases remain honest |
-| `test/maps/peak-map.test.mjs` | Summit subject, placement, Peak-only date input, defaults, theme, invalid page gates, 2D reset, and 3D bearing pass |
+| `test/maps/peak-map.test.mts` | Summit subject, placement, Peak-only date input, defaults, theme, invalid page gates, 2D reset, and 3D bearing pass |
 | Terrain coordinator/compass tests | Accepted active bearing reaches both existing and optional consumers; stale/invalid/inactive messages do not; teardown resets |
 | Build/release tests | Bundle roots, manifest CSS/worlds, reviewer metadata, dependency version, and generated full license notice are pinned |
 | `npm test` | Freshly built shipped bundles and full unit/integration suite pass |

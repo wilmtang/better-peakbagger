@@ -172,8 +172,8 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Map location menu | `src/maps/map-location-menu.ts`, `src/maps/map-elevation.js`, `src/maps/peak-weather-map.js` | Shared MAIN-world coordinates and approximate terrain elevation on native and 3D maps; explicit right-click, bounded credential-free Mapterhorn reads and tab-memory tiles. Independent of weather/3D opt-outs; forecast requests stay with the isolated peak weather card. |
 | Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.js` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
-| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
-| Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
+| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.ts`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
+| Full Screen and Peak maps | `src/maps/big-map.ts`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.ts` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
@@ -301,11 +301,11 @@ state:
 
 - `src/gpx/gpx-analyzer.js` reads Peakbagger's same-origin MasterMap frame and its
   Leaflet globals for route and hover synchronization.
-- `src/maps/big-map.js` identifies and restyles Peakbagger's native Full Screen GPS
+- `src/maps/big-map.ts` identifies and restyles Peakbagger's native Full Screen GPS
   layers without replacing their interactions.
 - `src/maps/peak-map.js` mirrors the native map context and peak feed into 3D.
 
-All three compose `src/terrain/terrain-coordinator.js` for the common
+All three compose `src/terrain/terrain-coordinator.ts` for the common
 idle/loading/active lifecycle, timeout recovery, camera handoff, toggle and
 compass state. Subject validation and init-payload construction stay in the
 owning surface so sharing lifecycle mechanics does not weaken page-specific
@@ -1099,7 +1099,7 @@ snapping rules, privacy boundary, and known limits are maintained in
 
 ### Full Screen GPS maps
 
-`src/maps/big-map.js` enhances Peakbagger's existing GPS layers rather than parsing a
+`src/maps/big-map.ts` enhances Peakbagger's existing GPS layers rather than parsing a
 second GPX. On group maps, it identifies genuine interactive native polylines,
 preserves their color palette and popups, changes only the configured width,
 and traces non-interactive casing underneath. A single-ascent map may also take

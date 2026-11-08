@@ -371,7 +371,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         /const restoredFromBfcache = [\s\S]{0,900}const cleanRemount = [\s\S]{0,700}assertState\(restoredFromBfcache \|\| cleanRemount,/,
         'Firefox history traversal must accept either exact BFCache restoration or one clean remount');
     assert.match(firefoxVerifier,
-        /import \{ TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS \} from '\.\.\/src\/terrain\/terrain-coordinator\.js';/,
+        /import \{ TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS \} from '\.\.\/src\/terrain\/terrain-coordinator\.ts';/,
         'the Firefox verifier must share the product terrain transaction deadline');
     assert.match(firefoxVerifier,
         /'Firefox ascent 3D extension frame',[\s\S]{0,120}TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS \+ 5_000/,

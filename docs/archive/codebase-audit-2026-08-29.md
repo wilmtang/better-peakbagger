@@ -397,7 +397,7 @@ partially dismantled page.
 and frame lifecycle on its one-shot `pagehide` listener in
 `src/gpx/gpx-analyzer.js` (lines 908–917). Peak Map and Big Map similarly tear
 down on every `pagehide` in `src/maps/peak-map.js` (lines 315–319) and
-`src/maps/big-map.js` (lines 805–810). GPX upload restores the native input and
+`src/maps/big-map.ts` (lines 805–810). GPX upload restores the native input and
 removes its enhancement in `src/ascent/ascent-upload.js` (lines 673–689). None
 has a `pageshow` resume/remount path. Current tests dispatch a generic
 `pagehide` and assert destruction, including `test/gpx/gpx-analyzer.test.mjs`
@@ -414,7 +414,7 @@ On persisted `pagehide`, pause transient work without deleting UI or disposing
 subscriptions; on `pageshow`, revalidate frame/document identity and resume.
 Perform terminal disposal only for a non-persisted teardown. Add explicit
 `dispose()` ownership for `MapViewport`'s window listener and `ResizeObserver`
-in `src/gpx/map-viewport.js` (lines 224–241) as part of the same lifecycle.
+in `src/gpx/map-viewport.ts` (lines 224–241) as part of the same lifecycle.
 
 **Regression proof.** Unit-test persisted and non-persisted
 `PageTransitionEvent` sequences, repeated history traversal, replaced map
@@ -441,7 +441,7 @@ serialized report at 800×450 and the node in resize state.
 
 The media handle is 14×14 pixels in `src/reports/report-editor.css` (lines
 596–615), the map handle is 24×18 and lacks `touch-action` in
-`src/gpx/map-viewport.js` (lines 143–163), and the ascent-table divider exposes
+`src/gpx/map-viewport.ts` (lines 143–163), and the ascent-table divider exposes
 only 13 pixels of width in `src/ascent/ascent-layout.css` (lines 5–39). The
 visual glyph can remain restrained; the interactive target need not.
 
@@ -467,7 +467,7 @@ the accessible value must describe the geometry the user can see.
 **Evidence.** Side layout caps the viewport wrapper at
 `calc(100vh - 16px)` in `src/gpx/gpx-panel-css.js` (lines 73–82), while schema
 allows a stored 720-pixel height in `src/settings/settings-schema.ts` (lines
-25–31). `src/gpx/map-viewport.js` keeps that uncapped value as `current`, writes
+25–31). `src/gpx/map-viewport.ts` keeps that uncapped value as `current`, writes
 it inline, announces it, and uses it as the vertical drag/keyboard baseline
 (lines 28–48, 67–75, and 177–221).
 
@@ -589,7 +589,7 @@ user-visible cache activity, not with the square of tiles inserted in one
 navigation burst.
 
 **Evidence.** The terrain cache stores its whole LRU index as one object in
-`src/terrain/terrain-cache.js` (lines 219–222). Cache hits use a one-second
+`src/terrain/terrain-cache.ts` (lines 219–222). Cache hits use a one-second
 coalesced save at lines 283–304, but every insertion serially performs
 `cache.put`, mutates/trims the index, and immediately saves the full object at
 lines 313–336. `trim()` also recomputes total size from every entry and sorts the

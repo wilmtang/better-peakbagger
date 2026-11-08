@@ -76,7 +76,7 @@ were stale; the closure ledger records what was actually changed.
 - **Reproduction:**
   Deterministically reproduced in jsdom with `installMapLayers`: mounting with a 50 ms handoff cooldown on `slope`, waiting for the cooldown to expire, and clicking `.bpb-layers-retry` results in `added: 0, drawn: 0`, row status `loading`, and detail text `Loading slope shading` permanently.
 - **Why existing tests missed it:**
-  `test/maps/map-layers.test.mjs` tests `retry` after a tile fails on an already-mounted Leaflet layer (`layers.has(id) === true`), not when `set(id, state)` skipped `add(id)` due to an active `retryAt` cooldown.
+  `test/maps/map-layers.test.mts` tests `retry` after a tile fails on an already-mounted Leaflet layer (`layers.has(id) === true`), not when `set(id, state)` skipped `add(id)` due to an active `retryAt` cooldown.
 - **Remediation Plan:**
   1. In `src/maps/map-overlay-leaflet.js:64` (`retry(id)`), check whether the layer is enabled and not yet mounted before iterating `records`:
      ```js
@@ -91,7 +91,7 @@ were stale; the closure ledger records what was actually changed.
        }
      }
      ```
-  2. Add a regression test in `test/maps/map-layers.test.mjs` covering cooldown expiry + **Retry** when `slope`/`land` starts enabled under cooldown (handoff and toggle-off/on during cooldown).
+  2. Add a regression test in `test/maps/map-layers.test.mts` covering cooldown expiry + **Retry** when `slope`/`land` starts enabled under cooldown (handoff and toggle-off/on during cooldown).
 
 ---
 
@@ -106,13 +106,13 @@ were stale; the closure ledger records what was actually changed.
   2. If the user interacts with any overlay control before `storage.get` resolves, `touched` becomes `true` in `src/maps/map-layers.js:130`. When `storage.get` later resolves and calls `announce()`, `src/maps/map-layers.js:271` checks `if (!touched)` and ignores the stored opacities—and the user's subsequent `save()` writes the default opacities back to `chrome.storage.local`, permanently overwriting their saved opacities.
   3. Even without `touched` gating, `src/maps/map-layer-bridge.js:118` unconditionally assigns `preferences = sanitizeOverlayPreferences(stored?.[OVERLAY_PREFERENCES_KEY])` when `storage.get` resolves, overwriting any `preferences` already updated by an earlier `save` message (`line 67`).
 - **Why existing tests missed it:**
-  In `test/maps/map-layers.test.mjs`, the mock `storage.local.get` resolves synchronously in the same microtask tick as `settings.requireCurrent()`, never exercising out-of-order completion or user interaction between the two reads.
+  In `test/maps/map-layers.test.mts`, the mock `storage.local.get` resolves synchronously in the same microtask tick as `settings.requireCurrent()`, never exercising out-of-order completion or user interaction between the two reads.
 - **Remediation Plan:**
   1. In `src/maps/map-layer-bridge.js`, track `let preferencesReady = !storage?.get;` and `let preferencesRevision = 0;`.
   2. Increment `preferencesRevision` in the `save` handler (`line 67`) and `storage.onChanged` listener (`line 107`).
   3. In the initial `storage.get(OVERLAY_PREFERENCES_KEY)` callback (`lines 116-123`), only assign `preferences` when `preferencesRevision === 0`, set `preferencesReady = true`, and call `announce()` inside `finally`.
   4. Gate `announce()` (`line 29`) on `if (disposed || !settingsReady || !preferencesReady) return;`.
-  5. Add a unit test in `test/maps/map-layers.test.mjs` with a deferred `storage.local.get` verifying that `announce()` waits for both `settingsReady` and `preferencesReady` and that an intervening `save` is not overwritten when `storage.local.get` resolves late.
+  5. Add a unit test in `test/maps/map-layers.test.mts` with a deferred `storage.local.get` verifying that `announce()` waits for both `settingsReady` and `preferencesReady` and that an intervening `save` is not overwritten when `storage.local.get` resolves late.
 
 ---
 
@@ -150,11 +150,11 @@ were stale; the closure ledger records what was actually changed.
   2. `src/maps/sentinel-session.js:97`: in `loadDates`, `if (error?.code === 'RATE_LIMITED') retryAt = error.retryAt;` overwrites `retryAt` without `Math.max` and without a fallback when `error.retryAt` is undefined (unlike `tileUrl` at line 56 which falls back to `Date.now() + 60_000`).
   3. `src/maps/map-layer-bridge.js:79` and `src/maps/map-layers.js:281`: cooldown timestamps merged from `cooldown` messages are not clamped with `Math.max` against existing active cooldowns.
 - **Why existing tests missed it:**
-  `test/maps/map-layers.test.mjs` and `test/maps/sentinel.test.mjs` test single 429 responses rather than overlapping in-flight tile/session responses with differing `Retry-After` values.
+  `test/maps/map-layers.test.mts` and `test/maps/sentinel.test.mjs` test single 429 responses rather than overlapping in-flight tile/session responses with differing `Retry-After` values.
 - **Remediation Plan:**
   1. In `src/maps/map-overlay-tiles.js`, retain the maximum `retryAt` when updating `blocked.get(blockKey)` and abort sibling in-flight requests for the same `blockKey` when a rate limit is recorded.
   2. In `src/maps/sentinel-session.js:56, 97`, `src/maps/map-layer-bridge.js:79`, and `src/maps/map-layers.js:126, 281`, apply `Math.max(currentRetryAt || 0, nextRetryAt || (Date.now() + 60_000))` when recording a `RATE_LIMITED` cooldown.
-  3. Add unit tests in `test/maps/map-layers.test.mjs` verifying monotonic `retryAt` retention across concurrent `land` / `slope` / `sentinel` 429 responses.
+  3. Add unit tests in `test/maps/map-layers.test.mts` verifying monotonic `retryAt` retention across concurrent `land` / `slope` / `sentinel` 429 responses.
 
 ---
 
@@ -183,11 +183,11 @@ were stale; the closure ledger records what was actually changed.
 
 To avoid false positives or re-reporting closed items, the following areas were traced end-to-end and verified clean or already tracked:
 
-1. **Shared Settings Schema & Cross-World Validation (`src/settings/settings-schema.ts`, `src/settings/bridge.js`, `src/gpx/gpx-analyzer.js`, `src/maps/big-map.js`, `src/terrain/terrain-frame-runtime.js`):**
+1. **Shared Settings Schema & Cross-World Validation (`src/settings/settings-schema.ts`, `src/settings/bridge.js`, `src/gpx/gpx-analyzer.js`, `src/maps/big-map.ts`, `src/terrain/terrain-frame-runtime.js`):**
    - Verified that all page-world and terrain-frame consumers validate `postMessage` payloads exclusively through `src/settings/settings-schema.ts` with no local constant drift.
 2. **Activity Capture Privacy & Ownership Gates (`src/capture/provider-page.js`, `src/capture/capture-core.js`, `src/background/background.js`, `src/ascent/ascent-draft.js`):**
    - Verified that raw GPX never leaves the provider page, ownership fails closed when signals are missing or ambiguous, waypoints share the 3,000-point budget and strip elevation/time/description/extensions, and draft filling never triggers Peakbagger Save.
-3. **3D Terrain LOD, Cancellation & Cache Bounds (`src/terrain/terrain-coordinator.js`, `src/terrain/terrain-frame-runtime.js`, `src/terrain/terrain-cache.js`):**
+3. **3D Terrain LOD, Cancellation & Cache Bounds (`src/terrain/terrain-coordinator.ts`, `src/terrain/terrain-frame-runtime.js`, `src/terrain/terrain-cache.ts`):**
    - Verified recent commits (`c73be873`, `ff365fa2`, `5149d2eb`, `685b1163`): `AbortController` propagation cancels superseded DEM/satellite work cleanly, `ImageBitmap.close()` is called on replaced/cleared overlay textures, and `terrain-cache.js` enforces byte/entry eviction in memory and IndexedDB.
 4. **Content-Script Page Features (`src/gpx/gpx-analyzer.js`, `src/ascent/ascent-filter.js`, `src/ascent/ascent-weather.js`, `src/weather/peak-weather.js`, `src/reports/report-editor.js`, `src/favorites/climber-hover-card.ts`):**
    - Verified generation guards on async weather/ERA5/sun/hover fetches, offline mountain-local timezone fallback (`src/time/mountain-tz.js`), and HTML escaping (`esc()`) across tooltip and summary templates.

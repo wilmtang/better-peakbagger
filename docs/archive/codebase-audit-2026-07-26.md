@@ -266,7 +266,7 @@ retryable.
 
 **Evidence.** The analyzer defines a replacement-aware `findMapIframe()`, then
 immediately freezes `const mapIframe = findMapIframe()` and passes that element
-to [`map-viewport.js`](../../src/gpx/map-viewport.js). The viewport, native
+to [`map-viewport.js`](../../src/gpx/map-viewport.ts). The viewport, native
 Leaflet lookup, 3D hide/restore, toggle/compass placement, terrain initialization,
 and peak-marker client all close over the frozen element.
 
@@ -312,7 +312,7 @@ identity and rebind atomically when that identity changes.
 ## F5 — Full Screen Map still gates on a fixed 10-second retry
 
 **Evidence.** The end of
-[`big-map.js`](../../src/maps/big-map.js) polls `bindMap()` 40 times at 250 ms,
+[`big-map.js`](../../src/maps/big-map.ts) polls `bindMap()` 40 times at 250 ms,
 then silently stops. It attaches a `load` listener only to the frame returned by
 the first startup query. A frame inserted after startup never receives that
 listener; a usable Leaflet map that arrives after ten seconds never binds; a
@@ -965,7 +965,7 @@ and 3D hide/restore (`:544`, `:577`) stay bound to the **old** one. Name the
 hover-marker path in fix step 3 and in the replacement assertion.
 
 The rest of F4 is exact, including the inert-viewport chain: `element` stays
-`null` without an iframe ([`map-viewport.js:31`, `:96`](../../src/gpx/map-viewport.js)),
+`null` without an iframe ([`map-viewport.js:31`, `:96`](../../src/gpx/map-viewport.ts)),
 so `mapViewport` is `null`, so the terrain toggle is never appended
 (`gpx-analyzer.js:334`) and the terrain container never resolves (`:513`). And
 the cited test really does assert only polylines and layer count

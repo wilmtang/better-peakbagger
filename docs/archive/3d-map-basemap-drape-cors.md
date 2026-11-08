@@ -152,7 +152,7 @@ of the three asking to read.
 The DEM never touches an `<img>`. It is fetched through the `bpb-dem://`
 custom protocol whose handler does its own `fetch()` and returns raw
 `ArrayBuffer` bytes to MapLibre (`src/terrain/terrain-frame.js:378-381`,
-`src/terrain/terrain-cache.js:189-206`). MapLibre builds the texture from bytes already
+`src/terrain/terrain-cache.ts:189-206`). MapLibre builds the texture from bytes already
 in JS memory — there is no cross-origin image element, so there is no taint to
 trip over. (Mapterhorn also sends ACAO, but the bytes path is the structural
 reason.) This is exactly the trick the fix borrows.
@@ -267,7 +267,7 @@ help the non-CORS majority — that is Tier 2. See `src/terrain/terrain-frame.js
    validated real template in a frame variable, and in the handler substitute
    `{z}/{x}/{y}`, `fetch()` the real tile, and return `{ data }`. Bytes via
    `addProtocol` produce a CORS-clean texture — no `crossOrigin`, no taint.
-   (Bonus: the LRU cache in `src/terrain/terrain-cache.js` can be generalized to cache
+   (Bonus: the LRU cache in `src/terrain/terrain-cache.ts` can be generalized to cache
    basemap tiles too.)
 2. The handler's `fetch()` still needs cross-origin permission, so add
    `optional_host_permissions` and request it at runtime, gated behind the
@@ -305,7 +305,7 @@ real browser against a known non-CORS Peakbagger layer.
 | `basemap` raster source built from raw https tiles | `src/terrain/terrain-frame.js:253-267` |
 | Basemap keep/drop decision (Tier 1: error/data/idle handlers) | `src/terrain/terrain-frame.js:404-425` |
 | `markBasemapFailed` / "Terrain only" fallback + notice | `src/terrain/terrain-frame.js` |
-| DEM via custom protocol (the working path) | `src/terrain/terrain-frame.js:378-381`, `src/terrain/terrain-cache.js:189-206` |
+| DEM via custom protocol (the working path) | `src/terrain/terrain-frame.js:378-381`, `src/terrain/terrain-cache.ts:189-206` |
 | Tile URL extraction from Leaflet | `src/gpx/gpx-analyzer.js:808-844`, `:776-806` |
 | Consent gesture to gate a permission request | `src/gpx/gpx-analyzer.js:719-722` |
 | MapLibre `crossOrigin` / same-origin test | `vendor/maplibre-gl-csp.js` (`_t`) |

@@ -199,7 +199,7 @@ renamed, the favorites panel's live refresh silently stops. Export the keys
 ### E8 — Theme resolution is re-implemented in every MAIN-world surface
 `prefersDark`/`effectiveTheme` are copied in
 [gpx-analyzer.js:74-75](../../src/gpx/gpx-analyzer.js),
-[big-map.js:328-331](../../src/maps/big-map.js), and
+[big-map.js:328-331](../../src/maps/big-map.ts), and
 [peak-map.js:107-110](../../src/maps/peak-map.js), with a fourth variant as
 `Settings.resolveTheme` ([settings.js:24-27](../../src/settings/settings.js)).
 MAIN-world code can't import `settings.js`, but this is the same situation

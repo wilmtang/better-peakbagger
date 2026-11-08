@@ -23,7 +23,7 @@ slider layout and the larger two-row conversation preview.
 | F2 | `src/maps/sentinel-layer.js` (lines 24–65 and 93–150) combines catalog ownership, capture selection, feedback DOM and scene installation. `src/terrain/terrain-frame-runtime.js` (lines 933–943) creates one raster layer per scene. | Separate the session model from its presentation. Apply user opacity once to the composed satellite image; per-scene alpha would make overlapping footprints more opaque. |
 | F3 | `src/snow/peak-snow.js` (lines 35–43 and 106–125) creates the map source inside a peak-card bootstrap. `src/snow/snotel-map-source.js` (lines 7–35) returns up to 50 stations within 50 km of that peak. The manifest loads the card on Peak.aspx only. | SNOTEL on ascent/BigMap needs a map-independent catalog owner. The proposed common behavior is stations in the visible map area, filtered locally; this is an explicit extension of the current peak-centered behavior. |
 | F4 | `src/maps/peak-snow-map.js` (lines 13–29 and 60–123) owns a separate toggle, notice, selection state and 3D snapshot. `src/snow/snotel-map-marker.js` owns marker activation, popups and the card action. | Move toggle/status ownership into the shared menu, retain renderer-specific marker code, and preserve the peak-card action only where its existing authorization and nearby-station membership hold. |
-| F5 | `src/maps/big-map.js` (lines 25–28) exits outside `A`, `G`, `P`. `src/gpx/gpx-analyzer.js` (lines 804–830) requires a route for 3D initialization. | Overlays depend on a usable native map, not a GPX route or terrain subject. Give them an independent bootstrap; keep current 3D eligibility unchanged. |
+| F5 | `src/maps/big-map.ts` (lines 25–28) exits outside `A`, `G`, `P`. `src/gpx/gpx-analyzer.js` (lines 804–830) requires a route for 3D initialization. | Overlays depend on a usable native map, not a GPX route or terrain subject. Give them an independent bootstrap; keep current 3D eligibility unchanged. |
 | F6 | `src/terrain/terrain-basemap.js` (lines 140–170) can infer the active drape by scanning live tile layers. `src/gpx/map-frame-lifecycle.js` owns replaceable MasterMap identity. | Exclude extension-owned overlays from basemap inference. Rebind on real map/frame identity changes and dispose the former instances. |
 | F7 | `src/settings/bridge.js` owns an explicit page-write allowlist; `src/terrain/terrain-map.js` validates frame relays and pending initialization. `src/snow/snotel-map-data.js` rebuilds at most 50 public station records. | Use a separate narrow overlay protocol and shared schema validation. Do not widen the analyzer settings-write allowlist, forward arbitrary URLs, or turn the menu into a generic privileged request bridge. |
 
@@ -172,7 +172,7 @@ src/maps/map-layer-control.ts    reusable Layers UI, no provider/storage access
 src/maps/map-layer-controller.js one map session and active-renderer ownership
 src/maps/map-layer-leaflet.js    extension-owned native panes and layers
 src/maps/map-layer-bridge.js     narrow isolated-world preferences/catalog service
-src/terrain/terrain-overlays.js  MapLibre adapter and validated status relay
+src/terrain/terrain-overlays.ts  MapLibre adapter and validated status relay
 src/background/map-layer-handoff.js bounded, tab-bound full-screen handoff
 ```
 

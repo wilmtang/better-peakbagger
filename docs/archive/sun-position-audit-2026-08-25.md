@@ -29,7 +29,7 @@ The review traced the complete Sun path through:
 - GPX selection, timestamp provenance, chart rebuilding, and iframe replacement
   in `src/gpx/gpx-analyzer.js`;
 - focused unit/integration coverage under `test/sun/`, `test/time/`,
-  `test/maps/peak-map.test.mjs`, and `test/gpx/gpx-analyzer.test.mjs`; and
+  `test/maps/peak-map.test.mts`, and `test/gpx/gpx-analyzer.test.mjs`; and
 - packaged-browser and GPU checks in `scripts/verify-extension.mts`,
   `scripts/verify-firefox-extension.mts`, and
   `scripts/verify-terrain-visual.mjs`.

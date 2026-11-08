@@ -99,7 +99,7 @@ Absolute azimuth and elevation do not change when the map rotates. The graphic
 is map-relative: for either object's azimuth `A` and accepted map bearing `B`,
 its marker is drawn at `A - B`; cardinal labels use the same inverse bearing.
 Native Peakbagger maps are north-up. While 3D is active,
-`src/terrain/terrain-coordinator.js` forwards only its already authenticated,
+`src/terrain/terrain-coordinator.ts` forwards only its already authenticated,
 finite, normalized view bearing. Stop, failure, replacement, or return to 2D
 resets the compass to bearing zero. Pitch is intentionally ignored.
 

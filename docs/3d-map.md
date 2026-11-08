@@ -67,7 +67,7 @@ details:
    receive GPX XML, timestamps, GPX elevations, activity metadata, or device
    fields.
 5. **The three page surfaces share one terrain lifecycle.**
-   `src/terrain/terrain-coordinator.js` owns state transitions, timeouts,
+   `src/terrain/terrain-coordinator.ts` owns state transitions, timeouts,
    camera handoff, terrain-compass updates, optional accepted-view notification,
    and failure recovery. The analyzer and Full
    Screen Map also share `src/gpx/map-frame-lifecycle.js` for native MasterMap
@@ -140,9 +140,9 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | --- | --- | --- | --- |
 | `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
 | `src/gpx/map-frame-lifecycle.js` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
-| `src/maps/big-map.js` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
+| `src/maps/big-map.ts` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
-| `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
+| `src/terrain/terrain-coordinator.ts` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
 | `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.ts` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
 | `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
@@ -185,7 +185,7 @@ not move. Stop, failure, frame replacement, and 2D reset deliver north-up.
 
 ### Full Screen Map
 
-`src/maps/big-map.js` does not download and reparse a second GPX. It locates genuine
+`src/maps/big-map.ts` does not download and reparse a second GPX. It locates genuine
 native Leaflet route layers and flattens their coordinates only when the user
 asks to open or prefetch 3D. This preserves native hover, click, popup, and
 group-map semantics in 2D.

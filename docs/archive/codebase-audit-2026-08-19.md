@@ -425,7 +425,7 @@ starts so only the newest generation may paint.
 **Broken invariant.** Consumers requesting the same immutable DEM URL at the
 same time should share one bounded network/validation operation.
 
-**Evidence.** `src/terrain/terrain-cache.js` (lines 336–368) checks CacheStorage
+**Evidence.** `src/terrain/terrain-cache.ts` (lines 336–368) checks CacheStorage
 and then starts a network fetch with no per-URL in-flight owner. The tilt warmer
 uses the same loader in `src/terrain/terrain-frame-runtime.js` (lines
 1578–1643) while MapLibre concurrently calls it through the custom protocol at

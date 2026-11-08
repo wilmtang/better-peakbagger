@@ -109,7 +109,7 @@ Firefox, including the native textarea and local-photo failure feedback.
 ## F2 — Enforce the terrain cache budget across owners
 
 **Evidence.** Each `TerrainCache.create()` has its own queues and cached state
-in `src/terrain/terrain-cache.js` (lines 205–239, 296–343). Its index is a whole
+in `src/terrain/terrain-cache.ts` (lines 205–239, 296–343). Its index is a whole
 object written to one shared key, and eviction counts only that owner's known
 entries (lines 247–274). Each terrain frame creates an owner in
 `src/terrain/terrain-frame-runtime.js` (line 1827); prefetch also creates one in

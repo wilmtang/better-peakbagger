@@ -398,7 +398,7 @@ status, and truthful UI independently.
 and format contract before it can consume memory, reach MapLibre, or enter the
 cache.
 
-**Evidence.** `src/terrain/terrain-cache.js` (lines 240–254) accepts any
+**Evidence.** `src/terrain/terrain-cache.ts` (lines 240–254) accepts any
 successful response and awaits `arrayBuffer()` before applying the total cache
 budget. It does not preflight Content-Length, stream to a limit+1 boundary,
 check Content-Type, or validate WebP bytes. A probe configured with a 1 MiB
