@@ -1,5 +1,10 @@
 # Report protection remediation
 
+Status: implemented in `ca9c8365` and `38edbf2e`; archived November 8, 2026.
+The closure ledger below preserves the verification limits. Remaining manual
+checks are tracked in the [repository follow-up ledger](../plans/follow-ups.md).
+Current behavior lives in the [trip-report editor guide](../trip-report-editor.md#saved-report-protection).
+
 User-authorized scope: fix encoded-route overblocking, preserve report-script
 denial and BPB compatibility, then implement the reviewed compact notice and
 original-source code inspector. Each independent unit receives its own commit

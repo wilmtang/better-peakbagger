@@ -79,6 +79,12 @@ ran hidden.
 
 ### Local proof limits
 
+- **Report source inspector.** Native picker keyboard navigation in Chrome and
+  Firefox, Firefox popup focus return, browser chrome zoom and assistive speech
+  remain unverified. Hidden fixtures prove source switching and layout stability
+  with normal/doubled inspector text; the focused change handler preserves focus.
+  Live provider playback and unknown server-side URL rewrites remain outside that
+  evidence. See the [report protection closure ledger](../archive/report-protection-remediation-2026-11-07.md).
 - **Replacement focus.** The fix is proven in jsdom. Real-browser transition runs
   pass but do not drive a row disappearing under an open card.
 - **Hosted CI.** The commits behind this ledger are local and unpushed. No hosted

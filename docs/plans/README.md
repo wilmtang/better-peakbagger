@@ -39,6 +39,11 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [report protection remediation](../archive/report-protection-remediation-2026-11-07.md)
+is implemented in two independently reviewed commits. Its closure ledger retains
+native-picker, browser-zoom and live-provider proof limits; remaining manual
+checks are carried in the [follow-up ledger](follow-ups.md).
+
 The [November 6 archive pass](follow-ups.md) moved 18 completed audit and
 implementation records to the archive. Their ledgers stay intact, and everything
 they left open is now in the follow-up ledger.
