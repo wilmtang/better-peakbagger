@@ -722,6 +722,39 @@ test('cancelling 3D while activation is pending cannot mount an abandoned frame'
     } finally { dispatch('destroy'); dom.window.close(); }
 });
 
+test('a real 3D request whose activation lapsed answers at once, and the analyzer view switch can restart 3D', async () => {
+    const dom = new JSDOM('<!doctype html><body><div id="bpb-map-viewport"></div><button class="bpb-gpx-segment-view">Original</button></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only',
+    });
+    const { window } = dom, messages: TestMessage[] = [];
+    let reply: unknown = { ok: false }, issued = 0;
+    Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
+    Object.defineProperty(window.chrome.runtime, 'sendMessage', { value: async () => { issued++; return reply; } });
+    window.postMessage = message => { messages.push(message); };
+    window.eval(bridgeBundle);
+    const dispatch = (type: string) => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type, focus: [48.7, -121.8] },
+    }));
+    const settle = () => new Promise(resolve => window.setTimeout(resolve, 0));
+    try {
+        await settle();
+        armTerrain(window); dispatch('requestConsent'); await settle();
+        assert.deepEqual(messages.filter(item => item.type === 'consentResult').map(item => item.enabled), [false], 'A lapsed consent request releases the click');
+        armTerrain(window); dispatch('init'); await settle();
+        assert.equal(messages.at(-1)!.type, 'error'); assert.equal(messages.at(-1)!.reason, 'timeout');
+
+        const before = issued;
+        fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
+        assert.equal(issued, before, 'The switch mints nothing while 3D is closed');
+        reply = { ok: true, token: 'open', expiresAt: Date.now() + 10000 };
+        armTerrain(window); dispatch('init'); await settle();
+        assert.ok(window.document.getElementById('bpb-terrain-frame'));
+        const open = issued;
+        fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
+        assert.equal(issued, open + 1, 'The trusted switch authorizes the restart it causes');
+    } finally { dispatch('destroy'); dom.window.close(); }
+});
+
 test('3D terrain bridge refuses forged page requests without trusted activation', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">

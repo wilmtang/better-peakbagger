@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { terrainActivation as TerrainActivation } from '../../src/background/terrain-activation.js';
+import { terrainActivation as TerrainActivation } from '../../src/background/terrain-activation.ts';
 
 const peakbagger = (tabId = 5, frameId = 0, documentId = 'host-document') => ({
     tab: { id: tabId },
@@ -22,19 +22,19 @@ const create = ({ start = 1000 } = {}) => {
     let current = start;
     let sequence = 0;
     const activation = TerrainActivation.create({
-        isPeakbaggerSender: sender => sender?.url?.startsWith('https://www.peakbagger.com/'),
+        isPeakbaggerSender: sender => sender?.url?.startsWith('https://www.peakbagger.com/') === true,
         isTerrainFrameSender: sender => sender?.url === 'chrome-extension://test-id/terrain/terrain.html',
         now: () => current,
         randomToken: () => `token-${++sequence}`,
     });
-    return { activation, advance: ms => { current += ms; } };
+    return { activation, advance: (ms: number) => { current += ms; } };
 };
 
 test('terrain init capabilities are tab-bound, action-bound, short-lived, and one-use', () => {
     const { activation, advance } = create();
 
     const issued = activation.issue({ action: 'init' }, peakbagger());
-    assert.deepEqual(issued, { ok: true, token: 'token-1', expiresAt: 6000 });
+    assert.deepEqual(issued, { ok: true, token: 'token-1', expiresAt: 1000 + TerrainActivation.TTL_MS.init });
     assert.deepEqual(activation.consumeFrame({ token: issued.token, action: 'init' }, terrainFrame(9)),
         { ok: false, reason: 'activation' });
     assert.deepEqual(activation.consumeFrame({ token: issued.token, action: 'init' }, terrainFrame()),
@@ -46,9 +46,18 @@ test('terrain init capabilities are tab-bound, action-bound, short-lived, and on
         { ok: false, reason: 'activation' });
 
     const expired = activation.issue({ action: 'init' }, peakbagger());
-    advance(TerrainActivation.TTL_MS);
+    advance(TerrainActivation.TTL_MS.init);
     assert.deepEqual(activation.consumeFrame({ token: expired.token, action: 'init' }, terrainFrame()),
         { ok: false, reason: 'activation' });
+
+    const slowBoot = activation.issue({ action: 'init' }, peakbagger());
+    advance(TerrainActivation.TTL_MS.init - 1);
+    assert.deepEqual(activation.consumeFrame({ token: slowBoot.token, action: 'init' }, terrainFrame()), { ok: true },
+        'A launch survives a cold frame start under load');
+
+    const hover = activation.issue({ action: 'prefetch' }, peakbagger());
+    advance(TerrainActivation.TTL_MS.prefetch);
+    assert.equal(activation.consumePrefetch(hover.token, peakbagger()), false, 'A hover prefetch stays short-lived');
 });
 
 test('prefetch capabilities return only to the issuing page document', () => {

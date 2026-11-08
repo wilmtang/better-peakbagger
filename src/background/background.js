@@ -37,7 +37,7 @@ import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler
 import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { createPackagedPageMatcher } from './sender-policy.js';
-import { terrainActivation as TerrainActivation } from './terrain-activation.js';
+import { terrainActivation as TerrainActivation } from './terrain-activation.ts';
 import { createMapLayerHandoff } from './map-layer-handoff.js';
 import { createBCLandRoutes } from './bc-land-routes.js';
 import { createCustomOverlayStore } from './custom-overlay-store.js';

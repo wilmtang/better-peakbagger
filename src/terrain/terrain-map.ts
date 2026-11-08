@@ -87,12 +87,18 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
             || node?.classList?.contains('bpb-terrain-consent-primary')) || null;
     };
 
+    // The analyzer's segment-view switch rebuilds the route, restarting an open
+    // 3D view. That restart comes from this trusted click.
+    const viewSwitchControl = (event: Event) => (event.composedPath() as (Element | null)[])
+        .some(node => node?.classList?.contains('bpb-gpx-segment-view'));
+
     // Page-world coordinators own map data, but only the isolated extension
     // world can mint the opaque capability that lets data start provider work.
     // The page can call click() or forge bridge messages; neither produces a
     // trusted event here.
     window.addEventListener('click', event => {
-        if (event.isTrusted && terrainControl(event)) void issueActivation('init');
+        if (!event.isTrusted) return;
+        if (terrainControl(event) || frame && !suspended && viewSwitchControl(event)) void issueActivation('init');
     }, true);
     window.addEventListener('keydown', event => {
         if (!event.isTrusted || !terrainControl(event)
@@ -433,8 +439,15 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
         const revision = ++launchRevision;
         const payload = buildInitPayload(data);
         pendingLaunch = payload;
+        const requested = activationPromises.has('init');
         const activation = await activationFor('init');
-        if (!activation || revision !== launchRevision) { if (pendingLaunch === payload) pendingLaunch = null; return; }
+        if (!activation || revision !== launchRevision) {
+            if (pendingLaunch === payload) pendingLaunch = null;
+            // A forged init stays silent. A real click whose capability lapsed
+            // reports at once rather than leaving the page spinning to its deadline.
+            if (requested && revision === launchRevision) postToPage('error', { reason: 'timeout' });
+            return;
+        }
         await settingsReady;
         if (revision !== launchRevision) { if (pendingLaunch === payload) pendingLaunch = null; return; }
         pendingLaunch = null;
@@ -525,7 +538,13 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
             && data && data[PAGE_MESSAGE_TAG] === true && data.dir === 'toCS') {
             if (data.type === 'requestConsent') {
                 void (async () => {
-                    if (!await activationFor('init', false)) return;
+                    // A forged request has no activation and gets no answer. A
+                    // real one that lapsed must release the page's pending click.
+                    const requested = activationPromises.has('init');
+                    if (!await activationFor('init', false)) {
+                        if (requested) postToPage('consentResult', { enabled: false });
+                        return;
+                    }
                     await settingsReady;
                     if (terrainEnabled) postToPage('consentResult', { enabled: true });
                     else showConsent();

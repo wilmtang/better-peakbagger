@@ -8,9 +8,19 @@
 
 const ISSUE_TYPE = 'TERRAIN_ACTIVATION_ISSUE';
 const CONSUME_TYPE = 'TERRAIN_ACTIVATION_CONSUME';
-const TTL_MS = 5 * 1000;
+// A launch must survive iframe start-up and worker messaging, which can take many
+// seconds under load, so 'init' lasts as long as the page's own load deadline.
+// A hover prefetch is only useful at once.
+const TTL_MS = { init: 25 * 1000, prefetch: 5 * 1000 } as const;
+type Action = keyof typeof TTL_MS;
+interface Capability { action: Action; expiresAt: number; tabId: number; frameId: number; documentId: string | null; }
+interface ActivationSender { tab?: { id?: unknown }; frameId?: unknown; documentId?: unknown; url?: string; }
+interface ActivationOptions {
+    isPeakbaggerSender?: (sender: ActivationSender) => boolean; isTerrainFrameSender?: (sender: ActivationSender) => boolean;
+    now?: () => number; randomToken?: () => string;
+}
 const MAX_LIVE_CAPABILITIES = 128;
-const ACTIONS = new Set(['init', 'prefetch']);
+const isAction = (value: unknown): value is Action => value === 'init' || value === 'prefetch';
 
 const defaultToken = () => {
     const bytes = new Uint8Array(24);
@@ -18,19 +28,19 @@ const defaultToken = () => {
     return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
-const senderFrameId = sender => Number.isInteger(sender?.frameId) ? sender.frameId : 0;
-const senderDocumentId = sender => typeof sender?.documentId === 'string' ? sender.documentId : null;
+const senderFrameId = (sender: ActivationSender) => Number.isInteger(sender?.frameId) ? sender.frameId as number : 0;
+const senderDocumentId = (sender: ActivationSender) => typeof sender?.documentId === 'string' ? sender.documentId : null;
 
 export function createTerrainActivation({
     isPeakbaggerSender,
     isTerrainFrameSender,
     now = () => Date.now(),
     randomToken = defaultToken,
-} = {}) {
+}: ActivationOptions = {}) {
     if (typeof isPeakbaggerSender !== 'function' || typeof isTerrainFrameSender !== 'function') {
         throw new TypeError('terrain activation requires sender validators');
     }
-    const capabilities = new Map();
+    const capabilities = new Map<string, Capability>();
 
     const prune = () => {
         const current = now();
@@ -38,24 +48,24 @@ export function createTerrainActivation({
             if (capability.expiresAt <= current) capabilities.delete(token);
         }
         while (capabilities.size >= MAX_LIVE_CAPABILITIES) {
-            capabilities.delete(capabilities.keys().next().value);
+            capabilities.delete(capabilities.keys().next().value!);
         }
     };
 
-    const issue = (message, sender) => {
+    const issue = (message: { action?: unknown } | null | undefined, sender: ActivationSender) => {
         const action = message?.action;
-        if (!ACTIONS.has(action) || !isPeakbaggerSender(sender)
+        if (!isAction(action) || !isPeakbaggerSender(sender)
             || !Number.isInteger(sender?.tab?.id)) {
             return { ok: false, reason: 'forbidden' };
         }
         prune();
-        let token;
+        let token: string;
         do { token = randomToken(); } while (capabilities.has(token));
-        const expiresAt = now() + TTL_MS;
+        const expiresAt = now() + TTL_MS[action];
         capabilities.set(token, {
             action,
             expiresAt,
-            tabId: sender.tab.id,
+            tabId: sender.tab!.id as number,
             frameId: senderFrameId(sender),
             documentId: senderDocumentId(sender),
         });
@@ -65,7 +75,7 @@ export function createTerrainActivation({
     // Looking up a token consumes it before any comparison. A stolen or
     // mismatched capability can deny one activation, but can never be probed or
     // replayed until it happens to match a later tab/frame.
-    const take = (token, action) => {
+    const take = (token: unknown, action: unknown) => {
         prune();
         if (typeof token !== 'string' || !token) return null;
         const capability = capabilities.get(token) || null;
@@ -73,22 +83,22 @@ export function createTerrainActivation({
         return capability && capability.action === action ? capability : null;
     };
 
-    const consumeFrame = (message, sender) => {
+    const consumeFrame = (message: { token?: unknown; action?: unknown } | null | undefined, sender: ActivationSender) => {
         if (!isTerrainFrameSender(sender) || !Number.isInteger(sender?.tab?.id)) {
             return { ok: false, reason: 'forbidden' };
         }
         const capability = take(message?.token, message?.action);
         if (!capability || capability.action !== 'init'
-            || capability.tabId !== sender.tab.id) {
+            || capability.tabId !== sender.tab!.id) {
             return { ok: false, reason: 'activation' };
         }
         return { ok: true };
     };
 
-    const consumePrefetch = (token, sender) => {
+    const consumePrefetch = (token: unknown, sender: ActivationSender) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender?.tab?.id)) return false;
         const capability = take(token, 'prefetch');
-        if (!capability || capability.tabId !== sender.tab.id
+        if (!capability || capability.tabId !== sender.tab!.id
             || capability.frameId !== senderFrameId(sender)) return false;
         const documentId = senderDocumentId(sender);
         return capability.documentId === null || documentId === null
@@ -99,7 +109,7 @@ export function createTerrainActivation({
         issue,
         consumeFrame,
         consumePrefetch,
-        forgetTab(tabId) {
+        forgetTab(tabId: number) {
             for (const [token, capability] of capabilities) {
                 if (capability.tabId === tabId) capabilities.delete(token);
             }

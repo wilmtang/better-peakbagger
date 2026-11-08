@@ -154,7 +154,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/terrain/terrain-tiles.js` | pure helper | Bounded DEM tile enumeration: the first-paint set for prefetch, and the coarse-rung set the frame warms while a live camera rests | Network or browser APIs |
 | `src/maps/peak-markers.js` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
 | `src/background/background.js` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
-| `src/background/terrain-activation.js` | extension worker domain | Five-second, one-use capabilities bound to action and tab, plus issuing frame/document identity for prefetch | UI events, map payloads, or provider requests |
+| `src/background/terrain-activation.ts` | extension worker domain | Short-lived, one-use capabilities bound to action and tab, plus issuing frame/document identity for prefetch | UI events, map payloads, or provider requests |
 | `src/background/terrain-prefetch.js` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
 
 The separation is deliberate. For example, putting subject discovery into the
@@ -273,7 +273,7 @@ would trap the user behind slow DEM or browser startup.
 1. The surface rechecks that it has a route or validated summit.
 2. If 3D is disabled, the surface asks the isolated bridge to show consent.
 3. A trusted pointer or keyboard action on the 3D control makes the isolated
-   bridge ask the worker for a five-second, one-use `init` capability. Synthetic
+   bridge ask the worker for a one-use `init` capability, alive for 25 seconds. Synthetic
    `.click()` and forged page messages cannot mint one.
 4. The bridge waits for its initial settings read. A newer storage push wins
    over a stale initial read through a revision counter.

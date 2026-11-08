@@ -156,7 +156,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 
 | Shipped surface | Primary owner | Boundary |
 | --- | --- | --- |
-| Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.js`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
+| Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
