@@ -353,7 +353,7 @@ script is added or removed without updating it.
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. Runs three test files in parallel locally and Node's default when `CI` is set. Flags appended after `npm test --` have no effect, because Node ignores flags after the file globs; to change the concurrency, build and then run `node --test --test-concurrency=N` with the flag before the glob. The override uses POSIX shell syntax. |
 | `npm run typecheck` | Strict, no-emit TypeScript checks using separate browser and Node checking projects; runs in Test CI and release verification. |
 | `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
-| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
+| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, the full 1,500-entry favorite manager/search/backup path, and a 1,200-photo library; discovers JavaScript and TypeScript scale tests separately from the fast default suite. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
 | `npm run audit:ci` | Requires zero advisories in shipped code, and reports but accepts advisories in build and test tooling at any severity. `DEVELOPMENT_TOOLS` in `scripts/check-npm-audit.mts` names the tools; every other direct dependency and everything it depends on counts as shipped, because `package.json` lists shipped libraries under `devDependencies`. See [releasing](releasing.md). |
@@ -1058,7 +1058,9 @@ add it to the merge-step condition, for example
   to it.
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
   100,000-point GPX completeness case, 100,000-point/5,000-peak analysis, and
-  1,500-entry favorite render/search/backup path out of the fast local loop.
+  1,500-entry favorite render/search/backup path and 1,200-photo library out of
+  the fast local loop. The photo case accounts for the editor's startup resume
+  lookup while retaining two transactions per library filter or page render.
   Scale files run sequentially so their timing gates do not compete with other
   CPU-heavy fixtures in the same runner.
   The capture case checks summit identities and protected reduction anchors,

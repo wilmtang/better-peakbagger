@@ -12,11 +12,14 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { JSDOM } from '../../helpers/test-dom.mts';
+import { byId } from '../../helpers/page-types.mts';
+import type { ChromeStub, StubMessage } from '../../helpers/page-types.mts';
 import {
     IDBDatabase,
     IDBFactory,
     IDBKeyRange,
+    IDBTransaction,
 } from 'fake-indexeddb';
 import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mjs';
 import { photoLibrary as Library } from '../../../src/photos/photo-library.js';
@@ -27,13 +30,13 @@ const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');
 const CATALOG_SIZE = 1200;
 const PAGE_SIZE = 48;
 
-const transactionDone = transaction => new Promise((resolve, reject) => {
-    transaction.oncomplete = resolve;
+const transactionDone = (transaction: IDBTransaction) => new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error);
 });
 
-const openDatabase = indexedDB => new Promise((resolve, reject) => {
+const openDatabase = (indexedDB: IDBFactory) => new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -63,7 +66,7 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
             ? 'Scale Alpine Photo 1199'
             : `Scale Photo ${String(index).padStart(4, '0')}`;
         const now = new Date(Date.UTC(2026, 0, 1) + index * 1000).toISOString();
-        photos.put(Library.createDraft({
+        const draft = {
             localId,
             title,
             source: {
@@ -75,7 +78,8 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
                 sha256: index.toString(16).padStart(64, '0'),
             },
             now,
-        }));
+        };
+        photos.put(Library.createDraft(draft));
         thumbnails.put({
             localId,
             blob: new Blob([`thumbnail-${index}`], { type: 'image/jpeg' }),
@@ -84,18 +88,19 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
     await transactionDone(seed);
     database.close();
 
-    const transactions = [];
+    const transactions: { names: string[]; mode: string }[] = [];
     const originalTransaction = IDBDatabase.prototype.transaction;
-    IDBDatabase.prototype.transaction = function instrumentedTransaction(storeNames, mode) {
+    IDBDatabase.prototype.transaction = function instrumentedTransaction(this: IDBDatabase, ...args: Parameters<IDBDatabase['transaction']>) {
+        const [storeNames, mode] = args;
         transactions.push({
             names: typeof storeNames === 'string' ? [storeNames] : [...storeNames],
             mode: mode || 'readonly',
         });
-        return originalTransaction.call(this, storeNames, mode);
+        return originalTransaction.apply(this, args);
     };
 
-    const createdUrls = [];
-    const revokedUrls = [];
+    const createdUrls: string[] = [];
+    const revokedUrls: string[] = [];
     let nextUrl = 0;
     win.URL.createObjectURL = () => {
         const url = `blob:scale-${++nextUrl}`;
@@ -114,8 +119,8 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         value: { estimate: async () => ({ usage: 1_000_000 }) },
         configurable: true,
     });
-    const chrome = makeChromeStub();
-    chrome.runtime.sendMessage = async message => {
+    const chrome = makeChromeStub() as unknown as ChromeStub;
+    chrome.runtime.sendMessage = async (message: StubMessage) => {
         if (message?.type === 'PHOTO_IMGBB_STATUS') {
             return { ok: true, configured: false, permissionGranted: false };
         }
@@ -126,9 +131,9 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
     };
     chrome.permissions = { contains: async () => false, request: async () => false };
     chrome.tabs = { create() {} };
-    win.chrome = chrome;
+    Object.defineProperty(win, 'chrome', { value: chrome, configurable: true });
 
-    const list = win.document.getElementById('library-list');
+    const list = byId(win.document, 'library-list');
     let maximumCards = 0;
     const observer = new win.MutationObserver(() => {
         maximumCards = Math.max(maximumCards, list.querySelectorAll('.photo-card').length);
@@ -143,17 +148,21 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         const openedAt = performance.now();
         await evalBundle(win, 'photos/photos.js');
         await waitFor(dom, () => list.querySelectorAll('.photo-card').length === PAGE_SIZE
-            && /Page 1 of 25/.test(win.document.getElementById('library-page-status').textContent),
+            && /Page 1 of 25/.test(byId(win.document, 'library-page-status').textContent || ''),
         5000);
         const firstVisibleMs = performance.now() - openedAt;
         assert.ok(firstVisibleMs < 2500,
             `first visible page took ${firstVisibleMs.toFixed(1)} ms`);
-        assert.equal(renderTransactions().length, 2,
-            'initial render is one catalog transaction plus one thumbnail transaction');
+        // Startup also reads the catalog for the editor's Continue draft action.
+        // Keep that intentional read explicit without weakening the two-read
+        // contract for subsequent filtering and paging below.
+        assert.deepEqual(renderTransactions().map(call => [...call.names].sort().join(',')).sort(),
+            ['metadata,photos', 'metadata,photos', 'thumbnails'],
+            'startup reads the resume catalog, the visible catalog and one thumbnail page');
         assert.equal(createdUrls.length, PAGE_SIZE);
 
         const initialUrls = [...createdUrls];
-        const search = win.document.getElementById('library-search');
+        const search = byId<HTMLInputElement>(win.document, 'library-search');
         const beforeSearchTransactions = renderTransactions().length;
         const searchedAt = performance.now();
         search.value = 'alpine photo 1199';
@@ -161,7 +170,7 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         assert.equal(renderTransactions().length, beforeSearchTransactions,
             'input itself is debounced instead of starting another full read');
         await waitFor(dom, () => list.querySelectorAll('.photo-card').length === 1
-            && /Scale Alpine Photo 1199/.test(list.textContent), 3000);
+            && /Scale Alpine Photo 1199/.test(list.textContent || ''), 3000);
         const filteredMs = performance.now() - searchedAt;
         assert.ok(filteredMs < 1500,
             `filtered result took ${filteredMs.toFixed(1)} ms including debounce`);
@@ -172,13 +181,13 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         search.value = '';
         search.dispatchEvent(new win.Event('input', { bubbles: true }));
         await waitFor(dom, () => list.querySelectorAll('.photo-card').length === PAGE_SIZE
-            && /Page 1 of 25/.test(win.document.getElementById('library-page-status').textContent),
+            && /Page 1 of 25/.test(byId(win.document, 'library-page-status').textContent || ''),
         3000);
         const firstPageUrls = createdUrls.slice(-PAGE_SIZE);
         const beforePageTransactions = renderTransactions().length;
-        win.document.getElementById('library-next').click();
+        byId(win.document, 'library-next').click();
         await waitFor(dom, () => /Page 2 of 25/.test(
-            win.document.getElementById('library-page-status').textContent,
+            byId(win.document, 'library-page-status').textContent || '',
         ), 3000);
         assert.equal(renderTransactions().length - beforePageTransactions, 2);
         assert.ok(firstPageUrls.every(url => revokedUrls.includes(url)),

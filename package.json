@@ -18,7 +18,7 @@
     "watch": "node scripts/build.mts --watch",
     "start": "node scripts/run-development.mjs",
     "test": "npm run build && node --test --test-concurrency=3 ${CI:+--test-concurrency=$(node -p 'os.availableParallelism()-1')} \"test/**/*.test.mjs\" \"test/**/*.test.mts\"",
-    "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.mjs\"",
+    "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.m[jt]s\"",
     "verify": "node scripts/verify.mts",
     "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mts",
     "audit:ci": "node scripts/check-npm-audit.mts",

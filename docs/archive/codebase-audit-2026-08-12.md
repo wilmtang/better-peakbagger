@@ -370,7 +370,7 @@ transactions.
 photo and sends every changed record through one `Promise.allSettled` call on
 both success and failure reconciliation. Each `updatePhotoBackup` in
 `src/photos/photo-store.js` (lines 469–493) opens its own read-write transaction.
-The 1,200-photo scale fixture in `test/scale/photos/photo-library.scale.mjs`
+The 1,200-photo scale fixture in `test/scale/photos/photo-library.scale.mts`
 (lines 27–43) measures library rendering, not background backup reconciliation.
 
 Apart from transaction scheduling and memory pressure, the fan-out makes
