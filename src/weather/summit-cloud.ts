@@ -53,7 +53,8 @@ export function mountSummitCloud() {
     const selectedClock = element('time', { class: 'bpb-cloud-selected-clock' }) as HTMLTimeElement, selectedClockText = createStableText(selectedClock);
     const title = element('strong', { class: 'bpb-cloud-prediction' }), titleText = createStableText(title);
     titleText.reserve(Object.values(CLOUD_STATES).map(value => value.title));
-    const confidence = element('span', { class: 'bpb-cloud-confidence' });
+    const confidence = element('span', { class: 'bpb-cloud-confidence' }), confidenceText = createStableText(confidence);
+    confidenceText.reserve(['Experimental estimate', 'Low confidence', 'Unavailable']);
     const reason = element('p', { class: 'bpb-cloud-reason' }), reasonText = createStableText(reason);
     const reserveReasons = (labels: string[]) => {
         const longest = 'The summit and sampled surroundings are relatively dry at summit height. Lower valleys may still contain cloud.';
@@ -113,7 +114,8 @@ export function mountSummitCloud() {
         if (!dates.includes(requestedDate)) requestedDate = today;
         dateSelect.replaceChildren(...dates.map(date => element('option', { value: date, text: relativeDate(date) })));
         dateSelect.value = requestedDate;
-        sourceText.reserve(['Showing: HRRR + GEM HRDPS · Summit 29,029 ft', ...models.map(model => `Showing: ${model.label} · Summit 29,029 ft`)]);
+        const pairs = [0, 1, 2].map(lead => resolveSummitCloudModels(subject, 'auto', lead).map(model => model.label).join(' + '));
+        sourceText.reserve([...pairs, ...models.map(model => model.label)].map(label => `Showing: ${label} · Summit 29,029 ft`));
         reserveReasons(models.map(model => model.label));
     }
     function placeholder(): CloudDisplay {
@@ -191,7 +193,7 @@ export function mountSummitCloud() {
         const prediction = predictions[selectedIndex];
         selectedClock.dateTime = new Date(times[selectedIndex]).toISOString();
         selectedClockText.reserve(times.flatMap(time => ['Past forecast', 'Current hour', 'Future forecast'].map(temporal => selectionLabel(time, temporal)))); selectedClockText.set(selectionLabel(times[selectedIndex]));
-        titleText.set(prediction.title); title.dataset.state = prediction.key; confidence.textContent = prediction.confidence;
+        titleText.set(prediction.title); title.dataset.state = prediction.key; confidenceText.set(prediction.confidence);
         reasonText.set(prediction.reason);
         evidence.replaceChildren(...data.models.map(model => {
             const estimate = prediction.estimates.find(item => item.model.id === model.id);
