@@ -10,30 +10,33 @@ import { createSnotelClient } from '../../src/snow/snotel-client.js';
 import { terrainStyle } from '../../src/terrain/terrain-style.ts';
 import { terrainCache } from '../../src/terrain/terrain-cache.js';
 
-const create = (name, fetchFn, now) => {
+type Provider = { request(index: number): Promise<unknown>; close?(): unknown };
+type Refusal = Error & { code?: string; retryAt?: number };
+const create = (name: string, fetchFn: unknown, now: () => number): Provider => {
+    const options = { fetchFn, now } as never;
     if (name === 'weather') {
-        const client = createWeatherClient({ fetchFn, now });
-        return { request: index => client.request({ latitude: 47, longitude: -121, elevation: null },
+        const client = createWeatherClient(options);
+        return { request: (index: number) => client.request({ latitude: 47, longitude: -121, elevation: null },
             { startDate: '2026-10-01', endDate: '2026-10-01' }, WEATHER_MODELS[index]) };
     }
     if (name === 'metadata') {
-        const client = createPeakModelUpdateClient({ fetchFn, now });
-        return { request: index => client.request(['ncep_gfs013', 'ecmwf_ifs', 'dwd_icon', 'ncep_gfs025'][index]) };
+        const client = createPeakModelUpdateClient(options);
+        return { request: (index: number) => client.request(['ncep_gfs013', 'ecmwf_ifs', 'dwd_icon', 'ncep_gfs025'][index]) };
     }
     if (name === 'snow') {
-        const client = createSnotelClient({ fetchFn, now });
-        return { request: index => client.observations({ id: `${679 + index}:WA:SNTL` }) };
+        const client = createSnotelClient(options);
+        return { request: (index: number) => client.observations({ id: `${679 + index}:WA:SNTL` }) };
     }
     if (name === 'style') {
-        const client = terrainStyle.createVectorStyleLoader({ fetch: fetchFn, styleUrl: 'https://tiles.openfreemap.org/styles/liberty' });
+        const client = terrainStyle.createVectorStyleLoader({ fetch: fetchFn as typeof fetch, styleUrl: 'https://styles.maptoolkit.org/hiking.json' });
         return { request: () => client.load() };
     }
-    const client = terrainCache.create({ limitMb: 0, fetchFn, now });
-    return { request: index => client.load({ url: `bpb-dem://2/${index}/0.webp` }), close: () => client.close() };
+    const client = terrainCache.create({ limitMb: 0, fetchFn, now } as never);
+    return { request: (index: number) => client.load({ url: `bpb-dem://2/${index}/0.webp` }), close: () => client.close() };
 };
-const refusal = async (client, index) => {
-    try { return await client.request(index); }
-    catch (error) { assert.equal(error.code, 'rate-limit'); return error; }
+const refusal = async (client: Provider, index: number): Promise<Refusal> => {
+    try { return await client.request(index) as Refusal; }
+    catch (error) { assert.equal((error as Refusal).code, 'rate-limit'); return error as Refusal; }
 };
 
 for (const name of ['weather', 'metadata', 'snow', 'style', 'dem']) {
@@ -63,7 +66,7 @@ for (const name of ['weather', 'metadata', 'snow', 'style', 'dem']) {
 for (const name of ['weather', 'metadata', 'snow', 'dem']) {
     test(`${name} retains the longer refusal when concurrent responses finish out of order`, async t => {
         let time = Date.now();
-        const held = []; let calls = 0;
+        const held: ((response: Response) => void)[] = []; let calls = 0;
         const client = create(name, () => {
             if (++calls > 2) return Promise.resolve(new Response('', { status: 429 }));
             return new Promise(resolve => held.push(resolve));

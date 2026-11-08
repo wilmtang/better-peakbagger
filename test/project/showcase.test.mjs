@@ -149,7 +149,7 @@ const FIXTURE_SERVERS = [
     'scripts/verify-draft-recovery.mjs',
     'scripts/verify-terrain-visual.mts',
     'scripts/verify-terrain-lod.mts',
-    'scripts/verify-firefox-terrain.mjs',
+    'scripts/verify-firefox-terrain.mts',
     'scripts/render-showcase.mjs',
 ];
 

@@ -973,7 +973,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // Bounded fetch, shape validation, and per-lifetime memoization all live in
     // the pure loader; only the grafting below needs MapLibre.
     const fetchVectorStyle = (basemap: VectorBasemap) => vectorStyleLoaders.get(basemap.id)!.load()
-        .then((style: VectorStyle) => TerrainStyle.renderingStyle(style, { basemap, terrain: true }));
+        .then((style: VectorStyle) => TerrainStyle.renderingStyle(style, { terrain: true }));
 
     const setVectorSprite = (sprite: VectorSprite | null | undefined) => {
         if (!Array.isArray(sprite)) { map!.setSprite?.(sprite as string | null); return; }
@@ -1095,7 +1095,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         if (vectorChoice) { vectorChoice = null; updateVectorAttribution(); }
     };
 
-    // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
+    // Switch the draped layer live. index < 0 selects terrain-only, a vector id
     // selects the extension-provided vector basemap. Each swap re-arms the
     // one-shot tile check so the new layer is judged on its own.
     const swapBasemap = (selection: number | string) => {
@@ -1165,7 +1165,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // per-drape tile-check flags so the resolved layer is judged fresh. Used by
     // the initial boot and by resume (to reflect a 2D layer change).
     const resolveBasemaps = (data: FrameData & { basemap?: { kind?: string; provider?: string } | null; basemaps?: unknown }) => {
-        initialVectorBasemap = data.basemap?.kind === 'vector' ? vectorBasemap(data.basemap.provider === undefined ? 'vector' : data.basemap.provider) : null;
+        initialVectorBasemap = data.basemap?.kind === 'vector' ? vectorBasemap(data.basemap.provider) : null;
         const initialBasemap = validateBasemap(data.basemap);
         const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
         availableBasemaps = [];

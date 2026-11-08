@@ -48,7 +48,7 @@ test('initial partial failure waits for usable tiles after the one-time load eve
     try {
         vm.runInContext(outputFiles[0].text, dom.getInternalVMContext());
         win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data: {
-            __bpbVectorMap: true, dir: 'toFrame', type: 'init', activation: 'opaque', generation: 1, basemap: 'vector', view: { center: [0, 0], zoom: 3 },
+            __bpbVectorMap: true, dir: 'toFrame', type: 'init', activation: 'opaque', generation: 1, basemap: 'maptoolkit', view: { center: [0, 0], zoom: 3 },
         } }));
         await new Promise(resolve => setImmediate(resolve)); assert.ok(win.renderer);
         // MapLibre's source-error flag can satisfy Map.loaded() while other
@@ -86,12 +86,12 @@ test('initial partial failure waits for usable tiles after the one-time load eve
         assert.equal(obsoleteClosed, false, 'An older coupled image remains useful while the next camera loads');
         assert.equal(messages.filter(message => message.type === 'painted').length, count + 1);
         assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1)!.view)), { center: [0, 0], zoom: 3 }, 'The image keeps its actual painted camera');
-        const request = win.protocol({ url: 'bpb-vector://https://tiles.openfreemap.org/tile.pbf', type: 'arrayBuffer' }, new win.AbortController());
+        const request = win.protocol({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf', type: 'arrayBuffer' }, new win.AbortController());
         const rejected = assert.rejects(request, (error: Error) => error.name === 'AbortError');
         send({ type: 'release' }); await rejected;
         assert.equal(pendingSignal!.aborted, true, 'Parking aborts the actual provider socket');
         assert.equal(Object.keys(win.renderer.lastStyle.sources).length, 0, 'A parked renderer owns no provider sources');
-        await assert.rejects(win.protocol({ url: 'bpb-vector://https://tiles.openfreemap.org/tile.pbf' }, new win.AbortController()), /inactive/);
+        await assert.rejects(win.protocol({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf' }, new win.AbortController()), /inactive/);
         assert.equal(fetches, 1, 'A renderer cannot start requests while parked');
         const original = win.renderer;
         send({ type: 'resume', activation: 'fresh', generation: 2, view: { center: [1, 1], zoom: 4 } });

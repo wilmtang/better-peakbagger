@@ -49,7 +49,7 @@ test('GPU gates cover browser upgrades and source or fixture changes before the 
         assert.equal(terrainVerificationRequired(after, before), true);
     }
     for (const file of ['src/settings/bridge.js', 'src/terrain/terrain-frame-runtime.ts',
-        'scripts/showcase/terrain.html', 'scripts/verify-firefox-terrain.mjs',
+        'scripts/showcase/terrain.html', 'scripts/verify-firefox-terrain.mts',
         'scripts/build-config.mts', 'manifest.json', '.github/workflows/test.yml']) {
         assert.equal(terrainVerificationRequired(lock(), lock(), [file]), true, file);
     }
@@ -62,7 +62,7 @@ test('GPU gates cover browser upgrades and source or fixture changes before the 
 
 test('Firefox GPU gestures target exposed canvas pixels and settle between drags', async () => {
     const verifier = await readFile(
-        new URL('../../scripts/verify-firefox-terrain.mjs', import.meta.url),
+        new URL('../../scripts/verify-firefox-terrain.mts', import.meta.url),
         'utf8',
     );
     const analyzerBearing = verifier.indexOf('const bearingBefore =');

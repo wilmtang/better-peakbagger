@@ -4,10 +4,12 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer } from '../../src/settings/settings-transfer.js';
-import {
-    loadOptions, el, waitFor, withGithubBackground, registerCleanup, root,
-    makeCacheStorage
-} from '../helpers/options-helpers.mjs';
+// @ts-expect-error jsdom ships no type declarations, so page objects stay untyped here.
+import type { JSDOM as PageValue } from 'jsdom';
+import * as helpers from '../helpers/options-helpers.mjs';
+
+const { el, waitFor, withGithubBackground, registerCleanup, root, makeCacheStorage } = helpers as PageValue;
+const loadOptions = helpers.loadOptions as unknown as (settings?: PageValue, options?: PageValue) => Promise<PageValue>;
 
 registerCleanup();
 
@@ -38,20 +40,20 @@ test('General display controls default on and save independent synced preference
 });
 
 test('settings GitHub controls back up, confirm restore, and persist automatic backup', async () => {
-    const messages = [];
-    const status = {
+    const messages: PageValue[] = [];
+    const status: PageValue = {
         connected: true,
         hasToken: true,
         repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
-    const restored = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
+    const restored = (settingsTransfer as PageValue).buildPayload({ theme: 'light', units: 'metric' }, {
         extensionVersion: '3.0.0',
         exportedAt: '2026-07-22T12:00:00.000Z'
     });
     const dom = await loadOptions({ theme: 'dark', units: 'imperial' }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: PageValue) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: PageValue, callback: PageValue) => {
                 messages.push(structuredClone(message));
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
@@ -111,17 +113,17 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
 });
 
 test('settings backup reports in-row progress before its persistent success state', async () => {
-    let finishBackup;
+    let finishBackup!: (value: unknown) => void;
     const backupResponse = new Promise(resolve => { finishBackup = resolve; });
-    const status = {
+    const status: PageValue = {
         connected: true,
         hasToken: true,
         repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
     const dom = await loadOptions({ theme: 'dark' }, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: PageValue) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = message => {
+            chrome.runtime.sendMessage = (message: PageValue) => {
                 if (message.type === 'GITHUB_AUTH_STATUS') return Promise.resolve(status);
                 if (message.type === 'GITHUB_SETTINGS_BACKUP') return backupResponse;
                 return Promise.resolve({});
@@ -154,11 +156,11 @@ test('settings GitHub controls point disconnected users to the shared connection
 });
 
 test('settings GitHub controls refresh after an in-page repository selection', async () => {
-    let status = { connected: false, hasToken: false };
+    let status: PageValue = { connected: false, hasToken: false };
     const dom = await loadOptions({}, {
-        prepareChrome: chrome => {
+        prepareChrome: (chrome: PageValue) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message, callback) => {
+            chrome.runtime.sendMessage = (message: PageValue, callback: PageValue) => {
                 const reply = message.type === 'GITHUB_AUTH_STATUS' ? status : {};
                 if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
                 return Promise.resolve(reply);
@@ -214,10 +216,10 @@ test('experimental 3D map is off by default and discloses external DEM requests'
     assert.match(row.querySelector('.title').textContent, /^Enable experimental 3D map$/);
     assert.match(row.querySelector('.experimental-badge').textContent, /^Experimental$/);
     assert.match(row.querySelector('.desc').textContent, /ascent maps.*Full Screen GPS maps.*Peak pages/i);
-    assert.match(row.querySelector('.desc').textContent, /Mapterhorn.*OpenFreeMap.*viewed map area and request metadata/i);
-    assert.deepEqual(Array.from(row.querySelectorAll('.desc a'), link => new URL(link.href).hostname), [
+    assert.match(row.querySelector('.desc').textContent, /Mapterhorn.*Maptoolkit.*viewed map area and request metadata/i);
+    assert.deepEqual(Array.from(row.querySelectorAll('.desc a'), (link: PageValue) => new URL(link.href).hostname), [
         'mapterhorn.com',
-        'openfreemap.org'
+        'www.maptoolkit.org'
     ]);
 
     const invalidDom = await loadOptions({ enable3dMap: 'yes' });
@@ -428,7 +430,7 @@ test('the removed "minimum trip-report words" control is gone', async () => {
 test('provider and filter order controls save independently and reflect remote changes', async () => {
     const dom = await loadOptions({});
     const providers = el(dom, 'map-provider-order');
-    const ids = list => [...list.children].map(row => row.dataset.orderItem);
+    const ids = (list: PageValue) => [...list.children].map((row: PageValue) => row.dataset.orderItem);
     const gaia = providers.querySelector('[data-order-item="gaia"]');
     assert.equal(providers.querySelectorAll('input:checked').length, 4);
     gaia.querySelector('.order-grip').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
@@ -459,9 +461,9 @@ test('keyboard reordering keeps focus on the grip at the first position', async 
 });
 
 const orderDragFixture = async () => {
-    const dom = await loadOptions({}, { prepareWindow: win => {
-        win.requestAnimationFrame = callback => win.setTimeout(() => callback(0), 16);
-        win.cancelAnimationFrame = id => win.clearTimeout(id);
+    const dom = await loadOptions({}, { prepareWindow: (win: PageValue) => {
+        win.requestAnimationFrame = (callback: PageValue) => win.setTimeout(() => callback(0), 16);
+        win.cancelAnimationFrame = (id: PageValue) => win.clearTimeout(id);
     } });
     const list = el(dom, 'map-provider-order');
     list.getBoundingClientRect = () => ({ top: 0, bottom: 192 });
@@ -470,7 +472,7 @@ const orderDragFixture = async () => {
         Object.defineProperty(row, 'offsetHeight', { get: () => 44 });
         row.getBoundingClientRect = () => ({ top: row.offsetTop, bottom: row.offsetTop + 44 });
     }
-    const pointer = (target, type, y) => target.dispatchEvent(new dom.window.MouseEvent(type, {
+    const pointer = (target: PageValue, type: string, y: number) => target.dispatchEvent(new dom.window.MouseEvent(type, {
         bubbles: true, cancelable: true, button: 0, clientY: y,
     }));
     const ids = () => [...list.children].map(row => row.dataset.orderItem);

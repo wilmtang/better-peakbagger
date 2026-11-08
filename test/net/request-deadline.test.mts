@@ -107,7 +107,7 @@ test('every third-party transport bounds its requests through this one module', 
         'photos/imgbb-client.js',
         'peakbagger/peakbagger-request.js',
         // The map surfaces reach third-party hosts too: DEM tiles from
-        // Mapterhorn and the vector style from OpenFreeMap. Neither renders
+        // Mapterhorn and the vector style from Maptoolkit. Neither renders
         // through a transport that reports status, so an unbounded wait there
         // shows up as a hole in the mesh or a blank drape rather than an error.
         'terrain/terrain-cache.js',

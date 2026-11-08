@@ -6,7 +6,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
-import { readSentinelCooldown } from '../../scripts/verify-terrain-provider-ui.mjs';
+import { readSentinelCooldown } from '../../scripts/verify-terrain-provider-ui.mts';
 
 test('terrain cooldown verification reads the actual shared control and requires an intercepted catalog request', t => {
     const dom = new JSDOM('<iframe id="bpb-terrain-frame"></iframe>', { runScripts: 'outside-only' });

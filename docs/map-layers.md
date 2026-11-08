@@ -2,8 +2,8 @@
 
 ## Vector basemap in 2D
 
-**Maptoolkit Hiking** is available alongside **OSM Vector (experimental)** in
-the native basemap picker. It uses Maptoolkit's keyless Hiking style, including
+**Maptoolkit Hiking (BPB experiment)** is available in the native basemap
+picker. It uses Maptoolkit's keyless Hiking style, including
 its contour lines, relief, labels and icons. Maptoolkit requests go directly to
 its style, tile, font and icon hosts; the style's elevation shading also uses
 Mapterhorn. Cookies and referrers are omitted. Selecting it does not require
@@ -19,10 +19,7 @@ script is loaded. The Community Service is proprietary and subject to its
 It is used for interactive maps, with normal browser caching and no offline
 tile archives or extension-managed tile storage.
 
-The native basemap picker also offers **OSM Vector (experimental)**, using the
-same OpenFreeMap Liberty style as 3D. Selecting it starts direct, cookie-free
-OpenFreeMap style and tile requests; the provider receives the viewed area and
-request metadata. No 3D setting, terrain tiles, API key or extra host permission
+No 3D setting, terrain tiles, API key or extra host permission
 is needed. Native routes, markers, popups, zoom and overlays keep their Leaflet
 owners above the vector basemap.
 

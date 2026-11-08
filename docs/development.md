@@ -515,7 +515,7 @@ uses them.
 | `browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
 | `packages CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
 | `terrain` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
-| `vector-map` | Hidden hardware Chrome and Firefox, real Leaflet and packaged MapLibre, synthetic OpenFreeMap replies. Exercises 2D loading/success/failure, keyboard retry and cancellation, native marker interaction, raster restoration and anchored page/picker geometry at 1280/375 × 800 and 200% CSS zoom. Geographic pixel assertions compare vector points with native markers at world zoom 0/1 and polar edges; `node scripts/verify-vector-map.mts --camera-only` isolates them. Chrome loads the real extension; Firefox stubs only extension runtime/capability transport. `BPB_VECTOR_SCREENSHOTS` retains target-page screenshots. No live provider/style survey or native window-focus proof. |
+| `vector-map` | Hidden hardware Chrome and Firefox, real Leaflet and packaged MapLibre, synthetic Maptoolkit replies. Exercises 2D loading/success/failure, keyboard retry and cancellation, native marker interaction, raster restoration and anchored page/picker geometry at 1280/375 × 800 and 200% CSS zoom. Geographic pixel assertions compare vector points with native markers at world zoom 0/1 and polar edges; `node scripts/verify-vector-map.mts --camera-only` isolates them. Chrome loads the real extension; Firefox stubs only extension runtime/capability transport. `BPB_VECTOR_SCREENSHOTS` retains target-page screenshots. No live provider/style survey or native window-focus proof. |
 | `terrain firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Includes inherited/explicit Sentinel capture resume, loaded source identity and desktop/narrow light/dark warning geometry. Uses instrumented fixture authorization/storage, distinct from the real-manifest check. Same HTTPS showcase host. |
 | `terrain cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
 | `terrain lod` | Measures painted elevation provenance across a cold-cache tilt sweep and 20 fixed-angle Rainier zoom cases, with local delayed DEM tiles and elevation/drape traffic counts. Same HTTPS showcase host and GPU rules as `verify -- terrain`. |
@@ -528,10 +528,9 @@ real hidden GPU rendering with eight credit layouts and eight held-tile → HTTP
 normal/enlarged text. It checks focus, feedback visibility, control overlap,
 and action/map/following-content geometry within one CSS pixel.
 
-Add `--maptoolkit` to `node scripts/verify-vector-map.mts` to run the vector
-matrix against Maptoolkit Hiking, including its packaged logo, clickable
-copyrights and overlay-menu clearance. `--maptoolkit --live` renders live
-provider tiles before and after one zoom-in/out sequence; ordinary
+`node scripts/verify-vector-map.mts` runs the vector matrix against Maptoolkit
+Hiking, including its packaged logo, clickable copyrights and overlay-menu
+clearance. `--live` renders live provider tiles before and after one zoom-in/out sequence; ordinary
 matrix runs use synthetic responses.
 `--layout-only` checks the faithful fixed-width native picker surround in both
 themes at 1280/375 × 800 and 100/200% CSS zoom. `--performance-only` holds a
@@ -557,7 +556,7 @@ loads a disposable copy of the real extension with only its Map constructor
 instrumented for inspection; settings and worker authorization remain real.
 Firefox uses explicit extension API/storage shims. Optional hover/focus warming
 is suppressed to keep synthetic elevation requests in the visible frame;
-warming has separate coverage. `--terrain --maptoolkit --live` renders one
+warming has separate coverage. `--terrain --live` renders one
 live 3D viewport. No native window/focus or long-term provider reliability is
 established by these checks.
 

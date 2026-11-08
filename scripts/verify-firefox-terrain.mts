@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, location, requestAnimationFrame */
+/* global location, requestAnimationFrame */
 
 import { createServer } from 'node:https';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 
 import { firefox } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 import { waitForPeakPopupSnapshot } from './verify-terrain-popup.mjs';
-import { verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
+import { verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mts';
 
 import {
     createFixtureCertificate,
@@ -29,9 +30,17 @@ import {
     listenServer,
 } from './resource-stack.mjs';
 
+// Page functions serialize into fixture documents whose test seams (the frame's
+// map, instrumented globals) have no declarations; the module-scoped page globals
+// below are type-only and erased, so those functions still run in the page.
+type PageValue = ReturnType<typeof JSON.parse>;
+type RequestListener = NonNullable<Parameters<typeof createServer>[1]>;
+type IncomingMessage = Parameters<RequestListener>[0];
+type ServerResponse = Parameters<RequestListener>[1];
+declare const document: PageValue, window: PageValue;
 const viewport = { width: 1000, height: 760 };
 const args = process.argv.slice(2);
-if (args.some(value => value !== '--provider-ui') || args.length > 1) throw new Error('Usage: verify-firefox-terrain.mjs [--provider-ui]');
+if (args.some(value => value !== '--provider-ui') || args.length > 1) throw new Error('Usage: verify-firefox-terrain.mts [--provider-ui]');
 const providerUiOnly = args.includes('--provider-ui');
 const fixtureHost = 'www.peakbagger.com';
 const TERRAIN_CAMERA_SETTLE_TIMEOUT_MS = 20_000;
@@ -40,8 +49,8 @@ const syntheticTerrariumWebp = Buffer.from(
     'base64',
 );
 let providerRasterMode = 'normal';
-const heldRasterResponses = [], expectedBlockedTiles = new Set();
-const rejectProviderRaster = (request, response) => {
+const heldRasterResponses: { request: IncomingMessage; response: ServerResponse }[] = [], expectedBlockedTiles = new Set();
+const rejectProviderRaster = (request: IncomingMessage, response: ServerResponse) => {
     expectedBlockedTiles.add(`https://${request.headers.host}${request.url}`);
     response.setHeader('Cache-Control', 'no-store');
     sendFixtureText(response, 403, 'Synthetic provider policy block');
@@ -50,10 +59,10 @@ const rejectProviderRaster = (request, response) => {
 // refuses any URL whose protocol is not https: — a deliberate security property
 // — and the analyzer fetches its GPX through that guard, so over http:// the
 // route never loads and the 3D toggle never enables.
-function createFixtureServer({ key, cert }) {
+function createFixtureServer({ key, cert }: { key: Buffer; cert: Buffer }) {
     const server = createServer({ key, cert }, async (request, response) => {
         try {
-            const url = new URL(request.url, `https://${fixtureHost}`);
+            const url = new URL(request.url!, `https://${fixtureHost}`);
             if (url.pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
                 if (providerRasterMode === 'hold') { heldRasterResponses.push({ request, response }); return; }
                 if (providerRasterMode === 'blocked') { rejectProviderRaster(request, response); return; }
@@ -80,7 +89,7 @@ function createFixtureServer({ key, cert }) {
                 '/peak.aspx': '/scripts/showcase/peak-map.html',
                 '/map/mastermap.aspx': '/scripts/showcase/terrain-native-map.html',
             };
-            let pathname = showcaseRoutes[url.pathname.toLowerCase()] || decodeURIComponent(url.pathname);
+            let pathname = (showcaseRoutes as Record<string, string>)[url.pathname.toLowerCase()] || decodeURIComponent(url.pathname);
             if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
                 pathname = '/scripts/showcase/terrain-basemap-tile.png';
             }
@@ -90,11 +99,11 @@ function createFixtureServer({ key, cert }) {
                 return;
             }
             await sendFixtureFile(response, file, {
-                transform: url.pathname === '/dist/terrain/terrain.html'
+                transform: (url.pathname === '/dist/terrain/terrain.html'
                     ? instrumentTerrainFrameHtml
                     : (url.pathname === '/dist/terrain/terrain-frame.js'
                         ? instrumentTerrainFrameModule
-                        : null),
+                        : null)) as never,
             });
         } catch (error) {
             sendFixtureError(response, error);
@@ -103,7 +112,7 @@ function createFixtureServer({ key, cert }) {
     return server;
 }
 
-const waitForTerrainCameraSettled = async (page, label) => {
+const waitForTerrainCameraSettled = async (page: Page, label: string) => {
     try {
         await page.waitForFunction(() => {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
@@ -127,12 +136,12 @@ const waitForTerrainCameraSettled = async (page, label) => {
     }
 };
 
-const getExposedCanvasDragTarget = async (canvas, label) => {
+const getExposedCanvasDragTarget = async (canvas: Locator, label: string) => {
     const box = await canvas.boundingBox();
     if (!box || box.width <= 200 || box.height <= 200) {
         throw new Error(`${label}: Firefox terrain canvas had no drag target`);
     }
-    const target = await canvas.evaluate(element => {
+    const target = await canvas.evaluate((element: PageValue) => {
         const rect = element.getBoundingClientRect();
         const candidates = [[0.25, 0.7], [0.25, 0.3], [0.4, 0.75], [0.4, 0.25]];
         for (const [xRatio, yRatio] of candidates) {
@@ -155,12 +164,12 @@ async function main() {
     const resources = createResourceStack();
     let primaryError = null;
     try {
-        const certificate = await createFixtureCertificate({ host: fixtureHost, label: 'firefox-terrain' });
+        const certificate = (await createFixtureCertificate({ host: fixtureHost, label: 'firefox-terrain' }))!;
         resources.defer('Firefox terrain certificate', () => certificate.remove());
         const server = createFixtureServer(certificate);
         resources.defer('Firefox terrain server', () => closeServer(server));
         await listenServer(server, 0, '127.0.0.1');
-        const port = server.address().port;
+        const port = (server.address() as { port: number }).port;
 
         const browser = await firefox.launch({
             headless: true,
@@ -186,12 +195,12 @@ async function main() {
         await context.addInitScript(() => {
             const nativeFetch = globalThis.fetch.bind(globalThis);
             globalThis.fetch = (input, init) => {
-                if (input !== 'https://tiles.openfreemap.org/styles/liberty') return nativeFetch(input, init);
+                if (input !== 'https://styles.maptoolkit.org/hiking.json') return nativeFetch(input, init);
                 return new Promise((resolve, reject) => {
-                    const abort = () => reject(init.signal.reason);
-                    init.signal.addEventListener('abort', abort, { once: true });
-                    (globalThis.__bpbHeldVectorStyles ??= []).push(() => {
-                        init.signal.removeEventListener('abort', abort);
+                    const abort = () => reject(init!.signal!.reason);
+                    init!.signal!.addEventListener('abort', abort, { once: true });
+                    ((globalThis as PageValue).__bpbHeldVectorStyles ??= []).push(() => {
+                        init!.signal!.removeEventListener('abort', abort);
                         const response = new Response('{}', { headers: { 'content-type': 'application/json' } });
                         Object.defineProperty(response, 'url', { value: input }); resolve(response);
                     });
@@ -214,7 +223,7 @@ async function main() {
             throw new Error(`Firefox requires ANGLE Metal on macOS: ${startupRenderer}`);
         }
         await page.addInitScript(installTerrainLifecycleProbe);
-        const errors = [];
+        const errors: string[] = [];
         const requests = { terrain: 0, basemap: 0, peaks: 0 };
         page.on('pageerror', error => errors.push(String(error)));
         page.on('console', message => {
@@ -255,7 +264,7 @@ async function main() {
             geometry: { type: 'Polygon', coordinates: [[[-122, 48], [-121, 48], [-121, 49], [-122, 49], [-122, 48]]] } }));
         const sentinelPixels = await page.evaluate(() => Object.fromEntries(['#315bb0', '#347d61'].map(color => {
             const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
-            const context = canvas.getContext('2d'); context.fillStyle = color; context.fillRect(0, 0, 256, 256);
+            const painter = canvas.getContext('2d'); painter.fillStyle = color; painter.fillRect(0, 0, 256, 256);
             return [color, canvas.toDataURL().split(',')[1]];
         })));
         await page.route('https://planetarycomputer.microsoft.com/**', route => {
@@ -286,7 +295,7 @@ async function main() {
             document.getElementById('bpb-terrain-toggle').click();
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             return {
-                issueAttempts: globalThis.__bpbTerrainFixtureIssueAttempts,
+                issueAttempts: (globalThis as PageValue).__bpbTerrainFixtureIssueAttempts,
                 frame: Boolean(document.getElementById('bpb-terrain-frame')),
             };
         });
@@ -307,12 +316,12 @@ async function main() {
                 type: 'init',
                 activation: 'guessed-fixture-capability',
             }, location.origin);
-            return globalThis.__bpbTerrainFixtureAuthorizationAttempts > 0;
+            return (globalThis as PageValue).__bpbTerrainFixtureAuthorizationAttempts > 0;
         }).catch(async error => {
             const frameState = await page.evaluate(() => {
                 const frame = document.getElementById('bpb-direct-terrain-probe');
                 return { url: frame?.contentWindow?.location.href, ready: frame?.contentDocument?.readyState,
-                    body: frame?.contentDocument?.body?.innerHTML, attempts: globalThis.__bpbTerrainFixtureAuthorizationAttempts };
+                    body: frame?.contentDocument?.body?.innerHTML, attempts: (globalThis as PageValue).__bpbTerrainFixtureAuthorizationAttempts };
             });
             throw new Error(`Direct-frame authorization probe failed: ${JSON.stringify({ frameState, errors: errors.slice(-8) })}`, { cause: error });
         });
@@ -320,8 +329,8 @@ async function main() {
             const frame = document.getElementById('bpb-direct-terrain-probe');
             const result = {
                 map: Boolean(frame?.contentWindow?.__bpbTerrainTestMap),
-                issueAttempts: globalThis.__bpbTerrainFixtureIssueAttempts,
-                authorizationAttempts: globalThis.__bpbTerrainFixtureAuthorizationAttempts,
+                issueAttempts: (globalThis as PageValue).__bpbTerrainFixtureIssueAttempts,
+                authorizationAttempts: (globalThis as PageValue).__bpbTerrainFixtureAuthorizationAttempts,
             };
             frame?.remove();
             return result;
@@ -360,15 +369,15 @@ async function main() {
 
         const frame = page.frameLocator('#bpb-terrain-frame');
         const rendererState = await frame.locator('canvas.maplibregl-canvas').evaluate(canvas => {
-            const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            const gl = (canvas as PageValue).getContext('webgl2') || (canvas as PageValue).getContext('webgl');
             const info = gl?.getExtension('WEBGL_debug_renderer_info');
             const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl?.getParameter(gl.RENDERER);
-            const map = globalThis.__bpbTerrainTestMap;
+            const map = (globalThis as PageValue).__bpbTerrainTestMap;
             return {
                 renderer,
                 zoom: map.getZoom(),
                 pitch: map.getPitch(),
-                canvas: { width: canvas.width, height: canvas.height },
+                canvas: { width: (canvas as PageValue).width, height: (canvas as PageValue).height },
                 terrain: Boolean(map.getTerrain()),
                 route: Boolean(map.getLayer('bpb-route')),
                 basemap: Boolean(map.getSource('basemap')),
@@ -390,7 +399,7 @@ async function main() {
         await verifyTerrainProviderRecovery({
             evaluate: expression => page.evaluate(expression),
             retryWithKeyboard: () => page.keyboard.press('s'),
-            blockRaster: () => { providerRasterMode = 'hold'; },
+            blockRaster: async () => { providerRasterMode = 'hold'; },
             releaseRaster: async status => {
                 if (status === 403) await waitForCondition(() => heldRasterResponses.some(({ response }) => !response.destroyed),
                     { description: 'held provider recovery raster tiles' });
@@ -403,7 +412,7 @@ async function main() {
         await verifyTerrainVectorPending({
             evaluate: expression => page.evaluate(expression),
             waitForStyle: () => page.waitForFunction(() => document.getElementById('bpb-terrain-frame').contentWindow.__bpbHeldVectorStyles?.length > 0),
-            releaseStyle: () => page.evaluate(() => document.getElementById('bpb-terrain-frame').contentWindow.__bpbHeldVectorStyles?.splice(0).forEach(release => release())),
+            releaseStyle: () => page.evaluate(() => document.getElementById('bpb-terrain-frame').contentWindow.__bpbHeldVectorStyles?.splice(0).forEach((release: () => void) => release())),
         });
         if (providerUiOnly) {
             if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
@@ -460,7 +469,7 @@ async function main() {
         }, rendererState.zoom, { timeout: 8_000 });
         await waitForTerrainCameraSettled(page, 'scroll zoom');
 
-        const bearingBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
+        const bearingBefore = await canvas.evaluate(() => (globalThis as PageValue).__bpbTerrainTestMap.getBearing());
         // Run bearing before pitch. Firefox intermittently loses a synthetic
         // horizontal secondary drag at the iframe boundary immediately after a
         // vertical one; separating the gestures by a settled camera makes each
@@ -495,14 +504,14 @@ async function main() {
             moonMarker: analyzerSunInitial.moonMarker,
         },
         { timeout: 8_000 }).then(handle => handle.jsonValue());
-        if (analyzerSunRotated.summary !== analyzerSunInitial.summary
-            || analyzerSunRotated.direction !== analyzerSunInitial.direction
-            || analyzerSunRotated.moon !== analyzerSunInitial.moon) {
+        if ((analyzerSunRotated as PageValue).summary !== (analyzerSunInitial as PageValue).summary
+            || (analyzerSunRotated as PageValue).direction !== (analyzerSunInitial as PageValue).direction
+            || (analyzerSunRotated as PageValue).moon !== (analyzerSunInitial as PageValue).moon) {
             throw new Error(`Firefox Analyzer bearing changed absolute Sun or Moon text: ${JSON.stringify({ analyzerSunInitial, analyzerSunRotated })}`);
         }
 
         await waitForTerrainCameraSettled(page, 'Analyzer bearing');
-        const pitchBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getPitch());
+        const pitchBefore = await canvas.evaluate(() => (globalThis as PageValue).__bpbTerrainTestMap.getPitch());
         dragTarget = await getExposedCanvasDragTarget(canvas, 'Analyzer pitch');
         await page.mouse.move(dragTarget.x, dragTarget.y);
         await page.mouse.down({ button: 'right' });
@@ -516,7 +525,7 @@ async function main() {
         // Firefox on macOS rewrites Ctrl+primary into a secondary-button gesture.
         // Exercise that production alternative separately from the normal right drag.
         await waitForTerrainCameraSettled(page, 'Analyzer pitch');
-        const ctrlPitchBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getPitch());
+        const ctrlPitchBefore = await canvas.evaluate(() => (globalThis as PageValue).__bpbTerrainTestMap.getPitch());
         dragTarget = await getExposedCanvasDragTarget(canvas, 'Analyzer Control-drag');
         await page.keyboard.down('Control');
         await page.mouse.move(dragTarget.x, dragTarget.y);
@@ -529,14 +538,14 @@ async function main() {
             return Math.abs((map?.getPitch() ?? previous) - previous) > 1;
         }, ctrlPitchBefore, { timeout: 8_000 }).catch(async cause => {
             const state = await canvas.evaluate(() => {
-                const map = globalThis.__bpbTerrainTestMap;
+                const map = (globalThis as PageValue).__bpbTerrainTestMap;
                 return { pitch: map.getPitch(), moving: map.isMoving(), rotating: map.isRotating() };
             });
             throw new Error(`Firefox Control-drag did not change pitch: ${JSON.stringify({ before: ctrlPitchBefore, ...state })}`, { cause });
         });
         await waitForTerrainCameraSettled(page, 'Analyzer Control-drag');
 
-        const widthBeforeResize = await canvas.evaluate(element => element.width);
+        const widthBeforeResize = await canvas.evaluate((element: PageValue) => element.width);
         await page.locator('#bpb-map-resize-handle').press('Shift+ArrowLeft');
         const resized = await page.waitForFunction(previousWidth => {
             const frameElement = document.getElementById('bpb-terrain-frame');
@@ -550,7 +559,7 @@ async function main() {
                     route: Boolean(map.getLayer('bpb-route')),
                 } : false;
         }, widthBeforeResize, { timeout: 10_000 }).then(handle => handle.jsonValue());
-        if (!resized.route || requests.terrain === 0 || requests.basemap === 0 || requests.peaks === 0) {
+        if (!(resized as PageValue).route || requests.terrain === 0 || requests.basemap === 0 || requests.peaks === 0) {
             throw new Error(`Firefox terrain fixtures were incomplete: ${JSON.stringify({ resized, requests })}`);
         }
         await waitForTerrainCameraSettled(page, 'Analyzer resize');
@@ -597,22 +606,22 @@ async function main() {
         });
         await page.locator('#bpb-terrain-toggle').click();
         await page.waitForFunction(() => {
-            const frame = document.getElementById('bpb-terrain-frame');
-            const map = frame?.contentWindow?.__bpbTerrainTestMap;
-            return frame?.style.opacity === '1' && map?.isStyleLoaded() && map.areTilesLoaded();
+            const terrainFrame = document.getElementById('bpb-terrain-frame');
+            const map = terrainFrame?.contentWindow?.__bpbTerrainTestMap;
+            return terrainFrame?.style.opacity === '1' && map?.isStyleLoaded() && map.areTilesLoaded();
         }, null, { timeout: 45_000 });
         const peakNameOutput = process.env.BPB_VERIFY_PEAK_NAME_SCREENSHOT_DIR;
         if (peakNameOutput) await mkdir(peakNameOutput, { recursive: true });
         for (const width of [1000, 375]) for (const theme of ['light', 'dark']) {
             await page.setViewportSize({ width, height: 760 });
-            await page.evaluate(theme => {
+            await page.evaluate(nextTheme => {
                 document.getElementById('bpb-map-viewport').scrollIntoView({ block: 'start' });
-                window.postMessage({ __bpbTerrain: true, dir: 'toCS', type: 'update', theme }, location.origin);
+                window.postMessage({ __bpbTerrain: true, dir: 'toCS', type: 'update', theme: nextTheme }, location.origin);
             }, theme);
-            await page.waitForFunction(theme => {
-                const frame = document.getElementById('bpb-terrain-frame'), map = frame?.contentWindow?.__bpbTerrainTestMap;
-                return frame?.contentDocument?.getElementById('bpb-terrain-map')?.dataset.theme === theme
-                    && map.loaded() && !map.isMoving() && map.getCanvas().clientWidth === frame.clientWidth;
+            await page.waitForFunction(nextTheme => {
+                const terrainFrame = document.getElementById('bpb-terrain-frame'), map = terrainFrame?.contentWindow?.__bpbTerrainTestMap;
+                return terrainFrame?.contentDocument?.getElementById('bpb-terrain-map')?.dataset.theme === nextTheme
+                    && map.loaded() && !map.isMoving() && map.getCanvas().clientWidth === terrainFrame.clientWidth;
             }, theme);
             const peakFrame = page.frameLocator('#bpb-terrain-frame');
             let captured = false;
@@ -658,7 +667,7 @@ async function main() {
         });
         const peakCanvas = page.frameLocator('#bpb-terrain-frame').locator('canvas.maplibregl-canvas');
         await waitForTerrainCameraSettled(page, 'Peak startup');
-        const peakBearingBefore = await peakCanvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
+        const peakBearingBefore = await peakCanvas.evaluate(() => (globalThis as PageValue).__bpbTerrainTestMap.getBearing());
         const peakDragTarget = await getExposedCanvasDragTarget(peakCanvas, 'Peak bearing');
         await page.mouse.move(peakDragTarget.x, peakDragTarget.y);
         await page.mouse.down({ button: 'right' });
@@ -686,9 +695,9 @@ async function main() {
             moonMarker: peakSunInitial.moonMarker,
         },
         { timeout: 8_000 }).then(handle => handle.jsonValue());
-        if (peakSunRotated.summary !== peakSunInitial.summary
-            || peakSunRotated.direction !== peakSunInitial.direction
-            || peakSunRotated.moon !== peakSunInitial.moon) {
+        if ((peakSunRotated as PageValue).summary !== (peakSunInitial as PageValue).summary
+            || (peakSunRotated as PageValue).direction !== (peakSunInitial as PageValue).direction
+            || (peakSunRotated as PageValue).moon !== (peakSunInitial as PageValue).moon) {
             throw new Error(`Firefox Peak bearing changed absolute Sun or Moon text: ${JSON.stringify({ peakSunInitial, peakSunRotated })}`);
         }
         await waitForTerrainCameraSettled(page, 'Peak bearing');
@@ -746,7 +755,7 @@ async function main() {
         const capturePicker = page.locator('[aria-label="Sentinel-2 capture"]');
         await page.waitForFunction(() => document.querySelector('[aria-label="Sentinel-2 capture"]').options.length > 1);
         const dateKey = await capturePicker.locator('option').nth(1).getAttribute('value');
-        const settle = async value => {
+        const settle = async (value: string | null) => {
             await page.waitForFunction(expected => {
                 const map = document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap;
                 const ids = Object.keys(map.getStyle().sources).filter(id => id.startsWith('bpb-overlay-sentinel-'));
@@ -761,9 +770,9 @@ async function main() {
         await capturePicker.selectOption('latest');await settle('latest');
         const output = process.env.BPB_VERIFY_FIREFOX_SENTINEL_SCREENSHOT_DIR;
         if(output)await mkdir(output,{recursive:true});
-        for(const [width,theme] of [[1000,'light'],[1000,'dark'],[375,'light'],[375,'dark']]){
+        for(const [width,theme] of [[1000,'light'],[1000,'dark'],[375,'light'],[375,'dark']] as const){
             await page.setViewportSize({width,height:760});await settle('latest');
-            await page.evaluate(theme => {document.documentElement.dataset.bpbTheme=theme;const win=document.getElementById('bpb-terrain-frame').contentWindow;const map=win.__bpbTerrainTestMap;const sourceId=Object.keys(map.getStyle().sources).find(id=>id.startsWith('bpb-overlay-sentinel-'));map.fire('error',{sourceId,error:Object.assign(new Error('fixture tile limit'),{status:429,retryAt:Date.now()+60000})});},theme);
+            await page.evaluate(nextTheme => {document.documentElement.dataset.bpbTheme=nextTheme;const win=document.getElementById('bpb-terrain-frame').contentWindow;const map=win.__bpbTerrainTestMap;const sourceId=Object.keys(map.getStyle().sources).find(id=>id.startsWith('bpb-overlay-sentinel-'));map.fire('error',{sourceId,error:Object.assign(new Error('fixture tile limit'),{status:429,retryAt:Date.now()+60000})});},theme);
             await page.waitForFunction(()=>document.querySelector('[data-layer="sentinel"]').dataset.status==='error');
             const geometry=await page.locator('.bpb-layers-panel').evaluate(element=>{const r=element.getBoundingClientRect();return{width:r.width,right:r.right,viewport:window.innerWidth};});
             assert.ok(geometry.width<=233&&geometry.right<=geometry.viewport,JSON.stringify(geometry));
@@ -781,11 +790,11 @@ async function main() {
         console.log('  - Analyzer and Peak Sun and Moon compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
         console.log('  - split Key Col legend preserved the exact summit name in light/dark 1000/375px hardware-rendered popups');
         console.log('  - shared-menu Sentinel choices survived suspend/resume; loaded MapLibre sources and light/dark warning geometry passed');
-        console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
+        console.log(`  - resized canvas ${(resized as PageValue).width}x${(resized as PageValue).height}; native focus/window placement was not tested`);
     } catch (error) {
         primaryError = error;
     }
-    await resources.dispose(primaryError);
+    await resources.dispose(primaryError as never);
 }
 
 main().catch(error => {

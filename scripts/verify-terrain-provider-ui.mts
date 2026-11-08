@@ -4,10 +4,34 @@
 
 import assert from 'node:assert/strict';
 
+// The real frame's test seam; only the members these probes touch.
+type TransformRequest = (url: string, type?: string) => { url: string } | undefined;
+interface ProbeMap {
+    getZoom(): number; getSource(id: string): { attribution?: string } | undefined; getLayer(id: string): unknown;
+    fire(type: string, detail: object): void; resize(): void; isSourceLoaded(id: string): boolean;
+    setTransformRequest(transform: TransformRequest | undefined): void; _requestManager: { _transformRequestFn?: TransformRequest };
+}
+type ProbeWindow = Window & typeof globalThis & { __bpbTerrainTestMap: ProbeMap; __bpbCatalogLimitRequests?: number; Event: typeof Event };
+type ProbeFrame = HTMLIFrameElement & { contentDocument: Document; contentWindow: ProbeWindow };
+interface CreditsProbe { mountStyle: string | null; theme?: string; attribution?: string; fontSize: string; hintClass: string; hintHidden: HTMLElement['hidden']; }
+type ProbePage = Window & typeof globalThis & { __bpbCreditsProbe?: CreditsProbe; __bpbProviderTransform?: TransformRequest; __bpbProviderProbeRevision: number };
+interface Box { x: number; y: number; width: number; height: number; right: number; bottom: number; }
+interface Geometry { [key: string]: unknown; lines?: { x: number; y: number; right: number; bottom: number }[]; }
+interface CreditState extends Geometry {
+    lines: { x: number; y: number; right: number; bottom: number }[];
+    hintVisible: boolean; frameWidth: number; frameHeight: number; visible: boolean; linkVisible: boolean; creditText: string;
+}
+interface Recovery {
+    selected: string; retryable: boolean; notice: string; noticeHidden: boolean; noticeKind?: string; feedbackFits: boolean;
+    horizontalOverflow: number; focus: boolean; painted: boolean; route: boolean; frameVisible: boolean;
+}
+type Evaluate = <T = unknown>(expression: string) => Promise<T>;
+type Screenshot = ((name: string) => Promise<unknown>) | undefined;
+
 export const readSentinelCooldown = () => {
-    const frame = document.getElementById('bpb-terrain-frame')?.contentWindow;
-    const control = document.querySelector('[aria-label="Sentinel-2 (experimental) settings"]');
-    const retry = control?.querySelector('.bpb-layers-retry');
+    const frame = (document.getElementById('bpb-terrain-frame') as ProbeFrame | null)?.contentWindow;
+    const control = document.querySelector<HTMLElement>('[aria-label="Sentinel-2 (experimental) settings"]');
+    const retry = control?.querySelector<HTMLElement>('.bpb-layers-retry');
     const message = control?.querySelector('.bpb-layers-feedback')?.textContent || '';
     const requests = frame?.__bpbCatalogLimitRequests || 0;
     const visible = Boolean(control && !control.hidden && retry && !retry.hidden);
@@ -16,21 +40,22 @@ export const readSentinelCooldown = () => {
         requests, visible, disabled, message, zoom: frame?.__bpbTerrainTestMap?.getZoom() };
 };
 
-const configureCredits = ({ width, theme, largeText, long }) => {
-    const mount = document.getElementById('bpb-map-viewport');
-    const frame = document.getElementById('bpb-terrain-frame');
+const configureCredits = ({ width, theme, largeText, long }: { width: number; theme: string; largeText: boolean; long: boolean }) => {
+    const page = window as ProbePage;
+    const mount = document.getElementById('bpb-map-viewport')!;
+    const frame = document.getElementById('bpb-terrain-frame') as ProbeFrame;
     const doc = frame.contentDocument;
     const map = frame.contentWindow.__bpbTerrainTestMap;
-    const surface = doc.getElementById('bpb-terrain-map');
-    const source = map.getSource('basemap');
-    window.__bpbCreditsProbe ??= {
+    const surface = doc.getElementById('bpb-terrain-map')!;
+    const source = map.getSource('basemap')!;
+    page.__bpbCreditsProbe ??= {
         mountStyle: mount.getAttribute('style'), theme: surface.dataset.theme,
-        attribution: source.attribution,
+        attribution: source.attribution as string | undefined,
         fontSize: getComputedStyle(surface).fontSize,
-        hintClass: doc.querySelector('.bpb-terrain-hint').className,
-        hintHidden: doc.querySelector('.bpb-terrain-hint').hidden,
+        hintClass: doc.querySelector<HTMLElement>('.bpb-terrain-hint')!.className,
+        hintHidden: doc.querySelector<HTMLElement>('.bpb-terrain-hint')!.hidden,
     };
-    const hint = doc.querySelector('.bpb-terrain-hint');
+    const hint = doc.querySelector<HTMLElement>('.bpb-terrain-hint')!;
     hint.hidden = false; hint.classList.remove('bpb-terrain-hint-dismissed');
     mount.style.width = `${width}px`;
     surface.dataset.theme = theme;
@@ -47,12 +72,12 @@ const configureCredits = ({ width, theme, largeText, long }) => {
     // Native menulist metrics can trail a font/color-scheme change. That is
     // matrix setup, before the attribution transition whose stability we test.
     // Wait for applied typography and stable control bounds, not two blind ticks.
-    const expectedFont = largeText ? '24px' : window.__bpbCreditsProbe.fontSize;
-    return new Promise((resolve, reject) => {
+    const expectedFont = largeText ? '24px' : page.__bpbCreditsProbe!.fontSize;
+    return new Promise<void>((resolve, reject) => {
         const deadline = performance.now() + 5000;
         let previous = '', stable = 0;
         const sample = () => {
-            const picker = doc.querySelector('.bpb-terrain-picker');
+            const picker = doc.querySelector<HTMLSelectElement>('.bpb-terrain-picker')!;
             const box = picker.getBoundingClientRect();
             const value = { theme: surface.dataset.theme, font: getComputedStyle(surface).fontSize,
                 pickerFont: getComputedStyle(picker).fontSize, x: box.x, y: box.y, width: box.width, height: box.height };
@@ -69,22 +94,22 @@ const configureCredits = ({ width, theme, largeText, long }) => {
 };
 
 const readCredits = () => {
-    const frame = document.getElementById('bpb-terrain-frame');
+    const frame = document.getElementById('bpb-terrain-frame') as ProbeFrame;
     const doc = frame.contentDocument;
-    const box = element => {
+    const box = (element: Element): Box => {
         const r = element.getBoundingClientRect();
         return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
     };
-    const credits = doc.querySelector('.maplibregl-ctrl-attrib-inner');
+    const credits = doc.querySelector<HTMLElement>('.maplibregl-ctrl-attrib-inner')!;
     const style = getComputedStyle(credits);
     const link = credits.querySelector('a[href="https://www.openstreetmap.org/copyright"]');
-    const hint = doc.querySelector('.bpb-terrain-hint');
+    const hint = doc.querySelector<HTMLElement>('.bpb-terrain-hint')!;
     // The credit block can wrap around an anchored zoom stack. Its bounding
     // box includes empty space; measure painted text fragments for overlap.
-    const lines = [];
+    const lines: CreditState['lines'] = [];
     const walker = doc.createTreeWalker(credits, window.NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
-        if (!walker.currentNode.textContent.trim()) continue;
+        if (!walker.currentNode.textContent?.trim()) continue;
         const range = doc.createRange();
         range.selectNodeContents(walker.currentNode);
         for (const rect of range.getClientRects()) lines.push({
@@ -97,44 +122,46 @@ const readCredits = () => {
         creditText: credits.textContent, lines,
         frameWidth: doc.documentElement.clientWidth, frameHeight: doc.documentElement.clientHeight,
         hint: box(hint), hintVisible: !hint.hidden && getComputedStyle(hint).opacity !== '0',
-        nav: box(doc.querySelector('.maplibregl-ctrl-group')),
-        scale: box(doc.querySelector('.maplibregl-ctrl-scale')),
-        picker: box(doc.querySelector('.bpb-terrain-picker')),
-        toggle: box(document.getElementById('bpb-terrain-toggle')),
-        heading: box(document.querySelector('.terrain-check h2')),
-        following: box(document.querySelector('.analyzer-shell')),
-        mount: box(document.getElementById('bpb-map-viewport')),
+        nav: box(doc.querySelector<HTMLElement>('.maplibregl-ctrl-group')!),
+        scale: box(doc.querySelector<HTMLElement>('.maplibregl-ctrl-scale')!),
+        picker: box(doc.querySelector<HTMLElement>('.bpb-terrain-picker')!),
+        toggle: box(document.getElementById('bpb-terrain-toggle')!),
+        heading: box(document.querySelector('.terrain-check h2')!),
+        following: box(document.querySelector('.analyzer-shell')!),
+        mount: box(document.getElementById('bpb-map-viewport')!),
         scroll: { x: window.scrollX, y: window.scrollY },
     };
 };
 
 const restoreCredits = () => {
-    const saved = window.__bpbCreditsProbe;
-    const mount = document.getElementById('bpb-map-viewport');
-    const frame = document.getElementById('bpb-terrain-frame');
+    const page = window as ProbePage, saved = page.__bpbCreditsProbe!;
+    const mount = document.getElementById('bpb-map-viewport')!;
+    const frame = document.getElementById('bpb-terrain-frame') as ProbeFrame;
     const map = frame.contentWindow.__bpbTerrainTestMap;
     if (saved.mountStyle === null) mount.removeAttribute('style'); else mount.setAttribute('style', saved.mountStyle);
-    frame.contentDocument.getElementById('bpb-terrain-map').dataset.theme = saved.theme;
+    frame.contentDocument.getElementById('bpb-terrain-map')!.dataset.theme = saved.theme;
     frame.contentDocument.getElementById('bpb-credits-text-probe')?.remove();
-    const hint = frame.contentDocument.querySelector('.bpb-terrain-hint');
+    const hint = frame.contentDocument.querySelector<HTMLElement>('.bpb-terrain-hint')!;
     hint.className = saved.hintClass; hint.hidden = saved.hintHidden;
-    map.getSource('basemap').attribution = saved.attribution;
+    map.getSource('basemap')!.attribution = saved.attribution;
     map.fire('sourcedata', { dataType: 'source', sourceDataType: 'metadata' }); map.resize();
-    delete window.__bpbCreditsProbe;
+    delete page.__bpbCreditsProbe;
 };
 
 // Attribution may change when a failed source is removed. The informational
 // scale follows the resulting credit inset; actions and reading position must
 // stay anchored, and painted credits must avoid the scale in both states.
-export const assertStableTerrainGeometry = (before, after, label, keys = ['nav', 'picker', 'toggle', 'heading', 'following', 'mount', 'scroll']) => {
-    for (const state of [before, after]) if (state.lines) assertTerrainCreditLayout(state, label);
-    for (const key of keys) for (const field of Object.keys(before[key])) {
-        assert.ok(Math.abs(before[key][field] - after[key][field]) <= 1,
-            `${label}: ${key}.${field} moved (${before[key][field]} → ${after[key][field]})`);
+export const assertStableTerrainGeometry = (before: Geometry, after: Geometry, label: string, keys = ['nav', 'picker', 'toggle', 'heading', 'following', 'mount', 'scroll']) => {
+    for (const state of [before, after]) if (state.lines) assertTerrainCreditLayout(state as CreditState, label);
+    for (const key of keys) {
+        const start = before[key] as Record<string, number>, end = after[key] as Record<string, number>;
+        for (const field of Object.keys(start)) {
+            assert.ok(Math.abs(start[field] - end[field]) <= 1, `${label}: ${key}.${field} moved (${start[field]} → ${end[field]})`);
+        }
     }
 };
 
-export const assertTerrainCreditLayout = (state, label) => {
+export const assertTerrainCreditLayout = (state: CreditState, label: string) => {
     assert.ok(state.lines.length > 0, `${label}: no painted credit text`);
     const controls = ['nav', 'scale', 'picker', ...(state.hintVisible ? ['hint'] : [])];
     for (const line of state.lines) {
@@ -142,7 +169,7 @@ export const assertTerrainCreditLayout = (state, label) => {
             && line.bottom <= state.frameHeight + 1,
         `${label}: credit text leaves the map: ${JSON.stringify(state)}`);
         for (const key of controls) {
-            const control = state[key];
+            const control = state[key] as Box;
             const overlaps = line.x < control.right - 1 && line.right > control.x + 1
                 && line.y < control.bottom - 1 && line.bottom > control.y + 1;
             assert.ok(!overlaps, `${label}: credit text overlaps ${key}: ${JSON.stringify(state)}`);
@@ -152,17 +179,17 @@ export const assertTerrainCreditLayout = (state, label) => {
 
 // Uses the actual MapLibre control and source attribution. Only provider data
 // is synthetic; font enlargement exercises wrapping without hiding overflow.
-export async function verifyTerrainCredits({ evaluate, screenshot }) {
+export async function verifyTerrainCredits({ evaluate, screenshot }: { evaluate: Evaluate; screenshot?: Screenshot }) {
     let cases = 0;
     try {
         for (const width of [800, 320]) for (const theme of ['light', 'dark']) for (const largeText of [false, true]) {
             const label = `${width}-${theme}-${largeText ? 'large-text' : 'normal'}`;
             await evaluate(`(${configureCredits})(${JSON.stringify({ width, theme, largeText, long: false })})`);
-            const before = await evaluate(`(${readCredits})()`);
+            const before = await evaluate<CreditState>(`(${readCredits})()`);
             assert.ok(before.visible && before.linkVisible, `${label}: OSM credits must be visible without opening a toggle`);
             if (screenshot && !largeText) await screenshot(`terrain-credits-short-${label}`);
             await evaluate(`(${configureCredits})(${JSON.stringify({ width, theme, largeText, long: true })})`);
-            const after = await evaluate(`(${readCredits})()`);
+            const after = await evaluate<CreditState>(`(${readCredits})()`);
             assert.ok(after.visible && after.linkVisible, `${label}: expanded credits remain visible`);
             assert.match(after.creditText, /Regional mapping contributors/, `${label}: long provider attribution was applied`);
             assertTerrainCreditLayout(after, label);
@@ -175,16 +202,17 @@ export async function verifyTerrainCredits({ evaluate, screenshot }) {
     console.log(`  - ${cases} terrain credit layouts: visible links, wrapping and stable controls`);
 }
 
-const selectRaster = ({ fresh = false } = {}) => {
-    const frame = document.getElementById('bpb-terrain-frame');
-    const picker = frame.contentDocument.querySelector('.bpb-terrain-picker');
+const selectRaster = ({ fresh = false }: { fresh?: boolean } = {}) => {
+    const page = window as ProbePage;
+    const frame = document.getElementById('bpb-terrain-frame') as ProbeFrame;
+    const picker = frame.contentDocument.querySelector<HTMLSelectElement>('.bpb-terrain-picker')!;
     const map = frame.contentWindow.__bpbTerrainTestMap;
     // Fixture-only instrumentation preserves the production transform while
     // varying local tile URLs; it must not introduce a cache-bypass mode.
-    window.__bpbProviderTransform ??= map._requestManager._transformRequestFn;
-    const original = window.__bpbProviderTransform;
-    const revision = ++window.__bpbProviderProbeRevision;
-    map.setTransformRequest(fresh ? (url, type) => {
+    page.__bpbProviderTransform ??= map._requestManager._transformRequestFn;
+    const original = page.__bpbProviderTransform;
+    const revision = ++page.__bpbProviderProbeRevision;
+    map.setTransformRequest(fresh ? (url: string, type?: string) => {
         const request = original?.(url, type) || { url };
         return type === 'Tile' && request.url.includes('/scripts/showcase/terrain-tiles/')
             ? { ...request, url: `${request.url}?providerProbe=${revision}` } : request;
@@ -195,17 +223,18 @@ const selectRaster = ({ fresh = false } = {}) => {
 };
 
 const readRecovery = () => {
-    const frame = document.getElementById('bpb-terrain-frame');
+    const frame = document.getElementById('bpb-terrain-frame') as ProbeFrame;
     const doc = frame.contentDocument, map = frame.contentWindow.__bpbTerrainTestMap;
-    const picker = doc.querySelector('.bpb-terrain-picker'), notice = doc.querySelector('.bpb-terrain-notice');
-    const controls = doc.querySelector('.bpb-terrain-controls'), nr = notice.getBoundingClientRect();
+    const picker = doc.querySelector<HTMLSelectElement>('.bpb-terrain-picker')!, notice = doc.querySelector<HTMLElement>('.bpb-terrain-notice')!;
+    const controls = doc.querySelector<HTMLElement>('.bpb-terrain-controls')!, nr = notice.getBoundingClientRect();
     const fr = frame.getBoundingClientRect();
-    const intersects = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+    type Edges = { left: number; right: number; top: number; bottom: number };
+    const intersects = (a: Edges, b: Edges) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
     const globalNotice = { left: nr.left + fr.left, right: nr.right + fr.left, top: nr.top + fr.top, bottom: nr.bottom + fr.top };
     const coversAction = ['bpb-terrain-toggle', 'bpb-terrain-compass'].some(id => {
         const element = document.getElementById(id);
         return element && !element.hidden && intersects(globalNotice, element.getBoundingClientRect());
-    }) || intersects(nr, doc.querySelector('.maplibregl-ctrl-group').getBoundingClientRect());
+    }) || intersects(nr, doc.querySelector<HTMLElement>('.maplibregl-ctrl-group')!.getBoundingClientRect());
     return { selected: picker.value, retryable: !picker.options[0].disabled,
         notice: notice.textContent, noticeHidden: notice.hidden,
         noticeKind: notice.dataset.kind,
@@ -215,9 +244,9 @@ const readRecovery = () => {
         route: Boolean(map.getLayer('bpb-route')), frameVisible: frame.style.opacity === '1' };
 };
 
-const until = async (read, predicate, label) => {
+const until = async <T,>(read: () => Promise<T>, predicate: (value: T) => boolean, label: string) => {
     const deadline = Date.now() + 20_000;
-    let value;
+    let value: T;
     do {
         value = await read();
         if (predicate(value)) return value;
@@ -226,7 +255,9 @@ const until = async (read, predicate, label) => {
     throw new Error(`${label}: ${JSON.stringify(value)}`);
 };
 
-export async function verifyTerrainProviderRecovery({ evaluate, blockRaster, releaseRaster, retryWithKeyboard, screenshot }) {
+export async function verifyTerrainProviderRecovery({ evaluate, blockRaster, releaseRaster, retryWithKeyboard, screenshot }: {
+    evaluate: Evaluate; blockRaster(): Promise<unknown>; releaseRaster(status: number): Promise<unknown>; retryWithKeyboard(): Promise<unknown>; screenshot?: Screenshot;
+}) {
     let cases = 0;
     await evaluate('window.__bpbProviderProbeRevision = 0; document.getElementById("bpb-map-viewport").scrollIntoView({block:"start"})');
     try {
@@ -234,29 +265,29 @@ export async function verifyTerrainProviderRecovery({ evaluate, blockRaster, rel
             const label = `${width}-${theme}-${largeText ? 'large-text' : 'normal'}`;
             await evaluate(`(${configureCredits})(${JSON.stringify({ width, theme, largeText, long: false })})`);
             await evaluate(`(${selectRaster})()`);
-            await until(() => evaluate(`(${readRecovery})()`), value => value.painted, `${label}: initial raster never painted`);
-            const before = await evaluate(`(${readCredits})()`);
+            await until(() => evaluate<Recovery>(`(${readRecovery})()`), value => value.painted, `${label}: initial raster never painted`);
+            const before = await evaluate<CreditState>(`(${readCredits})()`);
             await blockRaster();
             await evaluate(`(${selectRaster})({fresh:true})`);
-            const pending = await evaluate(`(${readRecovery})()`);
+            const pending = await evaluate<Recovery>(`(${readRecovery})()`);
             assert.equal(pending.selected, '0', `${label}: the pending map remains selected`);
             assert.equal(pending.focus, true, `${label}: pending retains keyboard focus`);
             assert.equal(pending.noticeHidden, true, `${label}: pending does not retain an old warning`);
-            assertStableTerrainGeometry(before, await evaluate(`(${readCredits})()`), `${label}/pending`);
+            assertStableTerrainGeometry(before, await evaluate<CreditState>(`(${readCredits})()`), `${label}/pending`);
             await releaseRaster(403);
-            const failed = await until(() => evaluate(`(${readRecovery})()`), value => value.selected === 'terrain' && !value.noticeHidden, `${label}: blocked tiles never produced visible recovery`);
+            const failed = await until(() => evaluate<Recovery>(`(${readRecovery})()`), value => value.selected === 'terrain' && !value.noticeHidden, `${label}: blocked tiles never produced visible recovery`);
             assert.ok(failed.retryable && failed.focus && failed.route && failed.frameVisible, `${label}: failure must preserve the map, focus and retry path`);
             assert.ok(failed.feedbackFits && failed.horizontalOverflow <= 1, `${label}: recovery feedback must wrap without clipping or horizontal scrolling: ${JSON.stringify(failed)}`);
             assert.match(failed.notice, /Select it again to retry/); assert.doesNotMatch(failed.notice, /CORS|cross-origin/);
-            assertStableTerrainGeometry(before, await evaluate(`(${readCredits})()`), `${label}/failure`);
+            assertStableTerrainGeometry(before, await evaluate<CreditState>(`(${readCredits})()`), `${label}/failure`);
             if (screenshot) await screenshot(`terrain-provider-failure-${label}`);
             await releaseRaster(200);
             await retryWithKeyboard();
-            const retry = await evaluate(`(${readRecovery})()`);
+            const retry = await evaluate<Recovery>(`(${readRecovery})()`);
             assert.equal(retry.noticeHidden, true, `${label}: retry clears the stale warning immediately: ${JSON.stringify(retry)}`);
             assert.equal(retry.focus, true, `${label}: retry retains focus`);
-            await until(() => evaluate(`(${readRecovery})()`), value => value.selected === '0' && value.painted && value.noticeHidden, `${label}: retry never painted a recovered map`);
-            assertStableTerrainGeometry(before, await evaluate(`(${readCredits})()`), `${label}/recovered`);
+            await until(() => evaluate<Recovery>(`(${readRecovery})()`), value => value.selected === '0' && value.painted && value.noticeHidden, `${label}: retry never painted a recovered map`);
+            assertStableTerrainGeometry(before, await evaluate<CreditState>(`(${readCredits})()`), `${label}/recovered`);
             cases++;
         }
     } finally {
@@ -270,24 +301,26 @@ export async function verifyTerrainProviderRecovery({ evaluate, blockRaster, rel
     console.log(`  - ${cases} terrain provider paths: held tiles → HTTP 403 → retry → painted map; stable geometry and focus`);
 }
 
-export async function verifyTerrainVectorPending({ evaluate, waitForStyle, releaseStyle, screenshot }) {
+export async function verifyTerrainVectorPending({ evaluate, waitForStyle, releaseStyle, screenshot }: {
+    evaluate: Evaluate; waitForStyle(): Promise<unknown>; releaseStyle(): Promise<unknown>; screenshot?: Screenshot;
+}) {
     await evaluate('window.__bpbProviderProbeRevision = 0');
     try {
         await evaluate(`(${configureCredits})({width:320,theme:'dark',largeText:true,long:false})`);
         await evaluate(`(${selectRaster})()`);
-        const before = await evaluate(`(${readCredits})()`);
-        await evaluate('(() => { const f = document.getElementById("bpb-terrain-frame"); const p = f.contentDocument.querySelector(".bpb-terrain-picker"); p.focus({preventScroll:true}); p.value = "vector"; p.dispatchEvent(new f.contentWindow.Event("change")); })()');
+        const before = await evaluate<CreditState>(`(${readCredits})()`);
+        await evaluate('(() => { const f = document.getElementById("bpb-terrain-frame"); const p = f.contentDocument.querySelector(".bpb-terrain-picker"); p.focus({preventScroll:true}); p.value = "maptoolkit"; p.dispatchEvent(new f.contentWindow.Event("change")); })()');
         await waitForStyle();
-        const pending = await evaluate(`(${readRecovery})()`);
-        assert.equal(pending.selected, 'vector', 'pending vector selection must not revert to terrain-only');
+        const pending = await evaluate<Recovery>(`(${readRecovery})()`);
+        assert.equal(pending.selected, 'maptoolkit', 'pending vector selection must not revert to terrain-only');
         assert.ok(pending.focus && pending.feedbackFits && pending.horizontalOverflow <= 1);
         assert.match(pending.notice, /Loading map/); assert.equal(pending.noticeKind, 'loading');
-        assertStableTerrainGeometry(before, await evaluate(`(${readCredits})()`), 'vector/pending');
+        assertStableTerrainGeometry(before, await evaluate<CreditState>(`(${readCredits})()`), 'vector/pending');
         if (screenshot) await screenshot('terrain-vector-pending');
         await releaseStyle();
-        const failed = await until(() => evaluate(`(${readRecovery})()`), value => value.selected === 'terrain' && /unavailable/.test(value.notice), 'vector style failure never produced feedback');
+        const failed = await until(() => evaluate<Recovery>(`(${readRecovery})()`), value => value.selected === 'terrain' && /unavailable/.test(value.notice), 'vector style failure never produced feedback');
         assert.ok(failed.focus && failed.feedbackFits && failed.horizontalOverflow <= 1);
-        assertStableTerrainGeometry(before, await evaluate(`(${readCredits})()`), 'vector/failure');
+        assertStableTerrainGeometry(before, await evaluate<CreditState>(`(${readCredits})()`), 'vector/failure');
         if (screenshot) await screenshot('terrain-vector-failure');
     } finally {
         await releaseStyle();

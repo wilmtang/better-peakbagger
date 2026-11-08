@@ -6,7 +6,7 @@
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
-import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, vectorProviderUrl } from '../maps/vector-basemap.ts';
+import { MAPTOOLKIT_BASEMAP, vectorProviderUrl } from '../maps/vector-basemap.ts';
 import type { VectorBasemap } from '../maps/vector-basemap.ts';
 
 export interface VectorSource {
@@ -50,7 +50,7 @@ const validId = (value: unknown): value is string => typeof value === 'string'
     && value.length <= MAX_ID_LENGTH
     && ID_PATTERN.test(value);
 
-const providerUrl = (value: unknown, { templates = [], basemap = VECTOR_BASEMAP }: { templates?: readonly string[]; basemap?: VectorBasemap } = {}) => vectorProviderUrl(value, basemap, { templates });
+const providerUrl = (value: unknown, { templates = [], basemap = MAPTOOLKIT_BASEMAP }: { templates?: readonly string[]; basemap?: VectorBasemap } = {}) => vectorProviderUrl(value, basemap, { templates });
 
 const finiteZoom = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 24 ? value : null;
 
@@ -140,7 +140,7 @@ const normalizeLayer = (input: unknown, sources: ReadonlySet<string>): VectorLay
     return normalized;
 };
 
-const normalizeStyle = (input: unknown, { basemap = VECTOR_BASEMAP }: { basemap?: VectorBasemap } = {}): VectorStyle | null => {
+const normalizeStyle = (input: unknown, { basemap = MAPTOOLKIT_BASEMAP }: { basemap?: VectorBasemap } = {}): VectorStyle | null => {
     const style = input as (Omit<VectorStyle, 'metadata'> & { metadata?: Record<string, unknown> }) | null | undefined;
     if (!style || style.version !== 8 || !style.sources || typeof style.sources !== 'object'
         || Array.isArray(style.sources) || !Array.isArray(style.layers)) return null;
@@ -199,8 +199,7 @@ const normalizeStyle = (input: unknown, { basemap = VECTOR_BASEMAP }: { basemap?
 // hillshades use independent DEM zoom ladders; the detailed pass is sufficient
 // in 2D, and 3D already shades its terrain mesh. Preserve water color-relief,
 // contours, labels and icons, and avoid fetching metadata for orphan sources.
-const renderingStyle = (style: VectorStyle, { basemap = VECTOR_BASEMAP, terrain = false }: { basemap?: VectorBasemap; terrain?: boolean } = {}): VectorStyle => {
-    if (basemap !== MAPTOOLKIT_BASEMAP) return style;
+const renderingStyle = (style: VectorStyle, { terrain = false }: { terrain?: boolean } = {}): VectorStyle => {
     const layers = style.layers.filter(layer => layer.type !== 'hillshade'
         || !terrain && (style.sources[layer.source!]?.tileSize || 512) <= 512);
     const used = new Set(layers.map(layer => layer.source));
@@ -209,7 +208,7 @@ const renderingStyle = (style: VectorStyle, { basemap = VECTOR_BASEMAP, terrain 
 
 const createVectorStyleLoader = ({
     styleUrl,
-    basemap = VECTOR_BASEMAP,
+    basemap = MAPTOOLKIT_BASEMAP,
     fetch = globalThis.fetch,
     timeoutMs = DEFAULT_TIMEOUT_MS,
 }: VectorStyleLoaderOptions = {}) => {

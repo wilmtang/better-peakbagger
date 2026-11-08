@@ -313,7 +313,6 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
             providerList.append(item);
         };
         addProvider('Mapterhorn', 'Elevation tiles', 'https://mapterhorn.com/privacy-policy/');
-        addProvider('OpenFreeMap', 'OSM vector tiles, when selected', 'https://openfreemap.org/privacy/');
         addProvider('Maptoolkit', 'Hiking map tiles, labels and icons, when selected', 'https://www.maptoolkit.org/privacy');
         addProvider('Microsoft Planetary Computer', 'Sentinel-2 imagery and capture search, when selected', 'https://privacy.microsoft.com/privacystatement');
 
@@ -557,7 +556,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
                     id: typeof data.id === 'string' ? data.id.slice(0, 80) : '', sourceRevision: Number.isSafeInteger(data.sourceRevision) ? data.sourceRevision : 0 });
             } else if (data.type === 'layerAction') {
                 if (!frameLoaded || suspended) return;
-                if (data.action === 'basemap' && typeof data.selection === 'string' && /^(?:terrain|vector|maptoolkit|\d{1,3})$/.test(data.selection)) {
+                if (data.action === 'basemap' && typeof data.selection === 'string' && /^(?:terrain|maptoolkit|\d{1,3})$/.test(data.selection)) {
                     postToFrame('layerAction', { action: 'basemap', selection: data.selection });
                 } else if (data.id === 'wildfire' && data.action === 'retry') {
                     postToFrame('layerAction', { id: 'wildfire', action: 'retry' });

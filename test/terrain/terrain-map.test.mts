@@ -784,14 +784,12 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     assert.ok(dialog, 'the isolated-world bridge should own the confirmation UI');
     assert.equal(dialog.getAttribute('aria-modal'), 'true');
     assert.match(dialog.textContent, /Mapterhorn/);
-    assert.match(dialog.textContent, /OpenFreeMap/);
     assert.match(dialog.textContent, /Microsoft Planetary Computer/);
-    assert.match(dialog.textContent, /OSM vector tiles, when selected/);
+    assert.match(dialog.textContent, /Hiking map tiles, labels and icons, when selected/);
     assert.match(dialog.textContent, /selected 2D map layer.*provider named/i);
     assert.match(dialog.textContent, /enable them later in Better Peakbagger Settings/i);
     assert.deepEqual(Array.from(dialog.querySelectorAll('a'), link => [link.textContent, new URL(link.href).hostname]), [
         ['Privacy notice', 'mapterhorn.com'],
-        ['Privacy notice', 'openfreemap.org'],
         ['Privacy notice', 'www.maptoolkit.org'],
         ['Privacy notice', 'privacy.microsoft.com']
     ]);
@@ -1526,7 +1524,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     const picker = () => framePicker(window);
     const map = maps[0];
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (experimental)', 'Maptoolkit Hiking', 'Terrain only'],
+        ['CalTopo', 'MyTopo', 'OpenTopo', 'Maptoolkit Hiking (BPB experiment)', 'Terrain only'],
         'the picker offers every layer plus the vector entry and terrain-only');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'MyTopo',
         'the initially-selected native layer is preselected');
@@ -1699,9 +1697,9 @@ test('the extension-provided vector entry grafts the provider style under the ex
 
     const providerStyle = {
         version: 8,
-        glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
-        sprite: 'https://tiles.openfreemap.org/sprites/ofm_f384/ofm',
-        sources: { openmaptiles: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' } },
+        glyphs: 'https://tiles.maptoolkit.org/fonts/{fontstack}/{range}.pbf',
+        sprite: 'https://tiles.maptoolkit.org/sprites/ofm_f384/ofm',
+        sources: { openmaptiles: { type: 'vector', url: 'https://tiles.maptoolkit.org/planet' } },
         layers: [
             { id: 'land', type: 'fill', source: 'openmaptiles', 'source-layer': 'landcover' },
             { id: 'road', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation' },
@@ -1741,24 +1739,24 @@ test('the extension-provided vector entry grafts the provider style under the ex
     map.glyphs = frameGlyphs;
     map.sprite = frameSprite;
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['OSM Vector (experimental)', 'Maptoolkit Hiking', 'Terrain only'],
+        ['Maptoolkit Hiking (BPB experiment)', 'Terrain only'],
         'the vector entry and terrain-only are offered even without page layers');
     assert.equal(picker().value, 'terrain', 'terrain-only stays the default — vector is opt-in');
     assert.equal(fetches.length, 0, 'no provider traffic before the user selects the vector entry');
 
     // A failed style fetch reverts to terrain-only with a visible reason and
     // is forgotten, so the next selection retries instead of staying broken.
-    picker().value = 'vector';
+    picker().value = 'maptoolkit';
     picker().dispatchEvent(new window.Event('change'));
-    assert.equal(picker().value, 'vector', 'the requested vector map stays selected while its style is pending');
+    assert.equal(picker().value, 'maptoolkit', 'the requested vector map stays selected while its style is pending');
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.deepEqual(fetches, ['https://tiles.openfreemap.org/styles/liberty'],
+    assert.deepEqual(fetches, ['https://styles.maptoolkit.org/hiking.json'],
         'selecting the entry requests the provider style');
     assert.equal(picker().value, 'terrain', 'a failed style fetch reverts to terrain-only');
-    assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /OSM Vector \(experimental\) is unavailable/);
+    assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /Maptoolkit Hiking \(BPB experiment\) is unavailable/);
 
     failFetch = false;
-    picker().value = 'vector';
+    picker().value = 'maptoolkit';
     picker().dispatchEvent(new window.Event('change'));
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
@@ -1784,14 +1782,14 @@ test('the extension-provided vector entry grafts the provider style under the ex
     assert.equal(map.sprite, frameSprite, 'terrain-only restores the frame sprite configuration');
 
     // Re-selecting reuses the cached style without another fetch.
-    picker().value = 'vector';
+    picker().value = 'maptoolkit';
     picker().dispatchEvent(new window.Event('change'));
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(fetches.length, 2, 'a successful style fetch is cached for the frame lifetime');
     assert.ok(map.getSource('bpb-vector:openmaptiles'), 'the cached style is re-grafted');
     assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest!(
-        'https://tiles.openfreemap.org/planet/1/2/3.pbf', 'Tile'))), {
-        url: 'bpb-vector://https://tiles.openfreemap.org/planet/1/2/3.pbf',
+        'https://tiles.maptoolkit.org/planet/1/2/3.pbf', 'Tile'))), {
+        url: 'bpb-vector://https://tiles.maptoolkit.org/planet/1/2/3.pbf',
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
     });
@@ -1801,10 +1799,10 @@ test('the extension-provided vector entry grafts the provider style under the ex
     assert.throws(() => map.options.transformRequest!('https://foreign.example/source.json', 'Source'),
         /unapproved provider origin/);
     assert.throws(() => map.options.transformRequest!(
-        'https://user:secret@tiles.openfreemap.org/planet/1/2/3.pbf', 'Tile'),
+        'https://user:secret@tiles.maptoolkit.org/planet/1/2/3.pbf', 'Tile'),
     /unapproved provider origin/);
     assert.throws(() => map.options.transformRequest!(
-        'https://tiles.openfreemap.org/planet/1/2/3.pbf#fragment', 'Tile'),
+        'https://tiles.maptoolkit.org/planet/1/2/3.pbf#fragment', 'Tile'),
     /unapproved provider origin/);
 
     map.handlers.get('error')!({ sourceId: 'bpb-vector:openmaptiles' });
@@ -1817,7 +1815,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
     // failure cannot skip the remaining layers or source, and is retried.
     map.failAddLayerId = 'bpb-vector:place-label';
     map.failRemoveLayerId = 'bpb-vector:road';
-    picker().value = 'vector';
+    picker().value = 'maptoolkit';
     picker().dispatchEvent(new window.Event('change'));
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(picker().value, 'terrain', 'an incomplete graft is never marked active');
@@ -1888,16 +1886,15 @@ test('Maptoolkit terrain preserves its mesh and route, restores named sprites an
         const controller = new AbortController();
         const late = request!({ url: 'bpb-vector://https://tiles.maptoolkit.org/late.pbf', type: 'arrayBuffer' }, controller);
         const ignored = assert.rejects(late, (error: Error) => error.name === 'AbortError');
-        choose('vector'); await tick(); assert.equal(controller.signal.aborted, true, 'A layer switch cancels the outgoing transport');
+        choose('terrain'); await tick(); assert.equal(controller.signal.aborted, true, 'A layer switch cancels the outgoing transport');
         rejectLate!(Object.assign(new Error('old provider failed'), { status: 503 })); await ignored;
         map.handlers.get('error')!({ sourceId: 'bpb-vector:mtk', error: Object.assign(new Error('cancelled'), { name: 'AbortError' }) });
-        assert.equal(framePicker(window).value, 'vector', 'An outgoing provider cannot roll the replacement back to terrain');
+        assert.equal(framePicker(window).value, 'terrain', 'An outgoing provider cannot change the replacement selection');
         choose('maptoolkit'); await tick();
         await assert.rejects(request!({ url: 'bpb-vector://https://tiles.maptoolkit.org/tile.pbf', type: 'arrayBuffer' }, new AbortController()), (error: Error & { status?: number }) => error.status === 429);
         assert.equal(framePicker(window).value, 'terrain'); assert.equal(framePicker(window).querySelector<HTMLOptionElement>('[value="maptoolkit"]')!.disabled, true);
         assert.match(window.document.querySelector<HTMLElement>('.bpb-terrain-notice')!.textContent, /Maptoolkit request limit/);
         const count = calls.length; choose('maptoolkit'); await tick(); assert.equal(calls.length, count, 'Retry cannot bypass the tile-level cooldown');
-        choose('vector'); await tick(); assert.equal(framePicker(window).value, 'vector', 'Other providers remain available');
         now += 120001; choose('terrain'); choose('maptoolkit'); await tick();
         assert.equal(framePicker(window).value, 'maptoolkit'); assert.equal(map.getSource('terrain'), terrain); assert.equal(map.getLayer('bpb-route'), route);
         assert.equal(calls.filter(url => url.endsWith('/hiking.json')).length, 1, 'The accepted style is reused after expiry');

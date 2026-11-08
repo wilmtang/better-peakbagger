@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from '../helpers/test-dom.mts';
 import type { TestWindow } from '../helpers/test-dom.mts';
 import { installVectorMapBridge } from '../../src/maps/vector-map-bridge.ts';
-import { VECTOR_BASEMAP, VECTOR_MESSAGE, readVectorView, readVectorPaint } from '../../src/maps/vector-basemap.ts';
+import { MAPTOOLKIT_BASEMAP, VECTOR_MESSAGE, readVectorView, readVectorPaint } from '../../src/maps/vector-basemap.ts';
 import { terrainBasemap } from '../../src/terrain/terrain-basemap.ts';
 
 const view = { center: [46.85, -121.76], zoom: 9 };
@@ -13,7 +13,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 interface BridgeMessage { type?: string; activation?: string; token?: string; retryAt?: number; basemap?: string; bitmap?: unknown; id?: string; [key: string]: unknown; }
 type Activation = { ok?: boolean; token?: string } | undefined;
 function setup({ sendMessage }: { sendMessage?: (message: BridgeMessage) => Activation | Promise<Activation> } = {}) {
-    const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_VECTOR">Vector</option><option value="BPB_MAPTOOLKIT">Maptoolkit</option></select><div id="bpb-vector-slot-test-vector"></div><div id="bpb-vector-slot-test-maptoolkit"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
+    const dom = new JSDOM('<select data-bpb-vector-map="test"><option value="BPB_MAPTOOLKIT">Maptoolkit</option></select><div id="bpb-vector-slot-test-maptoolkit"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
     const win = dom.window, captures = new Map<string, (event: unknown) => void>(), calls: BridgeMessage[] = [], messages: BridgeMessage[] = [];
     Object.assign(win, { ImageBitmap: class { width = 640; height = 480; closed = false; close() { this.closed = true; } } });
     const add = win.document.addEventListener.bind(win.document);
@@ -30,7 +30,7 @@ function setup({ sendMessage }: { sendMessage?: (message: BridgeMessage) => Acti
     const frame = () => win.document.querySelector<HTMLIFrameElement>('iframe:not([data-bpb-vector-parked])');
     const fromFrame = (type: string, origin = 'chrome-extension://test', source: unknown = frame()?.contentWindow, detail: BridgeMessage = {}) => send(type, { dir: 'fromFrame', generation: calls.length, ...detail }, source, origin);
     const retry = (disabled: boolean) => {
-        const button = win.document.createElement('button'); button.dataset.bpbVectorMap = 'test'; button.dataset.bpbVectorBasemap = 'vector'; button.setAttribute('aria-disabled', String(disabled));
+        const button = win.document.createElement('button'); button.dataset.bpbVectorMap = 'test'; button.dataset.bpbVectorBasemap = 'maptoolkit'; button.setAttribute('aria-disabled', String(disabled));
         captures.get('click')!({ type: 'click', isTrusted: true, target: button });
     };
     return { win, calls, messages, send, choose, frame, fromFrame, retry, close() { bridge.dispose(); dom.window.close(); } };
@@ -39,7 +39,7 @@ function setup({ sendMessage }: { sendMessage?: (message: BridgeMessage) => Acti
 test('planar vector views validate coordinates and preserve world zoom zero', () => {
     assert.deepEqual(readVectorView({ center: [0, 0], zoom: -1 }), { center: [0, 0], zoom: -1 });
     for (const bad of [{ ...view, center: [90, 0] }, { ...view, center: [0, 181] }, { ...view, zoom: NaN }, { ...view, zoom: 24 }, { ...view, center: [0, 0, 0] }]) assert.equal(readVectorView(bad), null);
-    assert.deepEqual(terrainBasemap.active({}, {}, { value: VECTOR_BASEMAP.code, selectedIndex: 0, options: [{ textContent: null }] }), { kind: 'vector', name: VECTOR_BASEMAP.name });
+    assert.deepEqual(terrainBasemap.active({}, {}, { value: MAPTOOLKIT_BASEMAP.code, selectedIndex: 0, options: [{ textContent: null }] }), { kind: 'vector', provider: MAPTOOLKIT_BASEMAP.id, name: MAPTOOLKIT_BASEMAP.name });
 });
 test('paint metadata rejects invalid cameras and unbounded CSS dimensions', () => {
     assert.deepEqual(readVectorPaint({ view, width: 640, height: 480 }), { view, width: 640, height: 480 });
@@ -58,7 +58,7 @@ test('paint relays require the current frame, activation and bounded metadata', 
         const bitmap = new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap();
         env.fromFrame('painted', undefined, undefined, { bitmap, width: 640, height: 480 });
         assert.equal(env.messages.at(-1)!.type, 'painted'); assert.equal(env.messages.at(-1)!.bitmap, bitmap);
-        assert.equal(env.messages.at(-1)!.basemap, 'vector', 'A queued paint remains scoped to its selected provider');
+        assert.equal(env.messages.at(-1)!.basemap, 'maptoolkit', 'A queued paint remains scoped to its selected provider');
         assert.equal(bitmap.closed, false, 'The accepted bitmap transfers to the page owner');
         const older = new (env.win as unknown as { ImageBitmap: new () => { closed: boolean; width: number; height: number } }).ImageBitmap();
         env.fromFrame('painted', undefined, undefined, { bitmap: older, width: 640, height: 480, view: { center: [0, 0], zoom: 9 } });
@@ -176,8 +176,8 @@ test('a provider cooldown stops every renderer in the isolated document', () => 
     const env = setup(), retryAt = Date.now() + 120000;
     try {
         const second = env.win.document.createElement('select'); second.dataset.bpbVectorMap = 'second';
-        second.innerHTML = '<option value="BPB_VECTOR">Vector</option>';
-        const slot = env.win.document.createElement('div'); slot.id = 'bpb-vector-slot-second-vector'; env.win.document.body.append(second, slot);
+        second.innerHTML = '<option value="BPB_MAPTOOLKIT">Maptoolkit</option>';
+        const slot = env.win.document.createElement('div'); slot.id = 'bpb-vector-slot-second-maptoolkit'; env.win.document.body.append(second, slot);
         env.choose(); env.send('view'); const first = env.frame()!.contentWindow;
         env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.win.document.querySelectorAll('iframe').length, 2);
         env.fromFrame('error', undefined, first, { retryAt: retryAt as number });
@@ -186,12 +186,11 @@ test('a provider cooldown stops every renderer in the isolated document', () => 
         env.choose(true, second); env.send('view', { id: 'second' }); assert.equal(env.frame(), null); assert.equal(env.calls.length, 0);
     } finally { env.close(); }
 });
-test('a trusted provider choice cannot be changed by page messages or another provider cooldown', async () => {
+test('a trusted provider choice cannot be changed by page messages', async () => {
     const env = setup();
     try {
-        env.choose(); env.send('view'); env.fromFrame('error', undefined, undefined, { retryAt: Date.now() + 120000 });
-        env.win.document.querySelector('select')!.value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view', { basemap: 'vector' });
-        const frame = env.frame(), sent: BridgeMessage[] = []; assert.ok(frame, 'OpenFreeMap cooldown does not disable Maptoolkit');
+        env.choose(); env.send('view', { basemap: 'retired-provider' });
+        const frame = env.frame(), sent: BridgeMessage[] = []; assert.ok(frame);
         frame.contentWindow!.postMessage = (data: BridgeMessage) => { sent.push(data); }; env.fromFrame('ready'); await settle();
         assert.equal(sent.find(item => item.type === 'init')?.basemap, 'maptoolkit');
         assert.equal(frame.title, 'Maptoolkit vector basemap');
@@ -254,21 +253,6 @@ test('an outgoing warm authorization cannot tear down a newer activation of the 
         assert.equal(env.frame(), original); env.send('pause');
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         assert.equal(original!.isConnected, false, 'BFCache releases parked frames and their authorization');
-    } finally { env.close(); }
-});
-
-test('each provider keeps its own bounded warm renderer and a parked limit cannot disable the other', async () => {
-    const env = setup();
-    try {
-        env.choose(); env.send('view'); const vector = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
-        env.win.document.querySelector('select')!.value = 'BPB_MAPTOOLKIT'; env.choose(); env.send('view');
-        const toolkit = env.frame(); env.fromFrame('ready'); await settle(); env.fromFrame('loaded');
-        assert.notEqual(vector, toolkit); assert.equal(env.win.document.querySelectorAll('iframe').length, 2);
-        env.win.document.querySelector('select')!.value = 'BPB_VECTOR'; env.choose(); env.send('view'); await settle();
-        assert.equal(env.frame(), vector); assert.equal(env.calls.length, 3);
-        env.fromFrame('error', undefined, toolkit!.contentWindow, { retryAt: Date.now() + 120000 });
-        assert.equal(toolkit!.isConnected, false); assert.equal(env.frame(), vector);
-        env.send('dispose'); assert.equal(env.win.document.querySelectorAll('iframe').length, 0);
     } finally { env.close(); }
 });
 

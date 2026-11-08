@@ -1,14 +1,14 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { VECTOR_BASEMAP, vectorProviderUrl } from './vector-basemap.ts';
+import { MAPTOOLKIT_BASEMAP, vectorProviderUrl } from './vector-basemap.ts';
 import type { VectorBasemap } from './vector-basemap.ts';
 import { requestDeadline } from '../net/request-deadline.js';
 import { cancelResponseBody, rateLimitError } from '../net/rate-limit.js';
 
 export const VECTOR_PROTOCOL = 'bpb-vector';
 const prefix = `${VECTOR_PROTOCOL}://`;
-export function vectorRequestUrl(url: unknown, basemap: VectorBasemap = VECTOR_BASEMAP) {
+export function vectorRequestUrl(url: unknown, basemap: VectorBasemap = MAPTOOLKIT_BASEMAP) {
     const approved = vectorProviderUrl(url, basemap);
     if (!approved) throw new Error('Unapproved vector map provider.');
     return prefix + approved;
@@ -21,7 +21,7 @@ export interface VectorRequestOptions {
     basemap?: VectorBasemap; fetch?: typeof globalThis.fetch;
     onRateLimit?: (error: Error & { retryAt?: number | null }) => void; timeoutMs?: number;
 }
-export function createVectorMapRequest({ basemap = VECTOR_BASEMAP, fetch = globalThis.fetch, onRateLimit = () => {}, timeoutMs = 15000 }: VectorRequestOptions = {}) {
+export function createVectorMapRequest({ basemap = MAPTOOLKIT_BASEMAP, fetch = globalThis.fetch, onRateLimit = () => {}, timeoutMs = 15000 }: VectorRequestOptions = {}) {
     return async (parameters: VectorRequestParameters, controller: AbortController) => {
         const url = parameters.url?.startsWith(prefix) ? vectorProviderUrl(parameters.url.slice(prefix.length), basemap) : null;
         if (!url) throw new Error('Unapproved vector map provider.');

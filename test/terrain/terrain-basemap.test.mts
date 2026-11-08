@@ -95,7 +95,7 @@ test('active fails closed when there is no map or no selected option', () => {
 
 test('Maptoolkit selected in 2D retains its fixed provider identity when entering 3D', () => {
     assert.deepEqual(terrainBasemap.active({}, {}, { value: 'BPB_MAPTOOLKIT', selectedIndex: 0, options: [{ textContent: 'page-owned label' }] }),
-        { kind: 'vector', provider: 'maptoolkit', name: 'Maptoolkit Hiking' });
+        { kind: 'vector', provider: 'maptoolkit', name: 'Maptoolkit Hiking (BPB experiment)' });
 });
 
 test('the custom Leaflet Sentinel choice starts the matching 3D provider, not its native fallback tiles', () => {

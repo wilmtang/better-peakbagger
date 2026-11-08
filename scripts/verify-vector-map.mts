@@ -13,7 +13,7 @@ import { snowMapDocument } from './verify-snow-map-fixture.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { decodePng } from './browser-verification-png.mts';
-import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.ts';
+import { MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.ts';
 
 
 // Browser-side fixture globals these evaluated callbacks read; node strips the
@@ -48,9 +48,9 @@ declare global {
 const waitForCondition = waitForValue as unknown as <T>(read: () => T | Promise<T>, options?: { description?: string; intervalMs?: number; timeoutMs?: number; isReady?: (value: T) => unknown }) => Promise<NonNullable<T>>;
 
 const args = process.argv.slice(2);
-assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--maptoolkit', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg))
+assert.ok(new Set(args).size === args.length && args.every(arg => ['--firefox', '--terrain', '--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg))
     && args.filter(arg => ['--preflight', '--live', '--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg)).length <= 1,
-'Usage: node scripts/verify-vector-map.mts [--firefox] [--maptoolkit] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only | --layout-only | --performance-only | --zoom-only]');
+'Usage: node scripts/verify-vector-map.mts [--firefox] [--terrain] [--preflight | --live | --camera-only | --recovery-only | --cooldown-only | --layout-only | --performance-only | --zoom-only]');
 const terrainMode = args.includes('--terrain');
 const zoomMode = args.includes('--zoom-only');
 assert.ok(!terrainMode || !args.some(arg => ['--camera-only', '--recovery-only', '--cooldown-only', '--layout-only', '--performance-only', '--zoom-only'].includes(arg)), 'Terrain selection requires the full, live or preflight mode');
@@ -75,9 +75,9 @@ const instrumentVectorMap = (source: string) => {
         event.stopImmediatePropagation(); window.heldZoomViews.push({ data: event.data, origin: event.origin });
     });\n` + source.replace('map = new maplibre.Map({', 'map = window.__bpbVectorTestMap = new maplibre.Map({');
 };
-const basemap = args.includes('--maptoolkit') ? MAPTOOLKIT_BASEMAP : VECTOR_BASEMAP;
-const providerOrigin = basemap === MAPTOOLKIT_BASEMAP ? 'https://tiles.maptoolkit.org' : 'https://tiles.openfreemap.org';
-const chooseKeys = basemap === MAPTOOLKIT_BASEMAP ? 'Maptoolkit' : 'OSM';
+const basemap = MAPTOOLKIT_BASEMAP;
+const providerOrigin = 'https://tiles.maptoolkit.org';
+const chooseKeys = 'Maptoolkit';
 const firefoxMode = args.includes('--firefox'), preflight = args.includes('--preflight'), liveMode = args.includes('--live'), cameraOnly = args.includes('--camera-only');
 const recoveryOnly = args.includes('--recovery-only');
 const cooldownOnly = args.includes('--cooldown-only');
@@ -510,7 +510,7 @@ try {
                 data: { __bpbVectorMap: true, dir: 'toPage', type: 'error', id: select!.dataset.bpbVectorMap, basemap: otherProvider } }));
             return { chosen, selected: select!.value, visible: document.querySelector<FixtureElement>('.bpb-vector-slot')?.style.opacity === '1',
                 errorHidden: document.querySelector<FixtureElement>('.bpb-vector-status')!.hidden };
-        }, basemap === MAPTOOLKIT_BASEMAP ? 'vector' : 'maptoolkit');
+        }, 'retired-provider');
         assert.equal(queuedProvider.selected, queuedProvider.chosen, 'A queued error from a different provider cannot reset this choice');
         assert.ok(queuedProvider.visible && queuedProvider.errorHidden, 'The current cartography survives an outgoing provider error');
         return { cases, samples, animatedSamples };

@@ -8,7 +8,7 @@
 // the extension: it only reads the same-origin page/frame that owns Leaflet.
 
 import { SENTINEL_CODE, SENTINEL_NAME, sentinelTarget } from '../maps/sentinel-core.js';
-import { VECTOR_BASEMAP, vectorBasemap } from '../maps/vector-basemap.ts';
+import { vectorBasemap } from '../maps/vector-basemap.ts';
 
 
 // Peakbagger builds each 2D basemap on demand inside its MasterMap
@@ -158,7 +158,6 @@ const active = (mapWin: LeafletMapWindow | null | undefined, map: BasemapMap | n
     try {
         const option = select && select.options && select.options[select.selectedIndex!];
         if (!mapWin || !map || !option || !select) return null;
-        if (select.value === VECTOR_BASEMAP.code) return { kind: 'vector', name: VECTOR_BASEMAP.name };
         const vector = vectorBasemap(select.value);
         if (vector) return { kind: 'vector', provider: vector.id, name: vector.name };
         if (select.value === SENTINEL_CODE) {

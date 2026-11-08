@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertStableTerrainGeometry, assertTerrainCreditLayout } from '../../scripts/verify-terrain-provider-ui.mjs';
+import { assertStableTerrainGeometry, assertTerrainCreditLayout } from '../../scripts/verify-terrain-provider-ui.mts';
 
 const state = lines => ({
     frameWidth: 798, frameHeight: 450, lines,

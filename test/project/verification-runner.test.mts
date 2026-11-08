@@ -48,7 +48,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['map-controls'], [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']]],
         [['terrain'], [['verify-terrain-visual.mts']]],
         [['terrain', 'chrome', '/tmp/terrain evidence'], [['verify-terrain-visual.mts', '/tmp/terrain evidence']]],
-        [['terrain', 'firefox'], [['verify-firefox-terrain.mjs']]],
+        [['terrain', 'firefox'], [['verify-firefox-terrain.mts']]],
         [['terrain', 'cache-owners'], [['verify-terrain-cache-owners.mjs']]],
         [['terrain', 'lod'], [['verify-terrain-lod.mts']]],
     ];

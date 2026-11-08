@@ -219,7 +219,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     const verifierPaths = [
         'scripts/verify-extension.mts',
         'scripts/verify-firefox-extension.mts',
-        'scripts/verify-firefox-terrain.mjs',
+        'scripts/verify-firefox-terrain.mts',
         'scripts/verify-terrain-lod.mts',
         'scripts/verify-terrain-visual.mts',
         'scripts/render-showcase.mjs',

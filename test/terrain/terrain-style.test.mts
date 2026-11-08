@@ -9,17 +9,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { terrainStyle as TerrainStyle } from '../../src/terrain/terrain-style.ts';
 
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+type MutableStyle = { glyphs?: string; sprite?: string; sources: Record<string, Record<string, unknown>>; layers: Record<string, unknown>[] };
+type StyleFetch = (url: string, init: RequestInit) => Promise<unknown>;
+type StyleError = Error & { code?: string };
+const createLoader = (options: { styleUrl?: string; fetch?: StyleFetch; timeoutMs?: number }) => TerrainStyle.createVectorStyleLoader(options as never);
+const STYLE_URL = 'https://styles.maptoolkit.org/hiking.json';
 const style = (overrides = {}) => ({ version: 8, sources: {}, layers: [], ...overrides });
-const respond = (body, { ok = true, status = 200, url = STYLE_URL, headers = {} } = {}) => ({
+const respond = (body: unknown, { ok = true, status = 200, url = STYLE_URL, headers = {} as Record<string, string> } = {}) => ({
     ok, status, url,
-    headers: { get: name => headers[name.toLowerCase()] ?? null },
+    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
     text: async () => typeof body === 'string' ? body : JSON.stringify(body),
 });
 
 test('a valid style document is fetched without credentials or a referrer', async () => {
-    const calls = [];
-    const loader = TerrainStyle.createVectorStyleLoader({
+    const calls: { url: string; init: RequestInit }[] = [];
+    const loader = createLoader({
         styleUrl: STYLE_URL,
         fetch: async (url, init) => { calls.push({ url, init }); return respond(style()); },
     });
@@ -33,7 +37,7 @@ test('a valid style document is fetched without credentials or a referrer', asyn
 
 test('the style is fetched once per frame lifetime', async () => {
     let calls = 0;
-    const loader = TerrainStyle.createVectorStyleLoader({
+    const loader = createLoader({
         styleUrl: STYLE_URL,
         fetch: async () => { calls += 1; return respond(style()); },
     });
@@ -47,7 +51,7 @@ test('a stalled style host fails on its deadline instead of leaving a blank drap
     // resolves, so a host that accepts the connection and never answers used to
     // leave that entry selected with nothing drawn and no notice.
     const aborts = [];
-    const loader = TerrainStyle.createVectorStyleLoader({
+    const loader = createLoader({
         styleUrl: STYLE_URL,
         timeoutMs: 10,
         fetch: (_url, init) => {
@@ -61,7 +65,7 @@ test('a stalled style host fails on its deadline instead of leaving a blank drap
 });
 
 test('a style body that stalls mid-parse also fails on the deadline', async () => {
-    const loader = TerrainStyle.createVectorStyleLoader({
+    const loader = createLoader({
         styleUrl: STYLE_URL,
         timeoutMs: 10,
         fetch: async () => ({
@@ -77,7 +81,7 @@ test('a style body that stalls mid-parse also fails on the deadline', async () =
 
 test('a failed attempt is forgotten so re-selecting the entry retries', async () => {
     let calls = 0;
-    const loader = TerrainStyle.createVectorStyleLoader({
+    const loader = createLoader({
         styleUrl: STYLE_URL,
         fetch: async () => (++calls === 1 ? respond(null, { ok: false, status: 503 }) : respond(style())),
     });
@@ -102,7 +106,7 @@ test('anything that is not a style document is refused before it reaches the map
         style({ layers: undefined }),
     ];
     for (const body of rejected) {
-        const loader = TerrainStyle.createVectorStyleLoader({
+        const loader = createLoader({
             styleUrl: STYLE_URL,
             fetch: async () => respond(body),
         });
@@ -113,7 +117,7 @@ test('anything that is not a style document is refused before it reaches the map
 
 test('a non-ok response names its status for the frame’s notice', async () => {
     for (const status of [403, 404, 500, 502]) {
-        const loader = TerrainStyle.createVectorStyleLoader({
+        const loader = createLoader({
             styleUrl: STYLE_URL,
             fetch: async () => respond(null, { ok: false, status }),
         });
@@ -123,26 +127,26 @@ test('a non-ok response names its status for the frame’s notice', async () => 
 
 test('the loader rejects redirects and every foreign nested resource URL', async () => {
     const valid = style({
-        glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
-        sprite: 'https://tiles.openfreemap.org/sprites/liberty',
+        glyphs: 'https://tiles.maptoolkit.org/fonts/{fontstack}/{range}.pbf',
+        sprite: 'https://tiles.maptoolkit.org/sprites/liberty',
         sources: {
-            map: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
+            map: { type: 'vector', url: 'https://tiles.maptoolkit.org/planet' },
         },
         layers: [{ id: 'land', type: 'fill', source: 'map', 'source-layer': 'landcover' }],
     });
-    const redirected = TerrainStyle.createVectorStyleLoader({
+    const redirected = createLoader({
         styleUrl: STYLE_URL,
         fetch: async () => respond(valid, { url: 'https://foreign.example/style' }),
     });
     await assert.rejects(redirected.load(), /redirected outside/);
 
     for (const mutate of [
-        value => { value.glyphs = 'https://foreign.example/fonts/{fontstack}/{range}.pbf'; },
-        value => { value.sprite = 'https://foreign.example/sprite'; },
-        value => { value.sources.map.url = 'https://foreign.example/planet'; },
-        value => { value.sources.map.url = 'https://user:secret@tiles.openfreemap.org/planet'; },
-        value => { value.sources.map.url = 'https://tiles.openfreemap.org/planet#fragment'; },
-        value => {
+        (value: MutableStyle) => { value.glyphs = 'https://foreign.example/fonts/{fontstack}/{range}.pbf'; },
+        (value: MutableStyle) => { value.sprite = 'https://foreign.example/sprite'; },
+        (value: MutableStyle) => { value.sources.map.url = 'https://foreign.example/planet'; },
+        (value: MutableStyle) => { value.sources.map.url = 'https://user:secret@tiles.maptoolkit.org/planet'; },
+        (value: MutableStyle) => { value.sources.map.url = 'https://tiles.maptoolkit.org/planet#fragment'; },
+        (value: MutableStyle) => {
             value.sources.map = {
                 type: 'vector',
                 tiles: ['https://foreign.example/{z}/{x}/{y}.pbf'],
@@ -151,7 +155,7 @@ test('the loader rejects redirects and every foreign nested resource URL', async
     ]) {
         const candidate = structuredClone(valid);
         mutate(candidate);
-        const loader = TerrainStyle.createVectorStyleLoader({
+        const loader = createLoader({
             styleUrl: STYLE_URL,
             fetch: async () => respond(candidate),
         });
@@ -161,7 +165,7 @@ test('the loader rejects redirects and every foreign nested resource URL', async
 
 test('the style byte and structure budgets reject before normalization', async () => {
     let read = false;
-    const declared = TerrainStyle.createVectorStyleLoader({
+    const declared = createLoader({
         styleUrl: STYLE_URL,
         fetch: async () => ({
             ...respond(style(), {
@@ -177,10 +181,10 @@ test('the style byte and structure budgets reject before normalization', async (
     const tooManySources = Object.fromEntries(Array.from(
         { length: TerrainStyle.MAX_SOURCES + 1 },
         (_, index) => [`source-${index}`, {
-            type: 'vector', url: `https://tiles.openfreemap.org/planet-${index}`,
+            type: 'vector', url: `https://tiles.maptoolkit.org/planet-${index}`,
         }],
     ));
-    const excessive = TerrainStyle.createVectorStyleLoader({
+    const excessive = createLoader({
         styleUrl: STYLE_URL,
         fetch: async () => respond(style({ sources: tooManySources })),
     });
@@ -190,7 +194,7 @@ test('the style byte and structure budgets reject before normalization', async (
 test('normalization rejects invalid, duplicate, unsupported, and disconnected layers', () => {
     const base = {
         version: 8,
-        sources: { map: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' } },
+        sources: { map: { type: 'vector', url: 'https://tiles.maptoolkit.org/planet' } },
         layers: [{ id: 'land', type: 'fill', source: 'map', 'source-layer': 'landcover' }],
     };
     for (const candidate of [
@@ -205,15 +209,15 @@ test('normalization rejects invalid, duplicate, unsupported, and disconnected la
 });
 
 test('the loader refuses to be built without a style URL', () => {
-    assert.throws(() => TerrainStyle.createVectorStyleLoader({}), TypeError);
-    assert.throws(() => TerrainStyle.createVectorStyleLoader({ styleUrl: '' }), TypeError);
+    assert.throws(() => createLoader({}), TypeError);
+    assert.throws(() => createLoader({ styleUrl: '' }), TypeError);
 });
 
-test('OpenFreeMap limits survive an unreadable body and block repeated style fetches until the known reset', async () => {
+test('Maptoolkit limits survive an unreadable body and block repeated style fetches until the known reset', async () => {
     let calls = 0;
-    const loader = TerrainStyle.createVectorStyleLoader({ styleUrl: STYLE_URL, fetch: async () => {
+    const loader = createLoader({ styleUrl: STYLE_URL, fetch: async () => {
         calls++; return { status: 429, headers: new Headers({ 'retry-after': '60' }), text() { throw new Error('must not read'); } };
     } });
-    await assert.rejects(loader.load(), error => error.code === 'rate-limit' && /OpenFreeMap request limit reached/.test(error.message));
+    await assert.rejects(loader.load(), (error: StyleError) => error.code === 'rate-limit' && /Maptoolkit request limit reached/.test(error.message));
     await assert.rejects(loader.load(), { status: 429 }); assert.equal(calls, 1);
 });

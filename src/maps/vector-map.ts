@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP, VECTOR_BASEMAPS, VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
+import { MAPTOOLKIT_BASEMAP, VECTOR_BASEMAPS, VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
 import type { VectorPaint } from './vector-basemap.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { readRetryAt } from '../net/rate-limit.js';
@@ -63,7 +63,7 @@ export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLS
     select.style.width = `${Math.ceil(Math.max(...[...select.options].map(item => metrics.measureText(item.textContent).width)) + 40)}px`;
     const reservedPickerWidth = select.style.width;
     let previous = select.value, layer: VectorLayerInstance | null = null, paused = false, replacing = false, disposed = false, attributionReservation: { element: HTMLElement; minHeight: string; visibility: string } | null = null;
-    let basemap = VECTOR_BASEMAP, retryTimer: number | null = null;
+    let basemap = MAPTOOLKIT_BASEMAP, retryTimer: number | null = null;
     const cooldowns = new Map<string, number>();
     const status = doc.createElement('div'); status.className = 'bpb-vector-status'; status.hidden = true;
     const message = doc.createElement('span'); message.setAttribute('role', 'status');
@@ -79,10 +79,8 @@ export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLS
     container.append(logo); L.DomEvent.disableClickPropagation(logo);
     const renderCredits = () => {
         credits.dataset.provider = basemap.id;
-        credits.replaceChildren(...(basemap === MAPTOOLKIT_BASEMAP
-            ? ['© ', creditLink('https://www.maptoolkit.com/copyright/', 'Maptoolkit'), ' © ', creditLink('https://www.openstreetmap.org/copyright', 'Openstreetmap')]
-            : [creditLink('https://openfreemap.org', 'OpenFreeMap'), ' © ', creditLink('https://openmaptiles.org', 'OpenMapTiles'), ', data from ', creditLink('https://www.openstreetmap.org/copyright', 'OpenStreetMap')]));
-        if (basemap === MAPTOOLKIT_BASEMAP) for (const link of credits.querySelectorAll('a')) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+        credits.replaceChildren('© ', creditLink('https://www.maptoolkit.com/copyright/', 'Maptoolkit'), ' © ', creditLink('https://www.openstreetmap.org/copyright', 'Openstreetmap'));
+        for (const link of credits.querySelectorAll('a')) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
     };
     renderCredits();
     credits.hidden = true; container.append(credits);

@@ -45,7 +45,7 @@ flowchart TB
     onx["onX Backcountry<br/>visible import preview"]
     caltopo["CalTopo map<br/>object import review"]
     alltrails["AllTrails custom route<br/>visible upload preview"]
-    tiles["Mapterhorn / OpenFreeMap /<br/>selected raster provider"]
+    tiles["Mapterhorn / Maptoolkit /<br/>selected raster provider"]
 
     user --> providerPage
     user --> isolated
@@ -1070,7 +1070,7 @@ frame.
 
 3D is disabled by default. Trusted activation enables it; only then may an idle
 toggle's hover/focus warm bounded DEM tiles. Mapterhorn elevation is required,
-while selected raster or OpenFreeMap imagery may fail independently.
+while selected raster or Maptoolkit imagery may fail independently.
 
 Native 2D stays visible until terrain is usable and returns on fatal failure.
 Switching exchanges center and equivalent zoom; bearing and pitch remain 3D

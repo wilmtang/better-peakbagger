@@ -380,7 +380,7 @@ The plan is complete when:
   — shared local HTTPS fixtures, narrow synthetic state, polling, and cleanup.
 - [`scripts/verify-packaged-extensions.mjs`](../../scripts/verify-packaged-extensions.mjs)
   — execution gate for the exact minified Chrome and Firefox archives.
-- [`scripts/verify-firefox-terrain.mjs`](../../scripts/verify-firefox-terrain.mjs)
+- [`scripts/verify-firefox-terrain.mts`](../../scripts/verify-firefox-terrain.mts)
   — hardware-renderer and Firefox pointer/resize terrain checks.
 - [`scripts/run-firefox.mjs`](../../scripts/run-firefox.mjs) — creation and
   cleanup of the derived Firefox source tree.

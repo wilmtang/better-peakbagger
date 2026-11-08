@@ -8,29 +8,21 @@ export interface VectorBasemap {
 export interface VectorView { center: [number, number]; zoom: number; }
 export interface VectorPaint { view: VectorView; width: number; height: number; }
 
-export const VECTOR_BASEMAP: VectorBasemap = Object.freeze({
-    id: 'vector',
-    code: 'BPB_VECTOR',
-    name: 'OSM Vector (experimental)',
-    provider: 'OpenFreeMap',
-    styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
-    origins: Object.freeze(['https://tiles.openfreemap.org']),
-});
 export const MAPTOOLKIT_BASEMAP: VectorBasemap = Object.freeze({
     id: 'maptoolkit',
     code: 'BPB_MAPTOOLKIT',
-    name: 'Maptoolkit Hiking',
+    name: 'Maptoolkit Hiking (BPB experiment)',
     provider: 'Maptoolkit',
     styleUrl: 'https://styles.maptoolkit.org/hiking.json',
     origins: Object.freeze(['https://styles.maptoolkit.org', 'https://tiles.maptoolkit.org',
         'https://fonts.maptoolkit.org', 'https://icons.maptoolkit.org', 'https://tiles.mapterhorn.com']),
 });
-export const VECTOR_BASEMAPS: readonly VectorBasemap[] = Object.freeze([VECTOR_BASEMAP, MAPTOOLKIT_BASEMAP]);
+export const VECTOR_BASEMAPS: readonly VectorBasemap[] = Object.freeze([MAPTOOLKIT_BASEMAP]);
 // Match the service's TileJSON HTML so MapLibre deduplicates the eager fallback
 // against the source attribution when its asynchronous metadata arrives.
 export const MAPTOOLKIT_ATTRIBUTION = "<a href='https://www.maptoolkit.com/copyright/' target='_blank' rel='noopener noreferrer'>&copy; Maptoolkit</a> <a href='https://www.openstreetmap.org/copyright' target='_blank' rel='noopener noreferrer'>&copy; Openstreetmap</a>";
 export const vectorBasemap = (value: unknown): VectorBasemap | null => VECTOR_BASEMAPS.find(item => item.id === value || item.code === value) || null;
-export function vectorProviderUrl(value: unknown, basemap: VectorBasemap = VECTOR_BASEMAP, { templates = [] }: { templates?: readonly string[] } = {}): string | null {
+export function vectorProviderUrl(value: unknown, basemap: VectorBasemap = MAPTOOLKIT_BASEMAP, { templates = [] }: { templates?: readonly string[] } = {}): string | null {
     if (typeof value !== 'string' || !value || value.length > 4096 || !VECTOR_BASEMAPS.includes(basemap)) return null;
     let url;
     try { url = new URL(value); } catch { return null; }

@@ -115,7 +115,7 @@ independent of the existing targets.
 - [verify-terrain-cache-owners.mjs](verify-terrain-cache-owners.mjs)
 - [verify-terrain-lod.mts](verify-terrain-lod.mts)
 - [verify-terrain-popup.mjs](verify-terrain-popup.mjs)
-- [verify-terrain-provider-ui.mjs](verify-terrain-provider-ui.mjs)
+- [verify-terrain-provider-ui.mts](verify-terrain-provider-ui.mts)
 - [verify-terrain-visual.mts](verify-terrain-visual.mts)
 
 ## Climbers and profiles
@@ -175,7 +175,7 @@ independent of the existing targets.
 - [report-table-selection.mjs](report-table-selection.mjs)
 - [verify-api-rate-limits.mjs](verify-api-rate-limits.mjs)
 - [verify-ascent-backup-lifecycle.mjs](verify-ascent-backup-lifecycle.mjs)
-- [verify-firefox-terrain.mjs](verify-firefox-terrain.mjs)
+- [verify-firefox-terrain.mts](verify-firefox-terrain.mts)
 - [verify-layout-stability.mts](verify-layout-stability.mts)
 - [verify-ascent-column-widths.mjs](verify-ascent-column-widths.mjs) — native peak/ascent metadata widths, nested map containment and card edge alignment, run by `layout-stability`.
 - [verify-ascent-filters.mjs](verify-ascent-filters.mjs) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.

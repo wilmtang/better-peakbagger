@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Retired OSM Vector.** The experimental OpenFreeMap layer is gone from the 2D and
+  3D base map menus. Maptoolkit Hiking is now labelled as a BPB experiment.
+
 - **Use Photo Topos without an ImgBB key.** Copy image and Export image get a
   finished topo out with no account, key or connection. Upload stays one click
   away and asks for a key only then, saving it once ImgBB has received it

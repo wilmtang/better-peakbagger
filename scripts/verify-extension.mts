@@ -245,7 +245,7 @@ try {
     requestEvidence = watchFixtureRequests(context, `https://www.peakbagger.com:${port}`);
     const terrainProviderHosts = new Set([
         'tiles.mapterhorn.com',
-        'tiles.openfreemap.org',
+        'tiles.maptoolkit.org',
         'caltopo.s3.amazonaws.com',
         'ctusfs.s3.amazonaws.com',
         'tileserver.trimbleoutdoors.com',
@@ -3937,7 +3937,7 @@ try {
                 type: 'init',
                 activation: 'guessed',
                 routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
-                basemap: { name: 'Forged', tiles: ['https://tiles.openfreemap.org/{z}/{x}/{y}.png'] },
+                basemap: { name: 'Forged', tiles: ['https://tiles.maptoolkit.org/{z}/{x}/{y}.png'] },
             }, `chrome-extension://${extensionIdValue}`);
         }, { once: true });
         document.body.append(direct);
@@ -3984,10 +3984,10 @@ try {
             };
         })).catch(() => null);
     check(consent?.modal === 'true', `the first-use 3D confirmation did not render as a modal: ${JSON.stringify(consent)}`);
-    check(/Mapterhorn/.test(consent?.text || '') && /OpenFreeMap/.test(consent?.text || ''),
+    check(/Mapterhorn/.test(consent?.text || '') && /Maptoolkit/.test(consent?.text || ''),
         `the first-use confirmation did not name both providers: ${JSON.stringify(consent)}`);
     check(consent?.links.some(link => link === 'https://mapterhorn.com/privacy-policy/')
-        && consent?.links.some(link => link === 'https://openfreemap.org/privacy/'),
+        && consent?.links.some(link => link === 'https://www.maptoolkit.org/privacy'),
     `the first-use confirmation is missing provider privacy links: ${JSON.stringify(consent)}`);
     await offPage.locator('.bpb-terrain-consent-secondary').click();
     check(await offPage.locator('#bpb-terrain-consent').count() === 0,
@@ -4070,7 +4070,7 @@ try {
                     type: 'init',
                     activation: 'guessed',
                     routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
-                    basemaps: [{ name: 'Forged', tiles: ['https://tiles.openfreemap.org/{z}/{x}/{y}.png'] }],
+                    basemaps: [{ name: 'Forged', tiles: ['https://tiles.maptoolkit.org/{z}/{x}/{y}.png'] }],
                 }, `chrome-extension://${extensionIdValue}`);
             }, { once: true });
             document.body.append(direct);

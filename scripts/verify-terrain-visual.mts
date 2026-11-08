@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodePng } from './browser-verification-png.mts';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
-import { readSentinelCooldown, verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mjs';
+import { readSentinelCooldown, verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mts';
 
 import {
     assertMapToggleAnchor,
@@ -869,7 +869,7 @@ try {
     cdp.on('Fetch.requestPaused', ({ requestId, request }: CdpResult) => {
         const isBasemapRequest = /\/scripts\/showcase\/terrain-tiles\//.test(request.url);
         const fulfill = async () => {
-            if (request.url === 'https://tiles.openfreemap.org/styles/liberty') {
+            if (request.url === 'https://styles.maptoolkit.org/hiking.json') {
                 pendingVectorStyles.push(requestId); return;
             }
             if (isBasemapRequest) {
@@ -952,7 +952,7 @@ try {
             { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
             { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' },
             { urlPattern: '*scripts/showcase/terrain-tiles/*', requestStage: 'Request' },
-            { urlPattern: 'https://tiles.openfreemap.org/styles/liberty', requestStage: 'Request' },
+            { urlPattern: 'https://styles.maptoolkit.org/hiking.json', requestStage: 'Request' },
         ]
     });
 
@@ -1152,7 +1152,7 @@ try {
         patterns: [
             { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
             { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' },
-            { urlPattern: 'https://tiles.openfreemap.org/styles/liberty', requestStage: 'Request' },
+            { urlPattern: 'https://styles.maptoolkit.org/hiking.json', requestStage: 'Request' },
         ]
     });
     console.log('Pending-drape boot probe: terrain became active while raster requests were held.');
@@ -1237,7 +1237,7 @@ try {
             await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 's', code: 'KeyS', text: 's', windowsVirtualKeyCode: 83 });
             await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 });
         },
-        blockRaster: () => { providerRasterMode = 'hold'; },
+        blockRaster: async () => { providerRasterMode = 'hold'; },
         releaseRaster: async (status: number) => {
             if (status === 403) await waitForCondition(() => providerHeldResponses.some(({ response }) => !response.destroyed),
                 () => `No live raster responses held; recent requests: ${JSON.stringify(basemapRequests.slice(-3))}`);
@@ -2023,7 +2023,7 @@ try {
     const releaseVectorStyles = async () => {
         for (const requestId of pendingVectorStyles.splice(0)) await cdp.call('Fetch.fulfillRequest', { requestId, responseCode: 200,
             responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'application/json' }],
-            body: Buffer.from(JSON.stringify({ version: 8, sources: { fixture: { type: 'vector', tiles: ['https://tiles.openfreemap.org/fixture/{z}/{x}/{y}.pbf'] } }, layers: [] })).toString('base64') });
+            body: Buffer.from(JSON.stringify({ version: 8, sources: { fixture: { type: 'vector', tiles: ['https://tiles.maptoolkit.org/fixture/{z}/{x}/{y}.pbf'] } }, layers: [] })).toString('base64') });
     };
     // Engine status events are injected; transport classification is covered
     // separately. The catalog uses the runtime's fetch path with a 429 stub.
@@ -2047,20 +2047,20 @@ try {
             // ignored, so this limit needs a real installed vector source.
             await evaluate(cdp, `(() => {
                 const picker = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('[aria-label="Base map"]');
-                picker.value = 'vector'; picker.dispatchEvent(new Event('change'));
+                picker.value = 'maptoolkit'; picker.dispatchEvent(new Event('change'));
             })()`);
             await waitForCondition(async () => {
                 await releaseVectorStyles();
                 return evaluate(cdp, 'Object.keys(document.getElementById(\'bpb-terrain-frame\').contentWindow.__bpbTerrainTestMap.getStyle().sources).some(id => id.startsWith(\'bpb-vector:\'))');
-            }, () => 'The OSM Vector source was never installed');
+            }, () => 'The Maptoolkit source was never installed');
             await evaluate(cdp, `void document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap.fire('error', {
                 sourceId: Object.keys(document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap.getStyle().sources).find(id => id.startsWith('bpb-vector:')),
                 error: Object.assign(new Error('fixture refusal'), { status: 429 }) })`);
             await waitForPageState(cdp, `(() => {
                 const notice = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('.bpb-terrain-notice');
-                return { ready: !notice.hidden && notice.textContent.includes('OpenFreeMap request limit reached') };
+                return { ready: !notice.hidden && notice.textContent.includes('Maptoolkit request limit reached') };
             })()`);
-            await capture(cdp, path.join(outputDir, `openfreemap-rate-limit-${theme}-${width}.png`));
+            await capture(cdp, path.join(outputDir, `maptoolkit-rate-limit-${theme}-${width}.png`));
         }
     }
     await cdp.call('Emulation.setDeviceMetricsOverride', { width: 820, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -2116,7 +2116,7 @@ try {
     })()`);
     if (!/viewed map area and request metadata/i.test(disclosure.text || '')
         || !disclosure.links?.includes('https://mapterhorn.com/privacy-policy/')
-        || !disclosure.links?.includes('https://openfreemap.org/privacy/')) {
+        || !disclosure.links?.includes('https://www.maptoolkit.org/privacy')) {
         throw new Error(`The General setting is missing the 3D privacy disclosure: ${JSON.stringify(disclosure)}`);
     }
     await delay(400);

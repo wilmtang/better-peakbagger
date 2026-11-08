@@ -209,7 +209,7 @@ async function main() {
                 fixtureHost,
                 'peakbagger.com',
                 'tiles.mapterhorn.com',
-                'tiles.openfreemap.org',
+                'tiles.maptoolkit.org',
                 'caltopo.s3.amazonaws.com',
                 'ctusfs.s3.amazonaws.com',
                 'tileserver.trimbleoutdoors.com',
@@ -2226,7 +2226,7 @@ async function main() {
                     type: 'init',
                     activation: 'guessed',
                     routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
-                    basemaps: [{ name: 'Forged', tiles: ['https://tiles.openfreemap.org/{z}/{x}/{y}.png'] }],
+                    basemaps: [{ name: 'Forged', tiles: ['https://tiles.maptoolkit.org/{z}/{x}/{y}.png'] }],
                 }, new URL(extensionRoot).origin);
             }, { once: true });
             document.body.append(direct);
@@ -2279,7 +2279,7 @@ async function main() {
           map: Boolean(document.getElementById("bpb-terrain-map")),
           providerRequests: performance.getEntriesByType("resource")
             .map(entry => entry.name)
-            .filter(name => /mapterhorn|openfreemap|opentopomap|arcgisonline|trimbleoutdoors|caltopo/i.test(name))
+            .filter(name => /mapterhorn|maptoolkit|opentopomap|arcgisonline|trimbleoutdoors|caltopo/i.test(name))
         };`) as { providerRequests: { length: number } };
         await driver.switchTo().defaultContent();
         const forgedHostState = await driver.executeScript(`return {

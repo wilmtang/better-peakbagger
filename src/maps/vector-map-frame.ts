@@ -130,7 +130,7 @@ window.addEventListener('message', async event => {
         if (disposed) return;
         if (reply?.ok !== true) { fail(); return; }
         const raw = await terrainStyle.createVectorStyleLoader({ styleUrl: basemap.styleUrl, basemap }).load();
-        style = terrainStyle.renderingStyle(raw, { basemap });
+        style = terrainStyle.renderingStyle(raw);
         if (disposed) return;
         active = true;
         maplibre.setWorkerUrl(ext.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
