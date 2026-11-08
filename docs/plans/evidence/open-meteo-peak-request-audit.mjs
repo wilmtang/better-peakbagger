@@ -12,7 +12,7 @@ import { cloudResponseForUrl } from '../../../test/helpers/summit-cloud-fixture.
 import { airQualityFixture } from '../../../test/helpers/air-quality-fixture.mjs';
 
 if (process.argv.length !== 2) throw new Error('This audit probe takes no arguments.');
-const roots = ['src/weather/peak-weather.js', 'src/weather/summit-cloud.js', 'src/maps/peak-cards.js'];
+const roots = ['src/weather/peak-weather.js', 'src/weather/summit-cloud.ts', 'src/maps/peak-cards.js'];
 const builds = await Promise.all(roots.map(entry => build({ entryPoints: [entry], bundle: true, write: false, format: 'iife', metafile: true })));
 const bundlePaths = ['dist/content/peak-weather.js', 'dist/content/summit-cloud.js', 'dist/content/peak-cards.js'];
 const bundles = await Promise.all(bundlePaths.map(file => readFile(file, 'utf8')));

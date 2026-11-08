@@ -359,14 +359,16 @@ than 2,200 m is accepted. Duplicate neighboring grid cells are not counted as
 independent samples. Missing values never mean clear.
 
 Humidity scales differ by model. HRRR, HRDPS, ICON and both GEM models report
-humidity over liquid water, which tops out near ice saturation in cold air: without
-a correction, saturated air at −30 °C reads as about 75% and looks dry. Below 0 °C
+humidity over liquid water. In cold air it stays well below 100%: GEM tops out at
+ice saturation, and the others often sit near it but can exceed it. Without a
+correction, ice-saturated air at −30 °C reads as about 75% and looks dry. Below 0 °C
 those models use saturation from the IFS mixed-phase blend (ice below −23 °C) and
 re-derive cloud with Open-Meteo's own formula. The thresholds below read those values;
 the card shows the reported humidity beside them. GFS, IFS, AIFS, ARPEGE, JMA and CMA
 reach 100% in cold air and are not adjusted. UKMO's evidence is ambiguous, so it is
 not adjusted either and can still under-read cold cloud. The classification rests on
-one day's field structure, and false “inside” in supersaturated air below −20 °C is
+one day's field structure. Adjusted values hit the 100% cap often on the models that
+exceed ice saturation, so false “inside” in clear supersaturated air below −20 °C is
 not ruled out.
 
 - Cloud fraction ≥60% and saturation ≥85% at summit height: likely inside cloud.
