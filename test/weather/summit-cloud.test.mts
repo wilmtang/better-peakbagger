@@ -109,6 +109,24 @@ test('neighbors, the moist-air check and nearby layers read the adjusted values 
     layer.points[0]!.samples[0]!.levels.push({ pressure: 660, height: 3350, cloud: 15, humidity: 75, temperature: -30, wind: 6, direction: 270 });
     assert.notEqual(predict(layer).key, 'clear');
 });
+test('terrain near summit height is no lift, while unresolved lower air stays uncertain', () => {
+    const noRise = cloudDataset(); noRise.points[4]!.grid.elevation = 2700;
+    assert.equal(predict(noRise).key, 'clear');
+    assert.equal(predict(noRise).lift, false);
+    const moist = cloudDataset(); moist.points[4]!.grid.elevation = 2200;
+    moist.points[4]!.samples[0]!.levels.find(level => level.height === 2600)!.humidity = 90;
+    assert.equal(predict(moist).lift, true); assert.equal(predict(moist).key, 'partial');
+    const unresolved = cloudDataset(); unresolved.points[4]!.samples[0]!.levels = [
+        { pressure: 925, height: 1000, cloud: 5, humidity: 55, temperature: 8, wind: 6, direction: 270 },
+        { pressure: 600, height: 4000, cloud: 5, humidity: 55, temperature: -8, wind: 6, direction: 270 },
+    ];
+    assert.equal(predict(unresolved).key, 'uncertain');
+    const elbert = { ...subject, elevation: 4401 };
+    const plateau = cloudDataset({ model: summitCloudModel('gfs_hrrr') });
+    const heights = new Map([[700, 3100], [675, 3420], [650, 3761], [625, 4080], [600, 4402], [500, 5800]]);
+    plateau.points.forEach(point => { point.grid.elevation = 3817; point.samples[0]!.levels = point.samples[0]!.levels.filter(level => heights.has(level.pressure)); point.samples[0]!.levels.forEach(level => { level.height = heights.get(level.pressure)!; }); });
+    assert.equal(predictModelCloud(asDataset(plateau), elbert, time, time).key, 'clear');
+});
 test('freshness, unavailable comparison and model disagreement downgrade the prediction', () => {
     const stale = cloudDataset(); stale.metadata.lastUpdate -= 24 * 3600000; assert.equal(predict(stale).key, 'uncertain');
     const cma = cloudDataset({ model: summitCloudModel('cma_grapes_global') }); Object.assign(cma, { metadata: null }); assert.equal(predict(cma).key, 'uncertain');

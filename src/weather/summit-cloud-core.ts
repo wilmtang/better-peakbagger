@@ -118,10 +118,22 @@ export function predictModelCloud(data: CloudDataset, subject: CloudSubject, tim
     const { wind, direction } = summit;
     const upwind = wind !== null && direction !== null && wind >= 3
         ? neighboring.find(({ point }) => angle(point.bearing as number, direction) <= 45) : null;
-    const lowerHeight = Math.max(central.grid.elevation + 30, subject.elevation - 500);
-    const incoming = upwind && lowerHeight < subject.elevation - 100
-        ? cloudAtElevation(upwind.point.samples.find(row => row.time === time), lowerHeight, upwind.point.grid.elevation, basis) : null;
-    const lift = Boolean(upwind && incoming && incoming.saturation >= 85 && upwind.point.grid.elevation < subject.elevation - 200);
+    // Upwind ground near summit height leaves no lower air to lift, which is not
+    // missing data. Otherwise take the moistest complete air in the lower band;
+    // native levels can be underground or miss a single interpolated height.
+    const upwindGround = upwind?.point.grid.elevation;
+    const liftPossible = upwindGround !== undefined && upwindGround < subject.elevation - 200;
+    const incoming: number[] = [];
+    if (upwind && liftPossible) {
+        const upwindSample = upwind.point.samples.find(row => row.time === time);
+        const floor = Math.max(upwindGround, subject.elevation - 500);
+        const atFloor = cloudAtElevation(upwindSample, floor, upwindGround, basis);
+        if (atFloor) incoming.push(atFloor.saturation);
+        for (const level of completeLevels(upwindSample, upwindGround, basis)) {
+            if (level.height >= floor && level.height <= subject.elevation - 100) incoming.push(level.saturation);
+        }
+    }
+    const lift = incoming.some(saturation => saturation >= 85);
     const evidence = { model: data.model, summit, neighbors: neighbors.length, cloudyNeighbors, lift, metadata,
         limited: data.model.gridKm > 10 || summit.gap > 1200 || time - now > 48 * 3600_000 || !metadata };
     if (stale || data.model.requireFreshness && !metadata) return result('uncertain', { ...evidence,
@@ -131,7 +143,7 @@ export function predictModelCloud(data: CloudDataset, subject: CloudSubject, tim
     if (cloudyNeighbors >= 3) return result('blocked', { ...evidence, reason: 'Most sampled directions have cloud near summit height, which may obscure nearby peaks.' });
     if (cloudyNeighbors || lift || !dry(summit) || neighbors.some(({ value }) => !dry(value))) return result('partial', { ...evidence, reason: lift
         ? 'Moist air approaching higher terrain could form cloud on the ridge.' : 'Some cloud is indicated near summit height or in the surrounding profiles.' });
-    if (wind === null || direction === null || wind >= 3 && !incoming) return result('uncertain', { ...evidence,
+    if (wind === null || direction === null || wind >= 3 && (!upwind || liftPossible && !incoming.length)) return result('uncertain', { ...evidence,
         reason: 'The cloud layers look dry, but incoming airflow cannot be checked for terrain cloud.' });
     // Reject a clear result when an endpoint is cloudy even if interpolation
     // dilutes a thin layer. Vertical sampling cannot resolve that boundary.
