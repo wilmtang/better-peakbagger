@@ -25,7 +25,7 @@ These shared modules already exist:
 | Latest read ownership | [`latest-read.ts`](../src/ui/latest-read.ts) | Request identity, validation, cache/TTL, retained labels and pending UI |
 | Movement | [`card-drag.js`](../src/ui/card-drag.js), [`layout-menu.js`](../src/ui/layout-menu.js) | Native anchors, valid destinations, order, persistence and preview strategy |
 | Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.js`](../src/time/mountain-time.js) | Forecast versus historical endpoint, date range, model capabilities and freshness |
-| Weather display | [`weather-hourly-table.js`](../src/weather/weather-hourly-table.js), [`weather-chart-scale.js`](../src/weather/weather-chart-scale.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |
+| Weather display | [`weather-hourly-table.ts`](../src/weather/weather-hourly-table.ts), [`weather-chart-scale.js`](../src/weather/weather-chart-scale.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |
 
 `card-drag.js` is used by ascent weather. It and the peak layout share
 [`card-pointer-drag.js`](../src/ui/card-pointer-drag.js) for pointer ownership,

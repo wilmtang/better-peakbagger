@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hourlyWeatherSeries as peakHourlySeries, hourlyWeatherColumns as peakHourlyConditions, hourlyWeatherColumns } from '../../src/weather/weather-hourly-table.js';
+import { hourlyWeatherSeries as peakHourlySeries, hourlyWeatherColumns as peakHourlyConditions, hourlyWeatherColumns } from '../../src/weather/weather-hourly-table.ts';
 import { weatherDayWindow } from '../../src/weather/weather-day.js';
 import { mountainTime } from '../../src/time/mountain-time.js';
 

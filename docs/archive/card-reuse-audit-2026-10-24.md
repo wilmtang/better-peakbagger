@@ -74,8 +74,8 @@ separately reserves a larger minimum range to keep rounded labels distinct.
 
 Evidence: [ascent chart](../../src/ascent/ascent-weather.js#L335),
 [ascent range and rounding](../../src/ascent/ascent-weather.js#L392),
-[peak range policy](../../src/weather/peak-weather-hourly.js#L121),
-[shared series/table](../../src/weather/weather-hourly-table.js#L14),
+[peak range policy](../../src/weather/peak-weather-hourly.ts#L136),
+[shared series/table](../../src/weather/weather-hourly-table.ts#L73),
 [reproduction script](../plans/evidence/card-reuse-audit.mjs) and
 [recorded output](../plans/evidence/card-reuse-audit.json).
 

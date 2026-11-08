@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
-import { verifyWeatherDaySwitches, verifyWeatherTabWrapping, verifyWeatherConditions } from './verify-weather-day-switches.mjs';
+import { verifyWeatherDaySwitches, verifyWeatherTabWrapping, verifyWeatherConditions } from './verify-weather-day-switches.mts';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 import { verifyWeatherLocation } from './verify-weather-location.mjs';
 

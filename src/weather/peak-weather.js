@@ -11,7 +11,7 @@ import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
-import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.js';
+import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.ts';
 import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createPeakWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';

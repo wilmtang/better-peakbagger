@@ -137,7 +137,7 @@ independent of the existing targets.
 
 - [verify-wildfires.mjs](verify-wildfires.mjs) — real Leaflet and hardware MapLibre wildfire rendering and recovery through the weather fixture harness.
 
-- [verify-air-quality.mjs](verify-air-quality.mjs) — lazy AQI requests and refresh stability through the weather browser harness.
+- [verify-air-quality.mts](verify-air-quality.mts) — lazy AQI requests and refresh stability through the weather browser harness.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
 - [verify-custom-overlays.mts](verify-custom-overlays.mts) — real unpacked editor, 18 transition and 24 keyboard-help cases at asserted content widths/zoom, negative geometry checks, direct HTTPS/CORS tiles, packaged workers and hardware 2D/3D rendering. `--loading-only` explicitly excludes editor/help matrices; unknown or duplicate selections fail before launch.
@@ -161,10 +161,11 @@ independent of the existing targets.
 - [verify-snow-map-fixture.mjs](verify-snow-map-fixture.mjs)
 - [verify-weather-card-drag.mjs](verify-weather-card-drag.mjs)
 - [verify-weather-clouds.mjs](verify-weather-clouds.mjs)
-- [verify-weather-day-switches.mjs](verify-weather-day-switches.mjs)
+- [verify-weather-day-switches.mts](verify-weather-day-switches.mts)
 - [verify-weather-intervals.mjs](verify-weather-intervals.mjs)
 - [verify-weather-location.mjs](verify-weather-location.mjs)
 - [verify-weather-model-refresh.mjs](verify-weather-model-refresh.mjs)
+- [weather-verification-types.mts](weather-verification-types.mts) — typed controls shared by weather browser assertions.
 - [verify-weather-tab-styles.mjs](verify-weather-tab-styles.mjs)
 
 ## Editors, backups, settings and layout

@@ -1,13 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+// @ts-expect-error jsdom ships no declarations; fixture DOM remains legacy until M4.5.
 import { JSDOM } from 'jsdom';
 import { build } from 'esbuild';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mjs';
-import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
+import { weatherFixture as untypedWeatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
 import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
+
+type WeatherBody = { latitude: number; longitude: number; elevation: number | null; utc_offset_seconds: number; hourly_units: Record<string, string>; hourly: Record<string, (number | null)[]> & { time: number[] } };
+const weatherFixture = untypedWeatherFixture as (options?: { latitude?: number; longitude?: number; elevation?: number | null; startDate?: string; hours?: number; fields?: string[] }) => WeatherBody;
+type Values = Record<string, unknown>;
+type RequestOptions = RequestInit & { signal: AbortSignal };
+type FixtureFetch = (url: string, init: RequestOptions) => Response | Promise<Response>;
+type StorageListener = (changes: Record<string, { newValue?: Values }>, area: string) => void;
+interface SetupOptions {
+    html?: string; fetchFn?: FixtureFetch; lazy?: boolean; now?: string; storedSettings?: Values; localModels?: Values;
+    readSettings?: () => Promise<{ bpbSettings?: Values }>; readModels?: () => Promise<Values>;
+    saveModels?: (values: Values) => Promise<unknown>; metadataFn?: FixtureFetch; aqiFn?: FixtureFetch;
+}
+interface CapturedRequest { url: string; init: RequestOptions }
+interface HeldRequest { url: string; init: RequestOptions; resolve: (response: Response) => void }
 
 const [peak, bundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
@@ -15,45 +30,49 @@ const [peak, bundle] = await Promise.all([
 ]);
 const menuBundle = (await build({ entryPoints: ['src/maps/map-location-menu.ts'], bundle: true, write: false, format: 'iife', globalName: 'testMapMenu' })).outputFiles[0].text;
 const pause = () => new Promise(resolve => setImmediate(resolve));
-const waitFor = async predicate => {
+const waitFor = async (predicate: () => unknown) => {
     const deadline = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > deadline) throw new Error('Peak weather did not settle'); await new Promise(resolve => setTimeout(resolve, 0)); }
 };
-const reply = url => {
+const reply = (url: string, _init?: RequestOptions) => {
     const query = new URL(url).searchParams;
-    const hours = (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24;
-    return new Response(JSON.stringify(weatherFixture({ startDate: query.get('start_date'), hours,
+    const hours = (Date.parse(query.get('end_date')!) - Date.parse(query.get('start_date')!)) / 3600_000 + 24;
+    return new Response(JSON.stringify(weatherFixture({ startDate: query.get('start_date')!, hours,
         latitude: Number(query.get('latitude')), longitude: Number(query.get('longitude')),
         elevation: query.has('elevation') ? Number(query.get('elevation')) : 1200 })), { headers: { 'content-type': 'application/json' } });
 };
-function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn, aqiFn } = {}) {
+function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn, aqiFn }: SetupOptions = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
-    const win = jsdom.window, requests = [], metadataRequests = [], listeners = [], observers = [], resizeObservers = [];
+    const win = jsdom.window;
+    const requests: CapturedRequest[] = [], metadataRequests: CapturedRequest[] = [], listeners: StorageListener[] = [];
+    const observers: { callback: (entries: { isIntersecting: boolean }[]) => void; disconnected: boolean }[] = [], resizeObservers: { callback: () => void; disconnected: boolean }[] = [];
     let clock = Date.parse(now);
     win.Date.now = () => clock;
     win.scrollBy = () => {};
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { local: { get: async key => Array.isArray(key) && key.includes('bpbDeviceSettings') ? {} : (readModels ? readModels() : localModels), set: saveModels || (async values => Object.assign(localModels, values)) }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
-        addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1),
+    win.chrome = { storage: { local: { get: async (key: string | string[]) => Array.isArray(key) && key.includes('bpbDeviceSettings') ? {} : (readModels ? readModels() : localModels), set: saveModels || (async (values: Values) => { Object.assign(localModels, values); }) }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
+        addListener: (fn: StorageListener) => listeners.push(fn), removeListener: (fn: StorageListener) => listeners.splice(listeners.indexOf(fn), 1),
     } } };
-    win.chrome.runtime = { sendMessage: async message => {
+    win.chrome.runtime = { sendMessage: async (message: { type: string; patch: Values }) => {
         if (message.type !== 'SETTINGS_PATCH') return;
         await win.chrome.storage.local.set(message.patch); // controlled persistence hooks for these UI tests
         Object.assign(storedSettings, message.patch);
         return { ok: true, settings: { units: 'imperial', ...storedSettings } };
     } };
     if (lazy) win.IntersectionObserver = class {
-        constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this); }
+        callback: (entries: { isIntersecting: boolean }[]) => void; disconnected = false;
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) { this.callback = callback; observers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
     };
     let chartWidth = 620;
     win.HTMLElement.prototype.getBoundingClientRect = () => ({ width: chartWidth, height: 184, left: 0, top: 0 });
     win.SVGElement.prototype.getBoundingClientRect = () => ({ width: chartWidth, height: 184, left: 0, top: 0 });
     win.ResizeObserver = class {
-        constructor(callback) { this.callback = callback; this.disconnected = false; resizeObservers.push(this); }
+        callback: () => void; disconnected = false;
+        constructor(callback: () => void) { this.callback = callback; resizeObservers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
     };
-    win.fetch = async (url, init) => {
+    win.fetch = async (url: string, init: RequestOptions) => {
         if (new URL(url).pathname.startsWith('/data/')) {
             metadataRequests.push({ url, init });
             return metadataFn ? metadataFn(url, init) : new Response(JSON.stringify({ last_run_initialisation_time: Math.floor(clock / 1000) - 3600,
@@ -63,33 +82,33 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
         if (new URL(url).hostname === 'air-quality-api.open-meteo.com') return aqiFn ? aqiFn(url, init) : new Response(JSON.stringify(airQualityFixture({ now: clock })), { headers: { 'content-type': 'application/json' } });
         const response = await fetchFn(url, init);
         if (!response.ok) return response;
-        const body = weatherModelFixture(await response.json(), new URL(url).searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
+        const body = weatherModelFixture(await response.json(), new URL(url).searchParams.get('models')!.split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
             Date.parse(new Date(clock).toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400])));
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     };
-    win.postMessage = data => win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data }));
+    win.postMessage = (data: unknown) => win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data }));
     win.eval(menuBundle);
     const locationMenu = win.testMapMenu.createMapLocationMenu({ window: win, client: { lookup: async () => 1957, clear() {} } });
     win.eval(bundle);
     return { win, locationMenu, doc: win.document, requests, metadataRequests, listeners, observers, resizeObservers,
-        setNow: next => { clock = Date.parse(next); },
-        resize: width => { chartWidth = width; resizeObservers.filter(observer => !observer.disconnected).forEach(observer => observer.callback()); },
+        setNow: (next: string) => { clock = Date.parse(next); },
+        resize: (width: number) => { chartWidth = width; resizeObservers.filter(observer => !observer.disconnected).forEach(observer => observer.callback()); },
         close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); locationMenu.dispose(); win.close(); } };
 }
-const settled = async (env, { past = true } = {}) => {
+const settled = async (env: ReturnType<typeof setup>, { past = true } = {}) => {
     await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 16 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
     if (past) env.doc.querySelector('[data-period="past"]').click();
 };
-const chooseModel = (env, id) => {
+const chooseModel = (env: ReturnType<typeof setup>, id: string) => {
     const select = env.doc.querySelector('#bpb-peak-weather-model');
     select.value = id; select.dispatchEvent(new env.win.Event('change'));
 };
-const openLocationMenu = (env, latitude = 46.8, longitude = -121.7, extra = {}) => {
+const openLocationMenu = (env: ReturnType<typeof setup>, latitude = 46.8, longitude = -121.7, extra = {}) => {
     const frame = env.doc.getElementById('Gmap');
     frame.getBoundingClientRect = () => ({ left: 10, top: 10, right: 650, bottom: 435, width: 640, height: 425 });
     env.locationMenu.show({ latitude, longitude, x: 100, y: 100, ...extra }, frame);
 };
-const selectLocation = (env, latitude, longitude) => {
+const selectLocation = (env: ReturnType<typeof setup>, latitude: number, longitude: number) => {
     openLocationMenu(env, latitude, longitude); env.doc.querySelector('#bpb-peak-weather-menu button').click();
 };
 
@@ -140,7 +159,7 @@ test('map weather menu fetches only on activation, uses terrain elevation and re
 });
 
 test('location transactions preserve truthful old labels, cancel races and retain summit weather on failure', async () => {
-    const held = []; let hold = false, fail = false;
+    const held: HeldRequest[] = []; let hold = false, fail = false;
     const env = setup({ fetchFn: (url, init) => fail ? new Response('', { status: 503 }) : hold
         ? new Promise(resolve => held.push({ url, init, resolve })) : reply(url) });
     try {
@@ -167,7 +186,7 @@ test('location transactions preserve truthful old labels, cancel races and retai
 });
 
 test('selected location resolves its own civil days and resets unavailable regional models without storing coordinates', async () => {
-    const writes = [], env = setup({ saveModels: async value => writes.push(value) });
+    const writes: Values[] = [], env = setup({ saveModels: async value => writes.push(value) });
     try {
         await settled(env, { past: false }); chooseModel(env, 'gfs_hrrr');
         await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
@@ -227,7 +246,7 @@ test('failed location selection can retry the same map point and names the actua
 });
 
 test('failed reset remains retryable when a point supersedes the first summit request', async () => {
-    const held = []; let fail = false, hold = true;
+    const held: HeldRequest[] = []; let fail = false, hold = true;
     const env = setup({ fetchFn: (url, init) => fail ? new Response('', { status: 503 }) : hold
         ? new Promise(resolve => held.push({ url, init, resolve })) : reply(url) });
     try {
@@ -248,7 +267,7 @@ test('failed reset remains retryable when a point supersedes the first summit re
 });
 
 test('a point selected before any readings load uses its own identity, elevation and civil day immediately', async () => {
-    const held = [], env = setup({ now: '2024-11-05T02:00:00Z', fetchFn: (url, init) => new Promise(resolve => held.push({ url, init, resolve })) });
+    const held: HeldRequest[] = [], env = setup({ now: '2024-11-05T02:00:00Z', fetchFn: (url, init) => new Promise(resolve => held.push({ url, init, resolve })) });
     try {
         await waitFor(() => held.length === 1); selectLocation(env, 35.68, 139.76);
         await waitFor(() => held.length === 2);
@@ -268,7 +287,7 @@ test('a point selected before any readings load uses its own identity, elevation
 });
 
 test('reset restores both summit model choices without persisting a regional fallback', async () => {
-    const writes = [], env = setup({ localModels: { bpbPeakWeatherModelForecast: 'gfs_hrrr', bpbPeakWeatherModelPast: 'icon_global' },
+    const writes: Values[] = [], env = setup({ localModels: { bpbPeakWeatherModelForecast: 'gfs_hrrr', bpbPeakWeatherModelPast: 'icon_global' },
         saveModels: async value => writes.push({ ...value }) });
     try {
         await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 2 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
@@ -306,7 +325,7 @@ test('reset and BFCache preserve a known cooldown and its explanation', async ()
 });
 
 test('Conditions is the initial hourly tab and rendering never writes a local preference', async () => {
-    const writes = [], env = setup({ saveModels: async values => { writes.push(values); } });
+    const writes: Values[] = [], env = setup({ saveModels: async values => { writes.push(values); } });
     try {
         await settled(env, { past: false });
         env.doc.querySelector('.bpb-week-day > summary').click();
@@ -325,7 +344,7 @@ test('Conditions is the initial hourly tab and rendering never writes a local pr
 
 test('every hourly data tab survives navigation; keyboard choices persist without render writes', async () => {
     for (const metric of ['temperature', 'precipitation', 'freezing', 'cloud', 'wind', 'gust', 'code']) {
-        const localModels = { bpbPeakWeatherHourlyMetric: 'wind' }, writes = [];
+        const localModels = { bpbPeakWeatherHourlyMetric: 'wind' }, writes: Values[] = [];
         const env = setup({ localModels, saveModels: async values => { writes.push({ ...values }); Object.assign(localModels, values); } });
         try {
             await settled(env, { past: false });
@@ -358,16 +377,16 @@ test('every hourly data tab survives navigation; keyboard choices persist withou
     }
 });
 
-test('cloud details stay in their graph, preserve gaps and use a fixed percentage axis without another request', async () => {
+test('cloud details retain their graph, preserve gaps and use a fixed percentage axis without another request', async () => {
     for (const units of ['imperial', 'metric']) {
         const env = setup({ storedSettings: { units } });
         try {
             await settled(env, { past: false });
             const query = new URL(env.requests[0].url).searchParams;
-            assert.ok(query.get('hourly').split(',').includes('cloud_cover'));
+            assert.ok(query.get('hourly')!.split(',').includes('cloud_cover'));
             env.doc.querySelector('.bpb-week-day > summary').click();
             const day = env.doc.querySelector('.bpb-week-day[open]');
-            assert.equal(day.querySelector('[data-weather-row="cloud"]'), null);
+            assert.ok(day.querySelector('[data-weather-row="cloud"]'));
             day.querySelector('[data-metric="cloud"]').click();
             const chart = day.querySelector('.bpb-week-chart');
             const values = [...chart.querySelectorAll('.bpb-week-point title')].map(node => node.textContent);
@@ -414,8 +433,8 @@ test('rain/snow explains the fixed conversion without a separate snowfall displa
         const day = env.doc.querySelector('.bpb-week-day[open]');
         assert.equal(day.querySelector('[data-metric="snowfall"]'), null);
         assert.equal(day.querySelector('[data-weather-row="snowfall"]'), null);
-        assert.equal(params.get('hourly').split(',').includes('snowfall'), false);
-        assert.ok(params.get('hourly').split(',').includes('freezing_level_height'));
+        assert.equal(params.get('hourly')!.split(',').includes('snowfall'), false);
+        assert.ok(params.get('hourly')!.split(',').includes('freezing_level_height'));
         day.querySelector('[data-metric="precipitation"]').click();
         const hint = day.querySelector('.bpb-week-chart-help > p').textContent;
         const info = day.querySelector('.bpb-week-info'), explanation = day.querySelector('.bpb-week-explanation');
@@ -438,7 +457,7 @@ test('rain/snow explains the fixed conversion without a separate snowfall displa
         assert.doesNotMatch(day.querySelector('.bpb-week-readout').textContent, /ft/);
         day.querySelector('[data-metric="code"]').click();
         assert.equal(day.querySelector('[data-weather-row="snowfall"]'), null);
-        assert.equal(day.querySelector('[data-weather-row="freezing"]'), null);
+        assert.ok(day.querySelector('[data-weather-row="freezing"]'));
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
@@ -464,7 +483,7 @@ test('unavailable freezing level retains complete core weather and a focusable f
 });
 
 test('a saved snowfall selection opens Rain/snow without rewriting storage during mount', async () => {
-    const writes = [];
+    const writes: Values[] = [];
     const env = setup({ localModels: { bpbPeakWeatherHourlyMetric: 'snowfall' }, saveModels: async values => { writes.push(values); } });
     try {
         await settled(env, { past: false }); env.doc.querySelector('.bpb-week-day > summary').click();
@@ -476,7 +495,7 @@ test('a saved snowfall selection opens Rain/snow without rewriting storage durin
 
 test('invalid saved hourly tabs and failed local reads fall back to usable Conditions', async () => {
     for (const value of [undefined, null, '', 'conditions', 'unknown', {}, ['wind']]) {
-        const localModels = { bpbPeakWeatherHourlyMetric: value }, writes = [];
+        const localModels = { bpbPeakWeatherHourlyMetric: value }, writes: Values[] = [];
         const env = setup({ localModels, saveModels: async values => { writes.push(values); } });
         try {
             await settled(env, { past: false }); env.doc.querySelector('.bpb-week-day > summary').click();
@@ -499,20 +518,20 @@ test('invalid saved hourly tabs and failed local reads fall back to usable Condi
 });
 
 test('a delayed local read restores the hourly tab before the weather card is usable', async () => {
-    let release;
+    let release: ((values: Values) => void) | undefined;
     const env = setup({ readModels: () => new Promise(resolve => { release = resolve; }) });
     try {
         await waitFor(() => release);
         assert.equal(env.doc.querySelector('#bpb-peak-weather').hidden, true);
         assert.equal(env.requests.length, 0);
-        release({ bpbPeakWeatherHourlyMetric: 'gust' });
+        release!({ bpbPeakWeatherHourlyMetric: 'gust' });
         await settled(env, { past: false }); env.doc.querySelector('.bpb-week-day > summary').click();
         assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'gust');
     } finally { env.close(); }
 });
 
 test('an older page redraw cannot overwrite the last explicit choice from another page', async () => {
-    const localModels = {};
+    const localModels: Values = {};
     const first = setup({ localModels }), second = setup({ localModels });
     try {
         await settled(first, { past: false }); await settled(second, { past: false });
@@ -532,8 +551,8 @@ test('a negative historical ARPEGE sample becomes zero without marking the day p
     const env = setup({ now: '2026-10-12T04:00:00Z', storedSettings: { units: 'metric' },
         localModels: { bpbPeakWeatherModelPast: 'meteofrance_arpege_world' }, fetchFn: url => {
             const query = new URL(url).searchParams;
-            const body = weatherModelFixture(weatherFixture({ startDate: query.get('start_date'),
-                hours: (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24 }), query.get('models').split(','));
+            const body = weatherModelFixture(weatherFixture({ startDate: query.get('start_date')!,
+                hours: (Date.parse(query.get('end_date')!) - Date.parse(query.get('start_date')!)) / 3600_000 + 24 }), query.get('models')!.split(','));
             body.hourly.precipitation_meteofrance_arpege_world[45] = -0.1;
             return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
         } });
@@ -602,9 +621,9 @@ test('mixed weather units update live without changing the default or refetching
 test('named GFS is the default with independent locally remembered period choices', async () => {
     const env = setup({ fetchFn: url => {
         const query = new URL(url).searchParams;
-        const body = weatherModelFixture(weatherFixture({ startDate: query.get('start_date'),
-            hours: (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24 }), query.get('models').split(','));
-        for (const [key, values] of Object.entries(body.hourly)) if (key.startsWith('temperature_2m')) values.fill(20);
+        const body = weatherModelFixture(weatherFixture({ startDate: query.get('start_date')!,
+            hours: (Date.parse(query.get('end_date')!) - Date.parse(query.get('start_date')!)) / 3600_000 + 24 }), query.get('models')!.split(','));
+        for (const [key, values] of Object.entries(body.hourly as Record<string, (number | null)[]>)) if (key.startsWith('temperature_2m')) values.fill(20);
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     } });
     try {
@@ -633,13 +652,13 @@ test('named GFS is the default with independent locally remembered period choice
 
 test('local choices load before the request, survive navigation and reject unavailable regional or unknown IDs', async () => {
     const localModels = { bpbPeakWeatherModelPast: 'ecmwf_ifs', bpbPeakWeatherModelForecast: 'icon_global' };
-    let release;
+    let release: (() => void) | undefined;
     const env = setup({ localModels, readModels: () => new Promise(resolve => { release = () => resolve(localModels); }) });
     try {
         await waitFor(() => release);
         await new Promise(resolve => setTimeout(resolve, 0)); // Sync settings finish before the local read.
         assert.equal(env.requests.length, 0);
-        release();
+        release!();
         await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('ICON Global'));
         assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'ecmwf_ifs,icon_global');
         assert.equal(env.doc.querySelector('select').options[0].value, 'best_match');
@@ -674,7 +693,7 @@ test('explicit short-range forecast labels its horizon and preserves sixteen day
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 2);
         assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 1 day$/);
         assert.match(env.doc.querySelector('select').selectedOptions[0].textContent, /HRRR · 3 km · up to 2 days/);
-        assert.equal(new URL(env.requests.at(-1).url).searchParams.get('models'), 'gfs_global,gfs_hrrr');
+        assert.equal(new URL(env.requests.at(-1)!.url).searchParams.get('models'), 'gfs_global,gfs_hrrr');
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16); assert.equal(env.doc.querySelector('select').value, 'gfs_global');
         env.doc.querySelector('[data-period="forecast"]').click(); assert.equal(env.doc.querySelector('select').value, 'gfs_hrrr');
@@ -685,11 +704,11 @@ test('explicit short-range forecast labels its horizon and preserves sixteen day
 });
 
 test('model changes cancel stale results; explicit failures keep the visible model without fallback', async () => {
-    let slow, unavailable = false;
+    let slow: (() => void) | undefined, unavailable = false;
     const env = setup({ fetchFn: url => {
         const ids = new URL(url).searchParams.get('models');
-        if (ids.includes('icon_global')) return new Promise(resolve => { slow = () => resolve(reply(url)); });
-        if (unavailable && ids.includes('ecmwf_ifs')) return new Response('', { status: 400 });
+        if (ids!.includes('icon_global')) return new Promise(resolve => { slow = () => resolve(reply(url)); });
+        if (unavailable && ids!.includes('ecmwf_ifs')) return new Response('', { status: 400 });
         return reply(url);
     } });
     try {
@@ -701,11 +720,11 @@ test('model changes cancel stale results; explicit failures keep the visible mod
         assert.match(env.doc.querySelector('.bpb-week-status').textContent, /^Updating… Showing GFS · 13 km\.$/);
         unavailable = true; chooseModel(env, 'ecmwf_ifs');
         await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('selection is unavailable'));
-        assert.equal(stale.init.signal.aborted, true); assert.equal(env.requests.length, 3);
+        assert.equal(stale!.init.signal.aborted, true); assert.equal(env.requests.length, 3);
         assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
         assert.match(env.doc.querySelector('.bpb-week-status').textContent, /Showing GFS · 13 km/);
         assert.equal(env.doc.querySelector('select').getAttribute('aria-describedby'), 'bpb-peak-weather-status');
-        slow(); await new Promise(resolve => setTimeout(resolve, 0));
+        slow!(); await new Promise(resolve => setTimeout(resolve, 0));
         assert.match(env.doc.querySelector('.bpb-week-status').textContent, /Showing GFS · 13 km/);
         unavailable = false; env.doc.querySelector('.bpb-week-refresh').click();
         await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('ECMWF IFS'));
@@ -715,8 +734,8 @@ test('model changes cancel stale results; explicit failures keep the visible mod
 });
 
 test('model loading reuses one live feedback row and preserves expanded weather until replacement', async () => {
-    let finish;
-    const env = setup({ fetchFn: url => new URL(url).searchParams.get('models').includes('best_match')
+    let finish: (() => void) | undefined;
+    const env = setup({ fetchFn: url => new URL(url).searchParams.get('models')!.includes('best_match')
         ? new Promise(resolve => { finish = () => resolve(reply(url)); }) : reply(url) });
     try {
         await settled(env, { past: false });
@@ -738,7 +757,7 @@ test('model loading reuses one live feedback row and preserves expanded weather 
         assert.equal(day.querySelector('.bpb-week-chart'), chart);
         assert.equal(day.open, true);
         assert.equal(day.querySelector('[aria-selected="true"]').dataset.metric, 'temperature');
-        finish();
+        finish!();
         await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
         assert.match(env.doc.querySelector('.bpb-week-models').textContent, /^Best Match\./);
         assert.doesNotMatch(status.textContent, /Updating|Showing GFS/);
@@ -754,7 +773,7 @@ test('summary activation expands only the requested day without collapsing conte
         first.click();
         assert.equal(days[0].open, true); assert.ok(days[0].querySelector('.bpb-weather-hourly-table'));
         assert.equal(days[0].querySelector('[aria-selected="true"]').dataset.metric, 'code');
-        const scrolls = []; env.win.scrollBy = value => scrolls.push(value.top);
+        const scrolls: number[] = []; env.win.scrollBy = (value: ScrollToOptions) => scrolls.push(value.top || 0);
         second.getBoundingClientRect = () => ({ top: days[0].open ? 500 : 200 });
         second.click();
         assert.equal(days[0].open, true); assert.equal(days[1].open, true);
@@ -834,7 +853,7 @@ test('multiple open days release every chart on close, opt-out and page lifecycl
 
 test('unrelated settings keep nodes and pinned readings; units and refresh restore focus and selected instant', async () => {
     const env = setup();
-    const update = values => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: values } }, 'sync'));
+    const update = (values: Values) => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: values } }, 'sync'));
     try {
         await settled(env, { past: false });
         env.doc.querySelector('.bpb-week-day > summary').click();
@@ -878,7 +897,7 @@ test('refresh crossing the date window clears expired selection and gives focus 
 
 test('weather opt-out hides the whole table row, skips requests and updates live across BFCache', async () => {
     const env = setup({ storedSettings: { showWeather: false } });
-    const update = showWeather => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather } } }, 'sync'));
+    const update = (showWeather: boolean) => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather } } }, 'sync'));
     try {
         await new Promise(resolve => setTimeout(resolve, 0));
         const card = env.doc.getElementById('bpb-peak-weather'), row = card.closest('tr');
@@ -899,13 +918,13 @@ test('weather opt-out hides the whole table row, skips requests and updates live
 });
 
 test('disabling weather aborts an in-flight forecast and ignores a late result', async () => {
-    let finish;
+    let finish: (() => void) | undefined;
     const env = setup({ fetchFn: url => new Promise(resolve => { finish = () => resolve(reply(url)); }) });
     try {
         await waitFor(() => env.requests.length === 1);
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
         assert.equal(env.requests[0].init.signal.aborted, true);
-        finish(); await new Promise(resolve => setTimeout(resolve, 0));
+        finish!(); await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.doc.getElementById('bpb-peak-weather').hidden, true);
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 0);
         assert.equal(env.requests.length, 1);
@@ -913,11 +932,11 @@ test('disabling weather aborts an in-flight forecast and ignores a late result',
 });
 
 test('a late startup read cannot override a weather opt-out and a failed read starts no request', async () => {
-    let finish;
+    let finish: ((values: { bpbSettings: Values }) => void) | undefined;
     const env = setup({ readSettings: () => new Promise(resolve => { finish = resolve; }) });
     try {
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync')); await pause();
-        finish({ bpbSettings: { showWeather: true } });
+        finish!({ bpbSettings: { showWeather: true } });
         await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.doc.getElementById('bpb-peak-weather').hidden, true); assert.equal(env.requests.length, 0);
     } finally { env.close(); }
@@ -930,7 +949,7 @@ test('a late startup read cannot override a weather opt-out and a failed read st
 
 test('peak identity and unique native coordinates fail closed without remote geocoding', () => {
     const doc = new JSDOM(peak).window.document;
-    assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296').elevation, 4391);
+    assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296')!.elevation, 4391);
     for (const url of ['https://evil.test/Peak.aspx?pid=2296', 'https://www.peakbagger.com/Peak.aspx?pid=2296&pid=2829', 'https://www.peakbagger.com/Peak.aspx?pid=0']) assert.equal(readPeakWeatherSubject(doc, url), null);
     doc.querySelector('h1').after(doc.querySelector('h1').cloneNode(true));
     assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296'), null);
@@ -1086,7 +1105,7 @@ test('missing hours break numeric lines and remain unavailable in conditions; mi
         const body = await reply(url).json();
         body.hourly.precipitation.fill(null);
         const absent = body.hourly.time.indexOf(Date.parse('2024-11-04T16:00:00Z') / 1000);
-        for (const values of Object.values(body.hourly)) values.splice(absent, 1);
+        for (const values of Object.values(body.hourly as Record<string, (number | null)[]>)) values.splice(absent, 1);
         const missingTemperature = body.hourly.time.indexOf(Date.parse('2024-11-04T18:00:00Z') / 1000);
         body.hourly.temperature_2m[missingTemperature] = null;
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
@@ -1113,14 +1132,14 @@ test('missing hours break numeric lines and remain unavailable in conditions; mi
     } finally { env.close(); }
 });
 
-test('Conditions keeps the four overview rows, interval values and scroll on a unit change', async () => {
+test('Conditions keeps the nine compact rows, interval values and scroll on a unit change', async () => {
     const env = setup();
     try {
         await settled(env); env.doc.querySelector('.bpb-week-day > summary').click();
         env.doc.querySelector('[data-metric="code"]').click();
         const grid = env.doc.querySelector('.bpb-week-conditions');
         assert.deepEqual([...grid.querySelectorAll('.bpb-weather-hourly-table > tbody > tr > th')].map(node => node.textContent),
-            ['Conditions', 'Temperature', 'Rain/snow', 'Wind']);
+            ['Weather', 'Temperature°F', 'Windmph', 'Gustsmph', 'Wind from', 'Rain/snowin', 'Cloud cover%', 'Feels like°F', 'Freezing levelft']);
         assert.equal(grid.querySelectorAll('.bpb-weather-conditions-hour').length, 24);
         assert.match(grid.querySelector('[data-weather-row="temperature"]').textContent, /°F/);
         const rain = [...grid.querySelectorAll('[data-weather-row="precipitation"] td')];
@@ -1139,7 +1158,7 @@ test('Temperature and Wind expose the matching hour feels-like and direction rea
     const env = setup();
     try {
         await settled(env); env.doc.querySelector('.bpb-week-day > summary').click();
-        const firstReading = metric => {
+        const firstReading = (metric: string) => {
             const day = env.doc.querySelector('.bpb-week-day[open]');
             day.querySelector(`[data-metric="${metric}"]`).click();
             day.querySelector('.bpb-week-chart').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
@@ -1166,7 +1185,7 @@ test('detail readings keep missing hours unavailable and accept a north wind of 
     try {
         await settled(env); env.doc.querySelector('.bpb-week-day > summary').click();
         const day = env.doc.querySelector('.bpb-week-day[open]');
-        const read = key => day.querySelector('.bpb-week-chart').dispatchEvent(new env.win.KeyboardEvent('keydown', { key, bubbles: true }));
+        const read = (key: string) => day.querySelector('.bpb-week-chart').dispatchEvent(new env.win.KeyboardEvent('keydown', { key, bubbles: true }));
         day.querySelector('[data-metric="temperature"]').click(); read('Home');
         assert.match(day.querySelector('.bpb-week-readout').textContent, /°F · Feels like Unavailable/);
         day.querySelector('[data-metric="wind"]').click(); read('Home');
@@ -1235,8 +1254,8 @@ test('collapsed peak weather waits for expansion and never refetches on unchange
 });
 
 test('collapsing peak weather aborts a pending read and preserves the last result on expansion', async () => {
-    let release, hold = false;
-    const env = setup({ fetchFn: async url => { if (hold) await new Promise(resolve => { release = resolve; }); return reply(url); } });
+    let release: (() => void) | undefined, hold = false;
+    const env = setup({ fetchFn: async url => { if (hold) await new Promise<void>(resolve => { release = resolve; }); return reply(url); } });
     try {
         await settled(env, { past: false });
         const card = env.doc.getElementById('bpb-peak-weather'), firstDay = env.doc.querySelector('.bpb-week-day');
@@ -1245,7 +1264,7 @@ test('collapsing peak weather aborts a pending read and preserves the last resul
         await pause();
         assert.equal(env.requests[1].init.signal.aborted, true, 'collapse must cancel the transport');
         assert.equal(card.getAttribute('aria-busy'), 'false');
-        release(); await pause();
+        release!(); await pause();
         assert.equal(env.doc.querySelector('.bpb-week-day'), firstDay, 'cancelled completion must not replace retained content');
         card.dataset.bpbCardCollapsed = 'false'; await pause();
         assert.equal(env.requests.length, 2, 'fresh retained data needs no request on expansion');
@@ -1268,9 +1287,9 @@ test('missing map with multiple right tables fails closed, and empty weather lea
     const table = noMap.querySelector('table.gray[align="right"]'); table.after(table.cloneNode(true));
     assert.equal(readPeakWeatherSubject(noMap, 'https://www.peakbagger.com/Peak.aspx?pid=2296'), null);
     const env = setup({ fetchFn: url => {
-        const query = new URL(url).searchParams, hours = (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24;
-        const body = weatherFixture({ startDate: query.get('start_date'), hours });
-        Object.entries(body.hourly).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
+        const query = new URL(url).searchParams, hours = (Date.parse(query.get('end_date')!) - Date.parse(query.get('start_date')!)) / 3600_000 + 24;
+        const body = weatherFixture({ startDate: query.get('start_date')!, hours });
+        Object.entries(body.hourly as Record<string, (number | null)[]>).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     } });
     try {
@@ -1283,7 +1302,7 @@ test('missing map with multiple right tables fails closed, and empty weather lea
 });
 
 test('Refresh remains focusable and rejects repeated activation while pending', async () => {
-    let release, hold = false;
+    let release: (() => void) | undefined, hold = false;
     const env = setup({ fetchFn: url => hold ? new Promise(resolve => { release = () => resolve(reply(url)); }) : reply(url) });
     try {
         await settled(env, { past: false });
@@ -1296,7 +1315,7 @@ test('Refresh remains focusable and rejects repeated activation while pending', 
         refresh.click(); refresh.dispatchEvent(new env.win.MouseEvent('click', { bubbles: true }));
         assert.equal(env.requests.length, 2);
         env.doc.querySelector('#bpb-peak-weather-model').focus();
-        release();
+        release!();
         await waitFor(() => refresh.getAttribute('aria-disabled') === 'false');
         assert.equal(env.doc.activeElement.id, 'bpb-peak-weather-model', 'completion does not steal deliberately moved focus');
     } finally { env.close(); }
@@ -1349,8 +1368,8 @@ test('partial data survives a refused refresh while a headerless limit blocks an
     let limited = false;
     const env = setup({ fetchFn: url => {
         if (limited) return new Response('', { status: 429 });
-        const query = new URL(url).searchParams, hours = (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24;
-        const body = weatherFixture({ startDate: query.get('start_date'), hours }); body.hourly.precipitation.fill(null);
+        const query = new URL(url).searchParams, hours = (Date.parse(query.get('end_date')!) - Date.parse(query.get('start_date')!)) / 3600_000 + 24;
+        const body = weatherFixture({ startDate: query.get('start_date')!, hours }); body.hourly.precipitation.fill(null);
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     } });
     try {
@@ -1372,18 +1391,18 @@ test('partial data survives a refused refresh while a headerless limit blocks an
 });
 
 test('BFCache cancels stale requests and resolves a new completed date range on restore', async () => {
-    let release;
+    let release: (() => void) | undefined;
     const env = setup({ fetchFn: url => new Promise(resolve => { release = () => resolve(reply(url)); }) });
     try {
         await waitFor(() => env.requests.length === 1);
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         assert.equal(env.requests[0].init.signal.aborted, true);
-        release();
+        release!();
         await waitFor(() => env.doc.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false');
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 0);
         env.win.Date.now = () => Date.parse('2024-11-06T12:00:00Z');
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
-        await waitFor(() => env.requests.length === 2); release(); await settled(env);
+        await waitFor(() => env.requests.length === 2); release!(); await settled(env);
         assert.equal(env.doc.querySelector('.bpb-week-day').dataset.date, '2024-11-05');
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide'));
         assert.equal(env.listeners.length, 0);
@@ -1447,7 +1466,7 @@ test('source details distinguish the clicked location from the returned weather 
         assert.match(day.querySelector('.bpb-week-sub').textContent, /Local time at selected point/);
         day.querySelector('[data-metric="temperature"]').click();
         assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /local time at selected point/i);
-        const request = new URL(env.requests.at(-1).url);
+        const request = new URL(env.requests.at(-1)!.url);
         assert.equal(request.searchParams.get('latitude'), '46.4947');
         assert.equal(request.searchParams.get('longitude'), '-121.4636');
         const source = env.doc.querySelector('.bpb-week-source-location').textContent;
@@ -1521,7 +1540,7 @@ test('model update times and cadence load only on disclosure, cover both GFS pro
 });
 
 test('metadata reserves readable states and keeps known clocks during refresh and failure', async () => {
-    let hold = false, release;
+    let hold = false, release: (() => void) | undefined;
     const env = setup({ metadataFn: () => hold ? new Promise(resolve => { release = () => resolve(new Response('', { status: 503 })); })
         : new Response(JSON.stringify({ last_run_initialisation_time: 1730790000,
             last_run_availability_time: 1730793000, update_interval_seconds: 21600 }), { headers: { 'content-type': 'application/json' } }) });
@@ -1538,7 +1557,7 @@ test('metadata reserves readable states and keeps known clocks during refresh an
         await waitFor(() => env.metadataRequests.length === 4);
         assert.deepEqual([...source.querySelectorAll('tbody td')].map(node => node.textContent), previous);
         // One failing domain must not erase its previous clock or its sibling.
-        release();
+        release!();
         await waitFor(() => !!source.querySelector('td[title*="latest check unavailable"]'));
         assert.deepEqual([...source.querySelectorAll('tbody td')].map(node => node.textContent), previous);
     } finally { env.close(); }
@@ -1547,7 +1566,7 @@ test('metadata reserves readable states and keeps known clocks during refresh an
 test('update clocks follow only the active period model and reuse cached products', async () => {
     const env = setup({ localModels: { bpbPeakWeatherModelPast: 'icon_global', bpbPeakWeatherModelForecast: 'gfs_global' } });
     const rows = () => [...env.doc.querySelectorAll('[data-update-model]')].map(row => row.dataset.updateModel);
-    const ready = id => rows().length && rows().every(model => model === id) && !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading');
+    const ready = (id: string) => rows().length && rows().every(model => model === id) && !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading');
     try {
         await settled(env, { past: false });
         assert.equal(env.metadataRequests.length, 0);
@@ -1577,7 +1596,7 @@ test('update clocks follow only the active period model and reuse cached product
 test('model changes cancel old update requests and failed changes keep clocks with retained weather', async () => {
     let failWeather = false, metadataCalls = 0;
     const env = setup({ fetchFn: url => failWeather ? new Response('', { status: 503 }) : reply(url),
-        metadataFn: (_, init) => ++metadataCalls <= 2 ? new Promise((_, reject) => {
+        metadataFn: (_url, init) => ++metadataCalls <= 2 ? new Promise((_, reject) => {
             init.signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' })), { once: true });
         }) : Promise.resolve(new Response(JSON.stringify({ last_run_initialisation_time: 1730797200,
             last_run_availability_time: 1730807400, update_interval_seconds: 21600 }), { headers: { 'content-type': 'application/json' } })) });
@@ -1668,7 +1687,7 @@ test('forecast weather uses expected language and missing forecast hours cannot 
         const body = await reply(url).json();
         for (let index = 0; index < body.hourly.time.length; index++) {
             if (body.hourly.time[index] * 1000 >= Date.parse('2024-11-05T08:00:00Z')) {
-                for (const [key, values] of Object.entries(body.hourly)) if (key !== 'time') values[index] = null;
+                for (const [key, values] of Object.entries(body.hourly as Record<string, (number | null)[]>)) if (key !== 'time') values[index] = null;
             }
         }
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
@@ -1821,13 +1840,13 @@ test('air quality is lazy until its tab is selected and reuses the forecast on r
     } finally { env.close(); }
 });
 test('leaving the AQI tab cancels transport and ignores late completions', async () => {
-    let finish, signal;
+    let finish: ((response: Response) => void) | undefined, signal: AbortSignal | undefined;
     const env = setup({ aqiFn: (_, init) => { signal = init.signal; return new Promise(resolve => { finish = resolve; }); } });
     try {
         await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
         await waitFor(() => signal); env.doc.querySelector('[data-period="past"]').click();
-        assert.equal(signal.aborted, true);
-        finish(new Response(JSON.stringify(airQualityFixture({ now: env.win.Date.now() })), { headers: { 'content-type': 'application/json' } }));
+        assert.equal(signal!.aborted, true);
+        finish!(new Response(JSON.stringify(airQualityFixture({ now: env.win.Date.now() })), { headers: { 'content-type': 'application/json' } }));
         await pause(); assert.equal(env.doc.querySelectorAll('.bpb-air-table tbody tr').length, 0);
     } finally { env.close(); }
 });
@@ -1846,7 +1865,7 @@ test('AQI does not request in a hidden browser tab and starts on visibility', as
 
 test('AQI aborts on card collapse, weather opt-out and page suspension', async () => {
     for (const action of ['collapse', 'disable', 'suspend', 'hidden']) {
-        let signal;
+        let signal: AbortSignal | undefined;
         const env = setup({ aqiFn: (_, init) => { signal = init.signal; return new Promise(() => {}); } });
         try {
             await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click(); await waitFor(() => signal);
@@ -1854,7 +1873,7 @@ test('AQI aborts on card collapse, weather opt-out and page suspension', async (
             if (action === 'disable') env.listeners.forEach(listener => listener({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
             if (action === 'suspend') env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
             if (action === 'hidden') { Object.defineProperty(env.doc, 'visibilityState', { configurable: true, value: 'hidden' }); env.doc.dispatchEvent(new env.win.Event('visibilitychange')); }
-            await waitFor(() => signal.aborted); assert.equal(signal.aborted, true, action);
+            await waitFor(() => signal!.aborted); assert.equal(signal!.aborted, true, action);
         } finally { env.close(); }
     }
 });
@@ -1880,7 +1899,7 @@ test('AQI labels the requested point when weather fails and restores retained we
         await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false'
             && env.doc.querySelector('#bpb-peak-weather-air').getAttribute('aria-busy') === 'false');
         assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, '46.8000, -121.7000', 'AQI must name its own request location despite retained summit weather');
-        assert.equal(new URL(env.requests.filter(request => request.url.includes('air-quality-api.')).at(-1).url).searchParams.get('latitude'), '46.8');
+        assert.equal(new URL(env.requests.filter(request => request.url.includes('air-quality-api.')).at(-1)!.url).searchParams.get('latitude'), '46.8');
         env.doc.querySelector('[data-period="forecast"]').click();
         assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit', 'retained weather still names its actual source location');
         env.doc.querySelector('[data-period="aqi"]').click();

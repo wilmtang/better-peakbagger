@@ -4,25 +4,39 @@
 import { dom } from '../ui/dom.js';
 import { createStableText } from '../ui/stable-text.js';
 import { mountainTime } from '../time/mountain-time.js';
-import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.js';
+import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.ts';
 import { weatherChartRange, weatherChartTicks } from './weather-chart-scale.js';
 
-const HOUR = 3600_000, element = dom.element;
-const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['freezing', 'Freezing level'], ['cloud', 'Clouds'], ['wind', 'Wind'], ['gust', 'Gusts']];
-const svgElement = (tag, attrs = {}, text) => {
-    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+import type { WeatherFormat, WeatherMetric, WeatherSample, WeatherWindow, WeatherZone, HourlyWeatherReading } from './weather-hourly-table.ts';
+
+type HourlyMetric = Exclude<WeatherMetric, 'apparent' | 'direction'>;
+export interface PeakHourlyState { metric: HourlyMetric; selectedTime: number | null; conditionsScrollLeft: number; infoOpen: boolean }
+interface PeakHourlyOptions {
+    container: HTMLElement; day: { window: WeatherWindow }; samples: WeatherSample[]; zone: WeatherZone;
+    metric?: unknown; format: WeatherFormat; onMetric: (metric: HourlyMetric) => void; state?: PeakHourlyState;
+    referenceElevation?: number | null; referenceLabel?: string;
+}
+interface ChartGeometry { x: (time: number) => number; y: (value: number) => number; top: number; bottom: number; left: number; right: number; width: number }
+const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+// Narrow the untouched JavaScript scale helper's empty-array default inference.
+const chartRange = weatherChartRange as (values: number[], metric: HourlyMetric, options: { references: number[] }) => { low: number; high: number } | null;
+const HOUR = 3600_000;
+const element = dom.element as <K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Record<string, unknown>, children?: Node[]) => HTMLElementTagNameMap[K];
+const metrics: [HourlyMetric, string][] = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['freezing', 'Freezing level'], ['cloud', 'Clouds'], ['wind', 'Wind'], ['gust', 'Gusts']];
+const svgElement = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, text?: string) => {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag) as SVGElementTagNameMap[K];
     for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
     if (text !== undefined) node.textContent = text;
     return node;
 };
 
-export const resolvePeakHourlyMetric = value => value === 'snowfall' ? 'precipitation' : metrics.some(([key]) => key === value) ? value : 'code';
+export const resolvePeakHourlyMetric = (value: unknown): HourlyMetric => value === 'snowfall' ? 'precipitation' : metrics.some(([key]) => key === value) ? value as HourlyMetric : 'code';
 
-export function createPeakHourlyChart({ container, day, samples, zone, metric = 'code', format, onMetric, state, referenceElevation, referenceLabel = 'Summit' }) {
+export function createPeakHourlyChart({ container, day, samples, zone, metric: initialMetric = 'code', format, onMetric, state, referenceElevation, referenceLabel = 'Summit' }: PeakHourlyOptions) {
     const id = `bpb-week-${day.window.date}`;
     const clockLabel = referenceLabel === 'Summit' ? 'Summit local time' : 'Local time at selected point';
-    metric = resolvePeakHourlyMetric(metric);
-    let disposed = false, observer, rows = [], geometry, hover = -1, selected = -1;
+    let metric = resolvePeakHourlyMetric(initialMetric);
+    let disposed = false, observer: ResizeObserver | undefined, rows: HourlyWeatherReading[] = [], geometry: ChartGeometry | null = null, hover = -1, selected = -1;
     const tabs = element('div', { class: 'bpb-week-tabs', role: 'tablist', 'aria-label': 'Hourly weather data' });
     const buttons = metrics.map(([key, label]) => element('button', { type: 'button', role: 'tab', id: `${id}-${key}`, 'data-metric': key,
         'aria-controls': `${id}-panel`, 'aria-label': label, 'data-label': label }, [element('span', { class: 'bpb-week-tab-label',
@@ -35,7 +49,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     const svg = svgElement('svg', { role: 'img', preserveAspectRatio: 'xMidYMid meet' });
     const empty = element('p', { class: 'bpb-week-chart-empty', hidden: '' });
     frame.append(svg, empty);
-    const conditions = element('div', { class: 'bpb-week-conditions bpb-weather-hourly-scroll', tabindex: '0', role: 'region', 'aria-label': `Hourly weather in ${clockLabel.toLowerCase()}. Scroll horizontally for all hours.` });
+    const conditions = element('div', { class: 'bpb-week-conditions bpb-weather-hourly-scroll bpb-weather-strip-scroll', tabindex: '0', role: 'region', 'aria-label': `Hourly weather in ${clockLabel.toLowerCase()}. Scroll horizontally for all hours.` });
     const note = element('p', { class: 'bpb-week-sub', id: `${id}-hint` });
     const info = element('button', { type: 'button', class: 'bpb-week-info', 'aria-expanded': 'false', 'aria-controls': `${id}-info` },
         [element('span', { 'aria-hidden': 'true', text: 'ⓘ' })]);
@@ -45,8 +59,8 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         explanation.hidden = true; info.setAttribute('aria-expanded', 'false'); info.removeAttribute('aria-describedby');
         document.removeEventListener('pointerdown', outsideInfo, true); document.removeEventListener('keydown', escapeInfo);
     };
-    const outsideInfo = event => { if (!help.contains(event.target)) closeInfo(); };
-    const escapeInfo = event => { if (event.key === 'Escape') { event.preventDefault(); closeInfo(); info.focus({ preventScroll: true }); } };
+    const outsideInfo = (event: PointerEvent) => { if (!(event.target instanceof Node) || !help.contains(event.target)) closeInfo(); };
+    const escapeInfo = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); closeInfo(); info.focus({ preventScroll: true }); } };
     const positionInfo = () => {
         if (explanation.hidden) return;
         const host = help.getBoundingClientRect(), button = info.getBoundingClientRect(), box = explanation.getBoundingClientRect();
@@ -65,25 +79,25 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     info.onclick = () => { if (explanation.hidden) openInfo(); else closeInfo(); };
     panel.append(readout, frame, conditions, help);
     container.replaceChildren(tabs, panel);
-    const localTime = time => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
-    const accumulation = key => key === 'precipitation';
-    const timeLabel = (row, key = metric) => accumulation(key) || key === 'gust'
+    const localTime = (time: number) => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
+    const accumulation = (key: HourlyMetric) => key === 'precipitation';
+    const timeLabel = (row: HourlyWeatherReading, key: HourlyMetric = metric) => accumulation(key) || key === 'gust'
         ? `${localTime(row.start)} – ${localTime(row.time)}${row.time === day.window.end ? ' (next midnight)' : ''}` : localTime(row.time);
-    const valueLabel = (value, key = metric) => format(value, key === 'gust' ? 'wind' : key);
+    const valueLabel = (value: number | null | undefined, key: HourlyMetric = metric) => format(value, key === 'gust' ? 'wind' : key);
     const samplesByTime = new Map(samples.map(sample => [sample.time, sample]));
-    const detailLabel = (row, key) => {
+    const detailLabel = (row: HourlyWeatherReading, key: HourlyMetric) => {
         const sample = samplesByTime.get(row.sourceTime);
-        if (key === 'temperature') return ` · Feels like ${Number.isFinite(sample?.apparent) ? format(sample.apparent, 'temperature') : 'Unavailable'}`;
+        if (key === 'temperature') return ` · Feels like ${finite(sample?.apparent) ? format(sample.apparent, 'temperature') : 'Unavailable'}`;
         if (key === 'wind') {
             const direction = sample?.direction;
-            const compass = Number.isFinite(direction) ? ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(direction / 45) % 8] : null;
-            return ` · Wind from ${compass ? `${compass} (${Math.round(direction)}°)` : 'Unavailable'}`;
+            const compass = finite(direction) ? ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(direction / 45) % 8] : null;
+            return ` · Wind from ${compass && finite(direction) ? `${compass} (${Math.round(direction)}°)` : 'Unavailable'}`;
         }
         return '';
     };
-    const readingLabel = (row, key = metric) => `${timeLabel(row, key)} · ${Number.isFinite(row.value) ? valueLabel(row.value, key) : 'Unavailable'}${detailLabel(row, key)}${row.partialInterval ? accumulation(key) ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
-    const overviewFor = (key, candidates) => {
-        const values = candidates.map(row => row.value).filter(Number.isFinite);
+    const readingLabel = (row: HourlyWeatherReading, key: HourlyMetric = metric) => `${timeLabel(row, key)} · ${finite(row.value) ? valueLabel(row.value, key) : 'Unavailable'}${detailLabel(row, key)}${row.partialInterval ? accumulation(key) ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
+    const overviewFor = (key: HourlyMetric, candidates: HourlyWeatherReading[]) => {
+        const values = candidates.map(row => row.value).filter(finite);
         if (!values.length) return 'Hourly readings unavailable';
         return `Low ${valueLabel(Math.min(...values), key)} · High ${valueLabel(Math.max(...values), key)}`;
     };
@@ -92,7 +106,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         return [...candidates.map(row => readingLabel(row, key)), overviewFor(key, candidates)];
     })]);
     const overview = () => overviewFor(metric, rows);
-    const rowTime = row => row.time;
+    const rowTime = (row: HourlyWeatherReading) => row.time;
     function drawCursor() {
         svg.querySelector('.bpb-week-cursor')?.remove();
         const index = hover >= 0 ? hover : selected, row = rows[index];
@@ -101,7 +115,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const { x, y, top, bottom } = geometry;
         const group = svgElement('g', { class: 'bpb-week-cursor', 'aria-hidden': 'true' });
         group.append(svgElement('line', { x1: x(rowTime(row)), x2: x(rowTime(row)), y1: top, y2: bottom }));
-        if (Number.isFinite(row.value)) group.append(svgElement('circle', { cx: x(rowTime(row)), cy: y(row.value), r: 4 }));
+        if (finite(row.value)) group.append(svgElement('circle', { cx: x(rowTime(row)), cy: y(row.value), r: 4 }));
         svg.append(group);
     }
     function draw() {
@@ -110,18 +124,18 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const left = 56, right = width - 20, top = 16, bottom = 148;
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.replaceChildren();
-        const values = rows.map(row => row.value).filter(Number.isFinite);
+        const values = rows.map(row => row.value).filter(finite);
         empty.hidden = values.length > 0; svg.toggleAttribute('hidden', !values.length);
         frame.tabIndex = values.length ? 0 : -1;
         empty.textContent = metric === 'cloud' ? 'Cloud cover is unavailable for this day.'
-            : `${metrics.find(([key]) => key === metric)[1]} readings are unavailable for this day.`;
-        frame.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} hourly graph. Use left and right arrows to explore readings; Escape clears selection.`);
-        svg.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)[1]} in ${clockLabel.toLowerCase()}. ${overview()}. Missing readings leave gaps.`);
+            : `${metrics.find(([key]) => key === metric)![1]} readings are unavailable for this day.`;
+        frame.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)![1]} hourly graph. Use left and right arrows to explore readings; Escape clears selection.`);
+        svg.setAttribute('aria-label', `${metrics.find(([key]) => key === metric)![1]} in ${clockLabel.toLowerCase()}. ${overview()}. Missing readings leave gaps.`);
         if (!values.length) { geometry = null; drawCursor(); return; }
-        const references = metric === 'freezing' && Number.isFinite(referenceElevation) ? [referenceElevation] : [];
-        const { low, high } = weatherChartRange(values, metric, { references });
-        const x = time => left + (time - day.window.start) / (day.window.end - day.window.start) * (right - left);
-        const y = value => bottom - (value - low) / (high - low) * (bottom - top);
+        const references = metric === 'freezing' && finite(referenceElevation) ? [referenceElevation] : [];
+        const { low, high } = chartRange(values, metric, { references })!;
+        const x = (time: number) => left + (time - day.window.start) / (day.window.end - day.window.start) * (right - left);
+        const y = (value: number) => bottom - (value - low) / (high - low) * (bottom - top);
         geometry = { x, y, top, bottom, left, right, width };
         for (const value of weatherChartTicks({ low, high })) {
             const position = y(value);
@@ -131,29 +145,31 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const tickHours = width < 470 ? [0, 12, 24] : [0, 6, 12, 18, 24];
         for (const hour of tickHours) {
             const time = hour === 24 ? day.window.end : mountainTime.civilToInstant(zone, day.window.date, hour * 60)?.ms;
-            if (!Number.isFinite(time)) continue;
+            if (!finite(time)) continue;
             svg.append(svgElement('text', { class: 'bpb-week-axis', x: x(time), y: bottom + 24, 'text-anchor': hour === 0 ? 'start' : hour === 24 ? 'end' : 'middle' }, `${String(hour).padStart(2, '0')}:00`));
         }
         if (references.length) {
-            const position = y(referenceElevation);
+            const reference = references[0];
+            const position = y(reference);
             svg.append(svgElement('line', { class: 'bpb-week-reference', x1: left, x2: right, y1: position, y2: position }),
-                svgElement('text', { class: 'bpb-week-axis', x: right, y: position > top + 20 ? position - 6 : position + 14, 'text-anchor': 'end' }, `${referenceLabel} ${valueLabel(referenceElevation, 'freezing')}`));
+                svgElement('text', { class: 'bpb-week-axis', x: right, y: position > top + 20 ? position - 6 : position + 14, 'text-anchor': 'end' }, `${referenceLabel} ${valueLabel(reference, 'freezing')}`));
         }
-        let path = '', previous = null;
+        let path = '';
+        let previous: HourlyWeatherReading | null = null;
         for (const row of rows) {
-            if (!Number.isFinite(row.value)) { previous = null; continue; }
+            if (!finite(row.value)) { previous = null; continue; }
             path += `${previous && row.sourceTime - previous.sourceTime === HOUR ? 'L' : 'M'}${x(row.time).toFixed(2)},${y(row.value).toFixed(2)} `;
             previous = row;
         }
         svg.append(svgElement('path', { class: 'bpb-week-line', d: path.trim() }));
         // Dots retain isolated readings and expose exact local times in SVG titles.
-        for (const row of rows.filter(sample => Number.isFinite(sample.value))) {
+        for (const row of rows.filter((sample): sample is HourlyWeatherReading & { value: number } => finite(sample.value))) {
             const point = svgElement('circle', { class: 'bpb-week-point', cx: x(row.time), cy: y(row.value), r: 2, 'data-time': row.sourceTime });
             point.append(svgElement('title', {}, readingLabel(row))); svg.append(point);
         }
         drawCursor();
     }
-    function choose(next, remember = true) {
+    function choose(next: HourlyMetric, remember = true) {
         closeInfo();
         metric = next; hover = -1; selected = -1;
         if (remember) onMetric(metric);
@@ -164,13 +180,14 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
             button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
         }
         panel.setAttribute('aria-labelledby', `${id}-${metric}`);
+        panel.dataset.weatherMetric = metric;
         const isConditions = metric === 'code';
         conditions.hidden = !isConditions; frame.hidden = isConditions; readout.hidden = isConditions;
         if (isConditions) {
             const { table } = createWeatherHourlyTable({ window: day.window, samples, zone, format,
-                keys: ['code', 'temperature', 'precipitation', 'wind'] });
+                compact: true });
             conditions.replaceChildren(table);
-            note.textContent = `${clockLabel} · Scroll for all hours.`;
+            note.textContent = `${clockLabel}${zone.estimated ? ` · ${mountainTime.zoneLabel(zone, day.window.start)}` : ''} · 24-hour clock · Scroll for all hours.`;
         } else {
             note.textContent = `${clockLabel} · Hover, tap or use ← → for readings.`;
             draw();
@@ -185,20 +202,20 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
             wind: 'Wind speed at ten meters above ground. Explore an hour to see the direction the wind comes from. These are model estimates; terrain and exposure can change local conditions.',
         };
         explanation.textContent = information[metric];
-        info.setAttribute('aria-label', `About ${metrics.find(([key]) => key === metric)[1].toLowerCase()}`);
+        info.setAttribute('aria-label', `About ${metrics.find(([key]) => key === metric)![1].toLowerCase()}`);
     }
     tabs.onclick = event => {
-        const button = event.target.closest('button[data-metric]');
-        if (button && tabs.contains(button)) choose(button.dataset.metric);
+        const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button[data-metric]') : null;
+        if (button && tabs.contains(button)) choose(resolvePeakHourlyMetric(button.dataset.metric));
     };
     tabs.onkeydown = event => {
-        const index = buttons.indexOf(event.target);
+        const index = event.target instanceof HTMLButtonElement ? buttons.indexOf(event.target) : -1;
         if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
-        choose(buttons[next].dataset.metric); buttons[next].focus({ preventScroll: true });
+        choose(resolvePeakHourlyMetric(buttons[next].dataset.metric)); buttons[next].focus({ preventScroll: true });
     };
-    const pointerIndex = event => {
+    const pointerIndex = (event: MouseEvent) => {
         if (!geometry || !rows.length) return -1;
         const bounds = svg.getBoundingClientRect();
         if (!bounds.width) return -1;

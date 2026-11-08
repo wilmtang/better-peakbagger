@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { verifyWeatherConditions, verifyWeatherTabWrapping } from './verify-weather-day-switches.mjs';
+import { verifyWeatherConditions, verifyWeatherTabWrapping } from './verify-weather-day-switches.mts';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 // Uses the existing hidden, real-manifest HTTPS fixture transport and teardown.

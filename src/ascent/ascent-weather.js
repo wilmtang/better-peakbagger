@@ -21,7 +21,7 @@ import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
 import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels } from '../weather/weather-models.js';
 import { createWeatherClient } from '../weather/open-meteo-client.js';
-import { createWeatherHourlyTable, hourlyWeatherSeries } from '../weather/weather-hourly-table.js';
+import { createWeatherHourlyTable, hourlyWeatherSeries } from '../weather/weather-hourly-table.ts';
 import { weatherChartRange, weatherChartTicks } from '../weather/weather-chart-scale.js';
 import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-cursor.js';
 

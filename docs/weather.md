@@ -159,7 +159,7 @@ rewriting storage during mount.
 
 | Hourly view | Meaning |
 | --- | --- |
-| Conditions | Local-time table with condition icons, temperature, water-equivalent rain/snow and wind; sticky labels and horizontal scrolling |
+| Conditions | Compact hourly strip with condition icons, temperature, wind, gusts, wind direction, water-equivalent rain/snow, cloud cover, feels-like temperature and freezing level; pinned labels and units, 24-hour clocks and horizontal scrolling |
 | Temperature | Responsive graph; selected readings include feels-like temperature |
 | Rain/snow | Combined precipitation as liquid water equivalent, not new snow depth or snowpack |
 | Freezing level | Model altitude of 0°C air above sea level, with summit/selected-height reference where known; not a snowline |
@@ -511,7 +511,7 @@ Pinned calculation sources, inspected October 24–25, 2026:
 | `src/weather/open-meteo-client.js`, model registries, `weather-day.js` | Bounded surface transport, model/date policy, validation and aggregation |
 | `src/weather/summit-cloud.js`, client/models/core | Cloud card, pressure-profile capabilities, sampling and prediction |
 | `src/weather/peak-weather-updates.js`, AQI client/view | Separate metadata and AQI ownership/caches |
-| `src/weather/weather-hourly-table.js`, `weather-chart-scale.js` | Shared interval series, conditions table and chart scale/ticks |
+| `src/weather/weather-hourly-table.ts`, `weather-chart-scale.js` | Shared interval series, conditions table and chart scale/ticks |
 | `src/ui/card-read-gate.ts`, `latest-read.ts`, `page-lifecycle.ts` | Eligibility/lazy start, superseding-read ownership, BFCache lifetime |
 | `src/ui/card.css`, peak layout, drag helpers | Opt-in palette/shell and surface adapters; see card conventions |
 
