@@ -420,6 +420,17 @@ user has already made an explicit in-3D choice. Each mode retains its own choice
 when returning. The 2D renderer pauses
 while 3D owns the map; see [2D vector basemap](map-layers.md#vector-basemap-in-2d).
 
+Entering 3D from Maptoolkit Hiking keeps the 2D map on screen until the frame
+has loaded, so native tiles are neither shown nor requested in between. The 2D
+paint is lent to the frame and draped on the terrain as a temporary source until
+the vector tiles load, then fades out. The paint stays in place, hidden, for the
+return to 2D, and native tiles replace it only if 3D moved the camera off it.
+
+Resources 2D already fetched come from the browser's HTTP cache, since both
+renderers share an origin and Maptoolkit serves tiles as immutable. A pitched
+camera still needs tiles 2D never drew: one measured live viewport reused all 11
+metadata and sprite requests, 5 of 7 glyph ranges and 6 of 23 tiles.
+
 Maptoolkit's style is grafted into the existing terrain graph; it does not
 replace the elevation mesh, route or overlays.
 The provider's hillshade passes are omitted in 3D because the existing terrain

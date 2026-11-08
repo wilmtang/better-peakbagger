@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAPTOOLKIT_BASEMAP, vectorBasemap, vectorProviderUrl } from '../../src/maps/vector-basemap.ts';
+import { MAPTOOLKIT_BASEMAP, vectorBasemap, vectorPaintCorners, vectorProviderUrl } from '../../src/maps/vector-basemap.ts';
 import type { VectorBasemap } from '../../src/maps/vector-basemap.ts';
 import { terrainStyle } from '../../src/terrain/terrain-style.ts';
 import type { VectorStyle } from '../../src/terrain/terrain-style.ts';
@@ -63,4 +63,16 @@ test('Hiking uses one detailed hillshade in 2D and the existing terrain shading 
         assert.deepEqual(adapted.layers.slice(0, 3), style.layers.slice(0, 3)); assert.equal(adapted.sprite, style.sprite);
     }
     assert.deepEqual(style, original, 'Adapting one surface cannot mutate the shared accepted provider style');
+});
+
+test('a planar paint resolves to its geographic corners, or none when one quad cannot place it', () => {
+    // At zoom 0 the 512px world spans 360 degrees, so 256px is a quarter of it each side of center.
+    const corners = vectorPaintCorners({ view: { center: [0, 0], zoom: 0 }, width: 256, height: 256 })!;
+    assert.deepEqual(corners.map(([lng]) => lng), [-90, 90, 90, -90]);
+    assert.ok(Math.abs(corners[0][1] - 66.5133) < 1e-3 && Math.abs(corners[2][1] + 66.5133) < 1e-3);
+    const local = vectorPaintCorners({ view: { center: [46.85, -121.76], zoom: 12 }, width: 800, height: 600 })!;
+    assert.ok(local[0][0] < -121.76 && local[1][0] > -121.76 && local[0][1] > 46.85 && local[2][1] < 46.85);
+    assert.equal(vectorPaintCorners({ view: { center: [0, 0], zoom: 0 }, width: 512, height: 256 }), null, 'wraps the world');
+    assert.equal(vectorPaintCorners({ view: { center: [84, 0], zoom: 3 }, width: 512, height: 512 }), null, 'past Web Mercator');
+    assert.equal(vectorPaintCorners({ view: { center: [0, 179], zoom: 3 }, width: 512, height: 256 }), null, 'crosses the antimeridian');
 });

@@ -668,7 +668,58 @@ try {
                 }
             }
         };
+        // The 2D map stays on screen until 3D covers it, and neither direction
+        // falls back to native tiles. Sampled every frame, because the defect
+        // was an intermediate state no settled assertion can see.
+        const sampleTransition = () => page.evaluate(() => {
+            const samples: { opacity?: string; painted: boolean; native: boolean }[] = [], start = document.getElementById('bpb-terrain-toggle')!.textContent;
+            return new Promise<typeof samples>(resolve => {
+                const sample = () => {
+                    samples.push({ opacity: document.querySelector<FixtureElement>('.bpb-vector-slot')?.style.opacity,
+                        painted: (document.querySelector<HTMLCanvasElement>('.bpb-vector-surface')?.width || 0) > 0, native: mapsPlaceholder.hasLayer(nativeTiles) });
+                    if (document.getElementById('bpb-terrain-toggle')!.textContent === start && samples.length < 2000) requestAnimationFrame(sample); else resolve(samples);
+                };
+                requestAnimationFrame(sample);
+            });
+        });
+        const pickerGeometry = async (frame: Frame) => {
+            const native = await page.evaluate(() => { const box = document.querySelector('#selboxdiv')!.getBoundingClientRect(), owner = document.querySelector('#map')!.getBoundingClientRect(); return { width: box.width, height: box.height, top: box.top - owner.top, right: owner.right - box.right }; });
+            const framed = await frame.evaluate(() => { const box = document.querySelector('.bpb-terrain-picker-box')!.getBoundingClientRect(); return { width: box.width, height: box.height, top: box.top, right: window.innerWidth - box.right }; });
+            return { native, framed };
+        };
+        const verifyTransition = async () => {
+            await page.setViewportSize({ width: 1280, height: 800 }); mode = 'ready'; await open(); await readyToggle();
+            await page.locator('#selmap').focus(); await page.keyboard.type(chooseKeys);
+            await page.waitForFunction(() => document.querySelector<FixtureElement>('.bpb-vector-slot')?.style.opacity === '1');
+            const nativeRequests: string[] = [], track = (request: { url(): string }) => { if (request.url().includes('/vector-native/')) nativeRequests.push(request.url()); };
+            page.on('request', track); mode = 'hold';
+            const entering = sampleTransition(); await toggle.click();
+            for (const item of await entering) assert.ok(item.opacity === '1' && item.painted && !item.native, `2D must stay painted until 3D covers it: ${JSON.stringify(item)}`);
+            const frame = page.frames().find(item => /\/terrain\/terrain.html/.test(item.url())); assert.ok(frame);
+            await frame.waitForFunction(() => !!window.__bpbTerrainTestMap?.getLayer('bpb-drape-2d'));
+            const pixel = await frame.evaluate(() => {
+                const canvas = (window.__bpbTerrainTestMap.getSource('bpb-drape-2d') as unknown as { canvas: HTMLCanvasElement }).canvas;
+                return [...canvas.getContext('2d')!.getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1).data];
+            });
+            assert.ok(pixel[3] === 255 && pixel.slice(0, 3).some(value => value < 250), `3D must drape the real 2D paint, not an empty image: ${pixel}`);
+            if (process.env.BPB_VECTOR_SCREENSHOTS) { await mkdir(process.env.BPB_VECTOR_SCREENSHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.BPB_VECTOR_SCREENSHOTS, 'transition-drape.png') }); }
+            for (const theme of ['light', 'dark']) {
+                await page.evaluate(value => { document.documentElement.dataset.bpbTheme = value; }, theme);
+                await frame.evaluate(value => { document.getElementById('bpb-terrain-map')!.dataset.theme = value; }, theme);
+                const { native, framed } = await pickerGeometry(frame);
+                for (const key of Object.keys(native) as (keyof typeof native)[]) assert.ok(Math.abs(native[key] - framed[key]) <= 1, `${theme}: the base map control changes ${key} between 2D and 3D: ${JSON.stringify({ native, framed })}`);
+            }
+            await frame.evaluate(() => { document.getElementById('bpb-terrain-map')!.dataset.theme = 'light'; });
+            mode = 'ready'; release();
+            await frame.waitForFunction(() => !window.__bpbTerrainTestMap.getLayer('bpb-drape-2d') && window.__bpbTerrainTestMap.getStyle().layers.some(layer => layer.id.startsWith('bpb-vector:')));
+            const leaving = sampleTransition(); await toggle.click();
+            for (const item of await leaving) assert.ok(item.opacity === '1' && item.painted && !item.native, `2D must already be painted on return: ${JSON.stringify(item)}`);
+            await page.waitForFunction(() => document.getElementById('bpb-terrain-frame')?.style.opacity === '0');
+            page.off('request', track);
+            assert.deepEqual(nativeRequests, [], 'Neither direction requests native tiles nobody sees');
+        };
         let cases = 0;
+        if (!preflight && !liveMode) { await verifyTransition(); cases++; }
         for (const [width, theme, zoom] of [[1280, 'light', 1], [375, 'dark', 1], [1280, 'light', 2], [375, 'dark', 2]] as [number, string, number][]) {
             await page.setViewportSize({ width, height: 800 }); const frame = await openTerrain(!liveMode);
             if (liveMode) await frame.locator('.bpb-terrain-picker').selectOption(basemap.id);

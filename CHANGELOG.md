@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Smoother Maptoolkit 3D.** Switching from 2D to 3D no longer flashes white or
+  reloads the native map behind the scenes. The 2D map stays visible and drapes
+  over the terrain until the 3D tiles arrive, and returning to 2D is immediate.
+  The base map menu also looks the same in 2D and 3D.
+
 - **Retired OSM Vector.** The experimental OpenFreeMap layer is gone from the 2D and
   3D base map menus. Maptoolkit Hiking is now labelled as a BPB experiment.
 

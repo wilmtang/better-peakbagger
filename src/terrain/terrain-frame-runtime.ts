@@ -10,8 +10,8 @@ import type * as MapLibre from 'maplibre-gl';
 import type { LngLat, Map as MapLibreMap, MapMouseEvent, Popup, PointLike } from 'maplibre-gl';
 import { terrainStyle as TerrainStyle } from './terrain-style.ts';
 import type { VectorSprite, VectorStyle } from './terrain-style.ts';
-import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, vectorBasemap } from '../maps/vector-basemap.ts';
-import type { VectorBasemap } from '../maps/vector-basemap.ts';
+import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, readVectorPaint, vectorBasemap, vectorPaintCorners } from '../maps/vector-basemap.ts';
+import type { VectorBasemap, VectorPaint } from '../maps/vector-basemap.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.ts';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
@@ -145,6 +145,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // mesh and route remain owned here. Labels stay upright above the route;
     // resource requests are scoped to the selected catalog provider.
     const VECTOR_PREFIX = 'bpb-vector:';
+    const DRAPE_ID = 'bpb-drape-2d', DRAPE_FADE_MS = 200, DRAPE_MAX_MS = 15000;
     const PALETTES = {
         light: {
             background: '#d9ded2',
@@ -270,6 +271,9 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     const vectorStyleLoaders = new Map(VECTOR_BASEMAPS.map(basemap => [basemap.id, TerrainStyle.createVectorStyleLoader({ basemap, styleUrl: basemap.styleUrl })]));
     const vectorCooldowns = new Map();
     let vectorCooldownTimer: ReturnType<typeof setTimeout> | null = null;
+    // The 2D paint lent for the moment before this renderer's own tiles arrive.
+    let lentDrape: { bitmap: ImageBitmap; paint: VectorPaint; generation: unknown } | null = null;
+    let drapeInstalled = false, drapeFading = false, drapeTimer: ReturnType<typeof setTimeout> | null = null;
     let vectorChoice: VectorBasemap | null = null, attributionControl: MapLibre.AttributionControl | null = null, attributionProvider: boolean | null = null, maptoolkitLogo: HTMLAnchorElement | null = null;
     let vectorSwapToken = 0;
     const vectorRequests = new Set<AbortController>();
@@ -400,6 +404,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     };
 
     const removeTerrain = () => {
+        removeDrape();
         cancelVectorRequests();
         clearTimeout(vectorCooldownTimer!); vectorCooldownTimer = null;
         snowReveal.cancel();
@@ -506,6 +511,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     // nothing.
     const suspendTerrain = () => {
         suspended = true;
+        removeDrape(); dropLentDrape();
         showNotice('');
         if (routePopup) { routePopup.remove(); routePopup = null; }
         cancelTiltWarm();
@@ -536,6 +542,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     };
 
     const fail = (reason: string) => {
+        dropLentDrape();
         removeTerrain();
         post('error', { reason });
     };
@@ -956,6 +963,59 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         noticeElement.hidden = !text;
     };
 
+    const dropLentDrape = () => { lentDrape?.bitmap.close(); lentDrape = null; };
+    const removeDrape = () => {
+        clearTimeout(drapeTimer!); drapeTimer = null; drapeFading = false;
+        if (!drapeInstalled) return;
+        drapeInstalled = false;
+        map?.off('sourcedata', retireDrape); map?.off('idle', retireDrape);
+        try {
+            if (map?.getLayer(DRAPE_ID)) map.removeLayer(DRAPE_ID);
+            if (map?.getSource(DRAPE_ID)) map.removeSource(DRAPE_ID);
+        } catch (error) { /* The style may be tearing down. */ }
+    };
+    const fadeDrape = () => {
+        if (!drapeInstalled || drapeFading) return;
+        const duration = prefersReducedMotion() ? 0 : DRAPE_FADE_MS;
+        if (!duration) { removeDrape(); return; }
+        drapeFading = true; clearTimeout(drapeTimer!);
+        map!.setPaintProperty(DRAPE_ID, 'raster-opacity-transition', { duration, delay: 0 });
+        map!.setPaintProperty(DRAPE_ID, 'raster-opacity', 0);
+        drapeTimer = setTimeout(removeDrape, duration + 50);
+    };
+    function retireDrape() {
+        if (!map || !drapeInstalled || !vectorActive) return;
+        try { if (!vectorSourceIds.every(id => map!.isSourceLoaded(id))) return; } catch (error) { /* A removed source cannot hold the drape back. */ }
+        fadeDrape();
+    }
+    // Reuse the pixels already on screen so the vector map appears on the
+    // terrain at once. Nothing is fetched for it, and it only ever stands in for
+    // a vector map still loading: any other choice discards it.
+    const installLentDrape = () => {
+        const lent = lentDrape;
+        if (!lent || !map || !loaded || suspended || !authorized || lent.generation !== activeGeneration) return;
+        lentDrape = null;
+        const corners = vectorPaintCorners(lent.paint);
+        const settled = vectorActive && vectorSourceIds.every(id => map!.isSourceLoaded(id));
+        const canvas = corners && vectorChoice && !settled ? document.createElement('canvas') : null;
+        const context = canvas?.getContext('2d');
+        if (!canvas || !context || !corners) { lent.bitmap.close(); return; }
+        canvas.width = lent.bitmap.width; canvas.height = lent.bitmap.height;
+        context.drawImage(lent.bitmap, 0, 0); lent.bitmap.close();
+        removeDrape();
+        try {
+            map.addSource(DRAPE_ID, { type: 'canvas', canvas, animate: false, coordinates: corners } as unknown as MapLibre.SourceSpecification);
+            map.addLayer({ id: DRAPE_ID, type: 'raster', source: DRAPE_ID, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }, 'terrain-hillshade');
+        } catch (error) {
+            console.warn('Better Peakbagger: 2D drape unavailable', error);
+            return;
+        }
+        drapeInstalled = true;
+        map.on('sourcedata', retireDrape); map.on('idle', retireDrape);
+        // A provider that stalls must not leave an old image over the terrain.
+        drapeTimer = setTimeout(fadeDrape, DRAPE_MAX_MS);
+    };
+
     const addBasemapLayer = (basemap: TerrainDrape) => {
         drapedBasemapTiles = basemap.tiles[0];
         map!.addSource('basemap', {
@@ -1115,6 +1175,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         if (!map || !loaded) return false;
         // Repeated selection and mode-resume must not rebuild the same vector graph.
         if ((vectorActive || vectorLoading) && vectorBasemap(selection) === vectorChoice) return true;
+        removeDrape();
         removeBasemapLayer();
         removeVectorBasemap();
         vectorSwapToken++;
@@ -1140,6 +1201,8 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
                     if (!map || !loaded || token !== vectorSwapToken) return;
                     vectorLoading = false;
                     addVectorBasemap(style);
+                    // The vector ground layers are opaque; keep the stand-in above them.
+                    if (drapeInstalled) map.moveLayer(DRAPE_ID, 'terrain-hillshade');
                     overlays?.basemapChanged();
                     renderPicker();
                     showNotice('');
@@ -1147,6 +1210,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
                 .catch(error => {
                     if (!map || !loaded || token !== vectorSwapToken) return;
                     if (error?.code === 'rate-limit') vectorCooldowns.set(selectedVector.id, readRetryAt(error.retryAt) || Date.now() + 300000);
+                    removeDrape();
                     removeVectorBasemap();
                     vectorActive = false;
                     renderPicker();
@@ -2322,6 +2386,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
                     pendingBasemapSelection = null;
                 }
                 overlays = createTerrainOverlays({ map: terrainMap, maplibre, document, post });
+                installLentDrape();
                 renderPicker();
                 postOverlayView();
                 setTheme(activeTheme);
@@ -2424,6 +2489,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         // A retained drape loads no new tile to prove itself; one later gap must
         // not read as a layer that never worked.
         if (drapeBefore && drapedBasemapTiles === drapeBefore) basemapContentLoaded = drapeProven;
+        installLentDrape();
 
         // Camera: the live 2D camera wins; else frame the route; else center the
         // focus. Pitch/bearing reset to the fresh-boot defaults either way.
@@ -2462,6 +2528,17 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         const data = event.data;
         if (event.source !== window.parent || !isPeakbaggerPageOrigin(event.origin)
             || !data || data[FRAME_MESSAGE_TAG] !== true || data.dir !== 'toFrame') return;
+        if (data.type === 'drape') {
+            // Can outrun the launch's asynchronous authorization, so it waits
+            // here until that launch's map is ready to take it.
+            const paint = readVectorPaint(data), { bitmap } = data;
+            if (typeof ImageBitmap !== 'function' || !(bitmap instanceof ImageBitmap)) return;
+            dropLentDrape();
+            if (!paint) { bitmap.close(); return; }
+            lentDrape = { bitmap, paint, generation: data.generation };
+            installLentDrape();
+            return;
+        }
         if (data.type === 'init' || data.type === 'resume') {
             const nextGeneration = data.generation === undefined
                 ? null
@@ -2494,6 +2571,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         if (activeGeneration !== null && data.generation !== activeGeneration) return;
         if (data.type === 'destroy') {
             authorizationRevision++;
+            dropLentDrape();
             if (!authorized) return;
             removeTerrain();
             authorized = false;

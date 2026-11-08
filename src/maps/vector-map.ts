@@ -62,7 +62,7 @@ export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLS
     // overflows Peakbagger's fixed 170px wrapper and can hide the native arrow.
     select.style.width = `${Math.ceil(Math.max(...[...select.options].map(item => metrics.measureText(item.textContent).width)) + 40)}px`;
     const reservedPickerWidth = select.style.width;
-    let previous = select.value, layer: VectorLayerInstance | null = null, paused = false, replacing = false, disposed = false, attributionReservation: { element: HTMLElement; minHeight: string; visibility: string } | null = null;
+    let previous = select.value, layer: VectorLayerInstance | null = null, paused = false, launching = false, replacing = false, disposed = false, attributionReservation: { element: HTMLElement; minHeight: string; visibility: string } | null = null;
     let basemap = MAPTOOLKIT_BASEMAP, retryTimer: number | null = null;
     const cooldowns = new Map<string, number>();
     const status = doc.createElement('div'); status.className = 'bpb-vector-status'; status.hidden = true;
@@ -264,18 +264,41 @@ export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLS
         cooldowns.set(basemap.id, Math.max(cooldowns.get(basemap.id) || 0, readRetryAt(retryAt) || 0));
         stop(); select.value = previous; status.hidden = false; retry.hidden = false; dismiss.hidden = false; cooldown();
     };
+    // 3D covers this map only once its frame is ready. Until then the 2D paint
+    // stays on screen: restoring native tiles here would flash an empty map and
+    // request raster imagery nobody sees. The last paint also stays in place,
+    // hidden with the native map, so returning from 3D never shows a blank map.
     const pause = () => {
         if (!layer || paused) return;
-        paused = true; post('pause'); layer.element!.style.opacity = '0'; layer.clearPaint(); restore(); status.hidden = true;
+        paused = true; post('pause'); status.hidden = true; select.removeAttribute('aria-busy');
     };
     const resume = () => {
         if (!layer || !paused) return;
-        paused = false; pending(); layer.update(); post('resume', view());
+        paused = false;
+        // 3D may have moved the camera off the kept paint, so native tiles fill
+        // whatever it no longer covers until the next vector paint replaces them.
+        const covered = layer.painted && layer.geometry(layer.painted).coverage >= .999;
+        if (!covered) { restore(); pending(); }
+        layer.update(); post('resume', view());
+    };
+    // Lend 3D a copy of what is on screen, to drape until its own tiles arrive.
+    // Missing or refused, 3D simply starts without it.
+    const lendPaint = () => {
+        const paint = layer?.painted, surface = layer?.surface;
+        if (!paint || paused || !surface?.width || !surface.height) return;
+        void win.createImageBitmap(surface).then(bitmap => {
+            try { win.parent.postMessage({ __bpbTerrain: true, dir: 'toCS', type: 'drape', bitmap, ...paint }, win.location.origin, [bitmap]); }
+            catch { bitmap.close(); }
+        }, () => {});
     };
     const terrain = (event: MessageEvent) => {
         if (event.source !== win.parent || event.origin !== win.location.origin || event.data?.__bpbTerrain !== true) return;
-        if (event.data.dir === 'toCS' && event.data.type === 'init') pause();
-        if (event.data.dir === 'toCS' && event.data.type === 'destroy') resume();
+        const { dir, type } = event.data;
+        // A 'loaded' already queued when the user cancels can arrive after
+        // 'destroy'; only a launch still open may take the map from 2D.
+        if (dir === 'toCS' && type === 'init') { launching = true; lendPaint(); }
+        if (dir === 'toPage' && type === 'loaded' && launching) { launching = false; pause(); }
+        if (dir === 'toCS' && type === 'destroy') { launching = false; resume(); }
     };
     // Capture runs before the native select's inline onchange handler.
     select.addEventListener('change', change, true); retry.addEventListener('click', retryClick);

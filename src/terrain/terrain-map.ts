@@ -5,6 +5,8 @@
 // frame. MapLibre and its worker run in terrain/terrain.html, where they have a
 // real extension origin instead of a browser-specific content-script sandbox.
 
+import { readVectorPaint } from '../maps/vector-basemap.ts';
+import type { VectorPaint } from '../maps/vector-basemap.ts';
 import { settings } from '../settings/settings.js';
 import { terrainCamera } from './terrain-camera.js';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
@@ -45,6 +47,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
     let launchRevision = 0;
     let awaitingFrameReady = false;
     let latestLayers: LayerSnapshot | null = null;
+    let pendingDrape: { bitmap: ImageBitmap; paint: VectorPaint } | null = null;
     let terrainEnabled: boolean | null | undefined = false;
     let terrainTheme = 'system';
     let settingsRevision = 0;
@@ -152,7 +155,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
         catch { return null; }
     };
 
-    const postToFrame = (type: string, detail: Record<string, unknown> = {}) => {
+    const postToFrame = (type: string, detail: Record<string, unknown> = {}, transfer: Transferable[] = []) => {
         const target = frameOrigin();
         if (!frame || !frame.contentWindow || !target) return;
         try {
@@ -162,7 +165,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
                 type,
                 generation: frameGeneration,
                 ...detail
-            }, target);
+            }, target, transfer);
         } catch (error) {
             // A frame that will not accept the message is a frame there is
             // nothing more to say to. Never let a failed notification abort the
@@ -191,6 +194,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
 
     const fail = (reason: string) => {
         launchRevision++;
+        discardDrape();
         removeFrame();
         postToPage('error', { reason: ALLOWED_FAILURES.has(reason) ? reason : 'renderer' });
     };
@@ -449,6 +453,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
             frameGeneration = frameGeneration >= Number.MAX_SAFE_INTEGER ? 1 : frameGeneration + 1;
             pendingInit = payload;
             postToFrame('resume', { ...payload, activation });
+            flushDrape();
             return;
         }
         if (frame) return;
@@ -489,9 +494,33 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
         }
     };
 
+    // The 2D paint on screen when 3D opened, held until the frame can take it.
+    // A page-owned bitmap is inert pixels; only its shape needs validating.
+    const discardDrape = () => { pendingDrape?.bitmap.close(); pendingDrape = null; };
+    const flushDrape = () => {
+        if (!pendingDrape || !frame || awaitingFrameReady || pendingLaunch || suspended) return;
+        const { bitmap, paint } = pendingDrape;
+        pendingDrape = null;
+        postToFrame('drape', { bitmap, ...paint }, [bitmap]);
+    };
+    const receiveDrape = (data: { bitmap?: unknown }) => {
+        const { bitmap } = data;
+        if (typeof ImageBitmap !== 'function' || !(bitmap instanceof ImageBitmap)) return;
+        const paint = readVectorPaint(data);
+        if (!paint || !(pendingLaunch || pendingInit)) { bitmap.close(); return; }
+        discardDrape();
+        pendingDrape = { bitmap, paint };
+        flushDrape();
+    };
+
     window.addEventListener('message', event => {
         const data = event.data;
 
+        if (data?.[PAGE_MESSAGE_TAG] === true && data.dir === 'toCS' && data.type === 'drape' && event.origin === location.origin
+            && (event.source === window || event.source === document.querySelector<HTMLIFrameElement>('iframe[src*="MasterMap.aspx" i]')?.contentWindow)) {
+            receiveDrape(data);
+            return;
+        }
         if (event.source === window && event.origin === location.origin
             && data && data[PAGE_MESSAGE_TAG] === true && data.dir === 'toCS') {
             if (data.type === 'requestConsent') {
@@ -505,6 +534,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
             else if (data.type === 'destroy') {
                 launchRevision++;
                 pendingLaunch = null;
+                discardDrape();
                 if (suspended) {
                     // Already parked at opacity 0; nothing more to do.
                 } else if (frame && frameLoaded) {
@@ -597,6 +627,7 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
                 awaitingFrameReady = false;
                 frameLoaded = false;
                 postToFrame('init', pendingInit);
+                flushDrape();
             }
         } else if (data.generation !== frameGeneration) {
             return;

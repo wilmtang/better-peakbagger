@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
+import { nativeMapDarkCss } from '../../src/theme/native-map-theme.js';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
@@ -1899,6 +1900,93 @@ test('Maptoolkit terrain preserves its mesh and route, restores named sprites an
         assert.equal(framePicker(window).value, 'maptoolkit'); assert.equal(map.getSource('terrain'), terrain); assert.equal(map.getLayer('bpb-route'), route);
         assert.equal(calls.filter(url => url.endsWith('/hiking.json')).length, 1, 'The accepted style is reused after expiry');
     } finally { dom.window.close(); }
+});
+
+test('the 3D base map control wears the native picker palette in both themes', async () => {
+    const css = await readFile(new URL('../../src/terrain/terrain-map.css', import.meta.url), 'utf8');
+    const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`)).split('}')[0];
+    const value = (block: string, name: string) => new RegExp(`${name}: ([^;]+);`).exec(block)?.[1];
+    const native = (selector: string) => nativeMapDarkCss.slice(nativeMapDarkCss.indexOf(`${selector} {`)).split('}')[0];
+    const dark = '#bpb-terrain-map[data-theme="dark"]', box = native('html[data-bpb-theme="dark"] #selboxdiv');
+    assert.equal(value(rule(`${dark} .bpb-terrain-picker-box`), 'background')?.toLowerCase(), value(box, 'background')?.replace(' !important', ''));
+    assert.equal(value(rule(`${dark} .bpb-terrain-picker-box`), 'border-color'), value(box, 'border-color')?.replace(' !important', ''));
+    assert.equal(value(rule(`${dark} .bpb-terrain-picker`), 'border-color'), value(native('html[data-bpb-theme="dark"] #selmap'), 'border-color')?.replace(' !important', ''));
+    assert.equal(value(rule('#bpb-terrain-map .bpb-terrain-picker-box'), 'border'), '2px solid #000');
+});
+
+test('a lent 2D paint drapes above the loading vector map, retires once its tiles load and never outlives the choice', async () => {
+    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
+    const { window } = dom, maps: StubMap[] = [];
+    let finishStyle: (() => void) | undefined, sourcesLoaded = false;
+    class Bitmap { width = 640; height = 480; closed = false; close() { this.closed = true; } }
+    const drawn: unknown[] = [];
+    Object.assign(window, { ImageBitmap: Bitmap });
+    Object.assign(globalThis, { ImageBitmap: Bitmap });
+    window.HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: (image: unknown) => drawn.push(image), measureText: () => ({ width: 100 }) })) as never;
+    class MapStub {
+        declare handlers: Map<string, Handler[]>; declare layers: StubLayer[]; declare options: StubOptions; declare sources: Map<string, StubSource>;
+        declare moved: string[]; declare paints: unknown[][];
+        constructor(options: StubOptions) { Object.assign(this, { options, sources: new Map(Object.entries(options.style.sources)), layers: [...options.style.layers], handlers: new Map(), moved: [], paints: [] }); maps.push(this as unknown as StubMap); }
+        addControl(control: StubControl) { const node = control.onAdd?.(this); if (node) this.options.container!.append(node); } removeControl() {}
+        once(type: string, callback: Handler) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type: string, callback: Handler) { this.handlers.set(type, [...this.handlers.get(type) || [], callback]); }
+        off(type: string, callback: Handler) { this.handlers.set(type, (this.handlers.get(type) || []).filter(item => item !== callback)); }
+        fire(type: string) { for (const handler of this.handlers.get(type) || []) handler({}); }
+        fitBounds() {} jumpTo() {} resize() {} remove() {} setTerrain() {} setSky() {} setFilter() {} setLayoutProperty() {} setPadding() {} getCanvas() { return null; }
+        setPaintProperty(...args: unknown[]) { this.paints.push(args); }
+        getBounds() { return { getWest: () => -122, getSouth: () => 46, getEast: () => -121, getNorth: () => 47 }; }
+        getZoom() { return 10; } getBearing() { return 0; } getPitch() { return 60; } getCenter() { return { lng: -121.5, lat: 46.5, wrap() { return this; } }; }
+        addSource(id: string, source: StubSource) { this.sources.set(id, { ...source, setData() {} }); }
+        getSource(id: string) { return this.sources.get(id); } removeSource(id: string) { this.sources.delete(id); }
+        addLayer(layer: StubLayer, before: string) { const index = this.layers.findIndex(item => item.id === before); this.layers.splice(index < 0 ? this.layers.length : index, 0, layer); }
+        getLayer(id: string) { return this.layers.find(item => item.id === id); } removeLayer(id: string) { this.layers = this.layers.filter(item => item.id !== id); }
+        moveLayer(id: string, before: string) { this.moved.push(id); const layer = this.getLayer(id)!; this.removeLayer(id); this.addLayer(layer, before); }
+        isSourceLoaded() { return sourcesLoaded; } getStyle() { return { ...this.options.style, sprite: null, glyphs: null }; } setGlyphs() {} setSprite() {} addSprite() {}
+    }
+    const style = { version: 8, sources: { mtk: { type: 'vector', url: 'https://tiles.maptoolkit.org/mtk-contours.json' } }, layers: [{ id: 'land', type: 'fill', source: 'mtk', 'source-layer': 'land' }] };
+    const fetch = async (url: string) => new Promise(resolve => { finishStyle = () => resolve({ ok: true, status: 200, url, text: async () => JSON.stringify(style) }); });
+    const send = bootTerrainFrame(window, MapStub, { fetch });
+    const paint = { view: { center: [46.5, -121.5], zoom: 9 }, width: 800, height: 600 };
+    const tick = () => new Promise(resolve => setImmediate(resolve));
+    const lent = () => new Bitmap();
+    try {
+        const first = lent();
+        send({ type: 'drape', generation: 1, bitmap: first, ...paint });
+        assert.equal(first.closed, false, 'A drape can outrun the launch and waits for its map');
+        send({ type: 'init', generation: 1, routeSegments: [[[46.85, -121.76], [46.86, -121.77]]], basemap: { kind: 'vector', provider: 'maptoolkit' } }); await tick();
+        const map = maps[0] as unknown as MapStub;
+        const ids = () => map.layers.map(layer => layer.id);
+        assert.ok(map.getLayer('bpb-drape-2d'), 'The paint is on the terrain as soon as the map loads');
+        assert.equal(first.closed, true); assert.deepEqual(drawn, [first]);
+        assert.equal((map.getSource('bpb-drape-2d') as unknown as { type: string }).type, 'canvas', 'The drape requests nothing');
+        assert.ok(ids().indexOf('bpb-drape-2d') < ids().indexOf('terrain-hillshade'), 'Relief still shades it');
+        finishStyle!(); await tick();
+        assert.ok(ids().indexOf('bpb-vector:land') < ids().indexOf('bpb-drape-2d'), 'Opaque vector ground cannot cover the stand-in');
+        map.fire('idle'); assert.ok(map.getLayer('bpb-drape-2d'), 'Tiles still loading keep it');
+        sourcesLoaded = true; map.fire('sourcedata');
+        assert.ok(map.paints.some(([id, name, value]) => id === 'bpb-drape-2d' && name === 'raster-opacity' && value === 0), 'It fades once the vector tiles load');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        assert.equal(map.getLayer('bpb-drape-2d'), undefined); assert.equal(map.getSource('bpb-drape-2d'), undefined);
+        assert.equal((map.handlers.get('sourcedata') || []).length, 0, 'A retired drape leaves no listeners');
+
+        sourcesLoaded = false;
+        const framePick = framePicker(window); framePick.value = 'terrain'; framePick.dispatchEvent(new window.Event('change'));
+        const refused = lent();
+        send({ type: 'drape', generation: 1, bitmap: refused, ...paint }); await tick();
+        assert.equal(refused.closed, true, 'Terrain only has no vector map to stand in for');
+        assert.equal(map.getLayer('bpb-drape-2d'), undefined);
+
+        const invalid = lent();
+        send({ type: 'drape', generation: 1, bitmap: invalid, ...paint, width: 0 });
+        assert.equal(invalid.closed, true, 'An invalid camera cannot place pixels');
+        send({ type: 'drape', generation: 1, bitmap: { width: 640 }, ...paint }); assert.equal(map.getLayer('bpb-drape-2d'), undefined, 'Only a real bitmap is accepted');
+
+        framePick.value = 'maptoolkit'; framePick.dispatchEvent(new window.Event('change')); await tick();
+        const held = lent(); send({ type: 'drape', generation: 1, bitmap: held, ...paint }); await tick();
+        assert.ok(map.getLayer('bpb-drape-2d'));
+        framePick.value = 'terrain'; framePick.dispatchEvent(new window.Event('change'));
+        assert.equal(map.getLayer('bpb-drape-2d'), undefined, 'Choosing another map removes the stand-in at once');
+    } finally { delete (globalThis as { ImageBitmap?: unknown }).ImageBitmap; dom.window.close(); }
 });
 
 test('the bridge forwards peak-feed requests to the page and replies to the frame', async () => {

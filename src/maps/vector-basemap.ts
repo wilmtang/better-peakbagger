@@ -44,6 +44,22 @@ export function readVectorView(input: unknown): VectorView | null {
     return { center: [value.center[0], value.center[1]], zoom: value.zoom };
 }
 
+// The geographic corners of a planar paint, clockwise from the top-left, in
+// MapLibre's image-source [lng, lat] order. Null when it wraps the world or
+// reaches past Web Mercator, where one quad cannot place the image.
+const WORLD_TILE_SIZE = 512, MERCATOR_MAX_LATITUDE = 85.0511287;
+export function vectorPaintCorners({ view, width, height }: VectorPaint): [number, number][] | null {
+    const world = WORLD_TILE_SIZE * 2 ** view.zoom;
+    if (width >= world || height >= world) return null;
+    const x = (view.center[1] + 180) / 360 * world;
+    const y = (1 - Math.log(Math.tan(Math.PI / 4 + view.center[0] * Math.PI / 360)) / Math.PI) / 2 * world;
+    const lng = (px: number) => px / world * 360 - 180;
+    const lat = (py: number) => Math.atan(Math.sinh(Math.PI * (1 - 2 * py / world))) * 180 / Math.PI;
+    const [west, east, north, south] = [lng(x - width / 2), lng(x + width / 2), lat(y - height / 2), lat(y + height / 2)];
+    if (west < -180 || east > 180 || Math.abs(north) > MERCATOR_MAX_LATITUDE || Math.abs(south) > MERCATOR_MAX_LATITUDE) return null;
+    return [[west, north], [east, north], [east, south], [west, south]];
+}
+
 // CSS dimensions accompany a transferred GPU bitmap; pixel dimensions can
 // differ with device scale. Neither world may trust the other side's shape.
 export function readVectorPaint(input: unknown): VectorPaint | null {
