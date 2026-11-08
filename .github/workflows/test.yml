@@ -353,6 +353,9 @@ jobs:
           mkdir -p browser-evidence
           npm run verify -- chrome 2>&1 | tee browser-evidence/verify-chrome.log
 
+      - name: Verify report route compiler and priority boundaries
+        run: node scripts/verify-report-routes.mts chrome 2>&1 | tee browser-evidence/report-routes-chrome.log
+
       - name: Retain browser failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -387,6 +390,9 @@ jobs:
         run: |
           mkdir -p browser-evidence
           npm run verify -- firefox 2>&1 | tee browser-evidence/verify-firefox.log
+
+      - name: Verify report route priority boundaries
+        run: node scripts/verify-report-routes.mts firefox 2>&1 | tee browser-evidence/report-routes-firefox.log
 
       - name: Verify capture with pending page resources
         run: |

@@ -13,12 +13,14 @@
       ]
     },
     "condition": {
-      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/+climber/+ascent\\.aspx([/?#;]|$)",
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
       "resourceTypes": [
-        "main_frame",
         "sub_frame"
       ],
-      "isUrlFilterCaseSensitive": false,
+      "isUrlFilterCaseSensitive": true,
       "excludedResponseHeaders": [
         {
           "header": "cf-mitigated",
@@ -43,11 +45,14 @@
       ]
     },
     "condition": {
-      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/",
-      "resourceTypes": [
-        "sub_frame"
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA][sS][cC](?:[eE]|%[46]5)(?:[nN]|%[46][eE])(?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
       ],
-      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
       "excludedResponseHeaders": [
         {
           "header": "cf-mitigated",
@@ -60,15 +65,33 @@
   },
   {
     "id": 3,
-    "priority": 2,
+    "priority": 1,
     "action": {
-      "type": "allow"
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
     },
     "condition": {
-      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/map/mastermap\\.aspx([?#]|$)",
-      "isUrlFilterCaseSensitive": false,
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA][sS]%[46]3(?:[eE]|%[46]5)(?:[nN]|%[46][eE])(?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
       "resourceTypes": [
-        "sub_frame"
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
       ]
     }
   },
@@ -86,12 +109,1790 @@
       ]
     },
     "condition": {
-      "regexFilter": "^https://(www\\.)?peakbagger\\.com(:[0-9]+)?/[^?#]*%",
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA]%[57]3[cC][eE](?:[nN]|%[46][eE])(?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA]%[57]3[cC]%[46]5(?:[nN]|%[46][eE])(?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1[sS][cC][eE](?:[nN]|%[46][eE])(?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1[sS][cC]%[46]5(?:[nN]|%[46][eE])(?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 8,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA]%[57]3%[46]3[eE][nN](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA]%[57]3%[46]3[eE]%[46][eE](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA]%[57]3%[46]3%[46]5[nN](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+[aA]%[57]3%[46]3%[46]5%[46][eE](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 12,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1[sS]%[46]3[eE][nN](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 13,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1[sS]%[46]3[eE]%[46][eE](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 14,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1[sS]%[46]3%[46]5[nN](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 15,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1[sS]%[46]3%[46]5%[46][eE](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3[cC][eE][nN](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3[cC][eE]%[46][eE](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3[cC]%[46]5[nN](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3[cC]%[46]5%[46][eE](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3[eE][nN](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 21,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3[eE]%[46][eE](?:[tT]|%[57]4)(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 22,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3%[46]5[nN][tT](?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 23,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3%[46]5[nN]%[57]4(?:\\.|%2[eE])(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 24,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3%[46]5%[46][eE][tT]\\.(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 25,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3%[46]5%[46][eE][tT]%2[eE](?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 26,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3%[46]5%[46][eE]%[57]4\\.(?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 27,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%[46]1%[57]3%[46]3%[46]5%[46][eE]%[57]4%2[eE](?:[aA]|%[46]1)(?:[sS]|%[57]3)(?:[pP]|%[57]0)(?:[xX]|%[57]8)\\.*(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 28,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[ABDEFGHIJKLMNOPQRSTUVWXYZabdefghijklmnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][012456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 29,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)(?:[ABCDEFGHIJKMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][0123456789abdefABDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 30,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)(?:[lL]|%[46][cC])(?:[ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghjklmnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][012345678abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 31,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)(?:[lL]|%[46][cC])(?:[iI]|%[46]9)(?:[ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][0123456789abcefABCEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 32,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)(?:[lL]|%[46][cC])(?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[ACDEFGHIJKLMNOPQRSTUVWXYZacdefghijklmnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][013456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 33,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC](?:[lL]|%[46][cC])(?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[ABCDFGHIJKLMNOPQRSTUVWXYZabcdfghijklmnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][012346789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 34,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3(?:[lL]|%[46][cC])(?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[ABCDFGHIJKLMNOPQRSTUVWXYZabcdfghijklmnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][012346789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 35,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC][lL](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[ABCDEFGHIJKLMNOPQSTUVWXYZabcdefghijklmnopqstuvwxyz0123456789._~-]|%(?:[01234689abcdefABCDEF][0123456789abcdefABCDEF]|[75][013456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 36,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC]%[46][cC](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[ABCDEFGHIJKLMNOPQSTUVWXYZabcdefghijklmnopqstuvwxyz0123456789._~-]|%(?:[01234689abcdefABCDEF][0123456789abcdefABCDEF]|[75][013456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 37,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3[lL](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[ABCDEFGHIJKLMNOPQSTUVWXYZabcdefghijklmnopqstuvwxyz0123456789._~-]|%(?:[01234689abcdefABCDEF][0123456789abcdefABCDEF]|[75][013456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 38,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3%[46][cC](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[ABCDEFGHIJKLMNOPQSTUVWXYZabcdefghijklmnopqstuvwxyz0123456789._~-]|%(?:[01234689abcdefABCDEF][0123456789abcdefABCDEF]|[75][013456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 39,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 40,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)(?:[lL]|%[46][cC])/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 41,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)(?:[lL]|%[46][cC])(?:[iI]|%[46]9)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 42,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[cC]|%[46]3)(?:[lL]|%[46][cC])(?:[iI]|%[46]9)(?:[mM]|%[46][dD])/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 43,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC](?:[lL]|%[46][cC])(?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 44,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3(?:[lL]|%[46][cC])(?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 45,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC][lL](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 46,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC]%[46][cC](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 47,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3[lL](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 48,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3%[46][cC](?:[iI]|%[46]9)(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 49,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC][lL][iI](?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 50,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC][lL]%[46]9(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 51,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC]%[46][cC][iI](?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 52,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[cC]%[46][cC]%[46]9(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 53,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3[lL][iI](?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 54,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3[lL]%[46]9(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 55,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3%[46][cC][iI](?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 56,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+%[46]3%[46][cC]%[46]9(?:[mM]|%[46][dD])(?:[bB]|%[46]2)(?:[eE]|%[46]5)(?:[rR]|%[57]2)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 57,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:www\\.)?peakbagger\\.com(?::[0-9]+)?/+map/+mastermap\\.aspx(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": false
+    }
+  },
+  {
+    "id": 58,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+Ma(?:s|%73)(?:t|%74)(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 59,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+M%61s(?:t|%74)(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 60,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+M%61%73(?:t|%74)(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 61,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%4[dD]as(?:t|%74)(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 62,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%4[dD]a%73(?:t|%74)(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 63,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%4[dD]%61s(?:t|%74)(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 64,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%4[dD]%61%73t(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 65,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%4[dD]%61%73%74(?:e|%65)(?:r|%72)(?:M|%4[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 66,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+ma(?:s|%73)(?:t|%74)(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 67,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+m%61s(?:t|%74)(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 68,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+m%61%73(?:t|%74)(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 69,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%6[dD]as(?:t|%74)(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 70,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%6[dD]a%73(?:t|%74)(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 71,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%6[dD]%61s(?:t|%74)(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 72,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%6[dD]%61%73t(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 73,
+    "priority": 2,
+    "action": {
+      "type": "allow"
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+[A-Za-z0-9%._~-]+/+%6[dD]%61%73%74(?:e|%65)(?:r|%72)(?:m|%6[dD])(?:a|%61)(?:p|%70)(?:\\.|%2[eE])(?:a|%61)(?:s|%73)(?:p|%70)(?:x|%78)(?:[?#]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true
+    }
+  },
+  {
+    "id": 74,
+    "priority": 3,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][0123456789abcefABCEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 75,
+    "priority": 3,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[mM]|%[46][dD])(?:[BCDEFGHIJKLMNOPQRSTUVWXYZbcdefghijklmnopqrstuvwxyz0123456789._~-]|%(?:[01235789abcdefABCDEF][0123456789abcdefABCDEF]|[64][023456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 76,
+    "priority": 3,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[mM]|%[46][dD])(?:[aA]|%[46]1)(?:[ABCDEFGHIJKLMNOQRSTUVWXYZabcdefghijklmnoqrstuvwxyz0123456789._~-]|%(?:[01234689abcdefABCDEF][0123456789abcdefABCDEF]|[75][123456789abcdefABCDEF]))",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 77,
+    "priority": 3,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[mM]|%[46][dD])/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 78,
+    "priority": 3,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[mM]|%[46][dD])(?:[aA]|%[46]1)/",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 79,
+    "priority": 3,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/+(?:[mM]|%[46][dD])(?:[aA]|%[46]1)(?:[pP]|%[57]0)[A-Za-z0-9%._~-]",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 80,
+    "priority": 4,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/[\\x21-\\x22\\x24-\\x3e\\x40-\\x7e]*%(?:(?:[0189a-fA-F][0-9a-fA-F]|2[0-9a-cA-CfF]|3[a-fA-F]|40|5[b-eB-E]|60|7[b-dB-DfF])|[\\x21-\\x2f\\x3a-\\x40\\x47-\\x60\\x67-\\x7e]|[0-9a-fA-F](?:[\\x21-\\x2f\\x3a-\\x40\\x47-\\x60\\x67-\\x7e]|$)|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
       "resourceTypes": [
         "main_frame",
         "sub_frame"
       ],
-      "isUrlFilterCaseSensitive": false,
+      "isUrlFilterCaseSensitive": true,
+      "excludedResponseHeaders": [
+        {
+          "header": "cf-mitigated",
+          "values": [
+            "challenge"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 81,
+    "priority": 4,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "content-security-policy",
+          "operation": "append",
+          "value": "script-src 'none'; object-src 'none'; base-uri 'none'; frame-src https://peakbagger.com:*/map/MasterMap.aspx https://peakbagger.com:*/map/mastermap.aspx https://peakbagger.com:*/Map/MasterMap.aspx https://peakbagger.com:*/Map/mastermap.aspx https://www.peakbagger.com:*/map/MasterMap.aspx https://www.peakbagger.com:*/map/mastermap.aspx https://www.peakbagger.com:*/Map/MasterMap.aspx https://www.peakbagger.com:*/Map/mastermap.aspx https://www.youtube.com/embed/ chrome-extension: moz-extension:"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(?:[\\x21-\\x2e\\x30-\\x7e]*@)?(?:www\\.)?[a-z0-9-]+\\.[a-z0-9:-]+/[\\x21-\\x22\\x24-\\x3e\\x40-\\x7e]*(?:\\.|%2[eE])(?:[/?#;]|$)",
+      "requestDomains": [
+        "peakbagger.com"
+      ],
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame"
+      ],
+      "isUrlFilterCaseSensitive": true,
       "excludedResponseHeaders": [
         {
           "header": "cf-mitigated",

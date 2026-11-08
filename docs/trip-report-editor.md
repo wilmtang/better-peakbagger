@@ -1298,6 +1298,26 @@ Cloudflare challenge headers. Challenge responses bearing `cf-mitigated: challen
 retain their site policy so the user can complete the normal site check. An
 existing website CSP is preserved; BPB adds a separate restrictive policy.
 
+The readable source for the packaged rules is
+[`generate-report-protection.mts`](../scripts/generate-report-protection.mts).
+Run it with `--write` after a policy change; tests reject stale generated JSON.
+Firefox evaluates the same packaged expressions and priorities. Chrome limits
+each compiled regular expression to 2 KiB, so small filename partitions and
+folder exclusions compose the route instead of one oversized expression.
+Document-only `allow` rules use priority 2, inverse map-folder denials use 3,
+and ambiguity denials use 4; future main-document rules must respect this
+priority contract. These are never `allowAllRequests` exceptions, and do not
+disable the separate Instagram-resource rules.
+
+Single percent-encoded ASCII unreserved characters in ordinary profile/editor
+paths no longer trigger report-only protection. Report aliases stay protected;
+supported native MasterMap filename aliases retain their existing frame
+exception. Nested escapes, encoded reserved/control/non-ASCII bytes, malformed
+escapes, and residual dot/trailing-dot ambiguities remain conservatively
+restricted on the path, including literal or encoded trailing dots on any
+segment. Percent values in the query do not trigger that guard.
+This does not assert how an unknown server recursively decodes or rewrites URLs.
+
 Instagram resources initiated by Peakbagger are blocked before network contact,
 including native embedded images and scripts. Loading a post requires the
 extension-owned per-post flow. This protection applies to BPB readers; Plain
@@ -1309,6 +1329,9 @@ Run `node scripts/verify-report-security.mjs chrome` and the `firefox` variant
 after building. `chrome --baseline` deliberately removes the response rules from
 a disposable copy and must fail on observed script execution. The fixture never
 submits report content or reads live cookies.
+`npm run verify -- report-security` also runs the route/priority fixtures in
+both browsers, including the native and encoded MasterMap inside a protected
+parent. Chrome checks every packaged expression against its real compiler.
 
 
 ### Instagram frame capabilities

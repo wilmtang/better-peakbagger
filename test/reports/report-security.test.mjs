@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import rules from '../../src/reports/report-protection.json' with { type: 'json' };
 import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.js';
 import { createFirefoxManifest } from '../../scripts/build-firefox-package.mjs';
-import { REPORT_CSP, protectedReportDocument, protectReportHeaders } from '../../src/reports/report-security-policy.js';
+import { REPORT_CSP, protectedReportDocument, protectReportHeaders } from '../../src/reports/report-security-policy.ts';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { evalBundle } from '../helpers/load-page.mjs';
