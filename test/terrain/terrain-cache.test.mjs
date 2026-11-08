@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 
-import { terrainCache } from '../../src/terrain/terrain-cache.js';
+import { terrainCache } from '../../src/terrain/terrain-cache.ts';
 
 class MemoryCache {
     constructor() { this.entries = new Map(); }

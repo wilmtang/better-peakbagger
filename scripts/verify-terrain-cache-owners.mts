@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global caches, document, localStorage */
+/* global caches, localStorage */
 
 import assert from 'node:assert/strict';
+import type { BrowserContext, BrowserType } from 'playwright';
 import { createServer } from 'node:https';
+import { readFile } from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
 
 import { chromium, firefox } from 'playwright';
 
@@ -27,10 +30,13 @@ const FIXTURE_HOST = 'www.peakbagger.com';
 const VIEWPORT = { width: 1000, height: 760 };
 const TILE_BYTES = 700 * 1024;
 
+// Page functions run in fixture documents; these type-only globals are erased.
+type PageValue = ReturnType<typeof JSON.parse>;
+declare const document: PageValue;
 const OWNER_HTML = `<!doctype html>
 <meta charset="utf-8">
 <script type="module">
-import { terrainCache } from '/src/terrain/terrain-cache.js';
+import { terrainCache } from '/src/terrain/terrain-cache.ts';
 
 const storageArea = {
     async get(key) {
@@ -80,9 +86,9 @@ window.cacheProbe = {
 </script>`;
 
 const INDEX_READER = async () => {
-    const { terrainCache } = await import('/src/terrain/terrain-cache.js');
+    const { terrainCache } = await import('/src/terrain/terrain-cache.ts' as string);
     const storageArea = {
-        async get(key) {
+        async get(key: string) {
             const value = localStorage.getItem(key);
             return { [key]: value === null ? undefined : JSON.parse(value) };
         }
@@ -97,9 +103,9 @@ const INDEX_READER = async () => {
     };
 };
 
-const createFixtureServer = certificate => createServer(certificate, async (request, response) => {
+const createFixtureServer = (certificate: { key: Buffer; cert: Buffer }) => createServer(certificate, async (request, response) => {
     try {
-        const url = new URL(request.url, `https://${FIXTURE_HOST}`);
+        const url = new URL(request.url!, `https://${FIXTURE_HOST}`);
         if (url.pathname === '/favicon.ico') {
             response.writeHead(204);
             response.end();
@@ -117,15 +123,20 @@ const createFixtureServer = certificate => createServer(certificate, async (requ
             sendFixtureNotFound(response);
             return;
         }
+        // The browser imports this runtime module straight from source.
+        if (url.pathname.endsWith('.ts')) {
+            sendFixtureText(response, 200, stripTypeScriptTypes(await readFile(file, 'utf8')), 'text/javascript; charset=utf-8');
+            return;
+        }
         await sendFixtureFile(response, file);
     } catch (error) {
         sendFixtureError(response, error);
     }
 });
 
-const runCase = async (context, origin, urls) => {
+const runCase = async (context: BrowserContext, origin: string, urls: string[]) => {
     const page = await context.newPage();
-    const errors = [];
+    const errors: string[] = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('console', message => {
         if (message.type() === 'error') errors.push(message.text());
@@ -134,14 +145,14 @@ const runCase = async (context, origin, urls) => {
         await page.goto(origin, { waitUntil: 'load' });
         await page.waitForFunction(() => {
             const frames = [...document.querySelectorAll('iframe')];
-            return frames.length === 2 && frames.every(frame => frame.contentWindow?.cacheProbe);
+            return frames.length === 2 && frames.every((frame: PageValue) => frame.contentWindow?.cacheProbe);
         });
         const hasLocks = await page.evaluate(() => [...document.querySelectorAll('iframe')]
-            .every(frame => frame.contentWindow.cacheProbe.hasWebLocks));
+            .every((frame: PageValue) => frame.contentWindow.cacheProbe.hasWebLocks));
         assert.equal(hasLocks, true, 'both cache owners require Web Locks');
 
         await page.evaluate(async () => {
-            const { terrainCache } = await import('/src/terrain/terrain-cache.js');
+            const { terrainCache } = await import('/src/terrain/terrain-cache.ts' as string);
             localStorage.clear();
             await caches.delete(terrainCache.CACHE_NAME);
         });
@@ -172,7 +183,7 @@ const runCase = async (context, origin, urls) => {
     }
 };
 
-const verifyBrowser = async ({ name, browserType, launchOptions, origin }) => {
+const verifyBrowser = async ({ name, browserType, launchOptions, origin }: { name: string; browserType: BrowserType; launchOptions: object; origin: string }) => {
     if (browserType === chromium) assertChromeLaunchAllowed();
     const browser = await browserType.launch(launchOptions);
     try {
@@ -201,12 +212,12 @@ async function main() {
     const resources = createResourceStack();
     let primaryError = null;
     try {
-        const certificate = await createFixtureCertificate({ host: FIXTURE_HOST, label: 'terrain-cache-owners' });
+        const certificate = (await createFixtureCertificate({ host: FIXTURE_HOST, label: 'terrain-cache-owners' }))!;
         resources.defer('terrain cache certificate', () => certificate.remove());
         const server = createFixtureServer({ key: certificate.key, cert: certificate.cert });
         resources.defer('terrain cache fixture server', () => closeServer(server));
         await listenServer(server, 0, '127.0.0.1');
-        const origin = `https://${FIXTURE_HOST}:${server.address().port}/`;
+        const origin = `https://${FIXTURE_HOST}:${(server.address() as { port: number }).port}/`;
 
         await verifyBrowser({
             name: 'Chromium',
@@ -231,7 +242,7 @@ async function main() {
     } catch (error) {
         primaryError = error;
     }
-    await resources.dispose(primaryError);
+    await resources.dispose(primaryError as never);
 }
 
 main().catch(error => {

@@ -13,7 +13,7 @@ import type { VectorSprite, VectorStyle } from './terrain-style.ts';
 import { MAPTOOLKIT_BASEMAP, MAPTOOLKIT_ATTRIBUTION, VECTOR_BASEMAPS, readVectorPaint, vectorBasemap, vectorPaintCorners } from '../maps/vector-basemap.ts';
 import type { VectorBasemap, VectorPaint } from '../maps/vector-basemap.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.ts';
-import { terrainCache as TerrainCache } from './terrain-cache.js';
+import { terrainCache as TerrainCache } from './terrain-cache.ts';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { createTerrainOverlays } from './terrain-overlays.ts';

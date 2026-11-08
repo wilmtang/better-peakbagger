@@ -12,7 +12,7 @@ import { drawAlbertaLand } from '../../src/maps/canadian-land.js';
 import { createOverlayTiles } from '../../src/maps/map-overlay-tiles.js';
 import { createBCLandRoutes } from '../../src/background/bc-land-routes.js';
 import { terrainStyle } from '../../src/terrain/terrain-style.ts';
-import { terrainCache } from '../../src/terrain/terrain-cache.js';
+import { terrainCache } from '../../src/terrain/terrain-cache.ts';
 
 type Reader = (fetchFn: typeof fetch) => Promise<unknown>;
 const readers: Record<string, Reader> = {

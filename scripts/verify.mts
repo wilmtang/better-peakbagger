@@ -61,7 +61,7 @@ const targets: Record<string, VerifierCommand[]> = {
 const terrainTargets: Record<string, VerifierCommand[]> = {
     chrome: [['verify-terrain-visual.mts']],
     firefox: [['verify-firefox-terrain.mts']],
-    'cache-owners': [['verify-terrain-cache-owners.mjs']],
+    'cache-owners': [['verify-terrain-cache-owners.mts']],
     lod: [['verify-terrain-lod.mts']],
 };
 

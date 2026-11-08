@@ -8,7 +8,7 @@ import { WEATHER_MODELS } from '../../src/weather/weather-models.js';
 import { createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.js';
 import { createSnotelClient } from '../../src/snow/snotel-client.js';
 import { terrainStyle } from '../../src/terrain/terrain-style.ts';
-import { terrainCache } from '../../src/terrain/terrain-cache.js';
+import { terrainCache } from '../../src/terrain/terrain-cache.ts';
 
 type Provider = { request(index: number): Promise<unknown>; close?(): unknown };
 type Refusal = Error & { code?: string; retryAt?: number };

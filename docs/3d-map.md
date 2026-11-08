@@ -150,7 +150,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/terrain/terrain-basemap.ts` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
-| `src/terrain/terrain-cache.js` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
+| `src/terrain/terrain-cache.ts` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
 | `src/terrain/terrain-tiles.js` | pure helper | Bounded DEM tile enumeration: the first-paint set for prefetch, and the coarse-rung set the frame warms while a live camera rests | Network or browser APIs |
 | `src/maps/peak-markers.js` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
 | `src/background/background.js` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
@@ -553,7 +553,7 @@ MapLibre reads DEM through the custom `bpb-dem` protocol. The protocol accepts
 only bounded `bpb-dem://z/x/y.webp` coordinates through zoom 18 and maps them to
 `https://tiles.mapterhorn.com/z/x/y.webp`.
 
-`src/terrain/terrain-cache.js` uses CacheStorage name `bpb-mapterhorn-dem-v1` plus a
+`src/terrain/terrain-cache.ts` uses CacheStorage name `bpb-mapterhorn-dem-v1` plus a
 best-effort `storage.local` LRU index. Important properties:
 
 - the shared settings schema determines the megabyte budget;
@@ -846,7 +846,7 @@ and that must cost nothing but resolution.
 
 MapLibre already knows how to do this — an absent tile keeps its parent/child
 fallback running and raises no map-level error — but it tells the two cases
-apart by `error.status`, so `src/terrain/terrain-cache.js` must carry the tile
+apart by `error.status`, so `src/terrain/terrain-cache.ts` must carry the tile
 host's HTTP status on the error it throws. A status-less error is read as a
 broken source instead of an absent tile, and because elevation is the only
 source in the boot style, that lands before MapLibre's own `load` and takes the

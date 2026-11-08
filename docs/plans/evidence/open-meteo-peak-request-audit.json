@@ -17,7 +17,7 @@
     "src/settings/settings-schema.ts",
     "src/settings/settings.js",
     "src/storage/storage-value.js",
-    "src/terrain/terrain-cache.js",
+    "src/terrain/terrain-cache.ts",
     "src/theme/theme-resolve.js",
     "src/time/mountain-time.js",
     "src/ui/card-pointer-drag.js",

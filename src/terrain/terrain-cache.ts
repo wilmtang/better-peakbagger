@@ -42,19 +42,32 @@ const MAX_ZOOM = 18;
 // boot style, that failure landed before MapLibre's `load` and tore the whole
 // 3D view down. Carrying the status through is what lets a coverage gap fall
 // back to the coarser level that does exist.
+const TOUCH_BATCH_MS = 1000;
+interface IndexEntry { size: number; used: number; }
+type CacheIndex = Record<string, IndexEntry>;
+interface CacheState { cache: Cache; index: CacheIndex; lru: Map<string, IndexEntry>; totalBytes: number; }
+interface CacheLocks { request(name: string, callback: () => Promise<unknown>): Promise<unknown>; }
+type StorageArea = Pick<chrome.storage.StorageArea, 'get' | 'set' | 'remove'>;
+type Deadline = ReturnType<typeof Deadline.createRequestDeadline>;
+interface InFlightOwner { cancel(): void; deadline: Deadline; cancelled: Promise<unknown>; promise: Promise<ArrayBuffer>; consumers: number; settled: boolean; }
+interface CacheOptions {
+    limitMb: number; cacheStorage?: CacheStorage; storageArea?: StorageArea; fetchFn?: typeof fetch; ResponseCtor?: typeof Response;
+    now?: () => number; tileTimeoutMs?: number; lockManager?: CacheLocks;
+}
 class TileRequestError extends Error {
-    constructor(message, status) {
+    declare status: number;
+    constructor(message: string, status: number) {
         super(message);
         this.name = 'TileRequestError';
         this.status = status;
     }
 }
 
-const isMissingTile = error => error instanceof TileRequestError && error.status === MISSING_TILE_STATUS;
+const isMissingTile = (error: unknown) => error instanceof TileRequestError && error.status === MISSING_TILE_STATUS;
 
-const responseHeader = (response, name) => response?.headers?.get?.(name);
+const responseHeader = (response: Response | undefined, name: string) => response?.headers?.get?.(name);
 
-const parseContentLength = response => {
+const parseContentLength = (response: Response | undefined) => {
     const raw = responseHeader(response, 'content-length');
     if (raw === null || raw === undefined) return null;
     const value = String(raw).trim();
@@ -64,14 +77,14 @@ const parseContentLength = response => {
     return size;
 };
 
-const hasAscii = (bytes, offset, value) => {
+const hasAscii = (bytes: Uint8Array, offset: number, value: string) => {
     for (let index = 0; index < value.length; index++) {
         if (bytes[offset + index] !== value.charCodeAt(index)) return false;
     }
     return true;
 };
 
-const validateWebp = data => {
+const validateWebp = (data: ArrayBuffer) => {
     const bytes = new Uint8Array(data);
     if (bytes.byteLength < 20) throw new Error('DEM tile was empty or truncated');
     if (!hasAscii(bytes, 0, 'RIFF') || !hasAscii(bytes, 8, 'WEBP')) {
@@ -92,7 +105,7 @@ const validateWebp = data => {
     if (chunkEnd > bytes.byteLength) throw new Error('DEM tile had a truncated WebP image chunk');
 };
 
-const readBoundedWebp = async (response, deadline = null) => {
+const readBoundedWebp = async (response: Response | undefined, deadline: Deadline | null = null) => {
     const mediaType = String(responseHeader(response, 'content-type') || '')
         .split(';', 1)[0]
         .trim()
@@ -162,10 +175,10 @@ const readBoundedWebp = async (response, deadline = null) => {
     return data;
 };
 
-const cleanIndex = raw => {
-    const index = {};
+const cleanIndex = (raw: unknown) => {
+    const index: CacheIndex = {};
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return index;
-    for (const [url, entry] of Object.entries(raw)) {
+    for (const [url, entry] of Object.entries(raw as Record<string, IndexEntry>)) {
         if (!url.startsWith(`${REMOTE_TILE_ORIGIN}/`) || !entry || typeof entry !== 'object') continue;
         const size = Number(entry.size), used = Number(entry.used);
         if (Number.isFinite(size) && size > 0 && size <= MAX_TILE_BYTES
@@ -176,13 +189,13 @@ const cleanIndex = raw => {
     return index;
 };
 
-const resolveStorageArea = storageArea => {
+const resolveStorageArea = (storageArea: StorageArea | undefined) => {
     if (storageArea) return storageArea;
     const api = typeof browser !== 'undefined' && browser.storage ? browser : globalThis.chrome;
     return api && api.storage && api.storage.local;
 };
 
-const readStoredIndex = async storageArea => {
+const readStoredIndex = async (storageArea: StorageArea | undefined): Promise<CacheIndex> => {
     if (!storageArea || typeof storageArea.get !== 'function') return {};
     try {
         const stored = await storageArea.get(INDEX_KEY);
@@ -192,7 +205,7 @@ const readStoredIndex = async storageArea => {
     }
 };
 
-const parseTileUrl = value => {
+const parseTileUrl = (value: unknown) => {
     const match = typeof value === 'string' && value.match(/^bpb-dem:\/\/(\d{1,2})\/(\d+)\/(\d+)\.webp$/);
     if (!match) return null;
     const z = Number(match[1]), x = Number(match[2]), y = Number(match[3]);
@@ -207,16 +220,16 @@ const parseTileUrl = value => {
 // spans extension windows and workers. Unit tests inject CacheStorage adapters
 // into one JavaScript realm, so give those adapters the same serialization
 // semantics without pretending this fallback coordinates browser contexts.
-let adapterLockTail = Promise.resolve();
+let adapterLockTail: Promise<unknown> = Promise.resolve();
 const adapterLockManager = {
-    request(_name, callback) {
+    request(_name: string, callback: () => Promise<unknown>) {
         const result = adapterLockTail.then(() => callback());
         adapterLockTail = result.catch(() => {});
         return result;
     }
 };
 
-const resolveLockManager = (lockManager, cacheStorage) => {
+const resolveLockManager = (lockManager: CacheLocks | undefined, cacheStorage: CacheStorage | undefined) => {
     if (lockManager !== undefined) return lockManager;
     const browserLocks = globalThis.navigator?.locks;
     if (browserLocks && typeof browserLocks.request === 'function') return browserLocks;
@@ -226,35 +239,37 @@ const resolveLockManager = (lockManager, cacheStorage) => {
 const create = ({
     limitMb, cacheStorage, storageArea, fetchFn, ResponseCtor,
     now = Date.now, tileTimeoutMs = TILE_TIMEOUT_MS, lockManager,
-}) => {
+}: CacheOptions) => {
     const limitBytes = Math.max(0, Math.floor(limitMb)) * 1024 * 1024;
     const cacheApi = cacheStorage || globalThis.caches;
     const local = resolveStorageArea(storageArea);
     const request = fetchFn || globalThis.fetch.bind(globalThis);
     const CachedResponse = ResponseCtor || globalThis.Response;
     const locks = resolveLockManager(lockManager, cacheStorage);
-    let statePromise = null;
+    let statePromise: Promise<CacheState | null> | null = null;
     let writeQueue = Promise.resolve();
     let persistenceQueue = Promise.resolve();
-    let saveTimer = null;
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
-    let limited = null;
+    let limited: (Error & { retryAt?: number | null }) | null = null;
     let dirtyGeneration = 0;
     let persistedGeneration = 0;
-    let closePromise = null;
+    let closePromise: Promise<boolean> | null = null;
     let storeDrainActive = false;
-    const inFlight = new Map();
-    const activeLoads = new Set();
-    const pendingStores = [];
+    const inFlight = new Map<string, InFlightOwner>();
+    const activeLoads = new Set<Promise<unknown>>();
+    const pendingTouches = new Map<string, IndexEntry>();
+    let touchTimer: ReturnType<typeof setTimeout> | null = null, touchQueue: Promise<void> = Promise.resolve();
+    const pendingStores: { remoteUrl: string; data: ArrayBuffer; contentType: string | null; resolve?: (value: unknown) => void }[] = [];
 
-    const withCacheLock = callback => locks.request(COORDINATION_LOCK, callback);
+    const withCacheLock = <T,>(callback: () => Promise<T>) => locks!.request(COORDINATION_LOCK, callback as () => Promise<unknown>) as Promise<T>;
 
     const removeStoredIndex = async () => {
         if (!local || typeof local.remove !== 'function') return;
         try { await local.remove(INDEX_KEY); } catch (error) { /* Best-effort cleanup. */ }
     };
 
-    const removeIndexEntry = (state, url) => {
+    const removeIndexEntry = (state: CacheState, url: string) => {
         const entry = state.index[url];
         if (!entry) return false;
         delete state.index[url];
@@ -263,7 +278,7 @@ const create = ({
         return true;
     };
 
-    const setIndexEntry = (state, url, entry) => {
+    const setIndexEntry = (state: CacheState, url: string, entry: IndexEntry) => {
         const previous = state.index[url];
         if (previous) state.totalBytes -= previous.size;
         state.index[url] = entry;
@@ -272,7 +287,7 @@ const create = ({
         state.lru.set(url, entry);
     };
 
-    const trim = async state => {
+    const trim = async (state: CacheState) => {
         if (state.totalBytes <= limitBytes) return false;
 
         let changed = false;
@@ -284,10 +299,10 @@ const create = ({
         return changed;
     };
 
-    const snapshotIndex = state => Object.fromEntries(Object.entries(state.index)
+    const snapshotIndex = (state: CacheState) => Object.fromEntries(Object.entries(state.index)
         .map(([url, entry]) => [url, { size: entry.size, used: entry.used }]));
 
-    const sameIndex = (left, right) => {
+    const sameIndex = (left: CacheIndex, right: CacheIndex) => {
         const leftEntries = Object.entries(left);
         const rightEntries = Object.entries(right);
         if (leftEntries.length !== rightEntries.length) return false;
@@ -295,18 +310,27 @@ const create = ({
             && right[url].size === entry.size && right[url].used === entry.used);
     };
 
-    const reconcile = async state => {
+    const reconcile = async (state: CacheState) => {
         const [requests, storedIndex] = await Promise.all([
             state.cache.keys(),
             readStoredIndex(local)
         ]);
-        const index = {};
+        const index: CacheIndex = {};
 
         for (const item of requests) {
             const url = typeof item === 'string' ? item : item.url;
             if (!url?.startsWith(`${REMOTE_TILE_ORIGIN}/`)) {
                 await state.cache.delete(item);
                 continue;
+            }
+            // Only an entry neither index knows needs its response opened. This
+            // runs under the shared lock for every commit, so its cost must not
+            // grow with the cache. A stored size wins: another owner may have
+            // replaced the tile since this context last read it.
+            const known = storedIndex[url] || state.index[url];
+            if (known && known.size > 0 && known.size <= MAX_TILE_BYTES) {
+                const used = Math.max(storedIndex[url]?.used || 0, state.index[url]?.used || 0);
+                if (used > 0) { index[url] = { size: Math.floor(known.size), used: Math.floor(used) }; continue; }
             }
             const response = await state.cache.match(item);
             if (!response) continue;
@@ -319,7 +343,7 @@ const create = ({
                 Number.isFinite(cachedUsed) && cachedUsed > 0 ? cachedUsed : 0,
                 ...candidates.map(entry => entry.used)
             );
-            if (!Number.isFinite(size) || size <= 0 || size > MAX_TILE_BYTES || used <= 0) {
+            if (size === undefined || !Number.isFinite(size) || size <= 0 || size > MAX_TILE_BYTES || used <= 0) {
                 await state.cache.delete(item);
                 continue;
             }
@@ -333,7 +357,7 @@ const create = ({
         return { storedIndex, metadataChanged: !sameIndex(index, storedIndex) };
     };
 
-    const persistSnapshot = async (state, storedIndex) => {
+    const persistSnapshot = async (state: CacheState, storedIndex: CacheIndex) => {
         if (!local || typeof local.set !== 'function') return false;
         const snapshot = snapshotIndex(state);
         const generation = dirtyGeneration;
@@ -342,7 +366,7 @@ const create = ({
         return true;
     };
 
-    const saveIndex = async (state, { force = false } = {}) => {
+    const saveIndex = async (state: CacheState, { force = false } = {}) => {
         if (!local || typeof local.set !== 'function' || !state) return false;
         if (!force && dirtyGeneration <= persistedGeneration) return true;
         let saved = false;
@@ -364,7 +388,7 @@ const create = ({
         return saved;
     };
 
-    const scheduleSave = state => {
+    const scheduleSave = (state: CacheState) => {
         if (saveTimer !== null || !state || closed) return;
         saveTimer = setTimeout(() => {
             saveTimer = null;
@@ -378,7 +402,7 @@ const create = ({
         }, 1000);
     };
 
-    const persistMutation = async (state, storedIndex) => {
+    const persistMutation = async (state: CacheState, storedIndex: CacheIndex) => {
         dirtyGeneration++;
         try {
             if (await persistSnapshot(state, storedIndex)) return true;
@@ -387,7 +411,7 @@ const create = ({
         return false;
     };
 
-    const initialize = async () => {
+    const initialize = async (): Promise<CacheState | null> => {
         if (!cacheApi || typeof cacheApi.open !== 'function' || !locks) return null;
         return withCacheLock(async () => {
             if (limitBytes === 0) {
@@ -411,7 +435,7 @@ const create = ({
         return statePromise;
     };
 
-    const read = async remoteUrl => {
+    const read = async (remoteUrl: string) => {
         const state = await getState();
         if (!state) return null;
         let data;
@@ -432,21 +456,40 @@ const create = ({
             return null;
         }
 
-        try {
-            await withCacheLock(async () => {
-                const { storedIndex, metadataChanged } = await reconcile(state);
-                let changed = metadataChanged;
-                // Another owner may have evicted the response after this read
-                // cloned it. Return that safe clone, but do not resurrect an
-                // index row for a tile no longer present in CacheStorage.
-                if (state.index[remoteUrl]) {
-                    setIndexEntry(state, remoteUrl, { size: data.byteLength, used: now() });
-                    changed = true;
-                }
-                if (changed) await persistMutation(state, storedIndex);
-            });
-        } catch (error) { /* LRU metadata is best effort after a valid hit. */ }
+        // A hit delivers its bytes now. Its LRU touch joins a batch, so a view
+        // of cached tiles costs one lock and one index write, not one per tile.
+        // An abrupt teardown can lose up to a second of touches, which only
+        // affects eviction order.
+        pendingTouches.set(remoteUrl, { size: data.byteLength, used: now() });
+        scheduleTouches();
         return data;
+    };
+
+    const commitTouches = () => {
+        touchQueue = touchQueue.then(async () => {
+            if (!pendingTouches.size) return;
+            const touches = [...pendingTouches];
+            pendingTouches.clear();
+            const state = await getState();
+            if (!state) return;
+            try {
+                await withCacheLock(async () => {
+                    const { storedIndex, metadataChanged } = await reconcile(state);
+                    let changed = metadataChanged;
+                    // Another owner may have evicted a response since it was
+                    // read. Do not resurrect an index row for a missing tile.
+                    for (const [url, entry] of touches) {
+                        if (state.index[url]) { setIndexEntry(state, url, entry); changed = true; }
+                    }
+                    if (changed) await persistMutation(state, storedIndex);
+                });
+            } catch (error) { /* LRU metadata is best effort after a valid hit. */ }
+        });
+        return touchQueue;
+    };
+    const scheduleTouches = () => {
+        if (touchTimer !== null || closed) return;
+        touchTimer = setTimeout(() => { touchTimer = null; void commitTouches(); }, TOUCH_BATCH_MS);
     };
 
     const drainStores = () => {
@@ -499,14 +542,14 @@ const create = ({
         });
     };
 
-    const enqueueStore = (remoteUrl, data, contentType) => {
+    const enqueueStore = (remoteUrl: string, data: ArrayBuffer, contentType: string | null) => {
         pendingStores.push({ remoteUrl, data, contentType });
         drainStores();
     };
 
-    const startNetworkLoad = remoteUrl => {
+    const startNetworkLoad = (remoteUrl: string) => {
         if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
-        if (limited?.retryAt > now()) throw limited;
+        if ((limited?.retryAt ?? 0) > now()) throw limited;
         // One owner holds the immutable tile's network request, byte bound,
         // validation, and cache write. Callers subscribe below; their own
         // cancellation never tears down work another caller still needs.
@@ -518,12 +561,12 @@ const create = ({
             promise: null,
             cancel: null,
             cancelled: null,
-        };
+        } as unknown as InFlightOwner;
         owner.cancelled = new Promise((_, reject) => {
             owner.cancel = () => reject(Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' }));
         });
         owner.cancelled.catch(() => {});
-        let response;
+        let response: Response | undefined;
         owner.promise = (async () => {
             response = await deadline.run(request(remoteUrl, {
                 signal: deadline.signal,
@@ -533,17 +576,17 @@ const create = ({
             if (response?.status === 429) {
                 const next = rateLimitError('Mapterhorn', response, now());
                 next.retryAt ??= now() + 300000;
-                limited = limited?.retryAt > next.retryAt ? limited : next;
+                limited = (limited?.retryAt ?? 0) > (next.retryAt ?? 0) ? limited : next;
                 throw limited;
             }
             if (!response || !response.ok) {
                 throw new TileRequestError(
                     `DEM tile request failed (${response && response.status})`,
-                    response && response.status
+                    response ? response.status : 0
                 );
             }
             const data = await readBoundedWebp(response, deadline);
-            if (!closed && limitBytes > 0) enqueueStore(remoteUrl, data, responseHeader(response, 'content-type'));
+            if (!closed && limitBytes > 0) enqueueStore(remoteUrl, data, responseHeader(response, 'content-type') ?? null);
             return data;
         })().finally(() => {
             cancelResponseBody(response);
@@ -555,11 +598,11 @@ const create = ({
         return owner;
     };
 
-    const cancellationError = signal => signal?.reason instanceof Error
+    const cancellationError = (signal: AbortSignal) => signal?.reason instanceof Error
         ? signal.reason
         : Object.assign(new Error('DEM tile request was cancelled'), { name: 'AbortError' });
 
-    const subscribe = async (remoteUrl, owner, signal) => {
+    const subscribe = async (remoteUrl: string, owner: InFlightOwner, signal?: AbortSignal) => {
         if (signal?.aborted) throw cancellationError(signal);
         owner.consumers++;
         let cancel = null;
@@ -577,9 +620,9 @@ const create = ({
             ]);
             // MapLibre may transfer or mutate the returned buffer. Never hand
             // two subscribers the same ArrayBuffer identity.
-            return { data: data.slice(0) };
+            return { data: (data as ArrayBuffer).slice(0) };
         } finally {
-            if (cancel) signal.removeEventListener?.('abort', cancel);
+            if (cancel) signal!.removeEventListener?.('abort', cancel);
             owner.consumers--;
             if (owner.consumers === 0 && !owner.settled) {
                 if (inFlight.get(remoteUrl) === owner) inFlight.delete(remoteUrl);
@@ -588,7 +631,7 @@ const create = ({
         }
     };
 
-    const loadInternal = async (parameters, abortController) => {
+    const loadInternal = async (parameters: { url: string }, abortController?: AbortController) => {
         const remoteUrl = parseTileUrl(parameters && parameters.url);
         if (!remoteUrl) throw new Error('Invalid DEM tile URL');
         if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
@@ -604,7 +647,7 @@ const create = ({
         return subscribe(remoteUrl, owner, caller);
     };
 
-    const load = async (parameters, abortController) => {
+    const load = async (parameters: { url: string }, abortController?: AbortController) => {
         if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
         const operation = loadInternal(parameters, abortController);
         activeLoads.add(operation);
@@ -616,6 +659,8 @@ const create = ({
     };
 
     const flush = async ({ attempts = 1 } = {}) => {
+        if (touchTimer !== null) { clearTimeout(touchTimer); touchTimer = null; }
+        await commitTouches();
         await writeQueue;
         const state = await getState();
         if (saveTimer !== null) {
@@ -655,7 +700,7 @@ const create = ({
     return { load, flush, close };
 };
 
-const getUsage = async ({ cacheStorage, storageArea } = {}) => {
+const getUsage = async ({ cacheStorage, storageArea }: { cacheStorage?: CacheStorage; storageArea?: StorageArea } = {}) => {
     const cacheApi = cacheStorage || globalThis.caches;
     if (!cacheApi || typeof cacheApi.keys !== 'function' || typeof cacheApi.open !== 'function') return null;
 

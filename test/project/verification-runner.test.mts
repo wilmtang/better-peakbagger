@@ -49,7 +49,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['terrain'], [['verify-terrain-visual.mts']]],
         [['terrain', 'chrome', '/tmp/terrain evidence'], [['verify-terrain-visual.mts', '/tmp/terrain evidence']]],
         [['terrain', 'firefox'], [['verify-firefox-terrain.mts']]],
-        [['terrain', 'cache-owners'], [['verify-terrain-cache-owners.mjs']]],
+        [['terrain', 'cache-owners'], [['verify-terrain-cache-owners.mts']]],
         [['terrain', 'lod'], [['verify-terrain-lod.mts']]],
     ];
     for (const [args, expected] of cases) {
