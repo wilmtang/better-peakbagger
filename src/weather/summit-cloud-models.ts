@@ -68,7 +68,13 @@ export function resolveSummitCloudModels(subject: SummitCloudSubject, selected: 
         if (!model) throw new Error('This model does not cover this summit. Choose another model or Automatic.');
         return [model];
     }
-    const ids = leadDays < 2 ? ['gfs_hrrr', 'gem_hrdps_continental', 'gfs_global', 'ecmwf_ifs025']
-        : ['gfs_global', 'ecmwf_ifs025'];
+    // High-resolution feeds end partway through tomorrow's local day. Pairing the
+    // first eligible one with GFS keeps those later hours forecast without a third
+    // or fourth request; they read as GFS alone at low confidence.
+    const highResolution = ['gfs_hrrr', 'gem_hrdps_continental'];
+    const ids = leadDays < 1 ? [...highResolution, 'gfs_global', 'ecmwf_ifs025']
+        : leadDays < 2 && eligible.some(model => highResolution.includes(model.id))
+            ? [eligible.find(model => highResolution.includes(model.id))!.id, 'gfs_global']
+            : ['gfs_global', 'ecmwf_ifs025'];
     return ids.map(id => eligible.find(model => model.id === id)).filter((model): model is SummitCloudModel => Boolean(model)).slice(0, 2);
 }

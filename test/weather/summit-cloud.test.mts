@@ -17,6 +17,10 @@ test('profile capabilities and explicit automatic comparison stay separate from 
     assert.equal(summitCloudModel('ecmwf_ifs'), undefined);
     assert.deepEqual(resolveSummitCloudModels(subject, 'auto', 0).map(x => x.id), ['gfs_hrrr', 'gem_hrdps_continental']);
     assert.deepEqual(resolveSummitCloudModels(subject, 'auto', 3).map(x => x.id), ['gfs_global', 'ecmwf_ifs025']);
+    // Tomorrow keeps one high-resolution feed and GFS, which covers the hours it cannot reach.
+    assert.deepEqual(resolveSummitCloudModels(subject, 'auto', 1).map(x => x.id), ['gfs_hrrr', 'gfs_global']);
+    assert.deepEqual(resolveSummitCloudModels({ latitude: 53.11, longitude: -119.16 }, 'auto', 1).map(x => x.id), ['gem_hrdps_continental', 'gfs_global']);
+    assert.deepEqual(resolveSummitCloudModels({ latitude: 45.83, longitude: 6.87 }, 'auto', 1).map(x => x.id), ['gfs_global', 'ecmwf_ifs025']);
     assert.throws(() => resolveSummitCloudModels({ latitude: 60, longitude: 10 }, 'gfs_hrrr'));
 });
 test('each model requests only the pressure levels the saved capability probe found complete', async () => {
@@ -168,6 +172,14 @@ test('one unresolved or failed comparison leaves the other model, named and low 
     assert.equal(failed.key, 'inside'); assert.equal(failed.confidence, 'Low confidence');
     assert.equal(predictSummitCloud([asDataset(lost)], subject, time, time, 2).key, 'unavailable');
     assert.equal(predictSummitCloud([asDataset(data)], subject, time, time, 1).reason.startsWith('Only'), false);
+});
+test('Automatic tomorrow hours past the high-resolution horizon stay forecast at low confidence', () => {
+    const hour = 3600000, late = time + 20 * hour;
+    const hrrr = cloudDataset({ model: summitCloudModel('gfs_hrrr'), hours: 16 }), gfs = cloudDataset();
+    const early = predictSummitCloud([asDataset(hrrr), asDataset(gfs)], subject, time, time, 2);
+    assert.equal(early.key, 'clear'); assert.equal(early.confidence, 'Low confidence', 'GFS is coarse, so agreement is still low confidence');
+    const uncovered = predictSummitCloud([asDataset(hrrr), asDataset(gfs)], subject, late, time, 2);
+    assert.equal(uncovered.key, 'clear'); assert.match(uncovered.reason, /^Only GFS/);
 });
 test('bounded multi-point requests preserve 23/25 hour UTC identities and missing units', () => {
     for (const hours of [23, 25]) {
