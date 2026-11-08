@@ -906,6 +906,18 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         };
     };
 
+    // The same reservation the native picker uses (src/maps/vector-map.ts): the
+    // longest label plus its arrow, so a choice never resizes the control.
+    const reservePickerWidth = () => {
+        const picker = pickerElement, metrics = document.createElement('canvas').getContext('2d');
+        if (!picker?.isConnected || !metrics) return;
+        const style = getComputedStyle(picker);
+        metrics.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        // Text scales with the font and the arrow does not, so enlarged text stays reserved.
+        const text = Math.max(...[...picker.options].map(option => metrics.measureText(option.textContent || '').width));
+        picker.style.width = `calc(${(text / parseFloat(style.fontSize)).toFixed(3)}em + 40px)`;
+    };
+
     const renderPicker = () => {
         clearTimeout(vectorCooldownTimer!);
         const next = Math.min(...[...vectorCooldowns.values()].map(value => retryDeadline(value)).filter((value): value is number => !!value));
@@ -922,6 +934,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
                 return option;
             }));
             pickerElement.value = selection;
+            reservePickerWidth();
         }
         post('layerBasemaps', { choices, selection });
     };
@@ -1955,6 +1968,10 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
 
         const controls = document.createElement('div');
         controls.className = 'bpb-terrain-controls';
+        // Peakbagger's native control is a boxed select; 3D wears the same one
+        // so the control does not change when the map changes mode.
+        const pickerBox = document.createElement('div');
+        pickerBox.className = 'bpb-terrain-picker-box';
         const picker = document.createElement('select');
         picker.className = 'bpb-terrain-picker';
         picker.setAttribute('aria-label', 'Base map');
@@ -1965,7 +1982,8 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         notice.setAttribute('role', 'status');
         notice.hidden = true;
         noticeElement = notice;
-        controls.append(picker, notice);
+        pickerBox.append(picker);
+        controls.append(pickerBox, notice);
         renderPicker();
 
         // Scroll zooms directly, matching the native 2D map. Pan and tilt are
@@ -1983,6 +2001,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
         status.textContent = 'Loading terrain…';
         mapElement.append(canvas, controls, hint, status);
         document.body.append(mapElement);
+        reservePickerWidth();
 
         try {
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
