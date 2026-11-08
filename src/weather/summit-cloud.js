@@ -16,7 +16,7 @@ import { weatherDayWindow } from './weather-day.js';
 import { createWeatherIcon } from './weather-icon.js';
 import { summitCloudModel, eligibleSummitCloudModels, resolveSummitCloudModels } from './summit-cloud-models.ts';
 import { createSummitCloudClient } from './summit-cloud-client.js';
-import { CLOUD_STATES, predictSummitCloud } from './summit-cloud-core.js';
+import { CLOUD_STATES, predictSummitCloud } from './summit-cloud-core.ts';
 
 const ID = 'bpb-summit-cloud', HOUR = 3600000, DAY = 24 * HOUR, element = dom.element;
 const dateLabel = date => new Date(`${date}T12:00Z`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });

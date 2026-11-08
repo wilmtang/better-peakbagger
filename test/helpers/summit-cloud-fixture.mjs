@@ -1,4 +1,4 @@
-import { cloudSamplePoints } from '../../src/weather/summit-cloud-core.js';
+import { cloudSamplePoints } from '../../src/weather/summit-cloud-core.ts';
 import { summitCloudModel } from '../../src/weather/summit-cloud-models.ts';
 
 export const cloudSubject = { latitude: 47.475, longitude: -120.902, elevation: 2870 };

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { cloudAtElevation, predictModelCloud, predictSummitCloud } from '../../src/weather/summit-cloud-core.js';
+import { cloudAtElevation, predictModelCloud, predictSummitCloud, type CloudDataset } from '../../src/weather/summit-cloud-core.ts';
 import { SUMMIT_CLOUD_MODELS, summitCloudModel, resolveSummitCloudModels } from '../../src/weather/summit-cloud-models.ts';
 import { summitCloudRequest, readSummitCloudResponse, createSummitCloudClient } from '../../src/weather/summit-cloud-client.js';
 import { cloudSubject as subject, cloudTime as time, cloudDataset, cloudResponse } from '../helpers/summit-cloud-fixture.mjs';
@@ -9,7 +9,8 @@ import { cloudSubject as subject, cloudTime as time, cloudDataset, cloudResponse
 const model = summitCloudModel('gfs_global'), day = { start: time, end: time + 24 * 3600000 };
 type Dataset = ReturnType<typeof cloudDataset>;
 type Point = Dataset['points'][number];
-const predict = (data: Dataset) => predictModelCloud(data, subject, time, time);
+const asDataset = (data: Dataset) => data as unknown as CloudDataset;
+const predict = (data: Dataset) => predictModelCloud(asDataset(data), subject, time, time);
 const setProfile = (point: Point, values: Record<string, unknown>) => point.samples.forEach(sample => sample.levels.forEach(level => Object.assign(level, values)));
 test('profile capabilities and explicit automatic comparison stay separate from surface feeds', () => {
     assert.equal(SUMMIT_CLOUD_MODELS.length, 12);
@@ -59,11 +60,60 @@ test('wind interpolation crosses north and thin cloud layers cannot be diluted i
     data.points[0]!.samples[0]!.levels.push({ pressure: 660, height: 3350, cloud: 100, humidity: 100, temperature: 0, wind: 5, direction: 270 });
     assert.notEqual(predict(data).key, 'clear');
 });
+test('water-referenced humidity cannot read saturated cold air as dry', () => {
+    const iceSaturated = { temperature: -30, humidity: 75, cloud: 15 };
+    const water = cloudDataset({ model: summitCloudModel('gem_regional') }); water.points.forEach(p => setProfile(p, iceSaturated));
+    assert.equal(predict(water).key, 'inside');
+    const reading = predict(water).summit!;
+    assert.equal(Math.round(reading.humidity), 75, 'the reported humidity stays reported');
+    assert.ok(reading.saturation > 99 && reading.cloud > 90);
+    // The same numbers on a model whose humidity reaches 100% in cold air really are dry.
+    const saturation = cloudDataset(); saturation.points.forEach(p => setProfile(p, iceSaturated));
+    assert.equal(predict(saturation).key, 'clear');
+    assert.equal(predict(saturation).summit!.saturation, 75);
+    // Above freezing the adjustment changes nothing.
+    const warm = cloudDataset({ model: summitCloudModel('gem_regional') }); warm.points.forEach(p => setProfile(p, { temperature: 4, humidity: 75, cloud: 15 }));
+    assert.equal(predict(warm).summit!.cloud, 15); assert.equal(predict(warm).summit!.saturation, 75);
+    assert.equal(predict(warm).key, 'clear');
+});
+test('captured HRRR profile near -10 C reads as inside cloud', () => {
+    // Mount Rainier, 2026-11-09T13Z, live: 92% humidity interpolates to about 51% derived cloud.
+    const rainier = { ...subject, elevation: 4392 };
+    const data = cloudDataset({ model: summitCloudModel('gfs_hrrr') }); data.points[0]!.grid.elevation = 3467;
+    data.points[0]!.samples[0]!.levels = [
+        { pressure: 700, height: 3027, humidity: 78, cloud: 13, temperature: -6.1, wind: 13.28, direction: 217 },
+        { pressure: 600, height: 4223, humidity: 94, cloud: 54, temperature: -10.5, wind: 22.07, direction: 226 },
+        { pressure: 500, height: 5607, humidity: 84, cloud: 28, temperature: -18.2, wind: 24.04, direction: 235 },
+    ];
+    assert.equal(predictModelCloud(asDataset(data), rainier, time, time).key, 'inside');
+});
+test('cold-air adjustment does not compound on the cached profile across repaints', () => {
+    const data = cloudDataset({ model: summitCloudModel('icon_global') }); data.points.forEach(p => setProfile(p, { temperature: -30, humidity: 60, cloud: 0 }));
+    const before = JSON.stringify(data.points);
+    const first = predict(data), second = predict(data);
+    assert.equal(JSON.stringify(data.points), before);
+    assert.deepEqual(first.summit, second.summit); assert.equal(first.key, second.key);
+    assert.ok(first.summit!.saturation < 85, '60% over water at -30 C is not saturated');
+});
+test('neighbors, the moist-air check and nearby layers read the adjusted values too', () => {
+    const surrounding = cloudDataset({ model: summitCloudModel('gem_regional') });
+    surrounding.points.forEach(p => setProfile(p, { temperature: -30, humidity: 50, cloud: 0 }));
+    surrounding.points.slice(1).forEach(p => setProfile(p, { humidity: 75, cloud: 15 }));
+    assert.equal(predict(surrounding).key, 'blocked');
+    const incoming = cloudDataset({ model: summitCloudModel('gem_regional') });
+    incoming.points.forEach(p => setProfile(p, { temperature: -30, humidity: 50, cloud: 0 }));
+    setProfile(incoming.points[4]!, { humidity: 66 });
+    assert.equal(predict(incoming).lift, true);
+    const layer = cloudDataset({ model: summitCloudModel('gem_regional') });
+    layer.points.forEach(p => setProfile(p, { temperature: -30, humidity: 50, cloud: 0 }));
+    layer.points[0]!.samples[0]!.levels.push({ pressure: 660, height: 3350, cloud: 15, humidity: 75, temperature: -30, wind: 6, direction: 270 });
+    assert.notEqual(predict(layer).key, 'clear');
+});
 test('freshness, unavailable comparison and model disagreement downgrade the prediction', () => {
     const stale = cloudDataset(); stale.metadata.lastUpdate -= 24 * 3600000; assert.equal(predict(stale).key, 'uncertain');
     const cma = cloudDataset({ model: summitCloudModel('cma_grapes_global') }); Object.assign(cma, { metadata: null }); assert.equal(predict(cma).key, 'uncertain');
-    assert.equal(predictSummitCloud([cloudDataset(), cloudDataset({ cloud: 95, humidity: 95 })], subject, time, time).key, 'uncertain');
-    assert.equal(predictSummitCloud([cloudDataset()], subject, time, time, 2).key, 'uncertain');
+    assert.equal(predictSummitCloud([asDataset(cloudDataset()), asDataset(cloudDataset({ cloud: 95, humidity: 95 }))], subject, time, time).key, 'uncertain');
+    assert.equal(predictSummitCloud([asDataset(cloudDataset())], subject, time, time, 2).key, 'uncertain');
     assert.equal(predictSummitCloud([], subject, time, time, 2).key, 'unavailable');
 });
 test('bounded multi-point requests preserve 23/25 hour UTC identities and missing units', () => {

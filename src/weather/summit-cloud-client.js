@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { SUMMIT_CLOUD_MODELS } from './summit-cloud-models.ts';
-import { cloudSamplePoints, cloudDistanceKm } from './summit-cloud-core.js';
+import { cloudSamplePoints, cloudDistanceKm } from './summit-cloud-core.ts';
 import { createPeakModelUpdateClient } from './peak-weather-updates.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';

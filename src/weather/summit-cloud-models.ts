@@ -3,6 +3,9 @@
 
 import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
 
+// `water`: reported humidity is relative to liquid water, so saturated cold air
+// reads well below 100%. Other models reach 100% at every temperature.
+export type HumidityBasis = 'water' | 'saturation';
 export interface SummitCloudSubject { latitude: number; longitude: number; elevation?: number | null }
 export interface SummitCloudModel {
     readonly id: string;
@@ -13,6 +16,7 @@ export interface SummitCloudModel {
     readonly days: number;
     readonly levels: readonly number[];
     readonly requireFreshness: boolean;
+    readonly humidityBasis: HumidityBasis;
 }
 
 // Pressure profiles are a separate capability from the surface-weather menu.
@@ -27,6 +31,9 @@ const sparse = [1000, 925, 850, 700, 600, 500, 400, 300, 250];
 const hrrr = [1000, 925, 850, 800, 750, 700, 675, 650, 625, 600, 500, 400, 300, 250];
 const icon = dense.filter(level => level !== 750 && level !== 650);
 const jma = sparse.filter(level => level !== 250);
+// Max reported humidity follows the ice-saturation curve, or stays well below
+// 100% in cold air. UKMO is ambiguous in the evidence, so it stays unadjusted.
+const waterBasis = new Set(['gfs_hrrr', 'gem_hrdps_continental', 'gem_regional', 'gem_global', 'icon_global']);
 const specifications: [id: string, gridKm: number, metadata: string, levels?: number[]][] = [
     ['gfs_hrrr', 3, 'ncep_hrrr_conus', hrrr],
     ['gem_hrdps_continental', 2.5, 'cmc_gem_hrdps'],
@@ -44,7 +51,8 @@ const specifications: [id: string, gridKm: number, metadata: string, levels?: nu
 export const SUMMIT_CLOUD_MODELS: readonly SummitCloudModel[] = Object.freeze(specifications.map(([id, gridKm, metadata, levels = dense]) => {
     const weather = PEAK_WEATHER_MODELS.find((model: { id: string }) => model.id === id)!;
     return Object.freeze({ id, label: weather.label, gridKm, metadata, domain: weather.domain,
-        days: weather.forecastDays, levels: Object.freeze([...levels]), requireFreshness: id === 'cma_grapes_global' });
+        days: weather.forecastDays, levels: Object.freeze([...levels]), requireFreshness: id === 'cma_grapes_global',
+        humidityBasis: waterBasis.has(id) ? 'water' as const : 'saturation' as const });
 }));
 export const summitCloudModel = (id: string) => SUMMIT_CLOUD_MODELS.find(model => model.id === id);
 export const eligibleSummitCloudModels = (subject?: SummitCloudSubject | null): SummitCloudModel[] => subject && Number.isFinite(subject.latitude) && Math.abs(subject.latitude) <= 90
