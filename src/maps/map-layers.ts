@@ -327,7 +327,12 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
                 map.on('movestart', moveStarted);
                 map.on('moveend', refresh);
                 map.on('unload', unloaded); map.getContainer().addEventListener('pointerdown', activateMap);
-                if (win.ResizeObserver) { binding.observer = new win.ResizeObserver(position); binding.observer.observe(candidate.frame || map.getContainer()); }
+                if (win.ResizeObserver) {
+                    const observer = new win.ResizeObserver(position); binding.observer = observer;
+                    // Expanding preceding content can move a same-size map.
+                    // Keep body-mounted controls anchored through those reflows.
+                    for (let target: Element | null = candidate.frame || map.getContainer(); target; target = target.parentElement) observer.observe(target);
+                }
                 custom?.mode(false); custom?.bind(owner, map); apply(); refresh(); return true;
             } catch (error) { console.warn('Better Peakbagger: map layers could not bind', error); unbind(); }
         }
