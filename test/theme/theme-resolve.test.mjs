@@ -20,7 +20,7 @@ test('theme consumers delegate instead of keeping local system-resolution copies
     const files = [
         '../../src/settings/settings.js',
         '../../src/gpx/gpx-analyzer.js',
-        '../../src/maps/big-map.js',
+        '../../src/maps/big-map.ts',
         '../../src/maps/peak-map.js',
     ];
     for (const file of files) {

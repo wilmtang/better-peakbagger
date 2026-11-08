@@ -6,6 +6,8 @@
 // to route maps and summit-focused peak maps.
 // Runs in MAIN world because the Leaflet map and layers are page-owned globals.
 
+// Peakbagger's page owns Leaflet and its layers; they have no declarations here.
+type PageOwned = ReturnType<typeof JSON.parse>;
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { gpxMetrics } from '../gpx/gpx-metrics.js';
@@ -46,7 +48,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 
         const subjectLink = Array.from(document.querySelectorAll('a[href]')).find(link => {
             try {
-                const url = new URL(link.href, location.href);
+                const url = new URL((link as HTMLAnchorElement).href, location.href);
                 return url.origin === location.origin
                     && /\/peak\.aspx$/i.test(url.pathname)
                     && Number(url.searchParams.get('pid')) === id;
@@ -71,29 +73,29 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
     let casingLayers = new WeakSet();
     let originalTrackStyles = new WeakMap();
     let mouseoutHandlers = new WeakMap();
-    const activeEnhancedLayers = new Set();
-    const activeCasings = new Set();
+    const activeEnhancedLayers = new Set<PageOwned>();
+    const activeCasings = new Set<PageOwned>();
     let routeStyle = { ...DEFAULT_STYLE };
-    let activeMap = null;
+    let activeMap: PageOwned = null;
     // The Leaflet map (and its L) can live in a same-origin child iframe, so
     // remember the window that owns them to build casings in the same realm.
-    let activeMapWin = null;
-    let activeMapFrame = null;
-    let activeMapHandlers = null;
-    let mapResizeObserver = null;
+    let activeMapWin: PageOwned = null;
+    let activeMapFrame: PageOwned = null;
+    let activeMapHandlers: PageOwned = null;
+    let mapResizeObserver: PageOwned = null;
     let mapGeneration = 0;
-    let retryTimer = null;
+    let retryTimer: PageOwned = null;
 
     // Peakbagger colors each group-map track to tell climbers apart. Read that
     // native color as #rrggbb so the 3D view can keep tracks distinct; #rgb and
     // rgb() forms are normalized, anything else returns null (frame falls back).
-    const nativeTrackColor = layer => {
+    const nativeTrackColor = (layer: PageOwned) => {
         const raw = layer && layer.options && typeof layer.options.color === 'string' ? layer.options.color.trim() : '';
         if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toLowerCase();
-        if (/^#[0-9a-f]{3}$/i.test(raw)) return '#' + raw.slice(1).split('').map(c => c + c).join('').toLowerCase();
+        if (/^#[0-9a-f]{3}$/i.test(raw)) return '#' + raw.slice(1).split('').map((c: PageOwned) => c + c).join('').toLowerCase();
         const rgb = raw.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
-        if (rgb && rgb.slice(1).every(n => Number(n) <= 255)) {
-            return '#' + rgb.slice(1, 4).map(n => Number(n).toString(16).padStart(2, '0')).join('');
+        if (rgb && rgb.slice(1).every((n: PageOwned) => Number(n) <= 255)) {
+            return '#' + rgb.slice(1, 4).map((n: PageOwned) => Number(n).toString(16).padStart(2, '0')).join('');
         }
         return null;
     };
@@ -101,7 +103,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
     // Group-track popups are native Peakbagger HTML. Carry only the ascent id
     // and plain-text label into the extension frame; the frame reconstructs
     // the link instead of trusting or forwarding page-owned markup.
-    const nativeAscentLink = layer => {
+    const nativeAscentLink = (layer: PageOwned) => {
         const popup = layer && layer._popup;
         if (!popup || !activeMapWin) return null;
         let content;
@@ -111,7 +113,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
                 : (popup._content ?? popup.content);
         } catch (error) { return null; }
 
-        let anchors = [];
+        let anchors: PageOwned = [];
         try {
             if (typeof content === 'string') {
                 const parsed = new activeMapWin.DOMParser().parseFromString(content, 'text/html');
@@ -141,14 +143,14 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         ? { color: routeStyle.color, weight: routeStyle.width }
         : { weight: routeStyle.width };
 
-    const containsLine = latLngs => {
+    const containsLine = (latLngs: PageOwned) => {
         if (!Array.isArray(latLngs) || !latLngs.length) return false;
         if (latLngs.length >= 2 && latLngs.every(point => point
             && Number.isFinite(point.lat) && Number.isFinite(point.lng))) return true;
         return latLngs.some(containsLine);
     };
 
-    const isNativeTrack = (layer, L) => {
+    const isNativeTrack = (layer: PageOwned, L: PageOwned) => {
         if (!isRouteMap) return false;
         if (!layer || typeof layer.setStyle !== 'function' || typeof layer.getLatLngs !== 'function') return false;
         if (typeof L.Polyline !== 'function' || !(layer instanceof L.Polyline)) return false;
@@ -170,7 +172,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
     // A white (configurable) underlay traced along the native track, sitting
     // beneath it so the colored line reads as a cased route — the same effect
     // the embedded ascent map builds with a second polyline.
-    const ensureCasing = layer => {
+    const ensureCasing = (layer: PageOwned) => {
         const L = activeMapWin && activeMapWin.L;
         if (!L || typeof L.Polyline !== 'function') return;
         let casing = casings.get(layer);
@@ -202,7 +204,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         }
     };
 
-    const removeCasing = layer => {
+    const removeCasing = (layer: PageOwned) => {
         const casing = casings.get(layer);
         if (!casing) return;
         casings.delete(layer);
@@ -212,7 +214,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         }
     };
 
-    const applyStyle = layer => {
+    const applyStyle = (layer: PageOwned) => {
         const L = activeMapWin && activeMapWin.L;
         // Never treat our own casing as a native track to widen or re-case.
         if (!activeMap || !L || casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
@@ -250,7 +252,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
     // the casing is built in the frame that owns the tracks — the previous
     // code only checked this window and so never found the Full Screen tracks.
     const MAP_IFRAME_SELECTOR = 'iframe#if, iframe[src*="MasterMap.aspx" i], iframe[src*="mastermap.aspx" i]';
-    const frameLifecycle = MapFrameLifecycle.create({ selector: MAP_IFRAME_SELECTOR });
+    const frameLifecycle = MapFrameLifecycle.create({ selector: MAP_IFRAME_SELECTOR } as never);
     const findMapIframe = () => frameLifecycle.current();
 
     const resolveMapContext = () => {
@@ -288,15 +290,15 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
             const generation = mapGeneration;
             const map = activeMap;
             activeMapHandlers = {
-                layeradd: event => queueMicrotask(() => {
+                layeradd: (event: PageOwned) => queueMicrotask(() => {
                     if (activeMap !== map || mapGeneration !== generation) return;
                     applyStyle(event && event.layer);
-                    updateTerrainToggle();
+                    scheduleTerrainToggle();
                 }),
-                layerremove: event => {
+                layerremove: (event: PageOwned) => {
                     if (activeMap !== map || mapGeneration !== generation) return;
                     removeCasing(event && event.layer);
-                    updateTerrainToggle();
+                    scheduleTerrainToggle();
                 }
             };
             activeMap.on('layeradd', activeMapHandlers.layeradd);
@@ -319,11 +321,11 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
     let terrainThemePref = 'system';
     let terrainCacheLimitMb = Schema.DEFAULTS.terrainCacheLimitMb;
     let terrainConsentPending = false;
-    let terrainMount = null;
-    let terrainToggle = null;
-    let terrainCompass = null;
-    let terrainFailureNotice = null;
-    let terrainCoordinator = null;
+    let terrainMount: PageOwned = null;
+    let terrainToggle: PageOwned = null;
+    let terrainCompass: PageOwned = null;
+    let terrainFailureNotice: PageOwned = null;
+    let terrainCoordinator: PageOwned = null;
     const TERRAIN_TOGGLE_GAP = 8;
     // Warm the DEM cache when the user signals intent to open 3D by hovering or
     // focusing the toggle. Throttled so a mouse lingering over the button posts
@@ -368,7 +370,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 
     const effectiveTheme = () => ThemeResolve.resolve(terrainThemePref);
 
-    const postTerrain = (type, detail = {}) => window.postMessage({
+    const postTerrain = (type: PageOwned, detail = {}) => window.postMessage({
         __bpbTerrain: true, dir: 'toCS', type, ...detail
     }, location.origin);
 
@@ -398,11 +400,11 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return emptyRoute();
         const L = activeMapWin.L;
         if (!L) return emptyRoute();
-        const segments = [];
-        const colors = [];
-        const links = [];
-        const tracks = [];
-        const pushLatLngs = (latLngs, color, link, track) => {
+        const segments: PageOwned = [];
+        const colors: PageOwned = [];
+        const links: PageOwned = [];
+        const tracks: PageOwned = [];
+        const pushLatLngs = (latLngs: PageOwned, color: PageOwned, link: PageOwned, track: PageOwned) => {
             if (!Array.isArray(latLngs) || !latLngs.length) return;
             if (latLngs.every(point => point && Number.isFinite(point.lat) && Number.isFinite(point.lng))) {
                 if (latLngs.length >= 2) {
@@ -417,7 +419,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         };
         let trackIndex = 0;
         try {
-            activeMap.eachLayer(layer => {
+            activeMap.eachLayer((layer: PageOwned) => {
                 if (casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
                 const group = mapType === 'G';
                 const color = group ? nativeTrackColor(layer) : null;
@@ -446,7 +448,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         if (!L) return false;
         let found = false;
         try {
-            activeMap.eachLayer(layer => {
+            activeMap.eachLayer((layer: PageOwned) => {
                 if (!found && !casingLayers.has(layer) && isNativeTrack(layer, L)) found = true;
             });
         } catch (error) { /* A live Leaflet layer collection can change during iteration. */ }
@@ -460,9 +462,9 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         if (!peakIdentity || !activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return null;
         const L = activeMapWin.L;
         if (!L || typeof L.Marker !== 'function') return null;
-        let state = null;
+        let state: PageOwned = null;
         try {
-            activeMap.eachLayer(layer => {
+            activeMap.eachLayer((layer: PageOwned) => {
                 if (state || !(layer instanceof L.Marker) || typeof layer.getLatLng !== 'function') return;
                 const point = layer.getLatLng();
                 if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)
@@ -599,10 +601,29 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         });
     };
 
+    let cancelToggleUpdate: (() => void) | null = null;
     const updateTerrainToggle = () => {
         ensureTerrainToggle();
         terrainMount.hidden = false;
         terrainCoordinator.update();
+    };
+
+    // A native settle swaps its markers one layer event at a time. One toggle
+    // update per frame keeps that from forcing a layer scan and layout per marker.
+    const scheduleTerrainToggle = () => {
+        if (cancelToggleUpdate) return;
+        const generation = mapGeneration;
+        const run = () => {
+            cancelToggleUpdate = null;
+            if (mapGeneration === generation) updateTerrainToggle();
+        };
+        if (typeof requestAnimationFrame === 'function') {
+            const frame = requestAnimationFrame(run);
+            cancelToggleUpdate = () => cancelAnimationFrame(frame);
+        } else {
+            const timer = setTimeout(run, 0);
+            cancelToggleUpdate = () => clearTimeout(timer);
+        }
     };
 
     const buildTerrainInit = () => {
@@ -691,6 +712,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
     });
 
     const releaseActiveMap = () => {
+        cancelToggleUpdate?.(); cancelToggleUpdate = null;
         mapResizeObserver?.disconnect();
         mapResizeObserver = null;
         const map = activeMap;
