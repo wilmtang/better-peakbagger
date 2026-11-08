@@ -108,12 +108,12 @@ limits; the Pricing FAQ defines how a request is counted, including fractional
 counts for larger selections. The browser still sends only the HTTP requests
 counted in the action table.
 
-In the Washington example, one cloud request asks for 72 variables at each of
-5 locations. The published calculation gives about **36 counted API calls**,
-even though it is **one network request**. Two models give about 72;
-the 32-day normal-weather request adds about 2.29. Thus the default page can
-send **5 actual requests**, while its **3 forecast requests** represent roughly
-**74.29 counted API calls**. The accounting for the other 2 metadata requests has not
+In the Washington example, the HRDPS cloud request asks for 72 variables at each
+of 5 locations. The published calculation gives about **36 counted API calls**,
+even though it is **one network request**. HRRR's 84 variables give about 42, so
+the pair gives about 78; the 32-day normal-weather request adds about 2.29. Thus
+the default page can send **5 actual requests**, while its **3 forecast requests**
+represent roughly **80.29 counted API calls**. The accounting for the other 2 metadata requests has not
 been verified. These are source-based estimates, not a live account-usage reading.
 See [Open-Meteo pricing](https://open-meteo.com/en/pricing) and the
 [definition, rate-limit evidence and calculation below](#api-call-counting-and-rate-limits).
@@ -312,7 +312,7 @@ The dropdown is a pressure-profile capability allowlist, separate from surface
 weather. Each selected model supplies five columns: summit plus four cardinal
 points at max(10 km, 1.5 grid spacings). This samples regional air, not a terrain
 viewshed. Hourly output may interpolate coarser native steps; unsupported fields
-and horizon-boundary hours remain unavailable.
+stay unavailable, as do horizon-boundary hours on a manually chosen model.
 
 | Model | Approximate profile grid | Nominal horizon |
 | --- | --- | --- |
@@ -329,40 +329,63 @@ and horizon-boundary hours remain unavailable.
 | JMA GSM | 55 km | 11 days |
 | CMA GRAPES | 15 km | 10 days |
 
-Automatic chooses the first two eligible HRRR/HRDPS/GFS/IFS models for the first
-two local dates, then GFS + IFS with a ten-day outlook cap. Manual selection uses
-one remembered model and never silently switches; an unsupported saved choice
+Automatic chooses the first two eligible HRRR/HRDPS/GFS/IFS models for today, the
+first eligible of HRRR/HRDPS plus GFS for tomorrow, and otherwise GFS + IFS with a
+ten-day outlook cap. High-resolution feeds end partway through tomorrow's local
+day, so tomorrow's later hours read as GFS alone. Because GFS is a coarse grid,
+Automatic tomorrow is low confidence even when both models agree. Manual selection
+uses one remembered model and never silently switches; an unsupported saved choice
 stays unavailable. Comparison is a design choice, not required to generate a
 prediction, and its accuracy benefit has not been measured. Agreement between
 deterministic models is not calibrated probabilistic confidence.
 
-GFS profiles use its 25 km product, not the finer surface grid. IFS/AIFS/JMA use
-nine native pressure levels; other allowed models use twelve. Six fields per
-level produce 54/72 variables. October 2026 Mount Stuart probes established
+GFS profiles use its 25 km product, not the finer surface grid. Each model requests
+only levels it serves: HRRR 14 (its 675 and 625 hPa keep Colorado's high peaks
+bracketed above its terrain), most models 12, ICON 10, IFS/AIFS 9 and JMA 8. Six
+fields per level produce 84/72/60/54/48 variables. Probes in October and November
+2026 ([saved evidence](plans/evidence/summit-cloud-humidity-basis.json)) established
 some field compatibility, including sparse brackets, not universal coverage or
 forecast skill. NAM, NBM, IFS 9 km and ACCESS-G lacked required fields in those
 probes and remain excluded. Most profile cloud fractions are humidity-derived,
-so cloud and humidity agreement is not independent evidence.
+so cloud and humidity agreement is not independent evidence. Open-Meteo's formula
+needs about 95% humidity for 60% cloud.
 
 ### Cloud prediction and orographic limits
 
-`src/weather/summit-cloud-core.js` brackets actual summit height with valid
+`src/weather/summit-cloud-core.ts` brackets actual summit height with valid
 geopotential layers above model ground. Temperature/cloud/humidity interpolate
 linearly; wind interpolates by components. No extrapolation or bracket wider
 than 2,200 m is accepted. Duplicate neighboring grid cells are not counted as
 independent samples. Missing values never mean clear.
 
-- Cloud fraction ≥60% and humidity ≥85% at summit height: likely inside cloud.
+Humidity scales differ by model. HRRR, HRDPS, ICON and both GEM models report
+humidity over liquid water, which tops out near ice saturation in cold air: without
+a correction, saturated air at −30 °C reads as about 75% and looks dry. Below 0 °C
+those models use saturation from the IFS mixed-phase blend (ice below −23 °C) and
+re-derive cloud with Open-Meteo's own formula. The thresholds below read those values;
+the card shows the reported humidity beside them. GFS, IFS, AIFS, ARPEGE, JMA and CMA
+reach 100% in cold air and are not adjusted. UKMO's evidence is ambiguous, so it is
+not adjusted either and can still under-read cold cloud. The classification rests on
+one day's field structure, and false “inside” in supersaturated air below −20 °C is
+not ruled out.
+
+- Cloud fraction ≥60% and saturation ≥85% at summit height: likely inside cloud.
 - At least three distinct neighboring cloudy profiles: nearby views likely blocked.
 - Moist/cloudy surroundings or moist incoming lower air: partial obstruction.
 - Clear requires summit and at least three distinct neighbors at cloud ≤20% and
-  humidity <80%, usable airflow and no detected cloudy layer within 500 m.
+  saturation <80%, usable airflow and no detected cloudy layer within 500 m.
   Missing neighbors/incoming-air resolution produces uncertainty.
-- The orographic check looks upwind within 45° of wind **from** direction,
-  wind ≥3 m/s, humidity ≥85% up to 500 m below summit, and lower model ground.
-  It flags a tendency. It does not simulate parcel lifting, stability,
-  condensation, ice microphysics or a terrain cross-section.
-- Model disagreement or a missing Automatic comparison produces uncertainty.
+- The orographic check looks upwind within 45° of wind **from** direction at wind
+  ≥3 m/s. Upwind ground within 200 m of the summit means there is no lower air to
+  lift. Otherwise it looks for saturation ≥85% in complete air 100–500 m below the
+  summit and above upwind ground; no usable air there is uncertain. It flags a
+  tendency. It does not simulate parcel lifting, stability, condensation, ice
+  microphysics or a terrain cross-section.
+- Two models report what both support. Clear against blocked or inside, or either
+  model uncertain, is uncertain. Any other difference reports the less severe
+  obstruction, with partial as the floor, at low confidence, and names what each
+  model said. If one model is missing or cannot bracket the summit, the other's
+  reading stands, named and low confidence.
   Grid >10 km, vertical gap >1,200 m, lead >48 h or missing update metadata
   lowers confidence. There is no percentage-confidence claim.
 - Updates older than max(18 h, three update cycles) are uncertain. CMA additionally
@@ -484,7 +507,7 @@ counted API calls = sum over locations of max(1, V/10, (V/10) × days/14)
 | --- | ---: | ---: |
 | Default GFS weather: 1 point, 10 variables, 32 UTC dates | 1 | 2.29 |
 | One dense cloud model: 5 points, 72 variables, selected day | 1 | 36 |
-| Default Washington weather + HRRR/HRDPS cloud comparison | 3 | 74.29, **plus 2 metadata GETs with unverified accounting** |
+| Default Washington weather + HRRR/HRDPS cloud comparison | 3 | 80.29, **plus 2 metadata GETs with unverified accounting** |
 | Weather + one manually selected dense cloud model | 2 | 38.29, plus metadata |
 | Weather + later-day GFS/IFS cloud comparison | 3 | 65.29, plus metadata |
 | AQI: 1 point, 2 variables, 5 days | 1 | 1 |
@@ -515,7 +538,7 @@ Pinned calculation sources, inspected October 24–25, 2026:
 | `src/weather/peak-weather.js`, subject/location readers, `weather-week.js` | Peak identity, selected location, periods, source display and bounded window |
 | `src/ascent/ascent-weather.js`, `ascent-weather-subject.js` | Strict saved identity/day, first-party summit lookup, archive/docking/GPX adapter |
 | `src/weather/open-meteo-client.js`, model registries, `weather-day.js` | Bounded surface transport, model/date policy, validation and aggregation |
-| `src/weather/summit-cloud.js`, client/models/core | Cloud card, pressure-profile capabilities, sampling and prediction |
+| `src/weather/summit-cloud.ts`, client/models/core | Cloud card, pressure-profile capabilities, sampling and prediction |
 | `src/weather/peak-weather-updates.js`, AQI client/view | Separate metadata and AQI ownership/caches |
 | `src/weather/weather-hourly-table.ts`, `weather-chart-scale.js` | Shared interval series, conditions table and chart scale/ticks |
 | `src/ui/card-read-gate.ts`, `latest-read.ts`, `page-lifecycle.ts` | Eligibility/lazy start, superseding-read ownership, BFCache lifetime |
