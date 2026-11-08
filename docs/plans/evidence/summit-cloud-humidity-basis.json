@@ -1,0 +1,885 @@
+{
+  "capturedAt": "2026-11-08T22:59:59.861Z",
+  "iceSaturationRatio": {
+    "-20": 0.824,
+    "-30": 0.746,
+    "-40": 0.677,
+    "-50": 0.62
+  },
+  "models": {
+    "gfs_global": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1047,
+          "maxHumidity": 100,
+          "p99Humidity": 99,
+          "p95Humidity": 96,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 1338,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 99,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1089,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 880,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-30..-40": {
+          "samples": 568,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-40..-50": {
+          "samples": 652,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "T<-50": {
+          "samples": 186,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          675,
+          650,
+          625,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": []
+      }
+    },
+    "ecmwf_ifs025": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1147,
+          "maxHumidity": 98,
+          "p99Humidity": 95,
+          "p95Humidity": 91,
+          "maxCloud": 70
+        },
+        "0..-10": {
+          "samples": 1242,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1104,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 891,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-30..-40": {
+          "samples": 542,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-40..-50": {
+          "samples": 654,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "T<-50": {
+          "samples": 180,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          700,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          800,
+          750,
+          675,
+          650,
+          625
+        ]
+      }
+    },
+    "icon_global": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1153,
+          "maxHumidity": 100,
+          "p99Humidity": 98,
+          "p95Humidity": 94,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 1250,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1090,
+          "maxHumidity": 100,
+          "p99Humidity": 98,
+          "p95Humidity": 93,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 901,
+          "maxHumidity": 97,
+          "p99Humidity": 90,
+          "p95Humidity": 83,
+          "maxCloud": 67
+        },
+        "-30..-40": {
+          "samples": 539,
+          "maxHumidity": 83,
+          "p99Humidity": 77,
+          "p95Humidity": 75,
+          "maxCloud": 25
+        },
+        "-40..-50": {
+          "samples": 645,
+          "maxHumidity": 70,
+          "p99Humidity": 68,
+          "p95Humidity": 67,
+          "maxCloud": 0
+        },
+        "T<-50": {
+          "samples": 182,
+          "maxHumidity": 66,
+          "p99Humidity": 64,
+          "p95Humidity": 64,
+          "maxCloud": 0
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          700,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          750,
+          675,
+          650,
+          625
+        ]
+      }
+    },
+    "gem_global": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1136,
+          "maxHumidity": 100,
+          "p99Humidity": 99,
+          "p95Humidity": 95,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 1263,
+          "maxHumidity": 100,
+          "p99Humidity": 97,
+          "p95Humidity": 94,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1082,
+          "maxHumidity": 91,
+          "p99Humidity": 89,
+          "p95Humidity": 86,
+          "maxCloud": 46
+        },
+        "-20..-30": {
+          "samples": 875,
+          "maxHumidity": 84,
+          "p99Humidity": 79,
+          "p95Humidity": 77,
+          "maxCloud": 28
+        },
+        "-30..-40": {
+          "samples": 570,
+          "maxHumidity": 74,
+          "p99Humidity": 73,
+          "p95Humidity": 70,
+          "maxCloud": 7
+        },
+        "-40..-50": {
+          "samples": 651,
+          "maxHumidity": 70,
+          "p99Humidity": 67,
+          "p95Humidity": 64,
+          "maxCloud": 0
+        },
+        "T<-50": {
+          "samples": 183,
+          "maxHumidity": 62,
+          "p99Humidity": 62,
+          "p95Humidity": 60,
+          "maxCloud": 0
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          650,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          675,
+          625
+        ]
+      }
+    },
+    "ukmo_global_deterministic_10km": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1150,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 95,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 1260,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 99,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1085,
+          "maxHumidity": 100,
+          "p99Humidity": 97,
+          "p95Humidity": 91,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 886,
+          "maxHumidity": 95,
+          "p99Humidity": 89,
+          "p95Humidity": 84,
+          "maxCloud": 59
+        },
+        "-30..-40": {
+          "samples": 548,
+          "maxHumidity": 97,
+          "p99Humidity": 87,
+          "p95Humidity": 78,
+          "maxCloud": 67
+        },
+        "-40..-50": {
+          "samples": 646,
+          "maxHumidity": 90,
+          "p99Humidity": 78,
+          "p95Humidity": 70,
+          "maxCloud": 42
+        },
+        "T<-50": {
+          "samples": 185,
+          "maxHumidity": 88,
+          "p99Humidity": 86,
+          "p95Humidity": 78,
+          "maxCloud": 37
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          650,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          675,
+          625
+        ]
+      }
+    },
+    "meteofrance_arpege_world": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1166,
+          "maxHumidity": 99,
+          "p99Humidity": 99,
+          "p95Humidity": 92,
+          "maxCloud": 80
+        },
+        "0..-10": {
+          "samples": 1255,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 99,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1063,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 99,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 881,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 98,
+          "maxCloud": 100
+        },
+        "-30..-40": {
+          "samples": 562,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-40..-50": {
+          "samples": 645,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "T<-50": {
+          "samples": 188,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          650,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          675,
+          625
+        ]
+      }
+    },
+    "ecmwf_aifs025_single": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1129,
+          "maxHumidity": 99,
+          "p99Humidity": 95,
+          "p95Humidity": 89,
+          "maxCloud": 79
+        },
+        "0..-10": {
+          "samples": 1270,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1086,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 99,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 892,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 99,
+          "maxCloud": 100
+        },
+        "-30..-40": {
+          "samples": 552,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-40..-50": {
+          "samples": 640,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "T<-50": {
+          "samples": 191,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          700,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          800,
+          750,
+          675,
+          650,
+          625
+        ]
+      }
+    },
+    "jma_gsm": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1031,
+          "maxHumidity": 100,
+          "p99Humidity": 97,
+          "p95Humidity": 91,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 1396,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 98,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1090,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 96,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 872,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 94,
+          "maxCloud": 100
+        },
+        "-30..-40": {
+          "samples": 553,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 98,
+          "maxCloud": 100
+        },
+        "-40..-50": {
+          "samples": 662,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 98,
+          "maxCloud": 100
+        },
+        "T<-50": {
+          "samples": 156,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          700,
+          600,
+          500,
+          400,
+          300
+        ],
+        "missing": [
+          800,
+          750,
+          675,
+          650,
+          625,
+          250
+        ]
+      }
+    },
+    "cma_grapes_global": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1154,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 95,
+          "maxCloud": 90
+        },
+        "0..-10": {
+          "samples": 1227,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 94
+        },
+        "-10..-20": {
+          "samples": 1096,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 93
+        },
+        "-20..-30": {
+          "samples": 881,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 98,
+          "maxCloud": 90
+        },
+        "-30..-40": {
+          "samples": 578,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 98,
+          "maxCloud": 93
+        },
+        "-40..-50": {
+          "samples": 635,
+          "maxHumidity": 100,
+          "p99Humidity": 98,
+          "p95Humidity": 90,
+          "maxCloud": 96
+        },
+        "T<-50": {
+          "samples": 189,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 98
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          650,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          675,
+          625
+        ]
+      }
+    },
+    "gfs_hrrr": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 898,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 95,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 784,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 97,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 650,
+          "maxHumidity": 100,
+          "p99Humidity": 96,
+          "p95Humidity": 89,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 546,
+          "maxHumidity": 91,
+          "p99Humidity": 89,
+          "p95Humidity": 80,
+          "maxCloud": 47
+        },
+        "-30..-40": {
+          "samples": 298,
+          "maxHumidity": 92,
+          "p99Humidity": 87,
+          "p95Humidity": 80,
+          "maxCloud": 47
+        },
+        "-40..-50": {
+          "samples": 567,
+          "maxHumidity": 86,
+          "p99Humidity": 82,
+          "p95Humidity": 72,
+          "maxCloud": 32
+        },
+        "T<-50": {
+          "samples": 1,
+          "maxHumidity": 80,
+          "p99Humidity": 80,
+          "p95Humidity": 80,
+          "maxCloud": 18
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          675,
+          650,
+          625,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": []
+      }
+    },
+    "gem_hrdps_continental": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 448,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 734,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 100,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 628,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 95,
+          "maxCloud": 100
+        },
+        "-20..-30": {
+          "samples": 458,
+          "maxHumidity": 97,
+          "p99Humidity": 91,
+          "p95Humidity": 86,
+          "maxCloud": 69
+        },
+        "-30..-40": {
+          "samples": 350,
+          "maxHumidity": 87,
+          "p99Humidity": 80,
+          "p95Humidity": 77,
+          "maxCloud": 33
+        },
+        "-40..-50": {
+          "samples": 432,
+          "maxHumidity": 86,
+          "p99Humidity": 76,
+          "p95Humidity": 68,
+          "maxCloud": 32
+        },
+        "T<-50": {
+          "samples": 118,
+          "maxHumidity": 72,
+          "p99Humidity": 70,
+          "p95Humidity": 66,
+          "maxCloud": 3
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          650,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          675,
+          625
+        ]
+      }
+    },
+    "gem_regional": {
+      "humidityByTemperature": {
+        "T>0": {
+          "samples": 1081,
+          "maxHumidity": 100,
+          "p99Humidity": 100,
+          "p95Humidity": 97,
+          "maxCloud": 100
+        },
+        "0..-10": {
+          "samples": 1226,
+          "maxHumidity": 100,
+          "p99Humidity": 98,
+          "p95Humidity": 94,
+          "maxCloud": 100
+        },
+        "-10..-20": {
+          "samples": 1051,
+          "maxHumidity": 90,
+          "p99Humidity": 89,
+          "p95Humidity": 85,
+          "maxCloud": 42
+        },
+        "-20..-30": {
+          "samples": 882,
+          "maxHumidity": 81,
+          "p99Humidity": 80,
+          "p95Humidity": 77,
+          "maxCloud": 21
+        },
+        "-30..-40": {
+          "samples": 543,
+          "maxHumidity": 73,
+          "p99Humidity": 72,
+          "p95Humidity": 70,
+          "maxCloud": 6
+        },
+        "-40..-50": {
+          "samples": 763,
+          "maxHumidity": 67,
+          "p99Humidity": 66,
+          "p95Humidity": 64,
+          "maxCloud": 0
+        },
+        "T<-50": {
+          "samples": 214,
+          "maxHumidity": 62,
+          "p99Humidity": 62,
+          "p95Humidity": 60,
+          "maxCloud": 0
+        }
+      },
+      "levels": {
+        "complete": [
+          1000,
+          925,
+          850,
+          800,
+          750,
+          700,
+          650,
+          600,
+          500,
+          400,
+          300,
+          250
+        ],
+        "missing": [
+          675,
+          625
+        ]
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { cloudSamplePoints } from '../../src/weather/summit-cloud-core.js';
-import { summitCloudModel } from '../../src/weather/summit-cloud-models.js';
+import { summitCloudModel } from '../../src/weather/summit-cloud-models.ts';
 
 export const cloudSubject = { latitude: 47.475, longitude: -120.902, elevation: 2870 };
 export const cloudTime = Date.UTC(2026, 9, 24, 12);

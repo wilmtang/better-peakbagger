@@ -14,7 +14,7 @@ import { createStableText } from '../ui/stable-text.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
 import { weatherDayWindow } from './weather-day.js';
 import { createWeatherIcon } from './weather-icon.js';
-import { summitCloudModel, eligibleSummitCloudModels, resolveSummitCloudModels } from './summit-cloud-models.js';
+import { summitCloudModel, eligibleSummitCloudModels, resolveSummitCloudModels } from './summit-cloud-models.ts';
 import { createSummitCloudClient } from './summit-cloud-client.js';
 import { CLOUD_STATES, predictSummitCloud } from './summit-cloud-core.js';
 

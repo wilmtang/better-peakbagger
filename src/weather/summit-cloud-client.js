@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { SUMMIT_CLOUD_MODELS } from './summit-cloud-models.js';
+import { SUMMIT_CLOUD_MODELS } from './summit-cloud-models.ts';
 import { cloudSamplePoints, cloudDistanceKm } from './summit-cloud-core.js';
 import { createPeakModelUpdateClient } from './peak-weather-updates.js';
 import { requestDeadline } from '../net/request-deadline.js';
