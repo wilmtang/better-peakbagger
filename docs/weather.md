@@ -381,12 +381,18 @@ are future evidence, not current inputs.
 
 The weather card's **Air quality** tab requests hourly US AQI and PM2.5 from
 Open-Meteo/CAMS only on selection. It uses the current summit/map-point location
-and offline local time, text categories alongside color and explicit gaps.
+and offline local time. The compact horizontal strip aligns hourly US AQI and
+PM2.5, with pinned labels and a complete six-band scale. Click an hour or use
+Left/Right, Home and End to inspect its time, text category and particle reading;
+inspection stays local and does not make another request. Missing AQI and PM2.5
+are labelled independently. Refresh preserves the selected UTC hour and visible
+hour columns; repeated DST hours keep explicit zone labels.
 It is regional surface output (approximately 45 km globally, 11 km in Europe),
 not a summit measurement or a separate smoke/visibility forecast.
 Leaving the tab, collapse, opt-out, backgrounding or page suspension cancels
 pending work. Returning reuses a five-minute page-memory result; Refresh retains
-old data on failure. Results older than thirty minutes are cleared from view.
+old data on failure. Readings older than thirty minutes are erased while the
+unavailable grid keeps its geometry until retry.
 
 ## Time, transport and privacy
 

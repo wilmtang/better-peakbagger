@@ -48,6 +48,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'weather-intervals': [['verify-weather-intervals.mjs']],
     weather: [['verify-ascent-weather.mjs'], ['verify-ascent-weather.mjs', '--firefox']],
     'peak-weather': [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']],
+    'air-quality': [['verify-ascent-weather.mjs', '--air-quality'], ['verify-ascent-weather.mjs', '--air-quality', '--firefox'], ['verify-air-quality-refresh.mts', 'chrome'], ['verify-air-quality-refresh.mts', 'firefox']],
     'summit-cloud': [['verify-summit-cloud.mjs'], ['verify-summit-cloud.mjs', '--firefox']],
     snow: [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']],
     'snow-depth': [['verify-snow-depth.mjs', 'chrome'], ['verify-snow-depth.mjs', 'firefox']],

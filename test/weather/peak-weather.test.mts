@@ -1839,6 +1839,129 @@ test('air quality is lazy until its tab is selected and reuses the forecast on r
         await waitFor(() => count() === 2 && env.doc.getElementById('bpb-peak-weather-air').getAttribute('aria-busy') === 'false');
     } finally { env.close(); }
 });
+test('air quality uses two aligned hourly rows with a complete category key', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length > 0);
+        const table = env.doc.querySelector('.bpb-air-table');
+        assert.equal(table.tBodies[0].rows.length, 2);
+        assert.deepEqual([...table.tBodies[0].rows].map(row => row.dataset.airRow), ['aqi', 'pm']);
+        const hours = table.tHead.querySelectorAll('[data-air-time]');
+        assert.equal(hours.length, 108);
+        assert.equal(table.tBodies[0].rows[0].cells.length, hours.length + 1);
+        assert.equal(table.tBodies[0].rows[1].cells.length, hours.length + 1);
+        assert.equal(env.doc.querySelectorAll('.bpb-air-scale li').length, 6);
+        assert.match(env.doc.querySelector('.bpb-air-scale').getAttribute('aria-label'), /US AQI/);
+        assert.equal(table.querySelector('[aria-current="time"]').dataset.airTime, hours[0].dataset.airTime);
+    } finally { env.close(); }
+});
+
+test('AQI inspection keeps independent nulls, zero readings and local keyboard navigation without requests', async () => {
+    const now = Date.parse('2024-11-05T12:00:00Z');
+    const env = setup({ aqiFn: () => {
+        const body = airQualityFixture({ now });
+        const hourly = body.hourly as { time: number[]; us_aqi: (number | null)[]; pm2_5: (number | null)[] };
+        hourly.us_aqi[12] = null; hourly.pm2_5[12] = 6.8;
+        hourly.us_aqi[13] = 72; hourly.pm2_5[13] = null;
+        hourly.us_aqi[14] = 0; hourly.pm2_5[14] = 0;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length === 2);
+        const list = env.doc.querySelector('.bpb-air-hours'), requests = env.requests.length;
+        assert.match(env.doc.querySelector('.bpb-air-summary').textContent, /AQI unavailable.*PM2.5 6.8/);
+        assert.equal(env.doc.querySelector('[data-air-row="aqi"] td').textContent, '—');
+        assert.equal(env.doc.querySelector('[data-air-row="aqi"] td').hasAttribute('data-band'), false);
+        list.focus(); list.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+        assert.match(env.doc.querySelector('.bpb-air-summary').textContent, /72 US AQI · Moderate.*PM2.5 Unavailable/);
+        list.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+        assert.match(env.doc.querySelector('.bpb-air-summary').textContent, /0 US AQI · Good.*PM2.5 0.0/);
+        assert.equal(env.doc.querySelector('th[aria-current="time"]').dataset.airTime, String(now + 2 * 3600000));
+        assert.equal(env.requests.length, requests); assert.equal(env.doc.activeElement, list);
+    } finally { env.close(); }
+});
+
+test('AQI refresh preserves the selected UTC hour and scroll when older hours leave the forecast', async () => {
+    let now = Date.parse('2024-11-05T12:00:00Z');
+    const env = setup({ aqiFn: () => new Response(JSON.stringify(airQualityFixture({ now })), { headers: { 'content-type': 'application/json' } }) });
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length === 2);
+        const selected = now + 4 * 3600000;
+        env.doc.querySelector(`th[data-air-time="${selected}"]`).click(); env.doc.querySelector('.bpb-air-hours').scrollLeft = 210;
+        now += 3600000; env.setNow(new Date(now).toISOString());
+        env.doc.querySelector('[aria-label="Refresh air quality"]').click();
+        await waitFor(() => env.doc.querySelector('#bpb-peak-weather-air').getAttribute('aria-busy') === 'false');
+        assert.equal(env.doc.querySelector('th[aria-current="time"]').dataset.airTime, String(selected));
+        assert.equal(env.doc.querySelector('.bpb-air-hours').scrollLeft, 210);
+        assert.equal(env.doc.querySelectorAll('.bpb-air-table thead [data-air-time]').length, 107);
+    } finally { env.close(); }
+});
+
+test('AQI keyboard time remains inside the atomic live reading when consecutive values are equal', async () => {
+    const env = setup({ aqiFn: () => {
+        const body = airQualityFixture({ now: Date.parse('2024-11-05T12:00:00Z') }); body.hourly.us_aqi.fill(35); body.hourly.pm2_5.fill(10);
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length === 2);
+        const readout = env.doc.querySelector('.bpb-air-time').closest('[aria-live]'), list = env.doc.querySelector('.bpb-air-hours');
+        assert.ok(readout, 'the selected time belongs to a live reading');
+        assert.equal(readout.getAttribute('aria-live'), 'polite'); assert.equal(readout.getAttribute('aria-atomic'), 'true');
+        assert.ok(readout.contains(env.doc.querySelector('.bpb-air-time')));
+        assert.equal(readout.querySelector('[aria-live]'), null, 'there are no competing nested live regions');
+        const before = readout.textContent, value = env.doc.querySelector('.bpb-air-summary').textContent;
+        list.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+        assert.equal(env.doc.querySelector('.bpb-air-summary').textContent, value);
+        assert.notEqual(readout.textContent, before, 'the live readout changes even when values do not');
+    } finally { env.close(); }
+});
+
+test('AQI expiry erases readings and retains the noninteractive grid until retry', async () => {
+    const env = setup(); let expire: (() => void) | undefined;
+    const originalTimeout = env.win.setTimeout;
+    env.win.setTimeout = (callback: () => void, delay: number) => {
+        if (delay >= 1700000 && delay <= 1800000) { expire = callback; return -1; }
+        return originalTimeout(callback, delay);
+    };
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => expire);
+        const rows = [...env.doc.querySelectorAll('.bpb-air-table tbody tr')];
+        expire!();
+        assert.match(env.doc.querySelector('#bpb-peak-weather-air [role="status"]').textContent, /expired/);
+        assert.deepEqual([...env.doc.querySelectorAll('.bpb-air-table tbody tr')], rows);
+        assert.ok([...env.doc.querySelectorAll('.bpb-air-table td')].every(cell => cell.textContent === '—' && !cell.hasAttribute('data-band')));
+        assert.equal(env.doc.querySelector('.bpb-air-table [aria-current]'), null);
+        assert.equal(env.doc.querySelector('.bpb-air-loaded').textContent, '');
+        assert.match(env.doc.querySelector('.bpb-air-summary').textContent, /unavailable/i);
+        env.doc.querySelector('[aria-label="Refresh air quality"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table td[data-band]').length > 0);
+    } finally { env.close(); }
+});
+
+test('returning after a cancelled AQI refresh restores the cached reading without stale busy feedback', async () => {
+    let hold = false, pending: AbortSignal | undefined;
+    const env = setup({ aqiFn: (_url, init) => {
+        if (hold) { pending = init.signal; return new Promise<Response>(() => {}); }
+        return new Response(JSON.stringify(airQualityFixture({ now: Date.parse('2024-11-05T12:00:00Z') })), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
+        await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length === 2);
+        hold = true; env.doc.querySelector('[aria-label="Refresh air quality"]').click(); await waitFor(() => pending);
+        env.doc.querySelector('[data-period="forecast"]').click(); assert.equal(pending!.aborted, true);
+        env.doc.querySelector('[data-period="aqi"]').click();
+        assert.equal(env.doc.querySelector('#bpb-peak-weather-air [role="status"]').textContent, '');
+        assert.equal(env.doc.querySelector('#bpb-peak-weather-air').getAttribute('aria-busy'), 'false');
+        assert.equal(env.requests.filter(request => request.url.includes('air-quality-api.')).length, 2);
+        assert.match(env.doc.querySelector('.bpb-air-summary').textContent, /US AQI/);
+    } finally { env.close(); }
+});
+
 test('leaving the AQI tab cancels transport and ignores late completions', async () => {
     let finish: ((response: Response) => void) | undefined, signal: AbortSignal | undefined;
     const env = setup({ aqiFn: (_, init) => { signal = init.signal; return new Promise(resolve => { finish = resolve; }); } });

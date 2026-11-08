@@ -291,6 +291,14 @@ only exist under `dist/` after a build.
 
 ### Local check discipline
 
+`npm run verify -- air-quality` checks the compact Conditions and Air Quality
+surfaces in hidden Chrome and Firefox, including narrow layouts, real browser
+zoom, keyboard inspection and refresh/error/retry geometry. It also runs
+deterministic renderer fixtures for DST refresh and UTC viewport anchoring:
+those use native markup and shipped CSS with stubbed time/provider responses,
+and supplement the real-extension checks rather than proving native assistive
+technology or window-focus behavior.
+
 While iterating, build and run the affected domain:
 
 ```bash

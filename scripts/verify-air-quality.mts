@@ -66,6 +66,12 @@ export async function verifyAirQuality({ origin, evaluate, navigate, click, pres
     await press(firefoxMode ? '\uE014' : 'ArrowRight');
     await wait(() => document.querySelectorAll<WeatherFixtureElement>('.bpb-air-table tbody tr').length > 0, 'keyboard-selected AQI forecast');
     assert.equal(count(), 1);
+    const shape = await evaluate(() => {
+        const table = document.querySelector<HTMLTableElement>('.bpb-air-table')!;
+        return { rows: table.tBodies[0].rows.length, hours: table.tHead!.rows[1].cells.length - 1,
+            values: [...table.tBodies[0].rows].map(row => row.cells.length - 1), scale: document.querySelectorAll('.bpb-air-scale li').length };
+    });
+    assert.equal(shape.rows, 2); assert.ok(shape.hours > 0); assert.deepEqual(shape.values, [shape.hours, shape.hours]); assert.equal(shape.scale, 6);
     const geometry = () => evaluate(() => {
         const rect = (selector: string) => { const r = document.querySelector<WeatherFixtureElement>(selector)!.getBoundingClientRect(); return [r.x + window.scrollX, r.y + window.scrollY, r.width, r.height]; };
         return { refresh: rect('[aria-label="Refresh air quality"]'), tabs: rect('.bpb-week-periods'), panel: rect('#bpb-peak-weather-air'),
@@ -95,10 +101,71 @@ export async function verifyAirQuality({ origin, evaluate, navigate, click, pres
             return window.__bpbAQIViewport.count >= 2;
         }, 'settled AQI viewport after resize/zoom');
         await evaluate(() => { delete window.__bpbAQIViewport; });
-        const before = await geometry(); assert.equal(before.overflow, false);
+        const bandStyles = await evaluate(() => {
+            const table = document.querySelector<HTMLTableElement>('.bpb-air-table')!;
+            const neutral = getComputedStyle(table.querySelector('[data-air-row="pm"] td')!).backgroundColor;
+            const cells = new Map([...table.querySelectorAll<HTMLElement>('td[data-band]')].map(cell => [cell.dataset.band, cell]));
+            return [...cells].map(([band, cell]) => ({ band, background: getComputedStyle(cell).backgroundColor, color: getComputedStyle(cell).color, neutral,
+                swatch: getComputedStyle(document.querySelector(`.bpb-air-swatch[data-band="${band}"]`)!).backgroundColor }));
+        });
+        assert.ok(bandStyles.length > 0);
+        assert.equal(await evaluate(() => getComputedStyle(document.querySelector('.bpb-air-days th[scope="colgroup"]')!).textAlign), 'left', 'day groups retain visible leading date labels');
+        // The current UTC hour may remove an entire early band from the
+        // forecast. Check all six legend colors as well as every present band.
+        const palette = await evaluate(() => [...document.querySelectorAll<HTMLElement>('.bpb-air-swatch')].map(cell => ({
+            band: cell.dataset.band, background: getComputedStyle(cell).backgroundColor, color: getComputedStyle(cell).color,
+        })));
+        assert.deepEqual(palette.map(band => band.band), ['0', '1', '2', '3', '4', '5']);
+        const luminance = (color: string) => {
+            const rgb = color.match(/[\d.]+/g)!.slice(0, 3).map(value => Number(value) / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+            return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+        };
+        for (const band of bandStyles) {
+            assert.equal(band.background, band.swatch, `AQI band does not match its legend: ${JSON.stringify(band)}`);
+            assert.notEqual(band.background, band.neutral, 'AQI bands must remain distinct from neutral PM cells');
+            assert.equal(band.color, palette.find(item => item.band === band.band)!.color);
+        }
+        for (const band of [...bandStyles, ...palette]) {
+            const a = luminance(band.background), b = luminance(band.color);
+            assert.ok((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 4.5, `AQI text contrast below 4.5:1: ${JSON.stringify(band)}`);
+        }
+        await evaluate(() => {
+            const list = document.querySelector<HTMLElement>('.bpb-air-hours')!;
+            list.scrollIntoView({ block: 'center', behavior: 'instant' }); list.focus({ preventScroll: true });
+        });
+        const inspectionBefore = await geometry(); assert.equal(inspectionBefore.overflow, false);
+        await press(firefoxMode ? '\uE010' : 'End');
+        await wait(() => {
+            const row = document.querySelector<HTMLTableElement>('.bpb-air-table')!.tHead!.rows[1];
+            return row.cells[row.cells.length - 1].getAttribute('aria-current') === 'time';
+        }, 'keyboard selects the last AQI hour');
+        stable(inspectionBefore, await geometry());
+        const inspectionCount = count();
+        await evaluate(() => document.querySelector<HTMLElement>('.bpb-air-table td[data-band="2"]')!.click());
+        await wait(() => document.querySelector('.bpb-air-summary')!.textContent!.includes('Unhealthy for sensitive groups'), 'long AQI category visible');
+        stable(inspectionBefore, await geometry()); assert.equal(count(), inspectionCount, 'hour inspection stays local');
+        await press(firefoxMode ? '\uE011' : 'Home');
+        await wait(() => document.querySelector<HTMLTableElement>('.bpb-air-table')!.tHead!.rows[1].cells[1].getAttribute('aria-current') === 'time', 'keyboard returns to first AQI hour');
+        stable(inspectionBefore, await geometry());
+        // Moving focus between controls may intentionally reveal an offscreen
+        // target at 200% zoom. Compare each interaction from its visible target.
+        await evaluate(() => {
+            const button = document.querySelector<HTMLElement>('[aria-label="Refresh air quality"]')!;
+            button.scrollIntoView({ block: 'center', behavior: 'instant' }); button.focus({ preventScroll: true });
+        });
+        await wait(() => {
+            const r = document.querySelector('[aria-label="Refresh air quality"]')!.getBoundingClientRect();
+            const signature = JSON.stringify([r.x, r.y, r.width, r.height, window.scrollY]);
+            const previous = window.__bpbAQIViewport;
+            window.__bpbAQIViewport = { signature, count: previous?.signature === signature ? previous.count + 1 : 0 };
+            return window.__bpbAQIViewport.count >= 2;
+        }, 'settled visible AQI action after inspection');
+        await evaluate(() => { delete window.__bpbAQIViewport; });
+        const before = await geometry();
         setMode('loading'); await click('[aria-label="Refresh air quality"]');
         await wait(() => document.querySelector<WeatherFixtureElement>('#bpb-peak-weather-air')!.getAttribute('aria-busy') === 'true', 'AQI pending');
         stable(before, await geometry());
+        assert.equal(await evaluate(() => document.activeElement === document.querySelector('[aria-label="Refresh air quality"]')), true, 'busy action retains focus');
         const pendingCount = count();
         await evaluate(() => document.querySelector<WeatherFixtureElement>('[aria-label="Refresh air quality"]')!.click());
         assert.equal(count(), pendingCount, 'busy action rejects duplicate activation');
@@ -113,8 +180,14 @@ export async function verifyAirQuality({ origin, evaluate, navigate, click, pres
         await wait(() => document.querySelector<WeatherFixtureElement>('#bpb-peak-weather-air')!.getAttribute('aria-busy') === 'false'
             && !document.querySelector<WeatherFixtureElement>('#bpb-peak-weather-air [role="status"]')!.textContent.includes('failed'), 'keyboard retry');
         stable(before, await geometry());
-        if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-aqi-${width}-${theme}-${zoom}.png`));
-        cases.push({ width, theme, zoom, states: ['ready', 'pending', 'success', 'error', 'keyboard-retry'] });
+        if (output) {
+            const name = `${firefoxMode ? 'firefox' : 'chrome'}-aqi-${width}-${theme}-${zoom}`;
+            await screenshotPage(path.join(output, `${name}.png`));
+            await evaluate(() => document.querySelector('.bpb-air-hours')!.scrollIntoView({ block: 'center', behavior: 'instant' }));
+            await wait(() => { const r = document.querySelector('.bpb-air-hours')!.getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight; }, 'AQI strip visible for screenshot');
+            await screenshotPage(path.join(output, `${name}-strip.png`));
+        }
+        cases.push({ width, theme, zoom, states: ['ready', 'keyboard-inspection', 'long-category', 'pending', 'success', 'error', 'keyboard-retry'] });
     }
     const loaded = count(); await click('[data-period="forecast"]'); await click('[data-period="aqi"]'); assert.equal(count(), loaded, 'returning tab reuses memory');
     setMode('aqi-weather-error');

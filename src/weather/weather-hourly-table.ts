@@ -33,7 +33,7 @@ export function compactWeatherHours(zone: WeatherZone, times: number[]) {
     const keys = new Map<string, number>();
     readings.forEach(row => keys.set(`${row.date}/${row.clock}`, (keys.get(`${row.date}/${row.clock}`) || 0) + 1));
     const changesZone = new Set(readings.map(row => row.zone)).size > 1;
-    return readings.map(row => ({ ...row, showZone: changesZone || keys.get(`${row.date}/${row.clock}`)! > 1 }));
+    return readings.map(row => ({ ...row, displayZone: row.zone.replace(/^(?:GMT|UTC)(?=[+−-])/, ''), showZone: changesZone || keys.get(`${row.date}/${row.clock}`)! > 1 }));
 }
 
 // Palette thresholds are physical km/h, independent of the displayed units.
@@ -115,7 +115,7 @@ export function createWeatherHourlyTable({ window, samples, zone, format, gustTi
     for (const [index, row] of hours.entries()) {
         const cell = element('th', { scope: 'col', class: 'bpb-weather-conditions-hour', 'data-weather-time': row.time }, [
             element('time', { datetime: new Date(row.time).toISOString(), title: compact ? labels[index].title : localTime(row.time), text: compact ? labels[index].clock : mountainTime.formatClock(zone, row.time).replace(/^0/, '').replace(':00', '') }),
-            ...(!compact || labels[index].showZone ? [element('span', { class: 'bpb-weather-hour-zone', text: mountainTime.zoneLabel(zone, row.time) })] : []),
+            ...(!compact || labels[index].showZone ? [element('span', { class: 'bpb-weather-hour-zone', text: compact ? labels[index].displayZone : mountainTime.zoneLabel(zone, row.time) })] : []),
         ]);
         if (compact && row.sample?.isDay === 0) cell.dataset.night = 'true';
         head.append(cell); columns.set(row.time, [cell]);

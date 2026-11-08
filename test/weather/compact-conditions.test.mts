@@ -76,6 +76,20 @@ test('longitude-estimate fallback keeps the pinned label short and labels exact 
     assert.match(table.querySelector('time')!.title, /estimated from longitude/);
 }));
 
+test('fractional DST zone offsets fit compact headers without losing their full exact-time labels', () => {
+    for (const [latitude, longitude, timeZone] of [[-31.55, 159.08, 'Australia/Lord_Howe'], [-43.95, -176.55, 'Pacific/Chatham']] as const) {
+        const zone = mountainTime.resolve(latitude, longitude, { lookup: () => timeZone })!;
+        const window = weatherDayWindow('2024-04-07', zone, Date.parse('2025-01-01'));
+        const first = Math.ceil(window.start / HOUR) * HOUR;
+        const times = Array.from({ length: 25 }, (_, index) => first + index * HOUR).filter(time => time < window.end);
+        const hours = compactWeatherHours(zone, times);
+        assert.equal(new Set(hours.map(row => row.zone)).size, 2);
+        assert.ok(hours.every(row => row.displayZone.length <= 6));
+        assert.ok(hours.some(row => row.displayZone.includes(':')));
+        assert.ok(hours.every(row => row.title.includes(row.zone)));
+    }
+});
+
 test('compact bands retain raw physical speed and interval gusts at fractional boundaries', () => withDocument(() => {
     const input = fixture(27.7, 85.3);
     const metric = createWeatherHourlyTable({ ...input, format: (value, key) => units.formatWeather(value, key, 'metric'), compact: true }).table;

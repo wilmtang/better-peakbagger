@@ -18,7 +18,7 @@ import { readPeakWeatherSubject } from './peak-weather-subject.js';
 import { PEAK_BEST_MATCH, eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 import { createPeakModelUpdateClient, peakModelUpdateDomains } from './peak-weather-updates.js';
 import { createWeatherIcon } from './weather-icon.js';
-import { createAirQualityView } from './air-quality-view.js';
+import { createAirQualityView } from './air-quality-view.ts';
 import { createWeatherLocationMenu, weatherLocationLabel } from './peak-weather-location.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
