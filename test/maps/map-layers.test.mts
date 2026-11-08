@@ -2,32 +2,36 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
+// @ts-expect-error jsdom ships no type declarations, so page objects stay untyped here.
 import { JSDOM } from 'jsdom';
+type PageValue = JSDOM;
 import { installMapLayers } from '../../src/maps/map-layers.ts';
 
 const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longitude: -121.74767, elevation: 1570 };
 const bounds = [-121.77, 46.84, -121.75, 46.86];
 function setup(terrain = false, { preferences = true } = {}) {
     const dom = new JSDOM('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
-    const win = dom.window, messages = [], moves = [], removed = [], popups = [], rasterPaints = [], events = new Map(); let currentBounds = bounds;
+    const win = dom.window, messages: PageValue[] = [], moves: PageValue[] = [], removed: PageValue[] = [], popups: PageValue[] = [], rasterPaints: PageValue[] = [], events = new Map(); let currentBounds = bounds;
     const container = win.document.getElementById('map');
     container.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
     const map = { getBounds: () => ({ getWest: () => currentBounds[0], getSouth: () => currentBounds[1], getEast: () => currentBounds[2], getNorth: () => currentBounds[3] }),
         getCenter: () => ({ lat: 46.85, lng: -121.76 }), getZoom: () => 17, getSize: () => ({ x: 800, y: 400 }),
-        getContainer: () => container, eachLayer() {}, removeLayer: layer => removed.push(layer), getPane: () => ({}),
-        latLngToContainerPoint: ([lat, lon]) => ({ x: lon >= currentBounds[0] && lon <= currentBounds[2] && lat >= currentBounds[1] && lat <= currentBounds[3] ? 400 : -1000, y: 200 }),
-        on(name, handler) { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(handler); },
-        off(name, handler) { events.get(name)?.delete(handler); }, flyToBounds: (...args) => moves.push(args), stop() {} };
+        getContainer: () => container, eachLayer() {}, removeLayer: (layer: PageValue) => removed.push(layer), getPane: () => ({}),
+        latLngToContainerPoint: ([lat, lon]: number[]) => ({ x: lon >= currentBounds[0] && lon <= currentBounds[2] && lat >= currentBounds[1] && lat <= currentBounds[3] ? 400 : -1000, y: 200 }),
+        on(name: string, handler: PageValue) { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(handler); },
+        off(name: string, handler: PageValue) { events.get(name)?.delete(handler); }, flyToBounds: (...args: PageValue[]) => moves.push(args), stop() {} };
+    if (terrain) { const frame = win.document.createElement('div'); frame.id = 'bpb-terrain-frame'; frame.getBoundingClientRect = container.getBoundingClientRect; win.document.body.append(frame); }
     win.mapsPlaceholder = map; win.fetch = async () => { throw new Error('Unexpected provider request'); };
     win.L = { GridLayer: { extend: () => class {
-        constructor(options) { this.id = options.pane.replace('bpb-overlay-', ''); }
+        declare id: string;
+        constructor(options: PageValue) { this.id = options.pane.replace('bpb-overlay-', ''); }
         on() { return this; } addTo() { return this; }
-        setOpacity(opacity) { rasterPaints.push([this.id, opacity]); return this; }
-    } }, marker: () => ({ bindPopup(content) { popups.push(content); return this; }, addTo() { return this; } }),
+        setOpacity(opacity: number) { rasterPaints.push([this.id, opacity]); return this; }
+    } }, marker: () => ({ bindPopup(content: PageValue) { popups.push(content); return this; }, addTo() { return this; } }),
     divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) };
-    win.postMessage = message => messages.push(message);
+    win.postMessage = (message: PageValue) => messages.push(message);
     const owner = installMapLayers(win);
-    const send = (detail, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
+    const send = (detail: PageValue, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
         source: win, origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
     if (preferences) send({ type: 'preferences', snotel: true });
     if (terrain) { send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
@@ -36,8 +40,8 @@ function setup(terrain = false, { preferences = true } = {}) {
     const panStart = () => { for (const handler of events.get('movestart') || []) handler({ target: map }); };
     const pan = () => { for (const handler of events.get('moveend') || []) handler({ target: map }); };
     return { win, messages, moves, removed, popups, rasterPaints, events, send, toggle, request, pan, panStart,
-        view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
-        close() { owner.dispose(); win.close(); } };
+        view(value: PageValue) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
+        close() { owner!.dispose(); win.close(); } };
 }
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} controls wait for opacity preferences before accepting interaction`, () => {
@@ -88,7 +92,7 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} opacity 
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} delayed snow-card availability updates existing station actions without a pan`, () => {
     const env = setup(terrain);
-    const card = detail => env.send(detail, '__bpbPeakSnow');
+    const card = (detail: PageValue) => env.send(detail, '__bpbPeakSnow');
     const gets = () => env.messages.filter(message => message.__bpbPeakSnow && message.type === 'get');
     const hasConditions = () => terrain
         ? env.messages.filter(message => message.type === 'snowStations').at(-1)?.conditions.includes(station.id)
@@ -262,14 +266,14 @@ test('terrain discovery receives the union of the overlay trigger and expanded m
     } finally { env.close(); }
 });
 
-test('native adapter stays detached through terrain boot and rebinds on return', () => {
+test('native adapter stays up through terrain boot, detaches once 3D covers the map and rebinds on return', () => {
     const env = setup();
     try {
         assert.equal(env.events.get('moveend').size, 1);
         env.send({ type: 'init', dir: 'toCS' }, '__bpbTerrain');
-        assert.equal(env.events.get('moveend').size, 0, 'entering 3D must not immediately recreate the disposed adapter');
+        assert.equal(env.events.get('moveend').size, 1, 'overlays stay on the native map until 3D covers it');
         env.send({ type: 'loaded' }, '__bpbTerrain');
-        assert.equal(env.events.get('moveend').size, 0);
+        assert.equal(env.events.get('moveend').size, 0, '3D owning the map releases the native adapter');
         env.send({ type: 'destroyed' }, '__bpbTerrain');
         assert.equal(env.events.get('moveend').size, 1, 'returning to 2D restores exactly one adapter');
     } finally { env.close(); }

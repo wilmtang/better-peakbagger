@@ -52,7 +52,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
     const state = Schema.mapOverlayState() as Record<string, OverlayState>;
     let custom: ReturnType<typeof createCustomOverlayControl> | null = null, handoffActive = !secondary;
     let touched = false, preferencesReady = false, revision = 1, capture: unknown = null, landTypes = Schema.mapLandTypes();
-    let binding: MapBinding | null = null, polling: number | null = null, frameMode = false, booting = false, active = true, disposed = false;
+    let binding: MapBinding | null = null, polling: number | null = null, frameMode = false, active = true, disposed = false;
     let terrainView: TerrainView | null = null, snotelAllowed = false, requestId = 0, stations: { id: string }[] = [], coverage: Record<string, boolean> | null = null;
     let stationTimer: number | null = null, relayFrame: number | null = null;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
@@ -157,7 +157,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
     const loadStations = () => {
         clearTimeout(stationTimer!); stationTimer = null;
         const bounds = stationView();
-        if (!active || !state.snotel.enabled || !snotelAllowed || !bounds || booting || statuses.snotel.retryAt! > Date.now()) return;
+        if (!active || !state.snotel.enabled || !snotelAllowed || !bounds || statuses.snotel.retryAt! > Date.now()) return;
         requestId++; post({ type: 'cancel' });
         loadNearby();
         statuses.snotel = { ...statuses.snotel, pending: true, error: false, retry: statuses.snotel.retry === true, message: 'Loading stations…' }; paint();
@@ -167,7 +167,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
         if (event && binding) binding.moving = false;
         if (event && revealPending) { cancelReveal(); requestId++; post({ type: 'cancel' }); }
         apply();
-        if (!frameMode && !booting) binding?.sentinel.refresh();
+        if (!frameMode) binding?.sentinel.refresh();
         clearTimeout(stationTimer!); stationTimer = win.setTimeout(loadStations, 300);
     };
     const apply = (opacityId: string | null = null) => {
@@ -177,7 +177,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
         relay();
         if (!opacityId || opacityId === 'snow') snowMetadata.update(active && state.snow.enabled && state.snow.opacity > 0 && coverage?.snow !== false
             && ((frameMode ? terrainView?.zoom : binding?.map.getZoom()) ?? -Infinity) >= OVERLAY_MIN_ZOOM);
-        if (!frameMode && !booting && active && binding) {
+        if (!frameMode && active && binding) {
             for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'snow', 'slope', 'wildfire']) binding.engine.set(id, { ...state[id], landTypes, retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
             if (!opacityId || opacityId === 'sentinel') {
                 binding.sentinel.cooldown(statuses.sentinel.retryAt);
@@ -270,7 +270,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
         binding = null;
     };
     const bind = () => {
-        if (!active || disposed || frameMode || booting) return false;
+        if (!active || disposed || frameMode) return false;
         const frame = frameLifecycle.current();
         const candidates: { win: MapOwnerWindow; frame: HTMLIFrameElement | null }[] = [];
         try { if (!fixedMap && frame?.contentWindow) candidates.push({ win: frame.contentWindow as MapOwnerWindow, frame: frame as HTMLIFrameElement }); } catch { /* Wait for replacement. */ }
@@ -287,7 +287,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
                 }
                 unbind(); map.__bpbOverlayOwner = win;
                 const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onWildfireStatus(status: OverlayStatus) {
-                    if (!active || frameMode || booting) return;
+                    if (!active || frameMode) return;
                     const previous = statuses.wildfire.retryAt || 0;
                     statuses.wildfire = { ...statuses.wildfire, ...status, retryAt: Math.max(previous, status.retryAt || 0) };
                     paint();
@@ -299,7 +299,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
                         message: error?.code === 'bc-permission-required' ? 'Allow BC parcel maps.' : 'Some map tiles are unavailable. Retry.' }; paint();
                     if ((error?.retryAt ?? 0) > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); } }
                 }, onActivity(id: string, activity: { error?: boolean; pending?: boolean }) {
-                    if (!active || frameMode || booting || !state[id].enabled || state[id].opacity === 0) return;
+                    if (!active || frameMode || !state[id].enabled || state[id].opacity === 0) return;
                     if (id === 'sentinel') binding?.sentinel.tileActivity(activity);
                     else {
                         if (['slope', 'snow'].includes(id) && statuses[id].retryAt! > Date.now()) return;
@@ -341,7 +341,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
     };
     const stopPolling = () => { clearInterval(polling!); polling = null; };
     const start = () => {
-        stopPolling(); if (!active || disposed || frameMode || booting || bind()) return;
+        stopPolling(); if (!active || disposed || frameMode || bind()) return;
         const began = Date.now(); polling = win.setInterval(() => { if (bind() || Date.now() - began >= 30000) stopPolling(); }, 250);
     };
     const handle = (event: MessageEvent) => {
@@ -349,7 +349,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
         if (event.source !== win || event.origin !== win.location.origin || !data || !active) return;
         if (data.__bpbMapLocation === true) {
             if (data.type === 'dismiss') locationMenu.close();
-            else if (data.type === 'context' && data.map === 'terrain' && frameMode && !booting) {
+            else if (data.type === 'context' && data.map === 'terrain' && frameMode) {
                 locationMenu.show(data, doc.getElementById('bpb-terrain-frame')!);
             }
             return;
@@ -424,16 +424,17 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
         if (data.dir === 'toPage' && data.type === 'customTaskReply') { custom?.taskReply(data); return; }
         if (data.dir === 'toPage' && data.type === 'customLayerStatus') { custom?.status(data.id, data.status); return; }
         if (data.dir === 'toCS' && data.type === 'init') {
+            // The native map stays up, overlays included, until 3D covers it.
             locationMenu.close();
-            booting = true; custom?.mode(true); stopPolling();
+        } else if (data.dir === 'toPage' && data.type === 'loaded') {
+            stopPolling();
+            custom?.mode(true);
             // Recreate the native adapter only when returning to 2D.
             unbind();
             requestId++; post({ type: 'cancel' });
-        } else if (data.dir === 'toPage' && data.type === 'loaded') {
-            stopPolling();
-            custom?.mode(true); frameMode = true; terrainMoving = false; booting = false; revision++; apply(); loadStations();
+            frameMode = true; terrainMoving = false; revision++; apply(); loadStations();
         } else if (data.dir === 'toPage' && ['destroyed', 'error'].includes(data.type)) {
-            custom?.mode(false); frameMode = booting = terrainMoving = false; terrainView = null; revision++; start(); apply(); refresh();
+            custom?.mode(false); frameMode = terrainMoving = false; terrainView = null; revision++; start(); apply(); refresh();
         } else if (data.dir === 'toPage' && data.type === 'layerMoveStart' && frameMode) {
             terrainMoving = true; navigationStarted();
         } else if (data.dir === 'toPage' && data.type === 'layerStatus' && frameMode) {
