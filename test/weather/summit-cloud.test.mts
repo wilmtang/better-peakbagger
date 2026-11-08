@@ -76,8 +76,8 @@ test('water-referenced humidity cannot read saturated cold air as dry', () => {
     assert.equal(predict(saturation).key, 'clear');
     assert.equal(predict(saturation).summit!.saturation, 75);
     // Above freezing the adjustment changes nothing.
-    const warm = cloudDataset({ model: summitCloudModel('gem_regional') }); warm.points.forEach(p => setProfile(p, { temperature: 4, humidity: 75, cloud: 15 }));
-    assert.equal(predict(warm).summit!.cloud, 15); assert.equal(predict(warm).summit!.saturation, 75);
+    const warm = cloudDataset({ model: summitCloudModel('gem_regional') }); warm.points.forEach(p => setProfile(p, { temperature: 4, humidity: 75, cloud: 0 }));
+    assert.equal(predict(warm).summit!.cloud, 0, 'no re-derivation above freezing'); assert.equal(predict(warm).summit!.saturation, 75);
     assert.equal(predict(warm).key, 'clear');
 });
 test('captured HRRR profile near -10 C reads as inside cloud', () => {
@@ -97,7 +97,7 @@ test('cold-air adjustment does not compound on the cached profile across repaint
     const first = predict(data), second = predict(data);
     assert.equal(JSON.stringify(data.points), before);
     assert.deepEqual(first.summit, second.summit); assert.equal(first.key, second.key);
-    assert.ok(first.summit!.saturation < 85, '60% over water at -30 C is not saturated');
+    assert.ok(first.summit!.saturation > 60 && first.summit!.saturation < 85, '60% over water at -30 C is adjusted once, not saturated');
 });
 test('neighbors, the moist-air check and nearby layers read the adjusted values too', () => {
     const surrounding = cloudDataset({ model: summitCloudModel('gem_regional') });
@@ -131,6 +131,38 @@ test('terrain near summit height is no lift, while unresolved lower air stays un
     plateau.points.forEach(point => { point.grid.elevation = 3817; point.samples[0]!.levels = point.samples[0]!.levels.filter(level => heights.has(level.pressure)); point.samples[0]!.levels.forEach(level => { level.height = heights.get(level.pressure)!; }); });
     assert.equal(predictModelCloud(asDataset(plateau), elbert, time, time).key, 'clear');
 });
+test('the mixed-phase blend and humidity classification are pinned', () => {
+    const atTemperature = (temperature: number, humidity: number, cloud = 0) => {
+        const levels = [2000, 3000].map(height => ({ pressure: 700, height, humidity, cloud, temperature }));
+        return cloudAtElevation({ levels }, 2500, 0, 'water')!;
+    };
+    for (const [temperature, humidity, expected] of [[-10, 85, 90.8], [-20, 70, 84.7], [-30, 60, 80.2], [-40, 50, 73.1]] as const) {
+        assert.ok(Math.abs(atTemperature(temperature, humidity).saturation - expected) < 0.2, `${temperature}: ${atTemperature(temperature, humidity).saturation}`);
+    }
+    assert.equal(atTemperature(-30, 50, 90).cloud, 90, 'a higher provider cloud value is kept');
+    assert.equal(atTemperature(-30, 75).saturation, 100, 'ice-saturated air is saturated, capped at 100');
+    assert.deepEqual(SUMMIT_CLOUD_MODELS.filter(item => item.humidityBasis === 'water').map(item => item.id).sort(),
+        ['gem_global', 'gem_hrdps_continental', 'gem_regional', 'gfs_hrrr', 'icon_global']);
+});
+test('a cloudy nearby layer with no temperature still blocks a clear result', () => {
+    const data = cloudDataset();
+    data.points[0]!.samples[0]!.levels.push({ pressure: 660, height: 3350, cloud: 100, humidity: 100, temperature: null as unknown as number, wind: 6, direction: 270 });
+    assert.equal(predict(data).key, 'uncertain');
+});
+test('lift boundaries: band floor, band top and the 200 m terrain rise', () => {
+    const floor = cloudDataset(), upwind = floor.points[4]!.samples[0]!.levels;
+    upwind.find(level => level.height === 1950)!.humidity = 100; upwind.find(level => level.height === 2600)!.humidity = 80;
+    assert.equal(predict(floor).lift, true, 'only the interpolated floor reaches 85%');
+    const top = cloudDataset();
+    top.points[4]!.samples[0]!.levels.push({ pressure: 720, height: 2800, cloud: 5, humidity: 95, temperature: 0, wind: 6, direction: 270 });
+    assert.equal(predict(top).lift, false, 'air within 100 m of summit height is not lifted');
+    const rise = (ground: number) => {
+        const data = cloudDataset(); data.points[4]!.grid.elevation = ground;
+        data.points[4]!.samples[0]!.levels.push({ pressure: 730, height: 2700, cloud: 5, humidity: 95, temperature: 0, wind: 6, direction: 270 });
+        return predict(data).lift;
+    };
+    assert.equal(rise(2660), true); assert.equal(rise(2671), false);
+});
 test('freshness, unavailable comparison and model disagreement downgrade the prediction', () => {
     const stale = cloudDataset(); stale.metadata.lastUpdate -= 24 * 3600000; assert.equal(predict(stale).key, 'uncertain');
     const cma = cloudDataset({ model: summitCloudModel('cma_grapes_global') }); Object.assign(cma, { metadata: null }); assert.equal(predict(cma).key, 'uncertain');
@@ -157,6 +189,10 @@ test('two models resolve to what both can support, never to a hidden clear', () 
     assert.equal(merge(unknown, clear).key, 'uncertain');
     assert.equal(merge(unknown, inside).key, 'uncertain');
     assert.equal(merge(clear, clear).key, 'clear');
+    assert.match(merge(clear, unknown).reason, /^E cannot confirm this hour\. The provider update is old/);
+    assert.equal(merge(clear, inside).reason, 'The models disagree about cloud at or around summit height.');
+    const fine = cloudDataset({ model: summitCloudModel('gfs_hrrr') }), finer = cloudDataset({ model: summitCloudModel('gem_hrdps_continental') });
+    assert.equal(merge(asDataset(fine), asDataset(finer)).confidence, 'Experimental estimate', 'agreeing high-resolution models keep the standard label');
     const named = merge(partial, inside);
     assert.equal(named.confidence, 'Low confidence');
     assert.match(named.reason, /A says .*inside cloud.*C says .*partly block/);

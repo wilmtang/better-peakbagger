@@ -14,7 +14,8 @@ export const CLOUD_STATES = Object.freeze({
 
 export interface CloudLevelInput { pressure?: number | null; height?: number | null; humidity?: number | null; cloud?: number | null; temperature?: number | null; wind?: number | null; direction?: number | null }
 export interface CloudSample { time?: number; levels: CloudLevelInput[] }
-interface CloudLevel extends CloudLevelInput { height: number; humidity: number; cloud: number; temperature: number; saturation: number }
+interface MoistureLevel extends CloudLevelInput { height: number; humidity: number; cloud: number; saturation: number }
+interface CloudLevel extends MoistureLevel { temperature: number }
 export interface CloudReading { cloud: number; humidity: number; saturation: number; temperature: number; gap: number; lower: number; upper: number; wind: number | null; direction: number | null }
 interface Place { latitude: number; longitude: number }
 export interface CloudSubject extends Place { elevation: number }
@@ -58,18 +59,20 @@ function derivedCloud(saturation: number, pressure: number): number {
     return Math.max(1 - Math.sqrt(Math.max(1 - saturation / 100, 0) / (1 - critical)), 0) * 100;
 }
 // Returns new objects: profiles are cached and repainted, so adjusting in place
-// would compound on every paint.
-function completeLevels(sample: CloudSample | undefined, ground: number, basis: HumidityBasis): CloudLevel[] {
+// would compound on every paint. A missing temperature leaves humidity as reported.
+function moistureLevels(sample: CloudSample | undefined, ground: number, basis: HumidityBasis): MoistureLevel[] {
     if (!Array.isArray(sample?.levels)) return [];
     return sample.levels.flatMap(level => {
         const { height, humidity, cloud, temperature, pressure } = level;
-        if (!finite(height) || (height as number) < ground || !finite(humidity) || !finite(cloud) || !finite(temperature)) return [];
-        const valid = level as CloudLevel;
-        if (basis !== 'water' || valid.temperature >= 0) return [{ ...valid, saturation: valid.humidity }];
-        const saturation = Math.min(100, valid.humidity / mixedPhaseSaturationRatio(valid.temperature));
+        if (!finite(height) || (height as number) < ground || !finite(humidity) || !finite(cloud)) return [];
+        const valid = level as MoistureLevel;
+        if (basis !== 'water' || !finite(temperature) || (temperature as number) >= 0) return [{ ...valid, saturation: valid.humidity }];
+        const saturation = Math.min(100, valid.humidity / mixedPhaseSaturationRatio(temperature as number));
         return [{ ...valid, saturation, cloud: finite(pressure) ? Math.max(valid.cloud, derivedCloud(saturation, pressure as number)) : valid.cloud }];
     }).sort((a, b) => a.height - b.height);
 }
+const completeLevels = (sample: CloudSample | undefined, ground: number, basis: HumidityBasis) =>
+    moistureLevels(sample, ground, basis).filter((level): level is CloudLevel => finite(level.temperature));
 
 // Require two valid atmospheric levels around the real elevation. Never use
 // below-grid-ground values, a lone nearest level, or extrapolation as clear sky.
@@ -147,14 +150,13 @@ export function predictModelCloud(data: CloudDataset, subject: CloudSubject, tim
         reason: 'The cloud layers look dry, but incoming airflow cannot be checked for terrain cloud.' });
     // Reject a clear result when an endpoint is cloudy even if interpolation
     // dilutes a thin layer. Vertical sampling cannot resolve that boundary.
-    const near = completeLevels(sample, central.grid.elevation, basis).filter(level => Math.abs(level.height - subject.elevation) <= 500);
+    const near = moistureLevels(sample, central.grid.elevation, basis).filter(level => Math.abs(level.height - subject.elevation) <= 500);
     if (near.some(cloudy)) return result('uncertain', { ...evidence, reason: 'A cloud layer is close to summit height; a small height shift could cover the summit.' });
     return result('clear', { ...evidence, reason: 'The summit and sampled surroundings are relatively dry at summit height. Lower valleys may still contain cloud.' });
 }
 
 const SEVERITY = { clear: 0, partial: 1, blocked: 2, inside: 3 };
 type RankedKey = keyof typeof SEVERITY;
-const ranked = (key: CloudStateKey): key is RankedKey => key in SEVERITY;
 
 export function predictSummitCloud(datasets: CloudDataset[], subject: CloudSubject, time: number, now = Date.now(), expectedModels = datasets.length) {
     const estimates = datasets.map(data => predictModelCloud(data, subject, time, now));
@@ -168,12 +170,15 @@ export function predictSummitCloud(datasets: CloudDataset[], subject: CloudSubje
     const keys = available.map(item => item.key);
     if (keys.every(key => key === first.key)) return { ...first, estimates,
         confidence: first.key === 'uncertain' || available.some(item => item.limited) ? 'Low confidence' : 'Experimental estimate' };
-    const order = keys.every(ranked) ? [...available].sort((a, b) => SEVERITY[a.key as RankedKey] - SEVERITY[b.key as RankedKey]) : [];
-    const least = order[0], most = order.at(-1);
+    const undecided = available.find(item => item.key === 'uncertain');
+    if (undecided) return result('uncertain', { estimates, confidence: 'Low confidence',
+        reason: `${undecided.model.label} cannot confirm this hour. ${undecided.reason}` });
+    const order = [...available].sort((a, b) => SEVERITY[a.key as RankedKey] - SEVERITY[b.key as RankedKey]);
+    const least = order[0]!, most = order.at(-1)!;
     // A clear model against one placing cloud at or all around the summit is a
     // real conflict. Otherwise report only the obstruction both can support,
     // never clear, and name what each model said.
-    if (!least || !most || least.key === 'clear' && SEVERITY[most.key as RankedKey] > SEVERITY.partial) return result('uncertain', {
+    if (least.key === 'clear' && SEVERITY[most.key as RankedKey] > SEVERITY.partial) return result('uncertain', {
         reason: 'The models disagree about cloud at or around summit height.', estimates, confidence: 'Low confidence' });
     return result(least.key === 'clear' ? 'partial' : least.key, { estimates, confidence: 'Low confidence',
         reason: `Models differ: ${most.model.label} says “${most.title}”; ${least.model.label} says “${least.title}”.` });
