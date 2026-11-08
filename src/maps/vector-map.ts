@@ -219,7 +219,9 @@ export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLS
             L.DomUtil.setPosition(this.element, this.hostPosition);
             this.position();
             this.element.style.width = `${size.x}px`; this.element.style.height = `${size.y}px`;
-            if (!paused) post('view', view());
+            // Leaving 3D moves the camera before the native map is shown.
+            if (paused) dropStalePaint();
+            else post('view', view());
         },
         animateZoom(event: LeafletZoomEvent) {
             if (!this.painted) return;
@@ -228,6 +230,14 @@ export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLS
             L.DomUtil.setTransform(this.surface!, offset.subtract(this.hostPosition), scale);
         },
     });
+    // 3D may have moved the camera off the kept paint or far past its detail.
+    // Native tiles then cover the map until a full vector paint replaces them,
+    // which after the renderer's keep-alive is a cold start.
+    const dropStalePaint = () => {
+        const painted = layer?.painted && layer.geometry(layer.painted);
+        if (!painted || painted.coverage >= .999 && painted.zoomError < 1) return;
+        layer!.clearPaint(); layer!.element!.style.opacity = '0'; restore();
+    };
     const stop = () => {
         win.clearTimeout(retryTimer!); retryTimer = null;
         if (layer) map.removeLayer(layer);
@@ -274,11 +284,9 @@ export function bindVectorMap(win: LeafletWindow, map: LeafletMap, select: HTMLS
     };
     const resume = () => {
         if (!layer || !paused) return;
+        dropStalePaint();
         paused = false;
-        // 3D may have moved the camera off the kept paint, so native tiles fill
-        // whatever it no longer covers until the next vector paint replaces them.
-        const covered = layer.painted && layer.geometry(layer.painted).coverage >= .999;
-        if (!covered) { restore(); pending(); }
+        if (!layer.painted) pending();
         layer.update(); post('resume', view());
     };
     // Lend 3D a copy of what is on screen, to drape until its own tiles arrive.

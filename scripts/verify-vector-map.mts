@@ -717,6 +717,14 @@ try {
             await page.waitForFunction(() => document.getElementById('bpb-terrain-frame')?.style.opacity === '0');
             page.off('request', track);
             assert.deepEqual(nativeRequests, [], 'Neither direction requests native tiles nobody sees');
+            // A camera moved off the paint must show native tiles, never a blank map.
+            await page.waitForFunction(() => document.querySelector<FixtureElement>('.bpb-vector-slot')?.style.opacity === '1');
+            await toggle.click();
+            await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')!.textContent!.trim() === '2D');
+            await frame.evaluate(() => { window.__bpbTerrainTestMap.jumpTo({ center: [-119, 44], zoom: 12 }); });
+            const moved = sampleTransition(); await toggle.click();
+            for (const item of await moved) assert.ok(item.native || item.opacity === '1' && item.painted, `A moved camera must not uncover an empty map: ${JSON.stringify(item)}`);
+            await page.waitForFunction(() => mapsPlaceholder.hasLayer(nativeTiles) || document.querySelector<HTMLCanvasElement>('.bpb-vector-surface')!.width > 0);
         };
         let cases = 0;
         if (!preflight && !liveMode) { await verifyTransition(); cases++; }

@@ -669,7 +669,7 @@ These pixel buffers contain no native routes, markers, GPX or account data;
 they are not persisted or sent elsewhere. Opening 3D lends a copy to the terrain
 frame, which shows it until its own tiles arrive and then discards it. The last
 displayed buffer stays in memory, hidden, while 3D is open so returning to 2D is
-immediate, and is cleared on deselection. At most one image capture is in flight.
+immediate, and is cleared on deselection or when the camera moved off it. At most one image capture is in flight.
 
 **Maptoolkit Hiking (BPB experiment)** is an optional basemap in both 2D and 3D. A
 trusted selection sends

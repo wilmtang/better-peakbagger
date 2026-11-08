@@ -37,8 +37,10 @@ clears provider sources and aborts requests. Up to one initialized renderer per
 provider may remain parked for 60 seconds, retaining only renderer/worker setup
 and the accepted style for faster reselection. A fresh capability is required
 to reactivate it; page messages cannot revive a deselected provider. Unload,
-navigation and back/forward-cache suspension discard it. A 3D switch pauses the 2D
-renderer and carries the vector choice into 3D; returning resumes the 2D layer.
+navigation and back/forward-cache suspension discard it. A 3D switch carries the
+vector choice into 3D and pauses the 2D renderer once 3D is ready; returning
+resumes the 2D layer from its last paint, or from native tiles if the camera moved
+off it.
 An entirely failed viewport restores the native map even after a successful
 load. Valid empty tiles and usable partial/cached output remain visible. The
 availability adapter is tied to the packaged MapLibre 6 tile-manager API;
