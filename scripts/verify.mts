@@ -29,7 +29,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'report-security': [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']],
     'inline-buddies': [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']],
     'signed-out': [['verify-signed-out.mjs']],
-    'capture-flow': [['verify-capture-flow.mjs']],
+    'capture-flow': [['verify-capture-flow.mts']],
     'capture-readiness': [['verify-capture-readiness.mjs']],
     'provider-contracts': [['verify-provider-contracts.mjs']],
     'provider-performance': [['verify-provider-performance.mjs']],

@@ -1125,6 +1125,13 @@ add it to the merge-step condition, for example
   ownership, export, summit lookup, results, and one draft Preview without Save.
   Failure cases cover the privacy gates and recovery actions; held exports
   exercise cancellation, restart, and popup reopening without duplicate work.
+  Use `node scripts/verify-capture-flow.mts --fresh-profiles 3` after a build
+  to repeat the full suite with independent profiles, servers and certificates;
+  CI requires three and alternates the first provider. Native click/submit/invalid
+  state and browser/server POST stage counters are bounded and omit field values,
+  GPX, filenames, cookies and URLs. Set `BPB_CAPTURE_FLOW_ARTIFACTS` to retain JSON
+  on failure. The Preview deadline remains 15 seconds. This improves diagnosis;
+  the original intermittent timeout is still unresolved.
   This proves the fixture flow, not current live provider compatibility.
 - `npm run verify -- capture-readiness` exercises the real worker and Peakbagger
   page helper with a parsed, signed-in page whose image never finishes loading.

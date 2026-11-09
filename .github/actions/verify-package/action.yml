@@ -20,7 +20,7 @@ runs:
       run: node scripts/verify-capture-readiness.mjs chrome 2>&1 | tee browser-evidence/verify-capture-readiness-chrome.log
     - name: Verify toolbar-to-draft capture
       shell: bash
-      run: node scripts/verify-capture-flow.mjs 2>&1 | tee browser-evidence/verify-capture-flow.log
+      run: node scripts/verify-capture-flow.mts --fresh-profiles 3 2>&1 | tee browser-evidence/verify-capture-flow.log
     - name: Verify sequential multi-summit drafts
       shell: bash
       env:

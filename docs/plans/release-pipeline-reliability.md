@@ -39,6 +39,14 @@ Each completed code unit receives independent review and its own checked commit.
   has no remaining comments. All 4,055 tests, typecheck and lint passed; the three
   public links and public-land/slope PNG probes passed once on 2026-11-08.
   Google acceptance, authentication and browser rendering remain separate checks.
+- Unit 2: bounded, sanitized native Preview events, per-provider browser/server
+  POST stage counters and a bounded control snapshot on timeout. CI now exercises
+  three independent capture profiles, alternating the first provider. Independent
+  review has no remaining comments; 4,058 tests, typecheck and lint passed. The
+  final hidden Chrome for Testing 156.0.8078.4 run passed all three profiles at
+  1000×760, including teardown; process/root inspection found no owned leftovers.
+  HTTPS fixtures stub providers and Peakbagger; no live provider, native focus,
+  WebGL or original-timeout root-cause proof is claimed.
 
 ### Intentionally not changed
 

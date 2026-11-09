@@ -45,7 +45,7 @@ test('Chrome fixture verifiers use shared launch trust instead of late or broad 
         'verify-map-handoffs', 'verify-report-photos', 'verify-ascent-backup-lifecycle',
         'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase', 'verify-map-controls',
     ]) {
-        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${['verify-report-photos', 'verify-terrain-visual', 'verify-terrain-lod', 'verify-extension'].includes(name) ? '.mts' : '.mjs'}`), 'utf8');
+        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${['verify-capture-flow', 'verify-report-photos', 'verify-terrain-visual', 'verify-terrain-lod', 'verify-extension'].includes(name) ? '.mts' : '.mjs'}`), 'utf8');
         assert.match(source, /\.\.\.(?:fixture|certificate|cert)!?\.chromeTrustArgs/, name);
         assert.doesNotMatch(source, /['"]--ignore-certificate-errors['"]/, name);
         assert.doesNotMatch(source, /ignoreHTTPSErrors:\s*true/, name);
