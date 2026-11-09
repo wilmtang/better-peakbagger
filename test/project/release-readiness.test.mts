@@ -86,13 +86,14 @@ test('readiness bodies are bounded and cancelled when the byte budget is exceede
 
 test('optional live smoke executes exactly three links and two public synthetic overlay probes', async () => {
     const urls: string[]=[];
-    const fetcher: typeof fetch = async input => {const url=String(input);urls.push(url);return url.includes('nationalmap.gov')?response():new Response('public project document');};
+    const tileHosts = new Set(['edits.nationalmap.gov','elevation.nationalmap.gov']);
+    const fetcher: typeof fetch = async input => {const url=String(input);urls.push(url);return tileHosts.has(new URL(url).hostname)?response():new Response('public project document');};
     const report=await onlineReadiness(validateReadiness(manifest,metadata).metadata,fetcher);
-    assert.equal(report.probes.length,5);assert.equal(urls.length,5);assert.equal(urls.filter(url=>url.includes('nationalmap.gov')).length,2);
+    assert.equal(report.probes.length,5);assert.equal(urls.length,5);assert.equal(urls.filter(url=>tileHosts.has(new URL(url).hostname)).length,2);
     assert.match(urls.find(url=>url.includes('PAD_US'))!,/dynamicLayers=/,'probe uses the actual all-types renderer request');
     assert.equal(report.googleValidation,'not established');assert.equal(report.browserCorsEnforcement,'not checked');assert.match(report.rendering,/not checked/);
     assert.equal(report.passed,true);
-    const failure=await onlineReadiness(validateReadiness(manifest,metadata).metadata,async input=>String(input).includes('elevation.nationalmap.gov')?new Response('',{status:503}):fetcher(input));
+    const failure=await onlineReadiness(validateReadiness(manifest,metadata).metadata,async input=>new URL(String(input)).hostname==='elevation.nationalmap.gov'?new Response('',{status:503}):fetcher(input));
     assert.equal(failure.passed,false);assert.equal(failure.probes.length,5);
     assert.equal(failure.probes.find(probe=>!probe.passed)?.id,'slope');
     assert.equal(failure.probes.find(probe=>!probe.passed)?.host,'elevation.nationalmap.gov');

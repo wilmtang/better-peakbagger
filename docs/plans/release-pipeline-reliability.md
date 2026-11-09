@@ -115,6 +115,10 @@ Each completed code unit receives independent review and its own checked commit.
   Canonical hidden Chrome for Testing 156.0.8078.4 passed the complete terrain
   verifier on Apple M3 Pro Metal hardware, including resize/recovery/popup
   scenarios and teardown. Independent review is clear; no runtime change.
+- CodeQL flagged substring host matching in the injected readiness test fetcher.
+  Mock routing, counting and slope-failure injection now compare parsed exact
+  hostnames. The seven readiness tests, typecheck and lint passed; independent
+  review is clear. Production authority validation already used exact hosts.
 
 ### Intentionally not changed
 
