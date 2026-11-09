@@ -29,6 +29,8 @@ packages. This plan implements the independently reviewed retrospective.
 6. Repair verifier defects exposed by hosted CI without relaxing product
    assertions: isolate sibling Cloud traffic from weather interaction counters,
    then investigate the settings deep-link geometry failure separately.
+7. Read trusted job logs through the supported host-pinned CLI interface so
+   terminal escape protection does not reject the evidence transport.
 
 No new extension version or store submission is part of this implementation.
 Each completed code unit receives independent review and its own checked commit.
@@ -94,6 +96,14 @@ Each completed code unit receives independent review and its own checked commit.
   Screenshots were inspected; owned profiles/processes were removed. All 4,112
   tests and lint passed; independent review is clear. No scroll JavaScript,
   native anchoring behavior, tolerance or timeout was changed.
+- Trusted job logs now use `gh run view --job --log` with a fully qualified
+  canonical repository and validated numeric ID, preserving the 60-second and
+  64MB bounds. The old raw API reader failed on an actual ANSI-formatted log;
+  the corrected helper parsed exactly three passes from a real successful
+  browser job. Process-boundary tests cover canonical arguments, proof parsing,
+  CLI failure and invalid IDs. All 4,113 tests, typecheck and lint passed;
+  independent review is clear. Binary artifact retrieval also passed its
+  read-only smoke check. No terminal-safety bypass was added.
 
 ### Intentionally not changed
 
@@ -124,6 +134,3 @@ Each completed code unit receives independent review and its own checked commit.
   Its hash/owning navigation were correct. The original interaction failure
   lacked request identities, so its exact historical sequence is not claimed
   proven merely from the controlled Cloud-overlap reproduction.
-- A read-only smoke check found that raw job-log retrieval is rejected by the
-  current GitHub CLI's ANSI protection. Binary artifact retrieval passed; the
-  log-reader correction is the next separate unit.

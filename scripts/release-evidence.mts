@@ -32,7 +32,9 @@ export const evidenceDependencies: EvidenceDependencies = {
     request: async endpoint => JSON.parse((await execute('gh', ['api', '--hostname', 'github.com', evidenceApiPath(endpoint)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 })).stdout),
     paginate: async (endpoint, key) => JSON.parse((await execute('gh', ['api', '--hostname', 'github.com', '--paginate', '--slurp', evidenceApiPath(endpoint)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 })).stdout).flatMap((page: Record<string, unknown>) => key ? page[key] : page),
     download: async id => (await execute('gh', ['api', '--hostname', 'github.com', `repos/${releaseRepository}/actions/artifacts/${id}/zip`], { encoding: 'buffer', maxBuffer: 200 * 1024 * 1024, timeout: 60_000 })).stdout,
-    log: async id => (await execute('gh', ['api', '--hostname', 'github.com', `repos/${releaseRepository}/actions/jobs/${id}/logs`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 })).stdout,
+    // The job-log CLI handles GitHub's ANSI-formatted log response. Raw api
+    // output is rejected by current gh releases; never relax terminal safety.
+    log: async id => (await execute('gh', ['run', 'view', '--job', String(evidenceId(id)), '--repo', `github.com/${releaseRepository}`, '--log'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 })).stdout,
     now: Date.now,
 };
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
