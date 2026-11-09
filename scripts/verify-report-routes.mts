@@ -273,7 +273,10 @@ try {
       await pressKey('.bpb-rs-choice:nth-child(3)','Space');
       const after = await geometry();
       assert.deepEqual(after,before,'source selection must not move report, controls, reading position or focus');
-      assert.equal((after as {documentWidth:number}).documentWidth,(after as {clientWidth:number}).clientWidth,'inspector does not create horizontal overflow');
+      const {documentWidth,clientWidth} = after as {documentWidth:number;clientWidth:number};
+      // Chrome 128 can exclude the reserved gutter from scrollWidth while
+      // retaining it in clientWidth. A narrower document is not overflow.
+      assert.ok(documentWidth<=clientWidth,`inspector does not create horizontal overflow: ${documentWidth} > ${clientWidth}`);
       assert.equal(await ui(() => [...document.querySelectorAll('.bpb-rs-choice')].every(button=>getComputedStyle(button).borderBottomWidth==='2px')),true,'native dark theme preserves source selection rules');
       assert.match(String(await ui(() => document.querySelector('.bpb-rs-code')!.textContent)),/External file contents are not available/);
       assert.equal(await ui(() => document.querySelectorAll('.bpb-rs-notice script,.bpb-rs-notice img').length),0);
