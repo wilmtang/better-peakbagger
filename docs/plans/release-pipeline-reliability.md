@@ -84,6 +84,16 @@ Each completed code unit receives independent review and its own checked commit.
   lint passed. Final hidden Chrome 156.0.8078.4 and Firefox 159.0.1 passed all
   eight desktop/narrow, theme and 100%/200% interaction cases with teardown.
   Independent review is clear. No weather runtime change was made.
+- The legacy ignored-climber backup fragment now shares the existing 24px
+  anchor inset. Old hosted CI failed the actual 1px visibility assertion;
+  the fixed CI-configuration trace matched its 7228.71875px target offset and
+  landed 23.71875px inside the short pane. Hidden Chrome 156.0.8078.4 passed
+  eight full navigation cases and four direct real-200%-zoom cases (CSS
+  viewports 500×380 and 240×380, both themes), with clamp-aware 1px checks.
+  Firefox 159.0.1 passed the canonical full extension check and settings matrix.
+  Screenshots were inspected; owned profiles/processes were removed. All 4,112
+  tests and lint passed; independent review is clear. No scroll JavaScript,
+  native anchoring behavior, tolerance or timeout was changed.
 
 ### Intentionally not changed
 
@@ -109,8 +119,11 @@ Each completed code unit receives independent review and its own checked commit.
   an atomic publish precondition. The protected reviewer must inspect the latest
   version and Google's validation, while external draft edits are excluded from
   the transaction. The new checkpoint still needs first live release proof.
-- PR #70's initial CI also found a settings anchor clipped by about 2px at
-  1000×420. Hash and owning navigation selection were correct. It remains under
-  investigation; neither tolerance nor deadline has been widened. The original
-  interaction failure lacked request identities, so the historical CI sequence
-  is not claimed proven merely from the controlled Cloud-overlap reproduction.
+- PR #70's original 2.28px settings displacement source remains unknown; the
+  corrected missing-inset contract is not claimed to fix an inferred JS race.
+  Its hash/owning navigation were correct. The original interaction failure
+  lacked request identities, so its exact historical sequence is not claimed
+  proven merely from the controlled Cloud-overlap reproduction.
+- A read-only smoke check found that raw job-log retrieval is rejected by the
+  current GitHub CLI's ANSI protection. Binary artifact retrieval passed; the
+  log-reader correction is the next separate unit.
