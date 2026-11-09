@@ -71,6 +71,7 @@ independent of the existing targets.
 - [chrome-launch-guard.mjs](chrome-launch-guard.mjs)
 - [firefox-content-viewport.mjs](firefox-content-viewport.mjs)
 - [firefox-verifier-processes.mjs](firefox-verifier-processes.mjs)
+- [image-download-completion.mts](image-download-completion.mts)
 - [layout-verification-plan.mjs](layout-verification-plan.mjs) — Exact-once browser/theme/viewport partitions and focused preflight selection.
 - [peak-map-links-verification.mjs](peak-map-links-verification.mjs)
 - [resource-stack.mjs](resource-stack.mjs)

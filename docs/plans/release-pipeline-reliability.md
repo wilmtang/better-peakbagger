@@ -36,6 +36,8 @@ packages. This plan implements the independently reviewed retrospective.
 9. Support GitHub's read-token ruleset redaction using an explicit reviewed
    administrative revision attestation; retain strict operator preflight and
    fail closed when the public revision or any protection changes.
+10. Wait for completed Firefox image-download bytes rather than treating final
+    filename presence as completion; retain title/format assertions and deadline.
 
 No new extension version or store submission is part of this implementation.
 Each completed code unit receives independent review and its own checked commit.
@@ -44,6 +46,15 @@ Each completed code unit receives independent review and its own checked commit.
 
 ### Fixed and verified
 
+- The Firefox export verifier waits for image completion markers and no `.part`
+  file in its fresh owned directory, then asserts against the same buffer.
+  Filename/title checks and the 15-second deadline remain. Unexpected filesystem
+  errors fail immediately. The regression demonstrates that the old filename
+  gate accepts a zero-byte placeholder and the new gate does not. All 4,128
+  tests, typecheck, lint and independent review passed. Canonical hidden Firefox
+  159.0.1 at 1000×760 passed, including a complete 13,839-byte PNG export, BFCache
+  restoration and teardown; owned processes/profile were removed. Header/footer
+  checks are completion evidence rather than full decoding/integrity validation.
 - Workflow acquisition can validate GitHub's redacted tag-actor field using an
   explicitly supplied reviewed administrative revision attestation. Exact source,
   ID, public revision and mature request-start checks fail closed; visible bad
@@ -156,6 +167,11 @@ Each completed code unit receives independent review and its own checked commit.
 ### Changed but not fully proven
 
 - The original Preview timeout remains unresolved.
+- Main run 42606608776 observed a correctly named zero-byte Firefox export; the
+  eventual outcome of that historical write remains unknown. A separate Firefox
+  cards check timed out after reorder/reload at 375px/light. Its artifact shows
+  all three collapsed cards, but the aggregate boolean omits which readiness
+  predicate failed; no product patch is justified by that evidence alone.
 - The first merged-main CI passed on 005481bb. Its first read-only rehearsal
   stopped before browsers or store jobs because GitHub redacts private tag
   bypass actors from workflow tokens. The visibility correction uses a mature
