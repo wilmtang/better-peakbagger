@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertFormattingLocale } from '../../scripts/verify-peak-weather-interactions.mjs';
+import { assertFormattingLocale } from '../../scripts/verify-peak-weather-interactions.mts';
 
 test('the formatting probe accepts a browser omitting its default region', () => {
     for (const [actual, expected] of [['en', 'en-US'], ['de', 'de-DE'], ['en-US', 'en-US']]) {

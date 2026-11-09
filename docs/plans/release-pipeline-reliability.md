@@ -26,6 +26,9 @@ packages. This plan implements the independently reviewed retrospective.
    upload. The v2 API cannot prove an unsubmitted draft's current digest, nor
    condition publication atomically on a draft revision. Receipts must not claim
    otherwise. Preserve global publication serialization and reconciliation.
+6. Repair verifier defects exposed by hosted CI without relaxing product
+   assertions: isolate sibling Cloud traffic from weather interaction counters,
+   then investigate the settings deep-link geometry failure separately.
 
 No new extension version or store submission is part of this implementation.
 Each completed code unit receives independent review and its own checked commit.
@@ -71,6 +74,16 @@ Each completed code unit receives independent review and its own checked commit.
   Independent review has no remaining comments. All 4,109 tests, typecheck,
   lint, actionlint and staged TypeScript policy passed. No store mutation was
   performed to test the new checkpoint.
+- Hosted CI exposed shared Cloud/weather request counters in the interaction
+  fixture. The typed verifier now disables the unrelated Cloud card, waits for
+  the weather card's own busy state and outgoing request, and preserves strict
+  duplicate-input assertions. It also restores a previously ineffective scalar
+  scroll assertion. A controlled historical browser run failed the same request
+  count assertion with one weather and two legitimate pressure-profile requests;
+  the fixed run passed the same overlap scenario. All 4,112 tests, typecheck and
+  lint passed. Final hidden Chrome 156.0.8078.4 and Firefox 159.0.1 passed all
+  eight desktop/narrow, theme and 100%/200% interaction cases with teardown.
+  Independent review is clear. No weather runtime change was made.
 
 ### Intentionally not changed
 
@@ -96,3 +109,8 @@ Each completed code unit receives independent review and its own checked commit.
   an atomic publish precondition. The protected reviewer must inspect the latest
   version and Google's validation, while external draft edits are excluded from
   the transaction. The new checkpoint still needs first live release proof.
+- PR #70's initial CI also found a settings anchor clipped by about 2px at
+  1000×420. Hash and owning navigation selection were correct. It remains under
+  investigation; neither tolerance nor deadline has been widened. The original
+  interaction failure lacked request identities, so the historical CI sequence
+  is not claimed proven merely from the controlled Cloud-overlap reproduction.
