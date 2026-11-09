@@ -31,6 +31,7 @@ type RulesetRule = { type: string; parameters?: {
 } };
 export type Ruleset = {
     id?: number; target?: string; enforcement?: string; bypass_actors?: unknown[];
+    source_type?: string; source?: string; updated_at?: string;
     conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules?: RulesetRule[];
 };
 type Reviewer = { type: string; reviewer: { id: number } };
@@ -121,13 +122,37 @@ export function validateConsecutivePasses(log: string, label: string) {
     return count;
 }
 
-export function validatePublicationSafeguards({ rulesets, environment, policies, metadataEnvironment, metadataPolicies }: Safeguards) {
+function tagBypassProof(rule: Ruleset, attestation: unknown, now: number): 'visible' | 'reviewed-revision' | null {
+    if (Object.hasOwn(rule, 'bypass_actors')) {
+        return Array.isArray(rule.bypass_actors) && rule.bypass_actors.length === 0 ? 'visible' : null;
+    }
+    if (!attestation || typeof attestation !== 'object' || Array.isArray(attestation)) return null;
+    const pin = attestation as Record<string, unknown>;
+    const revision = typeof pin.updatedAt === 'string' ? Date.parse(pin.updatedAt) : NaN;
+    const verified = typeof pin.verifiedAt === 'string' ? Date.parse(pin.verifiedAt) : NaN;
+    // verifiedAt is the privileged request START, not the later file-write time.
+    // Require a mature version so an edit within its timestamp interval cannot
+    // hide behind a snapshot captured before that edit. GitHub's public
+    // modification timestamp is the revision signal; never infer absent actors.
+    return pin.schemaVersion === 1 && pin.repository === repository
+        && Number.isSafeInteger(pin.rulesetId) && Number(pin.rulesetId) > 0 && pin.rulesetId === rule.id
+        && rule.source_type === 'Repository' && rule.source === repository
+        && Array.isArray(pin.bypassActors) && pin.bypassActors.length === 0
+        && Number.isFinite(revision) && Number.isFinite(verified)
+        && new Date(revision).toISOString() === pin.updatedAt && new Date(verified).toISOString() === pin.verifiedAt
+        && revision >= 0 && verified <= now && revision <= verified - 2000
+        && typeof rule.updated_at === 'string' && Date.parse(rule.updated_at) === revision
+        ? 'reviewed-revision' : null;
+}
+
+export function validatePublicationSafeguards({ rulesets, environment, policies, metadataEnvironment, metadataPolicies }: Safeguards,
+    attestation?: unknown, now = Date.now()) {
     const rules = (type: string) => rulesets.filter(rule => rule.target === type && rule.enforcement === 'active');
     const covers = (rule: Ruleset, ref: string) => rule.conditions?.ref_name?.include?.includes(ref)
         && rule.conditions.ref_name?.exclude?.length === 0;
     const main = rules('branch').find(rule => (covers(rule, '~DEFAULT_BRANCH') || covers(rule, 'refs/heads/main'))
         && rule.rules?.some(entry => entry.type === 'required_status_checks'));
-    const tags = rules('tag').find(rule => covers(rule, 'refs/tags/v*') && rule.bypass_actors?.length === 0);
+    const tags = rules('tag').find(rule => covers(rule, 'refs/tags/v*') && tagBypassProof(rule, attestation, now));
     const hasRule = (rule: Ruleset, type: string) => rule?.rules?.some(entry => entry.type === type);
     requireEvidence(main && tags && [main, tags].every(rule => hasRule(rule, 'deletion') && hasRule(rule, 'non_fast_forward')),
         'Active main and immutable v* tag rulesets are required; tag bypasses are forbidden');
@@ -149,6 +174,7 @@ export function validatePublicationSafeguards({ rulesets, environment, policies,
         && metadataReviewer?.reviewers?.length,
     'chrome-metadata-review must allow only v* tags, require a reviewer and forbid admin bypass');
     return { rulesets: [main.id, tags.id], environment: environment.id, metadataEnvironment: metadataEnvironment.id,
+        ...(tagBypassProof(tags, attestation, now) === 'reviewed-revision' ? { tagBypassVerification: 'reviewed-revision' } : {}),
         reviewers: reviewer.reviewers.map(entry => ({ type: entry.type, id: entry.reviewer.id })) };
 }
 

@@ -88,6 +88,33 @@ audit, protected-main ancestry and remote publication protections remain gates.
 The operator preflight uses this same acquisition validator. Every downstream
 browser, join and store job checks the independently pinned identity.
 
+GitHub [redacts ruleset bypass actors](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset)
+from clients without ruleset write access. Workflow tokens retain read-only
+permissions. For a genuinely absent actor field only, workflow acquisition can
+use the reviewed administrative attestation in
+`store-assets/publication-protections.json`. It requires the exact repository,
+repository-owned ruleset ID and unchanged public modification timestamp. A
+visible nonempty or malformed actor list always fails. Operator preflight still
+requires direct enumeration of an empty bypass list and never uses this fallback.
+
+To refresh the attestation after an intentional ruleset change, record the UTC
+request-start time **before** an administrative `gh api --hostname github.com
+repos/wilmtang/better-peakbagger/rulesets/21198203` read. Confirm the expected
+repository/source, active `v*` protections and `bypass_actors: []`. The observed
+`updated_at` must already be at least two seconds older than that request start;
+otherwise capture again after the version matures. Store its UTC-normalized
+timestamp as `updatedAt`, the request start as `verifiedAt`, and the exact ID and
+empty list. Independently review and merge the file, then obtain new CI/rehearsal
+evidence. Never refresh it from a redacted response or merely assign a later
+file-write time to an earlier privileged read.
+
+This proof depends on GitHub's server-managed ruleset modification timestamp
+advancing on configuration edits, including private bypass changes. The
+[ruleset object](https://docs.github.com/en/graphql/reference/repos#repositoryruleset)
+describes `updatedAt` as its last modification time. This is an administrative
+attestation linked to a public revision, not direct current actor enumeration or
+an atomic publication precondition. The original protected reviews remain gates.
+
 Shared setup still installs Node 24, locked dependencies and exact expected
 browser versions. Browser capabilities must match before assertions begin.
 The additional ordinary Firefox matrix continues to cover Linux separately.
