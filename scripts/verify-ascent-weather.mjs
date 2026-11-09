@@ -29,7 +29,7 @@ import { airQualityFixture } from '../test/helpers/air-quality-fixture.mjs';
 import { wildfireFixture } from '../test/helpers/wildfire-fixture.mjs';
 import { verifyWildfires } from './verify-wildfires.mjs';
 import { verifyAirQuality } from './verify-air-quality.mts';
-import { verifyPeakWeatherInteractions } from './verify-peak-weather-interactions.mjs';
+import { verifyPeakWeatherInteractions } from './verify-peak-weather-interactions.mts';
 import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mjs';

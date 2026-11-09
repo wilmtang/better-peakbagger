@@ -24,7 +24,7 @@ import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mts';
 import {
     ChromeWebStoreRequestError,
     publishChrome,
-} from '../../scripts/publish-chrome.mjs';
+} from '../../scripts/publish-chrome.mts';
 import {
     assertReleasedSectionsUnchanged,
     releaseSection,
@@ -78,7 +78,7 @@ function releaseState(overrides = {}) {
     };
 }
 
-function runGit(cwd, args) {
+function runGit(cwd: string, args: string[]) {
     const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.trim();
@@ -411,7 +411,7 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
 });
 
 test('Firefox retry inspection distinguishes an unused version without mutating AMO', async () => {
-    const requests = [];
+    const requests: { url: string; options?: RequestInit }[] = [];
     const unused = await inspectAmoVersion({
         addonId: 'better-peakbagger@wilmtang.github.io',
         version: '3.7.2',
@@ -419,15 +419,15 @@ test('Firefox retry inspection distinguishes an unused version without mutating 
         secret: 'secret',
         nowSeconds: 1_788_407_200,
         fetchImpl: async (url, options) => {
-            requests.push({ url: url.href, options });
+            requests.push({ url: url.toString(), options });
             return new Response('{}', { status: 404 });
         },
     });
     assert.deepEqual(unused, { state: 'unused', version: '3.7.2' });
     assert.equal(requests.length, 1);
     assert.match(requests[0].url, /versions\/v3\.7\.2\/$/);
-    assert.equal(requests[0].options.method, undefined);
-    assert.match(requests[0].options.headers.Authorization, /^JWT [^.]+\.[^.]+\.[^.]+$/);
+    assert.equal(requests[0].options?.method, undefined);
+    assert.match(new Headers(requests[0].options?.headers).get('Authorization')!, /^JWT [^.]+\.[^.]+\.[^.]+$/);
 
     const present = await inspectAmoVersion({
         addonId: 'better-peakbagger@wilmtang.github.io',
@@ -446,7 +446,7 @@ test('Firefox retry inspection distinguishes an unused version without mutating 
         channel: 'listed',
         fileStatus: 'awaiting_review',
     });
-    assert.throws(() => createAmoJwt({ issuer: '', secret: '' }), /credentials/);
+    assert.throws(() => createAmoJwt({ issuer: '', secret: '', nowSeconds: 0 }), /credentials/);
     await assert.rejects(() => inspectAmoVersion({
         addonId: 'id',
         version: 'v3.7.2',
@@ -482,11 +482,11 @@ test('every bundle entry belongs to an AMO-declared authored source root', () =>
     }
 });
 
-async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
+async function makeReleaseZip(extraFiles: Record<string, string> = {}, omittedFiles: string[] = []) {
     const zip = new JSZip();
     const omitted = new Set(omittedFiles);
     const expectedFiles = await expectedReleaseFiles();
-    const files = {
+    const files: Record<string, string> = {
         ...Object.fromEntries(expectedFiles.map((out) => [out, `runtime:${out}`])),
         'manifest.json': JSON.stringify({
             version: '1.4.0',
@@ -516,13 +516,8 @@ test('release and browser development commands use the dist build', async () => 
     assert.equal(packageJson.scripts.start, 'node scripts/run-development.mjs');
     assert.match(packageJson.scripts.test, /^npm run build && node --test /);
     assert.match(packageJson.scripts['test:scale'], /^npm run build && node --test --test-concurrency=1 /);
-    assert.match(workflow, /uses: \.\/\.github\/actions\/verify-package/);
-    assert.match(
-        workflow,
-        /verify:\s*\n\s+name: Verify release[\s\S]{0,400}runs-on: macos-15-intel/,
-        'current-Chrome package verification must not run on hosted Linux',
-    );
-    assert.match(workflow, /- name: Run scale tests\s+run: npm run test:scale/);
+    assert.match(workflow, /node scripts\/release-evidence\.mts "\$BPB_MODE"/);
+    assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/verify-package|npm test|npm run test:scale/);
     assert.match(
         workflow,
         /- name: Check out tagged source\s+uses: [^\n]+\s+with:\s+fetch-depth: 0/,
@@ -533,7 +528,7 @@ test('release and browser development commands use the dist build', async () => 
         /release:check -- "\$GITHUB_REF_NAME" --require-protected-main/,
     );
     assert.match(packageJson.scripts.lint, /^eslint .*npm run build.*check-web-ext-lint/);
-    assert.match(workflow, /run: npm run lint\n/);
+    assert.match(workflow, /run: npm run audit:ci\n/);
     assert.doesNotMatch(releaseBump, /exec(?:File)?Sync\([^\n]*git[^\n]*tag/);
     assert.doesNotMatch(releaseBump, /push origin main --tags/);
 });
@@ -580,9 +575,10 @@ test('release publication waits for packaged declared-browser-floor verification
     );
     assert.match(workflow, /compatibility:\s*\n[\s\S]*?browser: chrome\s+version: "128"/);
     assert.match(workflow, /browser: firefox\s+version: "152\.0"/);
-    assert.match(workflow, /BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts\/verification-repetitions\.mjs chrome/);
-    assert.match(workflow, /node scripts\/verification-repetitions\.mjs firefox/);
-    assert.equal(workflow.match(/needs: \[verify, compatibility\]/g)?.length, 2);
+    assert.match(workflow, /node scripts\/verify-packaged-extensions\.mts/);
+    assert.match(workflow, /--browser "\$BROWSER"/);
+    assert.equal(workflow.match(/needs: \[verify\]/g)?.length, 2);
+    assert.match(workflow, /needs: \[verify, chrome-upload, chrome-metadata\]/);
 });
 
 test('Chrome verifier accepts an exact externally installed floor binary', async () => {
@@ -776,15 +772,15 @@ test('Firefox package embeds options without changing its canonical Chrome packa
         JSZip.loadAsync(firefoxBytes),
     ]);
     const [sourceManifest, firefoxManifest] = await Promise.all([
-        sourceArchive.file('manifest.json').async('string').then(JSON.parse),
-        firefoxArchive.file('manifest.json').async('string').then(JSON.parse),
+        sourceArchive.file('manifest.json')!.async('string').then(JSON.parse),
+        firefoxArchive.file('manifest.json')!.async('string').then(JSON.parse),
     ]);
 
     assert.deepEqual(Object.keys(firefoxArchive.files), Object.keys(sourceArchive.files));
     for (const [name, sourceEntry] of Object.entries(sourceArchive.files)) {
         if (name === 'manifest.json' || sourceEntry.dir) continue;
         assert.deepEqual(
-            await firefoxArchive.file(name).async('uint8array'),
+            await firefoxArchive.file(name)!.async('uint8array'),
             await sourceEntry.async('uint8array'),
             `${name} must be unchanged in the Firefox package`,
         );
@@ -919,7 +915,7 @@ test('generated notices cover the real editor and copied runtime graph', async (
         reportEditorDocs,
         warningBaseline: WEB_EXT_WARNING_BASELINE,
         noticeInventory: notices,
-    }), error => error.message.startsWith(`AMO approval notes must name only Marked ${driftedMarked};`));
+    }), error => error instanceof Error && error.message.startsWith(`AMO approval notes must name only Marked ${driftedMarked};`));
 
     const hardcodedAcknowledgements = acknowledgements.replace(
         'locked, unmodified Marked',
@@ -999,7 +995,7 @@ test('Firefox package builder requires distinct input and output paths', () => {
     );
 });
 
-function jsonResponse(body, status = 200) {
+function jsonResponse(body: unknown, status = 200) {
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'Content-Type': 'application/json' },
@@ -1015,7 +1011,13 @@ function submittedStatus(version = '1.4.0', state = 'PENDING_REVIEW') {
     };
 }
 
-function chromeArguments(overrides = {}) {
+type ChromeTestOverrides = {
+    token?: string; publisherId?: string; extensionId?: string; packageBytes?: Uint8Array; expectedVersion?: string;
+    fetchImpl?: typeof fetch; sleep?: (milliseconds: number) => Promise<void>; pollIntervalMs?: number;
+    maxPolls?: number; requestTimeoutMs?: number; maxResponseBytes?: number;
+    setTimeoutImpl?: typeof setTimeout; clearTimeoutImpl?: typeof clearTimeout;
+};
+function chromeArguments(overrides: ChromeTestOverrides = {}) {
     return {
         token: 'test-token',
         publisherId: 'publisher-123',
@@ -1028,7 +1030,7 @@ function chromeArguments(overrides = {}) {
 }
 
 test('Chrome publisher waits for upload processing before publishing', async () => {
-    const calls = [];
+    const calls: { url: string; options?: RequestInit }[] = [];
     const responses = [
         jsonResponse({}),
         jsonResponse({ uploadState: 'IN_PROGRESS' }),
@@ -1038,8 +1040,8 @@ test('Chrome publisher waits for upload processing before publishing', async () 
     ];
     const result = await publishChrome(chromeArguments({
         fetchImpl: async (url, options) => {
-            calls.push({ url, options });
-            return responses.shift();
+            calls.push({ url: url.toString(), options });
+            return responses.shift()!;
         },
         sleep: async () => {},
     }));
@@ -1051,18 +1053,18 @@ test('Chrome publisher waits for upload processing before publishing', async () 
     assert.match(calls[2].url, /:fetchStatus$/);
     assert.match(calls[3].url, /:publish$/);
     assert.match(calls[4].url, /:fetchStatus$/);
-    assert.deepEqual(JSON.parse(calls[3].options.body), {
+    assert.deepEqual(JSON.parse(String(calls[3].options?.body)), {
         publishType: 'DEFAULT_PUBLISH',
         blockOnWarnings: true,
     });
 });
 
 test('Chrome publisher fails closed and never publishes a failed upload', async () => {
-    const calls = [];
+    const calls: string[] = [];
     await assert.rejects(
         publishChrome(chromeArguments({
             fetchImpl: async (url) => {
-                calls.push(url);
+                calls.push(url.toString());
                 return calls.length === 1
                     ? jsonResponse({})
                     : jsonResponse({ uploadState: 'FAILED' });
@@ -1090,7 +1092,7 @@ test('Chrome publisher treats store warnings as a failed release', async () => {
         }),
     ];
     await assert.rejects(
-        publishChrome(chromeArguments({ fetchImpl: async () => responses.shift() })),
+        publishChrome(chromeArguments({ fetchImpl: async () => responses.shift()! })),
         /Listing needs attention/,
     );
 });
@@ -1111,11 +1113,11 @@ test('Chrome publisher checks for a consumed or ambiguous version before upload'
         }, /without distribution-channel version evidence/],
         [{ lastAsyncUploadState: 'UPLOAD_SUCCEEDED' }, /Inspect its version/],
     ]) {
-        const calls = [];
+        const calls: string[] = [];
         await assert.rejects(
             publishChrome(chromeArguments({
                 fetchImpl: async (url) => {
-                    calls.push(url);
+                    calls.push(url.toString());
                     return jsonResponse(status);
                 },
             })),
@@ -1127,10 +1129,10 @@ test('Chrome publisher checks for a consumed or ambiguous version before upload'
 });
 
 test('Chrome publisher treats an already reconciled expected submission as success', async () => {
-    const calls = [];
+    const calls: string[] = [];
     const result = await publishChrome(chromeArguments({
         fetchImpl: async (url) => {
-            calls.push(url);
+            calls.push(url.toString());
             return jsonResponse(submittedStatus());
         },
     }));
@@ -1161,7 +1163,7 @@ test('Chrome publisher requires the expected remote submitted revision', async (
         ];
         await assert.rejects(
             publishChrome(chromeArguments({
-                fetchImpl: async () => responses.shift(),
+                fetchImpl: async () => responses.shift()!,
                 maxPolls: 1,
             })),
             message,
@@ -1173,8 +1175,8 @@ test('Chrome publisher requires the expected remote submitted revision', async (
 test('Chrome publisher bounds headers, bodies, and malformed responses', async () => {
     await assert.rejects(
         publishChrome(chromeArguments({
-            fetchImpl: async (_url, { signal }) => new Promise((resolve, reject) => {
-                signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            fetchImpl: async (_url, { signal } = {}) => new Promise<Response>((resolve, reject) => {
+                signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
             }),
             requestTimeoutMs: 5,
         })),
@@ -1223,11 +1225,13 @@ test('Chrome publisher clears every request deadline', async () => {
     const responses = [jsonResponse({}), jsonResponse({ uploadState: 'FAILED' })];
     await assert.rejects(
         publishChrome(chromeArguments({
-            fetchImpl: async () => responses.shift(),
-            setTimeoutImpl: () => {
+            fetchImpl: async () => responses.shift()!,
+            // The publisher calls only the timer function, never its Node
+            // __promisify__ property. Keep this deterministic fixture port narrow.
+            setTimeoutImpl: (() => {
                 scheduled += 1;
-                return scheduled;
-            },
+                return scheduled as unknown as ReturnType<typeof setTimeout>;
+            }) as unknown as typeof setTimeout,
             clearTimeoutImpl: () => { cleared += 1; },
         })),
         /upload did not succeed/,
@@ -1237,14 +1241,14 @@ test('Chrome publisher clears every request deadline', async () => {
 });
 
 test('Chrome publisher reconciles an upload timeout without replaying the mutation', async () => {
-    const calls = [];
+    const calls: string[] = [];
     const result = await publishChrome(chromeArguments({
         fetchImpl: async (url, { signal } = {}) => {
-            calls.push(url);
+            calls.push(url.toString());
             if (calls.length === 1) return jsonResponse({});
             if (calls.length === 2) {
-                return new Promise((resolve, reject) => {
-                    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                return new Promise<Response>((resolve, reject) => {
+                    signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
                 });
             }
             return jsonResponse(submittedStatus());
@@ -1259,17 +1263,17 @@ test('Chrome publisher reconciles an upload timeout without replaying the mutati
 });
 
 test('Chrome publisher reconciles a publish timeout without replaying the mutation', async () => {
-    const calls = [];
+    const calls: string[] = [];
     const result = await publishChrome(chromeArguments({
         fetchImpl: async (url, { signal } = {}) => {
-            calls.push(url);
+            calls.push(url.toString());
             if (calls.length === 1) return jsonResponse({});
             if (calls.length === 2) {
                 return jsonResponse({ uploadState: 'SUCCEEDED', crxVersion: '1.4.0' });
             }
             if (calls.length === 3) {
-                return new Promise((resolve, reject) => {
-                    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                return new Promise<Response>((resolve, reject) => {
+                    signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
                 });
             }
             return jsonResponse(submittedStatus());
@@ -1283,15 +1287,15 @@ test('Chrome publisher reconciles a publish timeout without replaying the mutati
 });
 
 test('Chrome publisher stops after an unreconciled mutation timeout', async () => {
-    const calls = [];
+    const calls: string[] = [];
     await assert.rejects(
         publishChrome(chromeArguments({
             fetchImpl: async (url, { signal } = {}) => {
-                calls.push(url);
+                calls.push(url.toString());
                 if (calls.length === 1) return jsonResponse({});
                 if (calls.length === 2) {
-                    return new Promise((resolve, reject) => {
-                        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                    return new Promise<Response>((resolve, reject) => {
+                        signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
                     });
                 }
                 return jsonResponse({ lastAsyncUploadState: 'UPLOAD_SUCCEEDED' });

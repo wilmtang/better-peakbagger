@@ -68,15 +68,16 @@ test('TypeScript lint covers every runtime root and Node tooling with typed rule
     assert.ok(result.messages.some(message => message.ruleId === '@typescript-eslint/no-unused-vars'));
 });
 
-test('CI and release enforce both checking projects and the default test command includes TypeScript', async () => {
+test('CI checks both projects and release inherits the exact checked CI packages', async () => {
     const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
     assert.match(pkg.scripts.test, /test\/\*\*\/\*\.test\.mts/);
     assert.match(pkg.scripts.typecheck, /--project tsconfig\.check\.json/);
     assert.match(pkg.scripts.typecheck, /--project tsconfig\.node\.check\.json/);
-    for (const file of ['test.yml', 'release.yml']) {
-        const workflow = await readFile(path.join(root, '.github/workflows', file), 'utf8');
-        assert.match(workflow, /run: npm run typecheck/);
-    }
+    const ci = await readFile(path.join(root, '.github/workflows/test.yml'), 'utf8');
+    assert.match(ci, /run: npm run typecheck/);
+    const release = await readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
+    assert.match(release, /node scripts\/release-evidence\.mts/);
+    assert.match(release, /check:typescript-policy -- --base d7bc366311ccb384d9460eb17d68872e986d6a35/);
     const updates = await readFile(path.join(root, '.github/dependabot.yml'), 'utf8');
     assert.match(updates, /dependency-name: typescript\n\s+update-types: \[version-update:semver-major\]/);
 });

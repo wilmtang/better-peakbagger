@@ -51,7 +51,7 @@ body.standalone-page .content { height: 100%; }
 
 /* Anchor landings clear the content's top padding without a JS offset fudge. */
 .settings-section { scroll-margin-top: 24px; }
-.subsection { scroll-margin-top: 24px; }
+.subsection, #ignored-github { scroll-margin-top: 24px; }
 
 .settings-section + .settings-section { margin-top: 32px; }
 .section-title {

@@ -13,7 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: firefox-store-retry-${{ inputs.tag }}
+  group: browser-store-publication
   cancel-in-progress: false
 
 jobs:
@@ -89,7 +89,7 @@ jobs:
       - name: Verify preserved package identity
         # Legacy releases have only structural archive evidence.
         if: steps.recovery.outputs.artifact-name != format('browser-extension-{0}', inputs.tag)
-        run: node scripts/release-package-identity.mjs verify release-package "${TARGET_TAG#v}" "${{ steps.recovery.outputs.tag-commit }}"
+        run: node scripts/release-package-identity.mts verify release-package "${TARGET_TAG#v}" "${{ steps.recovery.outputs.tag-commit }}"
 
       - name: Revalidate the preserved Firefox package
         run: |

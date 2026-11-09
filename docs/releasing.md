@@ -16,48 +16,84 @@ mutation would create an avoidable partial-release failure.
 
 ## Rehearse before tagging
 
+Before starting the expensive checks, run:
+
+```sh
+npm run release:readiness -- --previous-tag vPREVIOUS.VERSION.HERE
+# Once per candidate, when public-service connectivity can be checked:
+npm run release:readiness -- --previous-tag vPREVIOUS.VERSION.HERE --online
+```
+
+Use the actual previous store release tag. The maintained copy in
+`store-assets/release-readiness.json` must cover every manifest permission.
+The report flags new permissions and prepares their justifications; it cannot
+check saved Chrome fields or authenticate a dashboard session. Sign in to both
+developer dashboards before the long rehearsal. After the verified package is
+uploaded, explicitly check its version and Google's missing-requirements panel
+before publication; new permission fields can appear only after upload.
+
+The optional online check makes three bounded public-link requests and one
+synthetic tile request each for public lands and slope. It checks PNG structure
+and response CORS headers, never a user's coordinates or activity. It does not
+establish browser CORS enforcement, map rendering, dashboard login or Google's
+URL acceptance. A local HTTP 200 did not establish Google's acceptance during
+the 4.1.0 release. Do not repeat live probes in every browser repetition.
+
 After the release metadata is merged and main CI passes, run:
 
 ```bash
-gh workflow run release.yml --ref main
+gh workflow run release.yml --ref main -f ci_run=CI_RUN_ID
 gh run list --workflow release.yml --event workflow_dispatch --limit 1
 gh run watch RUN_ID --exit-status
 ```
 
-Use the returned run ID and confirm **Release scale tests**, **Verify release**, packaged Chrome 128,
-and packaged Firefox 152 finish successfully, with both store jobs skipped.
-This checks listing metadata before expensive work, then runs the same audit,
-tests, lint, production packaging, archive validation, and current/floor browser
-checks used for publication. A rehearsal proves package readiness for its commit;
-a later tag still reruns the gates for its own commit.
+Use the new rehearsal run ID and confirm **Prepare release candidate**, **Verify
+release**, and all four **Packaged** browser jobs succeed, with both store jobs
+skipped. The explicit CI run must be a terminal full `Test` push on canonical
+main for the exact commit. Its required checks and actual successful job
+coverage must be within 24 hours. Partial reruns that carry jobs from an earlier
+attempt do not refresh that evidence; rerun the complete CI workflow.
 
-Keep the candidate fixed while CI and the rehearsal run. Any code, metadata,
-test, or workflow change requires new evidence for the resulting commit. Use a
-fresh rehearsal after a failed rehearsal; rerunning a failed job is diagnostic
-work, not three consecutive successes for a new candidate.
+CI builds the production Chrome ZIP once, derives Firefox, validates both
+archives and executes them. Its shared package gate also exercises popup,
+pending-resource capture, three independent toolbar-to-draft profiles (six
+provider successes, alternating first provider), and multi-summit flows against
+those same minified bundles. CI retains the exact ZIPs and their version/source
+hash identity in `ci-packages-SHA-ATTEMPT` for seven days. Its other required
+jobs supply Node, scale, lint, layout and cross-platform coverage.
 
-Manual rehearsals require three consecutive successes per browser by default,
-using the same archive bytes with fresh disposable profiles. Choose one or five
-with `-f repetitions=1` or `-f repetitions=5`. Every requested repetition must
-pass, including teardown; the first failure stops the check and stays failed.
-Current-browser checks verify archive hashes between runs. The floor jobs use
-the same repetition count. Published tag jobs run once after this preflight.
-The current-package job allows 25, 45, or 65 minutes for one, three, or five
-passes, including setup, tests, and lint. Individual assertion and performance
-deadlines stay unchanged.
+Rehearsal acquires that artifact by immutable ID, hard-checks GitHub's archive
+SHA-256 and inner package hashes, then fans out current Chrome/current Firefox
+on separate Intel macOS runners and Chrome 128/Firefox 152 on separate Ubuntu
+runners. Every browser requires three consecutive passes with fresh profiles
+and teardown by default. `-f repetitions=1` is diagnostic only; five is also
+supported. Each Chrome pass extracts a new copy; both canonical ZIP hashes are
+checked around every pass. Every job checks the independently pinned expected
+identity, not just the downloaded identity file. There are no automatic retries
+of failed passes. The first failure remains a failed rehearsal.
 
-Ordinary CI's current-browser job and the release job use the same
-`.github/actions/setup-verification` and `.github/actions/verify-package`
-actions. Setup installs Node 24 and locked dependencies, resolves browser
-paths, and exports exact expected versions. The package gate builds the canonical
-Chrome ZIP, derives and validates Firefox's ZIP from those bytes, and executes
-both archives through `npm run release:verify-packages`. The shared gate then
-checks popup sizing/results, pending-resource capture, toolbar capture, and
-sequential summit drafts against the same minified `dist/`, without rebuilding
-development bundles. Popup failures retain targeted screenshots alongside logs.
-Browser capabilities must match the installed versions before
-extension assertions begin; an absent expectation is an error in CI. The
-additional ordinary Firefox matrix continues to cover Linux separately.
+Keep the candidate fixed. Any source, metadata, test or workflow change requires
+new CI and rehearsal evidence. Use a fresh rehearsal after failure; a rerun
+cannot become publication evidence. The latest exact-commit main rehearsal must
+itself succeed on attempt one with three or five passes in every browser; an
+older green run cannot hide a newer failed or in-progress run.
+
+A tag promotes the same ZIP bytes without another build or repeated full suite.
+Promotion reconstructs the trusted CI/rehearsal run, attempt, job/log and
+artifact proof, compares rehearsal ZIP hashes with the original CI artifact,
+and rechecks identities and latest attempts after download. Required coverage
+and artifacts must remain within 24 hours, with no future/missing timestamps.
+Metadata, immutable history, the complete adoption policy, fresh dependency
+audit, protected-main ancestry and remote publication protections remain gates.
+The operator preflight uses this same acquisition validator. Every downstream
+browser, join and store job checks the independently pinned identity.
+
+Shared setup still installs Node 24, locked dependencies and exact expected
+browser versions. Browser capabilities must match before assertions begin.
+The additional ordinary Firefox matrix continues to cover Linux separately.
+Individual assertion/performance deadlines remain unchanged. Rehearsal browser
+jobs have separate 40-minute budgets; they do not serialize current browser
+pairs or wait for another package rebuild.
 
 Ordinary CI runs the complete interaction layout matrix in separate Chrome and
 Firefox jobs, with the same runner and assertion deadlines. Each browser keeps
@@ -72,15 +108,16 @@ the known lost QUIT-response error can be accepted after confirmed process
 exit. Disconnections during other commands, assertion failures, and lingering
 processes remain failures. The success message follows completed teardown.
 
-Scale gates run serially on the same explicit Ubuntu 24.04 runner and Node 24
-toolchain in CI and release. Full capture analysis keeps all three CPU samples,
+Scale gates run serially on the explicit Ubuntu 24.04 runner and Node 24
+toolchain in CI; exact-commit release evidence inherits this required coverage. Full capture analysis keeps all three CPU samples,
 including the first; correctness, point budgets, and cooperative yielding must
 pass each time. The 15-second limit applies to the median, with a 30-second
 individual-sample guard and a 120-second overall test deadline. This tolerates
 one moderate measurement outlier while rejecting sustained or severe slowdown.
 It is a reference-runner regression gate, not a latency promise for every device.
 
-Verified artifacts contain the exact two ZIPs and `package-identity.json`, which
+Verified rehearsal artifacts contain the exact two ZIPs, `candidate-evidence.json`
+linking the source CI run/attempt/artifact/digest, and `package-identity.json`, which
 records their version, source commit, and SHA-256 hashes. Each downstream job
 checks that identity before using the downloads. Artifact names include the
 release version and run attempt; failed-job reruns consume the successful verify
@@ -95,8 +132,45 @@ requires reconciliation; do not rerun a mutation to see whether it works.
 ## One-time setup
 
 Create a protected GitHub environment named `browser-stores`. Restrict it to
-release tags and, if desired, require a reviewer. Configure the following in
+release tags and require a reviewer. Configure the following in
 that environment.
+
+### Chrome metadata checkpoint
+
+Create `chrome-metadata-review` **before** enabling the workflow reference. Require
+an owner reviewer, forbid admin bypass, and allow only `v*` tags. It has no store
+secrets or variables and no OIDC permission; `browser-stores` retains the existing
+publisher credentials, WIF subject and reviewer protection. The shared preflight
+checks both environments. The configured checkpoint was read back after creation
+with one owner reviewer, only the `v*` tag policy, no bypass, zero secrets and zero
+variables; this configuration check is not a live publication test.
+
+The tag transaction uploads Chrome first, writes a pinned receipt and pauses at
+this environment. Before approval, inspect the **latest draft version** and clear
+Google's missing requirements in the Developer Dashboard, including permission
+justifications and URL validation. The upload job's summary links the dashboard
+and maintained copy. No store credentials are exposed to the review job. After
+approval, publication uses the receipt and **never uploads again**. Firefox can
+finish independently. Each primary tag-release store job revalidates the same fresh CI and
+rehearsal evidence, independent package pin and dependency audit after approval
+waits. All tag/recovery workflows share the publication lock; do not concurrently
+upload or edit drafts outside that transaction. The separate Firefox recovery
+workflow retains its legacy preserved-artifact and unused-version contract; it
+shares the lock but does not claim the new primary pipeline's freshness proof.
+
+The [v2 status API](https://developer.chrome.com/docs/webstore/api/reference/rest/v2/publishers.items/fetchStatus)
+exposes submitted/published revision versions, not an unsubmitted draft digest or
+revision precondition. The receipt records expected bytes/source/version, a
+successful upload outcome and an optional API-reported version; it cannot prove
+the current remote draft still matches. An asynchronous upload may omit its
+version, and a synchronous upload may leave no asynchronous status. Human review
+of the latest draft is therefore required. An already-submitted receipt claims
+only exact submission reconciliation, not a new upload. Publication must still
+prove the exact submitted version and fails on contradictory state. The receipt
+expires after 24 hours; neither it nor the manual gate replaces fresh test proof.
+The original evidence expiry also propagates to the store job and is checked
+again immediately before a mutation, so audit/authentication work cannot silently
+extend its validity.
 
 ### Chrome Web Store
 
@@ -264,13 +338,9 @@ visible in the AMO Developer Hub.
    `scripts/check-web-ext-lint.mts`, up to the reviewed per-file occurrence limits
    recorded there.
 
-   Release scale tests retain the 15-second capture CPU ceiling on the same
-   Ubuntu runner class as ordinary scale CI. Package verification waits for
-   that required job; its browser checks run separately on hosted macOS.
-   Release CI also downloads the verified archives and executes them in hidden
-   Chrome for Testing 128 and Firefox 152 before either store job becomes
-   eligible. The ordinary package verifier separately covers current Chrome
-   for Testing and current Firefox. Record all four exact browser versions;
+   Main CI retains the 15-second capture CPU ceiling on Ubuntu. The rehearsal
+   consumes its exact verified archives and executes all four current/floor
+   browsers in parallel before either store becomes eligible. Record all four exact browser versions;
    these desktop checks do not replace the Firefox Android 142+ device step.
 
 4. Review the four stamped files and commit them. Push main, wait for its Test
@@ -294,7 +364,8 @@ visible in the AMO Developer Hub.
    live remote main to agree; the candidate tag must be unused. It checks
    metadata and changelog history, then pins the exact successful main CI and
    first-attempt rehearsal. All required jobs must succeed, both store jobs
-   must be skipped, and all current/floor browser passes must include teardown.
+   (including Chrome upload and metadata review) must be skipped, and all
+   current/floor browser passes must include teardown.
    A one-pass rehearsal cannot authorize tagging. It downloads the rehearsal's
    exact artifact, checks both archive hashes against its commit identity, and
    removes the temporary download even on failure. The receipt records the
@@ -356,7 +427,7 @@ in the Developer Dashboard rather than assuming the extension code failed.
    gh api repos/wilmtang/better-peakbagger/actions/runs/RUN_ID/artifacts --paginate \
      --jq '.artifacts[] | {name, expired}'
    gh run download RUN_ID --name ARTIFACT_NAME --dir tmp/release-X.Y.Z
-   node scripts/release-package-identity.mjs verify tmp/release-X.Y.Z X.Y.Z TAG_COMMIT
+   node scripts/release-package-identity.mts verify tmp/release-X.Y.Z X.Y.Z TAG_COMMIT
    ```
 
    Use the tag's full commit SHA. A store-job rerun increases the run attempt
@@ -364,13 +435,20 @@ in the Developer Dashboard rather than assuming the extension code failed.
    an earlier attempt number. Read its actual name; do not derive it from the
    latest run attempt. If it is expired or identity verification fails, stop
    recovery and record the blocker.
-3. Reconcile the target store. Chrome can accept a dashboard upload of the
-   verified ZIP and submit it for review after the listing is corrected. Confirm
-   the draft version and automatic publication choice. If that exact version
-   is already submitted, the Chrome publisher's preflight returns before upload
-   or publish. If it is already published, retain that evidence and follow the
-   publisher's guidance; do not submit it again. Firefox signing can run only
-   after the authenticated exact-version check proves the version unused.
+3. Reconcile the target store. For a new pipeline run, preserve its
+   `chrome-upload-receipt-ATTEMPT` artifact and independently pinned receipt hash.
+   If upload succeeded and Google rejected metadata, correct the dashboard fields,
+   inspect the latest draft/version, approve `chrome-metadata-review`, and run only
+   **Submit Chrome Web Store**. That job calls the receipt-based publish-only API;
+   it cannot replay upload. Never rerun **Upload Chrome Web Store** as a metadata
+   recovery action. If receipt/proof expired, is missing, or upload outcome is
+   ambiguous, stop and reconcile the dashboard/API read-only before a reviewed
+   recovery decision; do not bypass the receipt's freshness or invent an upload
+   receipt. A submitted exact version can be reconciled without another mutation.
+   A receipt for an existing submission cannot publish if that submission vanished.
+   Old runs from before this split need their original dashboard recovery path;
+   do not assume the new receipt exists. Firefox signing still requires the
+   authenticated exact-version check to prove its version unused.
 4. Rerun only the affected store job after reconciliation, through the normal
    `browser-stores` reviewer gate:
 
@@ -383,7 +461,8 @@ in the Developer Dashboard rather than assuming the extension code failed.
    Obtain `databaseId` from the command output, as described in the
    [GitHub CLI manual](https://cli.github.com/manual/gh_run_rerun). GitHub also
    reruns [dependent jobs](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run);
-   inspect the job graph before dispatch. The two store jobs are independent.
+   inspect the job graph before dispatch. Chrome has separate upload, metadata
+   review and publish jobs; rerun only publish after successful upload and review.
    Leave an accepted Firefox submission intact during Chrome recovery. Record
    terminal results, the original failed attempt, and whether recovery performed
    a new submission or only reconciled an existing one.

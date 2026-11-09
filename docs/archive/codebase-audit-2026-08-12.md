@@ -199,7 +199,7 @@ version only after the remote store proves that exact revision is the submitted
 revision. A timed-out non-idempotent upload or publish must be reconciled before
 retry, not treated as a clean failure.
 
-**Evidence.** `scripts/publish-chrome.mjs` (lines 46–72) performs each request
+**Evidence.** `scripts/publish-chrome.mts` (lines 46–72) performs each request
 with plain `fetch()` and then retains `response.text()` without a request
 deadline or body cap. The surrounding workflow's 15-minute job timeout cannot
 classify whether an upload or publish applied before a hung response.
@@ -212,7 +212,7 @@ allows `crxVersion` to be absent while processing is `IN_PROGRESS`. The
 [status contract](https://developer.chrome.com/docs/webstore/api/reference/rest/v2/publishers.items/fetchStatus)
 describes `lastAsyncUploadState` as the publisher item's most recent async
 upload state, while the submitted revision's distribution channels contain the
-revision `crxVersion`. The existing release test in `test/project/release.test.mjs`
+revision `crxVersion`. The existing release test in `test/project/release.test.mts`
 (lines 877–903) deliberately omits the upload version from both the initial and
 polled upload responses and accepts the local fallback. It never proves the
 post-publish submitted revision.

@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { access, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { access } from 'node:fs/promises';
 import test from 'node:test';
 import {
     preflightArguments, releasePreflight, selectRehearsalArtifact, validateConsecutivePasses,
     validatePublicationSafeguards, validateVerificationJobs, validateVerificationRun,
     type VerificationRun,
 } from '../../scripts/release-preflight.mts';
-import { writePackageIdentity } from '../../scripts/release-package-identity.mjs';
 
 const commit = 'a'.repeat(40);
 const repo = { full_name: 'wilmtang/better-peakbagger' };
@@ -20,9 +18,9 @@ const run = { id: 123, run_attempt: 1, repository: repo, head_repository: repo,
 const expectation = { commit, workflow: 'release.yml', event: 'workflow_dispatch' };
 const job = (name: string, conclusion = 'success') => ({ name, status: 'completed', conclusion });
 const ciJobs = () => ['Node tests and lint', 'Scale tests', 'Chrome extension smoke', 'Firefox extension smoke'].map(name => job(name));
-const rehearsalJobs = () => ['Release scale tests', 'Verify release', 'Packaged chrome 128 floor',
-    'Packaged firefox 152.0 floor'].map(name => job(name)).concat([
-    job('Submit Chrome Web Store', 'skipped'), job('Submit Firefox Add-ons', 'skipped'),
+const rehearsalJobs = () => ['Prepare release candidate', 'Verify release', 'Packaged chrome current', 'Packaged firefox current', 'Packaged chrome 128',
+    'Packaged firefox 152.0'].map(name => job(name)).concat([
+    job('Upload Chrome Web Store', 'skipped'), job('Review Chrome metadata', 'skipped'), job('Submit Chrome Web Store', 'skipped'), job('Submit Firefox Add-ons', 'skipped'),
 ]);
 const log = (count: number) => Array.from({ length: count }, (_, index) => [
     `job\tstep\t2026-10-15T00:00:00Z Verification repetition ${index + 1}/${count} started.`,
@@ -53,7 +51,7 @@ test('only a terminal successful run of the exact workflow, repository, event, m
 
 test('all required CI and rehearsal jobs must pass, and both store jobs must remain skipped', () => {
     assert.deepEqual(validateVerificationJobs(ciJobs()), []);
-    assert.equal(validateVerificationJobs(rehearsalJobs(), true).length, 3);
+    assert.equal(validateVerificationJobs(rehearsalJobs(), true).length, 4);
     for (const rehearsal of [false, true]) {
         const jobs = rehearsal ? rehearsalJobs() : ciJobs();
         for (const conclusion of ['failure', 'cancelled', 'skipped', null]) {
@@ -101,12 +99,15 @@ function safeguards() {
         environment: { id: 3, deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
             protection_rules: [{ type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { id: 4 } }] }] },
         policies: [{ type: 'tag', name: 'v*' }],
+        metadataEnvironment: { id: 9, can_admins_bypass: false, deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+            protection_rules: [{ type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { id: 4 } }] }] },
+        metadataPolicies: [{ type: 'tag', name: 'v*' }],
     };
 }
 
 test('preflight requires active strict main checks, immutable tags, and owner-controlled store review', () => {
     assert.deepEqual(validatePublicationSafeguards(safeguards()), {
-        rulesets: [1, 2], environment: 3, reviewers: [{ type: 'User', id: 4 }],
+        rulesets: [1, 2], environment: 3, metadataEnvironment: 9, reviewers: [{ type: 'User', id: 4 }],
     });
     const changes = [
         (state: ReturnType<typeof safeguards>) => { state.rulesets[0].rules.pop(); },
@@ -121,6 +122,10 @@ test('preflight requires active strict main checks, immutable tags, and owner-co
         (state: ReturnType<typeof safeguards>) => { state.environment.deployment_branch_policy.protected_branches = true; },
         (state: ReturnType<typeof safeguards>) => { state.policies.push({ name: 'main', type: 'branch' }); },
         (state: ReturnType<typeof safeguards>) => { state.policies[0].type = 'branch'; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataEnvironment.can_admins_bypass = true; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataEnvironment.protection_rules[0].reviewers = []; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataEnvironment.deployment_branch_policy.protected_branches = true; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataPolicies.push({ type: 'branch', name: 'main' }); },
     ];
     for (const change of changes) {
         const state = safeguards(); change(state);
@@ -150,77 +155,35 @@ test('the rehearsal artifact must belong to the exact successful attempt and com
     }
 });
 
-test('preflight pins a complete receipt, rejects changed candidates, and removes downloads on success or hash failure', async t => {
-    for (const failure of [null, 'changed', 'hash', 'rerun', 'one-pass', 'mixed-passes']) {
-        await t.test(failure || 'successful receipt', async () => {
-            const state = safeguards();
-            let inspections = 0, directory, commands = 0;
-            const requests = [];
-            const artifact = { id: 42, name: 'browser-extension-v4.0.2-1', expired: false,
-                workflow_run: { id: 123, head_sha: commit } };
-            const options = {
-                inspect: async (tag: string) => {
-                    assert.equal(tag, 'v4.0.2');
-                    return ++inspections === 2 && failure === 'changed' ? 'b'.repeat(40) : commit;
-                },
-                read: async (name: string) => {
-                    if (name === 'CHANGELOG.md') return '# Changelog\n\n## 4.0.2 — 2026-10-16\n\n- Changes.\n';
-                    return JSON.stringify({ version: '4.0.2', packages: { '': { version: '4.0.2' } },
-                        browser_specific_settings: { gecko: { id: 'test@example.test' } } });
-                },
-                request: async (endpoint: string) => {
-                    requests.push(endpoint);
-                    if (!endpoint) return { default_branch: 'main' };
-                    if (endpoint === 'actions/runs/456') return { ...run, id: 456, path: '.github/workflows/test.yml', event: 'push' };
-                    if (endpoint === 'actions/runs/123') return { ...run, run_attempt: failure === 'rerun' ? 2 : 1 };
-                    if (endpoint === 'environments/browser-stores') return state.environment;
-                    if (endpoint.startsWith('rulesets/')) return state.rulesets.find(rule => rule.id === Number(endpoint.split('/')[1]));
-                    assert.fail(`Unexpected request: ${endpoint}`);
-                },
-                paginate: async (endpoint: string) => {
-                    requests.push(endpoint);
-                    if (endpoint.includes('/456/attempts/1/jobs')) return ciJobs();
-                    if (endpoint.includes('/123/attempts/1/jobs')) return rehearsalJobs().map((entry, id) => ({ ...entry, id }));
-                    if (endpoint.endsWith('/artifacts?per_page=100')) return [artifact];
-                    if (endpoint === 'rulesets?per_page=100') return state.rulesets;
-                    if (endpoint.includes('deployment-branch-policies')) return state.policies;
-                    assert.fail(`Unexpected pagination: ${endpoint}`);
-                },
-                runCommand: async (program: string, args: string[]) => {
-                    commands++;
-                    if (program === process.execPath) {
-                        assert.ok([
-                            'scripts/check-changelog-history.mjs', 'scripts/check-npm-audit.mts',
-                        ].includes(args[0]));
-                        if (args[0] === 'scripts/check-npm-audit.mts') assert.deepEqual(args.slice(1), []);
-                        return '';
-                    }
-                    assert.equal(program, 'gh');
-                    if (args[1] === 'view') return '> node scripts/verify-store-packages.mjs\n'
-                        + log(failure === 'one-pass' ? 1
-                            : failure === 'mixed-passes' && args[args.indexOf('--job') + 1] === '2' ? 5 : 3);
-                    assert.equal(args[1], 'download');
-                    directory = args[args.indexOf('--dir') + 1];
-                    for (const suffix of ['', '-firefox']) await writeFile(path.join(directory, `better_peakbagger-4.0.2${suffix}.zip`), 'verified package');
-                    await writePackageIdentity(directory, '4.0.2', commit);
-                    if (failure === 'hash') await writeFile(path.join(directory, 'better_peakbagger-4.0.2.zip'), 'changed bytes');
-                    return '';
-                },
-            };
-            const pending = releasePreflight({ tag: 'v4.0.2', ciRunId: '456', rehearsalRunId: '123' }, options as unknown as Parameters<typeof releasePreflight>[1]);
-            if (failure) await assert.rejects(pending, /Candidate changed|Package identity|fresh successful rehearsal|consecutive passes|same repetition count/);
-            else {
-                const receipt = await pending;
-                assert.equal(receipt.commit, commit);
-                assert.equal(receipt.rehearsal.id, 123);
-                assert.equal(receipt.ci.id, 456);
-                assert.equal(receipt.artifact.id, 42);
-                assert.equal(receipt.packageIdentity.commit, commit);
-                assert.deepEqual(receipt.safeguards.rulesets, [1, 2]);
-                assert.equal(inspections, 2);
-                assert.ok(commands > 0 && requests.length > 0);
-            }
-            if (directory) await assert.rejects(access(directory), { code: 'ENOENT' });
+test('local preflight shares publication acquisition and rechecks candidate identity', async t => {
+    for (const failure of [null, 'changed', 'acquisition']) await t.test(failure || 'receipt', async () => {
+        const state = safeguards(); let inspections = 0; let directory: string | undefined;
+        const receipt = { expiresAt: '2026-11-09T12:00:00.000Z', identity: { commit, version: '4.0.2', archives: {} }, sourceCi: { id: 456, attempt: 1, artifactId: 1, digest: 'sha256:ci' },
+            rehearsal: { id: 123, attempt: 1, artifactId: 42, digest: 'sha256:rehearsal' } };
+        const pending = releasePreflight({ tag: 'v4.0.2', ciRunId: '456', rehearsalRunId: '123' }, {
+            inspect: async () => ++inspections === 2 && failure === 'changed' ? 'b'.repeat(40) : commit,
+            read: async name => name === 'CHANGELOG.md' ? '# Changelog\n\n## 4.0.2 — 2026-10-16\n\n- Changes.\n' : JSON.stringify({ version: '4.0.2', packages: { '': { version: '4.0.2' } }, browser_specific_settings: { gecko: { id: 'test@example.test' } } }),
+            request: async endpoint => {
+                if (!endpoint) return { default_branch: 'main' };
+                if (endpoint === 'environments/browser-stores') return state.environment;
+                if (endpoint === 'environments/chrome-metadata-review') return state.metadataEnvironment;
+                if (endpoint.startsWith('rulesets/')) return state.rulesets.find(rule => rule.id === Number(endpoint.split('/')[1]))!;
+                assert.fail(endpoint);
+            },
+            paginate: async endpoint => endpoint.startsWith('rulesets') ? state.rulesets : state.policies,
+            runCommand: async (program, args) => {
+                assert.equal(program, process.execPath);
+                assert.ok(['scripts/check-changelog-history.mjs', 'scripts/check-npm-audit.mts', 'scripts/release-readiness.mts'].includes(args[0]!)); return '';
+            },
+            acquire: async options => {
+                directory = options.directory;
+                assert.equal(options.mode, 'publication'); assert.equal(options.ciRunId, 456); assert.equal(options.rehearsalRunId, 123);
+                if (failure === 'acquisition') throw new Error('Acquisition rejected');
+                return receipt;
+            },
         });
-    }
+        if (failure) await assert.rejects(pending, /Candidate changed|Acquisition rejected/);
+        else { const result = await pending; assert.equal(result.artifact.id, 42); assert.deepEqual(result.packageIdentity, receipt.identity); assert.equal(inspections, 2); }
+        assert.ok(directory); await assert.rejects(access(directory), { code: 'ENOENT' });
+    });
 });

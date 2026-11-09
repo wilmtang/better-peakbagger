@@ -68,6 +68,7 @@ import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verificat
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
 import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mjs';
+import { observeTerrainFrameCreation } from './terrain-frame-creation.mts';
 
 import type { BrowserContext, ConsoleMessage, Download, JSHandle, Locator, Page } from 'playwright';
 
@@ -4198,10 +4199,13 @@ try {
                 }
             });
         });
-        await peakBigMapPage.locator('#bpb-terrain-toggle').click();
-        const peakBigMapInit = await peakBigMapPage.waitForFunction(
-            () => window.__bpbPeakBigMapTerrainInit, null, { timeout: 5000 }
-        ).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
+        const { value: peakBigMapInit, created: peakBigMapFrameCreated } = await observeTerrainFrameCreation(
+            peakBigMapPage, `chrome-extension://${extensionId}/terrain/terrain.html`, async () => {
+                await peakBigMapPage.locator('#bpb-terrain-toggle').click();
+                return peakBigMapPage.waitForFunction(
+                    () => window.__bpbPeakBigMapTerrainInit, null, { timeout: 5000 }
+                ).then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
+            });
         check(JSON.stringify(peakBigMapInit?.focus) === JSON.stringify([48.83115, -121.60214])
             && peakBigMapInit?.focusZoom === 13
             && peakBigMapInit?.focusPeak?.id === 2829
@@ -4209,8 +4213,6 @@ try {
             && peakBigMapInit?.focusPeak?.state === 'unclimbed'
             && !Object.hasOwn(peakBigMapInit || {}, 'routeSegments'),
         `the Full Screen peak map did not start a route-free summit view (init=${JSON.stringify(peakBigMapInit)})`);
-        const peakBigMapFrameCreated = await peakBigMapPage.locator('#bpb-terrain-frame')
-            .waitFor({ state: 'attached', timeout: 3000 }).then(() => true).catch(() => false);
         check(peakBigMapFrameCreated,
             'the Full Screen peak map did not create the extension-owned terrain frame');
         await peakBigMapPage.close();
@@ -4342,18 +4344,19 @@ try {
                 }
             });
         });
-        await peakPage.locator('#bpb-terrain-toggle').focus();
-        await peakPage.keyboard.press('Enter');
-        const peakInit = await peakPage.waitForFunction(() => window.__bpbPeakTerrainInit, null, { timeout: 5000 })
-            .then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
+        const { value: peakInit, created: peakFrameCreated } = await observeTerrainFrameCreation(
+            peakPage, `chrome-extension://${extensionId}/terrain/terrain.html`, async () => {
+                await peakPage.locator('#bpb-terrain-toggle').focus();
+                await peakPage.keyboard.press('Enter');
+                return peakPage.waitForFunction(() => window.__bpbPeakTerrainInit, null, { timeout: 5000 })
+                    .then((handle: JSHandle) => handle.jsonValue()).catch(() => null);
+            });
         check(JSON.stringify(peakInit?.focus) === JSON.stringify([48.83115, -121.60214])
             && peakInit?.focusZoom === 13
             && peakInit?.focusPeak?.id === 2829
             && peakInit?.focusPeak?.name === 'Mount Shuksan'
             && !Object.hasOwn(peakInit || {}, 'routeSegments'),
         `the real Peak-page click did not start a route-free summit view (init=${JSON.stringify(peakInit)})`);
-        const peakFrameCreated = await peakPage.locator('#bpb-terrain-frame').waitFor({ state: 'attached', timeout: 3000 })
-            .then(() => true).catch(() => false);
         check(peakFrameCreated, 'the isolated terrain bridge did not create a frame for the Peak-page summit view');
         await peakPage.close();
     }

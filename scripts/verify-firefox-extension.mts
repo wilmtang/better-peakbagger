@@ -523,7 +523,7 @@ async function main() {
             await driver.actions({ bridge: true })
                 .move({ origin: overlay, x, y }).click().perform();
         };
-        // @ts-expect-error release.test.mjs pins this signature; the argument is a WebElement.
+        // @ts-expect-error release.test.mts pins this signature; the argument is a WebElement.
         const clickEditorControl = async element => {
             await driver.executeScript(
                 "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' });",

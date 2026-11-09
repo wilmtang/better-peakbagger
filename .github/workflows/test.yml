@@ -96,7 +96,7 @@ jobs:
     # full verifier is load-sensitive on the smaller 3-core arm64 runner.
     # Chrome 128 remains the Linux floor.
     runs-on: macos-15-intel
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       BPB_VERIFY_ARTIFACTS: browser-evidence
     steps:
@@ -112,6 +112,22 @@ jobs:
 
       - name: Verify packages and capture flows
         uses: ./.github/actions/verify-package
+
+      - name: Record exact CI package identity
+        run: |
+          version="$(node -p 'require("./manifest.json").version')"
+          node scripts/release-package-identity.mts write web-ext-artifacts "$version" "$GITHUB_SHA"
+
+      - name: Preserve exact tested packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-packages-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            web-ext-artifacts/*.zip
+            web-ext-artifacts/package-identity.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
 
       - name: Retain browser failure evidence
         if: failure()

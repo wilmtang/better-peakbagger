@@ -512,7 +512,7 @@ source root used to reproduce the submitted extension.
 reviewers that runtime source lives under `src/`, `options/`, and `popup/`.
 `scripts/build-config.mjs` (lines 26–39 and 83–87) also resolves
 `photos/photos.js` and `photos/guide.js` from the authored `photos/` root and
-ships both bundles. `test/project/release.test.mjs` (lines 343–390) checks
+ships both bundles. `test/project/release.test.mts` (lines 343–390) checks
 dependency versions, licensing, terrain notes, and listing copy, but not source
 root completeness.
 

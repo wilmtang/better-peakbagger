@@ -29,7 +29,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'report-security': [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']],
     'inline-buddies': [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']],
     'signed-out': [['verify-signed-out.mjs']],
-    'capture-flow': [['verify-capture-flow.mjs']],
+    'capture-flow': [['verify-capture-flow.mts']],
     'capture-readiness': [['verify-capture-readiness.mjs']],
     'provider-contracts': [['verify-provider-contracts.mjs']],
     'provider-performance': [['verify-provider-performance.mjs']],
@@ -56,7 +56,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'peak-cards': [['verify-ascent-weather.mjs', '--cards'], ['verify-ascent-weather.mjs', '--cards', '--firefox']],
     'peak-card-placement': [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']],
     'weather-interactions': [['verify-ascent-weather.mjs', '--interactions'], ['verify-ascent-weather.mjs', '--interactions', '--firefox']],
-    packages: [['verify-packaged-extensions.mjs']],
+    packages: [['verify-packaged-extensions.mts']],
 };
 const terrainTargets: Record<string, VerifierCommand[]> = {
     chrome: [['verify-terrain-visual.mts']],

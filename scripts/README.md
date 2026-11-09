@@ -48,12 +48,14 @@ independent of the existing targets.
 - [dependency-metadata.mjs](dependency-metadata.mjs)
 - [privacy-guard.mjs](privacy-guard.mjs)
 - [typescript-policy.mts](typescript-policy.mts) — Rejects new or modified authored JavaScript in the staged index or a committed comparison; preserves generated/vendor formats.
-- [publish-chrome.mjs](publish-chrome.mjs)
+- [publish-chrome.mts](publish-chrome.mts)
 - [release-bump.mjs](release-bump.mjs)
 - [release-changelog.mjs](release-changelog.mjs)
 - [release-check.mjs](release-check.mjs)
-- [release-package-identity.mjs](release-package-identity.mjs)
+- [release-package-identity.mts](release-package-identity.mts)
+- [release-evidence.mts](release-evidence.mts)
 - [release-preflight.mts](release-preflight.mts)
+- [release-readiness.mts](release-readiness.mts) — Prepares permission disclosures and reports bounded optional public service probes; authentication and Google's uploaded-draft validation remain manual.
 - [select-release-artifact.mjs](select-release-artifact.mjs)
 - [stage-ui-ux-skill-update.mjs](stage-ui-ux-skill-update.mjs) — Enforces the checked skill-only patch and prepares the direct-main automation commit without executing downloaded helpers.
 - [third-party-notices.mjs](third-party-notices.mjs)
@@ -81,11 +83,12 @@ independent of the existing targets.
 
 - [verify-extension.mts](verify-extension.mts)
 - [verify-firefox-extension.mts](verify-firefox-extension.mts)
-- [verify-packaged-extensions.mjs](verify-packaged-extensions.mjs)
+- [verify-packaged-extensions.mts](verify-packaged-extensions.mts)
 
 ## Capture and providers
 
-- [verify-capture-flow.mjs](verify-capture-flow.mjs)
+- [capture-preview-diagnostics.mts](capture-preview-diagnostics.mts)
+- [verify-capture-flow.mts](verify-capture-flow.mts)
 - [verify-capture-popup.mts](verify-capture-popup.mts)
 - [verify-garmin-ui.mts](verify-garmin-ui.mts) — Garmin connection, inbox and popup geometry, recovery and keyboard checks in hidden Chrome and Firefox.
 - [verify-connections.mjs](verify-connections.mjs) — Packaged Garmin, ImgBB and GitHub disconnect states, focus, duplicate activation and geometry in hidden Chrome and Firefox.
@@ -117,6 +120,8 @@ independent of the existing targets.
 - [verify-terrain-lod.mts](verify-terrain-lod.mts)
 - [verify-terrain-popup.mjs](verify-terrain-popup.mjs)
 - [verify-terrain-provider-ui.mts](verify-terrain-provider-ui.mts)
+- [terrain-toggle-readiness.mts](terrain-toggle-readiness.mts)
+- [terrain-frame-creation.mts](terrain-frame-creation.mts)
 - [verify-terrain-visual.mts](verify-terrain-visual.mts)
 
 ## Climbers and profiles
@@ -155,7 +160,7 @@ independent of the existing targets.
 - [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)
 - [verify-peak-weather-3d.mjs](verify-peak-weather-3d.mjs)
 - [verify-peak-weather-cases.mjs](verify-peak-weather-cases.mjs)
-- [verify-peak-weather-interactions.mjs](verify-peak-weather-interactions.mjs)
+- [verify-peak-weather-interactions.mts](verify-peak-weather-interactions.mts)
 - [verify-peak-weather-refresh.mjs](verify-peak-weather-refresh.mjs)
 - [verify-snotel-options.mjs](verify-snotel-options.mjs)
 - [verify-snow-map-cases.mjs](verify-snow-map-cases.mjs)

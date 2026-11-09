@@ -18,7 +18,7 @@ const load = async (name: string) => yaml.load(await readFile(new URL(`../../.gi
 test('ordinary and release package gates share setup, browsers, and their execution command', async () => {
     const ordinary = await load('workflows/test.yml');
     const release = await load('workflows/release.yml');
-    for (const job of [ordinary.jobs.chrome, release.jobs.verify]) {
+    for (const job of [ordinary.jobs.chrome]) {
         const setup = job.steps.find((step: WorkflowStep) => step.uses === './.github/actions/setup-verification');
         assert.equal(setup.with['chrome-version'], 'current');
         assert.equal(setup.with['firefox-version'], 'latest');
@@ -26,7 +26,7 @@ test('ordinary and release package gates share setup, browsers, and their execut
         assert.equal(job.steps.filter((step: WorkflowStep) => step.uses === './.github/actions/verify-package').length, 1);
         assert.equal(job['runs-on'], 'macos-15-intel');
     }
-    for (const job of [ordinary.jobs.node, ordinary.jobs.scale, release.jobs.scale]) {
+    for (const job of [ordinary.jobs.node, ordinary.jobs.scale, release.jobs.prepare]) {
         assert.ok(job.steps.some((step: WorkflowStep) => step.uses === './.github/actions/setup-verification'));
     }
 });

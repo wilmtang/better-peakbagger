@@ -27,7 +27,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['instagram'], [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']]],
         [['report-security'], [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
         [['inline-buddies'], [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']]],
-        [['capture-flow'], [['verify-capture-flow.mjs']]],
+        [['capture-flow'], [['verify-capture-flow.mts']]],
         [['capture-readiness', 'firefox'], [['verify-capture-readiness.mjs', 'firefox']]],
         [['provider-contracts'], [['verify-provider-contracts.mjs']]],
         [['provider-performance'], [['verify-provider-performance.mjs']]],
@@ -67,7 +67,7 @@ test('package verification uses the supplied archives without rebuilding product
     await runVerification(['packages', '/tmp/Chrome archive.zip', '/tmp/Firefox archive.zip'], {
         execute: async (...call) => { calls.push(call); },
     });
-    assert.deepEqual(calls, [[process.execPath, [script('verify-packaged-extensions.mjs'),
+    assert.deepEqual(calls, [[process.execPath, [script('verify-packaged-extensions.mts'),
         '/tmp/Chrome archive.zip', '/tmp/Firefox archive.zip'], { cwd: root }]]);
 });
 

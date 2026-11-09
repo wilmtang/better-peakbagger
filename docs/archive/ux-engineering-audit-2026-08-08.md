@@ -349,7 +349,7 @@ package bytes shipped by the release.
 **Evidence.** `package-lock.json` records Marked 18.0.9 and TipTap core 3.29.2.
 `scripts/create-amo-metadata.mts` (line 52), `ACKNOWLEDGEMENTS.md` (lines
 59–78), `docs/trip-report-editor.md` (lines 150–159), and
-`test/project/release.test.mjs` (lines 187–194) preserve Marked 18.0.6.
+`test/project/release.test.mts` (lines 187–194) preserve Marked 18.0.6.
 `scripts/check-web-ext-lint.mjs` (lines 52–57) and the acknowledgements preserve
 TipTap 3.28.0. Generated `THIRD_PARTY_NOTICES.txt` and copied runtime bytes are
 current, so the defect is false human/reviewer metadata rather than stale code.
