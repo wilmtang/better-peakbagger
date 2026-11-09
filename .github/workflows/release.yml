@@ -1,11 +1,14 @@
 name: Release browser extensions
 
 on:
-  # Read-only rehearsal: the same package gates run without store credentials.
   workflow_dispatch:
     inputs:
+      ci_run:
+        description: Successful full main Test run for this exact commit (within 24 hours)
+        required: true
+        type: string
       repetitions:
-        description: Consecutive successful checks required for each exact archive
+        description: Consecutive successful checks per browser (1 is diagnostic only)
         type: choice
         options: ['1', '3', '5']
         default: '3'
@@ -13,8 +16,10 @@ on:
     tags:
       - "v*"
 
+# Serialize the entire upload/review/publication transaction across every tag.
+# Read-only rehearsals do not hold the store publication lock.
 concurrency:
-  group: browser-store-release-${{ github.ref }}
+  group: ${{ github.event_name == 'push' && 'browser-store-publication' || format('browser-release-rehearsal-{0}', github.run_id) }}
   cancel-in-progress: false
 
 defaults:
@@ -22,193 +27,182 @@ defaults:
     shell: bash
 
 jobs:
-  scale:
-    name: Release scale tests
-    # Keep the CPU ceiling on the same runner class as ordinary scale CI.
+  prepare:
+    name: Prepare release candidate
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up shared verification
-        uses: ./.github/actions/setup-verification
-
-      - name: Check early release readiness
-        # Live probes and dashboard checks remain explicit operator checks.
-        run: npm run release:readiness
-
-      - name: Run scale tests
-        run: npm run test:scale
-
-  verify:
-    name: Verify release
-    needs: scale
-    # Current Chrome 151 omits command-line extensions on hosted Linux. Keep
-    # exact-package verification on the less load-sensitive standard Intel
-    # macOS runner; the declared browser floors still run separately on Linux.
-    runs-on: macos-15-intel
-    # A hosted current-browser pair takes about six minutes in addition to
-    # setup, tests, and lint. Allocate time for every requested consecutive pass.
-    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && (inputs.repetitions == '5' && 65 || inputs.repetitions == '3' && 45) || 25 }}
+      actions: read
     outputs:
-      version: ${{ steps.metadata.outputs.version }}
-      artifact-name: ${{ steps.metadata.outputs.artifact-name }}
-    env:
-      BPB_VERIFY_ARTIFACTS: browser-evidence
-      BPB_VERIFY_REPETITIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.repetitions || '1' }}
-    permissions:
-      contents: read
+      version: ${{ steps.candidate.outputs.version }}
+      artifact-id: ${{ steps.packages.outputs.artifact-id }}
+      identity-sha256: ${{ steps.candidate.outputs.identity-sha256 }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
       - name: Set up shared verification
         uses: ./.github/actions/setup-verification
-        with:
-          chrome-version: current
-          firefox-version: latest
-          popup-firefox: 'true'
-
-      - name: Validate version and listing metadata before package gates
-        id: metadata
+      - name: Check early release readiness
+        run: npm run release:readiness
+      - name: Validate version and listing metadata
         run: |
           version="$(node -p 'require("./manifest.json").version')"
           npm run release:check -- "v$version" --metadata-only
           npm run release:metadata:firefox
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "artifact-name=browser-extension-v${version}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-
       - name: Fetch protected main tip
         if: github.event_name == 'push'
         run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-
-      - name: Validate tag, protected-main ancestry, and version metadata
+      - name: Validate tag and protected-main ancestry
         if: github.event_name == 'push'
         run: npm run release:check -- "$GITHUB_REF_NAME" --require-protected-main
-
       - name: Check immutable release history
         run: npm run release:check-history
-
-      # The test workflow runs this too, but nothing makes a release wait for
-      # that workflow, and test/project/dependency-audit.test.mjs only exercises
-      # evaluateAudit() against synthetic reports — it never calls npm audit. The
-      # gate requires zero advisories in shipped code. The audit evaluator
-      # enforces its dependency graph and expiry; every other finding still fails.
+      # Require zero advisories in shipped code under the reviewed audit policy.
       - name: Check dependency advisories
         run: npm run audit:ci
-
-      - name: Run tests
-        run: npm test
-
-      # Compare with policy adoption, not the previous release, so an unchanged
-      # violation cannot become grandfathered merely by releasing it once.
-      - name: Enforce the TypeScript adoption policy
+      - name: Enforce the complete TypeScript adoption policy
         run: npm run check:typescript-policy -- --base d7bc366311ccb384d9460eb17d68872e986d6a35
-
-      - name: Check TypeScript
-        run: npm run typecheck
-
-      - name: Lint source and extension
-        run: npm run lint
-
-      - name: Verify packages and capture flows
-        uses: ./.github/actions/verify-package
-
-      - name: Record verified package identity
-        run: node scripts/release-package-identity.mjs write web-ext-artifacts "${{ steps.metadata.outputs.version }}" "$GITHUB_SHA"
-
-      - name: Retain package verifier failure evidence
-        if: failure()
+      - name: Acquire trusted exact packages and verification evidence
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BPB_CI_RUN: ${{ inputs.ci_run }}
+          BPB_MODE: ${{ github.event_name == 'workflow_dispatch' && 'rehearsal' || 'publication' }}
+        run: node scripts/release-evidence.mts "$BPB_MODE"
+      - name: Preserve frozen candidate packages
+        id: packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-browser-failure-${{ github.run_attempt }}
-          path: browser-evidence/
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Preserve verified store packages
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ steps.metadata.outputs.artifact-name }}
-          path: |
-            web-ext-artifacts/*.zip
-            web-ext-artifacts/package-identity.json
+          name: frozen-candidate-${{ github.run_attempt }}
+          path: release-package/
           if-no-files-found: error
           compression-level: 0
-          retention-days: 30
+          retention-days: 7
 
   compatibility:
-    name: Packaged ${{ matrix.browser }} ${{ matrix.version }} floor
-    needs: verify
-    env:
-      RELEASE_VERSION: ${{ needs.verify.outputs.version }}
-      BPB_VERIFY_ARTIFACTS: browser-evidence
-      BPB_VERIFY_REPETITIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.repetitions || '1' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    name: Packaged ${{ matrix.browser }} ${{ matrix.version }}
+    needs: prepare
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
     permissions:
       contents: read
+      actions: read
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      EXPECTED_IDENTITY: ${{ needs.prepare.outputs.identity-sha256 }}
+      BPB_VERIFY_ARTIFACTS: browser-evidence
+      BPB_VERIFY_REPETITIONS: ${{ inputs.repetitions }}
+      BROWSER: ${{ matrix.browser }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - browser: chrome
+            version: current
+            runner: macos-15-intel
+            chrome: current
+            firefox: none
+          - browser: firefox
+            version: current
+            runner: macos-15-intel
+            chrome: none
+            firefox: latest
+          - browser: chrome
             version: "128"
+            runner: ubuntu-24.04
+            chrome: "128"
+            firefox: none
           - browser: firefox
             version: "152.0"
+            runner: ubuntu-24.04
+            chrome: none
+            firefox: "152.0"
     steps:
-      - name: Check out tagged source
+      - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up shared verification
+      - name: Set up selected browser
         uses: ./.github/actions/setup-verification
         with:
-          chrome-version: ${{ matrix.browser == 'chrome' && matrix.version || 'none' }}
-          firefox-version: ${{ matrix.browser == 'firefox' && matrix.version || 'none' }}
-
-      - name: Download verified store packages
+          chrome-version: ${{ matrix.chrome }}
+          firefox-version: ${{ matrix.firefox }}
+      - name: Download frozen candidate
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ needs.verify.outputs.artifact-name }}
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
           path: release-package
-
+          merge-multiple: true
       - name: Verify downloaded package identity
-        run: node scripts/release-package-identity.mjs verify release-package "$RELEASE_VERSION" "$GITHUB_SHA"
-
-      - name: Execute the packaged extension at its browser floor
+        run: node scripts/release-package-identity.mts verify release-package "$RELEASE_VERSION" "$GITHUB_SHA" "$EXPECTED_IDENTITY"
+      - name: Execute exact archive in the selected browser
         run: |
           mkdir -p browser-evidence
-          version="${RELEASE_VERSION}"
-          if [ "${{ matrix.browser }}" = chrome ]; then
-            BPB_VERIFY_EXTENSION_SOURCE="release-package/better_peakbagger-${version}.zip"
-            mkdir floor-extension
-            unzip -q "$BPB_VERIFY_EXTENSION_SOURCE" -d floor-extension
-            BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts/verification-repetitions.mjs chrome 2>&1 | tee browser-evidence/floor.log
-          else
-            BPB_VERIFY_EXTENSION_SOURCE="release-package/better_peakbagger-${version}-firefox.zip" \
-              node scripts/verification-repetitions.mjs firefox 2>&1 | tee browser-evidence/floor.log
-          fi
-
-      - name: Retain floor failure evidence
+          node scripts/verify-packaged-extensions.mts \
+            "release-package/better_peakbagger-${RELEASE_VERSION}.zip" \
+            "release-package/better_peakbagger-${RELEASE_VERSION}-firefox.zip" \
+            --browser "$BROWSER" 2>&1 | tee browser-evidence/packages.log
+      - name: Retain browser failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-floor-failure-${{ matrix.browser }}-${{ github.run_attempt }}
+          name: release-browser-failure-${{ matrix.browser }}-${{ matrix.version }}-${{ github.run_attempt }}
           path: browser-evidence/
           if-no-files-found: ignore
           retention-days: 7
 
+  verify:
+    name: Verify release
+    needs: [prepare, compatibility]
+    # A skipped browser matrix is expected only for promotion on a tag. An
+    # explicit always condition prevents skipped needs from silently propagating.
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.compatibility.result == 'success' || (github.event_name == 'push' && needs.compatibility.result == 'skipped')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ needs.prepare.outputs.version }}
+      artifact-name: browser-extension-v${{ needs.prepare.outputs.version }}-${{ github.run_attempt }}
+      identity-sha256: ${{ needs.prepare.outputs.identity-sha256 }}
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      EXPECTED_IDENTITY: ${{ needs.prepare.outputs.identity-sha256 }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Download frozen candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: release-package
+          merge-multiple: true
+      - name: Verify downloaded package identity
+        run: node scripts/release-package-identity.mts verify release-package "$RELEASE_VERSION" "$GITHUB_SHA" "$EXPECTED_IDENTITY"
+      - name: Preserve verified store packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-extension-v${{ needs.prepare.outputs.version }}-${{ github.run_attempt }}
+          path: release-package/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
   chrome:
     name: Submit Chrome Web Store
-    needs: [verify, compatibility]
+    needs: [verify]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     env:
       RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+      EXPECTED_IDENTITY: ${{ needs.verify.outputs.identity-sha256 }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: browser-stores
@@ -232,7 +226,7 @@ jobs:
           path: release-package
 
       - name: Verify downloaded package identity
-        run: node scripts/release-package-identity.mjs verify release-package "$RELEASE_VERSION" "$GITHUB_SHA"
+        run: node scripts/release-package-identity.mts verify release-package "$RELEASE_VERSION" "$GITHUB_SHA" "$EXPECTED_IDENTITY"
 
       - name: Check Chrome publisher configuration
         env:
@@ -268,10 +262,11 @@ jobs:
 
   firefox:
     name: Submit Firefox Add-ons
-    needs: [verify, compatibility]
+    needs: [verify]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     env:
       RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+      EXPECTED_IDENTITY: ${{ needs.verify.outputs.identity-sha256 }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: browser-stores
@@ -297,7 +292,7 @@ jobs:
           path: release-package
 
       - name: Verify downloaded package identity
-        run: node scripts/release-package-identity.mjs verify release-package "$RELEASE_VERSION" "$GITHUB_SHA"
+        run: node scripts/release-package-identity.mts verify release-package "$RELEASE_VERSION" "$GITHUB_SHA" "$EXPECTED_IDENTITY"
 
       - name: Revalidate tagged source
         run: npm run release:check -- "$GITHUB_REF_NAME"

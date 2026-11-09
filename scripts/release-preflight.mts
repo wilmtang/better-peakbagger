@@ -9,13 +9,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { validateRelease } from './release-check.mjs';
 import { validateReleasePreflight } from './release-bump.mjs';
-import { verifyPackageIdentity } from './release-package-identity.mjs';
+import { acquireEvidence } from './release-evidence.mts';
 
 const execute = promisify(execFile);
 const repository = 'wilmtang/better-peakbagger';
 const requiredChecks = ['Node tests and lint', 'Scale tests', 'Chrome extension smoke', 'Firefox extension smoke'];
-const rehearsalChecks = ['Release scale tests', 'Verify release',
-    'Packaged chrome 128 floor', 'Packaged firefox 152.0 floor'];
+const rehearsalChecks = ['Prepare release candidate', 'Verify release', 'Packaged chrome current',
+    'Packaged firefox current', 'Packaged chrome 128', 'Packaged firefox 152.0'];
 const storeChecks = ['Submit Chrome Web Store', 'Submit Firefox Add-ons'];
 
 // The GitHub API fields these validators read. Every one is untrusted until the
@@ -42,6 +42,7 @@ type Safeguards = { rulesets: Ruleset[]; environment?: Environment; policies?: {
 type Artifact = { id?: number; name: string; expired?: boolean; workflow_run?: { id?: number; head_sha?: string } };
 type ApiRecord = Record<string, unknown>;
 type PreflightDependencies = {
+    acquire?: typeof acquireEvidence;
     inspect?: (tag: string) => Promise<string>;
     read?: (file: string, encoding: 'utf8') => Promise<string>;
     request?: (endpoint: string) => Promise<ApiRecord>;
@@ -95,7 +96,7 @@ export function validateVerificationJobs(jobs: VerificationJob[], rehearsal = fa
     };
     for (const name of rehearsal ? rehearsalChecks : requiredChecks) named(name, 'success');
     if (rehearsal) for (const name of storeChecks) named(name, 'skipped');
-    return rehearsal ? rehearsalChecks.slice(1).map(name => named(name, 'success')) : [];
+    return rehearsal ? rehearsalChecks.filter(name => name.startsWith('Packaged ')).map(name => named(name, 'success')) : [];
 }
 
 export function validateConsecutivePasses(log: string, label: string) {
@@ -179,7 +180,7 @@ async function inspectCandidate(tag: string) {
 }
 
 export async function releasePreflight({ tag, ciRunId, rehearsalRunId }: { tag: string; ciRunId: string; rehearsalRunId: string }, {
-    inspect = inspectCandidate, read = readFile, request = api, paginate = pages, runCommand = command,
+    inspect = inspectCandidate, read = readFile, request = api, paginate = pages, runCommand = command, acquire = acquireEvidence,
 }: PreflightDependencies = {}) {
     const commit = await inspect(tag);
     const [manifest, packageJson, packageLock, changelog] = await Promise.all([
@@ -190,47 +191,27 @@ export async function releasePreflight({ tag, ciRunId, rehearsalRunId }: { tag: 
     await runCommand(process.execPath, ['scripts/check-changelog-history.mjs']);
     // A green run from yesterday cannot cover an advisory disclosed today.
     await runCommand(process.execPath, ['scripts/check-npm-audit.mts']);
-    const [ci, rehearsal, repositoryInfo] = await Promise.all([
-        request(`actions/runs/${ciRunId}`), request(`actions/runs/${rehearsalRunId}`), request(''),
-    ]) as [VerificationRun, VerificationRun, ApiRecord];
+    await runCommand(process.execPath, ['scripts/release-readiness.mts']);
+    const repositoryInfo = await request('');
     requireEvidence(repositoryInfo.default_branch === 'main', 'The protected default branch must remain main');
-    validateVerificationRun(ci, { commit, workflow: 'test.yml', event: 'push' });
-    validateVerificationRun(rehearsal, { commit, workflow: 'release.yml', event: 'workflow_dispatch' });
-    // A new rehearsal retains failed attempts as evidence instead of replacing
-    // them with a green retry. Every component must pass in that fresh run.
-    requireEvidence(rehearsal.run_attempt === 1, 'Use a fresh successful rehearsal, not a rerun of a failed rehearsal');
-    const [ciJobs, rehearsalJobs] = await Promise.all([ci, rehearsal].map(run =>
-        paginate(`actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`, 'jobs'))) as [VerificationJob[], VerificationJob[]];
-    validateVerificationJobs(ciJobs);
-    const browserJobs = validateVerificationJobs(rehearsalJobs, true);
-    const repetitions: Record<string, number> = {};
-    for (const job of browserJobs) {
-        const log = await runCommand('gh', ['run', 'view', String(rehearsal.id), '--repo', repository,
-            '--attempt', String(rehearsal.run_attempt), '--job', String(job.id), '--log']);
-        repetitions[job.name] = validateConsecutivePasses(log, job.name);
-    }
-    requireEvidence(new Set(Object.values(repetitions)).size === 1, 'Every browser must complete the same repetition count');
-    const [artifacts, ruleListings, environment, policyPages] = await Promise.all([
-        paginate(`actions/runs/${rehearsal.id}/artifacts?per_page=100`, 'artifacts'),
+    const [ruleListings, environment, policyPages] = await Promise.all([
         paginate('rulesets?per_page=100'), request('environments/browser-stores'),
         paginate('environments/browser-stores/deployment-branch-policies?per_page=100', 'branch_policies'),
-    ]) as [Artifact[], Ruleset[], Environment, Safeguards['policies']];
-    const artifact = selectRehearsalArtifact(artifacts, rehearsal, version);
+    ]) as [Ruleset[], Environment, Safeguards['policies']];
     const rulesets = await Promise.all(ruleListings.map(rule => request(`rulesets/${rule.id}`))) as Ruleset[];
     const safeguards = validatePublicationSafeguards({ rulesets, environment, policies: policyPages });
     const directory = await mkdtemp(path.join(os.tmpdir(), 'bpb-release-preflight-'));
-    let identity;
+    let candidate;
     try {
-        await runCommand('gh', ['run', 'download', String(rehearsal.id), '--repo', repository,
-            '--name', artifact.name, '--dir', directory]);
-        identity = await verifyPackageIdentity(directory, version, commit);
+        candidate = await acquire({ mode: 'publication', commit, version, ciRunId: Number(ciRunId),
+            rehearsalRunId: Number(rehearsalRunId), directory });
     } finally { await rm(directory, { recursive: true, force: true }); }
     // Catch a concurrent edit, commit, merge, or remote push during the checks.
     requireEvidence(await inspect(tag) === commit, 'Candidate changed during preflight');
-    return { schemaVersion: 1, checkedAt: new Date().toISOString(), repository, tag, commit,
-        ci: { id: ci.id, attempt: ci.run_attempt, url: ci.html_url },
-        rehearsal: { id: rehearsal.id, attempt: rehearsal.run_attempt, url: rehearsal.html_url, repetitions },
-        artifact: { id: artifact.id, name: artifact.name }, packageIdentity: identity, safeguards };
+    requireEvidence(candidate.rehearsal, 'Publication evidence is missing its rehearsal');
+    return { schemaVersion: 2, checkedAt: new Date().toISOString(), repository, tag, commit,
+        ci: candidate.sourceCi, rehearsal: candidate.rehearsal,
+        artifact: { id: candidate.rehearsal.artifactId }, packageIdentity: candidate.identity, safeguards };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

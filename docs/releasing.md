@@ -42,45 +42,58 @@ the 4.1.0 release. Do not repeat live probes in every browser repetition.
 After the release metadata is merged and main CI passes, run:
 
 ```bash
-gh workflow run release.yml --ref main
+gh workflow run release.yml --ref main -f ci_run=CI_RUN_ID
 gh run list --workflow release.yml --event workflow_dispatch --limit 1
 gh run watch RUN_ID --exit-status
 ```
 
-Use the returned run ID and confirm **Release scale tests**, **Verify release**, packaged Chrome 128,
-and packaged Firefox 152 finish successfully, with both store jobs skipped.
-This checks listing metadata before expensive work, then runs the same audit,
-tests, lint, production packaging, archive validation, and current/floor browser
-checks used for publication. A rehearsal proves package readiness for its commit;
-a later tag still reruns the gates for its own commit.
+Use the new rehearsal run ID and confirm **Prepare release candidate**, **Verify
+release**, and all four **Packaged** browser jobs succeed, with both store jobs
+skipped. The explicit CI run must be a terminal full `Test` push on canonical
+main for the exact commit. Its required checks and actual successful job
+coverage must be within 24 hours. Partial reruns that carry jobs from an earlier
+attempt do not refresh that evidence; rerun the complete CI workflow.
 
-Keep the candidate fixed while CI and the rehearsal run. Any code, metadata,
-test, or workflow change requires new evidence for the resulting commit. Use a
-fresh rehearsal after a failed rehearsal; rerunning a failed job is diagnostic
-work, not three consecutive successes for a new candidate.
+CI builds the production Chrome ZIP once, derives Firefox, validates both
+archives and executes them. Its shared package gate also exercises popup,
+pending-resource capture, three independent toolbar-to-draft profiles (six
+provider successes, alternating first provider), and multi-summit flows against
+those same minified bundles. CI retains the exact ZIPs and their version/source
+hash identity in `ci-packages-SHA-ATTEMPT` for seven days. Its other required
+jobs supply Node, scale, lint, layout and cross-platform coverage.
 
-Manual rehearsals require three consecutive successes per browser by default,
-using the same archive bytes with fresh disposable profiles. Choose one or five
-with `-f repetitions=1` or `-f repetitions=5`. Every requested repetition must
-pass, including teardown; the first failure stops the check and stays failed.
-Current-browser checks verify archive hashes between runs. The floor jobs use
-the same repetition count. Published tag jobs run once after this preflight.
-The current-package job allows 25, 45, or 65 minutes for one, three, or five
-passes, including setup, tests, and lint. Individual assertion and performance
-deadlines stay unchanged.
+Rehearsal acquires that artifact by immutable ID, hard-checks GitHub's archive
+SHA-256 and inner package hashes, then fans out current Chrome/current Firefox
+on separate Intel macOS runners and Chrome 128/Firefox 152 on separate Ubuntu
+runners. Every browser requires three consecutive passes with fresh profiles
+and teardown by default. `-f repetitions=1` is diagnostic only; five is also
+supported. Each Chrome pass extracts a new copy; both canonical ZIP hashes are
+checked around every pass. Every job checks the independently pinned expected
+identity, not just the downloaded identity file. There are no automatic retries
+of failed passes. The first failure remains a failed rehearsal.
 
-Ordinary CI's current-browser job and the release job use the same
-`.github/actions/setup-verification` and `.github/actions/verify-package`
-actions. Setup installs Node 24 and locked dependencies, resolves browser
-paths, and exports exact expected versions. The package gate builds the canonical
-Chrome ZIP, derives and validates Firefox's ZIP from those bytes, and executes
-both archives through `npm run release:verify-packages`. The shared gate then
-checks popup sizing/results, pending-resource capture, toolbar capture, and
-sequential summit drafts against the same minified `dist/`, without rebuilding
-development bundles. Popup failures retain targeted screenshots alongside logs.
-Browser capabilities must match the installed versions before
-extension assertions begin; an absent expectation is an error in CI. The
-additional ordinary Firefox matrix continues to cover Linux separately.
+Keep the candidate fixed. Any source, metadata, test or workflow change requires
+new CI and rehearsal evidence. Use a fresh rehearsal after failure; a rerun
+cannot become publication evidence. The latest exact-commit main rehearsal must
+itself succeed on attempt one with three or five passes in every browser; an
+older green run cannot hide a newer failed or in-progress run.
+
+A tag promotes the same ZIP bytes without another build or repeated full suite.
+Promotion reconstructs the trusted CI/rehearsal run, attempt, job/log and
+artifact proof, compares rehearsal ZIP hashes with the original CI artifact,
+and rechecks identities and latest attempts after download. Required coverage
+and artifacts must remain within 24 hours, with no future/missing timestamps.
+Metadata, immutable history, the complete adoption policy, fresh dependency
+audit, protected-main ancestry and remote publication protections remain gates.
+The operator preflight uses this same acquisition validator. Every downstream
+browser, join and store job checks the independently pinned identity.
+
+Shared setup still installs Node 24, locked dependencies and exact expected
+browser versions. Browser capabilities must match before assertions begin.
+The additional ordinary Firefox matrix continues to cover Linux separately.
+Individual assertion/performance deadlines remain unchanged. Rehearsal browser
+jobs have separate 40-minute budgets; they do not serialize current browser
+pairs or wait for another package rebuild.
 
 Ordinary CI runs the complete interaction layout matrix in separate Chrome and
 Firefox jobs, with the same runner and assertion deadlines. Each browser keeps
@@ -95,15 +108,16 @@ the known lost QUIT-response error can be accepted after confirmed process
 exit. Disconnections during other commands, assertion failures, and lingering
 processes remain failures. The success message follows completed teardown.
 
-Scale gates run serially on the same explicit Ubuntu 24.04 runner and Node 24
-toolchain in CI and release. Full capture analysis keeps all three CPU samples,
+Scale gates run serially on the explicit Ubuntu 24.04 runner and Node 24
+toolchain in CI; exact-commit release evidence inherits this required coverage. Full capture analysis keeps all three CPU samples,
 including the first; correctness, point budgets, and cooperative yielding must
 pass each time. The 15-second limit applies to the median, with a 30-second
 individual-sample guard and a 120-second overall test deadline. This tolerates
 one moderate measurement outlier while rejecting sustained or severe slowdown.
 It is a reference-runner regression gate, not a latency promise for every device.
 
-Verified artifacts contain the exact two ZIPs and `package-identity.json`, which
+Verified rehearsal artifacts contain the exact two ZIPs, `candidate-evidence.json`
+linking the source CI run/attempt/artifact/digest, and `package-identity.json`, which
 records their version, source commit, and SHA-256 hashes. Each downstream job
 checks that identity before using the downloads. Artifact names include the
 release version and run attempt; failed-job reruns consume the successful verify
@@ -118,7 +132,7 @@ requires reconciliation; do not rerun a mutation to see whether it works.
 ## One-time setup
 
 Create a protected GitHub environment named `browser-stores`. Restrict it to
-release tags and, if desired, require a reviewer. Configure the following in
+release tags and require a reviewer. Configure the following in
 that environment.
 
 ### Chrome Web Store
@@ -287,13 +301,9 @@ visible in the AMO Developer Hub.
    `scripts/check-web-ext-lint.mts`, up to the reviewed per-file occurrence limits
    recorded there.
 
-   Release scale tests retain the 15-second capture CPU ceiling on the same
-   Ubuntu runner class as ordinary scale CI. Package verification waits for
-   that required job; its browser checks run separately on hosted macOS.
-   Release CI also downloads the verified archives and executes them in hidden
-   Chrome for Testing 128 and Firefox 152 before either store job becomes
-   eligible. The ordinary package verifier separately covers current Chrome
-   for Testing and current Firefox. Record all four exact browser versions;
+   Main CI retains the 15-second capture CPU ceiling on Ubuntu. The rehearsal
+   consumes its exact verified archives and executes all four current/floor
+   browsers in parallel before either store becomes eligible. Record all four exact browser versions;
    these desktop checks do not replace the Firefox Android 142+ device step.
 
 4. Review the four stamped files and commit them. Push main, wait for its Test
@@ -379,7 +389,7 @@ in the Developer Dashboard rather than assuming the extension code failed.
    gh api repos/wilmtang/better-peakbagger/actions/runs/RUN_ID/artifacts --paginate \
      --jq '.artifacts[] | {name, expired}'
    gh run download RUN_ID --name ARTIFACT_NAME --dir tmp/release-X.Y.Z
-   node scripts/release-package-identity.mjs verify tmp/release-X.Y.Z X.Y.Z TAG_COMMIT
+   node scripts/release-package-identity.mts verify tmp/release-X.Y.Z X.Y.Z TAG_COMMIT
    ```
 
    Use the tag's full commit SHA. A store-job rerun increases the run attempt

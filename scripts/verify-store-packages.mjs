@@ -24,7 +24,7 @@ export async function verifyStorePackages(version, {
     const firefoxBytes = await deriveFirefox(chromeBytes);
     await verify(firefoxBytes, version, 'firefox');
     await write(firefox, firefoxBytes);
-    await execute(process.execPath, ['scripts/verify-packaged-extensions.mjs', chrome, firefox]);
+    await execute(process.execPath, ['scripts/verify-packaged-extensions.mts', chrome, firefox]);
     return { chrome, firefox };
 }
 

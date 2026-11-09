@@ -332,7 +332,7 @@ the recorded proof limits. No source-review disagreement remains.
   native HTTP-cache/coverage matrices are recorded under R02/R03 below.
 - Minified Chrome and Firefox **4.0.2** packages built and passed archive
   validation (**136 entries each**). After the R03 follow-up, regenerated exact
-  archive bytes passed `verify-packaged-extensions.mjs` in hidden isolated
+  archive bytes passed `verify-packaged-extensions.mts` in hidden isolated
   Chrome 156/Firefox 158 without rebuilding. Startup/bridge, layout, BFCache
   and teardown checks passed; archive fingerprints remained unchanged.
 

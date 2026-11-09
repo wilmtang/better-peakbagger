@@ -56,7 +56,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'peak-cards': [['verify-ascent-weather.mjs', '--cards'], ['verify-ascent-weather.mjs', '--cards', '--firefox']],
     'peak-card-placement': [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']],
     'weather-interactions': [['verify-ascent-weather.mjs', '--interactions'], ['verify-ascent-weather.mjs', '--interactions', '--firefox']],
-    packages: [['verify-packaged-extensions.mjs']],
+    packages: [['verify-packaged-extensions.mts']],
 };
 const terrainTargets: Record<string, VerifierCommand[]> = {
     chrome: [['verify-terrain-visual.mts']],

@@ -378,7 +378,7 @@ The plan is complete when:
   assertions.
 - [`scripts/browser-verification-fixtures.mjs`](../../scripts/browser-verification-fixtures.mjs)
   — shared local HTTPS fixtures, narrow synthetic state, polling, and cleanup.
-- [`scripts/verify-packaged-extensions.mjs`](../../scripts/verify-packaged-extensions.mjs)
+- [`scripts/verify-packaged-extensions.mts`](../../scripts/verify-packaged-extensions.mts)
   — execution gate for the exact minified Chrome and Firefox archives.
 - [`scripts/verify-firefox-terrain.mts`](../../scripts/verify-firefox-terrain.mts)
   — hardware-renderer and Firefox pointer/resize terrain checks.

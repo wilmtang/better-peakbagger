@@ -47,6 +47,18 @@ Each completed code unit receives independent review and its own checked commit.
   1000×760, including teardown; process/root inspection found no owned leftovers.
   HTTPS fixtures stub providers and Peakbagger; no live provider, native focus,
   WebGL or original-timeout root-cause proof is claimed.
+- Units 3–4: CI retains exact packages; four rehearsal browsers run independently;
+  tag promotion and operator preflight share trusted evidence reconstruction.
+  Source CI/rehearsal attempts, required coverage, current-job timestamps,
+  archive/API digests, independent downstream identity pins and post-download
+  freshness are checked. Main/tag/environment protections are checked read-only;
+  publication and Firefox recovery share a global lock. Independent review is
+  clear. All 4,086 tests, typecheck, lint and actionlint passed; final added
+  freshness/API-root regressions passed in the 30-case evidence suite. Exact
+  production packages passed hidden Chrome 156.0.8078.4 and Firefox 159.0.1 at
+  1000×760 (plus existing responsive header cases), including teardown. No
+  current-run process/profile/extraction leftovers remained. Historical code
+  failed the new fresh-extraction assertion on repetition two; the fix passed.
 
 ### Intentionally not changed
 
@@ -60,3 +72,6 @@ Each completed code unit receives independent review and its own checked commit.
 - None yet. The original Preview timeout remains unresolved.
 - Live publication and native/mobile behavior cannot be inferred from fixture or
   read-only workflow checks; record remaining evidence here before handoff.
+- New hosted CI package retention, four-runner rehearsal and tag promotion have
+  not yet executed live. Local fixtures and read-only API validation establish
+  their checked logic, not GitHub scheduling or a store submission.

@@ -67,7 +67,7 @@ test('package verification uses the supplied archives without rebuilding product
     await runVerification(['packages', '/tmp/Chrome archive.zip', '/tmp/Firefox archive.zip'], {
         execute: async (...call) => { calls.push(call); },
     });
-    assert.deepEqual(calls, [[process.execPath, [script('verify-packaged-extensions.mjs'),
+    assert.deepEqual(calls, [[process.execPath, [script('verify-packaged-extensions.mts'),
         '/tmp/Chrome archive.zip', '/tmp/Firefox archive.zip'], { cwd: root }]]);
 });
 

@@ -52,7 +52,8 @@ independent of the existing targets.
 - [release-bump.mjs](release-bump.mjs)
 - [release-changelog.mjs](release-changelog.mjs)
 - [release-check.mjs](release-check.mjs)
-- [release-package-identity.mjs](release-package-identity.mjs)
+- [release-package-identity.mts](release-package-identity.mts)
+- [release-evidence.mts](release-evidence.mts)
 - [release-preflight.mts](release-preflight.mts)
 - [release-readiness.mts](release-readiness.mts) — Prepares permission disclosures and reports bounded optional public service probes; authentication and Google's uploaded-draft validation remain manual.
 - [select-release-artifact.mjs](select-release-artifact.mjs)
@@ -82,7 +83,7 @@ independent of the existing targets.
 
 - [verify-extension.mts](verify-extension.mts)
 - [verify-firefox-extension.mts](verify-firefox-extension.mts)
-- [verify-packaged-extensions.mjs](verify-packaged-extensions.mjs)
+- [verify-packaged-extensions.mts](verify-packaged-extensions.mts)
 
 ## Capture and providers
 
