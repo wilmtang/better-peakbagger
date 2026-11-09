@@ -119,6 +119,18 @@ Each completed code unit receives independent review and its own checked commit.
   Mock routing, counting and slope-failure injection now compare parsed exact
   hostnames. The seven readiness tests, typecheck and lint passed; independent
   review is clear. Production authority validation already used exact hosts.
+- The real-extension peak-map checks now observe bridge insertion before the
+  trusted pointer/keyboard gesture. They retain a durable record of the exact
+  extension iframe inserted directly into the connected viewport, rather than
+  starting attachment observation after the page init response. The original
+  three-second post-init bound remains; wrong sources, detached/wrong mounts and
+  init without a frame still fail. A same-task insertion/removal regression
+  demonstrates the late selector's observation gap. All 4,122 tests, typecheck
+  and lint passed; independent review is clear. No runtime change was made.
+  The corrected canonical real-extension check passed hidden Chrome for Testing
+  156.0.8078.4 at 1000×760, including BFCache restoration and teardown. A separate
+  local hardware-Metal lifecycle trace created and loaded the frame normally;
+  it did not reproduce the hosted failure or a blocked-provider removal.
 
 ### Intentionally not changed
 
@@ -156,3 +168,7 @@ Each completed code unit receives independent review and its own checked commit.
   sequence was not captured. The fixture correction verifies settled mode
   transitions only; early-enabled startup-click stability remains unproven and
   is not claimed fixed by adding the public readiness condition.
+- The final-head CI frame-creation failure recorded a valid page init but no
+  lifecycle trace. Local baseline verification created the frame normally.
+  The demonstrated late-observation defect does not establish that hosted
+  failure's exact cause or rule out another bridge-startup failure.
