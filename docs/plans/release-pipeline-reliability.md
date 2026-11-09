@@ -133,7 +133,7 @@ Each completed code unit receives independent review and its own checked commit.
 
 ### Changed but not fully proven
 
-- None yet. The original Preview timeout remains unresolved.
+- The original Preview timeout remains unresolved.
 - Live publication and native/mobile behavior cannot be inferred from fixture or
   read-only workflow checks; record remaining evidence here before handoff.
 - At the implementation commit, new hosted CI package retention, four-runner
