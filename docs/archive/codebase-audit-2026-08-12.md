@@ -199,7 +199,7 @@ version only after the remote store proves that exact revision is the submitted
 revision. A timed-out non-idempotent upload or publish must be reconciled before
 retry, not treated as a clean failure.
 
-**Evidence.** `scripts/publish-chrome.mjs` (lines 46–72) performs each request
+**Evidence.** `scripts/publish-chrome.mts` (lines 46–72) performs each request
 with plain `fetch()` and then retains `response.text()` without a request
 deadline or body cap. The surrounding workflow's 15-minute job timeout cannot
 classify whether an upload or publish applied before a hung response.

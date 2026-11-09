@@ -129,7 +129,7 @@ export async function acquireEvidence({ mode, commit, version, ciRunId, rehearsa
         const receipt: CandidateReceipt = { schemaVersion: 1, sourceCi: { id: source.run.id, attempt: source.run.run_attempt,
             artifactId: source.artifact.id, digest: source.artifact.digest }, packageIdentity: identity };
         await writeFile(path.join(directory, 'candidate-evidence.json'), JSON.stringify(receipt, null, 2), { flag: 'wx' });
-        return { identity, sourceCi: receipt.sourceCi };
+        return { identity, sourceCi: receipt.sourceCi, expiresAt: new Date(Date.parse(source.run.run_started_at!) + evidenceAgeMs).toISOString() };
     }
     assert.equal(mode, 'publication');
     const selected = await latestRehearsal(commit, deps);
@@ -151,7 +151,7 @@ export async function acquireEvidence({ mode, commit, version, ciRunId, rehearsa
     assert.equal(await latestRehearsal(commit, deps), selected, 'Rehearsal selection changed during acquisition');
     await unchanged(rehearsal, deps);
     validateFreshJobs(source.run, source.jobs, deps.now());
-    return { identity, sourceCi: receipt.sourceCi, rehearsal: { id: selected, attempt: 1, artifactId: rehearsal.artifact.id, digest: rehearsal.artifact.digest } };
+    return { identity, sourceCi: receipt.sourceCi, expiresAt: new Date(Math.min(Date.parse(source.run.run_started_at!), Date.parse(rehearsal.run.run_started_at!)) + evidenceAgeMs).toISOString(), rehearsal: { id: selected, attempt: 1, artifactId: rehearsal.artifact.id, digest: rehearsal.artifact.digest } };
 }
 
 export async function remotePublicationSafeguards(deps = evidenceDependencies) {
@@ -161,20 +161,54 @@ export async function remotePublicationSafeguards(deps = evidenceDependencies) {
     const rulesets = await Promise.all(rules.map(rule => deps.request(`rulesets/${evidenceId(rule.id)}`)));
     const environment = await deps.request('environments/browser-stores');
     const policies = await deps.paginate('environments/browser-stores/deployment-branch-policies?per_page=100', 'branch_policies');
-    return validatePublicationSafeguards({ rulesets, environment, policies } as Parameters<typeof validatePublicationSafeguards>[0]);
+    const metadataEnvironment = await deps.request('environments/chrome-metadata-review');
+    const metadataPolicies = await deps.paginate('environments/chrome-metadata-review/deployment-branch-policies?per_page=100', 'branch_policies');
+    return validatePublicationSafeguards({ rulesets, environment, policies, metadataEnvironment, metadataPolicies } as Parameters<typeof validatePublicationSafeguards>[0]);
+}
+
+export function assertPublicationDeadline(value: string | undefined, now = Date.now()) {
+    const deadline = Date.parse(value ?? '');
+    assert.ok(Number.isFinite(deadline) && new Date(deadline).toISOString() === value
+        && deadline > now && deadline <= now + evidenceAgeMs, 'Missing, invalid or expired publication evidence deadline');
+}
+
+export async function revalidateEvidence({ commit, version, expectedIdentity, directory }: {
+    commit: string; version: string; expectedIdentity: string; directory: string;
+}, deps = evidenceDependencies) {
+    assert.match(expectedIdentity, /^[a-f0-9]{64}$/, 'Missing independently pinned package identity');
+    await verifyPackageIdentity(directory, version, commit, expectedIdentity);
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'bpb-revalidate-'));
+    try {
+        const result = await acquireEvidence({ mode: 'publication', commit, version, directory: temporary }, deps);
+        assert.equal(packageIdentityDigest(result.identity), expectedIdentity, 'Revalidated package identity changed');
+        return result;
+    } finally { await rm(temporary, { recursive: true, force: true }); }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     const [mode, ...extra] = process.argv.slice(2);
-    assert.ok(!extra.length && ['rehearsal', 'publication'].includes(mode!), 'Usage: release-evidence.mts rehearsal|publication');
+    assert.ok(!extra.length && ['rehearsal', 'publication', 'revalidate', 'assert-fresh'].includes(mode!), 'Usage: release-evidence.mts rehearsal|publication|revalidate|assert-fresh');
     assert.equal(process.env.GITHUB_REPOSITORY, releaseRepository);
     assert.equal(process.env.GITHUB_EVENT_NAME, mode === 'rehearsal' ? 'workflow_dispatch' : 'push');
     if (mode === 'rehearsal') assert.equal(process.env.GITHUB_REF, 'refs/heads/main', 'Rehearse the protected main branch');
     else assert.match(process.env.GITHUB_REF ?? '', /^refs\/tags\/v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+    if (mode === 'assert-fresh') {
+        assertPublicationDeadline(process.env.BPB_RELEASE_EVIDENCE_EXPIRES_AT);
+        console.log('Publication evidence is still within its original validity window.');
+        process.exit(0);
+    }
     await remotePublicationSafeguards();
     const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
-    const result = await acquireEvidence({ mode: mode as 'rehearsal' | 'publication', commit: process.env.GITHUB_SHA!, version: manifest.version,
-        ciRunId: mode === 'rehearsal' ? evidenceId(process.env.BPB_CI_RUN) : undefined, directory: 'release-package' });
-    await writeFile('acquisition-evidence.json', JSON.stringify(result, null, 2));
-    if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `version=${manifest.version}\nidentity-sha256=${packageIdentityDigest(result.identity)}\n`);
+    if (mode === 'revalidate') {
+        const result = await revalidateEvidence({ commit: process.env.GITHUB_SHA!, version: manifest.version,
+            expectedIdentity: process.env.EXPECTED_IDENTITY ?? '', directory: 'release-package' });
+        assertPublicationDeadline(result.expiresAt);
+        if (process.env.GITHUB_ENV) await appendFile(process.env.GITHUB_ENV, `BPB_RELEASE_EVIDENCE_EXPIRES_AT=${result.expiresAt}\n`);
+        console.log('Fresh publication evidence and package identity revalidated.');
+    } else {
+        const result = await acquireEvidence({ mode: mode as 'rehearsal' | 'publication', commit: process.env.GITHUB_SHA!, version: manifest.version,
+            ciRunId: mode === 'rehearsal' ? evidenceId(process.env.BPB_CI_RUN) : undefined, directory: 'release-package' });
+        await writeFile('acquisition-evidence.json', JSON.stringify(result, null, 2));
+        if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `version=${manifest.version}\nidentity-sha256=${packageIdentityDigest(result.identity)}\n`);
+    }
 }

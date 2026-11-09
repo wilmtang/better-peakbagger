@@ -48,7 +48,7 @@ independent of the existing targets.
 - [dependency-metadata.mjs](dependency-metadata.mjs)
 - [privacy-guard.mjs](privacy-guard.mjs)
 - [typescript-policy.mts](typescript-policy.mts) — Rejects new or modified authored JavaScript in the staged index or a committed comparison; preserves generated/vendor formats.
-- [publish-chrome.mjs](publish-chrome.mjs)
+- [publish-chrome.mts](publish-chrome.mts)
 - [release-bump.mjs](release-bump.mjs)
 - [release-changelog.mjs](release-changelog.mjs)
 - [release-check.mjs](release-check.mjs)

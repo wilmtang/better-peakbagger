@@ -24,7 +24,7 @@ import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mts';
 import {
     ChromeWebStoreRequestError,
     publishChrome,
-} from '../../scripts/publish-chrome.mjs';
+} from '../../scripts/publish-chrome.mts';
 import {
     assertReleasedSectionsUnchanged,
     releaseSection,
@@ -578,6 +578,7 @@ test('release publication waits for packaged declared-browser-floor verification
     assert.match(workflow, /node scripts\/verify-packaged-extensions\.mts/);
     assert.match(workflow, /--browser "\$BROWSER"/);
     assert.equal(workflow.match(/needs: \[verify\]/g)?.length, 2);
+    assert.match(workflow, /needs: \[verify, chrome-upload, chrome-metadata\]/);
 });
 
 test('Chrome verifier accepts an exact externally installed floor binary', async () => {

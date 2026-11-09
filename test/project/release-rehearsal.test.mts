@@ -13,7 +13,7 @@ const load = async (name: string): Promise<Workflow> => yaml.load(await readFile
 const workflow = await load('release.yml');
 
 test('dispatches never authorize store jobs, including on a release tag', () => {
-    for (const store of ['chrome', 'firefox']) {
+    for (const store of ['chrome-upload', 'chrome-metadata', 'chrome', 'firefox']) {
         const job = workflow.jobs[store]!;
         assert.equal(job.if, "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')");
         const permits = new Function('github', 'startsWith', `return ${job.if};`);
@@ -21,7 +21,7 @@ test('dispatches never authorize store jobs, including on a release tag', () => 
         for (const github of [{ event_name: 'workflow_dispatch', ref: 'refs/heads/main' }, { event_name: 'workflow_dispatch', ref: 'refs/tags/v4.2.0' },
             { event_name: 'push', ref: 'refs/heads/main' }, { event_name: 'pull_request', ref: 'refs/tags/v4.2.0' }]) assert.equal(permits(github, startsWith), false);
         assert.equal(permits({ event_name: 'push', ref: 'refs/tags/v4.2.0' }, startsWith), true);
-        assert.deepEqual(job.needs, ['verify']);
+        assert.deepEqual(job.needs, store === 'chrome' ? ['verify', 'chrome-upload', 'chrome-metadata'] : store === 'chrome-metadata' ? ['verify', 'chrome-upload'] : ['verify']);
     }
     assert.equal(workflow.jobs.prepare!.permissions['id-token'], undefined);
     assert.equal(workflow.jobs.prepare!.environment, undefined);
@@ -70,7 +70,7 @@ test('promotion keeps metadata, ancestry, audit, history and complete policy gat
         assert.equal(workflow.jobs[name]!.env.EXPECTED_IDENTITY, '${{ needs.prepare.outputs.identity-sha256 }}');
     }
     const firefox = workflow.jobs.firefox!.steps;
-    assert.ok(firefox.findIndex(step => step.run?.includes('--require-unused')) < firefox.findIndex(step => step.run === 'npm run release:sign:firefox'));
+    assert.ok(firefox.findIndex(step => step.run?.includes('--require-unused')) < firefox.findIndex(step => step.run?.includes('npm run release:sign:firefox')));
 });
 
 test('every tag and store recovery shares a lock while rehearsals remain independent', async () => {
@@ -100,4 +100,26 @@ test('Firefox recovery still resolves preserved source identity without invoking
     assert.match(source.run!, /node scripts\/select-release-artifact\.mjs "\$TARGET_TAG" "\$attempt"/);
     assert.match(source.run!, /\.event.*push/); assert.match(source.run!, /\.head_sha.*tag_commit/);
     assert.doesNotMatch(JSON.stringify(steps), /publish-chrome/);
+});
+
+test('Chrome pauses after upload in a protected credential-free metadata checkpoint', () => {
+    const upload = workflow.jobs['chrome-upload']!, gate = workflow.jobs['chrome-metadata']!, publish = workflow.jobs.chrome!;
+    assert.equal(upload.environment, 'browser-stores'); assert.equal(publish.environment, 'browser-stores');
+    assert.deepEqual(gate.environment, { name: 'chrome-metadata-review', url: 'https://chrome.google.com/webstore/devconsole' });
+    assert.deepEqual(gate.permissions, { actions: 'read' });
+    assert.doesNotMatch(JSON.stringify(gate), /secrets\.|id-token|google-auth|CHROME_WEBSTORE_TOKEN|publish-chrome/);
+    assert.ok(upload.steps.some(step => step.run?.includes('publish-chrome.mts upload ')));
+    assert.ok(publish.steps.some(step => step.run?.includes('publish-chrome.mts publish ') && step.run.includes('--metadata-reviewed')));
+    assert.equal(upload.steps.some(step => step.run?.includes('publish-chrome.mts publish ')), false);
+    assert.equal(publish.steps.some(step => step.run?.includes('publish-chrome.mts upload ')), false);
+    for (const job of [gate, publish]) {
+        const receipt = job.steps.find(step => step.name === 'Download pinned upload receipt')!;
+        assert.equal(receipt.with!['artifact-ids'], '${{ needs.chrome-upload.outputs.receipt-id }}');
+        assert.ok(job.steps.some(step => step.run?.includes('sha256sum --check --strict')));
+    }
+    for (const job of [upload, publish, workflow.jobs.firefox!]) {
+        assert.ok(job.steps.some(step => step.run?.includes('release-evidence.mts revalidate') && step.run.includes('npm run audit:ci')),
+            'approval waits must not authorize stale verification or stale advisories');
+        assert.equal(job.env.EXPECTED_IDENTITY, '${{ needs.verify.outputs.identity-sha256 }}');
+    }
 });

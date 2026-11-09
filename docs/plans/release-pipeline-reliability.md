@@ -59,6 +59,18 @@ Each completed code unit receives independent review and its own checked commit.
   1000×760 (plus existing responsive header cases), including teardown. No
   current-run process/profile/extraction leftovers remained. Historical code
   failed the new fresh-extraction assertion on repetition two; the fix passed.
+- Unit 5: Chrome upload and publication are separated by the tag-only protected
+  `chrome-metadata-review` checkpoint. Its configured environment was read back
+  with owner review, no admin bypass, zero secrets and zero variables. Credentials
+  and WIF remain in `browser-stores`. Receipts bind local sent bytes, source and
+  optional API version; they do not claim remote draft identity. Publish-only
+  cannot upload, and preserves exact-version reconciliation without replaying
+  writes. Receipt paths are exclusively reserved before upload; receipt and
+  original verification deadlines are checked at mutation boundaries. Primary
+  jobs revalidate evidence and dependency advisories after approval waits.
+  Independent review has no remaining comments. All 4,109 tests, typecheck,
+  lint, actionlint and staged TypeScript policy passed. No store mutation was
+  performed to test the new checkpoint.
 
 ### Intentionally not changed
 
@@ -66,12 +78,21 @@ Each completed code unit receives independent review and its own checked commit.
   privacy boundaries, immutable tags, required reviewers and store-version checks.
 - Native ascent Save remains manual. No speculative runtime patch is justified
   by the single unreproduced Preview verification failure.
+- The legacy combined Chrome API and separate Firefox recovery contract remain
+  compatible. Firefox recovery shares the global lock but retains its existing
+  preserved-artifact/unused-version proof rather than claiming the new primary
+  tag pipeline's freshness checks.
 
 ### Changed but not fully proven
 
 - None yet. The original Preview timeout remains unresolved.
 - Live publication and native/mobile behavior cannot be inferred from fixture or
   read-only workflow checks; record remaining evidence here before handoff.
-- New hosted CI package retention, four-runner rehearsal and tag promotion have
-  not yet executed live. Local fixtures and read-only API validation establish
-  their checked logic, not GitHub scheduling or a store submission.
+- At the implementation commit, new hosted CI package retention, four-runner
+  rehearsal and tag promotion had not executed live. Subsequent hosted evidence
+  belongs in the PR/CI record; local fixtures and read-only API validation do not
+  establish GitHub scheduling or a store submission.
+- The Chrome v2 API cannot prove the current unsubmitted draft digest or provide
+  an atomic publish precondition. The protected reviewer must inspect the latest
+  version and Google's validation, while external draft edits are excluded from
+  the transaction. The new checkpoint still needs first live release proof.

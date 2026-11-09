@@ -9,7 +9,7 @@ import os from 'node:os';
 import JSZip from 'jszip';
 import { packageIdentityDigest, verifyPackageIdentity, writePackageIdentity } from '../../scripts/release-package-identity.mts';
 import { writeFile } from 'node:fs/promises';
-import { acquireEvidence, evidenceApiPath, extractEvidenceArchive, validateFreshJobs, latestRehearsal,
+import { acquireEvidence, assertPublicationDeadline, revalidateEvidence, evidenceApiPath, extractEvidenceArchive, validateFreshJobs, latestRehearsal,
     type EvidenceArtifact, type EvidenceDependencies } from '../../scripts/release-evidence.mts';
 const commit = 'a'.repeat(40), version = '4.2.0', now = Date.parse('2026-11-08T12:00:00Z');
 const time = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -24,7 +24,7 @@ async function fixture() {
     const ci = run(1, 'test.yml', 'push'), rehearsal = run(2, 'release.yml', 'workflow_dispatch');
     const ciJobs = ['Node tests and lint', 'Scale tests', 'Chrome extension smoke', 'Firefox extension smoke'].map(job);
     const rehearsalJobs = ['Prepare release candidate', 'Verify release', 'Packaged chrome current', 'Packaged firefox current', 'Packaged chrome 128', 'Packaged firefox 152.0'].map((name, i) => job(name, i + 10)).concat(
-        ['Submit Chrome Web Store', 'Submit Firefox Add-ons'].map((name, i) => ({ ...job(name, i + 20), conclusion: 'skipped' })));
+        ['Upload Chrome Web Store', 'Review Chrome metadata', 'Submit Chrome Web Store', 'Submit Firefox Add-ons'].map((name, i) => ({ ...job(name, i + 20), conclusion: 'skipped' })));
     const zip = new JSZip(), archives: Record<string, string> = {};
     for (const suffix of ['', '-firefox']) {
         const name = `better_peakbagger-${version}${suffix}.zip`, bytes = Buffer.from(`exact ${suffix} bytes`);
@@ -158,4 +158,25 @@ test('coverage that expires during acquisition cannot be promoted', async () => 
 test('canonical GitHub repository endpoint has no trailing slash', () => {
     assert.equal(evidenceApiPath(''), 'repos/wilmtang/better-peakbagger');
     assert.equal(evidenceApiPath('actions/runs/1'), 'repos/wilmtang/better-peakbagger/actions/runs/1');
+});
+
+
+test('post-approval revalidation checks expected identity and fresh remote coverage without rebuilding', async () => {
+    const f = await fixture();
+    try {
+        const directory = path.join(f.root, 'local');
+        const result = await acquireEvidence({ mode: 'rehearsal', commit, version, ciRunId: 1, directory }, f.deps);
+        const expectedIdentity = packageIdentityDigest(result.identity);
+        await revalidateEvidence({ commit, version, expectedIdentity, directory }, f.deps);
+        await assert.rejects(revalidateEvidence({ commit, version, expectedIdentity: '0'.repeat(64), directory }, f.deps), /independently pinned/);
+        f.state.ciJobs[0]!.completed_at = time(1500);
+        await assert.rejects(revalidateEvidence({ commit, version, expectedIdentity, directory }, f.deps), /stale evidence/);
+    } finally { await f.clean(); }
+});
+
+
+test('store mutation deadline cannot refresh or outlive the original evidence', () => {
+    assert.doesNotThrow(() => assertPublicationDeadline(new Date(now + 60_000).toISOString(), now));
+    for (const value of [undefined, '', 'invalid', new Date(now).toISOString(), new Date(now - 1).toISOString(),
+        new Date(now + 25 * 60 * 60_000).toISOString()]) assert.throws(() => assertPublicationDeadline(value, now), /deadline/);
 });

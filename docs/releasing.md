@@ -135,6 +135,43 @@ Create a protected GitHub environment named `browser-stores`. Restrict it to
 release tags and require a reviewer. Configure the following in
 that environment.
 
+### Chrome metadata checkpoint
+
+Create `chrome-metadata-review` **before** enabling the workflow reference. Require
+an owner reviewer, forbid admin bypass, and allow only `v*` tags. It has no store
+secrets or variables and no OIDC permission; `browser-stores` retains the existing
+publisher credentials, WIF subject and reviewer protection. The shared preflight
+checks both environments. The configured checkpoint was read back after creation
+with one owner reviewer, only the `v*` tag policy, no bypass, zero secrets and zero
+variables; this configuration check is not a live publication test.
+
+The tag transaction uploads Chrome first, writes a pinned receipt and pauses at
+this environment. Before approval, inspect the **latest draft version** and clear
+Google's missing requirements in the Developer Dashboard, including permission
+justifications and URL validation. The upload job's summary links the dashboard
+and maintained copy. No store credentials are exposed to the review job. After
+approval, publication uses the receipt and **never uploads again**. Firefox can
+finish independently. Each primary tag-release store job revalidates the same fresh CI and
+rehearsal evidence, independent package pin and dependency audit after approval
+waits. All tag/recovery workflows share the publication lock; do not concurrently
+upload or edit drafts outside that transaction. The separate Firefox recovery
+workflow retains its legacy preserved-artifact and unused-version contract; it
+shares the lock but does not claim the new primary pipeline's freshness proof.
+
+The [v2 status API](https://developer.chrome.com/docs/webstore/api/reference/rest/v2/publishers.items/fetchStatus)
+exposes submitted/published revision versions, not an unsubmitted draft digest or
+revision precondition. The receipt records expected bytes/source/version, a
+successful upload outcome and an optional API-reported version; it cannot prove
+the current remote draft still matches. An asynchronous upload may omit its
+version, and a synchronous upload may leave no asynchronous status. Human review
+of the latest draft is therefore required. An already-submitted receipt claims
+only exact submission reconciliation, not a new upload. Publication must still
+prove the exact submitted version and fails on contradictory state. The receipt
+expires after 24 hours; neither it nor the manual gate replaces fresh test proof.
+The original evidence expiry also propagates to the store job and is checked
+again immediately before a mutation, so audit/authentication work cannot silently
+extend its validity.
+
 ### Chrome Web Store
 
 The [Chrome Web Store API](https://developer.chrome.com/docs/webstore/using-api)
@@ -327,7 +364,8 @@ visible in the AMO Developer Hub.
    live remote main to agree; the candidate tag must be unused. It checks
    metadata and changelog history, then pins the exact successful main CI and
    first-attempt rehearsal. All required jobs must succeed, both store jobs
-   must be skipped, and all current/floor browser passes must include teardown.
+   (including Chrome upload and metadata review) must be skipped, and all
+   current/floor browser passes must include teardown.
    A one-pass rehearsal cannot authorize tagging. It downloads the rehearsal's
    exact artifact, checks both archive hashes against its commit identity, and
    removes the temporary download even on failure. The receipt records the
@@ -397,13 +435,20 @@ in the Developer Dashboard rather than assuming the extension code failed.
    an earlier attempt number. Read its actual name; do not derive it from the
    latest run attempt. If it is expired or identity verification fails, stop
    recovery and record the blocker.
-3. Reconcile the target store. Chrome can accept a dashboard upload of the
-   verified ZIP and submit it for review after the listing is corrected. Confirm
-   the draft version and automatic publication choice. If that exact version
-   is already submitted, the Chrome publisher's preflight returns before upload
-   or publish. If it is already published, retain that evidence and follow the
-   publisher's guidance; do not submit it again. Firefox signing can run only
-   after the authenticated exact-version check proves the version unused.
+3. Reconcile the target store. For a new pipeline run, preserve its
+   `chrome-upload-receipt-ATTEMPT` artifact and independently pinned receipt hash.
+   If upload succeeded and Google rejected metadata, correct the dashboard fields,
+   inspect the latest draft/version, approve `chrome-metadata-review`, and run only
+   **Submit Chrome Web Store**. That job calls the receipt-based publish-only API;
+   it cannot replay upload. Never rerun **Upload Chrome Web Store** as a metadata
+   recovery action. If receipt/proof expired, is missing, or upload outcome is
+   ambiguous, stop and reconcile the dashboard/API read-only before a reviewed
+   recovery decision; do not bypass the receipt's freshness or invent an upload
+   receipt. A submitted exact version can be reconciled without another mutation.
+   A receipt for an existing submission cannot publish if that submission vanished.
+   Old runs from before this split need their original dashboard recovery path;
+   do not assume the new receipt exists. Firefox signing still requires the
+   authenticated exact-version check to prove its version unused.
 4. Rerun only the affected store job after reconciliation, through the normal
    `browser-stores` reviewer gate:
 
@@ -416,7 +461,8 @@ in the Developer Dashboard rather than assuming the extension code failed.
    Obtain `databaseId` from the command output, as described in the
    [GitHub CLI manual](https://cli.github.com/manual/gh_run_rerun). GitHub also
    reruns [dependent jobs](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run);
-   inspect the job graph before dispatch. The two store jobs are independent.
+   inspect the job graph before dispatch. Chrome has separate upload, metadata
+   review and publish jobs; rerun only publish after successful upload and review.
    Leave an accepted Firefox submission intact during Chrome recovery. Record
    terminal results, the original failed attempt, and whether recovery performed
    a new submission or only reconciled an existing one.

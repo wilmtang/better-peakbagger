@@ -16,7 +16,7 @@ const repository = 'wilmtang/better-peakbagger';
 const requiredChecks = ['Node tests and lint', 'Scale tests', 'Chrome extension smoke', 'Firefox extension smoke'];
 const rehearsalChecks = ['Prepare release candidate', 'Verify release', 'Packaged chrome current',
     'Packaged firefox current', 'Packaged chrome 128', 'Packaged firefox 152.0'];
-const storeChecks = ['Submit Chrome Web Store', 'Submit Firefox Add-ons'];
+const storeChecks = ['Upload Chrome Web Store', 'Review Chrome metadata', 'Submit Chrome Web Store', 'Submit Firefox Add-ons'];
 
 // The GitHub API fields these validators read. Every one is untrusted until the
 // validator has checked it, so each stays optional.
@@ -35,10 +35,11 @@ export type Ruleset = {
 };
 type Reviewer = { type: string; reviewer: { id: number } };
 export type Environment = {
-    id?: number; protection_rules?: { type: string; reviewers?: Reviewer[] }[];
+    id?: number; can_admins_bypass?: boolean; protection_rules?: { type: string; reviewers?: Reviewer[] }[];
     deployment_branch_policy?: { protected_branches?: boolean; custom_branch_policies?: boolean };
 };
-type Safeguards = { rulesets: Ruleset[]; environment?: Environment; policies?: { type?: string; name?: string }[] };
+type Safeguards = { rulesets: Ruleset[]; environment?: Environment; policies?: { type?: string; name?: string }[];
+    metadataEnvironment?: Environment; metadataPolicies?: { type?: string; name?: string }[] };
 type Artifact = { id?: number; name: string; expired?: boolean; workflow_run?: { id?: number; head_sha?: string } };
 type ApiRecord = Record<string, unknown>;
 type PreflightDependencies = {
@@ -120,7 +121,7 @@ export function validateConsecutivePasses(log: string, label: string) {
     return count;
 }
 
-export function validatePublicationSafeguards({ rulesets, environment, policies }: Safeguards) {
+export function validatePublicationSafeguards({ rulesets, environment, policies, metadataEnvironment, metadataPolicies }: Safeguards) {
     const rules = (type: string) => rulesets.filter(rule => rule.target === type && rule.enforcement === 'active');
     const covers = (rule: Ruleset, ref: string) => rule.conditions?.ref_name?.include?.includes(ref)
         && rule.conditions.ref_name?.exclude?.length === 0;
@@ -140,7 +141,14 @@ export function validatePublicationSafeguards({ rulesets, environment, policies 
         && policies?.length === 1 && policies[0].type === 'tag' && policies[0].name === 'v*'
         && reviewer?.reviewers?.length,
     'browser-stores must allow only v* tags and require a reviewer');
-    return { rulesets: [main.id, tags.id], environment: environment.id,
+    const metadataReviewer = metadataEnvironment?.protection_rules?.find(rule => rule.type === 'required_reviewers');
+    requireEvidence(metadataEnvironment?.can_admins_bypass === false
+        && metadataEnvironment.deployment_branch_policy?.protected_branches === false
+        && metadataEnvironment.deployment_branch_policy.custom_branch_policies === true
+        && metadataPolicies?.length === 1 && metadataPolicies[0].type === 'tag' && metadataPolicies[0].name === 'v*'
+        && metadataReviewer?.reviewers?.length,
+    'chrome-metadata-review must allow only v* tags, require a reviewer and forbid admin bypass');
+    return { rulesets: [main.id, tags.id], environment: environment.id, metadataEnvironment: metadataEnvironment.id,
         reviewers: reviewer.reviewers.map(entry => ({ type: entry.type, id: entry.reviewer.id })) };
 }
 
@@ -194,12 +202,14 @@ export async function releasePreflight({ tag, ciRunId, rehearsalRunId }: { tag: 
     await runCommand(process.execPath, ['scripts/release-readiness.mts']);
     const repositoryInfo = await request('');
     requireEvidence(repositoryInfo.default_branch === 'main', 'The protected default branch must remain main');
-    const [ruleListings, environment, policyPages] = await Promise.all([
+    const [ruleListings, environment, policyPages, metadataEnvironment, metadataPolicies] = await Promise.all([
         paginate('rulesets?per_page=100'), request('environments/browser-stores'),
         paginate('environments/browser-stores/deployment-branch-policies?per_page=100', 'branch_policies'),
-    ]) as [Ruleset[], Environment, Safeguards['policies']];
+        request('environments/chrome-metadata-review'),
+        paginate('environments/chrome-metadata-review/deployment-branch-policies?per_page=100', 'branch_policies'),
+    ]) as [Ruleset[], Environment, Safeguards['policies'], Environment, Safeguards['metadataPolicies']];
     const rulesets = await Promise.all(ruleListings.map(rule => request(`rulesets/${rule.id}`))) as Ruleset[];
-    const safeguards = validatePublicationSafeguards({ rulesets, environment, policies: policyPages });
+    const safeguards = validatePublicationSafeguards({ rulesets, environment, policies: policyPages, metadataEnvironment, metadataPolicies });
     const directory = await mkdtemp(path.join(os.tmpdir(), 'bpb-release-preflight-'));
     let candidate;
     try {

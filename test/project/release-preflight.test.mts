@@ -20,7 +20,7 @@ const job = (name: string, conclusion = 'success') => ({ name, status: 'complete
 const ciJobs = () => ['Node tests and lint', 'Scale tests', 'Chrome extension smoke', 'Firefox extension smoke'].map(name => job(name));
 const rehearsalJobs = () => ['Prepare release candidate', 'Verify release', 'Packaged chrome current', 'Packaged firefox current', 'Packaged chrome 128',
     'Packaged firefox 152.0'].map(name => job(name)).concat([
-    job('Submit Chrome Web Store', 'skipped'), job('Submit Firefox Add-ons', 'skipped'),
+    job('Upload Chrome Web Store', 'skipped'), job('Review Chrome metadata', 'skipped'), job('Submit Chrome Web Store', 'skipped'), job('Submit Firefox Add-ons', 'skipped'),
 ]);
 const log = (count: number) => Array.from({ length: count }, (_, index) => [
     `job\tstep\t2026-10-15T00:00:00Z Verification repetition ${index + 1}/${count} started.`,
@@ -99,12 +99,15 @@ function safeguards() {
         environment: { id: 3, deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
             protection_rules: [{ type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { id: 4 } }] }] },
         policies: [{ type: 'tag', name: 'v*' }],
+        metadataEnvironment: { id: 9, can_admins_bypass: false, deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+            protection_rules: [{ type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { id: 4 } }] }] },
+        metadataPolicies: [{ type: 'tag', name: 'v*' }],
     };
 }
 
 test('preflight requires active strict main checks, immutable tags, and owner-controlled store review', () => {
     assert.deepEqual(validatePublicationSafeguards(safeguards()), {
-        rulesets: [1, 2], environment: 3, reviewers: [{ type: 'User', id: 4 }],
+        rulesets: [1, 2], environment: 3, metadataEnvironment: 9, reviewers: [{ type: 'User', id: 4 }],
     });
     const changes = [
         (state: ReturnType<typeof safeguards>) => { state.rulesets[0].rules.pop(); },
@@ -119,6 +122,10 @@ test('preflight requires active strict main checks, immutable tags, and owner-co
         (state: ReturnType<typeof safeguards>) => { state.environment.deployment_branch_policy.protected_branches = true; },
         (state: ReturnType<typeof safeguards>) => { state.policies.push({ name: 'main', type: 'branch' }); },
         (state: ReturnType<typeof safeguards>) => { state.policies[0].type = 'branch'; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataEnvironment.can_admins_bypass = true; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataEnvironment.protection_rules[0].reviewers = []; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataEnvironment.deployment_branch_policy.protected_branches = true; },
+        (state: ReturnType<typeof safeguards>) => { state.metadataPolicies.push({ type: 'branch', name: 'main' }); },
     ];
     for (const change of changes) {
         const state = safeguards(); change(state);
@@ -151,7 +158,7 @@ test('the rehearsal artifact must belong to the exact successful attempt and com
 test('local preflight shares publication acquisition and rechecks candidate identity', async t => {
     for (const failure of [null, 'changed', 'acquisition']) await t.test(failure || 'receipt', async () => {
         const state = safeguards(); let inspections = 0; let directory: string | undefined;
-        const receipt = { identity: { commit, version: '4.0.2', archives: {} }, sourceCi: { id: 456, attempt: 1, artifactId: 1, digest: 'sha256:ci' },
+        const receipt = { expiresAt: '2026-11-09T12:00:00.000Z', identity: { commit, version: '4.0.2', archives: {} }, sourceCi: { id: 456, attempt: 1, artifactId: 1, digest: 'sha256:ci' },
             rehearsal: { id: 123, attempt: 1, artifactId: 42, digest: 'sha256:rehearsal' } };
         const pending = releasePreflight({ tag: 'v4.0.2', ciRunId: '456', rehearsalRunId: '123' }, {
             inspect: async () => ++inspections === 2 && failure === 'changed' ? 'b'.repeat(40) : commit,
@@ -159,6 +166,7 @@ test('local preflight shares publication acquisition and rechecks candidate iden
             request: async endpoint => {
                 if (!endpoint) return { default_branch: 'main' };
                 if (endpoint === 'environments/browser-stores') return state.environment;
+                if (endpoint === 'environments/chrome-metadata-review') return state.metadataEnvironment;
                 if (endpoint.startsWith('rulesets/')) return state.rulesets.find(rule => rule.id === Number(endpoint.split('/')[1]))!;
                 assert.fail(endpoint);
             },
