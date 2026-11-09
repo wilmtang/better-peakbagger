@@ -156,7 +156,7 @@ export async function acquireEvidence({ mode, commit, version, ciRunId, rehearsa
     return { identity, sourceCi: receipt.sourceCi, expiresAt: new Date(Math.min(Date.parse(source.run.run_started_at!), Date.parse(rehearsal.run.run_started_at!)) + evidenceAgeMs).toISOString(), rehearsal: { id: selected, attempt: 1, artifactId: rehearsal.artifact.id, digest: rehearsal.artifact.digest } };
 }
 
-export async function remotePublicationSafeguards(deps = evidenceDependencies) {
+export async function remotePublicationSafeguards(deps = evidenceDependencies, attestation?: unknown) {
     const info = await deps.request('') as { default_branch?: string };
     assert.equal(info.default_branch, 'main', 'Protected default branch must remain main');
     const rules = await deps.paginate('rulesets?per_page=100') as { id: number }[];
@@ -165,7 +165,7 @@ export async function remotePublicationSafeguards(deps = evidenceDependencies) {
     const policies = await deps.paginate('environments/browser-stores/deployment-branch-policies?per_page=100', 'branch_policies');
     const metadataEnvironment = await deps.request('environments/chrome-metadata-review');
     const metadataPolicies = await deps.paginate('environments/chrome-metadata-review/deployment-branch-policies?per_page=100', 'branch_policies');
-    return validatePublicationSafeguards({ rulesets, environment, policies, metadataEnvironment, metadataPolicies } as Parameters<typeof validatePublicationSafeguards>[0]);
+    return validatePublicationSafeguards({ rulesets, environment, policies, metadataEnvironment, metadataPolicies } as Parameters<typeof validatePublicationSafeguards>[0], attestation, deps.now());
 }
 
 export function assertPublicationDeadline(value: string | undefined, now = Date.now()) {
@@ -199,7 +199,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         console.log('Publication evidence is still within its original validity window.');
         process.exit(0);
     }
-    await remotePublicationSafeguards();
+    // Workflow tokens cannot enumerate private bypass actors. Only this
+    // low-privilege path permits the reviewed administrative revision pin;
+    // operator preflight still requires a directly visible empty actor list.
+    const protectionAttestation = JSON.parse(await readFile(new URL('../store-assets/publication-protections.json', import.meta.url), 'utf8'));
+    console.log('Verified publication safeguards:', JSON.stringify(await remotePublicationSafeguards(evidenceDependencies, protectionAttestation)));
     const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
     if (mode === 'revalidate') {
         const result = await revalidateEvidence({ commit: process.env.GITHUB_SHA!, version: manifest.version,

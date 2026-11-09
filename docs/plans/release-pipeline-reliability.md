@@ -33,6 +33,9 @@ packages. This plan implements the independently reviewed retrospective.
    terminal escape protection does not reject the evidence transport.
 8. Establish a public rendered idle-2D control baseline before testing settled
    terrain mode-switch anchoring; retain the existing movement assertion.
+9. Support GitHub's read-token ruleset redaction using an explicit reviewed
+   administrative revision attestation; retain strict operator preflight and
+   fail closed when the public revision or any protection changes.
 
 No new extension version or store submission is part of this implementation.
 Each completed code unit receives independent review and its own checked commit.
@@ -41,6 +44,13 @@ Each completed code unit receives independent review and its own checked commit.
 
 ### Fixed and verified
 
+- Workflow acquisition can validate GitHub's redacted tag-actor field using an
+  explicitly supplied reviewed administrative revision attestation. Exact source,
+  ID, public revision and mature request-start checks fail closed; visible bad
+  actor lists reject and operator preflight stays strict. All 4,124 tests,
+  typecheck and lint passed; both independent reviews are clear. Actual anonymous
+  API responses reproduced strict rejection and passed the pinned path for all
+  rules/environment checks. Hosted retry proof remains below.
 - Unit 1: maintained store copy, required/optional API and host permission diffs,
   content-script match diffs, and bounded opt-in public probes. Independent review
   has no remaining comments. All 4,055 tests, typecheck and lint passed; the three
@@ -146,6 +156,13 @@ Each completed code unit receives independent review and its own checked commit.
 ### Changed but not fully proven
 
 - The original Preview timeout remains unresolved.
+- The first merged-main CI passed on 005481bb. Its first read-only rehearsal
+  stopped before browsers or store jobs because GitHub redacts private tag
+  bypass actors from workflow tokens. The visibility correction uses a mature
+  administrative observation and an unchanged public ruleset revision without
+  extra workflow permissions. It depends on GitHub's modification timestamp
+  reflecting private configuration edits; no mutation experiment established a
+  stronger guarantee. Fresh hosted CI/rehearsal proof is still required.
 - Live publication and native/mobile behavior cannot be inferred from fixture or
   read-only workflow checks; record remaining evidence here before handoff.
 - At the implementation commit, new hosted CI package retention, four-runner

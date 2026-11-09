@@ -143,6 +143,60 @@ test('a separate main history guard does not hide the required-check ruleset', (
     }
 });
 
+function redactedSafeguards() {
+    const state: Parameters<typeof validatePublicationSafeguards>[0] = safeguards();
+    Object.assign(state.rulesets[1], { source_type: 'Repository', source: 'wilmtang/better-peakbagger',
+        updated_at: '2026-08-22T06:59:59.094-07:00' });
+    delete state.rulesets[1].bypass_actors;
+    const pin: Record<string, unknown> = { schemaVersion: 1, repository: 'wilmtang/better-peakbagger', rulesetId: 2,
+        updatedAt: '2026-08-22T13:59:59.094Z', verifiedAt: '2026-11-09T11:00:38.000Z', bypassActors: [] };
+    return { state, pin, now: Date.parse('2026-11-09T12:00:00.000Z') };
+}
+
+test('redacted tag actors require an explicit mature administrative attestation for the exact public revision', () => {
+    const { state, pin, now } = redactedSafeguards();
+    assert.throws(() => validatePublicationSafeguards(state), /tag bypasses/,
+        'operator preflight remains strict without an explicit attestation');
+    assert.equal(validatePublicationSafeguards(state, pin, now).tagBypassVerification, 'reviewed-revision');
+    state.rulesets[1].bypass_actors = [];
+    assert.equal(validatePublicationSafeguards(state, { invalid: true }, now).tagBypassVerification, undefined,
+        'direct enumeration still verifies the visible list without relying on a pin');
+});
+
+test('redacted protection proof fails closed on mismatched, immature, malformed or contradicted attestations', () => {
+    const changes: ((state: Parameters<typeof validatePublicationSafeguards>[0], pin: Record<string, unknown>) => void)[] = [
+        (_state, pin) => { pin.schemaVersion = 2; },
+        (_state, pin) => { pin.repository = 'another/repository'; },
+        (_state, pin) => { pin.rulesetId = 3; },
+        (_state, pin) => { pin.rulesetId = '2'; },
+        (_state, pin) => { pin.updatedAt = '2026-08-22T14:00:00.000Z'; },
+        (_state, pin) => { pin.updatedAt = 'invalid'; },
+        (_state, pin) => { pin.verifiedAt = 'invalid'; },
+        (_state, pin) => { pin.verifiedAt = '2026-11-09T12:00:01.000Z'; },
+        (_state, pin) => { pin.verifiedAt = pin.updatedAt; },
+        (_state, pin) => { pin.verifiedAt = '2026-08-22T14:00:00.094Z'; },
+        (_state, pin) => { pin.bypassActors = [{ actor_type: 'User', actor_id: 4 }]; },
+        (_state, pin) => { delete pin.bypassActors; },
+        (state) => { state.rulesets[1].source = 'another/repository'; },
+        (state) => { state.rulesets[1].source_type = 'Organization'; },
+        (state) => { state.rulesets[1].updated_at = '2026-11-09T11:00:00.000Z'; },
+        (state) => { delete state.rulesets[1].updated_at; },
+        (state) => { state.rulesets[1].bypass_actors = [{ actor_id: 4 }]; },
+        (state) => { Object.assign(state.rulesets[1], { bypass_actors: null }); },
+        (state) => { Object.assign(state.rulesets[1], { bypass_actors: undefined }); },
+        (state) => { Object.assign(state.rulesets[1], { bypass_actors: { length: 0 } }); },
+        (state) => { state.rulesets[1].rules = []; },
+    ];
+    for (const change of changes) {
+        const { state, pin, now } = redactedSafeguards(); change(state, pin);
+        assert.throws(() => validatePublicationSafeguards(state, pin, now));
+    }
+    for (const pin of [null, [], 'invalid']) {
+        const { state, now } = redactedSafeguards();
+        assert.throws(() => validatePublicationSafeguards(state, pin, now));
+    }
+});
+
 test('the rehearsal artifact must belong to the exact successful attempt and commit', () => {
     const artifact = { id: 42, name: 'browser-extension-v4.0.2-1', expired: false,
         workflow_run: { id: run.id, head_sha: commit } };
