@@ -1,5 +1,8 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Keep the native percentage-width columns steady when source disclosure
+   turns a short saved report into a scrolling page. */
+html:has(.bpb-rs-notice) { scrollbar-gutter: stable; }
 .bpb-rs-notice {
     --rs-ink: #30343a; --rs-secondary: #59616b; --rs-rule: #d7dce0;
     --rs-source: #f3f4f5; --rs-blue: #155db3; --rs-amber: #966513;

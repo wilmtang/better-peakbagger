@@ -1335,6 +1335,13 @@ truncated source are labelled explicitly; no-source partial inspection says
 **Script inspection limited**, without claiming the report is safe. Source stays
 in page memory and is neither stored nor transmitted.
 
+Pages with this notice reserve the native scrollbar gutter, so opening or
+closing its source panel cannot shrink percentage-width report columns when
+the page starts or stops scrolling. Route fixtures force classic Firefox
+scrollbars in their disposable profile and compare trigger geometry and
+available page width across disclosure states. Source changes also preserve
+the heading, following content, focus and scroll position.
+
 The native Chrome/Firefox fixtures pin script-type and namespace semantics,
 including Gecko's whitespace-wrapped module compatibility difference. Its
 extension-origin API selects this narrow quirk; report markers cannot grant

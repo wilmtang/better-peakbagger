@@ -120,6 +120,9 @@ try {
       const options = new firefox.Options().addArguments('-headless').setProfile(profile);
       options.setAcceptInsecureCerts(true);
       options.setPreference('network.dns.localDomains', 'www.peakbagger.com');
+      // Classic scrollbars must not shrink the native report column when the
+      // source disclosure makes a short page scroll. Override only this profile.
+      options.setPreference('ui.useOverlayScrollbars', 0);
       if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
       const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options)
           .setFirefoxService(new firefox.ServiceBuilder().addArguments('--allow-system-access', `--profile-root=${temporaryRoot}`)).build() as firefox.Driver;
@@ -222,6 +225,7 @@ try {
       return {summary:rectangle(notice.querySelector('summary')!),notice:rectangle(notice),
           title:rectangle(notice.previousElementSibling!),following:rectangle(notice.nextElementSibling!),
           scroll:[scrollX,scrollY],documentWidth:document.documentElement.scrollWidth,width:innerWidth,
+          clientWidth:document.documentElement.clientWidth,documentHeight:document.documentElement.scrollHeight,
           focus:document.activeElement?.className,focusTag:document.activeElement?.tagName,
           activeSource:[...notice.querySelectorAll('button')].indexOf(document.activeElement as HTMLButtonElement),open:notice.open};
   });
@@ -254,21 +258,22 @@ try {
       // Explicit text-enlargement check; this is not browser chrome zoom.
       await ui(theme==='dark' ? () => {document.documentElement.dataset.bpbTheme='dark';} : () => {document.documentElement.dataset.bpbTheme='light';});
       await ui(textScale===2 ? () => {document.querySelector<HTMLElement>('.bpb-rs-notice')!.style.fontSize='26px';} : () => {});
-      const closed = await geometry() as {summary:number[];open:boolean;width:number}; assert.equal(closed.open,false);
+      const closed = await geometry() as {summary:number[];open:boolean;width:number;clientWidth:number}; assert.equal(closed.open,false);
       assert.equal(closed.width,width,'verify actual content viewport, including Firefox minimum window size');
       if (process.env.BPB_REPORT_SCREENSHOTS && theme==='light' && textScale===1) {
           await screenshot(path.join(process.env.BPB_REPORT_SCREENSHOTS,`${kind}-${width}-closed.png`));
       }
       await pressKey('.bpb-rs-summary','Enter');
-      const opened = await geometry() as {summary:number[];open:boolean}; assert(opened.open);
-      assert.deepEqual(opened.summary,closed.summary,'disclosure trigger stays anchored');
+      const opened = await geometry() as {summary:number[];open:boolean;clientWidth:number}; assert(opened.open);
+      assert.deepEqual(opened.summary,closed.summary,`disclosure trigger stays anchored; viewport before=${closed.clientWidth}, after=${opened.clientWidth}`);
+      assert.equal(opened.clientWidth,closed.clientWidth,'opening the disclosure preserves the available page width');
       await pressKey('.bpb-rs-choice:nth-child(3)','Enter');
       await ui(() => document.querySelector<HTMLButtonElement>('.bpb-rs-choice:nth-child(1)')!.click());
       const before = await geometry();
       await pressKey('.bpb-rs-choice:nth-child(3)','Space');
       const after = await geometry();
       assert.deepEqual(after,before,'source selection must not move report, controls, reading position or focus');
-      assert.equal((after as {documentWidth:number}).documentWidth,width,'inspector does not create horizontal overflow');
+      assert.equal((after as {documentWidth:number}).documentWidth,(after as {clientWidth:number}).clientWidth,'inspector does not create horizontal overflow');
       assert.equal(await ui(() => [...document.querySelectorAll('.bpb-rs-choice')].every(button=>getComputedStyle(button).borderBottomWidth==='2px')),true,'native dark theme preserves source selection rules');
       assert.match(String(await ui(() => document.querySelector('.bpb-rs-code')!.textContent)),/External file contents are not available/);
       assert.equal(await ui(() => document.querySelectorAll('.bpb-rs-notice script,.bpb-rs-notice img').length),0);
