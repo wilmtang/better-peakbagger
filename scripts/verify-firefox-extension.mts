@@ -7,10 +7,11 @@
 // broader browser fixtures are shared with the Chrome verifier.
 /* global document, location, window */
 
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForImageDownload } from './image-download-completion.mts';
 
 import { Builder, By, Key, until } from 'selenium-webdriver';
 import type { WebElement } from 'selenium-webdriver';
@@ -495,11 +496,7 @@ async function main() {
         // Export saves the flattened file under the title-derived name.
         const exportTitle = await driver.executeScript('return document.getElementById("photo-title").value') as string;
         await driver.findElement(By.id('export-image')).click();
-        const exported = await waitForCondition(async () => {
-            const names = await readdir(downloadDir).catch(() => []);
-            return names.find(name => /-topo\.(png|jpg)$/.test(name) && !name.endsWith('.part')) || null;
-        }, { timeoutMs: 15_000, description: 'the Firefox Export image download' });
-        const exportedBytes = await readFile(path.join(downloadDir, exported as string));
+        const { name: exported, bytes: exportedBytes } = await waitForImageDownload(downloadDir);
         const exportedSignature = exportedBytes.subarray(0, 4).toString('hex');
         const exportedOk = /-topo\.(png|jpg)$/.test(exported as string)
             && (exportedSignature === '89504e47' || exportedSignature.startsWith('ffd8'))
