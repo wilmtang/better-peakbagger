@@ -46,3 +46,30 @@ jobs:
         run: node scripts/dependabot-queue-sweep.mts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # GitHub's delete_branch_on_merge setting is enabled, but missed deletions
+  # need reconciliation. Keep its write token separate from queue management.
+  cleanup-branches:
+    name: Clean up merged Dependabot branches
+    if: github.repository == 'wilmtang/better-peakbagger'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Retry missed branch deletions
+        run: node scripts/dependabot-branch-cleanup.mts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

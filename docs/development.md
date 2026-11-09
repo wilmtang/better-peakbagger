@@ -852,7 +852,7 @@ Four pieces carry that:
 | --- | --- |
 | Schedule, grouping, cooldown | `.github/dependabot.yml` |
 | npm auto-merge trigger and provenance gate | `.github/workflows/dependabot-auto-merge.yml` |
-| Rebasing behind updates and reporting stuck ones | `.github/workflows/dependabot-queue-sweep.yml` |
+| Rebasing behind updates, reporting stuck ones and retrying branch cleanup | `.github/workflows/dependabot-queue-sweep.yml` |
 | Checks that must pass first | `.github/workflows/test.yml` |
 | Enforcement of those checks | the `main` ruleset, in repository settings |
 
@@ -1000,6 +1000,31 @@ A single open issue, **Dependabot auto-merge needs attention**, lists every queu
 update older than three days with its failing checks or merge state. It closes itself once that list is empty, so
 it is the place to look rather than the green auto-merge job. The sweep holds no
 merge authority and does not bypass the required checks.
+
+GitHub's **Automatically delete head branches** setting is enabled, but a missed
+deletion otherwise has no retry: PR #69 merged with native auto-merge while its
+unchanged tooling branch remained. The API exposed no reason for the omission;
+the branch was unprotected and the active branch rules targeted only `main`.
+A separate `cleanup-branches` job in the same scheduled workflow retries cleanup
+with its own contents-write token; the queue job keeps contents-read access.
+It considers only same-repository Dependabot PRs merged into `main`, paginates
+all branches and PRs, and leaves branches used by any open PR alone. A branch
+must still match the merged PR's exact head and be an ancestor of the observed
+`main` commit. A SHA lease rejects deletion if the branch moves after inspection.
+Forks, protected branches, changed tips and squash/diverged heads stay manual.
+The schedule is necessary because a merge performed with `GITHUB_TOKEN` need
+not trigger another workflow run; a closed-PR trigger alone cannot ensure cleanup.
+
+Cleanup closure ledger:
+
+- **Fixed and verified:** deleted the two remote tips fully contained in `main`
+  using exact SHA leases; cleanup/queue regression tests and a live metadata-only
+  cleanup run passed. Oversized PR bodies are projected away inside `gh`.
+- **Intentionally not changed:** native automatic deletion remains enabled;
+  unmerged branches, merge provenance gates and required checks are preserved.
+- **Changed but not fully proven:** the scheduled cleanup job has not yet deleted
+  a surviving merged branch with its Actions token. The original native deletion
+  omission remains unexplained by GitHub's exposed metadata.
 
 ### What still stops a bad merge
 

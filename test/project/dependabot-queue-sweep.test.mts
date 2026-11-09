@@ -4,6 +4,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+// @ts-expect-error js-yaml ships no declarations; parsed workflows are typed below.
+import yaml from 'js-yaml';
 import {
     ISSUE_TITLE,
     planSweep,
@@ -120,7 +122,14 @@ test('comments the exact Dependabot command on the chosen pull request', () => {
 test('the sweep stays unprivileged and on trusted code', async () => {
     const workflow = await readFile(new URL('../../.github/workflows/dependabot-queue-sweep.yml', import.meta.url), 'utf8');
     assert.doesNotMatch(workflow, /pull_request/);
-    assert.doesNotMatch(workflow, /contents: write/);
+    const parsed = yaml.load(workflow) as {
+        permissions: Record<string, string>;
+        jobs: { sweep: { permissions: Record<string, string> } };
+    };
+    assert.deepEqual(parsed.permissions, { contents: 'read' });
+    assert.deepEqual(parsed.jobs.sweep.permissions, {
+        contents: 'read', issues: 'write', 'pull-requests': 'write',
+    });
     assert.match(workflow, /persist-credentials: false/);
     assert.match(workflow, /run: node scripts\/dependabot-queue-sweep\.mts/);
     assert.match(workflow, /schedule:/);
