@@ -1,5 +1,9 @@
 # Active plans
 
+- [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
+  — early store readiness, permanent capture evidence, exact package promotion,
+  parallel browser checks and a protected post-upload Chrome checkpoint.
+
 - [Repository follow-up ledger](follow-ups.md)
   — the single list of what completed audits left open: the deepmerge release
   blocker, terrain warming timing, Linux backup widths, hosted CI and manual

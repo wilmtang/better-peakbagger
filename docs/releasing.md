@@ -16,6 +16,29 @@ mutation would create an avoidable partial-release failure.
 
 ## Rehearse before tagging
 
+Before starting the expensive checks, run:
+
+```sh
+npm run release:readiness -- --previous-tag vPREVIOUS.VERSION.HERE
+# Once per candidate, when public-service connectivity can be checked:
+npm run release:readiness -- --previous-tag vPREVIOUS.VERSION.HERE --online
+```
+
+Use the actual previous store release tag. The maintained copy in
+`store-assets/release-readiness.json` must cover every manifest permission.
+The report flags new permissions and prepares their justifications; it cannot
+check saved Chrome fields or authenticate a dashboard session. Sign in to both
+developer dashboards before the long rehearsal. After the verified package is
+uploaded, explicitly check its version and Google's missing-requirements panel
+before publication; new permission fields can appear only after upload.
+
+The optional online check makes three bounded public-link requests and one
+synthetic tile request each for public lands and slope. It checks PNG structure
+and response CORS headers, never a user's coordinates or activity. It does not
+establish browser CORS enforcement, map rendering, dashboard login or Google's
+URL acceptance. A local HTTP 200 did not establish Google's acceptance during
+the 4.1.0 release. Do not repeat live probes in every browser repetition.
+
 After the release metadata is merged and main CI passes, run:
 
 ```bash

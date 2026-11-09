@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "urls": {
+    "homepage": "https://wilmtang.github.io/better-peakbagger/",
+    "privacy": "https://raw.githubusercontent.com/wilmtang/better-peakbagger/main/PRIVACY.md",
+    "support": "https://wilmtang.github.io/better-peakbagger/#faq"
+  },
+  "purpose": "Better Peakbagger improves researching, planning and recording mountain ascents on Peakbagger through route analysis, user-reviewed ascent drafts, report tools and display preferences.",
+  "permissionJustifications": {
+    "storage": "Stores preferences, device-local credentials, caches, report drafts and capture state. Temporary form-delivery jobs and reduced GPX payloads expire after 30 minutes; separate opt-in inbox and backup retention is described in the privacy policy.",
+    "activeTab": "After an explicit toolbar action, temporarily accesses the selected Garmin or Strava activity to verify ownership and read its same-origin GPX. The toolbar capture path has no permanent access to these provider websites.",
+    "scripting": "Injects packaged adapters for the user's selected activity, Peakbagger account/summit checks and explicitly requested track transfers. Optional Instagram theme support registers a confined packaged helper. No remote extension code is downloaded or executed.",
+    "tabGroups": "Groups newly opened Peakbagger ascent drafts for user review without inspecting or reorganizing unrelated tab groups.",
+    "alarms": "Expires temporary capture state and schedules user-enabled Garmin inbox checks, backups and climber-list synchronization. Scheduled imports never save Peakbagger ascents.",
+    "declarativeNetRequest": "Uses packaged rules to append restrictive Content-Security-Policy headers to Peakbagger report-viewing documents and relevant frames, protecting against active report content while preserving approved native routes and map/video frames. Another packaged rule blocks Instagram/CDN subresources initiated by Peakbagger so native embeds cannot bypass user-controlled post loading. Rules do not inspect request bodies, collect browsing history or load remote extension code."
+  },
+  "hostPermissionJustification": "Peakbagger access supports route analysis, planning, report tools, account/summit checks and user-reviewed drafts. Other hosts are optional and requested for user-enabled GitHub backups, ImgBB uploads, Garmin API inbox, Instagram theme support or explicit track transfers. Custom map access is requested only for configured HTTPS provider hosts; the optional wildcard does not automatically grant all-site access."
+}

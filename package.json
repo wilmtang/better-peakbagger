@@ -29,6 +29,7 @@
     "release:bump": "node scripts/release-bump.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:preflight": "node scripts/release-preflight.mts",
+    "release:readiness": "node scripts/release-readiness.mts",
     "release:check:firefox-version": "node scripts/check-amo-version.mjs",
     "release:check-history": "node scripts/check-changelog-history.mjs",
     "release:metadata:firefox": "node scripts/create-amo-metadata.mts web-ext-artifacts/amo-metadata.json",

@@ -54,6 +54,7 @@ independent of the existing targets.
 - [release-check.mjs](release-check.mjs)
 - [release-package-identity.mjs](release-package-identity.mjs)
 - [release-preflight.mts](release-preflight.mts)
+- [release-readiness.mts](release-readiness.mts) — Prepares permission disclosures and reports bounded optional public service probes; authentication and Google's uploaded-draft validation remain manual.
 - [select-release-artifact.mjs](select-release-artifact.mjs)
 - [stage-ui-ux-skill-update.mjs](stage-ui-ux-skill-update.mjs) — Enforces the checked skill-only patch and prepares the direct-main automation commit without executing downloaded helpers.
 - [third-party-notices.mjs](third-party-notices.mjs)

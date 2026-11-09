@@ -36,6 +36,10 @@ jobs:
       - name: Set up shared verification
         uses: ./.github/actions/setup-verification
 
+      - name: Check early release readiness
+        # Live probes and dashboard checks remain explicit operator checks.
+        run: npm run release:readiness
+
       - name: Run scale tests
         run: npm run test:scale
 
