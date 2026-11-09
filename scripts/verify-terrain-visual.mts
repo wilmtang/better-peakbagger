@@ -9,6 +9,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { decodePng } from './browser-verification-png.mts';
+import { readTerrainToggleReadiness } from './terrain-toggle-readiness.mts';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 import { readSentinelCooldown, verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mts';
 
@@ -375,15 +376,7 @@ const clickTerrainToggle = async (cdp: Cdp) => {
 };
 
 const openTerrainWithTrustedClick = async (cdp: Cdp) => {
-    const before = await waitForPageState(cdp, `(() => {
-        const toggle = document.getElementById('bpb-terrain-toggle');
-        const nativeMap = document.querySelector('iframe[src*="MasterMap.aspx" i]');
-        let nativeReady = false;
-        try { nativeReady = Boolean(nativeMap?.contentWindow?.mapsPlaceholder); } catch {}
-        const rect = toggle?.getBoundingClientRect();
-        return { ready: Boolean(toggle && !toggle.disabled && nativeReady),
-            left: rect?.left, top: rect?.top, width: rect?.width, height: rect?.height };
-    })()`);
+    const before = await waitForPageState(cdp, `(${readTerrainToggleReadiness.toString()})()`);
     const focused = await clickTerrainToggle(cdp);
     const after = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');

@@ -31,6 +31,8 @@ packages. This plan implements the independently reviewed retrospective.
    then investigate the settings deep-link geometry failure separately.
 7. Read trusted job logs through the supported host-pinned CLI interface so
    terminal escape protection does not reject the evidence transport.
+8. Establish a public rendered idle-2D control baseline before testing settled
+   terrain mode-switch anchoring; retain the existing movement assertion.
 
 No new extension version or store submission is part of this implementation.
 Each completed code unit receives independent review and its own checked commit.
@@ -104,6 +106,15 @@ Each completed code unit receives independent review and its own checked commit.
   CLI failure and invalid IDs. All 4,113 tests, typecheck and lint passed;
   independent review is clear. Binary artifact retrieval also passed its
   read-only smoke check. No terminal-safety bypass was added.
+- The terrain fixture now requires idle 2D semantics, visible native zoom and
+  toggle geometry, and the intended clearance before recording its baseline.
+  Native zoom coordinates include the iframe border. The original 1px
+  post-click movement assertion and timeout remain unchanged; later movement
+  still fails regression tests. Eighteen focused terrain/inventory tests,
+  typecheck and lint passed (the preceding full suite passed 4,113 tests).
+  Canonical hidden Chrome for Testing 156.0.8078.4 passed the complete terrain
+  verifier on Apple M3 Pro Metal hardware, including resize/recovery/popup
+  scenarios and teardown. Independent review is clear; no runtime change.
 
 ### Intentionally not changed
 
@@ -134,3 +145,10 @@ Each completed code unit receives independent review and its own checked commit.
   Its hash/owning navigation were correct. The original interaction failure
   lacked request identities, so its exact historical sequence is not claimed
   proven merely from the controlled Cloud-overlap reproduction.
+- The second PR CI run passed the corrected weather and full package/capture
+  checks but found a 12px terrain-toggle baseline change. Source and local
+  geometry are consistent with sampling the 106px fallback before the deferred
+  118px native-control placement. The exact historical first-paint/event
+  sequence was not captured. The fixture correction verifies settled mode
+  transitions only; early-enabled startup-click stability remains unproven and
+  is not claimed fixed by adding the public readiness condition.

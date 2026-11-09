@@ -120,6 +120,7 @@ independent of the existing targets.
 - [verify-terrain-lod.mts](verify-terrain-lod.mts)
 - [verify-terrain-popup.mjs](verify-terrain-popup.mjs)
 - [verify-terrain-provider-ui.mts](verify-terrain-provider-ui.mts)
+- [terrain-toggle-readiness.mts](terrain-toggle-readiness.mts)
 - [verify-terrain-visual.mts](verify-terrain-visual.mts)
 
 ## Climbers and profiles
