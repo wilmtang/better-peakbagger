@@ -23,6 +23,10 @@
   filters. Ownership does not establish access; missing coverage stays unknown.
   Snow-depth legends show the source's modeled bands and analysis date.
 
+- **Load US public lands with all categories selected.** Correct the federal
+  category request that the provider rejected, leaving maps blank. Individual
+  categories and right-click readings retain their selected-type filtering.
+
 - **See reported US wildfires.** Optional incident markers and mapped perimeters
   show separately dated NIFC/WFIGS source details, reported acreage and containment
   where available. These are reported fire records, not live safety boundaries.

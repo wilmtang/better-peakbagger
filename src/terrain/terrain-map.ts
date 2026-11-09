@@ -12,7 +12,7 @@ import { terrainCamera } from './terrain-camera.js';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
 import { readLayerSnapshot, readLayerStatus, readBasemapChoices, readAttributionInset } from '../maps/map-layer-protocol.ts';
 import { sentinelTarget } from '../maps/sentinel-core.js';
-import { overlayBounds } from '../maps/map-overlay-providers.js';
+import { overlayBounds } from '../maps/map-overlay-providers.ts';
 import { terrainFailure } from './terrain-failure.js';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 

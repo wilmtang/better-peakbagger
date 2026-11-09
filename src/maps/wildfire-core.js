@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { overlayBounds } from './map-overlay-providers.js';
+import { overlayBounds } from './map-overlay-providers.ts';
 export const WILDFIRE_MIN_ZOOM = 7;
 export const WILDFIRE_SOURCE = 'https://www.arcgis.com/home/item.html?id=d1c32af3212341869b3c810f1a215824';
 export const WILDFIRE_LEGEND = 'NIFC/WFIGS · Current US reported locations and mapped perimeters. Reports may lag; check official closures. Canada is not supported yet.';

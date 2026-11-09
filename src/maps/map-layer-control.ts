@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
+import { OVERLAY_MIN_ZOOM } from './map-overlay-providers.ts';
 import { createWildfireList } from './wildfire-details.js';
 import { WILDFIRE_MIN_ZOOM, WILDFIRE_SOURCE } from './wildfire-core.js';
 import { SENTINEL_MIN_ZOOM } from './sentinel-core.js';

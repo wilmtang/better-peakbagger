@@ -2,10 +2,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SLOPE_BANDS, SLOPE_RULE, LAND_CLASSES, LAND_RENDERER, overlayTileUrl, tileBounds, overlayBounds, viewportStations, mapOverlayCoverage } from '../../src/maps/map-overlay-providers.js';
+import { SLOPE_BANDS, SLOPE_RULE, LAND_CLASSES, LAND_RENDERER, overlayTileUrl, tileBounds, overlayBounds, viewportStations, mapOverlayCoverage } from '../../src/maps/map-overlay-providers.ts';
+
+interface FillSymbol { style: string; color?: number[]; outline: unknown; }
+type Renderer = {type: 'simple'; symbol: FillSymbol} | {type: 'uniqueValue'; field1: string; defaultSymbol: FillSymbol;
+    uniqueValueInfos: {value: string; symbol: FillSymbol}[]};
+interface ExportLayer { id: number; source: {mapLayerId: number}; definitionExpression: string; drawingInfo: {renderer: Renderer}; }
+const layersFor = (selected?: unknown) => JSON.parse(new URL(overlayTileUrl('land', {z: 10, x: 163, y: 359}, selected))
+    .searchParams.get('dynamicLayers')!) as ExportLayer[];
+const uniqueRenderer = (layer: ExportLayer | undefined) => {
+    assert(layer); const renderer = layer.drawingInfo.renderer; assert(renderer.type === 'uniqueValue'); return renderer;
+};
+const simpleRenderer = (layer: ExportLayer | undefined) => {
+    assert(layer); const renderer = layer.drawingInfo.renderer; assert(renderer.type === 'simple'); return renderer;
+};
+const nonFederalRenderer = {...LAND_RENDERER, uniqueValueInfos: LAND_RENDERER.uniqueValueInfos.filter(item => item.value !== 'FED')};
 
 test('offline overlay availability distinguishes provider regions without treating unknown bounds as absence', () => {
-    const places = [
+    const places: [string, number, number, boolean[]][] = [
         ['Rainier', -121.76, 46.85, [true, true, true, true]],
         ['Denali', -151.01, 63.07, [true, true, true, true]],
         ['Hawaii', -155.58, 19.82, [true, true, true, false]],
@@ -24,13 +38,13 @@ test('offline overlay availability distinguishes provider regions without treati
     ];
     for (const [place, lon, lat, expected] of places) {
         const bounds = [lon - .01, lat - .01, lon + .01, lat + .01];
-        assert.deepEqual(['sentinel', 'slope', 'land', 'snotel'].map(id => mapOverlayCoverage(bounds)[id]), expected, place);
+        assert.deepEqual((['sentinel', 'slope', 'land', 'snotel'] as const).map(id => mapOverlayCoverage(bounds)![id]), expected, place);
         assert.deepEqual(mapOverlayCoverage(bounds.map((value, index) => index % 2 ? value : value + 360)), mapOverlayCoverage(bounds), `${place} world copy`);
     }
-    for (const [place, lon, lat] of places) assert.equal(mapOverlayCoverage([lon - .01, lat - .01, lon + .01, lat + .01]).wildfire, ['Rainier', 'Denali', 'Hawaii', 'New Hampshire', 'South Dakota'].includes(place), `${place} wildfire coverage`);
+    for (const [place, lon, lat] of places) assert.equal(mapOverlayCoverage([lon - .01, lat - .01, lon + .01, lat + .01])!.wildfire, ['Rainier', 'Denali', 'Hawaii', 'New Hampshire', 'South Dakota'].includes(place), `${place} wildfire coverage`);
     assert.equal(mapOverlayCoverage(null), null);
     assert.equal(mapOverlayCoverage([NaN, 0, 1, 2]), null);
-    assert.equal(mapOverlayCoverage([-122.1, 49.09, -122, 49.11]).snotel, true, 'nearby US stations remain discoverable across the Canadian border');
+    assert.equal(mapOverlayCoverage([-122.1, 49.09, -122, 49.11])!.snotel, true, 'nearby US stations remain discoverable across the Canadian border');
 });
 
 test('slope classification uses the service degree template with exact inclusive lower boundaries', () => {
@@ -50,7 +64,7 @@ test('ownership colors only explicit fee ownership, leaving all unclassified are
     const url = new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 }));
     assert.equal(url.hostname, 'edits.nationalmap.gov');
     assert.equal(url.searchParams.get('transparent'), 'true');
-    assert.deepEqual(JSON.parse(url.searchParams.get('dynamicLayers')).find(layer => layer.id === 0).drawingInfo.renderer, LAND_RENDERER);
+    assert.deepEqual(uniqueRenderer(layersFor().find(layer => layer.id === 0)), nonFederalRenderer);
     assert.throws(() => overlayTileUrl('private', { z: 1, x: 0, y: 0 }));
 });
 test('tiles wrap at the dateline and viewport station selection does not silently truncate', () => {
@@ -67,16 +81,16 @@ test('tiles wrap at the dateline and viewport station selection does not silentl
 test('BLM-managed federal fee land has its own color without marking unknown land public', () => {
     const classes = new Map(LAND_CLASSES.map(category => [category.value, category]));
     assert.equal(classes.get('BLM')?.label, 'BLM');
-    assert.notDeepEqual(classes.get('BLM').color, classes.get('FED').color);
-    assert.equal(classes.get('FED').label, 'Other federal');
-    const layers = JSON.parse(new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 })).searchParams.get('dynamicLayers'));
+    assert.notDeepEqual(classes.get('BLM')!.color, classes.get('FED')!.color);
+    assert.equal(classes.get('FED')!.label, 'Other federal');
+    const layers = layersFor();
     const blm = layers.find(layer => layer.definitionExpression === "Own_Type = 'FED' AND Mang_Name = 'BLM'");
     assert.ok(blm, 'management is explicit; ownership alone does not establish current BLM management');
     assert.equal(blm.source.mapLayerId, 0, 'fee polygons, never proclamation boundaries');
-    assert.deepEqual(blm.drawingInfo.renderer.symbol.color, [...classes.get('BLM').color, 255]);
+    assert.deepEqual(simpleRenderer(blm).symbol.color, [...classes.get('BLM')!.color, 255]);
     assert.equal(layers.indexOf(blm), 0, 'ArcGIS draws the first dynamic layer on top');
     const other = layers.find(layer => layer.id === 0);
-    assert.deepEqual(other.drawingInfo.renderer, LAND_RENDERER);
+    assert.deepEqual(uniqueRenderer(other), nonFederalRenderer);
     assert.equal(LAND_RENDERER.defaultSymbol.style, 'esriSFSNull');
     assert.ok(!LAND_RENDERER.uniqueValueInfos.some(item => ['PVT', 'UNK', 'BLM'].includes(item.value)));
 });
@@ -84,18 +98,18 @@ test('BLM-managed federal fee land has its own color without marking unknown lan
 test('BLM and USFS lead the land palette with distinct saturated colors and agency filters', () => {
     const classes = new Map(LAND_CLASSES.map(category => [category.value, category]));
     assert.deepEqual(LAND_CLASSES.slice(0, 2).map(category => category.value), ['BLM', 'USFS']);
-    assert.deepEqual(classes.get('BLM').color, [230, 159, 0]);
-    assert.deepEqual(classes.get('USFS').color, [0, 114, 178]);
-    const layers = JSON.parse(new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 })).searchParams.get('dynamicLayers'));
-    assert.equal(layers.length, 3, 'two agency passes and the ownership fallback share one export');
+    assert.deepEqual(classes.get('BLM')!.color, [230, 159, 0]);
+    assert.deepEqual(classes.get('USFS')!.color, [0, 114, 178]);
+    const layers = layersFor();
+    assert.equal(layers.length, 4, 'agency, other-federal and non-federal passes share one export');
     for (const [index, agency] of ['BLM', 'USFS'].entries()) {
         assert.equal(layers[index].definitionExpression, `Own_Type = 'FED' AND Mang_Name = '${agency}'`);
         assert.equal(layers[index].source.mapLayerId, 0, 'fee land, never broad administrative boundaries');
-        assert.deepEqual(layers[index].drawingInfo.renderer.symbol.color, [...classes.get(agency).color, 255]);
+        assert.deepEqual(simpleRenderer(layers[index]).symbol.color, [...classes.get(agency)!.color, 255]);
         assert.ok(!LAND_RENDERER.uniqueValueInfos.some(item => item.value === agency));
     }
     assert.equal(LAND_RENDERER.defaultSymbol.style, 'esriSFSNull');
-    const saturation = color => (Math.max(...color) - Math.min(...color)) / Math.max(...color);
+    const saturation = (color: number[]) => (Math.max(...color) - Math.min(...color)) / Math.max(...color);
     for (const category of LAND_CLASSES) {
         assert.ok(['BLM', 'USFS'].includes(category.value) ? saturation(category.color) > 0.9 : saturation(category.color) < 0.35,
             `${category.label} keeps the requested visual priority`);
@@ -104,15 +118,40 @@ test('BLM and USFS lead the land palette with distinct saturated colors and agen
 
 
 test('US filters hide unchecked agencies from the federal fallback and group local districts', () => {
-    const layers = selected => JSON.parse(new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 }, selected)).searchParams.get('dynamicLayers'));
+    const layers = layersFor;
     const federal = layers(['FED']);
-    assert.equal(federal.length, 1);
-    assert.match(federal[0].definitionExpression, /Mang_Name NOT IN \('BLM','USFS'\)/);
-    assert.deepEqual(federal[0].drawingInfo.renderer.uniqueValueInfos.map(item => item.value), ['FED']);
+    assert.equal(federal.length, 2);
+    assert.equal(federal[0].definitionExpression, "Own_Type = 'FED'");
+    const renderer = uniqueRenderer(federal[0]);
+    assert.equal(renderer.field1, 'Mang_Name');
+    assert.deepEqual(renderer.defaultSymbol.color, [145,145,145,255]);
+    assert.deepEqual(renderer.uniqueValueInfos.map(item => [item.value,item.symbol]),
+        ['BLM','USFS'].map(value => [value,{type:'esriSFS',style:'esriSFSNull',outline:null}]));
+    assert.equal(federal[1].definitionExpression, '1=0');
     const local = layers(['LOC']);
-    assert.deepEqual(local[0].drawingInfo.renderer.uniqueValueInfos.map(item => item.value), ['LOC', 'DIST']);
+    assert.deepEqual(uniqueRenderer(local[0]).uniqueValueInfos.map(item => item.value), ['LOC', 'DIST']);
     const blm = layers(['BLM']);
     assert.equal(blm[0].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'BLM'");
     assert.equal(blm[1].definitionExpression, '1=0');
     assert.equal(layers(["FED' OR 1=1"])[0].definitionExpression, '1=0', 'untrusted categories cannot become query expressions');
+});
+
+test('every US category selection uses simple service filters and keeps managers out of the federal fallback', () => {
+    const categories = ['BLM','USFS','FED','STAT','LOC','TRIB'];
+    for (let mask = 0; mask < 64; mask++) {
+        const selected = categories.filter((_,index) => mask & 1 << index), layers = layersFor(selected);
+        assert.equal(new Set(layers.map(layer => layer.id)).size, layers.length, 'passes have distinct IDs');
+        for (const layer of layers) assert.doesNotMatch(layer.definitionExpression, /\bNOT IN\b|\bOR\b/, 'the live service refuses compound exclusion filters');
+        const federal = layers.find(layer => layer.definitionExpression === "Own_Type = 'FED'");
+        assert.equal(!!federal, selected.includes('FED'));
+        if (federal) {
+            const renderer = uniqueRenderer(federal);
+            for (const manager of ['BLM','USFS',null,'NPS','UNRECOGNIZED']) {
+                const symbol = renderer.uniqueValueInfos.find(item => item.value === manager)?.symbol || renderer.defaultSymbol;
+                assert.equal(symbol.style, manager === 'BLM' || manager === 'USFS' ? 'esriSFSNull' : 'esriSFSSolid');
+                if (symbol.style === 'esriSFSNull') assert.equal(symbol.outline, null);
+            }
+        }
+        assert.ok(!uniqueRenderer(layers.find(layer => layer.id === 0)).uniqueValueInfos.some(item => item.value === 'FED'));
+    }
 });

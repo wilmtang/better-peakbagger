@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { overlayBounds, mapOverlayCoverage } from './map-overlay-providers.js';
+import { overlayBounds, mapOverlayCoverage } from './map-overlay-providers.ts';
 import { fetchWildfireComponent } from './wildfire-client.js';
 import { WILDFIRE_MIN_ZOOM, wildfireRecords } from './wildfire-core.js';
 

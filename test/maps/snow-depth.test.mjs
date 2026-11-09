@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSnowDepthMetadata, readSnowDepthLegend, readSnowDepthTime } from '../../src/maps/snow-depth.js';
-import { mapOverlayCoverage, overlayTileUrl } from '../../src/maps/map-overlay-providers.js';
+import { mapOverlayCoverage, overlayTileUrl } from '../../src/maps/map-overlay-providers.ts';
 import { snowDepthCatalogue, snowDepthLegend } from '../helpers/snow-depth-fixture.mjs';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const json = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });

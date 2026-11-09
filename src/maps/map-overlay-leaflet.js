@@ -4,7 +4,7 @@
 import { createLeafletWildfires } from './wildfire-leaflet.ts';
 import { createOverlayTiles } from './map-overlay-tiles.js';
 import { createPageBCTileFetch } from './bc-land-client.js';
-import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
+import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.ts';
 import { SNOW_DEPTH_MAX_ZOOM } from './snow-depth.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup, updateSnotelPopupAction } from '../snow/snotel-map-marker.js';

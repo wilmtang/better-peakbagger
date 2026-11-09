@@ -159,12 +159,18 @@ try {
     resources.defer('held public-land tiles', () => { landMode = 'ready'; heldLand.splice(0).forEach(resolve => resolve()); });
     await context.route('https://edits.nationalmap.gov/**', async route => {
         const layers = JSON.parse(new URL(route.request().url()).searchParams.get('dynamicLayers')!);
+        // The live provider rejects this old compound ownership predicate.
+        // Reproduce its refusal so a healthy-looking fixture cannot hide it.
+        if (layers.some((layer: {definitionExpression: string}) => /\bNOT IN\b|\bOR\b/.test(layer.definitionExpression))) {
+            return route.fulfill({ status: 403, contentType: 'text/html', body: 'Map service refused the compound filter.' });
+        }
         const base = layers.find((layer: LeafletLayer) => layer.id === 0);
         assert.equal(base.drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
-        assert.match(base.definitionExpression, /Mang_Name NOT IN|1=0|Own_Type IN/);
+        assert.match(base.definitionExpression, /1=0|Own_Type IN/);
         const mask = (layers.some((layer: LeafletLayer) => layer.definitionExpression === "Own_Type = 'FED' AND Mang_Name = 'BLM'") ? 1 : 0)
             | (layers.some((layer: LeafletLayer) => layer.definitionExpression === "Own_Type = 'FED' AND Mang_Name = 'USFS'") ? 2 : 0)
-            | (base.drawingInfo.renderer.uniqueValueInfos.some((item: PageItem) => item.value === 'FED') ? 4 : 0);
+            | (layers.some((layer: {definitionExpression: string; drawingInfo: {renderer: {field1?: string}}}) =>
+                layer.definitionExpression === "Own_Type = 'FED'" && layer.drawingInfo.renderer.field1 === 'Mang_Name') ? 4 : 0);
         if (landMode === 'hold') await new Promise(resolve => heldLand.push(resolve as () => void));
         if (landMode === 'error') return route.fulfill({ status: 503, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'Unavailable' });
         return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: Buffer.from(landTiles[mask], 'base64') });
@@ -271,6 +277,12 @@ try {
             await waitForCondition(pixel,{description:'full opacity paints the composed imagery',isReady:rgba=>[52,125,97].every((value,i)=>Math.abs(value-rgba[i])<=2)});
         }
         for (const label of ['Slope angle', 'Public lands']) await page.getByRole('checkbox', { name: label, exact: true }).check();
+        const landResult = await waitForCondition(() => page.evaluate(() => {
+            const row = document.querySelector('[data-layer="land"]');
+            return { ready: row?.querySelector<PageElement>('.bpb-layers-value')?.hidden === false,
+                status: row?.querySelector('.bpb-layers-row-status')?.textContent || '' };
+        }), { description: 'default public-land request reaches a visible result', isReady: result => result.ready || /Couldn.t load/.test(result.status) });
+        assert.equal(landResult.ready,true,`Public lands must render default selected types; status=${landResult.status}`);
         await waitForCondition(() => native!.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay && layer._tiles).length === 3), { description: 'three independently layered rasters' });
         // A different scene set from the same pass is normal near a footprint
         // boundary. Hold replacement imagery after a same-zoom pan: removing

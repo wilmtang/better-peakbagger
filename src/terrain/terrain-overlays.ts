@@ -6,7 +6,7 @@ import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
 import { createSentinelSession } from '../maps/sentinel-session.js';
 import { SNOW_DEPTH_MAX_ZOOM } from '../maps/snow-depth.js';
 import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
-import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM, rasterTileStatus } from '../maps/map-overlay-providers.js';
+import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM, rasterTileStatus } from '../maps/map-overlay-providers.ts';
 import { readLayerSnapshot, mergeLandCooldowns } from '../maps/map-layer-protocol.ts';
 import { createBCTileFetch } from '../maps/bc-land-client.js';
 import { createCustomRenderer } from '../maps/custom-overlay-render.js';

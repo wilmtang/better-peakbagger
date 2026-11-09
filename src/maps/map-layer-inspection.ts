@@ -6,6 +6,7 @@ import { readBoundedResponseText } from '../net/bounded-text.js';
 import { cancelResponseBody, rateLimitError } from '../net/rate-limit.js';
 import { SNOW_DEPTH_SERVICE, SNOW_DEPTH_BOUNDS } from './snow-depth.js';
 import { landCoverage, AB_LAND_SERVICE } from './canadian-land.js';
+import { US_LAND_SERVICE } from './map-overlay-providers.ts';
 
 export interface InspectionPoint { latitude: number; longitude: number; x: number; y: number; }
 export interface LayerLegendEntry { label: string; color?: string; image?: string; value?: string; }
@@ -155,14 +156,16 @@ export class PublicLandLayer extends QueryLayer {
             return { value: owners.length ? owners.length > 1 ? 'Crown / municipal' : owners[0] === 'Provincial' ? 'Crown land' : 'Municipal' : 'No mapped parcel',
                 detail: 'Alberta regional parcel ownership · partial coverage; ownership does not establish access or camping rights.' };
         }
-        const url = new URL('https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US_4_1/MapServer/0/query');
+        const url = new URL(`${US_LAND_SERVICE}/0/query`);
         const selected = new Set(Schema.mapLandTypes(context.landTypes));
-        const predicates = [...selected].filter(type => ['FED', 'STAT', 'LOC', 'TRIB'].includes(type)).map(type =>
-            type === 'LOC' ? "Own_Type IN ('LOC','DIST')" : type === 'FED' ? "(Own_Type='FED' AND (Mang_Name NOT IN ('BLM','USFS') OR Mang_Name IS NULL))" : `Own_Type='${type}'`);
-        for (const type of ['BLM', 'USFS']) if (selected.has(type)) predicates.push(`(Own_Type='FED' AND Mang_Name='${type}')`);
-        if (!predicates.length) return { value: 'No selected type', detail: 'USGS PAD-US · selected land types only' };
+        // Query selected ownership classes with the service's simple filter;
+        // the category check below separates managers within federal parcels.
+        // json() rejects truncated responses before any local filtering.
+        const owners = [...new Set([...selected].flatMap(type => ['BLM', 'USFS', 'FED'].includes(type) ? ['FED']
+            : type === 'LOC' ? ['LOC', 'DIST'] : ['STAT', 'TRIB'].includes(type) ? [type] : []))];
+        if (!owners.length) return { value: 'No selected type', detail: 'USGS PAD-US · selected land types only' };
         for (const [key, value] of Object.entries({ geometry: `${point.longitude},${point.latitude}`, geometryType: 'esriGeometryPoint',
-            inSR: '4326', spatialRel: 'esriSpatialRelIntersects', where: predicates.join(' OR '), outFields: 'Own_Type,Mang_Name,Unit_Nm',
+            inSR: '4326', spatialRel: 'esriSpatialRelIntersects', where: `Own_Type IN (${owners.map(owner => `'${owner}'`).join(',')})`, outFields: 'Own_Type,Mang_Name,Unit_Nm',
             returnGeometry: 'false', resultRecordCount: '8', f: 'json' })) url.searchParams.set(key, value);
         const data = await this.json(url, context, signal, point);
         if (!Array.isArray(data.features) || data.features.length > 8) return unavailable('USGS PAD-US · invalid parcel response');

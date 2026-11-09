@@ -510,8 +510,12 @@ The provider request and legend share one color definition. Slope uses the
 USGS **Slope Degrees** template followed by explicit inclusive-lower,
 exclusive-upper remapping and a color map. PAD-US uses an explicit `Own_Type`
 renderer on the fee layer, with an invisible default symbol. Filtered BLM and
-USFS passes draw on top in the same service export; both map engines apply opacity
-once to that single image. Sources:
+USFS passes draw on top in the same service export. Other federal land uses a
+separate manager renderer: its default is gray, with invisible BLM/USFS symbols,
+so unknown and null managers remain classified without restoring an unchecked
+agency. The remaining owner pass omits federal parcels. Both map engines apply
+opacity once to that single image. This avoids the compound federal-exclusion
+expression that the live service rejected with HTTP 403. Sources:
 [USGS 3DEP service](https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer),
 [Esri raster function contract](https://developers.arcgis.com/rest/services-reference/enterprise/raster-function-objects/),
 [PAD-US fee service](https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US_4_1/MapServer/0),
@@ -732,6 +736,10 @@ the row's tooltip and accessible reading; no extra action or disclosure is added
   are unknown; ownership does not establish access or camping permission.
   ParcelMap BC point details remain unavailable: the existing optional image
   transport must not be repurposed into arbitrary parcel queries.
+  US requests select ownership classes with a simple filter, then apply the
+  selected manager categories locally. The eight-record bound and truncated-
+  response rejection remain in force; incomplete results cannot become a
+  misleading “No mapped parcel” reading.
 - **Slope angle** requests the same USGS `Slope Degrees` function used by the
   shading, validates 0–90 degrees, and labels it an estimate.
 - **Sentinel-2** has no scalar point value; its capture details stay in Overlays.

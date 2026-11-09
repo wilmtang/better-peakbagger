@@ -73,7 +73,7 @@ test('land ownership respects selected manager/owner types, never equates no par
     const c = context(); c.landTypes = ['USFS'];
     const reading = await layer.rightClick(point, c, signal());
     assert.equal(reading.value, 'USFS'); assert.match(reading.detail, /National forest.*does not establish access/);
-    assert.match(url!.searchParams.get('where')!, /Own_Type='FED' AND Mang_Name='USFS'/);
+    assert.equal(url!.searchParams.get('where'), "Own_Type IN ('FED')");
     assert.equal(url!.searchParams.get('returnGeometry'), 'false');
     assert.equal(url!.searchParams.get('outFields'), 'Own_Type,Mang_Name,Unit_Nm');
     c.landTypes = ['USFS', 'BLM'];
@@ -81,6 +81,36 @@ test('land ownership respects selected manager/owner types, never equates no par
     c.landTypes = ['STAT']; assert.equal((await layer.rightClick(point, c, signal())).value, 'No mapped parcel');
     c.landTypes = []; assert.equal(layer.applicable(c, point), false);
     assert.equal((await layer.rightClick({...point, latitude: 50, longitude: -123}, context(), signal())).value, 'Unavailable');
+});
+test('federal inspection filters managers locally and never treats a truncated owner query as no parcel', async () => {
+    let calls = 0;
+    const features = [
+        {attributes: {Own_Type:'FED',Mang_Name:'BLM',Unit_Nm:'Excluded desert'}},
+        {attributes: {Own_Type:'FED',Mang_Name:'USFS',Unit_Nm:'Excluded forest'}},
+        {attributes: {Own_Type:'FED',Mang_Name:'NPS',Unit_Nm:'Park'}},
+        {attributes: {Own_Type:'FED',Mang_Name:null,Unit_Nm:'Unassigned manager'}},
+        {attributes: {Own_Type:'FED',Mang_Name:'FUTURE',Unit_Nm:'New agency'}},
+        {attributes: {Own_Type:'PVT',Mang_Name:null,Unit_Nm:'Private parcel'}},
+    ];
+    const layer = new PublicLandLayer(async input => {
+        calls++; const query = new URL(String(input)).searchParams;
+        assert.equal(query.get('where'), "Own_Type IN ('FED')");
+        assert.equal(query.get('resultRecordCount'),'8');
+        return json({features});
+    });
+    const c = context(); c.landTypes = ['FED'];
+    const reading = await layer.rightClick(point,c,signal());
+    assert.equal(reading.value,'Other federal');
+    assert.match(reading.detail,/Park.*Unassigned manager/);
+    assert.doesNotMatch(reading.detail,/Excluded|Private/);
+    c.landTypes = ['USFS']; assert.equal((await layer.rightClick(point,c,signal())).value,'USFS');
+    c.landTypes = []; assert.equal((await layer.rightClick(point,c,signal())).value,'No selected type');
+    assert.equal(calls,2,'no selected category starts no query');
+    c.landTypes = ['FED'];
+    const partial = new PublicLandLayer(async () => json({features:features.slice(0,2),exceededTransferLimit:true}));
+    await assert.rejects(partial.rightClick(point,c,signal()),/Incomplete/);
+    const oversized = new PublicLandLayer(async () => json({features:Array.from({length:9},()=>features[0])}));
+    assert.equal((await oversized.rightClick(point,c,signal())).value,'Unavailable');
 });
 test('Alberta point reads request only ownership class; BC never bypasses the optional image permission boundary', async () => {
     let calls = 0;

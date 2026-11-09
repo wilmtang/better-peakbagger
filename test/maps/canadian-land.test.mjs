@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { BC_LAND_RENDERER, albertaLandTileUrl, drawAlbertaLand, landCoverage } from '../../src/maps/canadian-land.js';
-import { publicLandTileSources, publicLandInfo } from '../../src/maps/map-overlay-providers.js';
+import { publicLandTileSources, publicLandInfo } from '../../src/maps/map-overlay-providers.ts';
 
 const tile = (longitude, latitude, z = 12) => ({ z, x: Math.floor((longitude + 180) / 360 * 2 ** z), y: Math.floor((1 - Math.asinh(Math.tan(latitude * Math.PI / 180)) / Math.PI) / 2 * 2 ** z) });
 const polygon = (objectid = 1, crownclass = 'Provincial') => ({ attributes: { objectid, crownclass }, geometry: { rings: [[[0, 0], [128, 0], [128, 128], [0, 0]]] } });

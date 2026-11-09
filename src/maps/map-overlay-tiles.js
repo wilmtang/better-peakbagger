@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { sentinelTileUrl } from './sentinel-core.js';
-import { overlayTileUrl, tileBounds, publicLandTileSources, mapOverlayCoverage } from './map-overlay-providers.js';
+import { overlayTileUrl, tileBounds, publicLandTileSources, mapOverlayCoverage } from './map-overlay-providers.ts';
 import { drawAlbertaLand } from './canadian-land.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';

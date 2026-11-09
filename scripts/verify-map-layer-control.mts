@@ -45,7 +45,7 @@ try {
     const bundle = await build({ stdin: { contents: `
         import {createMapLayerControl} from './src/maps/map-layer-control.js';
         import {settingsSchema as schema} from './src/settings/settings-schema.js';
-        import {publicLandInfo} from './src/maps/map-overlay-providers.js';
+        import {publicLandInfo} from './src/maps/map-overlay-providers.ts';
         import {snotelPopup,updateSnotelPopupAction} from './src/snow/snotel-map-marker.js';
         const state=schema.mapOverlayState({slope:{enabled:true,opacity:60}});
         const statuses={sentinel:{capture:'latest',message:'Coverage 100% · Clouds 3%',captures:[

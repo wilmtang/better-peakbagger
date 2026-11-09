@@ -9,7 +9,7 @@ import { createSentinelSession } from './sentinel-session.js';
 import { createSnowDepthMetadata, SNOW_DEPTH_LEGEND } from './snow-depth.js';
 import { WILDFIRE_LEGEND } from './wildfire-core.js';
 import { sentinelTarget } from './sentinel-core.js';
-import { OVERLAY_MIN_ZOOM, SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
+import { OVERLAY_MIN_ZOOM, SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.ts';
 import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns, readAttributionInset } from './map-layer-protocol.ts';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -53,7 +53,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
     let custom: ReturnType<typeof createCustomOverlayControl> | null = null, handoffActive = !secondary;
     let touched = false, preferencesReady = false, revision = 1, capture: unknown = null, landTypes = Schema.mapLandTypes();
     let binding: MapBinding | null = null, polling: number | null = null, frameMode = false, active = true, disposed = false;
-    let terrainView: TerrainView | null = null, snotelAllowed = false, requestId = 0, stations: { id: string }[] = [], coverage: Record<string, boolean> | null = null;
+    let terrainView: TerrainView | null = null, snotelAllowed = false, requestId = 0, stations: { id: string; latitude: number; longitude: number }[] = [], coverage: Record<string, boolean> | null = null;
     let stationTimer: number | null = null, relayFrame: number | null = null, relayed = '', terrainLaunching = false;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
     let revealPending = false, terrainMoving = false;
