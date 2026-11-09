@@ -505,6 +505,9 @@ attempt retains the 15-second deadline. Turning the layer off also cancels this
 wait. Raster success/failure feedback tracks retained tile coordinates, instead
 of preserving the first error for the renderer's entire lifetime. Browser HTTP
 caching remains responsible for reusing successful provider responses.
+Network failures raised by an embedded map window are recognized across
+JavaScript realms, so an iframe's native `TypeError` receives that same single
+retry. Cancellation and rate-limit errors still stop before another attempt.
 
 The provider request and legend share one color definition. Slope uses the
 USGS **Slope Degrees** template followed by explicit inclusive-lower,

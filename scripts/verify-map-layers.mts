@@ -149,7 +149,8 @@ try {
     resources.defer('held slope tiles', () => { slopeMode = 'ready'; heldSlope.splice(0).forEach(resolve => resolve()); });
     await context.route('https://elevation.nationalmap.gov/**', async route => {
         const url = route.request().url(), count = (slopeRequests.get(url) || 0) + 1; slopeRequests.set(url, count);
-        if (slopeMode === 'partial') missingSlopeUrl ??= url;
+        if (slopeMode === 'partial' || slopeMode === 'network-recover') missingSlopeUrl ??= url;
+        if (slopeMode === 'network-recover' && url === missingSlopeUrl && count === 1) return route.abort('failed');
         if (slopeMode === 'hold' && url === missingSlopeUrl) await new Promise(resolve => heldSlope.push(resolve as () => void));
         if (slopeMode === 'partial' && url === missingSlopeUrl || slopeMode === 'recover' && count === 1)
             return route.fulfill({ status: slopeMode === 'partial' ? 404 : 503, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'Unavailable' });
@@ -488,6 +489,18 @@ try {
     await wait(() => document.querySelector<PageElement>('[data-layer="slope"] .bpb-layers-value')?.hidden === false, 'temporary slope failures recover automatically');
     assert.ok([...slopeRequests.values()].some(count => count === 2), 'real transient requests were retried');
     assert.ok([...slopeRequests.values()].every(count => count <= 2), 'slope recovery stays bounded');
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
+    slopeMode = 'network-recover'; slopeRequests.clear(); missingSlopeUrl = null;
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
+    const networkRecovery = await waitForCondition(() => page.evaluate(() => {
+        const row = document.querySelector('[data-layer="slope"]');
+        return {ready:row?.querySelector<PageElement>('.bpb-layers-value')?.hidden === false,
+            status:row?.querySelector('.bpb-layers-row-status')?.textContent || ''};
+    }), {description:'embedded-map network failure reaches a visible slope result', isReady:value=>value.ready || /Partly loaded|Couldn.t load/.test(value.status)});
+    assert.equal(networkRecovery.ready,true,`embedded-map slope fetch recovers automatically; status=${networkRecovery.status}`);
+    assert.equal(slopeRequests.get(missingSlopeUrl),2,'retry the failed native iframe fetch once');
+    assert.ok([...slopeRequests.values()].every(count=>count<=2),'network recovery cannot loop');
+    cases.push('embedded-map native network rejection recovers automatically without partial slope feedback');
     await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
     slopeMode = 'partial'; slopeRequests.clear(); missingSlopeUrl = null;
     await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();

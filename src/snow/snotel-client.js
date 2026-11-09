@@ -4,7 +4,7 @@
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
-import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.js';
+import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.ts';
 import { validateSnotelStations, validateSnotelData } from './snotel-data.js';
 
 const BASE = 'https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/';

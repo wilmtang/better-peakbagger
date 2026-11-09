@@ -27,6 +27,10 @@
   category request that the provider rejected, leaving maps blank. Individual
   categories and right-click readings retain their selected-type filtering.
 
+- **Recover embedded-map slope tiles after a network failure.** Temporary
+  failures now receive the same bounded retry as other maps, while available
+  shading stays visible and persistent failures remain recoverable with Retry.
+
 - **See reported US wildfires.** Optional incident markers and mapped perimeters
   show separately dated NIFC/WFIGS source details, reported acreage and containment
   where available. These are reported fire records, not live safety boundaries.

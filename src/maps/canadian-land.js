@@ -3,7 +3,7 @@
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
-import { temporaryHttpStatus } from '../net/retry-transient.js';
+import { temporaryHttpStatus } from '../net/retry-transient.ts';
 import regionData from './canadian-land-regions.json' with { type: 'json' };
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 
