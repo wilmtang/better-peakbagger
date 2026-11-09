@@ -310,6 +310,9 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 | Public lands | 25% | USGS PAD-US 4.1 fee ownership, ParcelMap BC ownership records and southwestern Alberta regional parcels. BLM and Canadian provincial Crown land are gold; USFS is deep blue; other recorded ownership uses muted colors. Canadian coverage is partial. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
 | SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, frame the nearest station within 50 km once. Unobscured visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
 
+The slope legend lists each angle range beside a compact square swatch, using
+the same colors as the renderer. Its source and no-data caveats remain below.
+
 Public-land settings have individual checkboxes for the types available in the
 visible region. **All types** controls the visible categories, with a mixed state
 when some are selected; selections for other regions stay saved. **Only** beside

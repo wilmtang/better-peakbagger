@@ -31,6 +31,9 @@
   failures now receive the same bounded retry as other maps, while available
   shading stays visible and persistent failures remain recoverable with Retry.
 
+- **Read a more compact slope legend.** Small color swatches sit beside each
+  angle range, matching the public-land legend without changing the shading.
+
 - **See reported US wildfires.** Optional incident markers and mapped perimeters
   show separately dated NIFC/WFIGS source details, reported acreage and containment
   where available. These are reported fire records, not live safety boundaries.

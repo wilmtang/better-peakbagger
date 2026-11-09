@@ -15,6 +15,7 @@ import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs'
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { darkCss } from '../src/theme/site-dark-css.js';
+import { SLOPE_BANDS } from '../src/maps/map-overlay-providers.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
@@ -72,6 +73,63 @@ try {
     const page = await context.newPage(), errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     const origin = `https://www.peakbagger.com:${fixture.port}`;
+    const slopeLegendCases = [];
+    const slopeInfo = {
+        legendEntries: SLOPE_BANDS.map(band => ({label:band.to > 90 ? `≥${band.from}°` : `${band.from}–${band.to}°`,color:`rgb(${band.color.join(',')})`})),
+        legend: 'USGS 3DEP · Below 20° and no data are clear. Ground slope; resolution varies. Not an avalanche forecast.',
+    };
+    await page.route('**/slope-legend.aspx', route => route.fulfill({contentType:'text/html',body:'<!doctype html><style>body{margin:16px;font:14px system-ui}#map{height:420px;background:#c4cdc3}</style><h1>Dynamic Map</h1><div id="map"></div><h2>Following native content</h2>'}));
+    for (const width of [736,320]) for (const theme of ['light','dark']) for (const scale of [1,2]) {
+        await page.setViewportSize({width,height:900}); await page.emulateMedia({colorScheme:theme as 'light'|'dark'});
+        await page.goto(`${origin}/slope-legend.aspx`); await page.addStyleTag({content:css}); await page.addScriptTag({content:bundle.outputFiles[0].text});
+        await page.locator('.bpb-map-layers').evaluate((element,scale)=>{element.style.fontSize=`${13*scale}px`;},scale);
+        await page.evaluate(info=>{const fixture=(window as unknown as LayerHost).fixture;fixture.statuses.slope=info;fixture.paint();},slopeInfo);
+        await page.getByRole('button',{name:/^Overlays/}).press('Enter');
+        await page.locator('[data-layer="slope"] button').press('Enter');
+        const legend=page.locator('[data-overlay="slope"] .bpb-layers-legend'); await legend.scrollIntoViewIfNeeded();
+        const readings=await legend.locator('.bpb-layers-legend-item').evaluateAll(items=>items.map(item=>{
+            const swatch=item.querySelector('i')!,box=swatch.getBoundingClientRect();
+            const range=document.createRange();range.selectNodeContents(item.lastChild!);const label=range.getBoundingClientRect();
+            return {text:item.textContent,width:box.width,height:box.height,x:box.x,y:box.y,labelX:label.x,labelY:label.y,labelHeight:label.height,
+                decorative:swatch.getAttribute('aria-hidden'),color:getComputedStyle(swatch).backgroundColor,clipped:item.scrollWidth>item.clientWidth};
+        }));
+        assert.equal(readings.length,5,'every renderer band has a visible legend row');
+        for(const [index,reading] of readings.entries()) {
+            assert.ok(reading.width<=12&&reading.height<=12,`slope legend uses compact square swatches: ${JSON.stringify(reading)}`);
+            assert.equal(reading.width,reading.height);assert.equal(reading.x,readings[0].x,'all range labels use one column');
+            assert.ok(reading.labelX>=reading.x+reading.width+4,'range label sits beside its swatch');
+            assert.ok(Math.abs(reading.y+reading.height/2-reading.labelY-reading.labelHeight/2)<=3,'swatch aligns with its label');
+            assert.equal(reading.text,slopeInfo.legendEntries[index].label);assert.equal(reading.decorative,'true');assert.equal(reading.clipped,false);
+            assert.deepEqual(reading.color.match(/\d+/g)?.map(Number),SLOPE_BANDS[index].color,'swatches match the renderer');
+        }
+        const surroundings=()=>page.evaluate(()=>['h1','#map','h2','.bpb-layers-trigger'].map(selector=>{
+            const box=document.querySelector(selector)!.getBoundingClientRect();return [box.x+scrollX,box.y+scrollY,box.width,box.height];
+        }));
+        const anchored=await surroundings();
+        for(const status of [{pending:true,message:'Loading slope shading…'},{error:true,partial:true,retry:true,message:'Some slope tiles couldn’t load. Available shading is still shown.'}]) {
+            await page.evaluate(({info,status})=>{const fixture=(window as unknown as LayerHost).fixture;fixture.statuses.slope={...info,...status};fixture.paint();},{info:slopeInfo,status});
+            assert.deepEqual(await surroundings(),anchored,'slope feedback preserves the map, heading, following content and trigger');
+            assert.equal(await legend.locator('.bpb-layers-legend-item').count(),5,'provider updates retain the legend');
+        }
+        const retry=page.locator('[data-overlay="slope"] .bpb-layers-retry');assert.equal(await retry.textContent(),'Retry');await retry.scrollIntoViewIfNeeded();await retry.focus();
+        const recoveryGeometry=()=>page.evaluate(()=>{
+            const rect=(element:Element)=>{const box=element.getBoundingClientRect();return [box.x,box.y,box.width,box.height];};
+            const panel=document.querySelector('.bpb-layers-panel')!;
+            return {button:rect(document.querySelector('[data-overlay="slope"] .bpb-layers-retry')!),legend:rect(document.querySelector('[data-overlay="slope"] .bpb-layers-legend')!),
+                panel:rect(panel),scroll:[scrollX,scrollY,panel.scrollTop]};
+        });
+        const before=await recoveryGeometry();
+        await retry.press('Enter');assert.equal(await retry.getAttribute('aria-disabled'),'true');
+        assert.deepEqual(await recoveryGeometry(),before,'pending retry keeps the legend and pointer target anchored');
+        await retry.press('Space');assert.equal(await page.evaluate(()=>(window as unknown as LayerHost).fixture.retryRequests),1,'busy legend recovery rejects repeated activation');
+        await page.evaluate(info=>{const fixture=(window as unknown as LayerHost).fixture;fixture.statuses.slope={...info,retry:true};fixture.paint();},slopeInfo);
+        assert.deepEqual(await recoveryGeometry(),before,'successful retry keeps the legend and reading position anchored');
+        assert.equal(await retry.evaluate(element=>element===document.activeElement),true);
+        assert.equal(await legend.evaluate(element=>element.scrollWidth<=element.clientWidth),true,'legend has no horizontal overflow');
+        if(screenshots){await mkdir(screenshots,{recursive:true});await page.screenshot({path:path.join(screenshots,`slope-${width}-${theme}-${scale}x.png`)});}
+        slopeLegendCases.push({width,theme,textScale:scale,bands:readings.length,anchored:true});
+    }
+    assert.equal(slopeLegendCases.length,8,'all slope legend selections executed');
     // Match the live native selector's white, black-bordered surround. The
     // full site sheet belongs only to the parent; its scoped map sheet must
     // reach this iframe without recoloring the map underneath the control.
@@ -543,7 +601,7 @@ try {
     }
     assert.equal(errors.length, 0, errors.join('\n'));
     assert.equal(cases.length, 8, 'all component selections executed');
-    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser()!.version(), hidden: true, nativeThemeCases, scrollCases, cases };
+    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser()!.version(), hidden: true, nativeThemeCases, slopeLegendCases, scrollCases, cases };
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError as null);
 console.log(JSON.stringify({ ...(summary as object), teardown: 'passed' }));

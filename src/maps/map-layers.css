@@ -217,6 +217,11 @@ html:is([data-bpb-theme="dark"], [data-theme="dark"]) #bpb-peak-weather-menu:foc
 /* NOAA's padded legend icons need their solid center to fill the square. */
 .bpb-layers-detail[data-overlay='snow'] .bpb-layers-legend-item i { width: 18px; height: 18px; flex: 0 0 18px; border-color: var(--bpb-layer-border); background-size: 200% 200%; background-position: center; background-repeat: no-repeat; }
 
+/* Short angle ranges use the same compact swatch treatment as land types. */
+.bpb-layers-detail[data-overlay='slope'] .bpb-layers-legend { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.bpb-layers-detail[data-overlay='slope'] .bpb-layers-legend-item { flex-direction: row; align-items: center; gap: 7px; white-space: nowrap; }
+.bpb-layers-detail[data-overlay='slope'] .bpb-layers-legend-item i { width: 9px; height: 9px; flex: 0 0 9px; border-color: var(--bpb-layer-border); }
+
 .bpb-layers-legend-caption, .bpb-layers-legend > a { grid-column: 1 / -1; }
 #bpb-peak-weather-menu .bpb-map-location-layers { margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid #8895a333; }
 #bpb-peak-weather-menu .bpb-map-location-layer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12px; }
