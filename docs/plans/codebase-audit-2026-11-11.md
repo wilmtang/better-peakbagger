@@ -336,8 +336,8 @@ bundle — the largest file, with the weakest proof — in any browser.
 **Direction and acceptance.** Add completed-download assertions for the settings
 export in Firefox and for a project bundle of at least 20 MB in both browsers.
 Independently of the outcome, route all three through one helper: move
-`downloadBlob` and its lifetime constant to a UI-neutral module (for example
-`src/ui/download.ts`) rather than importing a photo module into Settings, and
+`downloadBlob` and its lifetime constant to a new UI-neutral module under
+`src/ui/` rather than importing a photo module into Settings, and
 delete the local copies, following the TypeScript-on-modification policy for
 the touched `.js` files. Record the result as a bug fix only if a failure
 reproduces; otherwise as consolidation of four copies of one browser
