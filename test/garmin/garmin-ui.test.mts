@@ -318,6 +318,9 @@ test('Dismissing from a full inbox still confirms the dismissal with Undo', asyn
         assert.equal(h.d.querySelector('#inbox-undo').hidden, false);
         await h.refresh();
         assert.equal(h.d.querySelector('#inbox-undo').hidden, false, 'polling with the same error keeps the notice');
+        h.state.error = null; await h.refresh();
+        assert.equal(h.d.querySelector('#inbox-undo').hidden, false, 'the earlier error clearing does not retire the notice');
+        assert.equal(h.d.querySelector('#inbox-status').textContent, 'Hike · 2026-10-23 dismissed.');
     } finally { h.dom.window.close(); }
 });
 test('An expired dismissal Undo leaves the status row and returns focus to Check now', async () => {

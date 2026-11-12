@@ -14,7 +14,7 @@ interface InboxReceipt { id: string; complete?: boolean; dismissed?: boolean; da
 interface InboxStatus {
     ok: true; featureEnabled?: boolean; configured?: boolean; enabled?: boolean; manual?: boolean; checking?: boolean;
     cid?: string | null; queued?: number; lastCheck?: number; historyIncomplete?: boolean;
-    error?: { code?: string; message?: string } | null; peakbaggerBlocked?: { code: string } | null;
+    error?: { code?: string; message?: string; storage?: boolean } | null; peakbaggerBlocked?: { code: string } | null;
     items: InboxItem[]; history?: InboxReceipt[];
 }
 interface InboxPreferences { enableGarminInbox: boolean; removeGpxTimestamps?: boolean }
@@ -50,7 +50,7 @@ function updateReviewControls() {
     $('#inbox-open').setAttribute('aria-disabled', String(busy || !live || updated || !review.analysis));
     $('#inbox-refresh span').textContent = updated ? 'Review updated matches' : 'Refresh from Garmin';
     // A full inbox cannot store a refreshed route; Refresh would do nothing.
-    $('#inbox-refresh').setAttribute('aria-disabled', String(busy || !live || handoff || (!updated && (!current.configured || ['key-rejected', 'permission', 'capacity'].includes(current.error?.code as string)))));
+    $('#inbox-refresh').setAttribute('aria-disabled', String(busy || !live || handoff || (!updated && (!current.configured || !!current.error?.storage || ['key-rejected', 'permission'].includes(current.error?.code as string)))));
     $('#inbox-dismiss').setAttribute('aria-disabled', String(busy || !live || handoff));
     $('#inbox-done').setAttribute('aria-disabled', String(busy || !live));
     $('#inbox-saved').hidden = !handoff || !positiveId(current.cid);
@@ -177,7 +177,7 @@ async function refresh(initial = false) {
     // A Garmin error that arrives after the dismissal outranks the notice; that
     // dismissal stays undoable from history. An error already showing (a full
     // inbox, say) must not hide the confirmation of the Dismiss that answers it.
-    if (dismissal && (errorSignature() !== dismissal.error || !history.some(receipt => receipt.id === dismissal!.id && receipt.dismissed && receipt.undoAvailable))) dismissal = null;
+    if (dismissal && ((current.error && errorSignature() !== dismissal.error) || !history.some(receipt => receipt.id === dismissal!.id && receipt.dismissed && receipt.undoAvailable))) dismissal = null;
     const statusUndo = $('#inbox-undo');
     if (!dismissal && !statusUndo.hidden && statusUndo.getAttribute('aria-busy') !== 'true') removeControl(statusUndo);
     if (dismissal) statusUndo.hidden = false;

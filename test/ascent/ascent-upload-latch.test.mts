@@ -106,3 +106,21 @@ test('the summit card Cancel during a re-preparation leaves Save and the file in
         assert.equal(waiting, 'true', 'card actions wait for the re-preparation');
     } finally { dom.window.close(); }
 });
+
+test('a page suspend during a preparation still releases its latch when it settles', async () => {
+    const dom = await loadEditor({ phase: 'no-matches' });
+    try {
+        const input = await chooseGpx(dom);
+        dom.holdNextPreparation();
+        toggleTimestamps(dom);
+        await waitFor(dom, () => input.disabled);
+        // A persisted pagehide suspends without starting another preparation.
+        const hide = new dom.window.Event('pagehide');
+        Object.defineProperty(hide, 'persisted', { value: true });
+        dom.window.dispatchEvent(hide);
+        await settle(dom);
+        dom.release();
+        await waitFor(dom, () => !input.disabled);
+        assert.equal(saveReachesForm(dom), true);
+    } finally { dom.window.close(); }
+});
