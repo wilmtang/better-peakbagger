@@ -170,7 +170,8 @@ async function refresh(initial = false) {
         row.querySelector('p')!.textContent = `${receipt.date ? `${receipt.date} · ` : ''}${receipt.dismissed ? 'Dismissed' : receipt.complete ? 'Completed' : 'Draft review in progress'}`;
     }
     for (const row of document.querySelectorAll('#inbox-history-list>div')) if (!history.some(receipt => row.id === `history-${receipt.id}`)) row.remove();
-    if (dismissal && !history.some(receipt => receipt.id === dismissal!.id && receipt.dismissed && receipt.undoAvailable)) dismissal = null;
+    // A Garmin error outranks the notice; that dismissal stays undoable from history.
+    if (dismissal && (current.error || !history.some(receipt => receipt.id === dismissal!.id && receipt.dismissed && receipt.undoAvailable))) dismissal = null;
     const statusUndo = $('#inbox-undo');
     if (!dismissal && !statusUndo.hidden && statusUndo.getAttribute('aria-busy') !== 'true') removeControl(statusUndo);
     if (dismissal) statusUndo.hidden = false;
@@ -190,7 +191,10 @@ async function refresh(initial = false) {
     $('#inbox-check').setAttribute('aria-disabled', String(current.checking || !current.enabled || ['key-rejected', 'permission'].includes(current.error?.code as string)));
     paintList();
 }
-$('#inbox-check').addEventListener('click', () => void busyAction($('#inbox-check'), $('#inbox-status'), async () => { await send({ type: 'GARMIN_CHECK' }); await refresh(); }));
+// Check now takes over the status line, so it retires the dismissal notice.
+$('#inbox-check').addEventListener('click', () => void busyAction($('#inbox-check'), $('#inbox-status'), async () => {
+    dismissal = null; await send({ type: 'GARMIN_CHECK' }); await refresh();
+}));
 $('#inbox-undo').addEventListener('click', () => { if (dismissal) void undoDismissal($('#inbox-undo'), dismissal.id); });
 $('#inbox-new').addEventListener('click', () => { accepted = new Set(items.keys()); $('#inbox-new').hidden = true; paintList(); });
 $('#inbox-back').addEventListener('click', () => { const id = review?.id; review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false;

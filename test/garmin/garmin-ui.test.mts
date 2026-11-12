@@ -270,6 +270,20 @@ test('Dismiss is confirmed in the list status with an Undo that outlasts polling
         assert.equal(h.d.activeElement.id, 'inbox-check', 'focus stays beside the status line');
     } finally { h.dom.window.close(); }
 });
+test('A Garmin error or Check now replaces the dismissal notice; history keeps the Undo', async () => {
+    for (const trigger of ['error', 'check']) {
+        const h = await auditInbox();
+        try {
+            await dismissFromReview(h);
+            if (trigger === 'error') { h.state.error = { code: 'key-rejected', message: 'Garmin needs a new API key.' }; await h.refresh(); }
+            else { h.d.querySelector('#inbox-check').click(); await tick(); }
+            assert.doesNotMatch(h.d.querySelector('#inbox-status').textContent, /dismissed/, trigger);
+            if (trigger === 'error') assert.equal(h.d.querySelector('#inbox-status').textContent, 'Garmin needs a new API key.');
+            assert.equal(h.d.querySelector('#inbox-undo').hidden, true, trigger);
+            assert(h.d.querySelector('#history-123 button'), `${trigger}: the dismissal stays undoable from history`);
+        } finally { h.dom.window.close(); }
+    }
+});
 test('An expired dismissal Undo leaves the status row and returns focus to Check now', async () => {
     const h = await auditInbox();
     try {

@@ -361,6 +361,9 @@ try {
             // from the idle list through dismissed and undone, at 100% and 200%.
             // Dismiss is activated in-page so the tool does not scroll to it.
             const dismissSelectors = ['.garmin-heading', '#inbox-check', '.garmin-feedback'];
+            // A Garmin error outranks the dismissal notice; check the notice without one.
+            await page.evaluate(() => { window.fixture.state.error = null; });
+            await page.locator('#inbox-update-key').waitFor({ state: 'hidden' });
             for (const zoom of [1, 2]) {
                 await page.evaluate(value => { document.documentElement.style.zoom = String(value); scrollTo(0, 0); }, zoom);
                 if (await page.locator('#inbox-review').isVisible()) await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-back')!.click());
