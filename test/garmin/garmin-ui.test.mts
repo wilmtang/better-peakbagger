@@ -308,6 +308,18 @@ test('A Garmin error or Check now replaces the dismissal notice; history keeps t
         } finally { h.dom.window.close(); }
     }
 });
+test('Dismissing from a full inbox still confirms the dismissal with Undo', async () => {
+    const full = { code: 'capacity', message: 'Your activity inbox is full. Review or remove activities to make room.' };
+    const h = await auditInbox({ error: full });
+    try {
+        assert.equal(h.d.querySelector('#inbox-status').textContent, full.message);
+        await dismissFromReview(h);
+        assert.equal(h.d.querySelector('#inbox-status').textContent, 'Hike · 2026-10-23 dismissed.', 'an error already showing does not hide the confirmation');
+        assert.equal(h.d.querySelector('#inbox-undo').hidden, false);
+        await h.refresh();
+        assert.equal(h.d.querySelector('#inbox-undo').hidden, false, 'polling with the same error keeps the notice');
+    } finally { h.dom.window.close(); }
+});
 test('An expired dismissal Undo leaves the status row and returns focus to Check now', async () => {
     const h = await auditInbox();
     try {

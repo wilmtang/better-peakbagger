@@ -210,6 +210,10 @@ export async function initGarminSettings(root: HTMLElement | null) {
         $('#garmin-delete-confirm').focus();
     });
     $('#garmin-delete-cancel').addEventListener('click', () => hideDeleteConfirmation());
+    // Collapsing Connection details must not leave a hidden, still-armed question.
+    $('#garmin-delete').closest('details')!.addEventListener('toggle', event => {
+        if (!(event.currentTarget as HTMLDetailsElement).open) hideDeleteConfirmation(false);
+    });
     $('#garmin-delete-confirmation').addEventListener('keydown', event => {
         if (event.key !== 'Escape') return; event.preventDefault(); hideDeleteConfirmation();
     });

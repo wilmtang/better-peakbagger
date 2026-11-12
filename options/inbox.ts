@@ -33,7 +33,8 @@ let statusError = false, preferences: InboxPreferences | null = null, reviewStat
 // The latest dismissal, stated in the list's status row with its Undo while the
 // worker still offers one. A newer dismissal replaces it; an earlier one stays
 // undoable from history until it expires.
-let dismissal: { id: string; text: string } | null = null;
+let dismissal: { id: string; text: string; error: string } | null = null;
+const errorSignature = () => JSON.stringify([current?.error?.code || null, current?.error?.message || null]);
 const activityName = (item: InboxItem) => `${garminActivityLabel(item.summary.type)} · ${item.summary.date}`;
 const reviewMessage = (item: InboxItem) => item.handoff ? 'Draft forms were opened. Review their saved state before continuing.'
     : item.analysis ? 'Strong matches are selected. Review any Probable matches before opening drafts.'
@@ -48,7 +49,8 @@ function updateReviewControls() {
     const handoff = !!live?.handoff;
     $('#inbox-open').setAttribute('aria-disabled', String(busy || !live || updated || !review.analysis));
     $('#inbox-refresh span').textContent = updated ? 'Review updated matches' : 'Refresh from Garmin';
-    $('#inbox-refresh').setAttribute('aria-disabled', String(busy || !live || handoff || (!updated && (!current.configured || ['key-rejected', 'permission'].includes(current.error?.code as string)))));
+    // A full inbox cannot store a refreshed route; Refresh would do nothing.
+    $('#inbox-refresh').setAttribute('aria-disabled', String(busy || !live || handoff || (!updated && (!current.configured || ['key-rejected', 'permission', 'capacity'].includes(current.error?.code as string)))));
     $('#inbox-dismiss').setAttribute('aria-disabled', String(busy || !live || handoff));
     $('#inbox-done').setAttribute('aria-disabled', String(busy || !live));
     $('#inbox-saved').hidden = !handoff || !positiveId(current.cid);
@@ -172,8 +174,10 @@ async function refresh(initial = false) {
         row.querySelector('p')!.textContent = `${receipt.date ? `${receipt.date} · ` : ''}${receipt.dismissed ? 'Dismissed' : receipt.complete ? 'Completed' : 'Draft review in progress'}`;
     }
     for (const row of document.querySelectorAll('#inbox-history-list>div')) if (!history.some(receipt => row.id === `history-${receipt.id}`)) row.remove();
-    // A Garmin error outranks the notice; that dismissal stays undoable from history.
-    if (dismissal && (current.error || !history.some(receipt => receipt.id === dismissal!.id && receipt.dismissed && receipt.undoAvailable))) dismissal = null;
+    // A Garmin error that arrives after the dismissal outranks the notice; that
+    // dismissal stays undoable from history. An error already showing (a full
+    // inbox, say) must not hide the confirmation of the Dismiss that answers it.
+    if (dismissal && (errorSignature() !== dismissal.error || !history.some(receipt => receipt.id === dismissal!.id && receipt.dismissed && receipt.undoAvailable))) dismissal = null;
     const statusUndo = $('#inbox-undo');
     if (!dismissal && !statusUndo.hidden && statusUndo.getAttribute('aria-busy') !== 'true') removeControl(statusUndo);
     if (dismissal) statusUndo.hidden = false;
@@ -235,7 +239,7 @@ for (const [selector, type] of [['#inbox-dismiss', 'GARMIN_DISMISS'], ['#inbox-d
     void busyAction($(selector), $('#inbox-review-status'), async () => {
         const target = review!;
         await send({ type, id: target.id });
-        if (type === 'GARMIN_DISMISS') { dismissal = { id: target.id, text: `${activityName(target)} dismissed.` }; statusError = false; }
+        if (type === 'GARMIN_DISMISS') { dismissal = { id: target.id, text: `${activityName(target)} dismissed.`, error: errorSignature() }; statusError = false; }
         const focused = document.activeElement, restoreFocus = $('#inbox-review').contains(focused);
         hideDoneConfirmation(false);
         review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false; await refresh();
