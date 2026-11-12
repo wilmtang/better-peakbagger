@@ -20,10 +20,10 @@ type EditorDom = PageDom & { holdNextPreparation: () => void; release: () => voi
 
 // Every GPX_PROCESS_INVALIDATE answers at once, except the one a test chose
 // to hold: that is the re-preparation in flight.
-const loadEditor = async (startReply: Record<string, unknown>) => {
+const loadEditor = async (startReply: Record<string, unknown>, settings: Record<string, unknown> = { removeGpxTimestamps: true }) => {
     let hold = false; let releaseHeld: (() => void) | null = null;
     const dom = await (loadPage as (fixture: string, options: Record<string, unknown>) => Promise<EditorDom>)('climber-ascentedit.html', {
-        url: URL, settings: { removeGpxTimestamps: true }, bundles: ['vendor/marked.umd.js', 'content/ascent-editor.js'], fixtures: PAGE_FIXTURES,
+        url: URL, settings, bundles: ['vendor/marked.umd.js', 'content/ascent-editor.js'], fixtures: PAGE_FIXTURES,
         prepare: (d: EditorDom) => {
             class DataTransferMock { files: File[] = []; items = { add: (file: File) => this.files.push(file) }; }
             (d.window as unknown as { DataTransfer: unknown }).DataTransfer = DataTransferMock;
@@ -122,5 +122,19 @@ test('a page suspend during a preparation still releases its latch when it settl
         dom.release();
         await waitFor(dom, () => !input.disabled);
         assert.equal(saveReachesForm(dom), true);
+    } finally { dom.window.close(); }
+});
+
+test('turning timestamp removal on re-prepares a chosen file before Save can send it', async () => {
+    const dom = await loadEditor({ phase: 'no-matches' }, { removeGpxTimestamps: false });
+    const attachedText = () => (dom.window.document.getElementById('GPXUpload') as HTMLInputElement).files![0].text();
+    try {
+        await chooseGpx(dom);
+        await settle(dom);
+        assert.match(await attachedText(), /<time>/, 'removal is off: the original is attached');
+        await dom.chrome.storage.sync.set({ bpbSettings: { removeGpxTimestamps: true } });
+        const deadline = Date.now() + 3000;
+        while (/<time>/.test(await attachedText()) && Date.now() < deadline) await settle(dom);
+        assert.doesNotMatch(await attachedText(), /<time>/, 'the native field no longer holds recorded times');
     } finally { dom.window.close(); }
 });

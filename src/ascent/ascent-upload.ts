@@ -932,6 +932,17 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
             includeTimestamps.setAttribute('aria-disabled', 'false');
             restoreNative();
         });
+        // Turning timestamp removal on while a file is chosen re-prepares it, so
+        // the native field never keeps a timed original for Save or Attach GPX.
+        let removeTimestamps: boolean | null = null;
+        const unsubscribeSettings = Settings.subscribe((settings: { removeGpxTimestamps?: boolean }) => {
+            const turnedOn = settings.removeGpxTimestamps === true && removeTimestamps === false;
+            removeTimestamps = settings.removeGpxTimestamps === true;
+            if (turnedOn && timestampSourceFile && nativeGpxFile()) void handleFileChange(timestampSourceFile);
+        });
+        void Settings.requireCurrent().then(settings => {
+            removeTimestamps ??= settings.removeGpxTimestamps === true;
+        }).catch(() => {});
         PageLifecycle.create({
             onSuspend: () => {
                 requestToken++;
@@ -951,6 +962,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
                 else restoreNative();
             },
             onDispose: () => {
+                unsubscribeSettings();
                 resetDropCue();
                 restoreNative({ reason: 'page-lifecycle' });
             },

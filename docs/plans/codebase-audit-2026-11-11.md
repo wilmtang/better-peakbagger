@@ -548,7 +548,7 @@ included a live Garmin, Strava or Peakbagger account.
 | F9 unsaved Garmin capture lockout | `765d4206`, `05d4eab0` | Owner chose: with the inbox off, import history is not consulted; with it on, a new capture takes over a toolbar receipt with no saved peak. Unit tests fail on the old code and pass. Review found that a second tab could then open a duplicate set of drafts; that opening is now refused, and peaks a taken-over receipt already saved are not offered again. |
 | F13 cleanup alarm restart | `481f466e`, `05d4eab0` | Test boots the built worker three times against one alarm store: three creations before, one after. |
 | F15 bare host | `3cfac011`, `05d4eab0` | Read-only browser check on November 12: `peakbagger.com` serves pages without redirecting. Local GPX processing now refuses a bare-host form up front, naming www, without offering a retry; the built-worker test fails on the old bundle and passes. |
-| F16 timestamp removal and earlier captures | `4f1a6338` | Owner chose the stricter reading. Turning timestamp removal on stops reuse of a capture made while it was off, and its timed GPX is not delivered to a draft (save verification still reads it). Unit tests of the reuse and delivery rules; PRIVACY.md states the behaviour. No worker-level test. |
+| F16 timestamp removal and earlier captures | `4f1a6338` | Owner chose the stricter reading. Turning timestamp removal on stops reuse of a capture made while it was off, and its timed GPX is not delivered to a draft (save verification still reads it). Unit tests of the reuse and delivery rules. Review found that a GPX already chosen on an ascent form kept its timed original; the form now re-prepares it when removal turns on (bundle test fails before, passes after), and refusal copy names the right recovery for local files and inbox drafts. No worker-level test. |
 | F17 Garmin binding | `fa905588` | Sleeping tabs are skipped and the active tab is tried first. |
 
 The worker fixes required converting the background worker (now `src/background/background.ts`) to
@@ -572,6 +572,10 @@ and `npm run verify -- chrome` passed.
   shows it is a fail-closed login check between route downloads, not waste.
 - F15's other half: the Garmin resume-on-visit still ignores bare-host tabs, and
   local GPX processing is refused there rather than made to work on two origins.
+- F16 limit: a draft filled before timestamp removal was turned on keeps the
+  timed GPX it was given; its Preview and Save run in the page and are not
+  re-checked (PRIVACY.md says so). The window is short because filling and
+  GPS Preview are one transaction.
 - From the last review, accepted as narrow: two tabs pressing Open drafts for
   one Garmin activity at the same moment may both be refused (it fails closed;
   trying again works); and after a partial Save with the inbox off, the

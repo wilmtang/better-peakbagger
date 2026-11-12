@@ -3353,7 +3353,13 @@ type DraftMap = Record<string, DraftRecord>;
             return { action: 'wait', peakName, message: 'Save the previous ascent to prepare this summit with its GPX and trip.' };
         }
 
-        if (await timestampsTurnedOn(job)) return { action: 'error', message: TIMESTAMPS_TURNED_ON_MESSAGE };
+        if (await timestampsTurnedOn(job)) {
+            return { action: 'error', message: job.provider === 'upload'
+                ? 'Remove GPX timestamps was turned on after this file was processed. Process it again.'
+                : job.inboxActivityId
+                    ? 'Remove GPX timestamps was turned on after these drafts were prepared. Close them and open the activity from the inbox again.'
+                    : TIMESTAMPS_TURNED_ON_MESSAGE };
+        }
         const uploadGpx = await readCapturePayload(job);
         if (!uploadGpx) {
             await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, {
