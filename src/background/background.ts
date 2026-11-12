@@ -4288,7 +4288,12 @@ type DraftMap = Record<string, DraftRecord>;
     });
 
     if (ext.alarms) {
-        ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
+        // Creating a same-named alarm replaces it and restarts its period, and
+        // this runs on every worker start; keep an existing five-minute alarm.
+        const armCleanup = () => ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
+        void Promise.resolve(typeof ext.alarms.get === 'function' ? ext.alarms.get(CLEANUP_ALARM) : undefined)
+            .then(existing => { if (existing?.periodInMinutes !== 5) return armCleanup(); })
+            .catch(armCleanup);
         ext.alarms.onAlarm.addListener(alarm => {
             if (alarm.name === GARMIN_ALARM) { void garminImports.check(false, true); return; }
             if (alarm.name === CLEANUP_ALARM) {
