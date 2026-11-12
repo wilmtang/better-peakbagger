@@ -526,34 +526,69 @@ follow step 6; the rest are independent of one another.
 
 ## Closure ledger
 
-To be filled during remediation; keep all three categories.
+Remediation began November 11 on `main`. Each fix was reviewed by the same
+independent reviewer as the plan, in three batches; its corrections are
+separate commits. "Verified" here means the stated checks, which never
+included a live Garmin, Strava or Peakbagger account.
 
 ### Fixed and verified
 
-None yet.
+| Item | Commits | Evidence |
+| --- | --- | --- |
+| F10 storage-limit retry loop | `0bbde541`, `3efe6028` | Unit test fails on the old code (5 downloads in 4 alarm periods) and passes; review added: the storage error survives discovery passes and is released only by an actual removal. |
+| F11 repeated Dismiss | `c24d56a5`, `3efe6028` | Unit tests fail on the old code and pass. Review corrected the first fix: stranded items (whose receipt Undo had deleted) are now restored, not dropped. |
+| F12 long provider error page | `79fe003c` | Eight bundle tests (six long pages, two empty bodies) fail on the old bundle and pass. |
+| F3 + F4 dismissal feedback and history | `77a3d485`, `61fa8a7a`, `decca1c5`, `f8b468fb` | jsdom tests; history-selection unit tests fail on the old worker; `npm run verify -- garmin` in hidden Chromium 156 and Firefox 157 checks idle list → dismissed → undone at 1180 and 390 px, light and dark, 100% and 200% CSS zoom, with screenshots inspected. Review caught a regression in `61fa8a7a` (an error already showing hid the notice) and an over-correction in `decca1c5` (an earlier error clearing hid it); both fixed with failing-first tests. |
+| F8 popup selection echo | `ba01d00a` | Popup test fails on the old bundle and passes. |
+| F7 confidence formatting | `4fa35216` | Helper unit test; popup and inbox tests. |
+| F6a Settings summary poll | `840eab57` | Settings regressions drive `GARMIN_SUMMARY` through the real handler. |
+| F5 steps 1–2 native dialogs | `33c88c73`, `9bb8572c`, `decca1c5` | jsdom tests assert no native dialog; the Garmin questions were opened by keyboard and closed with Escape in hidden Chromium and Firefox at 1180 and 390 px. |
+| F14 preparation latch | `2cef0a16`, `de6f96e1`, `f8b468fb` | Bundle tests for toggle → Attach GPX, toggle → card Cancel and a page suspend during preparation time out on the stuck latch with the earlier code and pass; the suspend case is the one that proves the preparation-owned release. |
+
+Supporting commits: `687817f7` repaired a document link the plan itself broke;
+`2cef0a16` is the conversion F14 required. It is type-only except two noted
+by review: the Remove control is no longer appended when absent (previously a
+literal "null" text node), and the summit card's primary pick prefers a scored
+match over an unscored one, which has no practical effect.
+
+Full `npm test` after the last fix: 4,164 of 4,164 passed; `npm run lint`
+passed.
 
 ### Intentionally not changed
 
-None yet. Candidates stated above: `ascent-delete.js` native dialogs (F5),
-receipt pruning (F4), and F6b or the later F1 steps if the browser measurement
-does not justify them.
+- F5 step 3, `src/ascent/ascent-delete.js` dialogs: an in-page replacement on
+  Peakbagger's own page carries more layout and focus risk than it removes.
+- F4 receipt pruning: receipts are the de-duplication record and are tiny.
+- From review, accepted as narrow: hitting the 200-item and 20 MiB limits at
+  once can replace the storage flag with a plain capacity error, costing one
+  wasted preparation per manual check; and the delete question's count can
+  change while it is open (it stays accurate).
 
 ### Changed but not fully proven
 
-None yet. Proof limits to carry forward:
+- F5 questions and the F3 notice were not checked at 200% zoom in a real
+  browser for the expired-Undo and Undo-failure states (jsdom only); the
+  Garmin questions were not checked at 200% at all.
+- F12 and F14 have no real-browser run. F10 and F11 are unit-tested only.
+- F5 step 1 (photo editor) was not checked in a real browser.
 
-- F9 was reproduced by the reviewer on the built worker, not rerun by the
-  author; its expiry variant is from reading only.
-- F10 and F11 are simulations with production modules, not browser runs.
-- F1 timings are from `fake-indexeddb`.
-- F2 is not reproduced.
-- F3 and F5 are derived from code without a rendered check.
-- F12: the reader's throw was reproduced in Node; its mapping to the wrong
-  message is from reading. F13 rests on documented alarm semantics, not a run.
-  F14–F18 are from reading only; F15, F17 and F18 each name the check that
-  would confirm or retire them.
-- No live Garmin, Strava or Peakbagger account was used, and `npm test` was not
-  run.
+### Not started, and why
+
+- **F9, F13, F15, F16, F17 — owner decision.** Each needs a non-mechanical
+  change to `src/background/background.js`. The TypeScript-on-modification
+  policy would then require converting that 4,169-line worker in the same
+  change, which is its own project (M7 step 5 in the adoption plan). Options:
+  convert the worker first, or approve a narrow documented policy exception.
+  F9 also needs the decision on consulting import history with the inbox off;
+  F16 needs the stricter-privacy decision; F15 needs one read-only live check.
+- **F1, then F6b — gated** on the real-browser IndexedDB timing in step 6.
+- **F2 — gated** on new completed-download assertions (Firefox settings export;
+  a ≥20 MB project bundle in both browsers).
+- **F18 — gated** on a hidden-tab fill measurement.
+
+Earlier proof limits still apply: F9 was reproduced by the reviewer only; F1
+timings are from `fake-indexeddb`; F2 is not reproduced; F13 rests on
+documented alarm semantics.
 
 ## Addendum — full read of the capture path
 
@@ -844,3 +879,12 @@ scope statement; F18's uncited count replaced with call sites; and the proof
 limits above. The reviewer spot-checked two of the "found sound" bullets
 (`mapWithConcurrency` and the F9 widening) and did not re-read the full file
 set. The author and reviewer agree on the document as it stands.
+
+**Rounds 4–6 (remediation).** The same reviewer read each batch of fix commits.
+Batch 1 had no blocking objections; its corrections (F11 restore instead of
+drop, F10 storage error kept through discovery, the notice outranking errors,
+the ledger) became `3efe6028`, `61fa8a7a` and this ledger. Batch 2 found one
+blocking regression in `61fa8a7a`, fixed in `decca1c5` with a failing-first
+test, plus non-blocking items taken there. Batch 3 had no blocking objections;
+its three corrections are `f8b468fb`. The reviewer agreed each batch as it
+stands after those commits.
