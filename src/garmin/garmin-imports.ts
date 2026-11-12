@@ -188,10 +188,22 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
     // Dismiss) counts as expired, so it cannot stay hidden in the inbox forever.
     const undoExpired = (item: GarminItem) => item.phase === 'dismissed' && !((item.undoUntil as number) > clock());
     const pruneDismissed = (state: GarminState) => {
+        let removed = false;
         for (const [id, item] of Object.entries(state.items)) {
-            if (undoExpired(item)) delete state.items[id];
+            if (!undoExpired(item)) continue;
+            // An item stranded by the old repeated-Dismiss bug was last acted on
+            // by Undo, which deleted its dismissal receipt. Restore it rather than
+            // dropping it, which would re-import and re-analyze it later.
+            if (!Number.isFinite(item.undoUntil) && !state.receipts[id]?.dismissed) {
+                item.revision = (item.revision || 0) + 1;
+                item.phase = item.analysis ? 'ready' : 'waiting';
+                if (item.phase === 'waiting') state.preparePending = true;
+                delete item.undoUntil; delete item.previousPhase;
+                continue;
+            }
+            delete state.items[id]; removed = true;
         }
-        releaseCapacity(state);
+        if (removed) releaseCapacity(state);
     };
     // Publish the newest 200 receipts by write time, not by object key order:
     // integer-like activity IDs would otherwise always sort small IDs first.
@@ -265,7 +277,8 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                     if (Object.keys(current.items).length >= 200) throw new GarminError('capacity');
                     current.items[row.id] = { id: row.id, owner: connection.owner, cid: connection.cid, summary: row, phase: 'waiting', createdAt: clock(), saved: [] };
                 }
-                current.error = null;
+                // Listing frees no storage; only a removal clears the byte limit.
+                if (!current.error?.storage) current.error = null;
             }); } catch (error) {
                 if (failureCode(error) !== 'capacity') throw error;
                 await mutateEpoch(epoch, current => { current.error = { code: 'capacity', message: (error as Error).message }; current.scan = scan; });
@@ -514,8 +527,9 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 item.saved = [...new Set([...item.saved, peakId])];
                 const receipt = state.receipts[activityId] ||= { owner: item.owner, cid: item.cid, peaks: {}, date: item.summary?.date || '' };
                 receipt.peaks![peakId] = aid; receipt.at = clock();
-                if (item.analysis?.matches.every(match => item.saved.includes(String(match.id)))) { delete state.items[activityId]; receipt.complete = true; }
-                releaseCapacity(state);
+                if (item.analysis?.matches.every(match => item.saved.includes(String(match.id)))) {
+                    delete state.items[activityId]; receipt.complete = true; releaseCapacity(state);
+                }
             });
             await reconcile();
         },

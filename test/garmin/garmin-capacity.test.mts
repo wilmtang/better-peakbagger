@@ -28,6 +28,9 @@ test('a full inbox stops preparing the same activity until an item is removed', 
         assert.equal(h.counts.downloads, 1, 'later alarm periods must not re-download the same activity');
         assert.equal(h.counts.preparations, 1, 'later alarm periods must not repeat Peakbagger lookups');
         assert.equal(h.alarms.size, 0, 'no continuation alarm while the inbox is full');
+        await h.imports.check();
+        assert.equal(h.counts.downloads, 1, 'a manual check lists Garmin but does not retry while storage is full');
+        assert.equal((await h.store.read()).error?.storage, true);
 
         assert.equal((await h.send('GARMIN_DONE', '900')).ok, true);
         const relieved = await h.store.read();

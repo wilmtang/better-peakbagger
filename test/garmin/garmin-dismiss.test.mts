@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { garminImportsHarness, readyItem } from '../helpers/garmin-imports-harness.mts';
+import { garminImportsHarness, readyItem, waitingItem } from '../helpers/garmin-imports-harness.mts';
 
 type Snapshot = { items: { id: string }[]; pending: number };
 
@@ -21,7 +21,24 @@ test('a second Dismiss leaves Undo able to restore the activity', async () => {
     } finally { await h.store.close(); }
 });
 
-test('an item stranded as dismissed without an Undo deadline is collected', async () => {
+test('an item stranded by a repeated Dismiss and Undo is restored to the inbox', async () => {
+    const h = await garminImportsHarness();
+    try {
+        // The old Undo deleted the receipt and left the item dismissed with no deadline.
+        await h.store.mutate(state => {
+            state.items['12'] = readyItem('12', { phase: 'dismissed', previousPhase: 'dismissed' });
+            state.items['13'] = waitingItem('13', { phase: 'dismissed', undoUntil: Number.NaN });
+        });
+        const snapshot = await h.imports.snapshot() as unknown as Snapshot;
+        assert.deepEqual(snapshot.items.map(item => item.id).sort(), ['12', '13']);
+        const state = await h.store.read();
+        assert.equal(state.items['12'].phase, 'ready', 'an analyzed item keeps its analysis');
+        assert.equal(state.items['13'].phase, 'waiting');
+        assert.equal(state.preparePending, true, 'a restored waiting item is prepared again');
+    } finally { await h.store.close(); }
+});
+
+test('a dismissed item without a deadline but with its dismissal receipt is collected', async () => {
     const h = await garminImportsHarness();
     try {
         await h.store.mutate(state => {
@@ -30,17 +47,17 @@ test('an item stranded as dismissed without an Undo deadline is collected', asyn
         });
         const snapshot = await h.imports.snapshot() as unknown as Snapshot;
         assert.equal(snapshot.pending, 0);
-        assert.equal((await h.store.read()).items['12'], undefined, 'the stranded item no longer occupies the inbox');
+        assert.equal((await h.store.read()).items['12'], undefined);
         assert.equal((await h.store.read()).receipts['12']?.dismissed, true, 'its dismissal still blocks re-import');
     } finally { await h.store.close(); }
 });
 
-test('a check collects a stranded dismissed item', async () => {
+test('a check restores a stranded dismissed item', async () => {
     const h = await garminImportsHarness();
     try {
         await h.store.mutate(state => { state.items['12'] = readyItem('12', { phase: 'dismissed', undoUntil: Number.NaN }); });
         await h.imports.check(false, true);
-        assert.equal((await h.store.read()).items['12'], undefined);
+        assert.equal((await h.store.read()).items['12'].phase, 'ready');
     } finally { await h.store.close(); }
 });
 
