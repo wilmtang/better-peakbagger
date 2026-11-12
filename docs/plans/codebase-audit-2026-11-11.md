@@ -571,6 +571,11 @@ and `npm run verify -- chrome` passed.
   shows it is a fail-closed login check between route downloads, not waste.
 - F15's other half: the Garmin resume-on-visit still ignores bare-host tabs, and
   local GPX processing is refused there rather than made to work on two origins.
+- From the last review, accepted as narrow: two tabs pressing Open drafts for
+  one Garmin activity at the same moment may both be refused (it fails closed;
+  trying again works); and after a partial Save with the inbox off, the
+  other tab stays refused until the earlier job expires, up to 30 minutes,
+  although the copy says to finish or close those drafts.
 
 - F5 step 3, `src/ascent/ascent-delete.js` dialogs: an in-page replacement on
   Peakbagger's own page carries more layout and focus risk than it removes.
