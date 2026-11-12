@@ -3749,7 +3749,11 @@ type DraftMap = Record<string, DraftRecord>;
     // not manufacture the activeTab gesture or open/focus a helper window.
     const garminBinding = async (expectedCid: string | null | undefined, { tabId = null, signal }: { tabId?: number | null; signal?: AbortSignal } = {}) => {
         await ensurePeakbaggerRequestsAllowed();
-        const candidates = (await ext.tabs.query({})).filter(tab => canonicalPeakbaggerTab(tab) && (tabId === null || tab.id === tabId));
+        // Like acquirePeakbaggerPage: sleeping tabs cannot run the page helper,
+        // and trying one costs a failed injection. Try the tab in view first.
+        const candidates = (await ext.tabs.query({})).filter(tab => canonicalPeakbaggerTab(tab) && (tabId === null || tab.id === tabId)
+            && !tab.discarded && !(tab as Tab & { frozen?: boolean }).frozen && tab.status !== 'unloaded')
+            .sort((left, right) => Number(right.active === true) - Number(left.active === true));
         let failure: unknown;
         for (const tab of candidates) {
             const candidateTabId = tab.id as number;
