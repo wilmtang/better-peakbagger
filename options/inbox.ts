@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settings as Settings } from '../src/settings/settings.js';
-import { matchLabel } from '../src/capture/match-confidence.js';
+import { matchReading } from '../src/capture/match-reading.ts';
 import { garminActivityLabel, positiveId } from '../src/garmin/garmin-api.js';
 
 interface InboxMatch { id: number; name: string; classification: string; confidence?: number }
@@ -76,7 +76,9 @@ function showReview(id: string, focus = true) {
         checkbox.checked = match.classification === 'strong' && !review.saved.includes(String(match.id));
         checkbox.disabled = review.saved.includes(String(match.id)) || !!review.handoff;
         const text = document.createElement('div'); text.textContent = match.name;
-        const detail = document.createElement('span'); detail.textContent = `${matchLabel(match.classification)}${Number.isFinite(match.confidence) ? ` · ${Math.round(match.confidence! * (match.confidence! <= 1 ? 100 : 1))}% confidence` : ''}${review.saved.includes(String(match.id)) ? ' · Saved and verified' : ''}`;
+        const reading = matchReading(match.classification, match.confidence);
+        const saved = review.saved.includes(String(match.id)) ? ' · Saved and verified' : '';
+        const detail = document.createElement('span'); detail.textContent = `${reading.text}${saved}`; detail.setAttribute('aria-label', `${reading.spoken}${saved}`);
         text.append(detail); label.append(checkbox, text); $('#inbox-matches').append(label);
     }
     $('#inbox-review-status').textContent = reviewMessage(review);
