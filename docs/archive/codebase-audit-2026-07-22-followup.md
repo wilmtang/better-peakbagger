@@ -129,8 +129,8 @@ are already exported), keeping the focus refresh for the permission-revocation
 case that storage events cannot see. Options test.
 
 ### B4 — Ascent-form Apply can hang forever if the worker is unreachable
-**Severity: low · [ascent-upload.js:207-234](../../src/ascent/ascent-upload.js),
-[ascent-upload.js:362-369](../../src/ascent/ascent-upload.js)**
+**Severity: low · [ascent-upload.js:207-234](../../src/ascent/ascent-upload.ts),
+[ascent-upload.js:362-369](../../src/ascent/ascent-upload.ts)**
 
 `applySelection` awaits `ext.runtime.sendMessage` with no rejection handling,
 and the card's click handler invokes it with `void`. `processFile` wraps its

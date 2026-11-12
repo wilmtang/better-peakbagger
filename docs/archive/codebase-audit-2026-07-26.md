@@ -132,7 +132,7 @@ links.
 
 The toolbar path has one authoritative worker read before provider capture. The
 local-file path repeats the issue in the isolated-world
-[`ascent-upload.js`](../../src/ascent/ascent-upload.js): it parses and sends
+[`ascent-upload.js`](../../src/ascent/ascent-upload.ts): it parses and sends
 waypoints and the track name using `Settings.get()`, then the worker re-reads
 the same fail-soft fallback before filtering the content-script-to-worker
 message. Therefore a user who explicitly disabled waypoints or
@@ -936,7 +936,7 @@ Everything in F1's evidence checks out: the private strict `read()`
 ([`background.js:43`](../../src/background/background.js)), the toolbar path
 handing those preferences into MAIN-world capture (`background.js:320`), and the
 upload path's second read
-([`ascent-upload.js:417`](../../src/ascent/ascent-upload.js)).
+([`ascent-upload.js:417`](../../src/ascent/ascent-upload.ts)).
 
 But fix step 3 — "pass one confirmed snapshot through the transaction; avoid
 independently re-reading on the page and worker" — argues against the design it

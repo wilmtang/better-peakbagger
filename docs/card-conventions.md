@@ -131,7 +131,7 @@ reviewable from mechanical code movement.
 | Standalone peak card | `peak-card-layout.js`; independent table row in the recognized peak table | Shared order, columns, grip, move menu and header collapse |
 | Saved-ascent weather archive | `ascent-weather.js` within the columns from `ascent-table-split.js` | Opt-in `createCardDrag`; weather-owned placement settings; hourly/source disclosures |
 | Ascent GPX Analyzer and its Sun & Moon panel | `gpx-analyzer.js` and `sun-calculator.js` | Keep their existing embedded layout, settings bridge and disclosures |
-| Add/edit ascent summit picker or upload feedback | `ascent-upload.js` beside its native form controls | Form-owned interaction; no automatic registration as a movable page card |
+| Add/edit ascent summit picker or upload feedback | `ascent-upload.ts` beside its native form controls | Form-owned interaction; no automatic registration as a movable page card |
 | Saved-ascent backup control | `ascent-backup.js` beside the owner's native edit actions | Inline action/status group; background worker owns remote writes |
 
 ## Peak cards: shared header, collapse and placement

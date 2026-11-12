@@ -562,7 +562,7 @@ A second pass read the highest-risk code in full: `src/capture/*`,
 `src/background/sender-policy.js`, `public-errors.js`, `trusted-actions.js`,
 `src/peakbagger/*` (request, page, response, account, cloudflare, origin),
 `src/gpx/gpx-parse.js`, and the ascent-editor scripts `ascent-draft.js`,
-`ascent-upload.js`, `ascent-saved.js`, `capture-save-verification.js` and
+`ascent-upload.ts`, `ascent-saved.js`, `capture-save-verification.js` and
 `ascent-page.js`. Not read: `src/gpx/gpx-metrics.js` and the route modules the
 worker delegates to (GitHub, photos, report drafts, imports, custom layers).
 No browser was launched for this pass either.
@@ -649,7 +649,7 @@ asserts one creation.
 ### F14 — Interrupted GPX preparation latches the form shut
 
 `handleFileChange` sets `preparingFile = true` and `upload.disabled = true`
-(`src/ascent/ascent-upload.js` lines 704–706) and restores both only
+(`src/ascent/ascent-upload.ts` lines 704–706) and restores both only
 `if (token === requestToken)` in its `finally` (lines 762–767). Several paths
 advance `requestToken` without starting a new preparation — notably
 `restoreNative` (line 297). While `preparingFile` is true a capture-phase

@@ -202,7 +202,7 @@ summit"`, `"${…} m elevation difference"`, and the track summary line reports
 module and literally cannot read the preference today.
 
 Meanwhile `ascent-upload.js` resolves display units
-([`resolveDisplayUnits`](../../src/ascent/ascent-upload.js)) and the GPX
+([`resolveDisplayUnits`](../../src/ascent/ascent-upload.ts)) and the GPX
 Analyzer resolves them ([`resolveUnits`](../../src/gpx/gpx-analyzer.js)).
 An imperial user therefore gets feet and miles everywhere in the product except
 the one panel that opens from the toolbar.
@@ -287,7 +287,7 @@ it is not addressed here.
 `` `Drafts opened, but tab grouping failed: ${error.message}` `` and ships it to
 two surfaces:
 
-- [ascent-upload.js:229](../../src/ascent/ascent-upload.js) renders it
+- [ascent-upload.js:229](../../src/ascent/ascent-upload.ts) renders it
   verbatim in the status line — so a user can see a raw exception string.
 - [popup.js:300](../../popup/popup.ts) collapses it to the button *label*
   `"Drafts opened without group"`, which uses the primary action's label as a
@@ -779,7 +779,7 @@ twice, with **two unrelated heuristics**:
 | module | heuristic |
 | --- | --- |
 | [`detectPageMetric`](../../src/gpx/gpx-analyzer.js) | finds the `Elevation:` cell, tests its sibling for an `m` suffix |
-| [`detectPageUnits`](../../src/ascent/ascent-upload.js) | reads the DOM order of the `#UpMi`/`#UpKm` and `#StartFt`/`#StartM` field pairs |
+| [`detectPageUnits`](../../src/ascent/ascent-upload.ts) | reads the DOM order of the `#UpMi`/`#UpKm` and `#StartFt`/`#StartM` field pairs |
 
 They run on different pages today, so they cannot visibly disagree — which is
 precisely why a divergence would ship unnoticed. AGENTS.md already names this

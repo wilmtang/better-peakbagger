@@ -29,12 +29,33 @@ import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
 import { createStableText } from '../ui/stable-text.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
+// @ts-expect-error tz-lookup ships no type declarations.
 import tzlookup from 'tz-lookup';
+
+const zoneAt = tzlookup as (lat: number, lon: number) => string;
+interface GpxMatch {
+    id: number | string; name: string; classification: string; confidence?: number; selected?: boolean;
+    time?: string; upDistanceM?: number; closestApproachM?: number;
+}
+// The worker's GPX_PROCESS_START reply; only the fields this page reads.
+interface ProcessReply {
+    phase?: string; message?: string; error?: { message?: string }; jobId?: string;
+    matches?: GpxMatch[]; boundFallback?: GpxMatch | null; boundPid?: number | string | null;
+    pageSessionId?: string; selectionGeneration?: number; selectionNonce?: string;
+}
+interface ApplyReply { ok?: boolean; error?: { message?: string }; tabIds?: number[]; groupWarning?: unknown }
+interface FileIdentity { name: string; size: number; lastModified: number; type: string }
+interface PreparedSelection {
+    file: File; attachedFile: File; identity: FileIdentity; nonce: string; generation: number; includeTimestampsOnce: boolean;
+}
+type StableText = ReturnType<typeof createStableText>;
+type DisplayUnits = Parameters<typeof Units.formatDistance>[1];
+type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
 
 (() => {
     'use strict';
 
-    const ext = globalThis.browser || globalThis.chrome;
+    const ext = ((globalThis as { browser?: typeof chrome }).browser || globalThis.chrome) as typeof chrome | undefined;
     if (!ext) return;
 
     // The worker owns a 60-second corridor deadline, preceded by login and
@@ -44,7 +65,7 @@ import tzlookup from 'tz-lookup';
     const GPX_PREPARATION_TIMEOUT_MS = 20_000;
     const GPX_PROCESS_REPLY_TIMEOUT_MS = CORRIDOR_TOTAL_TIMEOUT_MS + 20_000;
 
-    const pad = value => String(value).padStart(2, '0');
+    const pad = (value: number) => String(value).padStart(2, '0');
 
     const localToday = (nowDate = new Date()) =>
         `${nowDate.getFullYear()}-${pad(nowDate.getMonth() + 1)}-${pad(nowDate.getDate())}`;
@@ -54,9 +75,9 @@ import tzlookup from 'tz-lookup';
     // only our generated value so local GPX processing may replace it with the
     // track's date without mistaking a date the user entered for a default.
     const autofillDate = () => {
-        const field = document.getElementById('DateText');
+        const field = document.getElementById('DateText') as HTMLInputElement | null;
         if (!field || String(field.value || '').trim()) return false;
-        const clearGeneratedMarker = event => {
+        const clearGeneratedMarker = (event: Event) => {
             if (event.isTrusted) delete field.dataset.bpbAutofilled;
         };
         field.addEventListener('input', clearGeneratedMarker);
@@ -76,7 +97,7 @@ import tzlookup from 'tz-lookup';
     // — entirely offline, per docs/mountain-local-time.md.
     // Failures fall back to the longitude estimate, exactly as the analyzer's.
 
-    const zoneOffsetMinutes = (timeZone, atMs) => {
+    const zoneOffsetMinutes = (timeZone: string, atMs: number) => {
         const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' })
             .formatToParts(new Date(atMs));
         const name = parts.find(part => part.type === 'timeZoneName')?.value || '';
@@ -87,21 +108,21 @@ import tzlookup from 'tz-lookup';
         return match[1] === '-' ? -value : value;
     };
 
-    const resolveUtcOffsetMinutes = segments => {
+    const resolveUtcOffsetMinutes = (segments: { lat: number | null; lon: number | null; time?: number | null }[][] | null | undefined) => {
         const points = (segments || []).flat();
         const start = points.find(point => Metrics.isValidCoordinate(point.lat, point.lon));
         if (!start) return null;
         const timed = points.find(point => Metrics.isValidCoordinate(point.lat, point.lon)
             && Metrics.isValidTimestamp(point.time));
-        const referenceMs = timed ? timed.time : Date.now();
+        const referenceMs = timed ? timed.time as number : Date.now();
         try {
-            const offset = zoneOffsetMinutes(tzlookup(start.lat, start.lon), referenceMs);
+            const offset = zoneOffsetMinutes(zoneAt(start.lat as number, start.lon as number), referenceMs);
             if (Metrics.isValidUtcOffsetMinutes(offset)) return offset;
         } catch (_error) {
             // A zone id unknown to this browser's ICU keeps the labelled solar
             // estimate below.
         }
-        return Metrics.longitudeUtcOffsetMinutes(start.lon);
+        return Metrics.longitudeUtcOffsetMinutes(start.lon as number);
     };
 
     // Peakbagger renders both values on the editor, but orders each unit pair
@@ -118,14 +139,14 @@ import tzlookup from 'tz-lookup';
     // detectPageUnits stays here — it reads this page's own field order — and
     // is handed to the shared resolver rather than reimplementing the
     // preference logic beside it.
-    const resolveDisplayUnits = settings => Units.resolveUnits(settings, detectPageUnits, 'distance');
+    const resolveDisplayUnits = (settings: Parameters<typeof Units.resolveUnits>[0]) => Units.resolveUnits(settings, detectPageUnits, 'distance');
     const formatTrackDistance = Units.formatDistance;
     const formatApproachDistance = Units.formatApproach;
 
     // ---- The ✦ Process button ---------------------------------------------
 
     const setupUploadProcessing = () => {
-        const upload = document.getElementById('GPXUpload');
+        const upload = document.getElementById('GPXUpload') as HTMLInputElement | null;
         const nativePreview = document.getElementById('GPXPreview');
         if (!upload || !nativePreview) return;
         const nativeRemove = document.getElementById('GPXRemove');
@@ -135,7 +156,7 @@ import tzlookup from 'tz-lookup';
         nativePreview.closest('td')?.classList.add('bpb-upload-cell');
         nativePreview.before(actionGroup);
         actionGroup.append(nativePreview);
-        if (sharedNativeActions) actionGroup.append(nativeRemove);
+        if (sharedNativeActions && nativeRemove) actionGroup.append(nativeRemove);
 
         const uploadCell = upload.closest('td');
         if (uploadCell && !document.getElementById('bpb-capture-hint')) {
@@ -169,17 +190,17 @@ import tzlookup from 'tz-lookup';
         timestampLabel.append(timestampHint);
         timestampChoice.append(includeTimestamps, timestampLabel);
         uploadCell?.insertBefore(timestampChoice, document.getElementById('bpb-capture-hint'));
-        let timestampSourceFile = null;
+        let timestampSourceFile: File | null = null;
         let preparingFile = false;
         // File replacement is asynchronous. Block native Preview/form submission
         // while preparing, and exclude the original upload from native postbacks.
         document.addEventListener('click', event => {
-            if (!event.target.closest?.('#GPXPreview, #SaveButton, #SaveButton2')) return;
+            if (!(event.target as Element | null)?.closest?.('#GPXPreview, #SaveButton, #SaveButton2')) return;
             if (!preparingFile) return;
             event.preventDefault();
             event.stopImmediatePropagation();
         }, true);
-        upload.form?.addEventListener('submit', event => {
+        upload.form?.addEventListener('submit', (event: SubmitEvent) => {
             if (!preparingFile) return;
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -222,15 +243,15 @@ import tzlookup from 'tz-lookup';
         dropOverlay.append(dropOverlayMessage);
         document.body.append(dropOverlay);
 
-        let button = null;
-        let attachButton = null, retryProcessButton = null;
-        let labelElement = null;
-        let processText = null;
-        let status = null;
-        let card = null;
+        let button: HTMLButtonElement | null = null;
+        let attachButton: HTMLButtonElement | null = null, retryProcessButton: HTMLButtonElement | null = null;
+        let labelElement: HTMLElement | null = null;
+        let processText: StableText | null = null;
+        let status: HTMLElement | null = null;
+        let card: HTMLElement | null = null;
         let requestToken = 0;
         let selectionGeneration = 0;
-        let selectedFile = null;
+        let selectedFile: PreparedSelection | null = null;
         let dropDepth = 0;
         const pageSessionId = (() => {
             try { return globalThis.crypto.randomUUID(); }
@@ -244,17 +265,17 @@ import tzlookup from 'tz-lookup';
             }
         };
 
-        const fileIdentity = file => ({
+        const fileIdentity = (file: File | null | undefined): FileIdentity => ({
             name: String(file?.name || '(no file)').slice(0, 255),
-            size: Number.isSafeInteger(file?.size) && file.size >= 0 ? file.size : 0,
-            lastModified: Number.isFinite(file?.lastModified) && file.lastModified >= 0
+            size: file && Number.isSafeInteger(file.size) && file.size >= 0 ? file.size : 0,
+            lastModified: file && Number.isFinite(file.lastModified) && file.lastModified >= 0
                 ? file.lastModified : 0,
             type: String(file?.type || '').slice(0, 100),
         });
-        const sameFileIdentity = (left, right) => !!left && !!right
+        const sameFileIdentity = (left: FileIdentity | null | undefined, right: FileIdentity | null | undefined) => !!left && !!right
             && left.name === right.name && left.size === right.size
             && left.lastModified === right.lastModified && left.type === right.type;
-        const selectionMessage = (generation, selectionNonce) => ({
+        const selectionMessage = (generation: number, selectionNonce: string) => ({
             pageSessionId,
             selectionGeneration: generation,
             selectionNonce,
@@ -265,7 +286,7 @@ import tzlookup from 'tz-lookup';
             status = null;
         };
 
-        const showStatus = (kind, message) => {
+        const showStatus = (kind: string, message: string) => {
             clearStatus();
             status = document.createElement('span');
             status.className = `bpb-upload-status bpb-upload-status-${kind}`;
@@ -292,7 +313,7 @@ import tzlookup from 'tz-lookup';
             nativePreview.classList.remove('bpb-native-preview-hidden');
         };
 
-        const restoreNative = ({ reason = null, retry = false } = {}) => {
+        const restoreNative = ({ reason = null, retry = false }: { reason?: string | null; retry?: boolean } = {}) => {
             const file = nativeGpxFile();
             requestToken++;
             const generation = ++selectionGeneration;
@@ -337,12 +358,12 @@ import tzlookup from 'tz-lookup';
             return selectedFile.file;
         };
 
-        const setBusy = label => {
+        const setBusy = (label: string) => {
             if (!button) return;
             button.disabled = true;
             includeTimestamps.setAttribute('aria-disabled', 'true');
             button.setAttribute('aria-busy', 'true');
-            processText.set(label);
+            processText!.set(label);
         };
 
         const setIdle = () => {
@@ -350,7 +371,7 @@ import tzlookup from 'tz-lookup';
             button.disabled = false;
             includeTimestamps.setAttribute('aria-disabled', String(preparingFile));
             button.removeAttribute('aria-busy');
-            processText.set('Process');
+            processText!.set('Process');
         };
 
         const showProcessButton = ({ attachmentOnly = false } = {}) => {
@@ -393,23 +414,23 @@ import tzlookup from 'tz-lookup';
                 processText.reserve(['Process', 'Reading track…', 'Finding summits…', 'Filling form…', 'Opening drafts…', 'Restoring…']);
                 button.append(glyph, labelElement);
                 button.addEventListener('click', () => void processFile());
-                nativePreview.parentNode.insertBefore(button, nativePreview);
+                nativePreview.parentNode!.insertBefore(button, nativePreview);
             }
             setIdle();
         };
 
-        const fail = (message, { retry = true } = {}) => {
+        const fail = (message: string, { retry = true } = {}) => {
             showStatus('error', message);
             restoreNative({ retry });
         };
 
-        const applySelection = async (response, selectedIds, primaryId, token) => {
+        const applySelection = async (response: ProcessReply, selectedIds: number[], primaryId: number | null, token: number) => {
             if (token !== requestToken || !selectedFile
                 || response.pageSessionId !== pageSessionId
                 || response.selectionGeneration !== selectedFile.generation
                 || response.selectionNonce !== selectedFile.nonce) return;
             setBusy(primaryId !== null ? 'Filling form…' : 'Opening drafts…');
-            let applied;
+            let applied: ApplyReply | undefined;
             try {
                 applied = await ext.runtime.sendMessage({
                     type: 'GPX_PROCESS_APPLY',
@@ -451,7 +472,7 @@ import tzlookup from 'tz-lookup';
 
         // ---- Summit picker card (plan §3.4, Option C) ----------------------
 
-        const summitChip = match => {
+        const summitChip = (match: GpxMatch) => {
             const chip = document.createElement('span');
             chip.className = `bpb-summit-chip bpb-summit-chip-${matchTone(match.classification)}`;
             chip.textContent = matchLabel(match.classification);
@@ -460,14 +481,14 @@ import tzlookup from 'tz-lookup';
 
         // The card title already says "along this track"; keep each row's
         // encounter short enough to never truncate.
-        const encounterMeta = (match, units) => {
-            const parts = [];
+        const encounterMeta = (match: GpxMatch, units: DisplayUnits) => {
+            const parts: string[] = [];
             if (match.time) parts.push(`at ${match.time}`);
             if (Number.isFinite(match.upDistanceM)) parts.push(formatTrackDistance(match.upDistanceM, units));
             return parts.join(' · ');
         };
 
-        const showSummitCard = (response, token, units) => {
+        const showSummitCard = (response: ProcessReply, token: number, units: DisplayUnits) => {
             removeCard();
             clearStatus();
             setIdle();
@@ -475,7 +496,7 @@ import tzlookup from 'tz-lookup';
             const fallback = response.boundFallback || null;
             const boundPid = response.boundPid === null || response.boundPid === undefined
                 ? null : String(response.boundPid);
-            const confidenceById = new Map();
+            const confidenceById = new Map<string, number | undefined>();
 
             card = document.createElement('section');
             card.className = 'bpb-summit-card';
@@ -488,13 +509,13 @@ import tzlookup from 'tz-lookup';
                 : matches.length === 1
                     ? 'One summit detected along this track'
                     : `${matches.length} summits detected along this track`;
-            card.append(heading);
+            card!.append(heading);
 
             const list = document.createElement('ul');
             list.className = 'bpb-summit-list';
-            const checkboxes = new Map();
+            const checkboxes = new Map<string, HTMLInputElement>();
 
-            const summitRow = (match, { fallbackRow = false } = {}) => {
+            const summitRow = (match: GpxMatch, { fallbackRow = false } = {}) => {
                 confidenceById.set(String(match.id), match.confidence);
                 const item = document.createElement('li');
                 const label = document.createElement('label');
@@ -513,7 +534,7 @@ import tzlookup from 'tz-lookup';
                 const meta = document.createElement('span');
                 meta.className = 'bpb-summit-meta';
                 meta.textContent = fallbackRow
-                    ? `${formatApproachDistance(match.closestApproachM, units)} from the summit`
+                    ? `${formatApproachDistance(match.closestApproachM as number, units)} from the summit`
                     : encounterMeta(match, units);
                 label.append(checkbox, name, summitChip(match), confidence, meta);
                 item.append(label);
@@ -525,16 +546,16 @@ import tzlookup from 'tz-lookup';
             if (fallback) {
                 const note = document.createElement('p');
                 note.className = 'bpb-summit-note';
-                note.textContent = `Your track’s closest approach to ${fallback.name} is ${formatApproachDistance(fallback.closestApproachM, units)} from the summit. Check it to use ${fallback.name} anyway.`;
-                card.append(note);
+                note.textContent = `Your track’s closest approach to ${fallback.name} is ${formatApproachDistance(fallback.closestApproachM as number, units)} from the summit. Check it to use ${fallback.name} anyway.`;
+                card!.append(note);
                 list.append(summitRow(fallback, { fallbackRow: true }));
             } else if (boundPid !== null && !matches.some(match => String(match.id) === boundPid)) {
                 const note = document.createElement('p');
                 note.className = 'bpb-summit-note';
                 note.textContent = 'Your track never comes within range of this page’s peak; the summits above can open as drafts instead.';
-                card.append(note);
+                card!.append(note);
             }
-            card.append(list);
+            card!.append(list);
 
             const actions = document.createElement('div');
             actions.className = 'bpb-summit-actions';
@@ -548,16 +569,16 @@ import tzlookup from 'tz-lookup';
             cancelButton.className = 'bpb-summit-cancel';
             cancelButton.textContent = 'Cancel';
             actions.append(applyButton, cancelButton);
-            card.append(actions);
+            card!.append(actions);
 
             const selection = () => {
                 const selectedIds = [...checkboxes].filter(([, checkbox]) => checkbox.checked).map(([id]) => id);
-                let primaryId = null;
+                let primaryId: string | null = null;
                 if (boundPid !== null) {
                     primaryId = selectedIds.includes(boundPid) ? boundPid : null;
                 } else if (selectedIds.length) {
                     primaryId = selectedIds.reduce((best, id) =>
-                        confidenceById.get(id) > confidenceById.get(best) ? id : best);
+                        (confidenceById.get(id) ?? -1) > (confidenceById.get(best) ?? -1) ? id : best);
                 }
                 return { selectedIds, primaryId };
             };
@@ -587,10 +608,10 @@ import tzlookup from 'tz-lookup';
                 restoreNative({ retry: true });
             });
 
-            actionGroup.insertAdjacentElement('afterend', card);
+            actionGroup.insertAdjacentElement('afterend', card!);
         };
 
-        const handleProcessResult = async (response, token, units) => {
+        const handleProcessResult = async (response: ProcessReply, token: number, units: DisplayUnits) => {
             if (!response || response.phase === 'error') {
                 fail(response?.error?.message || 'The GPX could not be processed.');
                 return;
@@ -612,7 +633,7 @@ import tzlookup from 'tz-lookup';
             // ambiguity is the only thing that earns UI.
             if (matches.length === 1 && !response.boundFallback
                 && (boundPid === null || String(matches[0].id) === boundPid)) {
-                await applySelection(response, [matches[0].id], matches[0].id, token);
+                await applySelection(response, [Number(matches[0].id)], Number(matches[0].id), token);
                 return;
             }
             showSummitCard(response, token, units);
@@ -621,7 +642,7 @@ import tzlookup from 'tz-lookup';
         const processFile = async () => {
             const file = currentGpxFile();
             if (!file || !button || button.disabled) return;
-            const selection = selectedFile;
+            const selection = selectedFile!;
             const token = ++requestToken;
             clearStatus();
             setBusy('Reading track…');
@@ -640,6 +661,7 @@ import tzlookup from 'tz-lookup';
                     maxBytes: MAX_GPX_BYTES,
                     maxChars: MAX_GPX_TEXT_CHARS,
                     label: 'GPX file',
+                    signal: undefined,
                 });
                 const parsed = gpxParse.parseGpxData(text, {
                     retainWaypoints: settings.retainWaypoints,
@@ -649,7 +671,7 @@ import tzlookup from 'tz-lookup';
                 if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
                 setBusy('Finding summits…');
                 const deadline = Deadline.createRequestDeadline(GPX_PROCESS_REPLY_TIMEOUT_MS);
-                let response;
+                let response: ProcessReply | undefined;
                 try {
                     response = await deadline.run(ext.runtime.sendMessage({
                         type: 'GPX_PROCESS_START',
@@ -667,8 +689,9 @@ import tzlookup from 'tz-lookup';
                 if (response?.pageSessionId !== pageSessionId
                     || response?.selectionGeneration !== selection.generation
                     || response?.selectionNonce !== selection.nonce) return;
-                await handleProcessResult(response, token, displayUnits);
-            } catch (error) {
+                await handleProcessResult(response!, token, displayUnits);
+            } catch (caught) {
+                const error = caught as CodedError | null;
                 if (token !== requestToken) return;
                 if (error?.code === 'no-gps-data') {
                     fail('This file has no track points. Peakbagger’s own Preview may still accept it.');
@@ -692,14 +715,14 @@ import tzlookup from 'tz-lookup';
             }
         };
 
-        const handleFileChange = async (file, { keepTimestampChoice = false } = {}) => {
+        const handleFileChange = async (file: File | null | undefined, { keepTimestampChoice = false } = {}) => {
             const token = ++requestToken;
             const deadline = Deadline.createRequestDeadline(GPX_PREPARATION_TIMEOUT_MS);
             const generation = ++selectionGeneration;
             const identity = fileIdentity(file);
             const nonce = newSelectionNonce();
             selectedFile = null;
-            timestampSourceFile = file;
+            timestampSourceFile = file || null;
             if (!keepTimestampChoice) includeTimestamps.checked = false;
             preparingFile = true;
             preparationText?.set('Preparing GPX…');
@@ -717,7 +740,7 @@ import tzlookup from 'tz-lookup';
                 }));
                 if (token !== requestToken || generation !== selectionGeneration) return;
                 if (!invalidated?.ok) throw new Error('The selected GPX could not be prepared. Reload the ascent form and try again.');
-                let settings;
+                let settings: Awaited<ReturnType<typeof Settings.requireCurrent>>;
                 try { settings = await deadline.run(Settings.requireCurrent()); }
                 catch (error) {
                     console.error('Better Peakbagger: capture settings read failed', error);
@@ -726,10 +749,10 @@ import tzlookup from 'tz-lookup';
                 if (token !== requestToken) return;
                 timestampChoice.hidden = !settings.removeGpxTimestamps || !file || !/\.gpx$/i.test(file.name || '');
                 const includeTimestampsOnce = settings.removeGpxTimestamps && includeTimestamps.checked;
-                let attachedFile = file;
+                let attachedFile = file as File;
                 if (file && /\.gpx$/i.test(file.name || '') && settings.removeGpxTimestamps && !includeTimestampsOnce) {
                     const text = await deadline.run(BoundedText.readBoundedBlobText(file, {
-                        maxBytes: MAX_GPX_BYTES, maxChars: MAX_GPX_TEXT_CHARS, label: 'GPX file',
+                        maxBytes: MAX_GPX_BYTES, maxChars: MAX_GPX_TEXT_CHARS, label: 'GPX file', signal: undefined,
                     }));
                     attachedFile = new File([removeGpxTimestamps(text)], file.name, {
                         type: file.type || 'application/gpx+xml', lastModified: file.lastModified,
@@ -744,9 +767,10 @@ import tzlookup from 'tz-lookup';
                     upload.files = transfer.files;
                 }
                 if (!file || !/\.gpx$/i.test(file.name || '')) return;
-                selectedFile = { file, attachedFile, identity, nonce, generation, includeTimestampsOnce };
+                selectedFile = { file, attachedFile, identity, nonce, generation, includeTimestampsOnce: !!includeTimestampsOnce };
                 showProcessButton({ attachmentOnly: invalidated.preserved === true });
-            } catch (error) {
+            } catch (caught) {
+                const error = caught as CodedError;
                 if (token !== requestToken) return;
                 // Clear the native file on failure: fallback must never upload
                 // the unprocessed original while timestamp removal is selected.
@@ -772,32 +796,32 @@ import tzlookup from 'tz-lookup';
         // single GPX. A later batch flow can resolve directories and hand the
         // resulting ordered files to the same admission seam instead of
         // teaching the event handlers to silently pick one transfer item.
-        const transferHasFiles = transfer => {
+        const transferHasFiles = (transfer: DataTransfer | null | undefined) => {
             if (!transfer) return false;
             if ([...(transfer.types || [])].includes('Files')) return true;
             return [...(transfer.items || [])].some(item => item.kind === 'file');
         };
 
-        const transferIncludesDirectory = transfer => [...(transfer?.items || [])]
+        const transferIncludesDirectory = (transfer: DataTransfer | null | undefined) => [...(transfer?.items || [])]
             .some(item => {
                 try { return item.webkitGetAsEntry?.()?.isDirectory === true; }
                 catch (error) { return false; }
             });
 
-        const filesFromTransfer = transfer => {
+        const filesFromTransfer = (transfer: DataTransfer | null | undefined): File[] => {
             const itemFiles = [...(transfer?.items || [])]
                 .filter(item => item.kind === 'file')
                 .map(item => item.getAsFile?.())
-                .filter(Boolean);
+                .filter((file): file is File => !!file);
             return itemFiles.length ? itemFiles : [...(transfer?.files || [])];
         };
 
-        const droppedFileCollection = transfer => ({
+        const droppedFileCollection = (transfer: DataTransfer | null | undefined) => ({
             files: filesFromTransfer(transfer),
             includesDirectory: transferIncludesDirectory(transfer),
         });
 
-        const droppedFileAdmission = collection => {
+        const droppedFileAdmission = (collection: { files: File[]; includesDirectory: boolean }): { files: File[]; error?: string } => {
             if (collection.includesDirectory || collection.files.length > 1) {
                 return {
                     error: 'Drop one GPX file at a time. Multiple files and folders aren’t supported yet.',
@@ -810,7 +834,7 @@ import tzlookup from 'tz-lookup';
             return { files: collection.files };
         };
 
-        const attachUploadFiles = files => {
+        const attachUploadFiles = (files: File[]) => {
             const transfer = new DataTransfer();
             files.forEach(file => transfer.items.add(file));
             upload.files = transfer.files;
@@ -825,7 +849,7 @@ import tzlookup from 'tz-lookup';
             dropOverlay.setAttribute('aria-hidden', 'true');
         };
 
-        const onDragEnter = event => {
+        const onDragEnter = (event: DragEvent) => {
             if (!transferHasFiles(event.dataTransfer)) return;
             event.preventDefault();
             dropDepth += 1;
@@ -833,20 +857,20 @@ import tzlookup from 'tz-lookup';
             dropOverlay.setAttribute('aria-hidden', 'false');
         };
 
-        const onDragOver = event => {
+        const onDragOver = (event: DragEvent) => {
             if (!transferHasFiles(event.dataTransfer)) return;
             event.preventDefault();
             if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
         };
 
-        const onDragLeave = event => {
+        const onDragLeave = (event: DragEvent) => {
             if (!document.documentElement.classList.contains('is-gpx-page-drag-over')) return;
             event.preventDefault();
             dropDepth = Math.max(0, dropDepth - 1);
             if (!dropDepth) resetDropCue();
         };
 
-        const onDrop = event => {
+        const onDrop = (event: DragEvent) => {
             if (!transferHasFiles(event.dataTransfer)) return;
             event.preventDefault();
             resetDropCue();

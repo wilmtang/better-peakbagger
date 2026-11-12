@@ -263,7 +263,7 @@ Single copy-pass commit over [options.html](../../options/options.html) and
 [options.html:201-203](../../options/options.html) scopes Units to "Distance
 and elevation in the GPX chart", but `ascent-upload.js` also uses it for the
 ✦ Process summary formatting on the ascent form
-([ascent-upload.js:99-101](../../src/ascent/ascent-upload.js)). Broaden the
+([ascent-upload.js:99-101](../../src/ascent/ascent-upload.ts)). Broaden the
 description ("in the GPX chart and processing summaries") rather than moving
 the setting; it lives acceptably under Map & GPX chart.
 
