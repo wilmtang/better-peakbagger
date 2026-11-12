@@ -356,8 +356,15 @@ interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: b
         openButton.textContent = count === 1 ? 'Open 1 draft' : `Open ${count} drafts`;
         openButton.disabled = count === 0;
         openButton.setAttribute('aria-disabled', String(count === 0 || resultActionPending));
-        currentJob!.selectedIds = selectedIds();
-        void ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab!.id, selectedIds: selectedIds() });
+        // Write only a selection the worker does not already hold: rendering a
+        // job would otherwise echo the worker's own selection back to it. A lost
+        // write affects only what a reopened popup shows; Open drafts sends its
+        // own selection.
+        const ids = selectedIds();
+        const previous = currentJob!.selectedIds || [];
+        currentJob!.selectedIds = ids;
+        if (ids.length === previous.length && ids.every(id => previous.includes(id))) return;
+        ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab!.id, selectedIds: ids }).catch(() => {});
     };
 
     const renderResults = (job: CaptureJob) => {

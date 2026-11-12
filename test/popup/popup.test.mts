@@ -1594,3 +1594,29 @@ test('a failed photo editor open keeps the popup and offers a retry', async () =
         assert.equal(popup.closed(), 1);
     } finally { popup.dom.window.close(); }
 });
+
+test('rendering a ready job does not echo its selection back, and a changed selection is written once', async () => {
+    const selections: PopupMessage[] = [];
+    const rejected: unknown[] = [];
+    const onRejection = (reason: unknown) => { rejected.push(reason); };
+    process.on('unhandledRejection', onRejection);
+    try {
+        const dom = mountPopup(message => {
+            if (message.type !== 'CAPTURE_SELECTION') return { ok: true };
+            selections.push(message);
+            throw new Error(WORKER_UNREACHABLE);
+        }, { ...readyJob, matches: [...readyJob.matches, { ...readyJob.matches[0], id: 2, name: 'Two Peak' }] });
+        await startIfOffered(dom);
+        const openButton = dom.window.document.getElementById('open-drafts')!;
+        await waitFor(() => openButton.textContent === 'Open 1 draft');
+        assert.equal(selections.length, 0, 'the initial render must not write the worker its own selection');
+        const second = dom.window.document.querySelectorAll<HTMLInputElement>('#peak-list input')[1];
+        second.checked = true;
+        second.dispatchEvent(new dom.window.Event('change'));
+        await waitFor(() => openButton.textContent === 'Open 2 drafts');
+        assert.deepEqual(selections.map(message => [...(message.selectedIds as number[])]), [[1, 2]]);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.deepEqual(rejected, [], 'a refused selection write is handled');
+        dom.window.close();
+    } finally { process.off('unhandledRejection', onRejection); }
+});
