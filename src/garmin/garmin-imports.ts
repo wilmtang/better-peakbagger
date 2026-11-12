@@ -27,7 +27,9 @@ interface GarminReceipt {
 }
 interface GarminConnection { key: string | null; subject?: string; owner?: string | null; cid?: string | null; connectedDate?: string; enabled?: boolean }
 interface GarminScan { from: string; to: string; scope: string; signature: string; offset: number; full: boolean; head: string | null }
-interface GarminFailure { code: string; message?: string }
+// `storage` marks the byte limit: unlike the 200-item limit, no further preparation
+// can succeed until an item is removed.
+interface GarminFailure { code: string; message?: string; storage?: boolean }
 interface GarminState {
     epoch: number; credentialEpoch?: number; revision?: number; connection: GarminConnection | null;
     items: Record<string, GarminItem>; receipts: Record<string, GarminReceipt>; scan: GarminScan | null;
@@ -173,11 +175,18 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         ]);
         return { configured: false, accessRemoved: cleanup[1].status === 'fulfilled' && cleanup[1].value !== false };
     };
+    // Removing an item may make room: clear the capacity error and resume any
+    // activity that a full inbox left waiting.
+    const releaseCapacity = (state: GarminState) => {
+        if (state.error?.code !== 'capacity' || Object.keys(state.items).length >= 200) return;
+        state.error = null;
+        if (Object.values(state.items).some(item => item.phase === 'waiting')) state.preparePending = true;
+    };
     const pruneDismissed = (state: GarminState) => {
         for (const [id, item] of Object.entries(state.items)) {
             if (item.phase === 'dismissed' && (item.undoUntil as number) <= clock()) delete state.items[id];
         }
-        if (state.error?.code === 'capacity' && Object.keys(state.items).length < 200) state.error = null;
+        releaseCapacity(state);
     };
     const snapshot = async (includeItems = true) => {
         const [initialMeta, prefs] = await Promise.all([store.summary(), settings.requireCurrent()]);
@@ -262,6 +271,9 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         }
         const queuedState = await store.read();
         if (queuedState.peakbaggerBlocked && (!resume || queuedState.peakbaggerBlocked.retryAt > clock())) return;
+        if (queuedState.error?.code === 'capacity' && queuedState.error.storage) {
+            await mutateEpoch(epoch, next => { next.preparePending = false; }); return;
+        }
         const items = Object.values(queuedState.items).filter(item => !item.handoff && ['waiting', 'error'].includes(item.phase) && !(item.retryAt! > clock())).slice(0, 3);
         if (!items.length) { await mutateEpoch(epoch, next => { next.preparePending = false; }); return; }
         const pausePeaks = async (error: unknown) => {
@@ -296,15 +308,24 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 const route = await decode(bytes, { signal: controller.signal, retainWaypoints: prefs.retainWaypoints });
                 stage = 'prepare';
                 const result = await prepare(item, route, context, controller.signal);
+                let storageFull = false;
                 await mutateEpoch(epoch, current => {
                     if (!current.items[item.id] || current.items[item.id].handoff
                         || current.items[item.id].phase === 'dismissed'
                         || (current.items[item.id].revision || 0) !== (item.revision || 0)) return;
                     const next = { ...current.items[item.id], ...result, phase: result.phase || 'ready', error: null };
                     const size = new TextEncoder().encode(JSON.stringify({ ...current.items, [item.id]: next })).length;
-                    if (size > 20 * 1024 * 1024) throw new GarminError('capacity');
+                    if (size > 20 * 1024 * 1024) {
+                        // Record the stop in this write: a thrown error would leave
+                        // preparation pending and retry this activity every minute.
+                        storageFull = true;
+                        current.error = { code: 'capacity', message: new GarminError('capacity').message, storage: true };
+                        current.preparePending = false;
+                        return;
+                    }
                     current.items[item.id] = next;
                 });
+                if (storageFull) return;
             } catch (error) {
                 if (controller.signal.aborted || ['key-rejected', 'rate', 'identity', 'capacity'].includes(failureCode(error) as string)) throw error;
                 if (stage === 'prepare' && (['cloudflare', 'rate-limit', 'network', 'server'].includes(failureCode(error) as string) || failureCode(error)?.startsWith('peakbagger-'))) {
@@ -405,7 +426,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         GARMIN_DONE: async message => {
             await store.mutate(state => { const item = state.items[message.id]; if (!item) return;
                 state.receipts[message.id] = { ...state.receipts[message.id], owner: item.owner, cid: item.cid, complete: true, date: item.summary?.date || '' }; delete state.items[message.id]; });
-            await store.mutate(state => { if (state.error?.code === 'capacity') state.error = null; });
+            await store.mutate(releaseCapacity);
             await reconcile(); return { ok: true };
         },
         GARMIN_RETRY: async message => {
@@ -478,7 +499,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 const receipt = state.receipts[activityId] ||= { owner: item.owner, cid: item.cid, peaks: {}, date: item.summary?.date || '' };
                 receipt.peaks![peakId] = aid;
                 if (item.analysis?.matches.every(match => item.saved.includes(String(match.id)))) { delete state.items[activityId]; receipt.complete = true; }
-                if (state.error?.code === 'capacity' && Object.keys(state.items).length < 200) state.error = null;
+                releaseCapacity(state);
             });
             await reconcile();
         },
