@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { resolveAvalancheLinks } from '../../src/avalanche/avalanche-links.js';
-import { parsePeakNations, readPeakNations } from '../../src/avalanche/avalanche-location.js';
+import { parsePeakNations, readPeakNations } from '../../src/avalanche/avalanche-location.ts';
 
 const bundle = await readFile(new URL('../../dist/content/peak-links.js', import.meta.url), 'utf8');
 const resolve = (text, latitude = 46.85, longitude = -121.76) =>

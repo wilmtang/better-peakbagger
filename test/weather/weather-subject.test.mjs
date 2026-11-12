@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { strictWeatherDate, readWeatherSubject, readWeatherSummit } from '../../src/ascent/ascent-weather-subject.js';
+import { strictWeatherDate, readWeatherSubject, readWeatherSummit } from '../../src/ascent/ascent-weather-subject.ts';
 
 const ascentUrl = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321';
 const fixture = async name => new JSDOM(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8')).window.document;

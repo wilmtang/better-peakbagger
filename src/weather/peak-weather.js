@@ -4,7 +4,7 @@
 import { dom } from '../ui/dom.js';
 import { createStableText } from '../ui/stable-text.js';
 import { units } from '../ui/units.js';
-import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
+import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
@@ -14,7 +14,7 @@ import { mountainTime } from '../time/mountain-time.js';
 import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.ts';
 import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createPeakWeatherClient } from './open-meteo-client.js';
-import { readPeakWeatherSubject } from './peak-weather-subject.js';
+import { readPeakWeatherSubject } from './peak-weather-subject.ts';
 import { PEAK_BEST_MATCH, eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 import { createPeakModelUpdateClient, peakModelUpdateDomains } from './peak-weather-updates.js';
 import { createWeatherIcon } from './weather-icon.js';

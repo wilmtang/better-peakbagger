@@ -2,25 +2,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.js';
-import { readWeatherSummit } from '../ascent/ascent-weather-subject.js';
+import { parsePeakId } from '../peakbagger/peak-page-fields.ts';
+import { readWeatherSummit, type WeatherSummit } from '../ascent/ascent-weather-subject.ts';
 
-export function readPeakWeatherSubject(doc, pageUrl) {
+export interface PeakWeatherSubject extends WeatherSummit {
+    name: string;
+    table: HTMLTableElement;
+}
+
+// Accepts main-database and Provisional Peak pages alike: both carry the same
+// native coordinate row and map table, and are identified by a nonzero pid.
+export function readPeakWeatherSubject(doc: Document, pageUrl: string): PeakWeatherSubject | null {
     let url;
     try { url = new URL(pageUrl); } catch { return null; }
-    const id = Number(url.searchParams.get('pid'));
+    const id = parsePeakId(url.searchParams.get('pid'));
     if (!isPeakbaggerUrl(url.href) || !/^\/peak\.aspx$/i.test(url.pathname)
-        || url.searchParams.getAll('pid').length !== 1 || !/^[1-9]\d*$/.test(url.searchParams.get('pid') || '')
-        || !Number.isSafeInteger(id)) return null;
+        || url.searchParams.getAll('pid').length !== 1 || id === null) return null;
     const headings = doc.querySelectorAll('h1');
-    const name = headings.length === 1 ? headings[0].textContent.replace(/\s+/g, ' ').trim() : '';
+    const name = headings.length === 1 ? (headings[0].textContent || '').replace(/\s+/g, ' ').trim() : '';
     if (!name) return null;
     try {
         const summit = readWeatherSummit(doc, { peak: { id, name } }, url.href);
         const nativeMap = doc.getElementById('Gmap');
         // The card owns a row immediately after the map, wherever the native
         // page places it. Mapless pages use the native right table's end.
-        const rightTables = [...doc.querySelectorAll('table.gray[align]')]
-            .filter(candidate => candidate.getAttribute('align').toLowerCase() === 'right'
+        const rightTables = [...doc.querySelectorAll<HTMLTableElement>('table.gray[align]')]
+            .filter(candidate => candidate.getAttribute('align')!.toLowerCase() === 'right'
                 && candidate.parentElement === headings[0].parentElement);
         const table = nativeMap?.closest('table') || (rightTables.length === 1 ? rightTables[0] : null);
         if (!table || !table.tBodies.length || table.contains(headings[0])) return null;

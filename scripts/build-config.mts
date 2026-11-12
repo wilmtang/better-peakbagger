@@ -90,7 +90,7 @@ export const ENTRIES: BundleEntry[] = [
     { out: 'content/climber-favorite.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'favorites/climber-favorite.js', 'favorites/climber-ignore.js'] },
     { out: 'content/profile-backup.js', sources: ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-snapshot.ts', 'reports/report-markup.ts', 'ascent/ascent-backup-source.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'profile/profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'maps/peak-map-bridge.js'] },
-    { out: 'content/peak-links.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'avalanche/avalanche-location.js', 'avalanche/avalanche-links.js', 'maps/peak-link-order.js', 'maps/peak-links.js'] },
+    { out: 'content/peak-links.js', sources: ['settings/settings-schema.ts', 'settings/settings.js', 'avalanche/avalanche-location.ts', 'avalanche/avalanche-links.js', 'maps/peak-link-order.js', 'maps/peak-links.ts'] },
     { out: 'content/map-layers.js', sources: ['maps/map-layers.ts'] },
     { out: 'content/vector-map.js', sources: ['maps/vector-map.ts'] },
     { out: 'content/vector-map-bridge.js', sources: ['maps/vector-map-bridge.ts'] },

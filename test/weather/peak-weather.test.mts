@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mjs';
 import { weatherFixture as untypedWeatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
-import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
+import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';
 import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
 
 type WeatherBody = { latitude: number; longitude: number; elevation: number | null; utc_offset_seconds: number; hourly_units: Record<string, string>; hourly: Record<string, (number | null)[]> & { time: number[] } };

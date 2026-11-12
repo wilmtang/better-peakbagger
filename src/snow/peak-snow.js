@@ -3,14 +3,14 @@
 
 import { dom } from '../ui/dom.js';
 import { units } from '../ui/units.js';
-import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
+import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
 import { createStableText } from '../ui/stable-text.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { settings } from '../settings/settings.js';
-import { readPeakWeatherSubject } from '../weather/peak-weather-subject.js';
-import { readPeakNations } from '../avalanche/avalanche-location.js';
+import { readPeakWeatherSubject } from '../weather/peak-weather-subject.ts';
+import { readPeakNations } from '../avalanche/avalanche-location.ts';
 import { createSnotelClient } from './snotel-client.js';
 import { createSnotelMapSource } from './snotel-map-source.js';
 import { snotelSymbol } from './snotel-map-marker.js';

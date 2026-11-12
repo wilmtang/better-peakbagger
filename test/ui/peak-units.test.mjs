@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { readPeakUnitSystem } from '../../src/peakbagger/peak-units.js';
+import { readPeakUnitSystem } from '../../src/peakbagger/peak-units.ts';
 import { peakUnitHeadings } from '../helpers/peak-unit-fixture.mjs';
 
 test('peak units recognize native full and abbreviated first-unit spellings', () => {

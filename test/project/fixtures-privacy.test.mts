@@ -32,7 +32,9 @@ const WAYBACK = new Set([
     '1039-default-full-columns.html',
     '21500-y9998-sort-ascentdated.html',
     '21500-y9999-sort-ascentdate.html',
-    '8241-y9999-sort-quality.html'
+    '8241-y9999-sort-quality.html',
+    // Logged-out Provisional Peak page (pid=-34225); see pages/README.md.
+    'peak-provisional.html',
 ]);
 
 const MASKED_CLIMBER_ID = '900001';

@@ -719,7 +719,7 @@ as test seams.
 ### Peak planning link order
 
 The **Better Peakbagger links** panel on `Peak.aspx` is rendered by
-`src/maps/peak-links.js`; `src/maps/peak-link-order.js` owns grip dragging,
+`src/maps/peak-links.ts`; `src/maps/peak-link-order.js` owns grip dragging,
 keyboard movement, cancellation, and persistence. The saved `peakLinkOrder`
 contains link IDs only, with its allowed IDs and default order defined by
 `PEAK_LINK_ORDER` in `src/settings/settings-schema.ts`.
@@ -735,7 +735,7 @@ order in browser sync does not by itself establish a GitHub backup.
 When adding or changing a planning link:
 
 1. Give the link a unique, stable key in the `addLink(key, label, description,
-   href)` call in `src/maps/peak-links.js`, and register that same key in
+   href)` call in `src/maps/peak-links.ts`, and register that same key in
    `PEAK_LINK_ORDER`. Adding markup alone does not make its order persist.
 2. Keep existing keys unchanged when editing labels or destinations. A renamed
    key is treated as a removed link followed by a new link, losing its saved

@@ -539,7 +539,7 @@ Pinned calculation sources, inspected October 24–25, 2026:
 | Owner | Responsibility |
 | --- | --- |
 | `src/weather/peak-weather.js`, subject/location readers, `weather-week.js` | Peak identity, selected location, periods, source display and bounded window |
-| `src/ascent/ascent-weather.js`, `ascent-weather-subject.js` | Strict saved identity/day, first-party summit lookup, archive/docking/GPX adapter |
+| `src/ascent/ascent-weather.js`, `ascent-weather-subject.ts` | Strict saved identity/day, first-party summit lookup, archive/docking/GPX adapter |
 | `src/weather/open-meteo-client.js`, model registries, `weather-day.js` | Bounded surface transport, model/date policy, validation and aggregation |
 | `src/weather/summit-cloud.ts`, client/models/core | Cloud card, pressure-profile capabilities, sampling and prediction |
 | `src/weather/peak-weather-updates.js`, AQI client/view | Separate metadata and AQI ownership/caches |

@@ -113,7 +113,7 @@ reviewable from mechanical code movement.
   `dom.element` and text nodes for provider text; do not interpolate it into HTML.
 - Read identity, date and coordinates through the relevant validated page reader.
   Peak forecasts use `readPeakWeatherSubject`; the ascent weather archive uses
-  `readWeatherSubject` in `ascent-weather-subject.js`. Do not infer an ascent date
+  `readWeatherSubject` in `ascent-weather-subject.ts`. Do not infer an ascent date
   from report prose, substitute today's date, or geocode a guessed summit name.
   Do not reuse backup's best-effort reader for strict weather identity.
 - Mount once, with a stable feature ID and an accessible label. Follow the

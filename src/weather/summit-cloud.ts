@@ -4,14 +4,14 @@
 import { dom } from '../ui/dom.js';
 import { settings } from '../settings/settings.js';
 import { units } from '../ui/units.js';
-import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
+import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { createStableText } from '../ui/stable-text.js';
-import { readPeakWeatherSubject } from './peak-weather-subject.js';
+import { readPeakWeatherSubject } from './peak-weather-subject.ts';
 import { weatherDayWindow } from './weather-day.js';
 import { createWeatherIcon } from './weather-icon.js';
 import { summitCloudModel, eligibleSummitCloudModels, resolveSummitCloudModels, type SummitCloudModel } from './summit-cloud-models.ts';

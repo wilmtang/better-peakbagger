@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Better Peakbagger — focused external planning links for Peak.aspx.
-// Reads only the peak's displayed WGS84 decimal coordinates and fails closed
-// if the coordinate row is missing/ambiguous. General and map links each
-// require their own unambiguous native section.
+// Reads only the peak's displayed WGS84 decimal coordinates (main-database
+// and Provisional Peaks alike) and fails closed if the coordinate row is
+// missing/ambiguous. General and map links each require their own
+// unambiguous native section.
 
-import { readPeakNations } from '../avalanche/avalanche-location.js';
+import { readPeakNations } from '../avalanche/avalanche-location.ts';
+import { PEAK_COORDINATE_LABEL, readPeakDecimalCoordinate } from '../peakbagger/peak-page-fields.ts';
 import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
 import { settings } from '../settings/settings.js';
 import { enablePeakLinkOrder } from './peak-link-order.js';
@@ -16,33 +18,26 @@ import { enablePeakLinkOrder } from './peak-link-order.js';
 
     const PANEL_ID = 'bpb-peak-links';
 
-    const normalize = text => (text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+    const normalize = (text: string | null | undefined) => (text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
     const coordinateRows = Array.from(document.querySelectorAll('tr')).filter(row => {
         if (row.cells.length < 2) return false;
-        return normalize(row.cells[0].textContent).toLowerCase() === 'latitude/longitude (wgs84)';
+        return normalize(row.cells[0].textContent).toLowerCase() === PEAK_COORDINATE_LABEL;
     });
     if (coordinateRows.length !== 1) return;
     const [coordinateRow] = coordinateRows;
 
-    // Parse only Peakbagger's explicitly labelled decimal-degree value. The
-    // same cell also contains DMS and UTM forms, which must never be mistaken
-    // for the summit coordinate.
-    const coordinateText = normalize(coordinateRow.cells[1].textContent);
-    if ((coordinateText.match(/\(Dec Deg\)/gi) || []).length !== 1) return;
-    const match = /^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\(Dec Deg\)/i.exec(coordinateText);
-    if (!match) return;
-
-    const latitude = Number(match[1]);
-    const longitude = Number(match[2]);
-    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90
-        || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
+    // The same cell also contains DMS (and, on main peaks, UTM) forms, which
+    // must never be mistaken for the summit coordinate.
+    const coordinate = readPeakDecimalCoordinate(coordinateRow.cells[1]);
+    if (!coordinate) return;
+    const { latitude, longitude } = coordinate;
 
     // Keep Peakbagger's source precision instead of round-tripping through a
     // Number (which can switch very small values to exponent notation). Windy
     // requires a decimal part, so append one only for integer source values.
-    const formatCoordinate = value => value.includes('.') ? value : `${value}.0`;
-    const lat = formatCoordinate(match[1]);
-    const lon = formatCoordinate(match[2]);
+    const formatCoordinate = (value: string) => value.includes('.') ? value : `${value}.0`;
+    const lat = formatCoordinate(coordinate.latitudeText);
+    const lon = formatCoordinate(coordinate.longitudeText);
 
     // Keep the injection anchored to the same native peak-details table as the
     // coordinate row. A generic bold "Links" elsewhere is not enough evidence.
@@ -54,13 +49,13 @@ import { enablePeakLinkOrder } from './peak-link-order.js';
     // The column layout may already have moved the native pair into separate
     // wrappers. Accept only that owned pair or the original shared parent.
     const detailsParent = peakTable.parentElement;
-    const split = detailsParent?.id === 'bpb-peak-details-column' && detailsParent.parentElement;
+    const split = detailsParent?.id === 'bpb-peak-details-column' ? detailsParent.parentElement : null;
     const mapParent = split?.id === 'bpb-peak-table-split'
         ? split.querySelector(':scope > #bpb-peak-map-column') : detailsParent;
     const mapRows = Array.from(document.querySelectorAll('tr')).filter(row =>
         row.cells.length === 2 && normalize(row.cells[0].textContent).toLowerCase() === 'web map links'
         && row.closest('table')?.matches('table.gray[align="right" i]')
-        && row.closest('table').parentElement === mapParent);
+        && row.closest('table')!.parentElement === mapParent);
     if (mapRows.length === 1 && !document.getElementById('bpb-peak-map-links')) {
         const group = document.createElement('div');
         group.id = 'bpb-peak-map-links';
@@ -119,7 +114,7 @@ import { enablePeakLinkOrder } from './peak-link-order.js';
     const linkList = document.createElement('div');
     linkList.className = 'bpb-peak-links__list';
 
-    const addLink = (key, label, description, href) => {
+    const addLink = (key: string, label: string, description: string, href: string) => {
         const item = document.createElement('div');
         item.className = 'bpb-peak-links__item';
         item.dataset.linkKey = key;
@@ -183,8 +178,8 @@ import { enablePeakLinkOrder } from './peak-link-order.js';
     // Peakbagger currently places two line breaks after its Links heading.
     // Insert after those when present, while remaining safe if the legacy
     // markup changes slightly.
-    let insertionPoint = linksHeading;
+    let insertionPoint: ChildNode = linksHeading;
     while (insertionPoint.nextSibling?.nodeName === 'BR') insertionPoint = insertionPoint.nextSibling;
-    insertionPoint.parentNode.insertBefore(section, insertionPoint.nextSibling);
+    insertionPoint.parentNode!.insertBefore(section, insertionPoint.nextSibling);
     enablePeakLinkOrder({ section, list: linkList, settings });
 })();
