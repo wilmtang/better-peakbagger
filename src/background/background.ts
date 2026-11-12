@@ -284,7 +284,7 @@ type DraftMap = Record<string, DraftRecord>;
         && typeof value.provider === 'string'
         && value.activityId != null;
 
-    const readMap = async <Value = CaptureJob>(key: string): Promise<Record<string, Value>> => ((await storage().get(key))[key] || {}) as Record<string, Value>;
+    const readMap = async <Value>(key: string): Promise<Record<string, Value>> => ((await storage().get(key))[key] || {}) as Record<string, Value>;
     const mutationQueueKey = (storageKey: string) => storageKey === JOBS_KEY || storageKey === DRAFTS_KEY
         ? CAPTURE_MUTATION_QUEUE
         : storageKey;
@@ -296,7 +296,7 @@ type DraftMap = Record<string, DraftRecord>;
             if (mutationQueues.get(queueKey) === operation) mutationQueues.delete(queueKey);
         });
     };
-    const mutateMap = <Result, Value = CaptureJob>(key: string, mutate: (map: Record<string, Value>) => Result | Promise<Result>) => enqueueMutation(mutationQueueKey(key), async () => {
+    const mutateMap = <Result, Value>(key: string, mutate: (map: Record<string, Value>) => Result | Promise<Result>) => enqueueMutation(mutationQueueKey(key), async () => {
         const map = await readMap<Value>(key);
         const result = await mutate(map);
         await storage().set({ [key]: map });
@@ -341,7 +341,7 @@ type DraftMap = Record<string, DraftRecord>;
 
     const installCapturePayload = (tabId: number, generation: string, gpx: unknown, patch: Partial<CaptureJob>, gpxWithoutTimestamps?: string | null) => {
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
-            const jobs = await readMap(JOBS_KEY);
+            const jobs = await readMap<CaptureJob>(JOBS_KEY);
             const current = jobs[tabId];
             if (!current || current.id !== generation) return null;
             const payloadKey = payloadKeyForJob(generation);
@@ -368,7 +368,7 @@ type DraftMap = Record<string, DraftRecord>;
 
     const updateCaptureJobWithoutPayload = (tabId: number, generation: string, patch: Partial<CaptureJob>) => {
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
-            const jobs = await readMap(JOBS_KEY);
+            const jobs = await readMap<CaptureJob>(JOBS_KEY);
             const current = jobs[tabId];
             if (!current || current.id !== generation) return null;
             const payloadKey = referencedPayloadKey(current);
@@ -2043,7 +2043,7 @@ type DraftMap = Record<string, DraftRecord>;
             };
         }
         if (activity.provider === 'garmin' && globalThis.indexedDB) {
-            const current = (await readMap(JOBS_KEY))[tabId];
+            const current = (await readMap<CaptureJob>(JOBS_KEY))[tabId];
             if (await garminImports.captureBlocked(activity.activityId, current?.id)) {
                 return { kind: 'complete', value: { phase: 'error', error: {
                     code: 'garmin-inbox-activity', message: 'This Garmin activity is already in your import history. Open the activity inbox to review its drafts.',
@@ -2059,7 +2059,7 @@ type DraftMap = Record<string, DraftRecord>;
             throw error;
         }
         if (cancelled()) return cancelledAdmission();
-        const jobs = await readMap(JOBS_KEY);
+        const jobs = await readMap<CaptureJob>(JOBS_KEY);
         diagnostics.mark('admission.jobs');
         if (cancelled()) return cancelledAdmission();
         const current = jobs[tabId];
@@ -2133,7 +2133,7 @@ type DraftMap = Record<string, DraftRecord>;
             if (admission.kind === 'complete') return admission.value;
             if (admission.kind === 'wait') {
                 await admission.process!.promise;
-                const completed = (await readMap(JOBS_KEY))[tabId];
+                const completed = (await readMap<CaptureJob>(JOBS_KEY))[tabId];
                 const completedSameActivity = completed
                     && completed.provider === admission.activity.provider
                     && completed.activityId === admission.activity.activityId;
@@ -2146,7 +2146,7 @@ type DraftMap = Record<string, DraftRecord>;
 
             await admission.process;
             if (admission.signal?.aborted) return null;
-            const completed = (await readMap(JOBS_KEY))[tabId];
+            const completed = (await readMap<CaptureJob>(JOBS_KEY))[tabId];
             return completed?.id === admission.job.id ? publicJob(completed) : null;
         }
     };
@@ -2171,7 +2171,7 @@ type DraftMap = Record<string, DraftRecord>;
             );
         }
 
-        const jobs = await readMap(JOBS_KEY);
+        const jobs = await readMap<CaptureJob>(JOBS_KEY);
         const job = jobs[tabId];
         if (!job) return { ok: true, removedGpx: false, removedDraftCount: 0 };
         if (job.provider !== activity.provider || job.activityId !== activity.activityId) {
@@ -2267,7 +2267,7 @@ type DraftMap = Record<string, DraftRecord>;
 
     const updateSelectionTransaction = async (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
-        const current = (await readMap(JOBS_KEY))[tabId];
+        const current = (await readMap<CaptureJob>(JOBS_KEY))[tabId];
         if (isFresh(current) && SELECTION_LOCKED_PHASES.has(current!.phase)) return current;
         return applySelection(message);
     };
@@ -2411,7 +2411,7 @@ type DraftMap = Record<string, DraftRecord>;
 
         const isCurrent = async () => {
             if (lifecycleEpoch(jobTabId) !== epoch) return false;
-            const current = (await readMap(JOBS_KEY))[jobTabId];
+            const current = (await readMap<CaptureJob>(JOBS_KEY))[jobTabId];
             return current?.id === priorJob?.id && current.openingId === openingId
                 && (current.phase === 'opening' || current.phase === 'opened' || current.phase === 'previewed');
         };
@@ -2644,7 +2644,7 @@ type DraftMap = Record<string, DraftRecord>;
     };
 
     const openDraftsTransaction = async (message: WorkerMessage, tabId: number) => {
-        const jobs = await readMap(JOBS_KEY);
+        const jobs = await readMap<CaptureJob>(JOBS_KEY);
         const existingJob = jobs[tabId];
         if (!isFresh(existingJob)) {
             throw PublicErrors.exception(
@@ -2848,7 +2848,7 @@ type DraftMap = Record<string, DraftRecord>;
         && left.selectionGeneration === right.selectionGeneration
         && left.selectionNonce === right.selectionNonce;
     const uploadSelectionIsCurrent = async (tabId: number, selection: UploadSelection) => {
-        const jobs = await readMap(JOBS_KEY);
+        const jobs = await readMap<CaptureJob>(JOBS_KEY);
         return jobs[tabId]?.provider === 'upload'
             && sameUploadSelection(jobs[tabId], selection);
     };
@@ -2896,6 +2896,8 @@ type DraftMap = Record<string, DraftRecord>;
                     updatedAt: now(),
                     expiresAt: now() + JOB_TTL_MS,
                     ...selection,
+                    // A selection placeholder: it has no matches until analysis
+                    // installs the real job, and readers check its phase first.
                 } as unknown as CaptureJob;
             });
             await removePayloadKeys(replacedPayloadKey);
@@ -3061,7 +3063,7 @@ type DraftMap = Record<string, DraftRecord>;
             return { ok: false, error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } };
         }
         const tabId = page.tabId;
-        const jobs = await readMap(JOBS_KEY);
+        const jobs = await readMap<CaptureJob>(JOBS_KEY);
         let job = jobs[tabId];
         const selection = cleanUploadSelection(message);
         if (!selection || !(await uploadSelectionIsCurrent(tabId, selection))
@@ -3245,7 +3247,7 @@ type DraftMap = Record<string, DraftRecord>;
         if (!page || !validateDraftPage(draft, page) || !validateDraftPage(draft, message)) {
             return { action: 'error', message: 'This Peakbagger page does not match its prepared ascent draft.' };
         }
-        const jobs = await readMap(JOBS_KEY);
+        const jobs = await readMap<CaptureJob>(JOBS_KEY);
         // A fresh draft intentionally keeps its source job alive past the
         // job's own TTL; cleanup preserves that relationship until every draft
         // expires or closes.
@@ -3409,7 +3411,7 @@ type DraftMap = Record<string, DraftRecord>;
         if (!page || !isFresh(draft) || !validateDraftPage(draft, page)
             || !draft.waitForSave || !draft.complete || draft.saved
             || !/^[1-9]\d*$/.test(String(message.aid)) || String(message.aid) === '1') return null;
-        const job = (await readMap(JOBS_KEY))[draft.sourceTabId];
+        const job = (await readMap<CaptureJob>(JOBS_KEY))[draft.sourceTabId];
         if (job?.id !== draft.jobId) return null;
         return { draft, job };
     };
@@ -3546,7 +3548,7 @@ type DraftMap = Record<string, DraftRecord>;
 
     const cleanup = async () => {
         const cutoff = now();
-        const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap<DraftRecord>(DRAFTS_KEY)]);
+        const [jobs, drafts] = await Promise.all([readMap<CaptureJob>(JOBS_KEY), readMap<DraftRecord>(DRAFTS_KEY)]);
         const sourceTabIds = new Set([
             ...Object.keys(jobs).map(Number),
             ...Object.values(drafts).map(draft => Number(draft.sourceTabId)),
@@ -3605,6 +3607,10 @@ type DraftMap = Record<string, DraftRecord>;
         if (!sender.tab) return isCustomOptionsParent(sender.url);
         try { return isCustomOptionsParent((await ext.tabs.get(sender.tab.id as number)).url); } catch { return false; }
     };
+    // Route factories below that are still JavaScript infer their option types
+    // from destructuring defaults (often null), which no real dependency can
+    // satisfy. Their options are asserted to that parameter type at the call;
+    // the ones that do typecheck use `satisfies`. Convert a factory to drop its cast.
     const customPrivate = createCustomPrivateStore();
     const customOverlays = createCustomOverlayStore({ storage: ext.storage.local,
         canRead: (sender: Sender) => isPeakbaggerSender(sender) || customReader(sender), canEdit: customEditor,
@@ -3626,7 +3632,7 @@ type DraftMap = Record<string, DraftRecord>;
         if (!isPopupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const sourceTabId = Number(message?.tabId);
         if (!Number.isInteger(sourceTabId)) return { ok: false, error: { code: 'invalid-tab' } };
-        const job = (await readMap(JOBS_KEY))[sourceTabId];
+        const job = (await readMap<CaptureJob>(JOBS_KEY))[sourceTabId];
         const recoveryTabId = Number(job?.error?.recoveryTabId);
         if (!Number.isInteger(recoveryTabId)) return { ok: false, error: { code: 'not-found' } };
         try {
@@ -3690,7 +3696,7 @@ type DraftMap = Record<string, DraftRecord>;
         now
     } as unknown as Parameters<typeof createTerrainPrefetch>[0]);
 
-    const ignoredMutations = createIgnoredStore({ storage: ext.storage.local } as unknown as Parameters<typeof createIgnoredStore>[0]);
+    const ignoredMutations = createIgnoredStore({ storage: ext.storage.local } satisfies Parameters<typeof createIgnoredStore>[0]);
     const githubRoutes = createGithubRoutes({
         customLayers: customOverlays,
         ignoredStore: ignoredMutations,
@@ -3709,19 +3715,19 @@ type DraftMap = Record<string, DraftRecord>;
     } as unknown as Parameters<typeof createGithubRoutes>[0]);
     const caltopoRoutes = createCaltopoRoutes({
         ext, isPeakbaggerSender, trustedActions, action: TrustedActions.ACTIONS.CALTOPO_IMPORT,
-    } as unknown as Parameters<typeof createCaltopoRoutes>[0]);
+    } satisfies Parameters<typeof createCaltopoRoutes>[0]);
     const alltrailsRoutes = createAlltrailsRoutes({
         ext,
         isPeakbaggerSender,
         trustedActions,
         action: TrustedActions.ACTIONS.ALLTRAILS_IMPORT,
-    } as unknown as Parameters<typeof createAlltrailsRoutes>[0]);
+    } satisfies Parameters<typeof createAlltrailsRoutes>[0]);
     const gaiaRoutes = createGaiaRoutes({
         ext,
         isPeakbaggerSender,
         trustedActions,
         action: TrustedActions.ACTIONS.GAIA_IMPORT,
-    } as unknown as Parameters<typeof createGaiaRoutes>[0]);
+    } satisfies Parameters<typeof createGaiaRoutes>[0]);
     const onxRoutes = createOnxRoutes({
         ext,
         isPeakbaggerSender,
@@ -3799,7 +3805,7 @@ type DraftMap = Record<string, DraftRecord>;
             const source = await ext.tabs.get(tabId);
             if (!createPackagedPageMatcher(ext, ['options/inbox.html'])({ ...sender, url: source.url })) throw PublicErrors.exception('garmin-inbox-tab', 'Open the activity inbox to continue.');
             return serializeLifecycle(tabId, async () => {
-                const jobs = await readMap(JOBS_KEY); const existing = jobs[tabId];
+                const jobs = await readMap<CaptureJob>(JOBS_KEY); const existing = jobs[tabId];
                 if (item.handoff?.phase === 'preparing') {
                     // This durable stage precedes every call that can create a
                     // draft tab. It is safe to retry after interrupted setup,
@@ -3927,7 +3933,7 @@ type DraftMap = Record<string, DraftRecord>;
         await mutateMap(BETA_SETTINGS_TABS_KEY, (tabs: Record<string, { owned: boolean }>) => { delete tabs[tabId]; });
     };
     const registeredBetaSettingsTab = async () => {
-        const records = await readMap(BETA_SETTINGS_TABS_KEY);
+        const records = await readMap<{ owned: boolean }>(BETA_SETTINGS_TABS_KEY);
         const tabId = Number(Object.keys(records)[0]);
         if (!Number.isInteger(tabId)) return null;
         try {
@@ -4126,7 +4132,7 @@ type DraftMap = Record<string, DraftRecord>;
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_FOCUS_RECOVERY': return focusCaptureRecoveryTab(message, sender);
             case 'CAPTURE_STATUS': {
-                const jobs = await readMap(JOBS_KEY);
+                const jobs = await readMap<CaptureJob>(JOBS_KEY);
                 const job = jobs[Number(message.tabId)] || null;
                 // Local-file GPX jobs belong to the ascent form, not the popup.
                 return job && job.provider !== 'upload' ? publicJob(job) : null;
@@ -4225,7 +4231,7 @@ type DraftMap = Record<string, DraftRecord>;
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
         runDetachedCleanup('report draft tab cleanup', () => reportDraftRoutes.forgetTab(tabId));
         runDetachedCleanup('capture tab cleanup', async () => {
-            const [drafts, jobs] = await Promise.all([readMap<DraftRecord>(DRAFTS_KEY), readMap(JOBS_KEY)]);
+            const [drafts, jobs] = await Promise.all([readMap<DraftRecord>(DRAFTS_KEY), readMap<CaptureJob>(JOBS_KEY)]);
             const sourceTabId = Number(drafts[tabId]?.sourceTabId ?? (jobs[tabId] ? tabId : NaN));
             if (!Number.isInteger(sourceTabId)) return;
             abortOwnedWork(sourceTabId, jobs[sourceTabId]?.id ?? null);
