@@ -3853,6 +3853,17 @@ type DraftMap = Record<string, DraftRecord>;
                     });
                     delete item.handoff;
                 }
+                // Drafts prepared before timestamp removal was turned on cannot be
+                // delivered. With nothing saved, reopening releases that handoff
+                // and prepares the activity again from current preferences.
+                if (item.handoff && isFresh(existing) && existing!.id === item.handoff.jobId
+                    && !existing!.savedPeakIds?.length && await timestampsTurnedOn(existing!)) {
+                    const staleJobId = item.handoff.jobId;
+                    await garminImports.store.mutate(current => {
+                        if (current.items[item.id]?.handoff?.jobId === staleJobId) delete current.items[item.id].handoff;
+                    });
+                    delete item.handoff;
+                }
                 if (item.handoff) {
                     if (!isFresh(existing) || existing.id !== item.handoff.jobId) throw new GarminError('handoff');
                     return { ok: true, ...await openDraftsTransaction({ ...message, tabId } as WorkerMessage, tabId) };
