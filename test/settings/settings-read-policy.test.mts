@@ -35,7 +35,7 @@ const FAIL_SOFT = Object.freeze({
 const AUTHORITATIVE = Object.freeze({
     'options/inbox.ts': [{ count: 1, kind: 'privacy', reason: 'hide the inbox until the master switch is read authoritatively' }],
     'popup/popup.ts': [{ count: 1, kind: 'privacy', reason: 'hide the inbox entry until the master switch is read authoritatively' }],
-    'options/garmin.js': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
+    'options/garmin.ts': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
     'src/garmin/garmin-badge.ts': [{ count: 1, kind: 'privacy', reason: 'keep the last accurate badge instead of drawing the queue from default settings' }],
     'options/inbox-toolbar-setting.ts': [{ count: 1, kind: 'preservation', reason: 'populate the toolbar count control without replacing unreadable settings with defaults' }],
     'src/garmin/garmin-imports.ts': [{ count: 7, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],

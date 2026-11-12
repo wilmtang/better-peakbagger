@@ -18,7 +18,7 @@ Files read, in full or in the part relevant to a finding:
 
 - Garmin inbox: `src/garmin/garmin-imports.ts`, `garmin-store.js`,
   `garmin-badge.ts`, `options/inbox.ts`, `options/inbox.html`,
-  `options/garmin.js`, and the Garmin call sites in
+  `options/garmin.ts`, and the Garmin call sites in
   `src/background/background.js`
 - Popup: `popup/popup.ts`
 - Photo topo output and downloads: `src/photos/photo-output.ts`, the download
@@ -106,7 +106,7 @@ reproduction.
 activity; with the inbox feature off, the popup instead sends them to enable a
 feature that still will not show it (`popup/popup.ts` lines 226–228). The only
 escape is "Delete local Garmin data", which is itself unavailable while the
-feature is off (`options/garmin.js` lines 82 and 181), so that user must enable
+feature is off (`options/garmin.ts` lines 82 and 181), so that user must enable
 the inbox first. Manual capture of a real activity is blocked by an abandoned
 attempt.
 
@@ -406,7 +406,7 @@ still use native dialogs (complete inventory: seven `confirm`, two `alert`):
 | Site | Dialog | Note |
 | --- | --- | --- |
 | `options/inbox.ts` 161 | `confirm` — mark activity done | |
-| `options/garmin.js` 183 | `confirm` — delete local drafts and history | Destructive. The October 31 service-disconnect audit (D5) reworked and browser-verified this dialog without replacing it |
+| `options/garmin.ts` 183 | `confirm` — delete local drafts and history | Destructive. The October 31 service-disconnect audit (D5) reworked and browser-verified this dialog without replacing it |
 | `photos/photos.ts` 1401 | `confirm` — continue without an editable copy | |
 | `photos/photos.ts` 3322 | `confirm` — bundle includes original metadata | |
 | `photos/photos.ts` 3347 | `confirm` — move to Recently Deleted | Followed by a toast with Undo (lines 3363–3366) |
@@ -432,7 +432,7 @@ Each replacement needs the layout-stability and focus checks in both browsers.
 
 ### F6 — Fixed-interval worker polling
 
-`options/garmin.js` line 194 polls every 5 seconds for the life of the Settings
+`options/garmin.ts` line 194 polls every 5 seconds for the life of the Settings
 tab while visible, whichever section is shown. With the feature on it sends
 `GARMIN_STATUS` (line 66), whose response carries every item with its matches
 and up to 200 history rows, yet the page uses only `configured`, `pending`,
@@ -513,7 +513,7 @@ reproduced bug — runs its new assertion against the unfixed code first.
 | 2 | F10 byte-capacity retry loop | — | Unit test across several alarm periods, then resume after removal |
 | 3 | F11 repeated Dismiss | — | Unit test dismiss ×2 → undo; stranded item collected; one `npm run verify -- chrome` covering the worker changes in steps 1–3 |
 | 4 | F3 + F4 dismiss feedback, visible Undo, stale Undo button, history selection | Rendered confirmation of the current state | Inbox jsdom tests; mixed-ID history test; hidden Chrome and Firefox transition and geometry check |
-| 5 | F6a Settings uses `GARMIN_SUMMARY` | — | Settings Garmin tests. The one-word change forces the TypeScript conversion of `options/garmin.js` (197 lines); scope the commit as that conversion plus the change |
+| 5 | F6a Settings uses `GARMIN_SUMMARY` | — | Settings Garmin tests. The one-word change forces the TypeScript conversion of `options/garmin.ts` (197 lines); scope the commit as that conversion plus the change |
 | 6 | F1 Garmin store | Real-browser timing at 5/25/90 items | Migration, write-scope and delete-path tests; before/after timings; `npm run verify -- chrome` |
 | 7 | F6b push instead of poll | Outcome of step 6 | Notice-driven refresh tests; worker idles with Settings open |
 | 8 | F2 shared download helper | New completed-download assertions (Firefox settings export; ≥20 MB bundle in both) | Those assertions against the shared helper |

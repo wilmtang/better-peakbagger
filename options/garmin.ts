@@ -3,8 +3,19 @@
 import { settings as Settings } from '../src/settings/settings.js';
 import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.js';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
-const ext = globalThis.browser || globalThis.chrome;
-export async function initGarminSettings(root) {
+
+// Settings reads only these summary fields; GARMIN_SUMMARY carries them
+// without every item's matches and the import history.
+interface GarminSettingsState {
+    configured?: boolean; enabled?: boolean; pending?: number; checking?: boolean; cid?: string | null;
+    connectedDate?: string; error?: { code?: string; message?: string } | null; accessRemoved?: boolean;
+}
+type GarminPreferences = typeof Schema.DEFAULTS;
+// Lookups are this module's own markup; one type covers the controls it reads.
+type Control = HTMLElement & HTMLInputElement & HTMLSelectElement;
+
+const ext = ((globalThis as { browser?: typeof chrome }).browser || globalThis.chrome) as typeof chrome;
+export async function initGarminSettings(root: HTMLElement | null) {
     if (!root) return;
     root.classList.add('garmin-settings');
     root.innerHTML = `<h3 class="subsection-title" id="capture-garmin-heading">Garmin connection</h3>
@@ -29,22 +40,25 @@ export async function initGarminSettings(root) {
         <button id="garmin-access" class="panel-button primary" hidden>Allow Garmin access</button>
         <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="panel-button secondary">Check full history</button><button id="garmin-delete" class="panel-button secondary" aria-disabled="true" aria-describedby="garmin-settings-status">Delete local Garmin data</button></div><p class="garmin-helper">Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
       </div>`;
-    const $ = selector => root.querySelector(selector);
+    const $ = (selector: string) => root.querySelector(selector) as Control;
     root.addEventListener('submit', event => event.preventDefault());
-    const send = async message => { const result = await ext.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error?.message || 'Garmin could not finish this action. Try again.'); return result; };
-    let featureEnabled = false; let state; let busy = false; let keyError = false; let settingsError = false;
+    const send = async (message: Record<string, unknown>): Promise<GarminSettingsState> => {
+        const result = await ext.runtime.sendMessage(message) as (GarminSettingsState & { ok?: boolean; error?: { message?: string } }) | undefined;
+        if (!result?.ok) throw new Error(result?.error?.message || 'Garmin could not finish this action. Try again.'); return result;
+    };
+    let featureEnabled = false; let state: GarminSettingsState | undefined; let busy = false; let keyError = false; let settingsError = false;
     let revision = 0; let preferencesRevealed = false; let settingsUnavailable = false;
     let disconnectConfirmed = false;
-    let pendingDrafts = null;
-    const setDraftCount = count => {
-        pendingDrafts = Number.isSafeInteger(count) && count >= 0 ? count : null;
+    let pendingDrafts: number | null = null;
+    const setDraftCount = (count: number | null | undefined) => {
+        pendingDrafts = Number.isSafeInteger(count) && (count as number) >= 0 ? count as number : null;
         $('#garmin-delete').setAttribute('aria-disabled', String(pendingDrafts === null));
     };
-    const perform = async (button, status, operation, { cleanup = false } = {}) => {
+    const perform = async (button: HTMLElement, status: HTMLElement, operation: () => Promise<void>, { cleanup = false } = {}) => {
         if (busy || (!featureEnabled && !cleanup)) return; busy = true; revision++;
         if (status.id === 'garmin-key-status') { keyError = false; disconnectConfirmed = false; } else settingsError = false;
         button.setAttribute('aria-disabled', 'true'); button.setAttribute('aria-busy', 'true'); status.classList.remove('is-error'); status.textContent = 'Working…';
-        try { await operation(); } catch (error) { status.textContent = error.message;
+        try { await operation(); } catch (error) { status.textContent = (error as Error).message;
             status.classList.add('is-error');
             if (status.id === 'garmin-key-status') keyError = true; else settingsError = true; }
         finally { busy = false; button.removeAttribute('aria-disabled'); button.removeAttribute('aria-busy');
@@ -62,8 +76,8 @@ export async function initGarminSettings(root) {
         if (busy && !duringOperation) return;
         const expected = ++revision;
         const fullStatus = featureEnabled;
-        let next;
-        try { next = await send({ type: fullStatus ? 'GARMIN_STATUS' : 'GARMIN_CONNECTION_STATUS' }); }
+        let next: GarminSettingsState;
+        try { next = await send({ type: fullStatus ? 'GARMIN_SUMMARY' : 'GARMIN_CONNECTION_STATUS' }); }
         catch (error) {
             if (expected !== revision) return;
             setDraftCount(null);
@@ -100,11 +114,11 @@ export async function initGarminSettings(root) {
     const credentialsImported = () => { keyError = settingsError = disconnectConfirmed = false; void refresh().catch(() => {}); };
     document.addEventListener('bpb:credentials-imported', credentialsImported);
     addEventListener('pagehide', () => document.removeEventListener('bpb:credentials-imported', credentialsImported), { once: true });
-    let prefs;
-    try { prefs = await Settings.requireCurrent(); }
+    let prefs: GarminPreferences;
+    try { prefs = await Settings.requireCurrent() as GarminPreferences; }
     catch { prefs = { ...Schema.DEFAULTS, enableGarminInbox: false }; settingsUnavailable = true;
         $('#garmin-key-status').textContent = 'Settings could not be read. You can still disconnect Garmin.'; keyError = true; }
-    const applyFeature = settings => {
+    const applyFeature = (settings: { enableGarminInbox: boolean }) => {
         if (featureEnabled !== settings.enableGarminInbox) { revision++; setDraftCount(null); }
         featureEnabled = settings.enableGarminInbox;
         const revealed = root.hidden;
@@ -124,20 +138,20 @@ export async function initGarminSettings(root) {
         void refresh().catch(() => { $('#garmin-disconnect').hidden = false; });
     };
     applyFeature(prefs);
-    const unsubscribe = Settings.subscribe(settings => { settingsUnavailable = false; applyFeature(settings); });
+    const unsubscribe = Settings.subscribe((settings: GarminPreferences) => { settingsUnavailable = false; applyFeature(settings); });
     addEventListener('pagehide', unsubscribe, { once: true });
-    const selectValue = (select, custom, value) => {
+    const selectValue = (select: string, custom: string, value: number) => {
         const known = [...$(select).options].some(option => option.value === String(value));
-        $(select).value = known ? String(value) : 'custom'; $(custom).value = value;
+        $(select).value = known ? String(value) : 'custom'; $(custom).value = String(value);
     };
     selectValue('#garmin-frequency', '#garmin-custom-hours', prefs.garminCheckHours);
     selectValue('#garmin-recent', '#garmin-custom-days', prefs.garminRecentDays);
     $('#garmin-types').value = prefs.garminActivityTypes;
     $('#garmin-history').value = prefs.garminHistoryStart === 'all' ? 'all' : prefs.garminHistoryStart ? 'date' : 'connection';
-    $('#garmin-date').value = prefs.garminHistoryStart === 'all' ? '' : prefs.garminHistoryStart;
+    $('#garmin-date').value = prefs.garminHistoryStart === 'all' ? '' : String(prefs.garminHistoryStart);
     for (const selector of ['#garmin-frequency', '#garmin-recent', '#garmin-history']) $(selector).addEventListener('change', updateChoices);
     updateChoices();
-    $('#garmin-show-key').addEventListener('click', () => { const show = $('#garmin-key').type === 'password'; $('#garmin-key').type = show ? 'text' : 'password'; $('#garmin-show-key span').textContent = show ? 'Hide' : 'Show'; $('#garmin-show-key').setAttribute('aria-pressed', String(show)); });
+    $('#garmin-show-key').addEventListener('click', () => { const key = root.querySelector<HTMLInputElement>('#garmin-key')!; const show = key.type === 'password'; key.type = show ? 'text' : 'password'; $('#garmin-show-key span').textContent = show ? 'Hide' : 'Show'; $('#garmin-show-key').setAttribute('aria-pressed', String(show)); });
     $('#garmin-key').addEventListener('input', () => { keyError = disconnectConfirmed = false; });
     $('.garmin-key-form').addEventListener('submit', event => {
         event.preventDefault();
@@ -169,14 +183,15 @@ export async function initGarminSettings(root) {
             ? 'Disconnected. Remove remaining browser access in extension permissions.'
             : 'Disconnected. Your existing drafts are kept.';
         if (document.activeElement === $('#garmin-disconnect')) {
-            (featureEnabled ? $('#garmin-key') : root.querySelector('h3')).focus({ preventScroll: true });
+            (featureEnabled ? $('#garmin-key') : root.querySelector('h3')!).focus({ preventScroll: true });
         }
         $('#garmin-disconnect').hidden = true;
         if (state) { state.configured = false; state.enabled = false; }
         $('#garmin-full').disabled = true;
     }, { cleanup: true }));
-    root.querySelector('h3').tabIndex = -1;
-    for (const [selector, type, extra] of [['#garmin-access', 'GARMIN_ACCESS', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]]) {
+    root.querySelector('h3')!.tabIndex = -1;
+    const actions: [string, string, { full?: boolean; deleteData?: boolean }][] = [['#garmin-access', 'GARMIN_ACCESS', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]];
+    for (const [selector, type, extra] of actions) {
         $(selector).addEventListener('click', () => {
             if (busy || !featureEnabled) return;
             if (extra.deleteData && (pendingDrafts === null
@@ -190,8 +205,8 @@ export async function initGarminSettings(root) {
             });
         });
     }
-    try { await refresh(); } catch (error) { $('#garmin-key-status').textContent = error.message; $('#garmin-disconnect').hidden = false; }
+    try { await refresh(); } catch (error) { $('#garmin-key-status').textContent = (error as Error).message; $('#garmin-disconnect').hidden = false; }
     const timer = setInterval(() => { if (!busy && !document.hidden) void refresh().catch(() => {}); }, 5000);
     addEventListener('pagehide', () => clearInterval(timer), { once: true });
 }
-if (document.querySelector('[data-garmin-settings]')) void initGarminSettings(document.querySelector('[data-garmin-settings]'));
+if (document.querySelector('[data-garmin-settings]')) void initGarminSettings(document.querySelector<HTMLElement>('[data-garmin-settings]'));
