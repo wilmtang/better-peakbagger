@@ -39,7 +39,7 @@ interface GpxMatch {
 }
 // The worker's GPX_PROCESS_START reply; only the fields this page reads.
 interface ProcessReply {
-    phase?: string; message?: string; error?: { message?: string }; jobId?: string;
+    phase?: string; message?: string; error?: { code?: string; message?: string }; jobId?: string;
     matches?: GpxMatch[]; boundFallback?: GpxMatch | null; boundPid?: number | string | null;
     pageSessionId?: string; selectionGeneration?: number; selectionNonce?: string;
 }
@@ -628,7 +628,8 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
 
         const handleProcessResult = async (response: ProcessReply, token: number, units: DisplayUnits) => {
             if (!response || response.phase === 'error') {
-                fail(response?.error?.message || 'The GPX could not be processed.');
+                // Processing again cannot succeed on the bare host; the message says where it can.
+                fail(response?.error?.message || 'The GPX could not be processed.', { retry: response?.error?.code !== 'peakbagger-host' });
                 return;
             }
             if (response.phase === 'no-gps') {

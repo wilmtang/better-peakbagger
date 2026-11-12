@@ -2723,12 +2723,23 @@ type DraftMap = Record<string, DraftRecord>;
             if (!opening.matches.length) {
                 throw PublicErrors.exception('no-selection', 'Select at least one detected peak.');
             }
+            let alreadySaved: number[] = [];
             if (job.provider === 'garmin' && !job.inboxActivityId && globalThis.indexedDB) {
-                await garminImports.reserveCapture(job as Parameters<typeof garminImports.reserveCapture>[0]);
+                // Another tab's capture of this activity may still have open,
+                // unsaved drafts; a second set would let both be saved.
+                const otherOpen = Object.values(await readMap<CaptureJob>(JOBS_KEY)).some(other => other.id !== job.id
+                    && other.provider === 'garmin' && String(other.activityId) === String(job.activityId)
+                    && isFresh(other) && ['opening', 'opened', 'previewed'].includes(other.phase));
+                if (otherOpen) {
+                    throw PublicErrors.exception('garmin-capture-open',
+                        'Drafts for this activity are already open from another tab. Finish or close them first.');
+                }
+                alreadySaved = await garminImports.reserveCapture(job as Parameters<typeof garminImports.reserveCapture>[0]);
             }
 
             const liveByPeak = new Map(existingForJob.map(draft => [String(draft.pid), draft]));
-            const savedPeaks = new Set(job.savedPeakIds || []);
+            // Peaks a taken-over receipt already records as saved are not offered again.
+            const savedPeaks = new Set([...(job.savedPeakIds || []), ...alreadySaved]);
             const missing = opening.confidenceOrdered.filter(match => !liveByPeak.has(String(match.id))
                 && !savedPeaks.has(match.id));
             const previewOrder = new Map(opening.confidenceOrdered
@@ -4306,7 +4317,7 @@ type DraftMap = Record<string, DraftRecord>;
         // Creating a same-named alarm replaces it and restarts its period, and
         // this runs on every worker start; keep an existing five-minute alarm.
         const armCleanup = () => ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
-        void Promise.resolve(typeof ext.alarms.get === 'function' ? ext.alarms.get(CLEANUP_ALARM) : undefined)
+        void Promise.resolve().then(() => typeof ext.alarms.get === 'function' ? ext.alarms.get(CLEANUP_ALARM) : undefined)
             .then(existing => { if (existing?.periodInMinutes !== 5) return armCleanup(); })
             .catch(armCleanup);
         ext.alarms.onAlarm.addListener(alarm => {

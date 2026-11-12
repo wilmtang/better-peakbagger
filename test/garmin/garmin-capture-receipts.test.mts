@@ -62,3 +62,14 @@ test('the inbox keeps refusing a saved or inbox-owned activity, but not while it
         assert.deepEqual((await h.store.read()).receipts['777'].peaks, { 7: '9001', 8: '9002' }, 'saves from both captures are kept');
     } finally { await h.store.close(); }
 });
+
+test('with the inbox off, a taken-over receipt reports the peaks it already saved', async () => {
+    const h = await garminImportsHarness();
+    const imports = h.imports as Imports;
+    h.prefs.enableGarminInbox = false;
+    try {
+        assert.deepEqual(await imports.reserveCapture(job('first-job')), []);
+        await imports.captureSaved(job('first-job'), '7', '9001');
+        assert.deepEqual(await imports.reserveCapture(job('second-job')), [7], 'an already saved peak is not offered again');
+    } finally { await h.store.close(); }
+});

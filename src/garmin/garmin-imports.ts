@@ -510,23 +510,26 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         // off it also takes over one that did, for the same climber, keeping
         // those saves. Earlier job ids are kept so a surviving draft tab of an
         // earlier capture can still record its Save.
-        async reserveCapture(job: CaptureJob) {
+        // Returns the peak ids the receipt already records as saved.
+        async reserveCapture(job: CaptureJob): Promise<number[]> {
             const enforce = (await settings.requireCurrent()).enableGarminInbox;
-            await store.mutate(state => {
+            return store.mutate(state => {
                 const receipt = state.receipts[job.activityId];
-                if (receipt?.jobId === job.id) return;
+                const saved = () => Object.keys(receipt?.peaks || {}).map(Number);
+                if (receipt?.jobId === job.id) return saved();
                 const adoptable = !!receipt?.fromToolbar && (!savedPeaks(receipt)
                     || (!enforce && String(receipt.cid) === String(job.cid)));
                 if (state.items[job.activityId] || (receipt && !adoptable)) {
                     if (enforce) throw new GarminError('duplicate');
-                    return;
+                    return [];
                 }
                 if (receipt) {
                     receipt.previousJobIds = [...(receipt.previousJobIds || []), receipt.jobId as string].filter(Boolean).slice(-8);
                     receipt.jobId = job.id; receipt.cid = job.cid; receipt.at = clock();
-                    return;
+                    return saved();
                 }
                 state.receipts[job.activityId] = { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {}, at: clock() };
+                return [];
             });
         },
         async captureSaved(job: CaptureJob, peakId: string, aid: string) {
