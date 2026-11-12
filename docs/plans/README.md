@@ -1,5 +1,9 @@
 # Active plans
 
+- [November 11 bugs, performance, engineering and UX audit](codebase-audit-2026-11-11.md)
+  — findings and an ordered plan only; nothing is implemented. Covers the Garmin
+  inbox store and Undo, export downloads, native dialogs and popup/inbox smells.
+
 - [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
   — early store readiness, permanent capture evidence, exact package promotion,
   parallel browser checks and a protected post-upload Chrome checkpoint.
