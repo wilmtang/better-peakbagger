@@ -182,9 +182,12 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         state.error = null;
         if (Object.values(state.items).some(item => item.phase === 'waiting')) state.preparePending = true;
     };
+    // A dismissed item without a finite Undo deadline (left by an earlier repeated
+    // Dismiss) counts as expired, so it cannot stay hidden in the inbox forever.
+    const undoExpired = (item: GarminItem) => item.phase === 'dismissed' && !((item.undoUntil as number) > clock());
     const pruneDismissed = (state: GarminState) => {
         for (const [id, item] of Object.entries(state.items)) {
-            if (item.phase === 'dismissed' && (item.undoUntil as number) <= clock()) delete state.items[id];
+            if (undoExpired(item)) delete state.items[id];
         }
         releaseCapacity(state);
     };
@@ -192,7 +195,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         const [initialMeta, prefs] = await Promise.all([store.summary(), settings.requireCurrent()]);
         if (!prefs.enableGarminInbox) return { featureEnabled: false, enabled: false, configured: false, pending: 0, queued: 0, items: [], history: [] };
         let meta = initialMeta;
-        if (meta.undoDue <= clock()) {
+        if (!(meta.undoDue > clock())) {
             await store.mutate(pruneDismissed);
             await reconcile();
             meta = await store.summary();
@@ -215,7 +218,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
     const runCheck = async (full: boolean, continuation = false, { prepareOnly = false, resume = false, tabId = null }: CheckOptions = {}) => {
         controller = new AbortController(); clientEpoch = -1;
         let state = await store.read();
-        if (Object.values(state.items).some(item => item.phase === 'dismissed' && item.undoUntil! <= clock())) {
+        if (Object.values(state.items).some(undoExpired)) {
             await store.mutate(pruneDismissed); state = await store.read();
         }
         const connection = state.connection;
@@ -406,7 +409,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         },
         GARMIN_CHECK: async message => { void check(message.full === true, false, { resume: true }); return { ok: true }; },
         GARMIN_DISMISS: async message => {
-            await store.mutate(state => { const item = state.items[message.id]; if (!item) return;
+            await store.mutate(state => { const item = state.items[message.id]; if (!item || item.phase === 'dismissed') return;
                 if (item.handoff) throw new GarminError('handoff');
                 item.revision = (item.revision || 0) + 1;
                 item.previousPhase = item.phase; item.phase = 'dismissed'; item.undoUntil = clock() + 60000;
