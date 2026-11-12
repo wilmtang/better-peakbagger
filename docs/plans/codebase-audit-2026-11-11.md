@@ -581,7 +581,7 @@ No browser was launched for this pass either.
 
 `capture` probes a 403 or `text/html` response body with
 `readBoundedResponseText` capped at 8,192 bytes / 4,096 characters
-(`src/capture/provider-page.js` lines 348–354; limits in
+(`src/capture/provider-page.ts`, then JavaScript, lines 348–354; limits in
 `provider-response.js`). That reader throws `ResourceLimitError` when either
 cap is exceeded (`src/net/bounded-text.js`), and the catch maps any limit error
 to `gpx-too-large` (`provider-page.js` line 401). The popup renders that code as

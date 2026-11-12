@@ -810,7 +810,7 @@ Dependency updates arrive automatically; see
 
 ### The intentional page APIs
 
-`src/capture/provider-page.js` publishes `globalThis.BPBProviderPage`. That is a narrow,
+`src/capture/provider-page.ts` publishes `globalThis.BPBProviderPage`. That is a narrow,
 deliberate boundary rather than a module dependency: `background.js` injects
 the built adapter into a provider page, then injects inline functions that call
 the API across the worker→page boundary, where an ES import cannot reach.

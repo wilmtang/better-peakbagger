@@ -157,7 +157,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Shipped surface | Primary owner | Boundary |
 | --- | --- | --- |
 | Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
-| Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
+| Provider extraction | `src/capture/provider-page.ts` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.ts`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
@@ -320,7 +320,7 @@ non-persisted page exit performs terminal disposal. `src/gpx/map-viewport.ts`
 owns and releases its window resize listener, observer, timer, and scheduled
 invalidation as part of that terminal path.
 
-`src/capture/provider-page.js` is also MAIN-world code, but it is injected only after a
+`src/capture/provider-page.ts` is also MAIN-world code, but it is injected only after a
 toolbar click into the active Garmin or Strava page. Its page realm owns the
 authenticated same-origin export request.
 

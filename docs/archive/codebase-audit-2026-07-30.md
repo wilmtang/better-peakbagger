@@ -235,7 +235,7 @@ Create one immutable upload snapshot after the required draft save:
 
 ### Evidence
 
-[`src/capture/provider-page.js`](../../src/capture/provider-page.js) performs
+[`src/capture/provider-page.ts`](../../src/capture/provider-page.ts) performs
 the authenticated Garmin or Strava export with plain `fetch()` followed by
 `response.text()`. It has no deadline, abort controller, or caller signal.
 

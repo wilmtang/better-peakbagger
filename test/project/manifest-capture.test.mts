@@ -77,7 +77,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
         'capture/provider-timing.js',
         'gpx/gpx-parse.js',
         'net/request-deadline.js',
-        'capture/provider-page.js',
+        'capture/provider-page.ts',
     ]);
     assert.deepEqual(bundleSources('peakbagger-page.js'), [
         'peakbagger/peakbagger-origin.js',
