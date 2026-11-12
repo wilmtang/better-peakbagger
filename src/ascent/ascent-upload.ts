@@ -192,6 +192,10 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
         uploadCell?.insertBefore(timestampChoice, document.getElementById('bpb-capture-hint'));
         let timestampSourceFile: File | null = null;
         let preparingFile = false;
+        // The latch belongs to the preparation that set it, not to the request
+        // token: restoring the native controls advances the token without
+        // starting a preparation, and must not leave Save and Preview blocked.
+        let preparation = 0;
         // File replacement is asynchronous. Block native Preview/form submission
         // while preparing, and exclude the original upload from native postbacks.
         document.addEventListener('click', event => {
@@ -374,6 +378,14 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
             processText!.set('Process');
         };
 
+        // While a file is being re-prepared, the controls that would act on it
+        // wait: Attach GPX and the summit card's actions.
+        const syncPreparingControls = () => {
+            for (const control of [attachButton, ...(card?.querySelectorAll<HTMLButtonElement>('.bpb-summit-actions button') || [])]) {
+                if (control) control.setAttribute('aria-disabled', String(preparingFile));
+            }
+        };
+
         const showProcessButton = ({ attachmentOnly = false } = {}) => {
             clearStatus();
             removeCard();
@@ -385,7 +397,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
                 attachButton.title = 'Preview this file on the current ascent without finding summits or changing ascent details';
                 attachButton.addEventListener('click', async () => {
                     const file = nativeGpxFile();
-                    if (!file) return;
+                    if (!file || preparingFile) return;
                     const restored = restoreNative();
                     const token = requestToken;
                     await restored;
@@ -394,6 +406,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
                     nativePreview.click();
                 });
                 nativePreview.insertAdjacentElement('afterend', attachButton);
+                syncPreparingControls();
             }
             nativePreview.classList.add('bpb-native-preview-hidden');
             // Existing ascents own their aid. Summit processing creates new
@@ -598,17 +611,19 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
 
             applyButton.addEventListener('click', () => {
                 const { selectedIds, primaryId } = selection();
-                if (!selectedIds.length) return;
+                if (!selectedIds.length || preparingFile) return;
                 applyButton.disabled = true;
                 cancelButton.disabled = true;
                 void applySelection(response, selectedIds.map(Number),
                     primaryId === null ? null : Number(primaryId), token);
             });
             cancelButton.addEventListener('click', () => {
+                if (preparingFile) return;
                 restoreNative({ retry: true });
             });
 
             actionGroup.insertAdjacentElement('afterend', card!);
+            syncPreparingControls();
         };
 
         const handleProcessResult = async (response: ProcessReply, token: number, units: DisplayUnits) => {
@@ -717,6 +732,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
 
         const handleFileChange = async (file: File | null | undefined, { keepTimestampChoice = false } = {}) => {
             const token = ++requestToken;
+            const owner = ++preparation;
             const deadline = Deadline.createRequestDeadline(GPX_PREPARATION_TIMEOUT_MS);
             const generation = ++selectionGeneration;
             const identity = fileIdentity(file);
@@ -727,6 +743,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
             preparingFile = true;
             preparationText?.set('Preparing GPX…');
             upload.disabled = true;
+            syncPreparingControls();
             includeTimestamps.setAttribute('aria-disabled', 'true');
             clearStatus();
             if (!keepTimestampChoice) resetNativeUi();
@@ -783,11 +800,12 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
                         : 'The selected GPX could not be prepared safely. Choose the file again to retry.');
             } finally {
                 deadline.clear();
-                if (token === requestToken) {
+                if (owner === preparation) {
                     preparingFile = false;
                     preparationText?.set(providerHintText);
                     upload.disabled = false;
                     includeTimestamps.setAttribute('aria-disabled', 'false');
+                    syncPreparingControls();
                 }
             }
         };
