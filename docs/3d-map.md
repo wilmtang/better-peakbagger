@@ -153,7 +153,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/terrain/terrain-cache.ts` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
 | `src/terrain/terrain-tiles.js` | pure helper | Bounded DEM tile enumeration: the first-paint set for prefetch, and the coarse-rung set the frame warms while a live camera rests | Network or browser APIs |
 | `src/maps/peak-markers.js` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
-| `src/background/background.js` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
+| `src/background/background.ts` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
 | `src/background/terrain-activation.ts` | extension worker domain | Short-lived, one-use capabilities bound to action and tab, plus issuing frame/document identity for prefetch | UI events, map payloads, or provider requests |
 | `src/background/terrain-prefetch.js` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
 

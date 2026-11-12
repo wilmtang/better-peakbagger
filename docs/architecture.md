@@ -156,7 +156,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 
 | Shipped surface | Primary owner | Boundary |
 | --- | --- | --- |
-| Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
+| Background coordination | `src/background/background.ts`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.ts` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.ts`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
@@ -529,7 +529,7 @@ apply.
 
 ### 3. Validation and complete summit lookup
 
-`src/background/background.js` funnels both entry points through `analyzeTrack()` and the
+`src/background/background.ts` funnels both entry points through `analyzeTrack()` and the
 pure algorithms in `src/capture/capture-core.js`. The pipeline sanitizes coordinates,
 preserves segment boundaries, rejects unusable time/elevation data, and computes
 corridor boxes from the validated track.
@@ -1290,7 +1290,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | `options/favorites-backup.js` | Settings → Backup & sync | The favorites GitHub backup, restore with its own confirm/undo, and the auto-backup gate | List rendering, source selection, or Buddy fetching |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
-| `src/background/favorites-store.js` and `src/background/background.js` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
+| `src/background/favorites-store.js` and `src/background/background.ts` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
 | `src/background/github-routes.js`, `src/github/github-write-queue.js`, and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns list management on its own page,

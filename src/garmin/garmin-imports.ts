@@ -14,11 +14,12 @@ interface GarminSettings { requireCurrent(): Promise<GarminPreferences> }
 interface RouteAnalysis {
     matches: { id: number; name: string; classification: string; confidence?: number; evidence?: unknown }[];
     route?: { lat: number; lon: number; ele?: number; time: unknown }[][]; waypoints?: unknown[];
+    tripName?: string; nightsOut?: number | null; dayStats?: unknown[]; trackSummary?: Record<string, unknown>;
 }
 interface GarminItem {
     id: string; owner?: string | null; cid?: string | null; phase: string; createdAt?: number; saved: string[];
     summary: { id?: string; date?: string; type?: string; owner?: string | null; localStart?: string; utcStart?: string };
-    analysis?: RouteAnalysis | null; error?: string | null; handoff?: { jobId?: string } | null;
+    analysis?: RouteAnalysis | null; error?: string | null; handoff?: { jobId?: string; tabId?: number; phase?: string } | null;
     revision?: number; retryAt?: number; undoUntil?: number; previousPhase?: string;
 }
 interface GarminReceipt {
@@ -52,7 +53,7 @@ interface GarminService {
 }
 interface BindingContext { cid: string; [key: string]: unknown }
 interface CheckOptions { prepareOnly?: boolean; resume?: boolean; tabId?: number | null }
-interface GarminMessage { type: string; id: string; key: string; full?: boolean; deleteData?: boolean }
+interface GarminMessage { type: string; id: string; key: string; full?: boolean; deleteData?: boolean; tabId?: number; selectedIds?: unknown[]; includeTimestampsOnce?: boolean }
 interface CaptureJob { id: string; activityId: string; cid: string; selectedIds: (string | number)[] }
 interface GarminImportDependencies {
     ext: GarminExt; settings: GarminSettings; store?: GarminStore;

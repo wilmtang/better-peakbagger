@@ -99,7 +99,7 @@ is `SaveButton`/`SaveButton2` or `null` (implicit Enter submission), skip
 otherwise. Keep the existing explicit Save-click listeners.
 
 ### B2 — Snapshot matching falls back to "same peak, most recent", which can attach the wrong ascent's data
-**Severity: medium · [background.js:889-902](../../src/background/background.js)**
+**Severity: medium · [background.js:889-902](../../src/background/background.ts)**
 
 `findSnapshotForPage` matches by ascent id, then peak+date, then **peak id
 alone** when the page date could not be parsed. The peak-only fallback means a
@@ -113,7 +113,7 @@ the peak-only fallback for the manual button (where the user sees what
 happens), or drop it entirely and accept "no snapshot → page-derived backup".
 
 ### B3 — Device-flow auth dies silently on worker restart; options UI polls forever
-**Severity: medium · [background.js:713-787](../../src/background/background.js), [options/github.js:156-165](../../options/github.js)**
+**Severity: medium · [background.js:713-787](../../src/background/background.ts), [options/github.js:156-165](../../options/github.js)**
 
 `githubAuthState` and the fire-and-forget `pollForToken()` loop live only in
 the MV3 service worker's memory. If Chrome tears the worker down mid-flow
@@ -159,7 +159,7 @@ sees "installed but no repos". Add `per_page=100` to the installations call and
 follow pagination on both endpoints (or document the cap).
 
 ### B7 — Fragile Peakbagger login sniff
-**Severity: low (brittleness, fails closed) · [background.js:119](../../src/background/background.js)**
+**Severity: low (brittleness, fails closed) · [background.js:119](../../src/background/background.ts)**
 
 `peakbaggerLogin()` regex-matches `cid=(\d+)…My Home Page` out of the homepage
 HTML. If Peakbagger reworks that link, every capture reports
@@ -173,7 +173,7 @@ itself may be stale.
 ## 2. Engineering — not following best practice
 
 ### E1 — `cleanup()` runs at the top of every message
-[background.js:949](../../src/background/background.js). Three serialized `storage.session`
+[background.js:949](../../src/background/background.ts). Three serialized `storage.session`
 round-trips (drafts, jobs, snapshots) per message — including every 450 ms
 popup poll during a capture and every draft handshake. The 5-minute alarm
 already exists; message-path cleanup adds latency for no correctness benefit

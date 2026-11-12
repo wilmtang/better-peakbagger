@@ -19,7 +19,7 @@ Files read, in full or in the part relevant to a finding:
 - Garmin inbox: `src/garmin/garmin-imports.ts`, `garmin-store.js`,
   `garmin-badge.ts`, `options/inbox.ts`, `options/inbox.html`,
   `options/garmin.ts`, and the Garmin call sites in
-  `src/background/background.js`
+  `src/background/background.ts`
 - Popup: `popup/popup.ts`
 - Photo topo output and downloads: `src/photos/photo-output.ts`, the download
   and confirmation call sites in `photos/photos.ts`
@@ -83,7 +83,7 @@ then do not save: delete the captured track data, or let the 30-minute draft
 lifetime lapse. Capture the same activity again.
 
 **Root cause.** Opening drafts calls `reserveCapture`
-(`src/background/background.js` lines 2599–2601), which writes a receipt bound
+(`src/background/background.ts` lines 2599–2601), which writes a receipt bound
 to that job's id (`src/garmin/garmin-imports.ts` lines 445–450). It runs
 whenever IndexedDB exists; it is not gated on the Garmin inbox being enabled.
 Admission then refuses any capture whose stored receipt names a different job
@@ -581,7 +581,7 @@ passed.
 ### Not started, and why
 
 - **F9, F13, F15, F16, F17 — owner decision.** Each needs a non-mechanical
-  change to `src/background/background.js`. The TypeScript-on-modification
+  change to `src/background/background.ts`. The TypeScript-on-modification
   policy would then require converting that 4,169-line worker in the same
   change, which is its own project (M7 step 5 in the adoption plan). Options:
   convert the worker first, or approve a narrow documented policy exception.
@@ -599,7 +599,7 @@ documented alarm semantics.
 ## Addendum — full read of the capture path
 
 A second pass read the highest-risk code in full: `src/capture/*`,
-`src/net/bounded-text.js`, all 4,169 lines of `src/background/background.js`,
+`src/net/bounded-text.js`, all 4,169 lines of `src/background/background.ts`,
 `src/background/sender-policy.js`, `public-errors.js`, `trusted-actions.js`,
 `src/peakbagger/*` (request, page, response, account, cloudflare, origin),
 `src/gpx/gpx-parse.js`, and the ascent-editor scripts `ascent-draft.js`,

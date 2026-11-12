@@ -61,10 +61,115 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { createGarminImports, GARMIN_ALARM } from '../garmin/garmin-imports.ts';
 import { GarminError } from '../garmin/garmin-api.js';
 
+// ---- Session record shapes --------------------------------------------------
+// Everything below is JSON this worker wrote to storage.session or received in
+// a runtime message. The fields are the ones the worker reads; storage and
+// messages are untrusted until each route validates them, so optional fields
+// stay optional.
+type Ext = typeof chrome;
+type Sender = chrome.runtime.MessageSender;
+type Tab = chrome.tabs.Tab;
+interface JobError { code: string; message: string; retryAt?: number; recoveryTabId?: number; [field: string]: unknown }
+interface DraftFields {
+    date?: string; time?: string; suffix?: string; upDistanceM?: number;
+    tripInfo?: { id?: string; sequence?: number; name?: string; [field: string]: unknown };
+    [field: string]: unknown;
+}
+interface CaptureMatch {
+    id: number; name: string; classification: string; confidence: number; selected?: boolean;
+    location?: unknown; draftFields: DraftFields; closestApproachM?: number;
+    [field: string]: unknown;
+}
+interface CapturePreferences {
+    retainWaypoints: boolean; removeGpxTimestamps: boolean; fillAscentDetails: boolean;
+    fillTripInfo: boolean; fillWildernessNights: boolean; fillExternalUrl: boolean;
+}
+interface ApplyLease { documentKey?: string; expiresAt: number; token?: string; [field: string]: unknown }
+interface CaptureJob {
+    id: string; phase: string; provider?: string; activityId?: string | null; cid?: string | null; tabId?: number;
+    sourceTabId?: number; windowId?: number; expiresAt: number; updatedAt?: number; epoch?: number;
+    capturePreferences?: CapturePreferences; includeTimestampsOnce?: boolean;
+    matches: CaptureMatch[]; selectedIds: number[]; boundFallback?: CaptureMatch | null;
+    payloadKey?: string; uploadGpx?: string; openingId?: string; savedTripId?: string | null; savedPeakIds?: (number | string)[];
+    nightsOut?: number | null; dayStats?: unknown[]; tripName?: string; trackSummary?: Record<string, unknown> | null;
+    error?: JobError | null; failedStage?: string; retryAt?: number; progress?: { completed: number; total: number } | null;
+    inboxActivityId?: string; applyLease?: ApplyLease | null; saveRecoveryRequired?: boolean; sourceClosed?: boolean;
+    selectionGeneration?: number; pageSessionId?: string; previewStarted?: boolean; groupWarning?: unknown;
+    complete?: boolean; jobId?: string; pid?: number | string; items?: unknown; boundPid?: number | null;
+    message?: string; createdAt?: number; openedDraftTabIds?: number[];
+    [field: string]: unknown;
+}
+interface DraftRecord {
+    jobId: string; pid: number | string; cid: number | string; tabId: number; sourceTabId: number;
+    expiresAt: number; complete?: boolean; saved?: boolean; waitForSave?: boolean; previewStarted?: boolean;
+    applyLease?: ApplyLease | null; openingId?: string; previewOrder?: number; focusOnReady?: boolean;
+    suffix?: string; tripInfo?: DraftFields['tripInfo'] | null; classification?: string; confidence?: number;
+    dayStatsPending?: boolean; preserveExistingFields?: boolean; wildernessNightsOut?: number | null; previewError?: string | null;
+    [field: string]: unknown;
+}
+interface PayloadRecord { jobId: string; gpx: string; gpxWithoutTimestamps?: string }
+interface HelperLease { tabId: number; generation: string; expectedUrl: string; createdAt: number; expiresAt: number; adopted: boolean }
+// A runtime message as received. Each route reads and validates its own fields.
+interface WorkerMessage {
+    type: string; tabId?: number; jobId?: string; pid?: number | string; cid?: number | string; aid?: string; id?: string;
+    selectedIds?: unknown; primaryId?: unknown; force?: boolean; includeTimestampsOnce?: boolean;
+    applyLeaseToken?: string; documentToken?: string; previewResult?: { state?: string; message?: string };
+    pageSessionId?: string; selectionGeneration?: number; selectionNonce?: string; reason?: string;
+    segments?: unknown; waypoints?: unknown; trackName?: unknown; utcOffsetMinutes?: unknown;
+    tripId?: string; gpxVerified?: boolean; disposition?: string; mutation?: unknown; patch?: unknown;
+    replace?: boolean; onlyIfUnset?: boolean; favoritesOnly?: boolean;
+    [field: string]: unknown;
+}
+type JobMap = Record<string, CaptureJob>;
+// Errors raised and passed between the worker's stages carry these fields.
+type WorkerError = Error & { code?: string; retryAt?: number; recoveryTabId?: number; resource?: string; source?: string; cause?: unknown };
+// The shared Peakbagger fetch helper's reply, as this worker reads it.
+interface PeakbaggerReply { kind: string; text?: string; error?: WorkerError; url?: string; requestedUrl?: string; status?: number; [field: string]: unknown }
+interface RequestScheduler {
+    run<Result>(task: (signal: AbortSignal) => Promise<Result>, options?: { signal?: AbortSignal | null }): Promise<Result>;
+    stop(reason: unknown, options?: { exceptSignal?: AbortSignal | null }): void;
+    resume(): boolean;
+    state(): { stopped: boolean; reason?: unknown };
+}
+interface BrowserOperation<Result> {
+    operation: () => Result | Promise<Result>; signal?: AbortSignal | null; timeoutMs?: number;
+    onCancel?: (() => unknown) | null; onLateResult?: ((value: Result) => unknown) | null;
+}
+// Page-realm globals the worker's injected functions call. Those functions are
+// serialized and run in the page, so these casts never reach the worker.
+type PageGlobals = typeof globalThis & {
+    BPBPeakbaggerPage?: { version?: number; accountEvidence(): unknown; request(request: unknown): unknown; [member: string]: unknown };
+    BPBProviderPage?: {
+        cancelCapture?(generation: string): unknown;
+        waitForOwnership(expected: unknown, generation: string): Promise<unknown>;
+        capture(options: unknown, generation: string, timeoutMs: number, activity: unknown, diagnostics: boolean): Promise<unknown>;
+    };
+};
+// A provider page's ownership or capture reply, before the worker checks it.
+interface ProviderResult {
+    ok?: boolean; code?: string; message?: string; provider?: string; activityId?: string; retryAt?: number;
+    segments?: unknown[]; waypoints?: unknown[]; metadata?: Record<string, unknown>; diagnostics?: unknown;
+    [field: string]: unknown;
+}
+interface CorridorBox { miny: number; maxy: number; minx: number; maxx: number }
+type ProgressReport = (progress: { completed: number; total: number }) => unknown;
+type Diagnostics = ReturnType<typeof createCaptureDiagnostics>;
+type Deadline = ReturnType<typeof Deadline.createRequestDeadline>;
+interface AnalyzeOptions {
+    segments: unknown; waypoints?: unknown; metadata?: Record<string, unknown>; capturePreferences: CapturePreferences;
+    boundPid?: number | string | null; onPhase?: (phase: string, progress?: { completed: number; total: number }) => unknown;
+    onProgress?: ProgressReport; diagnostics?: Diagnostics; signal?: AbortSignal | null; peakbaggerRequest?: PeakbaggerRequest;
+}
+// A worker route handler; each validates its own message and sender.
+type RouteHandler = (message: WorkerMessage, sender: Sender) => unknown;
+type RecentHelperEvent = { at: number; value: unknown };
+type PeakbaggerRequest = (url: string, options?: { kind?: string; signal?: AbortSignal; [option: string]: unknown }) => Promise<PeakbaggerReply>;
+type DraftMap = Record<string, DraftRecord>;
+
 (() => {
     'use strict';
 
-    const ext = globalThis.browser || globalThis.chrome;
+    const ext = ((globalThis as { browser?: Ext }).browser || globalThis.chrome) as Ext | undefined;
     if (!ext) return;
 
     const JOBS_KEY = 'bpbCaptureJobs';
@@ -103,44 +208,44 @@ import { GarminError } from '../garmin/garmin-api.js';
         code: 'beta-settings-open-failed',
         message: 'Settings could not be opened. Try again.',
     });
-    const processes = new Map();
-    const captureAdmissions = new Map();
-    const captureCancellationEpochs = new Map();
-    const localAnalysisOwners = new Map();
-    const providerCancellationRequests = new Set();
-    const lifecycleQueues = new Map();
-    const lifecycleEpochs = new Map();
+    const processes = new Map<number, { generation: string; promise: Promise<unknown>; controller: AbortController | null }>();
+    const captureAdmissions = new Map<number, Promise<unknown>>();
+    const captureCancellationEpochs = new Map<number, number>();
+    const localAnalysisOwners = new Map<number, { generation: string; controller: AbortController | null }>();
+    const providerCancellationRequests = new Set<string>();
+    const lifecycleQueues = new Map<number, Promise<unknown>>();
+    const lifecycleEpochs = new Map<number, number>();
     // Events can arrive in the narrow interval after tabs.create() returns but
     // before its durable lease write finishes. Remember them synchronously so
     // that adoption cannot be lost behind storage latency.
-    const recentHelperActivations = new Map();
-    const recentHelperNavigations = new Map();
-    const mutationQueues = new Map();
+    const recentHelperActivations = new Map<number, RecentHelperEvent>();
+    const recentHelperNavigations = new Map<number, RecentHelperEvent>();
+    const mutationQueues = new Map<string, Promise<unknown>>();
     const CAPTURE_MUTATION_QUEUE = 'capture-lifecycle';
 
     const now = () => Date.now();
     const newCaptureDiagnostics = () => createCaptureDiagnostics({
-        enabled: globalThis.BPB_CAPTURE_DIAGNOSTICS === true,
-        report: snapshot => console.debug('Better Peakbagger capture diagnostics', snapshot),
+        enabled: (globalThis as { BPB_CAPTURE_DIAGNOSTICS?: unknown }).BPB_CAPTURE_DIAGNOSTICS === true,
+        report: ((snapshot: unknown) => console.debug('Better Peakbagger capture diagnostics', snapshot)) as () => void,
     });
     const peakbaggerScheduler = createPeakbaggerRequestScheduler({
         concurrency: CaptureLimits.CORRIDOR_CONCURRENCY,
-    });
-    const isFresh = record => !!record && Number(record.expiresAt) > now();
+    }) as unknown as RequestScheduler;
+    const isFresh = (record: { expiresAt?: unknown } | null | undefined) => !!record && Number(record.expiresAt) > now();
     const makeId = () => `${now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const publicFailure = (context, error, fallback) => {
+    const publicFailure = (context: string, error: unknown, fallback: { code: string; message: string }): { code: string; message: string; retryAt?: number } => {
         if (!PublicErrors.isPublic(error)) {
             console.error(`Better Peakbagger: ${context} failed`, error);
         }
-        return PublicErrors.expose(error, fallback);
+        return PublicErrors.expose(error, fallback as Parameters<typeof PublicErrors.expose>[1]);
     };
     const storage = () => {
         if (!ext.storage.session) throw new Error('This browser does not provide private session storage.');
         return ext.storage.session;
     };
 
-    const readCapturePreferences = async () => {
-        let settings;
+    const readCapturePreferences = async (): Promise<CapturePreferences> => {
+        let settings: Awaited<ReturnType<typeof Settings.requireCurrent>>;
         try {
             settings = await Settings.requireCurrent();
         } catch (cause) {
@@ -161,29 +266,29 @@ import { GarminError } from '../garmin/garmin-api.js';
         };
     };
 
-    const sameCapturePreferences = (left, right) => !!left && !!right
+    const sameCapturePreferences = (left: CapturePreferences | null | undefined, right: CapturePreferences | null | undefined) => !!left && !!right
         && left.retainWaypoints === right.retainWaypoints
         && left.fillAscentDetails === right.fillAscentDetails
         && left.fillTripInfo === right.fillTripInfo
         && left.fillWildernessNights === right.fillWildernessNights
         && left.fillExternalUrl === right.fillExternalUrl;
-    const sameProviderActivity = (left, right) => !!left && !!right
+    const sameProviderActivity = (left: { provider?: string; activityId?: unknown } | null | undefined, right: { provider?: string; activityId?: unknown } | null | undefined) => !!left && !!right
         && left.provider === right.provider
         && String(left.activityId) === String(right.activityId);
     // A successful single-summit Preview and a verified multi-summit Save no
     // longer depend on the worker cache. Removing their bookkeeping must not
     // overwrite the page's success state with a false recapture instruction.
-    const draftNeedsDisconnectNotice = draft => !draft?.complete
-        || (draft.waitForSave === true && draft.saved !== true);
-    const hasProviderActivity = value => !!value
+    const draftNeedsDisconnectNotice = (draft: DraftRecord | null | undefined) => !draft?.complete
+        || (draft!.waitForSave === true && draft!.saved !== true);
+    const hasProviderActivity = (value: { provider?: unknown; activityId?: unknown } | null | undefined) => !!value
         && typeof value.provider === 'string'
         && value.activityId != null;
 
-    const readMap = async key => (await storage().get(key))[key] || {};
-    const mutationQueueKey = storageKey => storageKey === JOBS_KEY || storageKey === DRAFTS_KEY
+    const readMap = async <Value = CaptureJob>(key: string): Promise<Record<string, Value>> => ((await storage().get(key))[key] || {}) as Record<string, Value>;
+    const mutationQueueKey = (storageKey: string) => storageKey === JOBS_KEY || storageKey === DRAFTS_KEY
         ? CAPTURE_MUTATION_QUEUE
         : storageKey;
-    const enqueueMutation = (queueKey, mutate) => {
+    const enqueueMutation = <Result>(queueKey: string, mutate: () => Result | Promise<Result>): Promise<Result> => {
         const previous = mutationQueues.get(queueKey) || Promise.resolve();
         const operation = previous.catch(() => {}).then(mutate);
         mutationQueues.set(queueKey, operation);
@@ -191,39 +296,39 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (mutationQueues.get(queueKey) === operation) mutationQueues.delete(queueKey);
         });
     };
-    const mutateMap = (key, mutate) => enqueueMutation(mutationQueueKey(key), async () => {
-        const map = await readMap(key);
+    const mutateMap = <Result, Value = CaptureJob>(key: string, mutate: (map: Record<string, Value>) => Result | Promise<Result>) => enqueueMutation(mutationQueueKey(key), async () => {
+        const map = await readMap<Value>(key);
         const result = await mutate(map);
         await storage().set({ [key]: map });
         return result;
     });
-    const mutateLifecycleMaps = mutate => enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
-        const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+    const mutateLifecycleMaps = <Result>(mutate: (jobs: JobMap, drafts: DraftMap) => Result | Promise<Result>) => enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
+        const [jobs, drafts] = await Promise.all([readMap<CaptureJob>(JOBS_KEY), readMap<DraftRecord>(DRAFTS_KEY)]);
         const result = await mutate(jobs, drafts);
         await storage().set({ [JOBS_KEY]: jobs, [DRAFTS_KEY]: drafts });
         return result;
     });
 
-    const payloadKeyForJob = jobId => typeof jobId === 'string' && /^[a-z0-9:-]{8,100}$/i.test(jobId)
+    const payloadKeyForJob = (jobId: unknown) => typeof jobId === 'string' && /^[a-z0-9:-]{8,100}$/i.test(jobId)
         ? `${PAYLOAD_KEY_PREFIX}${jobId}`
         : null;
-    const referencedPayloadKey = job => {
+    const referencedPayloadKey = (job: Partial<CaptureJob> | null | undefined) => {
         const expected = payloadKeyForJob(job?.id);
         return expected && job?.payloadKey === expected ? expected : null;
     };
-    const capturePayloadValue = (job, record) => {
+    const capturePayloadValue = (job: Partial<CaptureJob>, record: Partial<PayloadRecord> | null | undefined) => {
         const gpx = job.capturePreferences?.removeGpxTimestamps && job.includeTimestampsOnce !== true
             ? record?.gpxWithoutTimestamps : record?.gpx;
         return record?.jobId === job.id && typeof gpx === 'string' && gpx.length > 0 ? gpx : null;
     };
-    const readCapturePayload = async job => {
+    const readCapturePayload = async (job: Partial<CaptureJob>) => {
         const key = referencedPayloadKey(job);
         if (!key) return null;
-        return capturePayloadValue(job, (await storage().get(key))[key]);
+        return capturePayloadValue(job, (await storage().get(key))[key] as PayloadRecord | undefined);
     };
-    const removePayloadKeys = async keys => {
+    const removePayloadKeys = async (keys: unknown) => {
         const owned = [...new Set((Array.isArray(keys) ? keys : [keys])
-            .filter(key => typeof key === 'string' && key.startsWith(PAYLOAD_KEY_PREFIX)))];
+            .filter((key): key is string => typeof key === 'string' && key.startsWith(PAYLOAD_KEY_PREFIX)))];
         if (!owned.length || typeof storage().remove !== 'function') return;
         try {
             await storage().remove(owned.length === 1 ? owned[0] : owned);
@@ -234,7 +339,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const installCapturePayload = (tabId, generation, gpx, patch, gpxWithoutTimestamps) => {
+    const installCapturePayload = (tabId: number, generation: string, gpx: unknown, patch: Partial<CaptureJob>, gpxWithoutTimestamps?: string | null) => {
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
             const jobs = await readMap(JOBS_KEY);
             const current = jobs[tabId];
@@ -245,7 +350,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             }
             const previousPayloadKey = referencedPayloadKey(current);
             await storage().set({ [payloadKey]: { jobId: generation, gpx, ...(gpxWithoutTimestamps ? { gpxWithoutTimestamps } : {}) } });
-            const next = { ...current, ...patch, payloadKey, updatedAt: now() };
+            const next: CaptureJob = { ...current, ...patch, payloadKey, updatedAt: now() };
             delete next.uploadGpx;
             jobs[tabId] = next;
             try {
@@ -261,13 +366,13 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const updateCaptureJobWithoutPayload = (tabId, generation, patch) => {
+    const updateCaptureJobWithoutPayload = (tabId: number, generation: string, patch: Partial<CaptureJob>) => {
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
             const jobs = await readMap(JOBS_KEY);
             const current = jobs[tabId];
             if (!current || current.id !== generation) return null;
             const payloadKey = referencedPayloadKey(current);
-            const next = { ...current, ...patch, updatedAt: now() };
+            const next: CaptureJob = { ...current, ...patch, updatedAt: now() };
             delete next.payloadKey;
             delete next.uploadGpx;
             jobs[tabId] = next;
@@ -281,10 +386,10 @@ import { GarminError } from '../garmin/garmin-api.js';
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
             const snapshot = await storage().get(null);
             const storedJobs = snapshot?.[JOBS_KEY];
-            const jobs = storedJobs && typeof storedJobs === 'object' && !Array.isArray(storedJobs)
-                ? structuredClone(storedJobs)
+            const jobs: JobMap = storedJobs && typeof storedJobs === 'object' && !Array.isArray(storedJobs)
+                ? structuredClone(storedJobs) as JobMap
                 : {};
-            const payloadPatch = {};
+            const payloadPatch: Record<string, PayloadRecord> = {};
             let jobsChanged = false;
 
             // Migrate a pre-split session generation without exposing or
@@ -308,8 +413,8 @@ import { GarminError } from '../garmin/garmin-api.js';
             });
             if (Object.keys(payloadPatch).length) await storage().set(payloadPatch);
 
-            const available = { ...snapshot, ...payloadPatch };
-            const referenced = new Set();
+            const available: Record<string, unknown> = { ...snapshot, ...payloadPatch };
+            const referenced = new Set<string>();
             Object.values(jobs).forEach(job => {
                 const payloadKey = referencedPayloadKey(job);
                 if (!payloadKey) {
@@ -319,7 +424,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                     }
                     return;
                 }
-                const record = available[payloadKey];
+                const record = available[payloadKey] as PayloadRecord | undefined;
                 if (capturePayloadValue(job, record)) {
                     referenced.add(payloadKey);
                     return;
@@ -343,7 +448,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const runDetachedCleanup = (label, cleanup) => {
+    const runDetachedCleanup = (label: string, cleanup: () => unknown) => {
         void Promise.resolve().then(cleanup).catch(error => {
             console.error(`Better Peakbagger: ${label} failed`, error);
         });
@@ -354,37 +459,37 @@ import { GarminError } from '../garmin/garmin-api.js';
     // terms as matches — it is an ordinary match with an extra distance, and
     // leaving its draftFields attached would have quietly reopened the hole
     // this function exists to close.
-    const publicMatchSummary = match => ({ ...match, draftFields: undefined });
-    const publicJob = job => isFresh(job) ? {
-        ...job,
+    const publicMatchSummary = (match: CaptureMatch) => ({ ...match, draftFields: undefined });
+    const publicJob = (job: CaptureJob | null | undefined) => isFresh(job) ? {
+        ...job!,
         hasCachedGpx: !!referencedPayloadKey(job),
         payloadKey: undefined,
         uploadGpx: undefined,
         capturePreferences: undefined,
-        timestampsRemoved: job.capturePreferences?.removeGpxTimestamps === true && job.includeTimestampsOnce !== true,
-        timestampChoiceAvailable: job.capturePreferences?.removeGpxTimestamps === true,
+        timestampsRemoved: job!.capturePreferences?.removeGpxTimestamps === true && job!.includeTimestampsOnce !== true,
+        timestampChoiceAvailable: job!.capturePreferences?.removeGpxTimestamps === true,
         tripName: undefined,
         nightsOut: undefined,
         dayStats: undefined,
-        matches: (job.matches || []).map(publicMatchSummary),
-        boundFallback: job.boundFallback ? publicMatchSummary(job.boundFallback) : job.boundFallback
+        matches: (job!.matches || []).map(publicMatchSummary),
+        boundFallback: job!.boundFallback ? publicMatchSummary(job!.boundFallback) : job!.boundFallback
     } : null;
 
-    const setBadge = async (tabId, text = '', color = '#b42318') => {
+    const setBadge = async (tabId: number, text = '', color = '#b42318') => {
         await ext.action.setBadgeBackgroundColor({ tabId, color });
         await ext.action.setBadgeText({ tabId, text });
     };
 
-    const updateCaptureJob = (tabId, generation, patch) => mutateMap(JOBS_KEY, jobs => {
+    const updateCaptureJob = (tabId: number, generation: string, patch: Partial<CaptureJob>) => mutateMap(JOBS_KEY, (jobs: JobMap) => {
         if (!jobs[tabId] || jobs[tabId].id !== generation) return null;
         jobs[tabId] = { ...jobs[tabId], ...patch, updatedAt: now() };
         return jobs[tabId];
     });
 
-    const failCaptureJob = async (tabId, generation, code, message, details = {}) => {
+    const failCaptureJob = async (tabId: number, generation: string, code: string, message: string, details: { retryAt?: unknown; recoveryTabId?: unknown } = {}) => {
         const retryAt = Number(details.retryAt);
         const recoveryTabId = Number(details.recoveryTabId);
-        const failed = await mutateMap(JOBS_KEY, jobs => {
+        const failed = await mutateMap(JOBS_KEY, (jobs: JobMap) => {
             const current = jobs[tabId];
             if (!current || current.id !== generation) return null;
             const stage = CapturePhases.isActive(current.phase) ? current.phase : null;
@@ -414,7 +519,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         return failed;
     };
 
-    const cleanPeakbaggerRetryAt = value => {
+    const cleanPeakbaggerRetryAt = (value: unknown) => {
         const retryAt = Number(value);
         return Number.isFinite(retryAt) && retryAt > now()
             && retryAt <= now() + 24 * 60 * 60 * 1000
@@ -422,12 +527,12 @@ import { GarminError } from '../garmin/garmin-api.js';
             : null;
     };
 
-    const peakbaggerPublicError = error => {
-        const failure = PeakbaggerError.exception(error);
+    const peakbaggerPublicError = (error: WorkerError | null | undefined) => {
+        const failure = PeakbaggerError.exception(error) as WorkerError;
         // Transport codes are shared across Peakbagger features. Capture has
         // its own recovery policy; leaking a transport code makes the popup
         // fall back to telling the user to reload the activity provider.
-        const code = {
+        const code = ({
             cloudflare: 'cloudflare',
             'rate-limit': 'rate-limit',
             'signed-out': 'peakbagger-signed-out',
@@ -438,19 +543,19 @@ import { GarminError } from '../garmin/garmin-api.js';
             http: 'peakbagger-response-invalid',
             'response-too-large': error?.resource === 'peaks'
                 ? 'peak-response-too-large' : 'peakbagger-response-invalid',
-        }[failure.code] || 'peakbagger-unavailable';
+        } as Record<string, string>)[failure.code as string] || 'peakbagger-unavailable';
         const publicError = PublicErrors.exception(
             code,
             failure.message,
             { cause: failure },
-        );
+        ) as WorkerError;
         const retryAt = cleanPeakbaggerRetryAt(error?.retryAt);
         if (failure.code === 'rate-limit' && retryAt) publicError.retryAt = retryAt;
         return publicError;
     };
 
     const activePeakbaggerCooldown = () => enqueueMutation(PEAKBAGGER_COOLDOWN_KEY, async () => {
-        const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY];
+        const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY] as { code?: string; retryAt?: number } | undefined;
         peakbaggerCooldownUntil = Math.max(cleanPeakbaggerRetryAt(peakbaggerCooldownUntil) || 0,
             stored?.code === 'rate-limit' ? cleanPeakbaggerRetryAt(stored.retryAt) || 0 : 0);
         if (peakbaggerCooldownUntil) return { code: 'rate-limit', retryAt: peakbaggerCooldownUntil };
@@ -458,14 +563,14 @@ import { GarminError } from '../garmin/garmin-api.js';
         return null;
     });
 
-    const retainPeakbaggerCooldown = retryAt => {
+    const retainPeakbaggerCooldown = (retryAt: unknown) => {
         // Retain synchronously: another admission or concurrent refusal must
         // never resume traffic while the session write is pending or failed.
         peakbaggerCooldownUntil = Math.max(cleanPeakbaggerRetryAt(peakbaggerCooldownUntil) || 0,
             cleanPeakbaggerRetryAt(retryAt) || now() + PEAKBAGGER_FALLBACK_COOLDOWN_MS);
         return enqueueMutation(PEAKBAGGER_COOLDOWN_KEY, async () => {
             try {
-                const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY];
+                const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY] as { code?: string; retryAt?: number } | undefined;
                 peakbaggerCooldownUntil = Math.max(peakbaggerCooldownUntil,
                     stored?.code === 'rate-limit' ? cleanPeakbaggerRetryAt(stored.retryAt) || 0 : 0);
                 await storage().set({
@@ -481,7 +586,7 @@ import { GarminError } from '../garmin/garmin-api.js';
     const ensurePeakbaggerRequestsAllowed = async () => {
         const cooldown = await activePeakbaggerCooldown();
         if (cooldown) {
-            const error = PublicErrors.exception('rate-limit', captureErrorMessage('rate-limit'));
+            const error = PublicErrors.exception('rate-limit', captureErrorMessage('rate-limit')) as WorkerError;
             error.retryAt = cooldown.retryAt;
             throw error;
         }
@@ -491,31 +596,31 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
 
     const schedulePeakbaggerRequest = (
-        request,
-        url,
-        options = {},
-        { recoveryTabId = null, adoptForRecovery = null } = {},
+        request: PeakbaggerRequest,
+        url: string,
+        options: { kind?: string; signal?: AbortSignal; [option: string]: unknown } = {},
+        { recoveryTabId = null, adoptForRecovery = null }: { recoveryTabId?: number | null; adoptForRecovery?: (() => unknown) | null } = {},
     ) => peakbaggerScheduler.run(
-        async schedulerSignal => {
+        async (schedulerSignal: AbortSignal) => {
             const response = await request(url, { ...options, signal: schedulerSignal });
             const code = response?.error?.code;
             if (code !== 'cloudflare' && code !== 'rate-limit') return response;
 
             const failure = peakbaggerPublicError(response.error);
             if (code === 'cloudflare' && Number.isInteger(recoveryTabId)) {
-                failure.recoveryTabId = recoveryTabId;
+                failure.recoveryTabId = recoveryTabId as number;
             }
             peakbaggerScheduler.stop(failure, { exceptSignal: schedulerSignal });
             if (code === 'cloudflare' && typeof adoptForRecovery === 'function') {
                 await adoptForRecovery();
             }
-            if (code === 'rate-limit') failure.retryAt = await retainPeakbaggerCooldown(failure.retryAt);
+            if (code === 'rate-limit') failure.retryAt = await retainPeakbaggerCooldown(failure.retryAt) as number;
             throw failure;
         },
         { signal: options.signal },
     );
 
-    const finishCaptureWithoutGps = async (tabId, generation, message) => {
+    const finishCaptureWithoutGps = async (tabId: number, generation: string, message?: string) => {
         const finished = await updateCaptureJobWithoutPayload(tabId, generation, {
             phase: 'no-gps',
             matches: [],
@@ -530,33 +635,33 @@ import { GarminError } from '../garmin/garmin-api.js';
         return finished;
     };
 
-    const readPeakbaggerAccount = async ({ request = fetchPeakbaggerResource, signal } = {}) => {
+    const readPeakbaggerAccount = async ({ request = fetchPeakbaggerResource as unknown as PeakbaggerRequest, signal }: { request?: PeakbaggerRequest; signal?: AbortSignal } = {}) => {
         const response = await request(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html', signal });
         if (response.kind !== 'ok') {
             const failure = peakbaggerPublicError(response.error);
-            // PeakbaggerError owns stable recovery copy, but only PublicError
+            // PeakbaggerError owns stable recovery copy, but only JobError
             // messages may cross the worker boundary. Promote the typed
             // Peakbagger failure here so a human check, outage, or rate limit
             // is not collapsed into the generic unexpected-capture fallback.
             throw failure;
         }
-        return PeakbaggerAccount.fromHtml(response.text, `${PEAKBAGGER_ORIGIN}/Default.aspx`);
+        return PeakbaggerAccount.fromHtml(response.text as string, `${PEAKBAGGER_ORIGIN}/Default.aspx`);
     };
-    const peakbaggerLogin = async options => (await readPeakbaggerAccount(options)).cid;
+    const peakbaggerLogin = async (options?: { request?: PeakbaggerRequest; signal?: AbortSignal }) => (await readPeakbaggerAccount(options)).cid;
 
     const cancelledCaptureError = () => PublicErrors.exception(
         'capture-cancelled',
         captureErrorMessage('capture-cancelled'),
     );
 
-    const peakbaggerPageError = (code, message, cause) =>
-        PublicErrors.exception(code, message, { cause });
-    const peakbaggerTabChangedError = cause => peakbaggerPageError(
+    const peakbaggerPageError = (code: string, message: string, cause: unknown) =>
+        PublicErrors.exception(code, message, { cause }) as WorkerError;
+    const peakbaggerTabChangedError = (cause?: unknown) => peakbaggerPageError(
         'peakbagger-tab-changed',
         'The Peakbagger tab closed or changed during capture. Keep a Peakbagger page open until summit detection finishes, then try again.',
         cause,
     );
-    const invalidPeakbaggerPageResponse = (resource, cause) => peakbaggerPageError(
+    const invalidPeakbaggerPageResponse = (resource: string, cause?: unknown) => peakbaggerPageError(
         'peakbagger-response-invalid',
         resource === 'html'
             ? 'Peakbagger returned an account page that could not be verified. Reload Peakbagger, confirm you’re signed in, then try again.'
@@ -564,27 +669,27 @@ import { GarminError } from '../garmin/garmin-api.js';
         cause,
     );
 
-    const canonicalPeakbaggerTab = tab => {
-        try { return new URL(tab?.url).origin === PEAKBAGGER_ORIGIN; }
+    const canonicalPeakbaggerTab = (tab: Tab | null | undefined) => {
+        try { return new URL(tab?.url as string).origin === PEAKBAGGER_ORIGIN; }
         catch { return false; }
     };
 
-    const canonicalPeakbaggerUrl = value => {
+    const canonicalPeakbaggerUrl = (value: unknown) => {
         try {
-            const url = new URL(value);
+            const url = new URL(value as string);
             return url.origin === PEAKBAGGER_ORIGIN ? url.href : null;
         } catch {
             return null;
         }
     };
 
-    const peakbaggerOperationTimeoutError = (phase, cause) => peakbaggerPageError(
+    const peakbaggerOperationTimeoutError = (phase: string, cause?: unknown) => peakbaggerPageError(
         'peakbagger-page-timeout',
         'Peakbagger did not respond within 20 seconds. Reload Peakbagger, wait for the page to finish, then try again.',
         Object.assign(new Error(`Peakbagger page operation timed out during ${phase}.`), { cause }),
     );
 
-    const providerOperationTimeoutError = (phase, cause) => PublicErrors.exception(
+    const providerOperationTimeoutError = (phase: string, cause?: unknown) => PublicErrors.exception(
         'provider-page-timeout',
         captureErrorMessage('provider-page-timeout'),
         { cause: Object.assign(new Error(`Provider page operation timed out during ${phase}.`), { cause }) },
@@ -594,29 +699,29 @@ import { GarminError } from '../garmin/garmin-api.js';
     // races the capture owner and one explicit deadline. The abandoned promise
     // retains a rejection handler so a renderer that responds late cannot wake
     // the worker with an unhandled rejection or resume the capture pipeline.
-    const runBrowserOperation = async ({
+    const runBrowserOperation = async <Result>({
         operation,
         signal,
         timeoutMs,
         onCancel,
         onLateResult,
         timeoutError,
-    }) => {
+    }: BrowserOperation<Result> & { timeoutError: (cause: unknown) => Error }): Promise<Result> => {
         if (signal?.aborted) throw cancelledCaptureError();
         const deadline = Deadline.createRequestDeadline(timeoutMs);
-        let rejectCancellation = null;
+        let rejectCancellation: ((reason: unknown) => void) | null = null;
         const cancellation = signal
-            ? new Promise((_, reject) => { rejectCancellation = reject; })
+            ? new Promise<never>((_, reject) => { rejectCancellation = reject; })
             : null;
         cancellation?.catch(() => {});
         const cancel = () => {
             deadline.abort();
             try { onCancel?.(); }
             catch (_error) { /* best-effort page cancellation */ }
-            rejectCancellation?.(cancelledCaptureError());
+            (rejectCancellation as ((reason: unknown) => void) | null)?.(cancelledCaptureError());
         };
         signal?.addEventListener('abort', cancel, { once: true });
-        const pending = Promise.resolve().then(operation);
+        const pending: Promise<Result> = Promise.resolve().then(operation);
         pending.catch(() => {});
         let abandoned = false;
         if (onLateResult) {
@@ -626,7 +731,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             }).catch(() => {});
         }
         try {
-            const bounded = deadline.run(pending);
+            const bounded: Promise<Result> = deadline.run(pending);
             return await (cancellation ? Promise.race([bounded, cancellation]) : bounded);
         } catch (error) {
             abandoned = true;
@@ -643,39 +748,39 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const runPeakbaggerBrowserOperation = ({
+    const runPeakbaggerBrowserOperation = <Result>({
         phase,
         operation,
         signal = null,
         timeoutMs = PEAKBAGGER_OPERATION_TIMEOUT_MS,
         onCancel = null,
         onLateResult = null,
-    }) => runBrowserOperation({
+    }: BrowserOperation<Result> & { phase: string }) => runBrowserOperation<Result>({
         operation,
         signal,
         timeoutMs,
         onCancel,
         onLateResult,
-        timeoutError: cause => peakbaggerOperationTimeoutError(phase, cause),
+        timeoutError: (cause: unknown) => peakbaggerOperationTimeoutError(phase, cause),
     });
 
-    const runProviderBrowserOperation = ({
+    const runProviderBrowserOperation = <Result>({
         phase,
         operation,
         signal = null,
         timeoutMs = PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
         onCancel = null,
         onLateResult = null,
-    }) => runBrowserOperation({
+    }: BrowserOperation<Result> & { phase: string }) => runBrowserOperation<Result>({
         operation,
         signal,
         timeoutMs,
         onCancel,
         onLateResult,
-        timeoutError: cause => providerOperationTimeoutError(phase, cause),
+        timeoutError: (cause: unknown) => providerOperationTimeoutError(phase, cause),
     });
 
-    const cleanPeakbaggerHelperLease = value => {
+    const cleanPeakbaggerHelperLease = (value: Partial<HelperLease> | null | undefined): HelperLease | null => {
         const expectedUrl = canonicalPeakbaggerUrl(value?.expectedUrl);
         return Number.isInteger(value?.tabId)
             && typeof value?.generation === 'string' && value.generation
@@ -684,24 +789,24 @@ import { GarminError } from '../garmin/garmin-api.js';
             && expectedUrl
             && typeof value?.adopted === 'boolean'
             ? {
-                tabId: value.tabId,
-                generation: value.generation,
-                createdAt: value.createdAt,
-                expiresAt: value.expiresAt,
+                tabId: value!.tabId as number,
+                generation: value!.generation as string,
+                createdAt: value!.createdAt as number,
+                expiresAt: value!.expiresAt as number,
                 expectedUrl,
-                adopted: value.adopted,
+                adopted: value!.adopted as boolean,
             }
             : null;
     };
 
-    const forgetPeakbaggerHelperLease = (tabId, generation = null) =>
-        mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, leases => {
+    const forgetPeakbaggerHelperLease = (tabId: number, generation: string | null = null) =>
+        mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, (leases: Record<string, HelperLease>) => {
             const lease = cleanPeakbaggerHelperLease(leases[tabId]);
             if (lease && (generation === null || lease.generation === generation)) delete leases[tabId];
         });
 
-    const markPeakbaggerHelperAdopted = (tabId, navigatedUrl = null) =>
-        mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, leases => {
+    const markPeakbaggerHelperAdopted = (tabId: number, navigatedUrl: string | null = null) =>
+        mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, (leases: Record<string, HelperLease>) => {
             const lease = cleanPeakbaggerHelperLease(leases[tabId]);
             if (!lease) return;
             const navigation = navigatedUrl === null ? null : canonicalPeakbaggerUrl(navigatedUrl);
@@ -709,53 +814,53 @@ import { GarminError } from '../garmin/garmin-api.js';
             leases[tabId] = { ...lease, adopted: true };
         });
 
-    const rememberRecentHelperEvent = (events, tabId, value) => {
+    const rememberRecentHelperEvent = (events: Map<number, RecentHelperEvent>, tabId: number | undefined, value: unknown) => {
         if (!Number.isInteger(tabId)) return;
         const cutoff = now() - 60_000;
         for (const [candidateId, event] of events) {
             if (event.at < cutoff) events.delete(candidateId);
         }
-        events.set(tabId, { at: now(), value });
+        events.set(tabId as number, { at: now(), value });
     };
 
-    const createPeakbaggerHelperLease = async (tab, generation, createdAt) => {
+    const createPeakbaggerHelperLease = async (tab: Tab, generation: string, createdAt: number) => {
         const expectedUrl = canonicalPeakbaggerUrl(tab?.url) || PEAKBAGGER_HELPER_URL;
-        const activation = recentHelperActivations.get(tab.id);
-        const navigation = recentHelperNavigations.get(tab.id);
-        const navigatedAway = navigation?.at >= createdAt
-            && canonicalPeakbaggerUrl(navigation.value) !== expectedUrl;
-        const lease = {
-            tabId: tab.id,
+        const activation = recentHelperActivations.get(tab.id as number);
+        const navigation = recentHelperNavigations.get(tab.id as number);
+        const navigatedAway = (navigation?.at as number) >= createdAt
+            && canonicalPeakbaggerUrl(navigation!.value) !== expectedUrl;
+        const lease: HelperLease = {
+            tabId: tab.id as number,
             generation,
             createdAt,
             expiresAt: createdAt + JOB_TTL_MS,
             expectedUrl,
-            adopted: tab.active === true || activation?.at >= createdAt || navigatedAway,
+            adopted: tab.active === true || (activation?.at as number) >= createdAt || navigatedAway,
         };
-        await mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, leases => {
-            leases[tab.id] = lease;
+        await mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, (leases: Record<string, HelperLease>) => {
+            leases[tab.id as number] = lease;
         });
-        recentHelperActivations.delete(tab.id);
-        recentHelperNavigations.delete(tab.id);
+        recentHelperActivations.delete(tab.id as number);
+        recentHelperNavigations.delete(tab.id as number);
         return lease;
     };
 
-    const closePeakbaggerHelperLease = async (tabId, generation) => {
-        const leases = await readMap(PEAKBAGGER_HELPER_LEASES_KEY);
+    const closePeakbaggerHelperLease = async (tabId: number, generation: string) => {
+        const leases = await readMap<HelperLease>(PEAKBAGGER_HELPER_LEASES_KEY);
         const lease = cleanPeakbaggerHelperLease(leases[tabId]);
         if (!lease || lease.generation !== generation) return;
         const activated = recentHelperActivations.get(tabId);
         const navigated = recentHelperNavigations.get(tabId);
         const wasAdopted = lease.adopted
-            || activated?.at >= lease.createdAt
-            || (navigated?.at >= lease.createdAt
-                && canonicalPeakbaggerUrl(navigated.value) !== lease.expectedUrl);
+            || (activated?.at as number) >= lease.createdAt
+            || ((navigated?.at as number) >= lease.createdAt
+                && canonicalPeakbaggerUrl(navigated!.value) !== lease.expectedUrl);
         if (wasAdopted) {
             await forgetPeakbaggerHelperLease(tabId, generation);
             return;
         }
 
-        let tab;
+        let tab: Tab | undefined;
         try {
             tab = await runPeakbaggerBrowserOperation({
                 phase: 'temporary-tab cleanup check',
@@ -790,8 +895,8 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const cleanupExpiredPeakbaggerHelperLeases = async cutoff => {
-        const leases = await readMap(PEAKBAGGER_HELPER_LEASES_KEY);
+    const cleanupExpiredPeakbaggerHelperLeases = async (cutoff: number) => {
+        const leases = await readMap<HelperLease>(PEAKBAGGER_HELPER_LEASES_KEY);
         await Promise.all(Object.values(leases).map(value => {
             const lease = cleanPeakbaggerHelperLease(value);
             if (!lease || lease.expiresAt > cutoff) return Promise.resolve();
@@ -799,9 +904,9 @@ import { GarminError } from '../garmin/garmin-api.js';
         }));
     };
 
-    const waitForPeakbaggerTab = async (tabId, signal, { created = false } = {}) => {
+    const waitForPeakbaggerTab = async (tabId: number, signal: AbortSignal | null | undefined, { created = false } = {}): Promise<Tab> => {
         let awaitingFirstDocument = created;
-        let readinessError = null;
+        let readinessError: unknown = null;
         const expiresAt = now() + PEAKBAGGER_OPERATION_TIMEOUT_MS;
         try {
             while (true) {
@@ -835,7 +940,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                     if (tab.status === 'complete') return tab;
                     // A usable document can remain "loading" indefinitely while
                     // an unrelated image or subframe is pending.
-                    let results;
+                    let results: chrome.scripting.InjectionResult<{ url: string; readyState: string }>[] | undefined;
                     try {
                         results = await runPeakbaggerBrowserOperation({
                             phase: 'page-document readiness',
@@ -858,7 +963,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                     }
                     const documentState = results?.[0]?.result;
                     if (documentState?.url === tab.url
-                        && (documentState.readyState === 'interactive' || documentState.readyState === 'complete')) {
+                        && (documentState!.readyState === 'interactive' || documentState!.readyState === 'complete')) {
                         return tab;
                     }
                 }
@@ -871,14 +976,14 @@ import { GarminError } from '../garmin/garmin-api.js';
                 }
                 await runPeakbaggerBrowserOperation({
                     phase: 'temporary-tab readiness',
-                    operation: () => new Promise(resolve => globalThis.setTimeout(resolve, 50)),
+                    operation: () => new Promise<void>(resolve => globalThis.setTimeout(resolve, 50)),
                     signal,
                     timeoutMs: remaining,
                 });
             }
         } catch (error) {
             if (signal?.aborted) throw cancelledCaptureError();
-            if (readinessError && error?.code === 'peakbagger-page-timeout') {
+            if (readinessError && (error as WorkerError)?.code === 'peakbagger-page-timeout') {
                 throw await peakbaggerPageConnectionError(tabId, readinessError, signal);
             }
             if (PublicErrors.isPublic(error)) throw error;
@@ -886,14 +991,14 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const ensurePeakbaggerPage = async (tabId, signal) => {
+    const ensurePeakbaggerPage = async (tabId: number, signal?: AbortSignal | null) => {
         const probe = async () => {
             const results = await runPeakbaggerBrowserOperation({
                 phase: 'page-helper probe',
                 signal,
                 operation: () => ext.scripting.executeScript({
                     target: { tabId },
-                    func: version => globalThis.BPBPeakbaggerPage?.version === version,
+                    func: (version: number) => (globalThis as PageGlobals).BPBPeakbaggerPage?.version === version,
                     args: [PEAKBAGGER_PAGE_VERSION],
                     world: 'MAIN',
                     injectImmediately: true,
@@ -915,7 +1020,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         if (!await probe()) throw new Error('The Peakbagger page helper did not start.');
     };
 
-    const readFreshPeakbaggerAccount = async (tabId, signal) => {
+    const readFreshPeakbaggerAccount = async (tabId: number, signal?: AbortSignal | null) => {
         if (signal?.aborted) throw cancelledCaptureError();
         try {
             const results = await runPeakbaggerBrowserOperation({
@@ -923,8 +1028,8 @@ import { GarminError } from '../garmin/garmin-api.js';
                 signal,
                 operation: () => ext.scripting.executeScript({
                     target: { tabId },
-                    func: version => globalThis.BPBPeakbaggerPage?.version === version
-                        ? globalThis.BPBPeakbaggerPage.accountEvidence()
+                    func: (version: number) => (globalThis as PageGlobals).BPBPeakbaggerPage?.version === version
+                        ? (globalThis as PageGlobals).BPBPeakbaggerPage!.accountEvidence()
                         : null,
                     args: [PEAKBAGGER_PAGE_VERSION],
                     world: 'MAIN',
@@ -937,7 +1042,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 operation: () => ext.tabs.get(tabId),
             });
             if (!canonicalPeakbaggerTab(tab) || tab.status !== 'complete') return null;
-            return PeakbaggerAccount.freshAccountCid(results?.[0]?.result, tab.url);
+            return PeakbaggerAccount.freshAccountCid(results?.[0]?.result, tab.url as string) as string | null;
         } catch (error) {
             if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
             // Evidence is only a fresh-page optimization. Any ambiguity or
@@ -946,7 +1051,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const PAGE_FAILURE_KINDS = Object.freeze({
+    const PAGE_FAILURE_KINDS: Readonly<Record<string, string>> = Object.freeze({
         cloudflare: 'challenged',
         'signed-out': 'wrong-content',
         network: 'transient',
@@ -961,11 +1066,14 @@ import { GarminError } from '../garmin/garmin-api.js';
         'unexpected-content': 'wrong-content',
     });
 
-    const validatePeakbaggerPageResult = (result, requestedUrl, resource) => {
+    // What the page helper returns for one request, before validation.
+    type PageResult = { requestedUrl?: unknown; url?: string; status?: number; redirected?: unknown; kind?: string; text?: unknown; error?: { code?: unknown; retryAt?: unknown } };
+    const validatePeakbaggerPageResult = (value: unknown, requestedUrl: string, resource: string): PeakbaggerReply => {
+        const result = value as PageResult | null;
         if (!result || typeof result !== 'object'
             || result.requestedUrl !== requestedUrl
             || !isPeakbaggerUrl(result.url)
-            || !Number.isInteger(result.status) || result.status < 0 || result.status > 599
+            || !Number.isInteger(result.status) || (result.status as number) < 0 || (result.status as number) > 599
             || typeof result.redirected !== 'boolean') {
             throw invalidPeakbaggerPageResponse(
                 resource,
@@ -989,9 +1097,9 @@ import { GarminError } from '../garmin/garmin-api.js';
                 status: result.status,
                 redirected: result.redirected,
                 text: result.text,
-            };
+            } as PeakbaggerReply;
         }
-        const code = typeof result.error?.code === 'string' ? result.error.code : '';
+        const code = typeof result.error?.code === 'string' ? result.error.code as string : '';
         if (!code || PAGE_FAILURE_KINDS[code] !== result.kind || 'text' in result) {
             throw invalidPeakbaggerPageResponse(
                 resource,
@@ -1005,18 +1113,18 @@ import { GarminError } from '../garmin/garmin-api.js';
             ...(retryAt ? { retryAt } : {}),
         });
         return {
-            kind: result.kind,
+            kind: result.kind as string,
             requestedUrl,
             url: result.url,
             status: result.status,
             redirected: result.redirected,
-            error,
+            error: error as WorkerError,
             reason: PeakbaggerError.message(error),
         };
     };
 
-    const peakbaggerPageConnectionError = async (tabId, cause, signal = null) => {
-        let tab;
+    const peakbaggerPageConnectionError = async (tabId: number, cause: unknown, signal: AbortSignal | null | undefined = null) => {
+        let tab: Tab | undefined;
         try {
             tab = await runPeakbaggerBrowserOperation({
                 phase: 'page-helper connection check',
@@ -1035,14 +1143,14 @@ import { GarminError } from '../garmin/garmin-api.js';
         );
     };
 
-    const requestThroughPeakbaggerPage = async (tabId, url, { kind, signal } = {}) => {
+    const requestThroughPeakbaggerPage = async (tabId: number, url: string, { kind, signal }: { kind?: string; signal?: AbortSignal | null } = {}) => {
         if (signal?.aborted) throw cancelledCaptureError();
-        let requestId = null;
+        let requestId: string | null = null;
         const cancelPageRequest = () => {
             if (requestId === null) return;
             void ext.scripting.executeScript({
                 target: { tabId },
-                func: id => globalThis.BPBPeakbaggerPage?.cancel?.(id) === true,
+                func: (id: string) => ((globalThis as PageGlobals).BPBPeakbaggerPage?.cancel as ((id: string) => unknown) | undefined)?.(id) === true,
                 args: [requestId],
                 world: 'MAIN',
                 injectImmediately: true,
@@ -1057,17 +1165,18 @@ import { GarminError } from '../garmin/garmin-api.js';
                 onCancel: cancelPageRequest,
                 operation: () => ext.scripting.executeScript({
                     target: { tabId },
-                    func: async (version, id, requestedUrl, resource) => {
-                        const api = globalThis.BPBPeakbaggerPage;
+                    func: async (version: number, id: string, requestedUrl: string, resource: string | undefined) => {
+                        const api = (globalThis as PageGlobals).BPBPeakbaggerPage as
+                            { version?: number; request?: (...args: unknown[]) => Promise<unknown> } | undefined;
                         if (api?.version !== version || typeof api.request !== 'function') {
-                            return { bridge: 'missing' };
+                            return { bridge: 'missing' } as { bridge: string; value?: unknown };
                         }
                         return {
                             bridge: 'result',
                             value: await api.request(id, requestedUrl, resource),
                         };
                     },
-                    args: [PEAKBAGGER_PAGE_VERSION, requestId, url, kind],
+                    args: [PEAKBAGGER_PAGE_VERSION, requestId as string, url, kind],
                     world: 'MAIN',
                     injectImmediately: true,
                 }),
@@ -1085,22 +1194,22 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (bridge?.bridge !== 'result') {
                 throw new Error('The Peakbagger page returned an invalid bridge result.');
             }
-            return validatePeakbaggerPageResult(bridge.value, url, kind);
+            return validatePeakbaggerPageResult(bridge.value, url, kind as string);
         } catch (error) {
             if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
             throw await peakbaggerPageConnectionError(tabId, error, signal);
         }
     };
 
-    const acquirePeakbaggerPage = async (sourceWindowId, generation, signal) => {
+    const acquirePeakbaggerPage = async (sourceWindowId: number | undefined, generation: string, signal?: AbortSignal | null) => {
         if (signal?.aborted) throw cancelledCaptureError();
-        let tab;
+        let tab: Tab | undefined;
         let created = false;
-        let leaseCreatedAt = null;
+        let leaseCreatedAt: number | null = null;
         try {
-            let candidates;
+            let candidates: Tab[];
             try {
-                const leasedTabs = await readMap(PEAKBAGGER_HELPER_LEASES_KEY);
+                const leasedTabs = await readMap<HelperLease>(PEAKBAGGER_HELPER_LEASES_KEY);
                 candidates = await runPeakbaggerBrowserOperation({
                     phase: 'Peakbagger tab lookup',
                     signal,
@@ -1110,7 +1219,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                     }),
                 });
                 candidates = candidates.filter(candidate =>
-                    !cleanPeakbaggerHelperLease(leasedTabs[candidate.id]));
+                    !cleanPeakbaggerHelperLease(leasedTabs[candidate.id as number]));
             } catch (error) {
                 if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
                 throw peakbaggerPageError(
@@ -1122,19 +1231,19 @@ import { GarminError } from '../garmin/garmin-api.js';
             // Memory-saving tabs still have a URL but cannot run the page
             // helper. Leave them asleep and use a live tab or our own helper.
             tab = candidates.find(candidate => canonicalPeakbaggerTab(candidate)
-                && !candidate.discarded && !candidate.frozen && candidate.status !== 'unloaded');
+                && !candidate.discarded && !(candidate as Tab & { frozen?: boolean }).frozen && candidate.status !== 'unloaded');
             if (!tab) {
                 try {
                     leaseCreatedAt = now();
                     tab = await runPeakbaggerBrowserOperation({
                         phase: 'temporary-tab creation',
                         signal,
-                        onLateResult: lateTab => runDetachedCleanup(
+                        onLateResult: (lateTab: Tab) => runDetachedCleanup(
                             'late temporary Peakbagger tab cleanup',
                             async () => {
                                 if (!Number.isInteger(lateTab?.id)) return;
-                                await createPeakbaggerHelperLease(lateTab, generation, leaseCreatedAt);
-                                await closePeakbaggerHelperLease(lateTab.id, generation);
+                                await createPeakbaggerHelperLease(lateTab, generation, leaseCreatedAt as number);
+                                await closePeakbaggerHelperLease(lateTab.id as number, generation);
                             },
                         ),
                         operation: () => ext.tabs.create({
@@ -1152,43 +1261,45 @@ import { GarminError } from '../garmin/garmin-api.js';
                     );
                 }
                 created = true;
-                await createPeakbaggerHelperLease(tab, generation, leaseCreatedAt);
+                await createPeakbaggerHelperLease(tab, generation, leaseCreatedAt as number);
             }
-            const accountEvidenceIsFresh = created || tab.status !== 'complete';
-            await waitForPeakbaggerTab(tab.id, signal, { created });
-            await ensurePeakbaggerPage(tab.id, signal);
+            const pageTab = tab;
+            const pageTabId = pageTab.id as number;
+            const accountEvidenceIsFresh = created || pageTab.status !== 'complete';
+            await waitForPeakbaggerTab(pageTabId, signal, { created });
+            await ensurePeakbaggerPage(pageTabId, signal);
             let adoptedForRecovery = false;
             return {
-                tabId: tab.id,
+                tabId: pageTabId,
                 freshAccount: () => accountEvidenceIsFresh
-                    ? readFreshPeakbaggerAccount(tab.id, signal)
+                    ? readFreshPeakbaggerAccount(pageTabId, signal)
                     : Promise.resolve(null),
-                request: (url, options) => requestThroughPeakbaggerPage(tab.id, url, options),
+                request: ((url: string, options?: { kind?: string; signal?: AbortSignal | null }) => requestThroughPeakbaggerPage(pageTabId, url, options)) as PeakbaggerRequest,
                 adoptForRecovery: async () => {
                     adoptedForRecovery = true;
                     if (created) {
-                        try { await markPeakbaggerHelperAdopted(tab.id); }
+                        try { await markPeakbaggerHelperAdopted(pageTabId); }
                         catch (error) {
                             console.error('Better Peakbagger: challenge tab adoption failed', error);
                         }
                     }
-                    return tab.id;
+                    return pageTabId;
                 },
                 release: () => created
                     ? (adoptedForRecovery
-                        ? forgetPeakbaggerHelperLease(tab.id, generation)
-                        : closePeakbaggerHelperLease(tab.id, generation))
+                        ? forgetPeakbaggerHelperLease(pageTabId, generation)
+                        : closePeakbaggerHelperLease(pageTabId, generation))
                     : Promise.resolve(),
             };
         } catch (error) {
             if (created && Number.isInteger(tab?.id)) {
-                try { await closePeakbaggerHelperLease(tab.id, generation); }
+                try { await closePeakbaggerHelperLease(tab!.id as number, generation); }
                 catch (cleanupError) {
                     console.error('Better Peakbagger: temporary request tab cleanup failed', cleanupError);
                 }
             }
             if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
-            if (Number.isInteger(tab?.id)) throw await peakbaggerPageConnectionError(tab.id, error, signal);
+            if (Number.isInteger(tab?.id)) throw await peakbaggerPageConnectionError(tab!.id as number, error, signal);
             throw peakbaggerPageError(
                 'peakbagger-tab-access-failed',
                 'Better Peakbagger could not access Peakbagger for this capture. Open Peakbagger in this browser window, then try again.',
@@ -1206,20 +1317,20 @@ import { GarminError } from '../garmin/garmin-api.js';
         try {
             const cid = await page.freshAccount();
             if (cid) return { status: 'signed-in', cid };
-            return await readPeakbaggerAccount({ request: (url, options) => schedulePeakbaggerRequest(
+            return await readPeakbaggerAccount({ request: (url: string, options?: Parameters<PeakbaggerRequest>[1]) => schedulePeakbaggerRequest(
                 page.request, url, options, { recoveryTabId: page.tabId },
             ) });
         } finally { await page.release(); }
     };
 
-    const fetchBox = async (box, { signal, budget, request = fetchPeakbaggerResource }) => {
+    const fetchBox = async (box: CorridorBox, { signal, budget, request = fetchPeakbaggerResource as unknown as PeakbaggerRequest }: { signal?: AbortSignal; budget: { requests: number }; request?: PeakbaggerRequest }) => {
         const params = new URLSearchParams({
             miny: String(box.miny),
             maxy: String(box.maxy),
             minx: String(box.minx),
             maxx: String(box.maxx)
         });
-        let lastError;
+        let lastError: WorkerError | undefined;
         for (let attempt = 0; attempt < 2; attempt++) {
             if (signal?.aborted) throw cancelledCaptureError();
             if (++budget.requests > CaptureLimits.MAX_CORRIDOR_REQUESTS) {
@@ -1239,7 +1350,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (attempt === 0) {
                 if (signal?.aborted) throw cancelledCaptureError();
                 const delayMs = 150 + Math.floor(Math.random() * 101);
-                await new Promise((resolve, reject) => {
+                await new Promise<void>((resolve, reject) => {
                     const cancelled = () => {
                         clearTimeout(timer);
                         reject(cancelledCaptureError());
@@ -1258,8 +1369,8 @@ import { GarminError } from '../garmin/garmin-api.js';
         );
     };
 
-    const mapWithConcurrency = async (items, concurrency, worker) => {
-        const results = new Array(items.length);
+    const mapWithConcurrency = async <Item, Result>(items: Item[], concurrency: number, worker: (item: Item) => Promise<Result>) => {
+        const results: Result[] = new Array(items.length);
         let nextIndex = 0;
         const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
             while (nextIndex < items.length) {
@@ -1271,39 +1382,39 @@ import { GarminError } from '../garmin/garmin-api.js';
         return results;
     };
 
-    const peakResponseLimitError = cause => PublicErrors.exception(
+    const peakResponseLimitError = (cause: unknown) => PublicErrors.exception(
         'peak-response-too-large',
         `Peakbagger returned more than ${CaptureLimits.MAX_PEAKBAGGER_PEAKS.toLocaleString('en-US')} nearby summits. Split the activity into a shorter track and try again.`,
         { cause },
     );
 
-    const fetchPeaks = async (boxes, {
+    const fetchPeaks = async (boxes: CorridorBox[], {
         signal,
         request,
         checkpoint = async () => {},
         onProgress = async () => {},
-    }) => {
+    }: { signal?: AbortSignal; request?: PeakbaggerRequest; checkpoint?: () => Promise<unknown>; onProgress?: ProgressReport }) => {
         const budget = { requests: 0 };
         let completed = 0;
         const responses = await mapWithConcurrency(
             boxes,
             CaptureLimits.CORRIDOR_CONCURRENCY,
-            async box => {
+            async (box: CorridorBox) => {
                 const response = await fetchBox(box, { signal, budget, request });
                 completed++;
                 await onProgress({ completed, total: boxes.length });
                 return response;
             },
         );
-        const byId = new Map();
+        const byId = new Map<unknown, { id: unknown; [field: string]: unknown }>();
         for (const response of responses) {
-            let parsed;
+            let parsed: { id: unknown; [field: string]: unknown }[];
             try {
                 parsed = Core.parsePeakbaggerPeaks(response, {
                     maxPeaks: CaptureLimits.MAX_PEAKBAGGER_PEAKS,
                 });
             } catch (error) {
-                if (error?.code === 'too-many-peaks') throw peakResponseLimitError(error);
+                if ((error as WorkerError)?.code === 'too-many-peaks') throw peakResponseLimitError(error);
                 throw error;
             }
             for (const peak of parsed) {
@@ -1317,14 +1428,14 @@ import { GarminError } from '../garmin/garmin-api.js';
         return [...byId.values()];
     };
 
-    const cancelProviderCapture = async (tabId, generation) => {
+    const cancelProviderCapture = async (tabId: number, generation: string) => {
         const results = await runProviderBrowserOperation({
             phase: 'capture cancellation',
             timeoutMs: PROVIDER_CLEANUP_TIMEOUT_MS,
             operation: () => ext.scripting.executeScript({
                 target: { tabId },
-                func: captureGeneration =>
-                    globalThis.BPBProviderPage?.cancelCapture?.(captureGeneration) === true,
+                func: (captureGeneration: string) =>
+                    (globalThis as PageGlobals).BPBProviderPage?.cancelCapture?.(captureGeneration) === true,
                 args: [generation],
                 world: 'MAIN'
             }),
@@ -1332,7 +1443,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         return !!results?.[0]?.result;
     };
 
-    const requestProviderCancellation = (tabId, generation) => {
+    const requestProviderCancellation = (tabId: number, generation: string) => {
         if (!Number.isInteger(tabId) || typeof generation !== 'string' || !generation) return;
         const key = `${tabId}:${generation}`;
         if (providerCancellationRequests.has(key)) return;
@@ -1343,10 +1454,10 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const providerOperationCancellation = (tabId, generation) => () =>
+    const providerOperationCancellation = (tabId: number, generation: string) => () =>
         requestProviderCancellation(tabId, generation);
 
-    const injectProvider = (tabId, generation, signal) => runProviderBrowserOperation({
+    const injectProvider = (tabId: number, generation: string, signal?: AbortSignal | null) => runProviderBrowserOperation({
         phase: 'injection',
         signal,
         onCancel: providerOperationCancellation(tabId, generation),
@@ -1357,7 +1468,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }),
     });
 
-    const inspectProviderOwnership = async (tabId, expectedActivity, generation, signal) => {
+    const inspectProviderOwnership = async (tabId: number, expectedActivity: unknown, generation: string, signal?: AbortSignal | null): Promise<ProviderResult> => {
         const results = await runProviderBrowserOperation({
             phase: 'ownership inspection',
             signal,
@@ -1366,24 +1477,24 @@ import { GarminError } from '../garmin/garmin-api.js';
                 target: { tabId },
                 // Narrowed in the page realm: the worker needs the verdict, not the
                 // provider profile identifiers the adapter compared to reach it.
-                func: (expected, captureGeneration) =>
-                    globalThis.BPBProviderPage.waitForOwnership(expected, captureGeneration),
+                func: (expected: unknown, captureGeneration: string) =>
+                    (globalThis as PageGlobals).BPBProviderPage!.waitForOwnership(expected, captureGeneration),
                 args: [expectedActivity, generation],
                 world: 'MAIN'
             }),
         });
         if (!results || !results[0]) throw new Error('The activity page returned no ownership result.');
-        return results[0].result;
+        return results[0].result as ProviderResult;
     };
 
     const captureProvider = async (
-        tabId,
-        capturePreferences,
-        generation,
-        expectedActivity,
-        signal,
+        tabId: number,
+        capturePreferences: CapturePreferences,
+        generation: string,
+        expectedActivity: unknown,
+        signal?: AbortSignal | null,
         diagnostic = false,
-    ) => {
+    ): Promise<ProviderResult> => {
         const results = await runProviderBrowserOperation({
             phase: 'GPX capture',
             signal,
@@ -1391,9 +1502,9 @@ import { GarminError } from '../garmin/garmin-api.js';
             onCancel: providerOperationCancellation(tabId, generation),
             operation: () => ext.scripting.executeScript({
                 target: { tabId },
-                func: async (options, captureGeneration, timeoutMs, activity, includeDiagnostics) => {
+                func: async (options: unknown, captureGeneration: string, timeoutMs: number, activity: unknown, includeDiagnostics: boolean) => {
                     try {
-                        return await globalThis.BPBProviderPage.capture(
+                        return await (globalThis as PageGlobals).BPBProviderPage!.capture(
                             options,
                             captureGeneration,
                             timeoutMs,
@@ -1415,16 +1526,16 @@ import { GarminError } from '../garmin/garmin-api.js';
             }),
         });
         if (!results || !results[0]) throw new Error('The activity page returned no capture result.');
-        return results[0].result;
+        return results[0].result as ProviderResult;
     };
 
-    const captureTimeoutError = cause => PublicErrors.exception(
+    const captureTimeoutError = (cause?: unknown) => PublicErrors.exception(
         'capture-timeout',
         captureErrorMessage('capture-timeout'),
         cause ? { cause } : undefined,
     );
 
-    const createCaptureCpuScheduler = ({ signal, deadline, timeoutMs }) => {
+    const createCaptureCpuScheduler = ({ signal, deadline, timeoutMs }: { signal?: AbortSignal | null; deadline: Deadline; timeoutMs: number }) => {
         const monotonicNow = () => typeof globalThis.performance?.now === 'function'
             ? globalThis.performance.now()
             : Date.now();
@@ -1441,7 +1552,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             assertActive();
             if (!force && monotonicNow() - sliceStartedAt < 8) return;
             if (typeof globalThis.setTimeout === 'function') {
-                await new Promise(resolve => globalThis.setTimeout(resolve, 0));
+                await new Promise<void>(resolve => globalThis.setTimeout(resolve, 0));
             } else {
                 await Promise.resolve();
             }
@@ -1469,8 +1580,8 @@ import { GarminError } from '../garmin/garmin-api.js';
         onProgress = async () => {},
         diagnostics = createCaptureDiagnostics(),
         signal = null,
-        peakbaggerRequest = fetchPeakbaggerResource,
-    }) => {
+        peakbaggerRequest = fetchPeakbaggerResource as unknown as PeakbaggerRequest,
+    }: AnalyzeOptions) => {
         const deadline = Deadline.createRequestDeadline(CaptureLimits.CORRIDOR_TOTAL_TIMEOUT_MS);
         const cancel = () => deadline.abort();
         if (signal?.aborted) cancel();
@@ -1500,7 +1611,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 ? Core.sanitizeWaypoints(waypoints)
                 : [];
             await cpu.checkpoint(true);
-            const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
+            const pointCount = sanitized.segments.reduce((sum: number, segment: unknown[]) => sum + segment.length, 0);
             diagnostics.mark('local.sanitize');
             diagnostics.count('track.source-points', sourcePointCount);
             diagnostics.count('track.sanitized-points', pointCount);
@@ -1539,7 +1650,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             }
             await onPhase('searching-summits', { completed: 0, total: boxes.length });
             assertActive();
-            const peaks = await deadline.run(fetchPeaks(boxes, {
+            const peaks: unknown[] = await deadline.run(fetchPeaks(boxes, {
                 signal: deadline.signal,
                 request: peakbaggerRequest,
                 checkpoint: cpu.checkpoint,
@@ -1552,7 +1663,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             const allMatches = await Core.detectPeaksAsync(
                 sanitized.segments,
                 peaks,
-                sanitized.quality.score,
+                (sanitized.quality as { score?: number }).score,
                 { checkpoint: cpu.checkpoint },
             );
             diagnostics.mark('local.matching');
@@ -1563,9 +1674,11 @@ import { GarminError } from '../garmin/garmin-api.js';
                     `This route passes more than ${CaptureLimits.MAX_CAPTURE_MATCHES} summit candidates. Split the activity into a shorter track and try again.`,
                 );
             }
-            const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
+            type Detected = { id: number; classification: string; encounter: { distanceM: number }; [field: string]: unknown };
+            const detected = allMatches as Detected[];
+            const visibleMatches = detected.filter(match => match.classification === 'strong' || match.classification === 'probable');
             const boundBelowBar = boundPid === null ? null
-                : allMatches.find(match => match.id === Number(boundPid)
+                : detected.find(match => match.id === Number(boundPid)
                 && !visibleMatches.some(visible => visible.id === match.id)) || null;
             if (!visibleMatches.length && !boundBelowBar) {
                 return {
@@ -1592,12 +1705,12 @@ import { GarminError } from '../garmin/garmin-api.js';
                 ? Core.serializeUploadGpx(reduced.segments, cleanWaypoints, { includeTimestamps: false }) : null;
             await cpu.checkpoint();
             diagnostics.mark('local.reduction');
-            const matches = [];
+            const matches: CaptureMatch[] = [];
             for (const match of visibleMatches) {
                 matches.push({
                     ...Core.publicMatch(match),
                     draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata),
-                });
+                } as CaptureMatch);
                 await cpu.checkpoint();
             }
             // A below-bar bound peak is still selectable on the ascent form. Keep
@@ -1619,7 +1732,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 selected: false,
                 closestApproachM: Math.round(boundBelowBar.encounter.distanceM),
                 draftFields: Core.calculateDraftFields(sanitized.segments, boundBelowBar, metadata)
-            } : null;
+            } as CaptureMatch : null;
 
             await cpu.checkpoint();
             diagnostics.mark('local.derivation');
@@ -1657,14 +1770,14 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
 
     const processCapture = async (
-        tabId,
-        expectedUrl,
-        capturePreferences,
-        generation,
-        signal,
-        diagnostics = newCaptureDiagnostics(),
+        tabId: number,
+        expectedUrl: string | undefined,
+        capturePreferences: CapturePreferences,
+        generation: string,
+        signal: AbortSignal | undefined,
+        diagnostics: Diagnostics = newCaptureDiagnostics(),
     ) => {
-        let peakbaggerPage = null;
+        let peakbaggerPage: Awaited<ReturnType<typeof acquirePeakbaggerPage>> | null = null;
         let diagnosticOutcome = 'error';
         try {
             const expectedActivity = providerFromUrl(expectedUrl);
@@ -1720,13 +1833,14 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger', progress: null })) return;
             await ensurePeakbaggerRequestsAllowed();
             peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, generation, signal);
-            const peakbaggerRequest = (url, options) => schedulePeakbaggerRequest(
-                peakbaggerPage.request,
+            const page = peakbaggerPage;
+            const peakbaggerRequest: PeakbaggerRequest = (url, options) => schedulePeakbaggerRequest(
+                page.request,
                 url,
                 options,
                 {
-                    recoveryTabId: peakbaggerPage.tabId,
-                    adoptForRecovery: peakbaggerPage.adoptForRecovery,
+                    recoveryTabId: page.tabId,
+                    adoptForRecovery: page.adoptForRecovery,
                 },
             );
             const cid = await peakbaggerPage.freshAccount()
@@ -1744,6 +1858,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 return;
             }
             const currentTab = await ext.tabs.get(tabId);
+            // (the account check above can outlast a navigation of the activity tab)
             const currentActivity = providerFromUrl(currentTab.url);
             if (!sameProviderActivity(currentActivity, expectedActivity)) {
                 await failCaptureJob(
@@ -1765,7 +1880,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 diagnostics.enabled,
             );
             diagnostics.mark('provider.capture');
-            const pageDiagnostics = capture?.diagnostics;
+            const pageDiagnostics = capture?.diagnostics as { durationsMs?: Record<string, number>; counts?: Record<string, number> } | undefined;
             for (const name of ['headers', 'body', 'parse', 'metadata']) {
                 diagnostics.add(`provider.${name}`, pageDiagnostics?.durationsMs?.[name]);
             }
@@ -1802,7 +1917,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (!await updateCaptureJob(tabId, generation, { phase: 'processing-track', progress: null })) return;
             await setBadge(tabId, '');
             let progressBucket = 0;
-            const reportProgress = async progress => {
+            const reportProgress = async (progress: { completed: number; total: number }) => {
                 const completed = Number(progress?.completed);
                 const total = Number(progress?.total);
                 if (!Number.isInteger(completed) || !Number.isInteger(total)
@@ -1824,7 +1939,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 signal,
                 peakbaggerRequest,
                 diagnostics,
-                onPhase: (phase, progress = null) => updateCaptureJob(
+                onPhase: (phase: string, progress: { completed: number; total: number } | null = null) => updateCaptureJob(
                     tabId,
                     generation,
                     { phase, progress },
@@ -1857,7 +1972,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 provider: capture.provider,
                 activityId: capture.activityId,
                 matches: analysis.matches,
-                selectedIds: analysis.matches.filter(match => match.selected).map(match => match.id),
+                selectedIds: (analysis.matches as CaptureMatch[]).filter(match => match.selected).map(match => match.id),
                 trackSummary: analysis.trackSummary,
                 tripName: analysis.tripName,
                 nightsOut: analysis.nightsOut,
@@ -1875,8 +1990,8 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (signal?.aborted) return;
             const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
             await failCaptureJob(tabId, generation, failure.code, failure.message, {
-                retryAt: error?.retryAt,
-                recoveryTabId: error?.recoveryTabId,
+                retryAt: (error as WorkerError)?.retryAt,
+                recoveryTabId: (error as WorkerError)?.recoveryTabId,
             });
             diagnostics.mark('storage.failure');
         } finally {
@@ -1889,26 +2004,31 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const serializeCaptureAdmission = (tabId, admit) => {
+    type Admission =
+        | { kind: 'cancelled' }
+        | { kind: 'complete'; value: unknown }
+        | { kind: 'wait'; process: { promise: Promise<unknown> } | undefined; activity: { provider: string; activityId: string }; capturePreferences: CapturePreferences }
+        | { kind: 'started'; job: CaptureJob; process: Promise<unknown>; signal: AbortSignal | undefined };
+    const serializeCaptureAdmission = <Result>(tabId: number, admit: () => Promise<Result>): Promise<Result> => {
         const previous = captureAdmissions.get(tabId) || Promise.resolve();
-        const operation = previous.catch(() => {}).then(admit);
+        const operation: Promise<Result> = previous.catch(() => {}).then(admit);
         captureAdmissions.set(tabId, operation);
         return operation.finally(() => {
             if (captureAdmissions.get(tabId) === operation) captureAdmissions.delete(tabId);
         });
     };
 
-    const admitCapture = async (message, tabId, admissionEpoch) => {
+    const admitCapture = async (message: WorkerMessage, tabId: number, admissionEpoch: number | undefined): Promise<Admission> => {
         const diagnostics = newCaptureDiagnostics();
         const cancelled = () => captureCancellationEpochs.get(tabId) !== admissionEpoch;
-        const cancelledAdmission = () => {
+        const cancelledAdmission = (): Admission => {
             diagnostics.finish('cancelled');
             return { kind: 'cancelled' };
         };
         const tab = await ext.tabs.get(tabId);
         diagnostics.mark('admission.active-tab');
         if (cancelled()) return cancelledAdmission();
-        const activity = providerFromUrl(tab.url);
+        const activity = providerFromUrl(tab.url) as { provider: string; activityId: string } | null;
         if (!activity) {
             await setBadge(tabId, '');
             if (cancelled()) return cancelledAdmission();
@@ -1932,7 +2052,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 } } };
             }
         }
-        let capturePreferences;
+        let capturePreferences: CapturePreferences;
         try {
             capturePreferences = await readCapturePreferences();
             diagnostics.mark('admission.settings');
@@ -1966,7 +2086,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         await setBadge(tabId, '');
         if (cancelled()) return cancelledAdmission();
 
-        const job = {
+        const job: CaptureJob = {
             id: makeId(),
             sourceTabId: tabId,
             provider: activity.provider,
@@ -1985,7 +2105,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         await serializeLifecycle(tabId, () => installLifecycleJob(job));
         diagnostics.mark('admission.storage');
         if (cancelled()) {
-            await mutateMap(JOBS_KEY, map => {
+            await mutateMap(JOBS_KEY, (map: JobMap) => {
                 if (map[tabId]?.id === job.id) delete map[tabId];
             });
             return cancelledAdmission();
@@ -2003,7 +2123,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         return { kind: 'started', job, process, signal: controller?.signal };
     };
 
-    const startCapture = async message => {
+    const startCapture = async (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
         while (true) {
             const admissionEpoch = captureCancellationEpochs.get(tabId);
@@ -2014,7 +2134,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (admission.kind === 'cancelled') return null;
             if (admission.kind === 'complete') return admission.value;
             if (admission.kind === 'wait') {
-                await admission.process.promise;
+                await admission.process!.promise;
                 const completed = (await readMap(JOBS_KEY))[tabId];
                 const completedSameActivity = completed
                     && completed.provider === admission.activity.provider
@@ -2033,7 +2153,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const clearCaptureTransaction = async message => {
+    const clearCaptureTransaction = async (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
         if (!Number.isInteger(tabId)) {
             throw PublicErrors.exception('invalid-tab', 'Activity tab identity is unavailable.');
@@ -2045,7 +2165,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             );
         }
         const tab = await ext.tabs.get(tabId);
-        const activity = providerFromUrl(tab.url);
+        const activity = providerFromUrl(tab.url) as { provider: string; activityId: string } | null;
         if (!activity) {
             throw PublicErrors.exception(
                 'activity-changed',
@@ -2064,8 +2184,8 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
 
         let removedGpx = false;
-        let removedPayloadKey = null;
-        await mutateMap(JOBS_KEY, map => {
+        let removedPayloadKey: string | null = null;
+        await mutateMap(JOBS_KEY, (map: JobMap) => {
             const current = map[tabId];
             if (!current || current.id !== job.id) return;
             removedPayloadKey = referencedPayloadKey(current);
@@ -2073,14 +2193,14 @@ import { GarminError } from '../garmin/garmin-api.js';
             delete map[tabId];
         });
         await removePayloadKeys(removedPayloadKey);
-        const removedDrafts = await mutateMap(DRAFTS_KEY, drafts => {
+        const removedDrafts = await mutateMap(DRAFTS_KEY, (drafts: DraftMap) => {
             const records = Object.values(drafts).filter(draft => draft.jobId === job.id);
-            records.forEach(draft => { delete drafts[draft.tabId]; });
+            records.forEach(draft => { delete drafts[draft.tabId as number]; });
             return records;
         });
         await Promise.all(removedDrafts.filter(draftNeedsDisconnectNotice).map(async draft => {
             try {
-                await ext.tabs.sendMessage?.(draft.tabId, { type: 'DRAFT_CLEARED' });
+                await ext.tabs.sendMessage?.(draft.tabId as number, { type: 'DRAFT_CLEARED' });
             } catch (_error) {
                 // Closed or still-loading draft tabs need no further cleanup.
             }
@@ -2089,7 +2209,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         return { ok: true, removedGpx, removedDraftCount: removedDrafts.length };
     };
 
-    const clearCapture = message => {
+    const clearCapture = (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
         if (!Number.isInteger(tabId)) return clearCaptureTransaction(message);
         abortOwnedWork(tabId);
@@ -2097,7 +2217,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         return serializeLifecycle(tabId, () => clearCaptureTransaction(message));
     };
 
-    const abortOwnedWork = (tabId, generation = null) => {
+    const abortOwnedWork = (tabId: number, generation: string | null = null) => {
         const provider = processes.get(tabId);
         if (provider && (generation === null || provider.generation === generation)) {
             requestProviderCancellation(tabId, provider.generation);
@@ -2107,11 +2227,11 @@ import { GarminError } from '../garmin/garmin-api.js';
         if (local && (generation === null || local.generation === generation)) local.controller?.abort();
     };
 
-    const cancelAdmittedCapture = async (tabId, cancelledAdmission) => {
+    const cancelAdmittedCapture = async (tabId: number, cancelledAdmission: boolean) => {
         let cancelled = cancelledAdmission;
-        let current = null;
-        let removedPayloadKey = null;
-        await mutateMap(JOBS_KEY, jobs => {
+        let current: CaptureJob | null = null as CaptureJob | null;
+        let removedPayloadKey: string | null = null;
+        await mutateMap(JOBS_KEY, (jobs: JobMap) => {
             current = jobs[tabId] || null;
             if (!current || CapturePhases.isTerminal(current.phase)) return;
             removedPayloadKey = referencedPayloadKey(current);
@@ -2122,13 +2242,13 @@ import { GarminError } from '../garmin/garmin-api.js';
         if (cancelled && current) {
             const process = processes.get(tabId);
             abortOwnedWork(tabId, current.id);
-            if (process?.generation === current.id) processes.delete(tabId);
+            if (process?.generation === current!.id) processes.delete(tabId);
         }
         if (cancelled) await setBadge(tabId, '');
         return { ok: cancelled, cancelled, job: cancelled ? null : publicJob(current) };
     };
 
-    const cancelCapture = message => {
+    const cancelCapture = (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
         if (!Number.isInteger(tabId)) {
             throw PublicErrors.exception('invalid-tab', 'Activity tab identity is unavailable.');
@@ -2147,27 +2267,27 @@ import { GarminError } from '../garmin/garmin-api.js';
     // storing a change the popup would then misreport as actionable.
     const SELECTION_LOCKED_PHASES = new Set(['opening', 'opened', 'previewed']);
 
-    const updateSelectionTransaction = async message => {
+    const updateSelectionTransaction = async (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
         const current = (await readMap(JOBS_KEY))[tabId];
-        if (isFresh(current) && SELECTION_LOCKED_PHASES.has(current.phase)) return current;
+        if (isFresh(current) && SELECTION_LOCKED_PHASES.has(current!.phase)) return current;
         return applySelection(message);
     };
 
-    const updateSelection = message => {
+    const updateSelection = (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
         return serializeLifecycle(tabId, () => updateSelectionTransaction(message));
     };
 
     // openDrafts() re-opens a job whose draft tabs were all closed, so the
     // mutation itself stays reachable in phase 'opened'; only the route locks.
-    const applySelection = async message => {
+    const applySelection = async (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
-        return mutateMap(JOBS_KEY, jobs => {
+        return mutateMap(JOBS_KEY, (jobs: JobMap) => {
             const job = jobs[tabId];
             if (!isFresh(job) || (job.phase !== 'ready' && job.phase !== 'opened')) return null;
             const allowed = new Set(job.matches.map(match => String(match.id)));
-            job.selectedIds = [...new Set((message.selectedIds || []).map(String))]
+            job.selectedIds = [...new Set(((message.selectedIds || []) as unknown[]).map(String))]
                 .filter(id => allowed.has(id))
                 .map(Number);
             job.updatedAt = now();
@@ -2175,17 +2295,17 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const beginDraftOpening = (message, expectedJobId) => {
+    const beginDraftOpening = (message: WorkerMessage, expectedJobId: string) => {
         const tabId = Number(message.tabId);
         const openingId = makeId();
-        return mutateMap(JOBS_KEY, jobs => {
+        return mutateMap(JOBS_KEY, (jobs: JobMap) => {
             const job = jobs[tabId];
             if (!isFresh(job) || job.id !== expectedJobId
                 || (job.phase !== 'ready' && job.phase !== 'opened' && job.phase !== 'previewed')) return null;
             if (job.phase === 'ready') {
                 if (job.provider !== 'upload') job.includeTimestampsOnce = message.includeTimestampsOnce === true;
                 const allowed = new Set(job.matches.map(match => String(match.id)));
-                job.selectedIds = [...new Set((message.selectedIds || []).map(String))]
+                job.selectedIds = [...new Set(((message.selectedIds || []) as unknown[]).map(String))]
                     .filter(id => allowed.has(id))
                     .map(Number);
             }
@@ -2196,23 +2316,26 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const prepareDraftOpening = (job, matches, sourceTabId) => {
-        const selection = Core.prepareDraftSelection(matches);
+    const prepareDraftOpening = (job: CaptureJob, matches: CaptureMatch[], sourceTabId: number) => {
+        const selection = Core.prepareDraftSelection(matches) as unknown as {
+            matches: CaptureMatch[]; confidenceOrdered: CaptureMatch[]; sequenceById: Map<string, number>; fallbackTripName: string;
+            [field: string]: unknown;
+        };
         const useTripInfo = job.capturePreferences?.fillTripInfo && selection.matches.length > 1;
         const useWildernessNights = job.capturePreferences?.fillWildernessNights
-            && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
-        const makeDraft = (match, {
+            && Number.isInteger(job.nightsOut) && (job.nightsOut as number) > 0;
+        const makeDraft = (match: CaptureMatch, {
             tabId,
             previewOrder,
             focusOnReady,
             preserveExistingFields = false,
-        }) => ({
+        }: { tabId: number; previewOrder: number; focusOnReady: boolean; preserveExistingFields?: boolean }): DraftRecord => ({
             tabId,
             jobId: job.id,
             openingId: job.openingId,
             sourceTabId,
             pid: match.id,
-            cid: job.cid,
+            cid: job.cid as string,
             classification: match.classification,
             confidence: match.confidence,
             suffix: match.draftFields.suffix,
@@ -2236,23 +2359,23 @@ import { GarminError } from '../garmin/garmin-api.js';
         return { ...selection, makeDraft };
     };
 
-    const lifecycleEpoch = tabId => lifecycleEpochs.get(tabId) || 0;
-    const invalidateLifecycle = tabId => {
+    const lifecycleEpoch = (tabId: number) => lifecycleEpochs.get(tabId) || 0;
+    const invalidateLifecycle = (tabId: number) => {
         lifecycleEpochs.set(tabId, lifecycleEpoch(tabId) + 1);
     };
-    const serializeLifecycle = (tabId, operation) => {
+    const serializeLifecycle = <Result>(tabId: number, operation: () => Result | Promise<Result>): Promise<Result> => {
         const previous = lifecycleQueues.get(tabId) || Promise.resolve();
-        const current = previous.catch(() => {}).then(operation);
+        const current: Promise<Result> = previous.catch(() => {}).then(operation);
         lifecycleQueues.set(tabId, current);
         return current.finally(() => {
             if (lifecycleQueues.get(tabId) === current) lifecycleQueues.delete(tabId);
         });
     };
-    const installLifecycleJob = job => {
+    const installLifecycleJob = (job: CaptureJob) => {
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
-            const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
-            const replacedPayloadKey = referencedPayloadKey(jobs[job.sourceTabId]);
-            const disconnectedDraftTabIds = [];
+            const [jobs, drafts] = await Promise.all([readMap<CaptureJob>(JOBS_KEY), readMap<DraftRecord>(DRAFTS_KEY)]);
+            const replacedPayloadKey = referencedPayloadKey(jobs[job.sourceTabId as number]);
+            const disconnectedDraftTabIds: number[] = [];
             let draftsChanged = false;
             Object.entries(drafts).forEach(([draftTabId, draft]) => {
                 if (Number(draft.sourceTabId) === Number(job.sourceTabId) && draft.jobId !== job.id) {
@@ -2261,8 +2384,8 @@ import { GarminError } from '../garmin/garmin-api.js';
                     if (draftNeedsDisconnectNotice(draft)) disconnectedDraftTabIds.push(Number(draftTabId));
                 }
             });
-            jobs[job.sourceTabId] = job;
-            const patch = { [JOBS_KEY]: jobs };
+            jobs[job.sourceTabId as number] = job;
+            const patch: Record<string, unknown> = { [JOBS_KEY]: jobs };
             if (draftsChanged) patch[DRAFTS_KEY] = drafts;
             await storage().set(patch);
             await removePayloadKeys(replacedPayloadKey);
@@ -2277,16 +2400,16 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const sameDraftIdentity = (left, right) => !!left && !!right
+    const sameDraftIdentity = (left: Partial<DraftRecord> | null | undefined, right: Partial<DraftRecord> | null | undefined) => !!left && !!right
         && Number(left.tabId) === Number(right.tabId)
         && left.jobId === right.jobId
         && left.openingId === right.openingId
         && String(left.pid) === String(right.pid)
         && String(left.cid) === String(right.cid);
 
-    const createDraftOpeningTransaction = ({ jobTabId, priorJob, openingId, epoch }) => {
-        const createdTabIds = [];
-        const draftWrites = new Map();
+    const createDraftOpeningTransaction = ({ jobTabId, priorJob, openingId, epoch }: { jobTabId: number; priorJob: CaptureJob; openingId: string; epoch: number }) => {
+        const createdTabIds: number[] = [];
+        const draftWrites = new Map<string, { previous: DraftRecord | null; installed: DraftRecord }>();
 
         const isCurrent = async () => {
             if (lifecycleEpoch(jobTabId) !== epoch) return false;
@@ -2301,7 +2424,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 'Draft opening was cancelled because the capture changed.',
             );
         };
-        const prepareFinish = patch => mutateMap(JOBS_KEY, jobs => {
+        const prepareFinish = (patch: Partial<CaptureJob>) => mutateMap(JOBS_KEY, (jobs: JobMap) => {
             const current = jobs[jobTabId];
             if (lifecycleEpoch(jobTabId) !== epoch || current?.id !== priorJob?.id
                 || current.openingId !== openingId || current.phase !== 'opening') return null;
@@ -2312,12 +2435,12 @@ import { GarminError } from '../garmin/garmin-api.js';
             };
             return jobs[jobTabId];
         });
-        const finalize = () => mutateLifecycleMaps((jobs, drafts) => {
+        const finalize = () => mutateLifecycleMaps((jobs: JobMap, drafts: DraftMap) => {
             const current = jobs[jobTabId];
             if (lifecycleEpoch(jobTabId) !== epoch || current?.id !== priorJob?.id
                 || current.openingId !== openingId
                 || (current.phase !== 'opened' && current.phase !== 'previewed')) return null;
-            const next = { ...current, updatedAt: now() };
+            const next: CaptureJob = { ...current, updatedAt: now() };
             delete next.openingId;
             jobs[jobTabId] = next;
             Object.values(drafts).forEach(draft => {
@@ -2325,16 +2448,16 @@ import { GarminError } from '../garmin/garmin-api.js';
             });
             return next;
         });
-        const finish = async patch => {
+        const finish = async (patch: Partial<CaptureJob>) => {
             const prepared = await prepareFinish(patch);
             if (!prepared) return null;
             return finalize();
         };
 
-        const trackTab = tabId => {
+        const trackTab = (tabId: number) => {
             createdTabIds.push(tabId);
         };
-        const writeDraft = draft => mutateMap(DRAFTS_KEY, drafts => {
+        const writeDraft = (draft: DraftRecord) => mutateMap(DRAFTS_KEY, (drafts: DraftMap) => {
             const key = String(draft.tabId);
             if (!draftWrites.has(key)) {
                 draftWrites.set(key, {
@@ -2342,11 +2465,11 @@ import { GarminError } from '../garmin/garmin-api.js';
                     installed: draft,
                 });
             } else {
-                draftWrites.get(key).installed = draft;
+                draftWrites.get(key)!.installed = draft;
             }
             drafts[key] = draft;
         });
-        const rollback = async cause => {
+        const rollback = async (cause: unknown) => {
             const closeResults = await Promise.allSettled(createdTabIds.map(tabId =>
                 Promise.resolve().then(() => ext.tabs.remove(tabId))));
             closeResults.forEach((result, index) => {
@@ -2355,7 +2478,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 }
             });
             try {
-                await mutateLifecycleMaps((jobs, drafts) => {
+                await mutateLifecycleMaps((jobs: JobMap, drafts: DraftMap) => {
                     draftWrites.forEach(({ previous, installed }, key) => {
                         if (!sameDraftIdentity(drafts[key], installed)) return;
                         if (previous) drafts[key] = previous;
@@ -2376,10 +2499,10 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
 
     const SAVE_RECOVERY_MESSAGE = 'A previous summit left its ascent form before its saved GPX and trip were checked. Review that ascent before starting a new capture.';
-    const draftNeedsSaveVerification = draft => draft.waitForSave && !draft.saved
+    const draftNeedsSaveVerification = (draft: DraftRecord) => draft.waitForSave && !draft.saved
         && (draft.previewStarted || draft.complete);
 
-    const draftTabMatches = (tab, draft) => {
+    const draftTabMatches = (tab: Tab | undefined, draft: DraftRecord) => {
         if (!tab || typeof tab.url !== 'string') return false;
         try {
             const url = new URL(tab.url);
@@ -2393,16 +2516,16 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const inspectRecordedDrafts = async (jobId, drafts) => {
-        const live = [];
-        const stale = [];
+    const inspectRecordedDrafts = async (jobId: string, drafts: DraftMap) => {
+        const live: DraftRecord[] = [];
+        const stale: DraftRecord[] = [];
         for (const draft of Object.values(drafts).filter(candidate => candidate.jobId === jobId)) {
             if (!isFresh(draft)) {
                 stale.push(draft);
                 continue;
             }
             try {
-                const tab = await ext.tabs.get(draft.tabId);
+                const tab = await ext.tabs.get(draft.tabId as number);
                 (draftTabMatches(tab, draft) ? live : stale).push(draft);
             } catch {
                 stale.push(draft);
@@ -2412,21 +2535,22 @@ import { GarminError } from '../garmin/garmin-api.js';
         // could duplicate an ascent and create another trip.
         const saveRecoveryRequired = stale.some(draftNeedsSaveVerification);
         if (stale.length && !saveRecoveryRequired) {
-            await mutateMap(DRAFTS_KEY, current => {
+            await mutateMap(DRAFTS_KEY, (current: DraftMap) => {
                 stale.forEach(draft => {
-                    if (sameDraftIdentity(current[draft.tabId], draft)) delete current[draft.tabId];
+                    if (sameDraftIdentity(current[draft.tabId as number], draft)) delete current[draft.tabId as number];
                 });
             });
         }
         return { live, stale, saveRecoveryRequired };
     };
 
-    const waitForDraftTabReady = async (tabId, transaction) => {
+    type DraftTransaction = ReturnType<typeof createDraftOpeningTransaction>;
+    const waitForDraftTabReady = async (tabId: number, transaction: DraftTransaction) => {
         const expiresAt = now() + DRAFT_TAB_READY_TIMEOUT_MS;
-        const timeoutError = cause => new Error('The new draft tab did not finish opening.', { cause });
-        let onUpdated;
-        let pollTimer = null;
-        const completed = new Promise(resolve => {
+        const timeoutError = (cause?: unknown) => new Error('The new draft tab did not finish opening.', { cause });
+        let onUpdated!: (updatedTabId: number, changeInfo: { status?: string }, tab: Tab) => void;
+        let pollTimer: ReturnType<typeof setTimeout> | null = null;
+        const completed = new Promise<Tab>(resolve => {
             onUpdated = (updatedTabId, changeInfo, tab) => {
                 if (updatedTabId === tabId && changeInfo.status === 'complete') resolve(tab);
             };
@@ -2450,7 +2574,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 await Promise.race([completed, new Promise(resolve => {
                     pollTimer = globalThis.setTimeout(resolve, 50);
                 })]);
-                globalThis.clearTimeout(pollTimer);
+                globalThis.clearTimeout(pollTimer as unknown as ReturnType<typeof setTimeout>);
                 pollTimer = null;
             }
         } finally {
@@ -2467,33 +2591,38 @@ import { GarminError } from '../garmin/garmin-api.js';
         startOrder = 0,
         focusFirst = false,
         onBeforeNavigate = null,
+    }: {
+        sourceTabId: number; matches: CaptureMatch[]; transaction: DraftTransaction;
+        makeDraft: ReturnType<typeof prepareDraftOpening>['makeDraft'];
+        startOrder?: number; focusFirst?: boolean;
+        onBeforeNavigate?: ((opened: { created: DraftRecord[]; groupWarning: boolean | null }) => unknown) | null;
     }) => {
         const sourceTab = await ext.tabs.get(sourceTabId);
         await transaction.assertCurrent();
-        const created = [];
+        const created: DraftRecord[] = [];
         for (let index = 0; index < matches.length; index++) {
             const match = matches[index];
             const tab = await ext.tabs.create({ url: ext.runtime.getURL('capture/draft-tab.html'), active: false, windowId: sourceTab.windowId });
-            transaction.trackTab(tab.id);
+            transaction.trackTab(tab.id as number);
             await transaction.assertCurrent();
             const draft = makeDraft(match, {
-                tabId: tab.id,
+                tabId: tab.id as number,
                 previewOrder: startOrder + index,
                 focusOnReady: focusFirst && index === 0,
             });
             await transaction.writeDraft(draft);
             // Use a real packaged document: Chromium may leave an initial
             // about:blank provisional, with no reliable load-complete signal.
-            await waitForDraftTabReady(tab.id, transaction);
+            await waitForDraftTabReady(tab.id as number, transaction);
             await transaction.assertCurrent();
             created.push(draft);
         }
 
-        let groupWarning = null;
+        let groupWarning: boolean | null = null;
         if (created.length) {
             try {
                 const groupId = await ext.tabs.group({
-                    tabIds: created.map(draft => draft.tabId),
+                    tabIds: created.map(draft => draft.tabId as number) as [number, ...number[]],
                     createProperties: { windowId: sourceTab.windowId }
                 });
                 await ext.tabGroups.update(groupId, { title: 'Peak Drafts', color: 'green', collapsed: false });
@@ -2508,7 +2637,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
         if (onBeforeNavigate) await onBeforeNavigate({ created, groupWarning });
         await transaction.assertCurrent();
-        await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
+        await Promise.all(created.map(draft => ext.tabs.update(draft.tabId as number, {
             url: `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
             active: false
         })));
@@ -2516,7 +2645,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         return { created, groupWarning };
     };
 
-    const openDraftsTransaction = async (message, tabId) => {
+    const openDraftsTransaction = async (message: WorkerMessage, tabId: number) => {
         const jobs = await readMap(JOBS_KEY);
         const existingJob = jobs[tabId];
         if (!isFresh(existingJob)) {
@@ -2525,11 +2654,11 @@ import { GarminError } from '../garmin/garmin-api.js';
                 'Capture results are no longer available. Capture the activity again.'
             );
         }
-        if (existingJob.saveRecoveryRequired) {
+        if (existingJob!.saveRecoveryRequired) {
             throw PublicErrors.exception('draft-save-unverified', SAVE_RECOVERY_MESSAGE);
         }
         const epoch = lifecycleEpoch(tabId);
-        const started = await beginDraftOpening(message, existingJob.id);
+        const started = await beginDraftOpening(message, existingJob!.id);
         if (!started) {
             throw PublicErrors.exception(
                 'job-expired',
@@ -2539,7 +2668,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         const job = started.job;
         const transaction = createDraftOpeningTransaction({
             jobTabId: tabId,
-            priorJob: existingJob,
+            priorJob: existingJob!,
             openingId: started.openingId,
             epoch,
         });
@@ -2552,7 +2681,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                     'Capture results are no longer available. Capture the activity again.'
                 );
             }
-            const existingDrafts = await readMap(DRAFTS_KEY);
+            const existingDrafts = await readMap<DraftRecord>(DRAFTS_KEY);
             await transaction.assertCurrent();
             const inspected = await inspectRecordedDrafts(job.id, existingDrafts);
             await transaction.assertCurrent();
@@ -2561,16 +2690,16 @@ import { GarminError } from '../garmin/garmin-api.js';
                 throw PublicErrors.exception('draft-save-unverified', SAVE_RECOVERY_MESSAGE);
             }
             const existingForJob = inspected.live
-                .sort((a, b) => b.confidence - a.confidence);
+                .sort((a, b) => (b.confidence as number) - (a.confidence as number));
             if (existingForJob.length && !inspected.stale.length) {
                 for (const draft of existingForJob) {
-                    await ext.tabs.update(draft.tabId, { active: false });
+                    await ext.tabs.update(draft.tabId as number, { active: false });
                     await transaction.assertCurrent();
                 }
-                await ext.tabs.update(existingForJob[0].tabId, { active: true });
+                await ext.tabs.update(existingForJob[0].tabId as number, { active: true });
                 await transaction.assertCurrent();
                 const opened = await transaction.finish({
-                    phase: existingJob.phase === 'previewed' ? 'previewed' : 'opened',
+                    phase: existingJob!.phase === 'previewed' ? 'previewed' : 'opened',
                     openedDraftTabIds: existingForJob.map(draft => draft.tabId),
                     groupWarning: job.groupWarning || null,
                 });
@@ -2597,7 +2726,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 throw PublicErrors.exception('no-selection', 'Select at least one detected peak.');
             }
             if (job.provider === 'garmin' && !job.inboxActivityId && globalThis.indexedDB) {
-                await garminImports.reserveCapture(job);
+                await garminImports.reserveCapture(job as Parameters<typeof garminImports.reserveCapture>[0]);
             }
 
             const liveByPeak = new Map(existingForJob.map(draft => [String(draft.pid), draft]));
@@ -2611,19 +2740,19 @@ import { GarminError } from '../garmin/garmin-api.js';
                 matches: missing,
                 makeDraft: (match, options) => opening.makeDraft(match, {
                     ...options,
-                    previewOrder: previewOrder.get(String(match.id)),
+                    previewOrder: previewOrder.get(String(match.id)) as number,
                 }),
                 transaction,
                 focusFirst: existingForJob.length === 0,
             });
-            const allDrafts = [...existingForJob, ...created].sort((a, b) => a.previewOrder - b.previewOrder);
+            const allDrafts = [...existingForJob, ...created].sort((a, b) => (a.previewOrder as number) - (b.previewOrder as number));
             const tabIds = allDrafts.map(draft => draft.tabId);
             if (existingForJob.length) {
                 for (const draft of allDrafts) {
-                    await ext.tabs.update(draft.tabId, { active: false });
+                    await ext.tabs.update(draft.tabId as number, { active: false });
                     await transaction.assertCurrent();
                 }
-                await ext.tabs.update(allDrafts[0].tabId, { active: true });
+                await ext.tabs.update(allDrafts[0].tabId as number, { active: true });
                 await transaction.assertCurrent();
             }
             const opened = await transaction.finish({ phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
@@ -2632,10 +2761,10 @@ import { GarminError } from '../garmin/garmin-api.js';
         } catch (cause) {
             await transaction.rollback(cause);
             if (saveRecoveryRequired) {
-                await updateCaptureJob(tabId, existingJob.id, { saveRecoveryRequired: true });
+                await updateCaptureJob(tabId, existingJob!.id, { saveRecoveryRequired: true });
             }
             if (payloadMissing) {
-                await updateCaptureJobWithoutPayload(tabId, existingJob.id, {
+                await updateCaptureJobWithoutPayload(tabId, existingJob!.id, {
                     phase: 'error',
                     error: {
                         code: 'capture-payload-missing',
@@ -2652,7 +2781,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const openDrafts = message => {
+    const openDrafts = (message: WorkerMessage) => {
         const tabId = Number(message.tabId);
         return serializeLifecycle(tabId, () => openDraftsTransaction(message, tabId));
     };
@@ -2665,12 +2794,12 @@ import { GarminError } from '../garmin/garmin-api.js';
     // cleanup alarm, and the DRAFT_READY/DRAFT_PROCEED handshake; the current
     // tab serves as its own draft tab after the same identity checks.
 
-    const uploadPageIdentity = sender => {
+    const uploadPageIdentity = (sender: Sender | null | undefined) => {
         if (sender?.id !== ext.runtime.id || sender?.frameId !== 0
             || !isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) return null;
-        let url;
+        let url: URL;
         try {
-            url = new URL(sender.url);
+            url = new URL(sender.url as string);
         } catch {
             return null;
         }
@@ -2683,15 +2812,15 @@ import { GarminError } from '../garmin/garmin-api.js';
         const pid = pidText === null ? null : Number(pidText);
         if (pid !== null && !Number.isSafeInteger(pid)) return null;
         return {
-            tabId: sender.tab.id,
-            windowId: sender.tab.windowId,
+            tabId: sender.tab!.id as number,
+            windowId: sender.tab!.windowId,
             isEdit: url.searchParams.has('aid'),
             pid: Number.isInteger(pid) ? pid : null,
             cid: cid || null
         };
     };
 
-    const uploadMatchSummary = match => ({
+    const uploadMatchSummary = (match: CaptureMatch) => ({
         id: match.id,
         name: match.name,
         location: match.location,
@@ -2700,40 +2829,41 @@ import { GarminError } from '../garmin/garmin-api.js';
         selected: match.selected,
         date: match.draftFields?.date || '',
         time: match.draftFields?.time || '',
-        upDistanceM: Number.isFinite(match.draftFields?.upDistanceM) ? match.draftFields.upDistanceM : null
+        upDistanceM: Number.isFinite(match.draftFields?.upDistanceM) ? match.draftFields.upDistanceM as number : null
     });
 
-    const cleanUploadSelection = message => {
+    type UploadSelection = { pageSessionId: string; selectionGeneration: number; selectionNonce: string };
+    const cleanUploadSelection = (message: WorkerMessage | null | undefined): UploadSelection | null => {
         const pageSessionId = typeof message?.pageSessionId === 'string'
             && /^[a-zA-Z0-9:_-]{8,100}$/.test(message.pageSessionId)
-            ? message.pageSessionId : null;
+            ? message!.pageSessionId as string : null;
         const selectionGeneration = Number(message?.selectionGeneration);
         const selectionNonce = typeof message?.selectionNonce === 'string'
             && /^[a-zA-Z0-9:_-]{8,100}$/.test(message.selectionNonce)
-            ? message.selectionNonce : null;
+            ? message!.selectionNonce as string : null;
         if (!pageSessionId || !Number.isSafeInteger(selectionGeneration)
             || selectionGeneration <= 0 || !selectionNonce) return null;
         return { pageSessionId, selectionGeneration, selectionNonce };
     };
-    const sameUploadSelection = (left, right) => !!left && !!right
+    const sameUploadSelection = (left: Partial<UploadSelection> | null | undefined, right: Partial<UploadSelection> | null | undefined) => !!left && !!right
         && left.pageSessionId === right.pageSessionId
         && left.selectionGeneration === right.selectionGeneration
         && left.selectionNonce === right.selectionNonce;
-    const uploadSelectionIsCurrent = async (tabId, selection) => {
+    const uploadSelectionIsCurrent = async (tabId: number, selection: UploadSelection) => {
         const jobs = await readMap(JOBS_KEY);
         return jobs[tabId]?.provider === 'upload'
             && sameUploadSelection(jobs[tabId], selection);
     };
 
-    const invalidateGpxSelection = async (message, sender) => {
+    const invalidateGpxSelection = async (message: WorkerMessage, sender: Sender) => {
         const page = uploadPageIdentity(sender);
         const selection = cleanUploadSelection(message);
         if (!page || !selection) return { ok: false, error: { code: 'invalid-selection' } };
         return serializeLifecycle(page.tabId, async () => {
-            const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+            const [jobs, drafts] = await Promise.all([readMap<CaptureJob>(JOBS_KEY), readMap<DraftRecord>(DRAFTS_KEY)]);
             const current = jobs[page.tabId];
             if (current?.pageSessionId === selection.pageSessionId
-                && current.selectionGeneration > selection.selectionGeneration) {
+                && (current.selectionGeneration as number) > selection.selectionGeneration) {
                 return { ok: false, error: { code: 'superseded' } };
             }
             // Once Apply has committed a draft, the old page's pagehide is an
@@ -2748,7 +2878,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             const preservesCommittedDraft = current?.provider === 'upload'
                 && (current.phase === 'opened' || current.phase === 'previewed')
                 && Object.values(drafts).some(draft => isFresh(draft)
-                    && draft.jobId === current.id
+                    && draft.jobId === current!.id
                     && Number(draft.sourceTabId) === page.tabId
                     && (message.reason === 'page-lifecycle' || repairingPreparedAscent));
             if (preservesCommittedDraft) {
@@ -2756,8 +2886,8 @@ import { GarminError } from '../garmin/garmin-api.js';
             }
             abortOwnedWork(page.tabId);
             invalidateLifecycle(page.tabId);
-            let replacedPayloadKey = null;
-            await mutateMap(JOBS_KEY, currentJobs => {
+            let replacedPayloadKey: string | null = null;
+            await mutateMap(JOBS_KEY, (currentJobs: JobMap) => {
                 replacedPayloadKey = referencedPayloadKey(currentJobs[page.tabId]);
                 currentJobs[page.tabId] = {
                     id: `selection:${selection.pageSessionId}:${selection.selectionGeneration}`,
@@ -2768,25 +2898,25 @@ import { GarminError } from '../garmin/garmin-api.js';
                     updatedAt: now(),
                     expiresAt: now() + JOB_TTL_MS,
                     ...selection,
-                };
+                } as unknown as CaptureJob;
             });
             await removePayloadKeys(replacedPayloadKey);
             return { ok: true, ...selection };
         });
     };
 
-    const startGpxProcess = async (message, sender) => {
+    const startGpxProcess = async (message: WorkerMessage, sender: Sender) => {
         const page = uploadPageIdentity(sender);
         const selection = cleanUploadSelection(message);
-        const reply = result => ({ ...(result || {}), ...(selection || {}) });
+        const reply = (result: Record<string, unknown>) => ({ ...(result || {}), ...(selection || {}) });
         if (!page || page.isEdit) {
             return reply({ phase: 'error', error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } });
         }
         const tabId = page.tabId;
-        let capturePreferences;
-        let peakbaggerPageRequest;
-        let job;
-        let controller;
+        let capturePreferences: CapturePreferences;
+        let peakbaggerPageRequest: PeakbaggerRequest;
+        let job: CaptureJob;
+        let controller: AbortController | null;
         try {
             if (!selection || !(await uploadSelectionIsCurrent(tabId, selection))) {
                 return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
@@ -2804,8 +2934,8 @@ import { GarminError } from '../garmin/garmin-api.js';
             await ensurePeakbaggerRequestsAllowed();
             await ensurePeakbaggerPage(tabId);
             peakbaggerPageRequest = (url, options) => schedulePeakbaggerRequest(
-                (requestUrl, requestOptions) =>
-                    requestThroughPeakbaggerPage(tabId, requestUrl, requestOptions),
+                ((requestUrl: string, requestOptions?: { kind?: string; signal?: AbortSignal | null }) =>
+                    requestThroughPeakbaggerPage(tabId, requestUrl, requestOptions)) as PeakbaggerRequest,
                 url,
                 options,
                 { recoveryTabId: tabId },
@@ -2831,7 +2961,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 includeTimestampsOnce: message.includeTimestampsOnce === true,
                 activityId: null,
                 boundPid: page.pid,
-                cid,
+                cid: cid as string,
                 phase: 'starting',
                 matches: [],
                 selectedIds: [],
@@ -2858,7 +2988,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             const failure = publicFailure('local GPX processing', error, UNEXPECTED_PROCESS_ERROR);
             return reply({ phase: 'error', error: failure });
         }
-        const finish = patch => mutateMap(JOBS_KEY, map => {
+        const finish = (patch: Partial<CaptureJob>) => mutateMap(JOBS_KEY, (map: JobMap) => {
             if (!map[tabId] || map[tabId].id !== job.id) return null;
             map[tabId] = { ...map[tabId], ...patch, updatedAt: now(), expiresAt: now() + JOB_TTL_MS };
             return map[tabId];
@@ -2898,7 +3028,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 phase: 'ready',
                 matches: analysis.matches,
                 boundFallback: analysis.boundFallback,
-                selectedIds: analysis.matches.filter(match => match.selected).map(match => match.id),
+                selectedIds: (analysis.matches as CaptureMatch[]).filter(match => match.selected).map(match => match.id),
                 trackSummary: analysis.trackSummary,
                 tripName: analysis.tripName,
                 nightsOut: analysis.nightsOut,
@@ -2912,7 +3042,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 phase: 'ready',
                 jobId: job.id,
                 boundPid: page.pid,
-                matches: analysis.matches.map(uploadMatchSummary),
+                matches: (analysis.matches as CaptureMatch[]).map(uploadMatchSummary),
                 boundFallback: analysis.boundFallback ? {
                     ...uploadMatchSummary(analysis.boundFallback),
                     closestApproachM: analysis.boundFallback.closestApproachM
@@ -2920,14 +3050,15 @@ import { GarminError } from '../garmin/garmin-api.js';
             });
         } catch (error) {
             const failure = publicFailure('local GPX processing', error, UNEXPECTED_PROCESS_ERROR);
-            await finish({ phase: 'error', error: failure });
+            await finish({ phase: 'error', error: failure as JobError });
             return reply({ phase: 'error', error: failure });
         } finally {
             if (localAnalysisOwners.get(tabId)?.generation === job.id) localAnalysisOwners.delete(tabId);
         }
     };
 
-    const applyGpxProcessTransaction = async (message, page) => {
+    type UploadPage = NonNullable<ReturnType<typeof uploadPageIdentity>>;
+    const applyGpxProcessTransaction = async (message: WorkerMessage, page: UploadPage | null) => {
         if (!page) {
             return { ok: false, error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } };
         }
@@ -2936,9 +3067,9 @@ import { GarminError } from '../garmin/garmin-api.js';
         let job = jobs[tabId];
         const selection = cleanUploadSelection(message);
         if (!selection || !(await uploadSelectionIsCurrent(tabId, selection))
-            || !isFresh(job) || job.provider !== 'upload' || job.id !== message.jobId
+            || !isFresh(job) || job!.provider !== 'upload' || job!.id !== message.jobId
             || !sameUploadSelection(job, selection)
-            || job.phase !== 'ready') {
+            || job!.phase !== 'ready') {
             return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
         }
         const uploadGpx = await readCapturePayload(job);
@@ -2959,7 +3090,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
         const byId = new Map(job.matches.map(match => [String(match.id), match]));
         if (job.boundFallback) byId.set(String(job.boundFallback.id), job.boundFallback);
-        const selectedIds = [...new Set((message.selectedIds || []).map(String))].filter(id => byId.has(id));
+        const selectedIds = [...new Set(((message.selectedIds || []) as unknown[]).map(String))].filter(id => byId.has(id));
         if (!selectedIds.length) {
             return { ok: false, error: { code: 'no-selection', message: 'Select at least one detected peak.' } };
         }
@@ -2980,7 +3111,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
         job = started.job;
 
-        const opening = prepareDraftOpening(job, selectedIds.map(id => byId.get(id)), tabId);
+        const opening = prepareDraftOpening(job, selectedIds.map(id => byId.get(id) as CaptureMatch), tabId);
         const primaryMatch = primaryId
             ? opening.matches.find(match => String(match.id) === primaryId)
             : null;
@@ -3006,7 +3137,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 await transaction.writeDraft(currentDraft);
                 await transaction.assertCurrent();
             }
-            let tabIds = [];
+            let tabIds: number[] = [];
             const { groupWarning } = await openNewDraftTabs({
                 sourceTabId: tabId,
                 matches: siblings,
@@ -3027,7 +3158,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (!prepared) await transaction.assertCurrent();
             if (primaryMatch) {
                 if (page.pid !== null) {
-                    await notifyDraftToProceed({ tabId });
+                    await notifyDraftToProceed({ tabId } as DraftRecord);
                     await transaction.assertCurrent();
                 } else {
                     // Unbound page: peak selection on the native form is a
@@ -3055,7 +3186,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const applyGpxProcess = (message, sender) => {
+    const applyGpxProcess = (message: WorkerMessage, sender: Sender) => {
         const page = uploadPageIdentity(sender);
         if (!page || page.isEdit) {
             return Promise.resolve({
@@ -3069,18 +3200,18 @@ import { GarminError } from '../garmin/garmin-api.js';
         return serializeLifecycle(page.tabId, () => applyGpxProcessTransaction(message, page));
     };
 
-    const validateDraftPage = (draft, message) => String(draft.pid) === String(message.pid)
+    const validateDraftPage = (draft: DraftRecord, message: { pid?: unknown; cid?: unknown }) => String(draft.pid) === String(message.pid)
         && String(draft.cid) === String(message.cid);
 
-    const draftOrder = draft => Number.isInteger(draft.previewOrder) ? draft.previewOrder : Number(draft.tabId);
-    const compareDraftOrder = (left, right) => draftOrder(left) - draftOrder(right);
-    const orderedDrafts = (drafts, jobId) => Object.values(drafts)
+    const draftOrder = (draft: DraftRecord) => Number.isInteger(draft.previewOrder) ? draft.previewOrder as number : Number(draft.tabId);
+    const compareDraftOrder = (left: DraftRecord, right: DraftRecord) => draftOrder(left) - draftOrder(right);
+    const orderedDrafts = (drafts: DraftMap, jobId: string) => Object.values(drafts)
         .filter(candidate => isFresh(candidate) && candidate.jobId === jobId)
         .sort(compareDraftOrder);
-    const firstPendingDraft = (drafts, jobId) => orderedDrafts(drafts, jobId)
+    const firstPendingDraft = (drafts: DraftMap, jobId: string) => orderedDrafts(drafts, jobId)
         .find(candidate => !candidate.complete || (candidate.waitForSave && !candidate.saved)) || null;
 
-    const notifyDraftToProceed = async draft => {
+    const notifyDraftToProceed = async (draft: DraftRecord | null | undefined) => {
         if (!draft || !ext.tabs.sendMessage) return;
         try {
             await ext.tabs.sendMessage(draft.tabId, { type: 'DRAFT_PROCEED' });
@@ -3089,15 +3220,15 @@ import { GarminError } from '../garmin/garmin-api.js';
         }
     };
 
-    const normalizedPreviewResult = value => {
+    const normalizedPreviewResult = (value: { state?: unknown; message?: unknown } | null | undefined) => {
         const state = value?.state === 'success' || value?.state === 'error' ? value.state : 'unknown';
         const message = typeof value?.message === 'string'
-            ? value.message.replace(/\s+/g, ' ').trim().slice(0, 200)
+            ? (value!.message as string).replace(/\s+/g, ' ').trim().slice(0, 200)
             : '';
         return { state, message };
     };
 
-    const draftDocumentKey = (message, sender) => {
+    const draftDocumentKey = (message: WorkerMessage, sender: Sender & { documentId?: string }) => {
         if (typeof sender.documentId === 'string' && sender.documentId) return `document:${sender.documentId}`;
         // Firefox versions/contexts without documentId still get a fresh
         // content-script nonce on navigation. Page/frame authorization remains
@@ -3106,10 +3237,10 @@ import { GarminError } from '../garmin/garmin-api.js';
             ? `nonce:${message.documentToken}` : null;
     };
 
-    const draftReadyTransaction = async (message, sender) => {
-        const tabId = sender.tab?.id;
+    const draftReadyTransaction = async (message: WorkerMessage, sender: Sender) => {
+        const tabId = sender.tab?.id as number;
         if (!Number.isInteger(tabId)) return { action: 'error', message: 'Draft tab identity is unavailable.' };
-        const drafts = await readMap(DRAFTS_KEY);
+        const drafts = await readMap<DraftRecord>(DRAFTS_KEY);
         const draft = drafts[tabId];
         if (!isFresh(draft)) return { action: 'ignore' };
         const page = uploadPageIdentity(sender);
@@ -3151,7 +3282,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         if (draft.previewStarted) {
             const result = normalizedPreviewResult(message.previewResult);
             if (result.state !== 'success') {
-                await mutateMap(DRAFTS_KEY, map => {
+                await mutateMap(DRAFTS_KEY, (map: DraftMap) => {
                     if (!sameDraftIdentity(map[tabId], draft)) return;
                     map[tabId].previewStarted = false;
                     map[tabId].previewError = result.message || 'Peakbagger returned no success confirmation.';
@@ -3165,14 +3296,14 @@ import { GarminError } from '../garmin/garmin-api.js';
                     message: `${explanation} The GPX and draft were kept.`
                 };
             }
-            await mutateMap(DRAFTS_KEY, map => {
+            await mutateMap(DRAFTS_KEY, (map: DraftMap) => {
                 if (!sameDraftIdentity(map[tabId], draft)) return;
                 map[tabId].complete = true;
                 map[tabId].previewError = null;
                 map[tabId].dayStatsPending = job.capturePreferences?.fillAscentDetails !== false
                     && Array.isArray(job.dayStats) && job.dayStats.length > 1;
             });
-            const currentDrafts = await readMap(DRAFTS_KEY);
+            const currentDrafts = await readMap<DraftRecord>(DRAFTS_KEY);
             const nextDraft = firstPendingDraft(currentDrafts, draft.jobId);
             if (nextDraft && nextDraft.tabId !== tabId) await notifyDraftToProceed(nextDraft);
             else if (!nextDraft) await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, { phase: 'previewed' });
@@ -3211,7 +3342,7 @@ import { GarminError } from '../garmin/garmin-api.js';
 
         if (draft.focusOnReady) {
             await ext.tabs.update(tabId, { active: true });
-            await mutateMap(DRAFTS_KEY, map => {
+            await mutateMap(DRAFTS_KEY, (map: DraftMap) => {
                 if (sameDraftIdentity(map[tabId], draft)) map[tabId].focusOnReady = false;
             });
         }
@@ -3219,7 +3350,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         const applyLeaseExpiresAt = now() + DRAFT_APPLY_LEASE_MS;
         const documentKey = draftDocumentKey(message, sender);
         if (!documentKey) return { action: 'error', message: 'Reload this ascent form to prepare its draft.' };
-        const claim = await mutateMap(DRAFTS_KEY, map => {
+        const claim = await mutateMap(DRAFTS_KEY, (map: DraftMap) => {
             const current = map[tabId];
             const first = current ? firstPendingDraft(map, current.jobId) : null;
             if (!sameDraftIdentity(current, draft) || !isFresh(current)
@@ -3264,18 +3395,18 @@ import { GarminError } from '../garmin/garmin-api.js';
         };
     };
 
-    const draftReady = async (message, sender) => {
-        const tabId = sender.tab?.id;
+    const draftReady = async (message: WorkerMessage, sender: Sender) => {
+        const tabId = sender.tab?.id as number;
         if (!Number.isInteger(tabId)) return { action: 'error', message: 'Draft tab identity is unavailable.' };
-        const draft = (await readMap(DRAFTS_KEY))[tabId];
+        const draft = (await readMap<DraftRecord>(DRAFTS_KEY))[tabId];
         if (!isFresh(draft)) return { action: 'ignore' };
         return serializeLifecycle(draft.sourceTabId, () => draftReadyTransaction(message, sender));
     };
 
     // Only the identity-bound content script on Peakbagger's save-success
     // surface may verify the persisted ascent. Preview alone owns no saved GPX.
-    const savedDraftContext = async (message, sender) => {
-        const draft = (await readMap(DRAFTS_KEY))[sender.tab?.id];
+    const savedDraftContext = async (message: WorkerMessage, sender: Sender) => {
+        const draft = (await readMap<DraftRecord>(DRAFTS_KEY))[sender.tab?.id as number];
         const page = uploadPageIdentity(sender);
         if (!page || !isFresh(draft) || !validateDraftPage(draft, page)
             || !draft.waitForSave || !draft.complete || draft.saved
@@ -3284,7 +3415,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         if (job?.id !== draft.jobId) return null;
         return { draft, job };
     };
-    const draftSaveContext = async (message, sender) => {
+    const draftSaveContext = async (message: WorkerMessage, sender: Sender) => {
         const context = await savedDraftContext(message, sender);
         if (!context) return { action: 'ignore' };
         const { draft, job } = context;
@@ -3293,7 +3424,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         return { action: 'verify', jobId: job.id, pid: draft.pid, cid: draft.cid,
             tripRequired: !!draft.tripInfo, tripId: job.savedTripId || null, gpx };
     };
-    const draftSaveConfirmed = async (message, sender) => {
+    const draftSaveConfirmed = async (message: WorkerMessage, sender: Sender) => {
         const context = await savedDraftContext(message, sender);
         if (!context) return { ok: false };
         return serializeLifecycle(context.draft.sourceTabId, async () => {
@@ -3305,7 +3436,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (draft.tripInfo && (!tripId || (job.savedTripId && job.savedTripId !== tripId))) {
                 return { ok: false, message: 'The saved ascent does not belong to the shared trip. Correct its Trip Info before continuing.' };
             }
-            await mutateLifecycleMaps((jobs, drafts) => {
+            await mutateLifecycleMaps((jobs: JobMap, drafts: DraftMap) => {
                 if (jobs[draft.sourceTabId]?.id !== job.id || !sameDraftIdentity(drafts[draft.tabId], draft)) return;
                 drafts[draft.tabId].saved = true;
                 drafts[draft.tabId].savedAid = String(message.aid);
@@ -3317,8 +3448,8 @@ import { GarminError } from '../garmin/garmin-api.js';
                 if (draft.tripInfo) jobs[draft.sourceTabId].savedTripId = tripId;
             });
             if (job.inboxActivityId) await garminImports.saved(job.inboxActivityId, String(draft.pid), String(message.aid), job.id, String(job.cid));
-            else if (job.provider === 'garmin' && globalThis.indexedDB) await garminImports.captureSaved(job, String(draft.pid), String(message.aid));
-            const next = firstPendingDraft(await readMap(DRAFTS_KEY), job.id);
+            else if (job.provider === 'garmin' && globalThis.indexedDB) await garminImports.captureSaved(job as Parameters<typeof garminImports.captureSaved>[0], String(draft.pid), String(message.aid));
+            const next = firstPendingDraft(await readMap<DraftRecord>(DRAFTS_KEY), job.id);
             if (next) {
                 // The waiting form predates trip creation. Reload its native
                 // options and WebForms event validation before selecting the id.
@@ -3336,11 +3467,11 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const previewStartedTransaction = async (message, sender) => {
-        const tabId = sender.tab?.id;
+    const previewStartedTransaction = async (message: WorkerMessage, sender: Sender) => {
+        const tabId = sender.tab?.id as number;
         const page = uploadPageIdentity(sender);
         if (!page) return { ok: false };
-        return mutateMap(DRAFTS_KEY, drafts => {
+        return mutateMap(DRAFTS_KEY, (drafts: DraftMap) => {
             const draft = drafts[tabId];
             const currentDraft = draft ? firstPendingDraft(drafts, draft.jobId) : null;
             if (!isFresh(draft) || currentDraft?.tabId !== tabId || draft.jobId !== message.jobId
@@ -3349,7 +3480,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 || draft.applyLease?.token !== message.applyLeaseToken
                 || draft.applyLease.documentKey !== draftDocumentKey(message, sender)
                 || draft.applyLease.expiresAt <= now()) {
-                if (draft?.applyLease?.expiresAt <= now()) draft.applyLease = null;
+                if ((draft?.applyLease?.expiresAt as number) <= now()) draft!.applyLease = null;
                 return { ok: false };
             }
             draft.applyLease = null;
@@ -3359,17 +3490,17 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const previewStarted = async (message, sender) => {
-        const draft = (await readMap(DRAFTS_KEY))[sender.tab?.id];
+    const previewStarted = async (message: WorkerMessage, sender: Sender) => {
+        const draft = (await readMap<DraftRecord>(DRAFTS_KEY))[sender.tab?.id as number];
         if (!draft) return { ok: false };
         return serializeLifecycle(draft.sourceTabId, () => previewStartedTransaction(message, sender));
     };
 
-    const dayStatsAppliedTransaction = async (message, sender) => {
-        const tabId = sender.tab?.id;
+    const dayStatsAppliedTransaction = async (message: WorkerMessage, sender: Sender) => {
+        const tabId = sender.tab?.id as number;
         const page = uploadPageIdentity(sender);
         if (!page) return { ok: false };
-        return mutateMap(DRAFTS_KEY, drafts => {
+        return mutateMap(DRAFTS_KEY, (drafts: DraftMap) => {
             const draft = drafts[tabId];
             if (!isFresh(draft) || !draft.complete || !draft.dayStatsPending || draft.jobId !== message.jobId
                 || !validateDraftPage(draft, page) || !validateDraftPage(draft, message)) return { ok: false };
@@ -3379,15 +3510,15 @@ import { GarminError } from '../garmin/garmin-api.js';
         });
     };
 
-    const dayStatsApplied = async (message, sender) => {
-        const draft = (await readMap(DRAFTS_KEY))[sender.tab?.id];
+    const dayStatsApplied = async (message: WorkerMessage, sender: Sender) => {
+        const draft = (await readMap<DraftRecord>(DRAFTS_KEY))[sender.tab?.id as number];
         if (!draft) return { ok: false };
         return serializeLifecycle(draft.sourceTabId, () => dayStatsAppliedTransaction(message, sender));
     };
 
-    const cleanupSource = async (sourceTabId, cutoff) => {
-        const result = await mutateMap(DRAFTS_KEY, map => {
-            const disconnectedDraftTabIds = [];
+    const cleanupSource = async (sourceTabId: number, cutoff: number) => {
+        const result = await mutateMap(DRAFTS_KEY, (map: DraftMap) => {
+            const disconnectedDraftTabIds: number[] = [];
             Object.entries(map).forEach(([tabId, draft]) => {
                 if (Number(draft.sourceTabId) === Number(sourceTabId) && draft.expiresAt <= cutoff) {
                     delete map[tabId];
@@ -3397,8 +3528,8 @@ import { GarminError } from '../garmin/garmin-api.js';
             return { drafts: { ...map }, disconnectedDraftTabIds };
         });
         const activeJobIds = new Set(Object.values(result.drafts).map(draft => draft.jobId));
-        let removedPayloadKey = null;
-        await mutateMap(JOBS_KEY, jobs => {
+        let removedPayloadKey: string | null = null;
+        await mutateMap(JOBS_KEY, (jobs: JobMap) => {
             const job = jobs[sourceTabId];
             if (job?.expiresAt <= cutoff && !activeJobIds.has(job.id)) {
                 removedPayloadKey = referencedPayloadKey(job);
@@ -3417,7 +3548,7 @@ import { GarminError } from '../garmin/garmin-api.js';
 
     const cleanup = async () => {
         const cutoff = now();
-        const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+        const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap<DraftRecord>(DRAFTS_KEY)]);
         const sourceTabIds = new Set([
             ...Object.keys(jobs).map(Number),
             ...Object.values(drafts).map(draft => Number(draft.sourceTabId)),
@@ -3440,12 +3571,12 @@ import { GarminError } from '../garmin/garmin-api.js';
         await reconcileCapturePayloads();
     };
 
-    const isPeakbaggerSender = sender =>
+    const isPeakbaggerSender = (sender: Sender | null | undefined) =>
         !!(sender && sender.tab && sender.url && isPeakbaggerSenderUrl(sender.url));
 
-    const isClimbListSender = sender => {
+    const isClimbListSender = (sender: Sender) => {
         if (!isPeakbaggerSender(sender)) return false;
-        try { return /\/climber\/climblistc\.aspx$/i.test(new URL(sender.url).pathname); }
+        try { return /\/climber\/climblistc\.aspx$/i.test(new URL(sender.url as string).pathname); }
         catch { return false; }
     };
 
@@ -3456,44 +3587,44 @@ import { GarminError } from '../garmin/garmin-api.js';
         'options/inbox.html',
     ]);
     const isPopupPage = createPackagedPageMatcher(ext, ['popup/popup.html']);
-    const isCustomOptionsParent = value => {
-        try { const actual = new URL(value), expected = new URL(ext.runtime.getURL('options/options.html'));
+    const isCustomOptionsParent = (value: unknown) => {
+        try { const actual = new URL(value as string), expected = new URL(ext.runtime.getURL('options/options.html'));
             return actual.protocol === expected.protocol && actual.host === expected.host && actual.pathname === expected.pathname;
         } catch { return false; }
     };
-    const customPage = (sender, paths) => {
+    const customPage = (sender: Sender | null | undefined, paths: string[]) => {
         if (sender?.id !== ext.runtime.id || sender.tab && (!Number.isInteger(sender.tab.id) || !Number.isInteger(sender.frameId)
-            || sender.frameId > 0 && !isPeakbaggerSenderUrl(sender.tab.url) && !isCustomOptionsParent(sender.tab.url))) return false;
-        try { const actual = new URL(sender.url); return paths.some(path => {
+            || (sender.frameId as number) > 0 && !isPeakbaggerSenderUrl(sender.tab.url) && !isCustomOptionsParent(sender.tab.url))) return false;
+        try { const actual = new URL(sender!.url as string); return paths.some(path => {
             const expected = new URL(ext.runtime.getURL(path));
             return actual.protocol === expected.protocol && actual.host === expected.host && actual.pathname === expected.pathname && !actual.username && !actual.password;
         }); } catch { return false; }
     };
-    const customEditor = sender => customPage(sender, ['custom-overlay/editor.html', 'options/options.html']);
-    const customReader = sender => customPage(sender, ['custom-overlay/editor.html', 'terrain/terrain.html', 'options/options.html']);
-    const privateEditor = async sender => {
+    const customEditor = (sender: Sender) => customPage(sender, ['custom-overlay/editor.html', 'options/options.html']);
+    const customReader = (sender: Sender) => customPage(sender, ['custom-overlay/editor.html', 'terrain/terrain.html', 'options/options.html']);
+    const privateEditor = async (sender: Sender) => {
         if (!customEditor(sender)) return false;
         if (!sender.tab) return isCustomOptionsParent(sender.url);
-        try { return isCustomOptionsParent((await ext.tabs.get(sender.tab.id)).url); } catch { return false; }
+        try { return isCustomOptionsParent((await ext.tabs.get(sender.tab.id as number)).url); } catch { return false; }
     };
     const customPrivate = createCustomPrivateStore();
     const customOverlays = createCustomOverlayStore({ storage: ext.storage.local,
-        canRead: sender => isPeakbaggerSender(sender) || customReader(sender), canEdit: customEditor,
-        privateStore: customPrivate, canReadPrivate: privateEditor });
+        canRead: (sender: Sender) => isPeakbaggerSender(sender) || customReader(sender), canEdit: customEditor,
+        privateStore: customPrivate, canReadPrivate: privateEditor } as unknown as Parameters<typeof createCustomOverlayStore>[0]);
     const bcLandRoutes = createBCLandRoutes({ ext, isPeakbaggerSender,
-        isTerrainSender: sender => {
-            if (sender.id !== ext.runtime.id || !Number.isInteger(sender.frameId) || sender.frameId < 1 || !isPeakbaggerSenderUrl(sender.tab?.url)) return false;
+        isTerrainSender: (sender: Sender) => {
+            if (sender.id !== ext.runtime.id || !Number.isInteger(sender.frameId) || (sender.frameId as number) < 1 || !isPeakbaggerSenderUrl(sender.tab?.url)) return false;
             try {
-                const actual = new URL(sender.url), expected = new URL(ext.runtime.getURL('terrain/terrain.html'));
+                const actual = new URL(sender.url as string), expected = new URL(ext.runtime.getURL('terrain/terrain.html'));
                 return actual.protocol === expected.protocol && actual.host === expected.host && actual.pathname === expected.pathname && !actual.username && !actual.password;
             } catch { return false; }
-        } });
+        } } as unknown as Parameters<typeof createBCLandRoutes>[0]);
     const captureControlTypes = new Set([
         'CAPTURE_START', 'CAPTURE_STATUS', 'CAPTURE_CANCEL', 'CAPTURE_CLEAR',
         'CAPTURE_SELECTION', 'CAPTURE_OPEN_DRAFTS', 'CAPTURE_FOCUS_RECOVERY',
     ]);
 
-    const focusCaptureRecoveryTab = async (message, sender) => {
+    const focusCaptureRecoveryTab = async (message: WorkerMessage, sender: Sender) => {
         if (!isPopupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const sourceTabId = Number(message?.tabId);
         if (!Number.isInteger(sourceTabId)) return { ok: false, error: { code: 'invalid-tab' } };
@@ -3515,35 +3646,35 @@ import { GarminError } from '../garmin/garmin-api.js';
         try { return ext.runtime.getURL('terrain/terrain.html'); }
         catch { return null; }
     })();
-    const isTerrainFrameSender = sender => !!(terrainFrameUrl && sender?.url === terrainFrameUrl
+    const isTerrainFrameSender = (sender: Sender | null | undefined) => !!(terrainFrameUrl && sender?.url === terrainFrameUrl
         && Number.isInteger(sender?.tab?.id));
-    const mapLayerHandoff = createMapLayerHandoff({ storage: ext.storage.session, isPeakbaggerSender });
+    const mapLayerHandoff = createMapLayerHandoff({ storage: ext.storage.session, isPeakbaggerSender } as unknown as Parameters<typeof createMapLayerHandoff>[0]);
     const terrainActivation = TerrainActivation.create({
         isPeakbaggerSender,
         isTerrainFrameSender,
         now,
-    });
+    } as unknown as Parameters<typeof TerrainActivation.create>[0]);
     const vectorFrameUrl = ext.runtime.getURL('terrain/vector.html');
     const vectorActivation = TerrainActivation.create({
         isPeakbaggerSender,
-        isTerrainFrameSender: sender => sender?.url === vectorFrameUrl && Number.isInteger(sender?.tab?.id),
+        isTerrainFrameSender: (sender: Sender | null | undefined) => sender?.url === vectorFrameUrl && Number.isInteger(sender?.tab?.id),
         now,
-    });
+    } as unknown as Parameters<typeof TerrainActivation.create>[0]);
     const trustedActions = TrustedActions.create({
         storage,
         isPeakbaggerSender,
         now,
-    });
+    } as unknown as Parameters<typeof TrustedActions.create>[0]);
 
     const customRelay = createCustomLayerRelay({ ext, privateStore: customPrivate, catalog: customOverlays,
-        isPage: isPeakbaggerSender, isTerrain: sender => customPage(sender, ['terrain/terrain.html']),
+        isPage: isPeakbaggerSender, isTerrain: (sender: Sender) => customPage(sender, ['terrain/terrain.html']),
         isEditor: privateEditor, isAccess: createPackagedPageMatcher(ext, ['custom-overlay/access.html']),
         trustedActions, action: TrustedActions.ACTIONS.CUSTOM_LAYER_ACCESS,
-        refreshAction: TrustedActions.ACTIONS.CUSTOM_LAYER_REFRESH });
+        refreshAction: TrustedActions.ACTIONS.CUSTOM_LAYER_REFRESH } as unknown as Parameters<typeof createCustomLayerRelay>[0]);
     ext.permissions?.onRemoved?.addListener(() => customRelay.revoke());
     ext.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.bpbCustomMapOverlaysV1) customRelay.revoke(); });
 
-    const instagramFrames = createInstagramFrames({ext,settings:Settings,trustedActions,isPeakbaggerSender,mutateMap,now});
+    const instagramFrames = createInstagramFrames({ext,settings:Settings,trustedActions,isPeakbaggerSender,mutateMap,now} as unknown as Parameters<typeof createInstagramFrames>[0]);
     const instagramDisplay = createInstagramDisplayRegistration(ext, { onChanged: async () => {
         // Firefox treats embedded web-accessible pages like content scripts for
         // several APIs. Notify both extension views and Peakbagger frames; each
@@ -3551,7 +3682,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         const message = { type: 'INSTAGRAM_DISPLAY_CHANGED' };
         await ext.runtime.sendMessage(message).catch(() => {});
         const tabs = await ext.tabs.query({ url: [...PEAKBAGGER_HOSTS].map(host => `https://${host}/*`) });
-        await Promise.all(tabs.map(tab => ext.tabs.sendMessage(tab.id, message).catch(() => {})));
+        await Promise.all(tabs.map(tab => ext.tabs.sendMessage(tab.id as number, message).catch(() => {})));
     } });
 
     const terrainPrefetch = createTerrainPrefetch({
@@ -3559,9 +3690,9 @@ import { GarminError } from '../garmin/garmin-api.js';
         consumeActivation: terrainActivation.consumePrefetch,
         mapWithConcurrency,
         now
-    });
+    } as unknown as Parameters<typeof createTerrainPrefetch>[0]);
 
-    const ignoredMutations = createIgnoredStore({ storage: ext.storage.local });
+    const ignoredMutations = createIgnoredStore({ storage: ext.storage.local } as unknown as Parameters<typeof createIgnoredStore>[0]);
     const githubRoutes = createGithubRoutes({
         customLayers: customOverlays,
         ignoredStore: ignoredMutations,
@@ -3577,28 +3708,28 @@ import { GarminError } from '../garmin/garmin-api.js';
         readMap,
         mutateMap,
         trustedActions,
-    });
+    } as unknown as Parameters<typeof createGithubRoutes>[0]);
     const caltopoRoutes = createCaltopoRoutes({
         ext, isPeakbaggerSender, trustedActions, action: TrustedActions.ACTIONS.CALTOPO_IMPORT,
-    });
+    } as unknown as Parameters<typeof createCaltopoRoutes>[0]);
     const alltrailsRoutes = createAlltrailsRoutes({
         ext,
         isPeakbaggerSender,
         trustedActions,
         action: TrustedActions.ACTIONS.ALLTRAILS_IMPORT,
-    });
+    } as unknown as Parameters<typeof createAlltrailsRoutes>[0]);
     const gaiaRoutes = createGaiaRoutes({
         ext,
         isPeakbaggerSender,
         trustedActions,
         action: TrustedActions.ACTIONS.GAIA_IMPORT,
-    });
+    } as unknown as Parameters<typeof createGaiaRoutes>[0]);
     const onxRoutes = createOnxRoutes({
         ext,
         isPeakbaggerSender,
         trustedActions,
         action: TrustedActions.ACTIONS.ONX_IMPORT,
-    });
+    } as unknown as Parameters<typeof createOnxRoutes>[0]);
     const photoRoutes = createPhotoRoutes({
         ext,
         storage,
@@ -3608,31 +3739,32 @@ import { GarminError } from '../garmin/garmin-api.js';
         readMap,
         trustedActions,
         onPhotoLibraryChanged: githubRoutes.schedulePhotoLibraryBackup,
-    });
+    } as unknown as Parameters<typeof createPhotoRoutes>[0]);
     const reportDraftRoutes = ReportDraftRoutes.createReportDraftRoutes({
         ext,
         now,
         isPeakbaggerSender,
         isExtensionPage: createPackagedPageMatcher(ext, ['options/drafts.html']),
         mutateMap,
-    });
+    } as unknown as Parameters<typeof ReportDraftRoutes.createReportDraftRoutes>[0]);
     // Imports reuse existing authenticated Peakbagger tabs only. An alarm may
     // not manufacture the activeTab gesture or open/focus a helper window.
-    const garminBinding = async (expectedCid, { tabId = null, signal } = {}) => {
+    const garminBinding = async (expectedCid: string | null | undefined, { tabId = null, signal }: { tabId?: number | null; signal?: AbortSignal } = {}) => {
         await ensurePeakbaggerRequestsAllowed();
         const candidates = (await ext.tabs.query({})).filter(tab => canonicalPeakbaggerTab(tab) && (tabId === null || tab.id === tabId));
-        let failure;
+        let failure: unknown;
         for (const tab of candidates) {
+            const candidateTabId = tab.id as number;
             try {
-                await ensurePeakbaggerPage(tab.id, signal);
-                const request = (url, options) => schedulePeakbaggerRequest(
-                    (target, init) => requestThroughPeakbaggerPage(tab.id, target, init), url, options,
+                await ensurePeakbaggerPage(candidateTabId, signal);
+                const request: PeakbaggerRequest = (url, options) => schedulePeakbaggerRequest(
+                    ((target: string, init?: { kind?: string; signal?: AbortSignal | null }) => requestThroughPeakbaggerPage(candidateTabId, target, init)) as PeakbaggerRequest, url, options,
                 );
                 const cid = await peakbaggerLogin({ request, signal });
-                if (cid && (!expectedCid || String(cid) === String(expectedCid))) return { cid, request, tabId: tab.id };
+                if (cid && (!expectedCid || String(cid) === String(expectedCid))) return { cid, request, tabId: candidateTabId };
             } catch (error) {
                 failure = error;
-                if (['cloudflare', 'rate-limit'].includes(error.code)) throw error;
+                if (['cloudflare', 'rate-limit'].includes((error as WorkerError).code as string)) throw error;
             }
         }
         throw failure || new GarminError('peakbagger');
@@ -3641,18 +3773,19 @@ import { GarminError } from '../garmin/garmin-api.js';
         ext, settings: Settings, binding: garminBinding,
         prepare: async (item, route, context, signal) => {
             const preferences = await readCapturePreferences();
-            const analysis = await analyzeTrack({ ...route,
-                metadata: { displayedLocalStart: item.summary.localStart.replace(' ', 'T'),
+            const analysis = await analyzeTrack({ ...(route as { segments: unknown; waypoints?: unknown }),
+                metadata: { displayedLocalStart: item.summary.localStart!.replace(' ', 'T'),
                     utcOffsetMinutes: item.summary.utcStart
-                        ? Math.round((Date.parse(`${item.summary.localStart.replace(' ', 'T')}Z`) - Date.parse(`${item.summary.utcStart.replace(' ', 'T')}Z`)) / 60000) : undefined },
-                capturePreferences: preferences, peakbaggerRequest: context.request, signal });
+                        ? Math.round((Date.parse(`${item.summary.localStart!.replace(' ', 'T')}Z`) - Date.parse(`${item.summary.utcStart.replace(' ', 'T')}Z`)) / 60000) : undefined },
+                capturePreferences: preferences, peakbaggerRequest: context.request as PeakbaggerRequest, signal });
             if (analysis.status !== 'ready') return { phase: analysis.status, analysis: null };
             // Rebuild Preview XML only at handoff; persist narrow reduced fields.
-            const reduced = analysis.reducedRoute.map(segment => segment.map(point => ({
+            type RoutePoint = { lat: number; lon: number; ele?: number; time: unknown };
+            const reduced = (analysis.reducedRoute as RoutePoint[][]).map(segment => segment.map(point => ({
                 lat: point.lat, lon: point.lon, ele: point.ele,
                 time: preferences.removeGpxTimestamps ? null : point.time,
             })));
-            return { analysis: { matches: analysis.matches, route: reduced,
+            return { analysis: { matches: analysis.matches as CaptureMatch[], route: reduced,
                 waypoints: analysis.reducedWaypoints, trackSummary: analysis.trackSummary,
                 tripName: analysis.tripName, nightsOut: analysis.nightsOut, dayStats: analysis.dayStats } };
         },
@@ -3660,7 +3793,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             const state = await garminImports.store.read(); const item = state.items[message.id];
             if (!item?.analysis || !item.cid || item.phase === 'dismissed') throw PublicErrors.exception('garmin-not-ready', 'This activity is not ready.');
             await garminBinding(item.cid);
-            const tabId = sender.tab?.id ?? Number(message.tabId);
+            const tabId = (sender.tab?.id ?? Number(message.tabId)) as number;
             const source = await ext.tabs.get(tabId);
             if (!createPackagedPageMatcher(ext, ['options/inbox.html'])({ ...sender, url: source.url })) throw PublicErrors.exception('garmin-inbox-tab', 'Open the activity inbox to continue.');
             return serializeLifecycle(tabId, async () => {
@@ -3670,33 +3803,33 @@ import { GarminError } from '../garmin/garmin-api.js';
                     // draft tab. It is safe to retry after interrupted setup,
                     // but never reinterpret a recorded opening as setup.
                     const handoff = item.handoff;
-                    const priorJob = jobs[handoff.tabId];
-                    const drafts = await readMap(DRAFTS_KEY);
+                    const priorJob = jobs[handoff.tabId as number];
+                    const drafts = await readMap<DraftRecord>(DRAFTS_KEY);
                     if (Object.values(drafts).some(draft => draft.jobId === handoff.jobId)
                         || priorJob?.id === handoff.jobId && priorJob.phase !== 'ready') throw new GarminError('handoff');
                     await garminImports.store.mutate(current => {
                         if (current.items[item.id]?.handoff?.jobId === handoff.jobId
-                            && current.items[item.id].handoff.phase === 'preparing') delete current.items[item.id].handoff;
+                            && current.items[item.id].handoff!.phase === 'preparing') delete current.items[item.id].handoff;
                     });
                     delete item.handoff;
                 }
                 if (item.handoff) {
                     if (!isFresh(existing) || existing.id !== item.handoff.jobId) throw new GarminError('handoff');
-                    return { ok: true, ...await openDraftsTransaction({ ...message, tabId }, tabId) };
+                    return { ok: true, ...await openDraftsTransaction({ ...message, tabId } as WorkerMessage, tabId) };
                 }
                 if (existing) {
-                    const inspected = await inspectRecordedDrafts(existing.id, await readMap(DRAFTS_KEY));
+                    const inspected = await inspectRecordedDrafts(existing.id, await readMap<DraftRecord>(DRAFTS_KEY));
                     if (existing.saveRecoveryRequired || inspected.saveRecoveryRequired) throw PublicErrors.exception('draft-save-unverified', SAVE_RECOVERY_MESSAGE);
                     if (inspected.live.length) throw PublicErrors.exception('garmin-previous-drafts', 'Finish reviewing the previous activity’s draft forms first.');
                 }
                 const preferences = await readCapturePreferences();
-                const analysis = item.analysis;
-                const matches = analysis.matches.filter(match => !item.saved.includes(String(match.id)));
+                const analysis = item.analysis!;
+                const matches = (analysis.matches as CaptureMatch[]).filter(match => !item.saved.includes(String(match.id)));
                 if (!Array.isArray(message.selectedIds) || !message.selectedIds.length
-                    || message.selectedIds.some(pid => !matches.some(match => match.id === pid))) throw PublicErrors.exception('garmin-selection', 'Select current summit matches before opening drafts.');
+                    || message.selectedIds.some((pid: unknown) => !matches.some(match => match.id === pid))) throw PublicErrors.exception('garmin-selection', 'Select current summit matches before opening drafts.');
                 const waypoints = preferences.retainWaypoints ? Core.sanitizeWaypoints(analysis.waypoints) : [];
                 const route = Core.sanitizeTrack(analysis.route).segments;
-                if (route.reduce((n, segment) => n + segment.length, 0) + waypoints.length > Core.MAX_UPLOAD_POINTS) throw new Error('Invalid retained route.');
+                if (route.reduce((n: number, segment: unknown[]) => n + segment.length, 0) + waypoints.length > Core.MAX_UPLOAD_POINTS) throw new Error('Invalid retained route.');
                 const upload = Core.serializeUploadGpx(route, waypoints);
                 const id = makeId();
                 await garminImports.store.mutate(current => {
@@ -3714,7 +3847,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                         preferences.removeGpxTimestamps ? Core.serializeUploadGpx(route, waypoints, { includeTimestamps: false }) : null);
                     await garminImports.store.mutate(current => {
                         if (current.epoch !== state.epoch || current.items[item.id]?.handoff?.jobId !== id) throw PublicErrors.exception('garmin-inbox-changed', 'The inbox changed. Review the activity again.');
-                        current.items[item.id].handoff.phase = 'opening';
+                        current.items[item.id].handoff!.phase = 'opening';
                     });
                 } catch (error) {
                     // No draft-opening call has occurred. Release only this
@@ -3724,7 +3857,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                     }); } catch (cleanupError) { console.error('Better Peakbagger: Garmin setup cleanup failed', cleanupError); }
                     throw error;
                 }
-                return { ok: true, ...await openDraftsTransaction({ ...message, tabId }, tabId) };
+                return { ok: true, ...await openDraftsTransaction({ ...message, tabId } as WorkerMessage, tabId) };
             });
         },
     });
@@ -3733,12 +3866,12 @@ import { GarminError } from '../garmin/garmin-api.js';
         customLayers: customOverlays,
         garmin: garminImports,
         verifyGithubConnection: githubRoutes.validateImportedConnection,
-    });
-    const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
+    } as unknown as Parameters<typeof createSettingsFileRoutes>[0]);
+    const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now } as unknown as Parameters<typeof createFavoritesStore>[0]);
     const buddyMutations = createBuddyStore({ storage: ext.storage.local, settings: () => Settings.requireCurrent(), now });
     const buddyCache = createBuddyCacheStore({ storage: ext.storage.local, now });
 
-    const openDraftsManager = async (message, sender) => {
+    const openDraftsManager = async (message: WorkerMessage, sender: Sender) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
             return {
                 ok: false,
@@ -3775,21 +3908,21 @@ import { GarminError } from '../garmin/garmin-api.js';
     };
 
     const optionsPageUrl = ext.runtime.getURL('options/options.html');
-    const isOptionsPageUrl = value => {
+    const isOptionsPageUrl = (value: unknown) => {
         try {
-            const actual = new URL(value);
+            const actual = new URL(value as string);
             const expected = new URL(optionsPageUrl);
             return actual.origin === expected.origin && actual.pathname === expected.pathname;
         } catch { return false; }
     };
-    const rememberBetaSettingsTab = tabId => mutateMap(BETA_SETTINGS_TABS_KEY, tabs => {
+    const rememberBetaSettingsTab = (tabId: number | undefined) => mutateMap(BETA_SETTINGS_TABS_KEY, (tabs: Record<string, { owned: boolean }>) => {
         for (const key of Object.keys(tabs)) delete tabs[key];
-        if (Number.isInteger(tabId)) tabs[tabId] = { owned: true };
+        if (Number.isInteger(tabId)) tabs[tabId as number] = { owned: true };
     });
-    const forgetBetaSettingsTab = async tabId => {
-        const records = await readMap(BETA_SETTINGS_TABS_KEY);
+    const forgetBetaSettingsTab = async (tabId: number) => {
+        const records = await readMap<{ owned: boolean }>(BETA_SETTINGS_TABS_KEY);
         if (!Object.hasOwn(records, tabId)) return;
-        await mutateMap(BETA_SETTINGS_TABS_KEY, tabs => { delete tabs[tabId]; });
+        await mutateMap(BETA_SETTINGS_TABS_KEY, (tabs: Record<string, { owned: boolean }>) => { delete tabs[tabId]; });
     };
     const registeredBetaSettingsTab = async () => {
         const records = await readMap(BETA_SETTINGS_TABS_KEY);
@@ -3807,17 +3940,17 @@ import { GarminError } from '../garmin/garmin-api.js';
             return null;
         }
     };
-    const registerBetaSettingsTab = async sender => {
+    const registerBetaSettingsTab = async (sender: Sender) => {
         if (!isExtensionPage(sender) || !isOptionsPageUrl(sender?.url)
             || !Number.isInteger(sender?.tab?.id)) {
             return { ok: false, error: { code: 'forbidden' } };
         }
-        await rememberBetaSettingsTab(sender.tab.id);
+        await rememberBetaSettingsTab(sender.tab!.id);
         return { ok: true };
     };
 
-    let betaSettingsQueue = Promise.resolve();
-    const openBetaSettings = async (message, sender, { action = TrustedActions.ACTIONS.BETA_SETTINGS, section = 'beta' } = {}) => {
+    let betaSettingsQueue: Promise<unknown> = Promise.resolve();
+    const openBetaSettings = async (message: WorkerMessage, sender: Sender, { action = TrustedActions.ACTIONS.BETA_SETTINGS as string, section = 'beta' }: { action?: string; section?: string } = {}) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
             return {
                 ok: false,
@@ -3830,7 +3963,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         if (!trustedActions.consumeCapability(message, sender, action)) {
             return { ok: false, error: { code: 'activation-required' } };
         }
-        const disposition = ['foreground-tab', 'background-tab', 'new-window'].includes(message?.disposition)
+        const disposition = ['foreground-tab', 'background-tab', 'new-window'].includes(message?.disposition as string)
             ? message.disposition
             : null;
         if (!disposition) return { ok: false, error: { code: 'invalid-request' } };
@@ -3842,7 +3975,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 const tabs = await ext.tabs.query({});
                 const existing = await registeredBetaSettingsTab() || tabs.find(tab => {
                     try {
-                        const url = new URL(tab.url);
+                        const url = new URL(tab.url as string);
                         return url.origin === optionsUrl.origin && url.pathname === optionsUrl.pathname;
                     } catch { return false; }
                 });
@@ -3865,13 +3998,13 @@ import { GarminError } from '../garmin/garmin-api.js';
                 if (disposition === 'new-window') {
                     const createdWindow = await ext.windows.create({ url: targetUrl, focused: true });
                     const tab = createdWindow?.tabs?.[0];
-                    if (Number.isInteger(tab?.id)) await rememberBetaSettingsTab(tab.id);
-                    return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null, reused: false };
+                    if (Number.isInteger(tab?.id)) await rememberBetaSettingsTab(tab!.id);
+                    return { ok: true, tabId: Number.isInteger(tab?.id) ? tab!.id : null, reused: false };
                 }
                 const tab = await ext.tabs.create({
                     url: targetUrl,
                     active: disposition === 'foreground-tab',
-                    ...(Number.isInteger(sender.tab.windowId) ? { windowId: sender.tab.windowId } : {}),
+                    ...(Number.isInteger(sender.tab!.windowId) ? { windowId: sender.tab!.windowId } : {}),
                 });
                 if (Number.isInteger(tab?.id)) await rememberBetaSettingsTab(tab.id);
                 return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null, reused: false };
@@ -3886,12 +4019,12 @@ import { GarminError } from '../garmin/garmin-api.js';
         return operation;
     };
 
-    ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    ext.runtime.onMessage.addListener((message: WorkerMessage, sender: Sender, sendResponse: (response: unknown) => void) => {
         const run = async () => {
             const type = message?.type;
             if (Object.hasOwn(instagramFrames.handlers, type)) {
-                const reply = await instagramFrames.handlers[type](message, sender);
-                if (type === 'INSTAGRAM_FRAME_CLAIM' && reply?.ok) await instagramDisplay.sync().catch(() => false);
+                const reply = await (instagramFrames.handlers as unknown as Record<string, RouteHandler>)[type](message, sender);
+                if (type === 'INSTAGRAM_FRAME_CLAIM' && (reply as { ok?: boolean } | undefined)?.ok) await instagramDisplay.sync().catch(() => false);
                 return reply;
             }
             if (type === 'INSTAGRAM_DISPLAY_SYNC') {
@@ -3903,16 +4036,16 @@ import { GarminError } from '../garmin/garmin-api.js';
                 // pages. This read-only boolean needs only our exact wrapper,
                 // extension identity and child-frame identity, like its claim.
                 const expected = new URL(ext.runtime.getURL('reports/instagram.html'));
-                let actual;try { actual = new URL(sender?.url); } catch { return { ok: false }; }
-                if (sender.id !== ext.runtime.id || !Number.isInteger(sender.tab?.id) || !(sender.frameId > 0)
+                let actual: URL;try { actual = new URL(sender?.url as string); } catch { return { ok: false }; }
+                if (sender.id !== ext.runtime.id || !Number.isInteger(sender.tab?.id) || !((sender.frameId as number) > 0)
                     || actual.protocol !== expected.protocol || actual.host !== expected.host || actual.pathname !== expected.pathname
                     || actual.username || actual.password || actual.search) return { ok: false };
                 return { ok: true, allowed: await instagramDisplay.sync() };
             }
             if (typeof type === 'string' && type.startsWith('CUSTOM_PRIVATE_')) return customRelay.handle(message, sender);
             if (typeof type === 'string' && type.startsWith('CUSTOM_OVERLAYS_')) return customOverlays.handle(message, sender);
-            if (typeof type === 'string' && type.startsWith('GARMIN_')) return garminImports.handle(message, sender);
-            const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? bcLandRoutes.handlers[type] : null;
+            if (typeof type === 'string' && type.startsWith('GARMIN_')) return garminImports.handle(message as unknown as Parameters<typeof garminImports.handle>[0], sender);
+            const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? (bcLandRoutes.handlers as unknown as Record<string, RouteHandler>)[type] : null;
             if (bcLandHandler) return bcLandHandler(message, sender);
             if (captureControlTypes.has(type) && !isPopupPage(sender)) {
                 return { ok: false, error: { code: 'forbidden' } };
@@ -3923,21 +4056,21 @@ import { GarminError } from '../garmin/garmin-api.js';
             if (githubRoutes.isExtensionOnly(type) && !isExtensionPage(sender)) {
                 return { error: 'forbidden' };
             }
-            const settingsFileHandler = settingsFileRoutes.handlers[type];
+            const settingsFileHandler = (settingsFileRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (settingsFileHandler) return settingsFileHandler(message, sender);
-            const photoHandler = photoRoutes.handlers[type];
+            const photoHandler = (photoRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (photoHandler) return photoHandler(message, sender);
-            const reportDraftHandler = reportDraftRoutes.handlers[type];
+            const reportDraftHandler = (reportDraftRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (reportDraftHandler) return reportDraftHandler(message, sender);
-            const githubHandler = githubRoutes.handlers[type];
+            const githubHandler = (githubRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (githubHandler) return githubHandler(message, sender);
-            const caltopoHandler = caltopoRoutes.handlers[type];
+            const caltopoHandler = (caltopoRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (caltopoHandler) return caltopoHandler(message, sender);
-            const alltrailsHandler = alltrailsRoutes.handlers[type];
+            const alltrailsHandler = (alltrailsRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (alltrailsHandler) return alltrailsHandler(message, sender);
-            const gaiaHandler = gaiaRoutes.handlers[type];
+            const gaiaHandler = (gaiaRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (gaiaHandler) return gaiaHandler(message, sender);
-            const onxHandler = onxRoutes.handlers[type];
+            const onxHandler = (onxRoutes.handlers as unknown as Record<string, RouteHandler>)[type];
             if (onxHandler) return onxHandler(message, sender);
             switch (type) {
             case BUDDY_CACHE_MESSAGE:
@@ -4013,10 +4146,10 @@ import { GarminError } from '../garmin/garmin-api.js';
             case TrustedActions.END_TYPE: return trustedActions.end(message, sender);
             case 'MAP_LAYERS_HANDOFF_PREPARE': return mapLayerHandoff.prepare(message, sender);
             case 'MAP_LAYERS_HANDOFF_CONSUME': return mapLayerHandoff.consume(message, sender);
-            case TerrainActivation.ISSUE_TYPE: return terrainActivation.issue(message, sender);
-            case TerrainActivation.CONSUME_TYPE: return terrainActivation.consumeFrame(message, sender);
-            case 'VECTOR_MAP_ACTIVATION_ISSUE': return vectorActivation.issue(message, sender);
-            case 'VECTOR_MAP_ACTIVATION_CONSUME': return vectorActivation.consumeFrame(message, sender);
+            case TerrainActivation.ISSUE_TYPE: return terrainActivation.issue(message as { action?: unknown }, sender);
+            case TerrainActivation.CONSUME_TYPE: return terrainActivation.consumeFrame(message as { token?: unknown; action?: unknown }, sender);
+            case 'VECTOR_MAP_ACTIVATION_ISSUE': return vectorActivation.issue(message as { action?: unknown }, sender);
+            case 'VECTOR_MAP_ACTIVATION_CONSUME': return vectorActivation.consumeFrame(message as { token?: unknown; action?: unknown }, sender);
             case 'TERRAIN_PREFETCH': return terrainPrefetch.handle(message, sender);
             default: return null;
             }
@@ -4030,20 +4163,20 @@ import { GarminError } from '../garmin/garmin-api.js';
         return true;
     });
 
-    const cleanupRemovedTab = async tabId => {
-        const removedDraft = await mutateMap(DRAFTS_KEY, drafts => {
+    const cleanupRemovedTab = async (tabId: number) => {
+        const removedDraft = await mutateMap(DRAFTS_KEY, (drafts: DraftMap) => {
             const value = drafts[tabId] || null;
             delete drafts[tabId];
             return value;
         });
-        const remainingDrafts = await readMap(DRAFTS_KEY);
+        const remainingDrafts = await readMap<DraftRecord>(DRAFTS_KEY);
         const nextDraft = removedDraft && !removedDraft.complete
                 && !orderedDrafts(remainingDrafts, removedDraft.jobId)
                     .some(candidate => !candidate.complete && compareDraftOrder(candidate, removedDraft) < 0)
             ? firstPendingDraft(remainingDrafts, removedDraft.jobId)
             : null;
-        const removedPayloadKeys = [];
-        await mutateMap(JOBS_KEY, jobs => {
+        const removedPayloadKeys: (string | null)[] = [];
+        await mutateMap(JOBS_KEY, (jobs: JobMap) => {
             if (jobs[tabId]) {
                 const job = jobs[tabId];
                 const hasPendingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === job.id);
@@ -4060,7 +4193,7 @@ import { GarminError } from '../garmin/garmin-api.js';
                 if (sourceJob && !hasSiblingDraft) {
                     if (sourceJob.sourceClosed) {
                         removedPayloadKeys.push(referencedPayloadKey(sourceJob));
-                        delete jobs[sourceJob.sourceTabId];
+                        delete jobs[sourceJob.sourceTabId as number];
                     } else if (referencedPayloadKey(sourceJob)) {
                         sourceJob.phase = sourceJob.savedPeakIds?.length || sourceJob.saveRecoveryRequired ? 'opened' : 'ready';
                         sourceJob.openedDraftTabIds = [];
@@ -4090,7 +4223,7 @@ import { GarminError } from '../garmin/garmin-api.js';
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
         runDetachedCleanup('report draft tab cleanup', () => reportDraftRoutes.forgetTab(tabId));
         runDetachedCleanup('capture tab cleanup', async () => {
-            const [drafts, jobs] = await Promise.all([readMap(DRAFTS_KEY), readMap(JOBS_KEY)]);
+            const [drafts, jobs] = await Promise.all([readMap<DraftRecord>(DRAFTS_KEY), readMap(JOBS_KEY)]);
             const sourceTabId = Number(drafts[tabId]?.sourceTabId ?? (jobs[tabId] ? tabId : NaN));
             if (!Number.isInteger(sourceTabId)) return;
             abortOwnedWork(sourceTabId, jobs[sourceTabId]?.id ?? null);
@@ -4098,7 +4231,7 @@ import { GarminError } from '../garmin/garmin-api.js';
             await serializeLifecycle(sourceTabId, () => cleanupRemovedTab(tabId));
         });
     });
-    const resumeGarminOnVisit = async tabId => {
+    const resumeGarminOnVisit = async (tabId: number) => {
         if (!globalThis.indexedDB) return;
         const tab = await ext.tabs.get(tabId);
         if (!tab.active || tab.status !== 'complete' || !canonicalPeakbaggerTab(tab)) return;

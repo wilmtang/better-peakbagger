@@ -74,9 +74,9 @@ CAPTURE_SELECTION sent while opened  : [ [1,2], [1,2], [1] ]
 ```
 
 The worker accepts that selection change —
-[background.js:495](../../src/background/background.js) permits
+[background.js:495](../../src/background/background.ts) permits
 `updateSelection` in phase `opened` — and then
-[`openDrafts`](../../src/background/background.js) short-circuits on
+[`openDrafts`](../../src/background/background.ts) short-circuits on
 `existingForJob.length` and returns `{ reused: true }`. So the user deselects a
 peak, the popup says "Open 1 draft", they click it, and the old tabs are
 re-focused with the deselected peak's tab still open. The popup promises an
@@ -283,7 +283,7 @@ it is not addressed here.
 
 ### F5 — Raw JavaScript error text reaches users; the Firefox path is unestablished — **fixed**
 
-[background.js:572](../../src/background/background.js) builds
+[background.js:572](../../src/background/background.ts) builds
 `` `Drafts opened, but tab grouping failed: ${error.message}` `` and ships it to
 two surfaces:
 

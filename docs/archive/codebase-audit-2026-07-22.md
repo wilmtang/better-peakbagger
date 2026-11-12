@@ -88,7 +88,7 @@ reuse its label logic) instead of rebuilding the label by hand.
 
 ### B5 — Reopened popup shows a dead "Drafts opened" button
 **Severity: low · [popup.js:186-189](../../popup/popup.ts),
-[background.js:558-566](../../src/background/background.js)**
+[background.js:558-566](../../src/background/background.ts)**
 
 `openDrafts` has a deliberate reuse path: clicking again focuses the existing
 draft tabs. But once the job phase is `opened`, the popup disables the button
@@ -102,7 +102,7 @@ background already handles the rest.
 ## 2. Engineering smells
 
 ### E1 — `background.js` has become a 1,925-line four-domain module
-[background.js](../../src/background/background.js) now mixes: the capture
+[background.js](../../src/background/background.ts) now mixes: the capture
 pipeline (jobs, drafts, provider injection), local-file GPX processing, the
 entire GitHub domain (device-flow auth, repo selection, ascent/profile/
 settings/favorites backup, auto-backup alarms — roughly lines 1061–1798), and
@@ -116,8 +116,8 @@ manifest stay untouched; `test/project/manifest-capture.test.mjs` pins that.
 Do this **after** E2–E4 so the extractions move already-deduplicated code.
 
 ### E2 — Draft-opening logic exists twice and has already diverged
-[background.js:534-613](../../src/background/background.js) (`openDrafts`)
-vs [background.js:746-865](../../src/background/background.js)
+[background.js:534-613](../../src/background/background.ts) (`openDrafts`)
+vs [background.js:746-865](../../src/background/background.ts)
 (`applyGpxProcess`): the track ordering, `sequenceById`, fallback trip name,
 trip-info/wilderness gating, tab-group creation ("Peak Drafts", green), and
 the draft-record shape are near-verbatim copies. One side has a `makeDraft`
@@ -128,8 +128,8 @@ parts (ordering, sequencing, trip naming) belong in `capture-core.js`; the
 tab/group choreography in one background helper both callers use.
 
 ### E3 — The terminal-phase set is defined three times
-[background.js:436](../../src/background/background.js),
-[background.js:507](../../src/background/background.js), and
+[background.js:436](../../src/background/background.ts),
+[background.js:507](../../src/background/background.ts), and
 [popup.js:21](../../popup/popup.ts) each hardcode
 `['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']`. Adding a
 phase means finding all three. Export it from a tiny pure module (e.g.
@@ -142,14 +142,14 @@ bundle for one constant.
 branch })` plus the enabled/token/repo triple-gate appear in
 `githubProfileBackupStatus`, `backupAscent`, `checkAscentBackup`,
 `backupProfileBatch`, and `optionsGithubClient`
-([background.js:1446-1664](../../src/background/background.js)). One
+([background.js:1446-1664](../../src/background/background.ts)). One
 `connectedGithubClient({ requireEnabled })` helper returning
 `{ client } | { error }` collapses all five and makes the gate order
 un-divergeable. Similarly, two ad-hoc concurrency implementations coexist in
 the same file: `mapWithConcurrency`
-([background.js:171](../../src/background/background.js)) and the inline
+([background.js:171](../../src/background/background.ts)) and the inline
 queue/worker loop in `terrainPrefetch`
-([background.js:1381-1396](../../src/background/background.js)) — use the
+([background.js:1381-1396](../../src/background/background.ts)) — use the
 former for both.
 
 ### E5 — Options-page and content-surface helper sprawl

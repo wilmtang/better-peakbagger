@@ -73,7 +73,7 @@ adjacent to the fixes that landed.
 ### B1 — Changing the selection after drafts open silently does nothing
 **Severity: medium · [popup.js:141-148](../../popup/popup.ts),
 [popup.js:187-189](../../popup/popup.ts),
-[background.js:609-617](../../src/background/background.js)**
+[background.js:609-617](../../src/background/background.ts)**
 
 In the `opened` phase the peak checkboxes stay live. Any change runs
 `refreshSelection`, which relabels the button back to "Open N drafts" and
@@ -94,7 +94,7 @@ Popup regression test for the changed-selection click.
 
 ### B2 — `previewed` strands a user who lost their draft tabs before Save
 **Severity: medium-low · [popup.js:190-193](../../popup/popup.ts),
-[background.js:599](../../src/background/background.js)**
+[background.js:599](../../src/background/background.ts)**
 
 After GPS Preview completes on every draft, the drafts still need the user's
 manual Save — that is the product's core promise. Yet at exactly that moment

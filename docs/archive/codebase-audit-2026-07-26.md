@@ -124,7 +124,7 @@ bounded UX/accessibility/maintenance defect.
 **Evidence.** [`settings.js`](../../src/settings/settings.js) deliberately
 keeps `get()` fail-soft: any `storage.sync.get` failure returns schema defaults.
 That is appropriate for passive rendering, but the same API is used by
-[`readCapturePreferences`](../../src/background/background.js), and the
+[`readCapturePreferences`](../../src/background/background.ts), and the
 defaults in
 [`settings-schema.ts`](../../src/settings/settings-schema.ts) enable waypoint
 retention, Trip Info, ascent details, wilderness nights, and external activity
@@ -214,7 +214,7 @@ snapshot or fail without producing/replacing an artifact.
 ## F3 — Draft opening is not a transaction
 
 **Evidence.** `openNewDraftTabs()` in
-[`background.js`](../../src/background/background.js) creates an `about:blank`
+[`background.js`](../../src/background/background.ts) creates an `about:blank`
 tab and persists its `bpbDraftTabs` record once per selected summit. Only after
 all creates does it navigate them with `Promise.all(tabs.update(...))`. There is
 no rollback around tab creation, draft-record writes, the pre-navigation
@@ -933,7 +933,7 @@ Everything in F1's evidence checks out: the private strict `read()`
 `:49`, all five capture defaults `true`
 ([`settings-schema.ts:34`](../../src/settings/settings-schema.ts)),
 `readCapturePreferences` on `get()`
-([`background.js:43`](../../src/background/background.js)), the toolbar path
+([`background.js:43`](../../src/background/background.ts)), the toolbar path
 handing those preferences into MAIN-world capture (`background.js:320`), and the
 upload path's second read
 ([`ascent-upload.js:417`](../../src/ascent/ascent-upload.ts)).

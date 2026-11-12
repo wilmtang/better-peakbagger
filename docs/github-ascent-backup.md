@@ -126,7 +126,7 @@ link, which automatically tracks endpoint query changes.
 | `photos/photos.ts` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
 | `options/favorites-backup.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
 | `options/settings-backup.js` | File transfer, the explicit sensitive-connection opt-in, GitHub transfer controls, auto toggle, and confirmed settings replacement | Repository mutation or exposing a credential outside the selected manual file operation |
-| `src/background/background.js` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
+| `src/background/background.ts` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
 | `src/background/github-routes.js` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
 | `src/github/github-write-queue.js` | Pure write ordering: exclusive operations, root-file batching, last-write-wins squashing, superseded reporting | Network, storage, tokens, or what a commit contains |
 | `src/github/github-backup.ts` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
