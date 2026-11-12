@@ -205,7 +205,9 @@ The reduced GPX can contain:
 It excludes heart rate, cadence, power, temperature, device fields,
 descriptions, routes, waypoint elevation/time/symbols, and extension elements.
 The Options-only **Remove GPX timestamps** preference removes recorded times
-from GPX sent to Peakbagger. Capture results offer **Include timestamps for this
+from GPX sent to Peakbagger. Turning it on also retires a capture made while it
+was off: that capture is not reused, and its drafts are not filled until the
+activity is captured again. Capture results offer **Include timestamps for this
 capture** before opening drafts; the choice applies to all selected summits
 and locks when opening starts. The next capture uses the default again.
 Allowlisted timed and timeless reduced tracks remain in private session storage

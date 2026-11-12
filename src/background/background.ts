@@ -13,6 +13,7 @@ import { captureCore as Core } from '../capture/capture-core.js';
 import { createCaptureDiagnostics } from '../capture/capture-diagnostics.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { captureErrorMessage } from '../capture/capture-error-policy.js';
+import { sameCapturePreferences, timestampsTurnedOnSince, TIMESTAMPS_TURNED_ON_MESSAGE } from '../capture/capture-reuse.ts';
 import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
 import {
@@ -266,12 +267,14 @@ type DraftMap = Record<string, DraftRecord>;
         };
     };
 
-    const sameCapturePreferences = (left: CapturePreferences | null | undefined, right: CapturePreferences | null | undefined) => !!left && !!right
-        && left.retainWaypoints === right.retainWaypoints
-        && left.fillAscentDetails === right.fillAscentDetails
-        && left.fillTripInfo === right.fillTripInfo
-        && left.fillWildernessNights === right.fillWildernessNights
-        && left.fillExternalUrl === right.fillExternalUrl;
+    // A timed capture cannot reach a draft once timestamp removal is on. A
+    // failed settings read fails closed.
+    const timestampsTurnedOn = async (job: Partial<CaptureJob>) => {
+        if (job.includeTimestampsOnce === true && job.capturePreferences?.removeGpxTimestamps) return false;
+        let current: boolean;
+        try { current = (await Settings.requireCurrent()).removeGpxTimestamps === true; } catch { return true; }
+        return timestampsTurnedOnSince(job.capturePreferences, current);
+    };
     const sameProviderActivity = (left: { provider?: string; activityId?: unknown } | null | undefined, right: { provider?: string; activityId?: unknown } | null | undefined) => !!left && !!right
         && left.provider === right.provider
         && String(left.activityId) === String(right.activityId);
@@ -2708,6 +2711,9 @@ type DraftMap = Record<string, DraftRecord>;
                     job: publicJob(opened)
                 };
             }
+            if (await timestampsTurnedOn(job)) {
+                throw PublicErrors.exception('capture-timestamps-changed', TIMESTAMPS_TURNED_ON_MESSAGE);
+            }
             if (!await readCapturePayload(job)) {
                 payloadMissing = true;
                 throw PublicErrors.exception(
@@ -3088,6 +3094,9 @@ type DraftMap = Record<string, DraftRecord>;
             || job!.phase !== 'ready') {
             return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
         }
+        if (await timestampsTurnedOn(job)) {
+            return { ok: false, error: { code: 'capture-timestamps-changed', message: 'Remove GPX timestamps was turned on after this file was processed. Process it again.' } };
+        }
         const uploadGpx = await readCapturePayload(job);
         if (!uploadGpx) {
             await updateCaptureJobWithoutPayload(tabId, job.id, {
@@ -3344,6 +3353,7 @@ type DraftMap = Record<string, DraftRecord>;
             return { action: 'wait', peakName, message: 'Save the previous ascent to prepare this summit with its GPX and trip.' };
         }
 
+        if (await timestampsTurnedOn(job)) return { action: 'error', message: TIMESTAMPS_TURNED_ON_MESSAGE };
         const uploadGpx = await readCapturePayload(job);
         if (!uploadGpx) {
             await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, {

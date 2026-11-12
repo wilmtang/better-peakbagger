@@ -51,6 +51,7 @@ const AUTHORITATIVE = Object.freeze({
     'src/ascent/ascent-upload.ts': [{ count: 2, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],
     'src/background/background.ts': [
         { count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' },
+        { count: 1, kind: 'privacy', reason: 'refuse a timed capture once GPX timestamp removal is on' },
         { count: 1, kind: 'preservation', reason: 'reconcile favorites after a confirmed Buddy change using the current source and removal preference' },
     ],
     'src/background/github-routes.js': [

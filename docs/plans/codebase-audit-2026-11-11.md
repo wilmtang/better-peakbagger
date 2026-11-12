@@ -548,6 +548,7 @@ included a live Garmin, Strava or Peakbagger account.
 | F9 unsaved Garmin capture lockout | `765d4206`, `05d4eab0` | Owner chose: with the inbox off, import history is not consulted; with it on, a new capture takes over a toolbar receipt with no saved peak. Unit tests fail on the old code and pass. Review found that a second tab could then open a duplicate set of drafts; that opening is now refused, and peaks a taken-over receipt already saved are not offered again. |
 | F13 cleanup alarm restart | `481f466e`, `05d4eab0` | Test boots the built worker three times against one alarm store: three creations before, one after. |
 | F15 bare host | `3cfac011`, `05d4eab0` | Read-only browser check on November 12: `peakbagger.com` serves pages without redirecting. Local GPX processing now refuses a bare-host form up front, naming www, without offering a retry; the built-worker test fails on the old bundle and passes. |
+| F16 timestamp removal and earlier captures | this commit | Owner chose the stricter reading. Turning timestamp removal on stops reuse of a capture made while it was off, and its timed GPX is not delivered to a draft (save verification still reads it). Unit tests of the reuse and delivery rules; PRIVACY.md states the behaviour. No worker-level test. |
 | F17 Garmin binding | `fa905588` | Sleeping tabs are skipped and the active tab is tried first. |
 
 The worker fixes required converting the background worker (now `src/background/background.ts`) to
@@ -562,7 +563,7 @@ by review: the Remove control is no longer appended when absent (previously a
 literal "null" text node), and the summit card's primary pick prefers a scored
 match over an unscored one, which has no practical effect.
 
-Full `npm test` after the worker fixes: 4,173 of 4,173 passed; `npm run lint`
+Full `npm test` after the F16 fix: 4,176 of 4,176 passed; `npm run lint`
 and `npm run verify -- chrome` passed.
 
 ### Intentionally not changed
@@ -604,8 +605,6 @@ and `npm run verify -- chrome` passed.
 
 ### Not started, and why
 
-- **F16 — owner decision.** Whether turning on "remove GPX timestamps" must
-  also stop reuse of a capture made before it, for up to 30 minutes.
 - **F1, then F6b — gated** on the real-browser IndexedDB timing in step 6.
 - **F2 — gated** on new completed-download assertions (Firefox settings export;
   a ≥20 MB project bundle in both browsers).

@@ -2,8 +2,8 @@
 
 - [November 11 bugs, performance, engineering and UX audit](codebase-audit-2026-11-11.md)
   — 18 findings, remediated and reviewed except where its ledger says otherwise
-  (the worker was converted to TypeScript first). F16 waits on an owner
-  decision; F1, F2, F6b and F18 wait on browser measurements.
+  (the worker was converted to TypeScript first). F1, F2, F6b and F18 wait on
+  browser measurements.
 
 - [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
   — early store readiness, permanent capture evidence, exact package promotion,
