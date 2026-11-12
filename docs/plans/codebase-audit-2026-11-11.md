@@ -569,7 +569,13 @@ passed.
 - F5 questions and the F3 notice were not checked at 200% zoom in a real
   browser for the expired-Undo and Undo-failure states (jsdom only); the
   Garmin questions were not checked at 200% at all.
-- F12 and F14 have no real-browser run. F10 and F11 are unit-tested only.
+- F12 and F14 have no behavioural real-browser run. `npm run verify -- chrome`
+  passed after the last fix (hidden Chromium 156, the real unpacked `dist/`,
+  BFCache restore and teardown passed), which proves the extension and the
+  converted bundles load, but its output shows no provider-page or
+  ascent-editor flow. F10 and F11 are unit-tested only.
+- F6a, F7 and F8 have jsdom evidence only; F7 changed visible inbox text
+  ("92% confidence" now reads "92%") without a rendered inspection.
 - F5 step 1 (photo editor) was not checked in a real browser.
 
 ### Not started, and why
