@@ -56,6 +56,7 @@ function updateReviewControls() {
     for (const input of document.querySelectorAll<HTMLInputElement>('#inbox-matches input')) {
         input.disabled = !live || handoff || live.saved.includes(input.value);
     }
+    if (!live) hideDoneConfirmation();
     if (!live) $('#inbox-review-status').textContent = 'This activity has left the inbox. Return to your activity list.';
     else if (updated) $('#inbox-review-status').textContent = 'Updated matches are ready. Review them before opening drafts.';
     else {
@@ -66,6 +67,7 @@ function updateReviewControls() {
 }
 function showReview(id: string, focus = true) {
     review = items.get(id) || null; if (!review) return;
+    hideDoneConfirmation(false);
     $('#inbox-timestamp-row').hidden = !preferences?.removeGpxTimestamps || !review.analysis?.hasTimestamps;
     $('#inbox-list').hidden = true; $('#inbox-review').hidden = false;
     $('#inbox-review-title').textContent = activityName(review);
@@ -197,7 +199,7 @@ $('#inbox-check').addEventListener('click', () => void busyAction($('#inbox-chec
 }));
 $('#inbox-undo').addEventListener('click', () => { if (dismissal) void undoDismissal($('#inbox-undo'), dismissal.id); });
 $('#inbox-new').addEventListener('click', () => { accepted = new Set(items.keys()); $('#inbox-new').hidden = true; paintList(); });
-$('#inbox-back').addEventListener('click', () => { const id = review?.id; review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false;
+$('#inbox-back').addEventListener('click', () => { hideDoneConfirmation(false); const id = review?.id; review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false;
     ((id && rows.get(id)?.querySelector('button')) || $('#inbox-check')).focus(); });
 $('#inbox-open').addEventListener('click', () => void busyAction($('#inbox-open'), $('#inbox-review-status'), async () => {
     const selectedIds = [...document.querySelectorAll<HTMLInputElement>('#inbox-matches input:checked')].map(input => Number(input.value));
@@ -211,14 +213,31 @@ $('#inbox-refresh').addEventListener('click', () => void busyAction($('#inbox-re
     if (changedMatches()) { showReview(review!.id, false); return; }
     await send({ type: 'GARMIN_RETRY', id: review!.id }); $('#inbox-review-status').textContent = 'Refreshing from Garmin. Your saved draft stays available.';
 }));
-for (const [selector, type] of [['#inbox-dismiss', 'GARMIN_DISMISS'], ['#inbox-done', 'GARMIN_DONE']] as const) $(selector).addEventListener('click', () => {
+// Done cannot be undone, so it asks in the page rather than with a native
+// dialog, which cannot follow the theme and which the browser may suppress.
+const hideDoneConfirmation = (restoreFocus = true) => {
+    if ($('#inbox-done-confirmation').hidden) return;
+    const focused = $('#inbox-done-confirmation').contains(document.activeElement);
+    $('#inbox-done-confirmation').hidden = true; $('#inbox-done').setAttribute('aria-expanded', 'false');
+    if (restoreFocus && focused) $('#inbox-done').focus();
+};
+$('#inbox-done').addEventListener('click', () => {
+    if (!featureEnabled || busy || $('#inbox-done').getAttribute('aria-disabled') === 'true') return;
+    $('#inbox-done-confirmation').hidden = false; $('#inbox-done').setAttribute('aria-expanded', 'true');
+    $('#inbox-done-confirm').focus();
+});
+$('#inbox-done-cancel').addEventListener('click', () => hideDoneConfirmation());
+$('#inbox-done-confirmation').addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return; event.preventDefault(); hideDoneConfirmation();
+});
+for (const [selector, type] of [['#inbox-dismiss', 'GARMIN_DISMISS'], ['#inbox-done-confirm', 'GARMIN_DONE']] as const) $(selector).addEventListener('click', () => {
     if (!featureEnabled || busy || $(selector).getAttribute('aria-disabled') === 'true') return;
-    if (type === 'GARMIN_DONE' && !confirm('Mark this activity done? It will leave the inbox and will not be imported again.')) return;
     void busyAction($(selector), $('#inbox-review-status'), async () => {
         const target = review!;
         await send({ type, id: target.id });
         if (type === 'GARMIN_DISMISS') { dismissal = { id: target.id, text: `${activityName(target)} dismissed.` }; statusError = false; }
         const focused = document.activeElement, restoreFocus = $('#inbox-review').contains(focused);
+        hideDoneConfirmation(false);
         review = null; $('#inbox-review').hidden = true; $('#inbox-list').hidden = false; await refresh();
         if (restoreFocus && (document.activeElement === focused || document.activeElement === document.body)) $('#inbox-check').focus();
     });

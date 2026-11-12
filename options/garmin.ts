@@ -38,7 +38,8 @@ export async function initGarminSettings(root: HTMLElement | null) {
         <p class="garmin-helper">While your browser runs, imports use routes to find peaks on Peakbagger. Drafts and reduced routes stay on this device until completed or removed. You review every ascent before Save.</p>
         <div class="garmin-feedback"><span aria-hidden="true">Open Peakbagger and sign in to prepare your drafts. Your activities stay in the inbox.</span><span id="garmin-settings-status" role="status" aria-atomic="true"></span></div>
         <button id="garmin-access" class="panel-button primary" hidden>Allow Garmin access</button>
-        <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="panel-button secondary">Check full history</button><button id="garmin-delete" class="panel-button secondary" aria-disabled="true" aria-describedby="garmin-settings-status">Delete local Garmin data</button></div><p class="garmin-helper">Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
+        <details><summary>Connection details</summary><p>Full history checks find older uploads within your chosen range. Keys and drafts stay on this device.</p><div class="garmin-actions"><button id="garmin-full" class="panel-button secondary">Check full history</button><button id="garmin-delete" class="panel-button secondary" aria-disabled="true" aria-describedby="garmin-settings-status" aria-controls="garmin-delete-confirmation" aria-expanded="false">Delete local Garmin data</button></div>
+        <div class="garmin-confirmation" id="garmin-delete-confirmation" role="alertdialog" aria-labelledby="garmin-delete-confirmation-title" aria-describedby="garmin-delete-confirmation-detail" hidden><div><p class="garmin-confirmation-title" id="garmin-delete-confirmation-title"></p><p class="garmin-confirmation-detail" id="garmin-delete-confirmation-detail">This can’t be undone.</p></div><div class="garmin-confirmation-actions"><button id="garmin-delete-cancel" class="panel-button secondary" type="button">Cancel</button><button id="garmin-delete-confirm" class="panel-button danger" type="button">Delete data</button></div></div><p class="garmin-helper">Deleting local data removes drafts and import history. Garmin activities and Peakbagger ascents stay in place.</p></details>
       </div>`;
     const $ = (selector: string) => root.querySelector(selector) as Control;
     root.addEventListener('submit', event => event.preventDefault());
@@ -50,9 +51,21 @@ export async function initGarminSettings(root: HTMLElement | null) {
     let revision = 0; let preferencesRevealed = false; let settingsUnavailable = false;
     let disconnectConfirmed = false;
     let pendingDrafts: number | null = null;
+    // Deletion cannot be undone, so it asks in the page with the count it will
+    // remove. An unknown count closes the question rather than showing zero.
+    const hideDeleteConfirmation = (restoreFocus = true) => {
+        if ($('#garmin-delete-confirmation').hidden) return;
+        const focused = $('#garmin-delete-confirmation').contains(document.activeElement);
+        $('#garmin-delete-confirmation').hidden = true; $('#garmin-delete').setAttribute('aria-expanded', 'false');
+        if (restoreFocus && focused) $('#garmin-delete').focus();
+    };
+    const deleteQuestion = () => pendingDrafts === 1 ? 'Delete 1 local Garmin draft and its import history?'
+        : `Delete ${pendingDrafts} local Garmin drafts and their import history?`;
     const setDraftCount = (count: number | null | undefined) => {
         pendingDrafts = Number.isSafeInteger(count) && (count as number) >= 0 ? count as number : null;
         $('#garmin-delete').setAttribute('aria-disabled', String(pendingDrafts === null));
+        if (pendingDrafts === null) hideDeleteConfirmation();
+        else $('#garmin-delete-confirmation-title').textContent = deleteQuestion();
     };
     const perform = async (button: HTMLElement, status: HTMLElement, operation: () => Promise<void>, { cleanup = false } = {}) => {
         if (busy || (!featureEnabled && !cleanup)) return; busy = true; revision++;
@@ -190,13 +203,23 @@ export async function initGarminSettings(root: HTMLElement | null) {
         $('#garmin-full').disabled = true;
     }, { cleanup: true }));
     root.querySelector('h3')!.tabIndex = -1;
-    const actions: [string, string, { full?: boolean; deleteData?: boolean }][] = [['#garmin-access', 'GARMIN_ACCESS', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-delete', 'GARMIN_DISCONNECT', { deleteData: true }]];
+    $('#garmin-delete').addEventListener('click', () => {
+        if (busy || !featureEnabled || pendingDrafts === null) return;
+        $('#garmin-delete-confirmation-title').textContent = deleteQuestion();
+        $('#garmin-delete-confirmation').hidden = false; $('#garmin-delete').setAttribute('aria-expanded', 'true');
+        $('#garmin-delete-confirm').focus();
+    });
+    $('#garmin-delete-cancel').addEventListener('click', () => hideDeleteConfirmation());
+    $('#garmin-delete-confirmation').addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return; event.preventDefault(); hideDeleteConfirmation();
+    });
+    const actions: [string, string, { full?: boolean; deleteData?: boolean }][] = [['#garmin-access', 'GARMIN_ACCESS', {}], ['#garmin-full', 'GARMIN_CHECK', { full: true }], ['#garmin-delete-confirm', 'GARMIN_DISCONNECT', { deleteData: true }]];
     for (const [selector, type, extra] of actions) {
         $(selector).addEventListener('click', () => {
-            if (busy || !featureEnabled) return;
-            if (extra.deleteData && (pendingDrafts === null
-                || !confirm(`Delete ${pendingDrafts} local Garmin drafts and their import history?`))) return;
-            void perform($(selector), $('#garmin-settings-status'), async () => {
+            if (busy || !featureEnabled || (extra.deleteData && pendingDrafts === null)) return;
+            if (extra.deleteData) { hideDeleteConfirmation(false); $('#garmin-delete').focus(); }
+            const control = extra.deleteData ? $('#garmin-delete') : $(selector);
+            void perform(control, $('#garmin-settings-status'), async () => {
                 if (type === 'GARMIN_ACCESS'
                     && !await ext.permissions.request({ origins: [GARMIN_PERMISSION] })) throw new Error('Garmin access was not granted.');
                 await send({ type, ...extra });

@@ -278,10 +278,14 @@ try {
             await page.locator('#garmin-settings-status').filter({ hasText: 'Garmin drafts enabled.' }).waitFor();
             assert(await access.isHidden(), 'Recovered permission removes its recovery action');
             assert.equal(await page.evaluate(() => window.fixture.accesses), 2);
-            page.once('dialog', dialog => dialog.dismiss());
             await page.locator('#garmin-preferences > details').evaluate((el: HTMLDetailsElement) => { el.open = true; });
             const beforeDelete = await page.locator('#garmin-settings-status').textContent();
             await page.locator('#garmin-delete').focus(); await page.locator('#garmin-delete').press('Enter');
+            await page.waitForFunction(() => document.activeElement!.id === 'garmin-delete-confirm');
+            assert.match(await page.locator('#garmin-delete-confirmation-title').textContent() ?? '', /^Delete \d+ local Garmin draft/);
+            if (name === 'chromium') await page.locator('#garmin-preferences > details').screenshot({ path: path.join(output, `delete-confirm-${width}-${theme}.png`) });
+            await page.keyboard.press('Escape');
+            await page.waitForFunction(() => document.activeElement!.id === 'garmin-delete' && document.querySelector<HTMLElement>('#garmin-delete-confirmation')!.hidden);
             assert.equal(await page.locator('#garmin-settings-status').textContent(), beforeDelete);
             await page.goto(`${origin}/options/options.html?setup#capture-garmin`);
             await page.locator('#garmin-key-status').filter({ hasText: 'Not connected' }).waitFor();
@@ -351,8 +355,11 @@ try {
             await page.locator('#inbox-timestamp-row').waitFor();
             stable(firstReview, await geometry(['#inbox-open', '#inbox-review-title', '#inbox-history', 'footer']));
             const reviewStatus = await page.locator('#inbox-review-status').textContent();
-            page.once('dialog', dialog => dialog.dismiss());
             await page.locator('#inbox-done').focus(); await page.locator('#inbox-done').press('Enter');
+            await page.waitForFunction(() => document.activeElement!.id === 'inbox-done-confirm');
+            if (name === 'chromium') await page.locator('#inbox-review').screenshot({ path: path.join(output, `done-confirm-${width}-${theme}.png`) });
+            await page.keyboard.press('Escape');
+            await page.waitForFunction(() => document.activeElement!.id === 'inbox-done' && document.querySelector<HTMLElement>('#inbox-done-confirmation')!.hidden);
             assert.equal(await page.locator('#inbox-review-status').textContent(), reviewStatus);
             assert.equal(await page.locator('#inbox-matches input:checked').count(), 1);
             assert.equal(await page.locator('#inbox-matches input:not(:checked)').count(), 1);

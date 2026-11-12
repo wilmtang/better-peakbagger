@@ -206,9 +206,33 @@ test('Inbox cancel preserves review status and dismissal focuses a surviving act
         h.d.querySelector('#inbox-list button').click();
         const before = h.d.querySelector('#inbox-review-status').textContent;
         h.d.querySelector('#inbox-done').focus(); h.d.querySelector('#inbox-done').click(); await tick();
+        assert.equal(h.d.querySelector('#inbox-done-confirmation').hidden, false, 'Done asks in the page');
+        assert.equal(h.d.querySelector('#inbox-done').getAttribute('aria-expanded'), 'true');
+        assert.equal(h.d.activeElement.id, 'inbox-done-confirm');
+        h.d.querySelector('#inbox-done-cancel').click(); await tick();
+        assert.equal(h.d.querySelector('#inbox-done-confirmation').hidden, true);
+        assert.equal(h.d.activeElement.id, 'inbox-done', 'Cancel returns focus to Done');
         assert.equal(h.d.querySelector('#inbox-review-status').textContent, before);
         assert(!h.calls.some((call: UiMessage) => call.type === 'GARMIN_DONE'));
+        h.d.querySelector('#inbox-done').click(); await tick();
+        h.d.querySelector('#inbox-done-confirmation').dispatchEvent(new h.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(h.d.querySelector('#inbox-done-confirmation').hidden, true, 'Escape closes the question');
         h.d.querySelector('#inbox-dismiss').focus(); h.d.querySelector('#inbox-dismiss').click(); await tick();
+        assert.equal(h.d.activeElement.id, 'inbox-check');
+    } finally { h.dom.window.close(); }
+});
+test('Inbox Done is sent only from its in-page confirmation', async () => {
+    const h = await auditInbox();
+    let native = 0; h.dom.window.confirm = () => { native++; return true; };
+    try {
+        h.d.querySelector('#inbox-list button').click();
+        h.d.querySelector('#inbox-done').click(); await tick();
+        assert(!h.calls.some((call: UiMessage) => call.type === 'GARMIN_DONE'));
+        h.d.querySelector('#inbox-done-confirm').click(); await tick();
+        assert.deepEqual(h.calls.filter((call: UiMessage) => call.type === 'GARMIN_DONE').map((call: UiMessage) => call.id), ['123']);
+        assert.equal(native, 0, 'no native dialog is used');
+        assert.equal(h.d.querySelector('#inbox-review').hidden, true);
+        assert.equal(h.d.querySelector('#inbox-done-confirmation').hidden, true);
         assert.equal(h.d.activeElement.id, 'inbox-check');
     } finally { h.dom.window.close(); }
 });

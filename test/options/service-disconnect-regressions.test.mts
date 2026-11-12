@@ -13,6 +13,9 @@ import type { ChromeStub, LoadPage, PageDom, StubMessage } from '../helpers/page
 type ImportOptions = Parameters<typeof createGarminImports>[0];
 // The options window hooks these tests replace before the page loads.
 interface HookWindow { setInterval: (callback: () => void) => number; confirm: (message: string) => boolean }
+// The in-page deletion question, or null while none is shown.
+const deleteQuestion = (dom: PageDom) => byId(dom, 'garmin-delete-confirmation').hidden ? null
+    : byId(dom, 'garmin-delete-confirmation-title').textContent;
 const loadOptions = untypedLoadOptions as LoadPage;
 registerCleanup();
 const byId = (dom: PageDom, id: string) => dom.window.document.getElementById(id);
@@ -118,8 +121,13 @@ test('Garmin local deletion replaces the earlier kept-drafts confirmation', asyn
     await waitFor(dom, () => byId(dom, 'garmin-disconnect').hidden && !byId(dom, 'garmin-disconnect').hasAttribute('aria-busy'));
     assert.match(byId(dom, 'garmin-key-status').textContent, /drafts are kept/);
     byId(dom, 'garmin-delete').click();
+    assert.equal(deleteQuestion(dom), 'Delete 25 local Garmin drafts and their import history?');
+    assert.equal(dom.window.document.activeElement, byId(dom, 'garmin-delete-confirm'));
+    assert.equal(state.pending, 25, 'asking deletes nothing');
+    byId(dom, 'garmin-delete-confirm').click();
     await waitFor(dom, () => byId(dom, 'garmin-key-status').textContent === 'Not connected');
-    assert.deepEqual(confirmations, ['Delete 25 local Garmin drafts and their import history?']);
+    assert.deepEqual(confirmations, [], 'no native dialog is used');
+    assert.equal(deleteQuestion(dom), null);
     assert.equal(state.pending, 0);
 });
 
@@ -233,19 +241,25 @@ test('Garmin deletion waits for a full draft count and becomes unavailable after
         await waitFor(dom, () => !byId(dom, 'garmin-preferences').hidden && statusReads > 0);
         (byId(dom, 'garmin-delete').closest('details') as HTMLDetailsElement).open = true;
         byId(dom, 'garmin-delete').click();
-        assert.deepEqual(confirmations, [], 'Unknown draft counts must never be presented as zero');
+        assert.equal(deleteQuestion(dom), null, 'Unknown draft counts must never be presented as zero');
         assert.equal(writes.length, 0);
         assert.equal(Object.keys((await store.read()).items).length, 25);
         unavailable = false;
         timers.forEach(callback => callback());
         await waitFor(dom, () => byId(dom, 'garmin-delete').getAttribute('aria-disabled') === 'false');
         byId(dom, 'garmin-delete').click();
-        assert.deepEqual(confirmations, ['Delete 25 local Garmin drafts and their import history?']);
+        assert.equal(deleteQuestion(dom), 'Delete 25 local Garmin drafts and their import history?');
+        byId(dom, 'garmin-delete-cancel').click();
+        assert.equal(deleteQuestion(dom), null);
+        assert.equal(dom.window.document.activeElement, byId(dom, 'garmin-delete'), 'Cancel returns focus to its trigger');
         assert.equal(writes.length, 0, 'Cancelling the correct confirmation preserves drafts');
+        byId(dom, 'garmin-delete').click();
         unavailable = true;
         const before = statusReads; timers.forEach(callback => callback());
         await waitFor(dom, () => statusReads > before && byId(dom, 'garmin-delete').getAttribute('aria-disabled') === 'true');
+        assert.equal(deleteQuestion(dom), null, 'A failed refresh closes a question about the previously known count');
         byId(dom, 'garmin-delete').click();
-        assert.equal(confirmations.length, 1, 'A failed refresh invalidates the previously known count');
+        assert.equal(deleteQuestion(dom), null, 'A failed refresh invalidates the previously known count');
+        assert.deepEqual(confirmations, []);
     } finally { dom.window.close(); await store.close(); }
 });
