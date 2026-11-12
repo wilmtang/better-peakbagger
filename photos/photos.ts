@@ -3343,11 +3343,8 @@ const downloadProject = async (item: TopoPhoto) => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+// Reversible, so no confirmation: the toast states the window and offers Undo.
 const moveToDeleted = async (item: TopoPhoto) => {
-    if (!confirm(
-        `Move “${item.title}” to Recently Deleted? It is restorable with editing data for 30 days. `
-        + 'Its ImgBB image and report URLs will not change.',
-    )) return;
     let deleted;
     try {
         deleted = await store.putPhoto(Library.markDeleted(item));
@@ -3522,7 +3519,7 @@ const cardFor = (item: TopoPhoto, thumbnail: Blob, objectUrls: string[]) => {
             ? 'Restore with editing data'
             : 'Restore record only', () => restoreLibraryItem(item),
         'The photo could not be restored. Try again.', 'secondary-button')
-        : makeLibraryButton('Remove…', () => moveToDeleted(item),
+        : makeLibraryButton('Remove', () => moveToDeleted(item),
             'The photo could not be moved to Recently Deleted. Try again.', 'danger-button'));
     body.append(actions);
     card.append(body);
@@ -4008,9 +4005,8 @@ const bindEvents = () => {
     ui.clear.addEventListener('click', () => {
         if (editorMutationLocked()) return;
         const count = project?.objects.length || 0;
-        if (!count || !confirm(`Remove all ${count} annotation${count === 1 ? '' : 's'}? You can Undo this.`)) {
-            return;
-        }
+        // Reversible, so no confirmation: the toast offers Undo.
+        if (!count) return;
         selectedId = null;
         selectedVertex = null;
         setProject(Project.removeObjects(project, project!.objects.map(object => object.id)));
