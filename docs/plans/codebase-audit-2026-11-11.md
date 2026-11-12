@@ -545,16 +545,32 @@ included a live Garmin, Strava or Peakbagger account.
 | F5 steps 1–2 native dialogs | `33c88c73`, `9bb8572c`, `decca1c5` | jsdom tests assert no native dialog; the Garmin questions were opened by keyboard and closed with Escape in hidden Chromium and Firefox at 1180 and 390 px. |
 | F14 preparation latch | `2cef0a16`, `de6f96e1`, `f8b468fb` | Bundle tests for toggle → Attach GPX, toggle → card Cancel and a page suspend during preparation time out on the stuck latch with the earlier code and pass; the suspend case is the one that proves the preparation-owned release. |
 
+| F9 unsaved Garmin capture lockout | `765d4206`, `05d4eab0` | Owner chose: with the inbox off, import history is not consulted; with it on, a new capture takes over a toolbar receipt with no saved peak. Unit tests fail on the old code and pass. Review found that a second tab could then open a duplicate set of drafts; that opening is now refused, and peaks a taken-over receipt already saved are not offered again. |
+| F13 cleanup alarm restart | `481f466e`, `05d4eab0` | Test boots the built worker three times against one alarm store: three creations before, one after. |
+| F15 bare host | `3cfac011`, `05d4eab0` | Read-only browser check on November 12: `peakbagger.com` serves pages without redirecting. Local GPX processing now refuses a bare-host form up front, naming www, without offering a retry; the built-worker test fails on the old bundle and passes. |
+| F17 Garmin binding | `fa905588` | Sleeping tabs are skipped and the active tab is tried first. |
+
+The worker fixes required converting the background worker (now `src/background/background.ts`) to
+TypeScript first (`c45d32ef`, owner-approved). The reviewer and the author
+compared the built and transpiled output with the previous build; only local
+aliases differ. `a4080301` tightened its storage and route-factory types after
+review.
+
 Supporting commits: `687817f7` repaired a document link the plan itself broke;
 `2cef0a16` is the conversion F14 required. It is type-only except two noted
 by review: the Remove control is no longer appended when absent (previously a
 literal "null" text node), and the summit card's primary pick prefers a scored
 match over an unscored one, which has no practical effect.
 
-Full `npm test` after the last fix: 4,164 of 4,164 passed; `npm run lint`
-passed.
+Full `npm test` after the worker fixes: 4,173 of 4,173 passed; `npm run lint`
+and `npm run verify -- chrome` passed.
 
 ### Intentionally not changed
+
+- F17's per-activity re-verification of the signed-in climber: a pinned test
+  shows it is a fail-closed login check between route downloads, not waste.
+- F15's other half: the Garmin resume-on-visit still ignores bare-host tabs, and
+  local GPX processing is refused there rather than made to work on two origins.
 
 - F5 step 3, `src/ascent/ascent-delete.js` dialogs: an in-page replacement on
   Peakbagger's own page carries more layout and focus risk than it removes.
@@ -574,19 +590,17 @@ passed.
   BFCache restore and teardown passed), which proves the extension and the
   converted bundles load, but its output shows no provider-page or
   ascent-editor flow. F10 and F11 are unit-tested only.
+- F9, F15 and F17 have no worker-level regression through the real capture
+  flow, and the two-tab refusal and F17's tab filter no automated test: the
+  worker harness lives in the legacy 4,500-line `background-capture.test.mjs`.
 - F6a, F7 and F8 have jsdom evidence only; F7 changed visible inbox text
   ("92% confidence" now reads "92%") without a rendered inspection.
 - F5 step 1 (photo editor) was not checked in a real browser.
 
 ### Not started, and why
 
-- **F9, F13, F15, F16, F17 — owner decision.** Each needs a non-mechanical
-  change to `src/background/background.ts`. The TypeScript-on-modification
-  policy would then require converting that 4,169-line worker in the same
-  change, which is its own project (M7 step 5 in the adoption plan). Options:
-  convert the worker first, or approve a narrow documented policy exception.
-  F9 also needs the decision on consulting import history with the inbox off;
-  F16 needs the stricter-privacy decision; F15 needs one read-only live check.
+- **F16 — owner decision.** Whether turning on "remove GPX timestamps" must
+  also stop reuse of a capture made before it, for up to 30 minutes.
 - **F1, then F6b — gated** on the real-browser IndexedDB timing in step 6.
 - **F2 — gated** on new completed-download assertions (Firefox settings export;
   a ≥20 MB project bundle in both browsers).

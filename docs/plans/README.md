@@ -1,9 +1,9 @@
 # Active plans
 
 - [November 11 bugs, performance, engineering and UX audit](codebase-audit-2026-11-11.md)
-  — 18 findings. F3–F8, F10–F12 and F14 are fixed and reviewed; F9, F13 and
-  F15–F17 wait on an owner decision about the background worker's TypeScript
-  conversion; F1, F2, F6b and F18 wait on browser measurements.
+  — 18 findings. F3–F15 and F17 are fixed and reviewed (the worker was
+  converted to TypeScript first); F16 waits on an owner decision; F1, F2, F6b
+  and F18 wait on browser measurements.
 
 - [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
   — early store readiness, permanent capture evidence, exact package promotion,
