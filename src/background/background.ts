@@ -2912,6 +2912,11 @@ type DraftMap = Record<string, DraftRecord>;
         if (!page || page.isEdit) {
             return reply({ phase: 'error', error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } });
         }
+        // The page-realm request helper only serves the canonical www origin, so
+        // a form on the bare host would fail later with misleading account copy.
+        if (!canonicalPeakbaggerUrl(sender.url)) {
+            return reply({ phase: 'error', error: { code: 'peakbagger-host', message: 'Summit lookup works on www.peakbagger.com. Open this ascent form there, then process the GPX again.' } });
+        }
         const tabId = page.tabId;
         let capturePreferences: CapturePreferences;
         let peakbaggerPageRequest: PeakbaggerRequest;
