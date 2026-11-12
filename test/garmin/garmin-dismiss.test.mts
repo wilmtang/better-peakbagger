@@ -43,3 +43,36 @@ test('a check collects a stranded dismissed item', async () => {
         assert.equal((await h.store.read()).items['12'], undefined);
     } finally { await h.store.close(); }
 });
+
+type History = { history: { id: string; dismissed: boolean; undoAvailable: boolean }[] };
+
+test('inbox history keeps the newest receipts whatever the Garmin ID magnitude', async () => {
+    const h = await garminImportsHarness();
+    try {
+        await h.store.mutate(state => {
+            // Older large-ID receipts, then a newer small-ID activity in the inbox.
+            for (let i = 0; i < 205; i++) state.receipts[String(21_000_000_000 + i)] = { complete: true, at: h.now() - 1_000_000 + i };
+            state.items['3900000000'] = readyItem('3900000000');
+        });
+        assert.equal((await h.send('GARMIN_DISMISS', '3900000000')).ok, true);
+        const { history } = await h.imports.snapshot() as unknown as History;
+        assert.equal(history.length, 200);
+        const dismissed = history.find(receipt => receipt.id === '3900000000');
+        assert.ok(dismissed, 'the newest dismissal is published even though its ID sorts first');
+        assert.equal(dismissed.undoAvailable, true);
+        assert.equal(history.some(receipt => receipt.id === '21000000000'), false, 'the oldest receipts are the ones left out');
+    } finally { await h.store.close(); }
+});
+
+test('an undoable dismissal stays in history even when 200 newer receipts exist', async () => {
+    const h = await garminImportsHarness();
+    try {
+        await h.store.mutate(state => { state.items['12'] = readyItem('12'); });
+        assert.equal((await h.send('GARMIN_DISMISS', '12')).ok, true);
+        await h.store.mutate(state => {
+            for (let i = 0; i < 200; i++) state.receipts[String(21_000_000_000 + i)] = { complete: true, at: h.now() + 1 + i };
+        });
+        const { history } = await h.imports.snapshot() as unknown as History;
+        assert.equal(history.find(receipt => receipt.id === '12')?.undoAvailable, true);
+    } finally { await h.store.close(); }
+});

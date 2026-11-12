@@ -1,17 +1,24 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+// @ts-expect-error jsdom ships no type declarations.
 import { JSDOM } from 'jsdom';
+
+interface UiMessage { type: string; [key: string]: unknown }
+type Callback = () => unknown;
+type Reply = Record<string, unknown>;
 const settingsSource = await readFile(new URL('../../dist/options/garmin.js', import.meta.url), 'utf8');
 const inboxSource = await readFile(new URL('../../dist/options/inbox.js', import.meta.url), 'utf8');
 const inboxHtml = await readFile(new URL('../../options/inbox.html', import.meta.url), 'utf8');
 const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
 test('Garmin disconnect is exposed with imports off and guards retry, focus and repeat activation', async () => {
     const dom = new JSDOM('<div data-garmin-settings hidden></div>', { url: 'chrome-extension://test/options/options.html#capture-garmin', runScripts: 'outside-only' });
-    let finish, removals = 0;
-    const calls = [];
+    let finish: (value: Reply) => void = () => {}, removals = 0;
+    const calls: string[] = [];
     dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } },
-        runtime: { sendMessage: async message => {
+        runtime: { sendMessage: async (message: UiMessage) => {
             calls.push(message.type);
             if (message.type === 'GARMIN_DISCONNECT') { removals++; return new Promise(resolve => { finish = resolve; }); }
             return { ok: true, configured: true };
@@ -40,11 +47,11 @@ test('Garmin disconnect is exposed with imports off and guards retry, focus and 
 });
 test('Garmin setup links directly to key creation and requests permission only on Connect', async () => {
     const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
-    const messages = []; let permissions = 0;
-    const intervals = []; dom.window.setInterval = callback => { intervals.push(callback); return intervals.length; };
+    const messages: UiMessage[] = []; let permissions = 0;
+    const intervals: Callback[] = []; dom.window.setInterval = (callback: Callback) => { intervals.push(callback); return intervals.length; };
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
         storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
-        runtime: { sendMessage: async message => {
+        runtime: { sendMessage: async (message: UiMessage) => {
             messages.push(message);
             if (message.type === 'GARMIN_CONNECT') return { ok: false, error: { message: 'Garmin didn’t accept this key.' } };
             return { ok: true, configured: false, pending: 0, items: [] };
@@ -55,7 +62,7 @@ test('Garmin setup links directly to key creation and requests permission only o
     assert.equal(permissions, 0);
     document.querySelector('#garmin-key').value = 'fictional-personal-api-key';
     document.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-    await tick(); assert.equal(permissions, 1); assert.equal(messages.filter(m => m.type === 'GARMIN_CONNECT').length, 1);
+    await tick(); assert.equal(permissions, 1); assert.equal(messages.filter((m: UiMessage) => m.type === 'GARMIN_CONNECT').length, 1);
     assert.match(document.querySelector('#garmin-key-status').textContent, /didn’t accept/);
     assert.equal(document.querySelector('#garmin-key').value, 'fictional-personal-api-key');
     Object.defineProperty(document, 'hidden', { value: false });
@@ -65,13 +72,13 @@ test('Garmin setup links directly to key creation and requests permission only o
 });
 test('Garmin setup finishes on Connect and only offers a second action for revoked access', async () => {
     const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
-    const messages = [], intervals = []; let permissions = 0;
-    const state = { configured: false, enabled: false, pending: 0, cid: null, items: [] };
-    dom.window.setInterval = callback => (intervals.push(callback), intervals.length);
+    const messages: UiMessage[] = [], intervals: Callback[] = []; let permissions = 0;
+    const state: Reply = { configured: false, enabled: false, pending: 0, cid: null, items: [] };
+    dom.window.setInterval = (callback: Callback) => (intervals.push(callback), intervals.length);
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
         storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
-        runtime: { sendMessage: async message => {
+        runtime: { sendMessage: async (message: UiMessage) => {
             messages.push(message);
             if (message.type === 'GARMIN_CONNECT') Object.assign(state, { configured: true, enabled: true });
             if (message.type === 'GARMIN_ACCESS') state.error = null;
@@ -119,11 +126,11 @@ test('inbox keeps drafts visible during a rejected-key state', async () => {
 
 test('review exposes refreshed results explicitly and updates handoff recovery without reopening', async () => {
     const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
-    const intervals = []; dom.window.setInterval = fn => { intervals.push(fn); return intervals.length; };
+    const intervals: Callback[] = []; dom.window.setInterval = (fn: Callback) => { intervals.push(fn); return intervals.length; };
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
-    const item = { id: '123', phase: 'waiting', saved: [], summary: { date: '2026-10-23', type: 'hiking' }, analysis: null };
-    const state = { configured: true, enabled: true, cid: '456', items: [item] }; const calls = [];
-    dom.window.chrome = { tabs: { getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async message => {
+    const item: Reply = { id: '123', phase: 'waiting', saved: [], summary: { date: '2026-10-23', type: 'hiking' }, analysis: null };
+    const state = { configured: true, enabled: true, cid: '456', items: [item] }; const calls: UiMessage[] = [];
+    dom.window.chrome = { tabs: { getCurrent: async () => ({ id: 1 }) }, runtime: { sendMessage: async (message: UiMessage) => {
         calls.push(message);
         if (message.type === 'GARMIN_OPEN_DRAFTS') item.handoff = true;
         return { ok: true, ...structuredClone(state) };
@@ -172,21 +179,22 @@ test('a bookmarked inbox stays hidden while disabled and does not poll its data'
     } finally { dom.window.close(); }
 });
 
-const auditInbox = async (overrides = {}) => {
+const auditInbox = async (overrides: Reply = {}) => {
     const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
-    const intervals = [], calls = [];
-    const item = { id: '123', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
+    const intervals: Callback[] = [], calls: UiMessage[] = [];
+    const item: Reply = { id: '123', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
         analysis: { matches: [{ id: 1, name: 'Example Peak', classification: 'strong' }], hasTimestamps: true } };
-    const state = { configured: true, enabled: true, cid: '456', items: [item], history: [], ...overrides };
-    dom.window.setInterval = fn => (intervals.push(fn), intervals.length);
+    const state: { items: Reply[]; history: Reply[]; undoError?: string; [key: string]: unknown } = { configured: true, enabled: true, cid: '456', items: [item], history: [], ...overrides };
+    dom.window.setInterval = (fn: Callback) => (intervals.push(fn), intervals.length);
     dom.window.confirm = () => false;
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
     const get = async () => ({ bpbSettings: { removeGpxTimestamps: true },
         bpbDeviceSettings: { schemaVersion: 1, settings: { removeGpxTimestamps: true } } });
-    dom.window.chrome = { runtime: { sendMessage: async message => {
+    dom.window.chrome = { runtime: { sendMessage: async (message: UiMessage) => {
         calls.push(message);
-        if (message.type === 'GARMIN_DISMISS') state.items = [];
-        if (message.type === 'GARMIN_UNDO') state.history[0].undoAvailable = false;
+        if (message.type === 'GARMIN_DISMISS') { state.items = []; state.history = [{ id: '123', dismissed: true, undoAvailable: true, date: '2026-10-23' }]; }
+        if (message.type === 'GARMIN_UNDO' && state.undoError) return { ok: false, error: { message: state.undoError } };
+        if (message.type === 'GARMIN_UNDO') { state.history[0].undoAvailable = false; state.items = [item]; }
         return { ok: true, ...structuredClone(state) };
     } }, storage: { sync: { get }, local: { get }, onChanged: { addListener() {}, removeListener() {} } } };
     dom.window.eval(inboxSource); await tick();
@@ -199,7 +207,7 @@ test('Inbox cancel preserves review status and dismissal focuses a surviving act
         const before = h.d.querySelector('#inbox-review-status').textContent;
         h.d.querySelector('#inbox-done').focus(); h.d.querySelector('#inbox-done').click(); await tick();
         assert.equal(h.d.querySelector('#inbox-review-status').textContent, before);
-        assert(!h.calls.some(call => call.type === 'GARMIN_DONE'));
+        assert(!h.calls.some((call: UiMessage) => call.type === 'GARMIN_DONE'));
         h.d.querySelector('#inbox-dismiss').focus(); h.d.querySelector('#inbox-dismiss').click(); await tick();
         assert.equal(h.d.activeElement.id, 'inbox-check');
     } finally { h.dom.window.close(); }
@@ -221,14 +229,71 @@ test('Inbox review follows phase errors even when both match snapshots are empty
         assert.equal(h.d.querySelector('#inbox-review-status').textContent, h.item.error);
     } finally { h.dom.window.close(); }
 });
-test('existing Inbox history rows reconcile Undo and retain authoritative availability', async () => {
+test('Inbox history offers Undo only while the worker does, and never leaves a dead control', async () => {
     const h = await auditInbox({ history: [{ id: '123', complete: true }] });
     try {
         h.state.history[0] = { id: '123', dismissed: true, undoAvailable: true }; await h.refresh();
         const undo = h.d.querySelector('#history-123 button'); assert(undo);
-        undo.click(); await tick(); assert.equal(undo.getAttribute('aria-disabled'), 'true');
+        undo.focus(); undo.click(); await tick();
+        assert.equal(h.d.querySelector('#history-123 button'), null, 'a used Undo is removed');
+        assert.equal(h.d.activeElement.textContent, 'Review activity', 'focus moves to the restored activity');
+        h.state.history[0] = { id: '123', dismissed: true, undoAvailable: true }; await h.refresh();
+        h.d.querySelector('#history-123 button').focus();
+        h.state.history[0].undoAvailable = false; await h.refresh();
+        assert.equal(h.d.querySelector('#history-123 button'), null, 'an expired Undo is removed, not disabled');
+        assert.equal(h.d.activeElement.id, 'inbox-check');
         h.state.history[0] = { id: '123', complete: true }; await h.refresh();
         assert.equal(h.d.querySelector('#history-123 button'), null);
+    } finally { h.dom.window.close(); }
+});
+
+const dismissFromReview = async (h: Awaited<ReturnType<typeof auditInbox>>) => {
+    h.d.querySelector('#inbox-list button').click();
+    h.d.querySelector('#inbox-dismiss').focus(); h.d.querySelector('#inbox-dismiss').click(); await tick();
+};
+test('Dismiss is confirmed in the list status with an Undo that outlasts polling', async () => {
+    const h = await auditInbox();
+    try {
+        await dismissFromReview(h);
+        const status = h.d.querySelector('#inbox-status'), undo = h.d.querySelector('#inbox-undo');
+        assert.equal(status.textContent, 'Hike · 2026-10-23 dismissed.');
+        assert.equal(undo.hidden, false);
+        assert.equal(h.d.activeElement.id, 'inbox-check', 'focus stays on a stable list action');
+        await h.refresh(); await h.refresh();
+        assert.equal(status.textContent, 'Hike · 2026-10-23 dismissed.', 'polling does not overwrite the confirmation');
+        assert.equal(undo.hidden, false);
+        undo.focus(); undo.click(); await tick();
+        assert.deepEqual(h.calls.filter((call: UiMessage) => call.type === 'GARMIN_UNDO').map((call: UiMessage) => call.id), ['123']);
+        assert.equal(undo.hidden, true);
+        assert.doesNotMatch(status.textContent, /dismissed/);
+        assert.equal(h.d.querySelectorAll('#inbox-list .garmin-activity').length, 1);
+        assert.equal(h.d.activeElement.id, 'inbox-check', 'focus stays beside the status line');
+    } finally { h.dom.window.close(); }
+});
+test('An expired dismissal Undo leaves the status row and returns focus to Check now', async () => {
+    const h = await auditInbox();
+    try {
+        await dismissFromReview(h);
+        const undo = h.d.querySelector('#inbox-undo'); undo.focus();
+        h.state.history[0].undoAvailable = false; await h.refresh();
+        assert.equal(undo.hidden, true);
+        assert.doesNotMatch(h.d.querySelector('#inbox-status').textContent, /dismissed/);
+        assert.equal(h.d.activeElement.id, 'inbox-check');
+    } finally { h.dom.window.close(); }
+});
+test('A failed Undo is reported without losing the control', async () => {
+    const h = await auditInbox();
+    try {
+        await dismissFromReview(h);
+        h.state.undoError = 'The activity could not be restored. Try again.';
+        const undo = h.d.querySelector('#inbox-undo'); undo.click(); await tick();
+        assert.equal(h.d.querySelector('#inbox-status').textContent, 'The activity could not be restored. Try again.');
+        assert.equal(undo.hidden, false);
+        assert.notEqual(undo.getAttribute('aria-disabled'), 'true');
+        await h.refresh();
+        assert.equal(h.d.querySelector('#inbox-status').textContent, 'The activity could not be restored. Try again.');
+        delete h.state.undoError; undo.click(); await tick();
+        assert.equal(undo.hidden, true);
     } finally { h.dom.window.close(); }
 });
 
@@ -236,7 +301,7 @@ test('Garmin Settings refreshes imported credentials and leaves cancelled deleti
     const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
     let configured = false, deletes = 0;
     dom.window.chrome = { storage: { sync: { get: async () => ({}) }, local: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } },
-        runtime: { sendMessage: async message => {
+        runtime: { sendMessage: async (message: UiMessage) => {
             if (message.type === 'GARMIN_DISCONNECT') deletes++;
             return { ok: true, configured, enabled: false, pending: 0, connectedDate: '2026-10-23', items: [] };
         } } };

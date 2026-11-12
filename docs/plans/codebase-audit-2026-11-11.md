@@ -17,7 +17,7 @@ checked every finding against the code and added three (see
 Files read, in full or in the part relevant to a finding:
 
 - Garmin inbox: `src/garmin/garmin-imports.ts`, `garmin-store.js`,
-  `garmin-badge.ts`, `options/inbox.js`, `options/inbox.html`,
+  `garmin-badge.ts`, `options/inbox.ts`, `options/inbox.html`,
   `options/garmin.js`, and the Garmin call sites in
   `src/background/background.js`
 - Popup: `popup/popup.ts`
@@ -164,7 +164,7 @@ item and assert preparation resumes promptly.
 
 **Trigger.** In the activity inbox, open an activity and choose Dismiss.
 
-**Code path.** The handler (`options/inbox.js` lines 159–168) sends
+**Code path.** The handler (`options/inbox.ts` lines 159–168) sends
 `GARMIN_DISMISS`, hides the review, shows the list and moves focus to **Check
 now**. `busyAction` wrote "Working…" to `#inbox-review-status`, which is inside
 the now-hidden review; `refresh` sets the list's `#inbox-status` to its
@@ -177,7 +177,7 @@ dismissal (`garmin-imports.ts` line 391) with no countdown.
 A related defect in the same rows: once the window lapses the button is only
 marked `aria-disabled` (line 124) and is never removed, so every dismissed
 receipt keeps a dead "Undo" button permanently. A test pins that state
-(`test/garmin/garmin-ui.test.mjs` lines 224–229). AGENTS.md requires that
+(`test/garmin/garmin-ui.test.mts` lines 224–229). AGENTS.md requires that
 completion status "must not look clickable unless it has a real action".
 
 No earlier audit declined a visible Undo; the archived design only describes
@@ -405,7 +405,7 @@ still use native dialogs (complete inventory: seven `confirm`, two `alert`):
 
 | Site | Dialog | Note |
 | --- | --- | --- |
-| `options/inbox.js` 161 | `confirm` — mark activity done | |
+| `options/inbox.ts` 161 | `confirm` — mark activity done | |
 | `options/garmin.js` 183 | `confirm` — delete local drafts and history | Destructive. The October 31 service-disconnect audit (D5) reworked and browser-verified this dialog without replacing it |
 | `photos/photos.ts` 1401 | `confirm` — continue without an editable copy | |
 | `photos/photos.ts` 3322 | `confirm` — bundle includes original metadata | |
@@ -437,7 +437,7 @@ tab while visible, whichever section is shown. With the feature on it sends
 `GARMIN_STATUS` (line 66), whose response carries every item with its matches
 and up to 200 history rows, yet the page uses only `configured`, `pending`,
 `error`, `checking`, `enabled`, `cid` and `connectedDate` — all present in
-`GARMIN_SUMMARY`. `options/inbox.js` line 183 polls every 2.5 seconds. Each
+`GARMIN_SUMMARY`. `options/inbox.ts` line 183 polls every 2.5 seconds. Each
 poll is a runtime message, an IndexedDB summary read and a settings read, keeps
 the MV3 worker from idling, and after any revision change triggers the
 full-record read from F1.
@@ -454,7 +454,7 @@ full-record read from F1.
 ### F7 — Confidence is handled three ways
 
 `capture-core.js` line 576 defines confidence as an integer percentage. The
-inbox multiplies by 100 when the value is `<= 1` (`options/inbox.js` line 52),
+inbox multiplies by 100 when the value is `<= 1` (`options/inbox.ts` line 52),
 which would print a 1% score as 100%; the popup declares `confidence?: string`
 (`popup/popup.ts` line 17) and prints "Strong · 92%" (lines 410–411) while the
 inbox prints "Strong · 92% confidence".

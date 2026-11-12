@@ -29,7 +29,7 @@ export const srcFile = (f: string, projectRoot?: string | number) =>
 const PAGE_LOCAL_RELATIVE: Record<string, readonly [string, string]> = {
     'options-main.js': ['options', 'options.js'],
     'garmin-settings-page.js': ['options', 'garmin.js'],
-    'garmin-inbox-page.js': ['options', 'inbox.js'],
+    'garmin-inbox-page.js': ['options', 'inbox.ts'],
     'inbox-toolbar-setting-page.js': ['options', 'inbox-toolbar-setting.ts'],
     'options-drafts.js': ['options', 'drafts.js'],
     'options-drafts-page.js': ['options', 'drafts-page.js'],

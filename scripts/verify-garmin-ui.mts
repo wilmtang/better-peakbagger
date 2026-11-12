@@ -356,13 +356,43 @@ try {
             assert.equal(await page.locator('#inbox-review-status').textContent(), reviewStatus);
             assert.equal(await page.locator('#inbox-matches input:checked').count(), 1);
             assert.equal(await page.locator('#inbox-matches input:not(:checked)').count(), 1);
-            await page.locator('#inbox-dismiss').click();
-            await page.waitForFunction(() => document.querySelectorAll('#inbox-list .garmin-activity').length === 0);
-            await page.waitForFunction(() => document.activeElement!.id === 'inbox-check');
-            await page.locator('#inbox-history summary').click();
-            await page.locator('#inbox-history-list button').click();
-            await page.locator('#inbox-list .garmin-activity').waitFor();
-            await page.waitForFunction(() => document.activeElement!.matches('#inbox-list .garmin-activity button'));
+            // Dismissal is confirmed beside Check now, with its Undo in the
+            // status line: the heading, Check now and status row keep their place
+            // from the idle list through dismissed and undone, at 100% and 200%.
+            // Dismiss is activated in-page so the tool does not scroll to it.
+            const dismissSelectors = ['.garmin-heading', '#inbox-check', '.garmin-feedback'];
+            for (const zoom of [1, 2]) {
+                await page.evaluate(value => { document.documentElement.style.zoom = String(value); scrollTo(0, 0); }, zoom);
+                if (await page.locator('#inbox-review').isVisible()) await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-back')!.click());
+                await page.locator('#inbox-list .garmin-activity').waitFor();
+                const listIdle = await geometry(dismissSelectors);
+                await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-list .garmin-activity button')!.click());
+                await page.locator('#inbox-review').waitFor();
+                await page.evaluate(() => { const dismiss = document.querySelector<HTMLElement>('#inbox-dismiss')!; dismiss.focus({ preventScroll: true }); dismiss.click(); });
+                await page.waitForFunction(() => document.querySelectorAll('#inbox-list .garmin-activity').length === 0);
+                await page.waitForFunction(() => document.activeElement!.id === 'inbox-check');
+                await page.locator('#inbox-status').filter({ hasText: 'dismissed.' }).waitFor();
+                assert(await page.locator('#inbox-undo').isVisible(), 'Dismissal offers Undo without opening history');
+                const dismissed = await geometry(dismissSelectors);
+                // Leaving the review restores focus to Check now, which may scroll a
+                // zoomed narrow page; the layout itself must not move.
+                listIdle.boxes.forEach((box, i) => {
+                    const shift = (measured: Geometry, index: number) => measured.boxes[index].y + measured.scroll[1];
+                    assert(Math.abs(shift(listIdle, i) - shift(dismissed, i)) <= 1 && Math.abs(box.x - dismissed.boxes[i].x) <= 1
+                        && Math.abs(box.height - dismissed.boxes[i].height) <= 1, `${name} dismissal moved ${dismissSelectors[i]}`);
+                });
+                // An element screenshot scrolls the page; restore it before measuring again.
+                if (name === 'chromium') await page.locator('#inbox-content .garmin-workspace').screenshot({ path: path.join(output, `dismissed-${width}-${theme}-${zoom}x.png`) });
+                await page.evaluate(value => scrollTo(0, value), dismissed.scroll[1]);
+                stable(dismissed, await geometry(dismissSelectors));
+                await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-undo')!.focus({ preventScroll: true }));
+                await page.keyboard.press('Enter');
+                await page.locator('#inbox-list .garmin-activity').waitFor();
+                await page.waitForFunction(() => document.activeElement!.id === 'inbox-check');
+                assert(await page.locator('#inbox-undo').isHidden(), 'A used Undo leaves the status line');
+                stable(dismissed, await geometry(dismissSelectors));
+            }
+            await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
             await page.locator('#inbox-list .garmin-activity button').click();
             const beforeUpdatedMatches = await geometry(['#inbox-refresh', '#inbox-open', '#inbox-history']);
             await page.evaluate(() => { window.fixture.state.items[0].analysis!.matches[0].name = 'Updated Mountain'; });

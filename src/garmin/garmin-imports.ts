@@ -24,6 +24,8 @@ interface GarminItem {
 interface GarminReceipt {
     owner?: string | null; cid?: string | null; date?: string; dismissed?: boolean; complete?: boolean;
     fromToolbar?: boolean; jobId?: string; peaks?: Record<string, string>;
+    // When the receipt was last written. Older receipts have none.
+    at?: number;
 }
 interface GarminConnection { key: string | null; subject?: string; owner?: string | null; cid?: string | null; connectedDate?: string; enabled?: boolean }
 interface GarminScan { from: string; to: string; scope: string; signature: string; offset: number; full: boolean; head: string | null }
@@ -191,6 +193,17 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         }
         releaseCapacity(state);
     };
+    // Publish the newest 200 receipts by write time, not by object key order:
+    // integer-like activity IDs would otherwise always sort small IDs first.
+    // Unstamped receipts keep their order and count as oldest. A receipt whose
+    // dismissal can still be undone is always included.
+    const recentReceipts = (state: GarminState) => {
+        const entries = Object.entries(state.receipts).map((entry, order) => ({ entry, order }))
+            .sort((a, b) => (a.entry[1].at || 0) - (b.entry[1].at || 0) || a.order - b.order);
+        const recent = entries.slice(-200);
+        const undoable = entries.slice(0, -200).filter(({ entry: [id] }) => (state.items[id]?.undoUntil || 0) > clock());
+        return [...undoable, ...recent].map(({ entry }) => entry);
+    };
     const snapshot = async (includeItems = true) => {
         const [initialMeta, prefs] = await Promise.all([store.summary(), settings.requireCurrent()]);
         if (!prefs.enableGarminInbox) return { featureEnabled: false, enabled: false, configured: false, pending: 0, queued: 0, items: [], history: [] };
@@ -208,7 +221,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 analysis: item.analysis ? { matches: item.analysis.matches.map(match => ({ id: match.id, name: match.name,
                     classification: match.classification, confidence: match.confidence, evidence: match.evidence })),
                 hasTimestamps: item.analysis.route?.some(segment => segment.some(point => point.time !== null)) } : null,
-            })), history: Object.entries(state.receipts).slice(-200).map(([id, receipt]) => ({ id, complete: !!receipt.complete,
+            })), history: recentReceipts(state).map(([id, receipt]) => ({ id, complete: !!receipt.complete,
                 dismissed: !!receipt.dismissed, date: receipt.date || '', undoUntil: state.items[id]?.undoUntil || 0 })) };
         }
         return { ...meta, featureEnabled: true, connectedDate: meta.connectedDate || date(), checking: !!running,
@@ -413,7 +426,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 if (item.handoff) throw new GarminError('handoff');
                 item.revision = (item.revision || 0) + 1;
                 item.previousPhase = item.phase; item.phase = 'dismissed'; item.undoUntil = clock() + 60000;
-                state.receipts[message.id] = { owner: item.owner, cid: item.cid, dismissed: true, date: item.summary?.date || '' }; });
+                state.receipts[message.id] = { owner: item.owner, cid: item.cid, dismissed: true, date: item.summary?.date || '', at: clock() }; });
             await reconcile(); return { ok: true };
         },
         GARMIN_UNDO: async message => {
@@ -428,7 +441,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         },
         GARMIN_DONE: async message => {
             await store.mutate(state => { const item = state.items[message.id]; if (!item) return;
-                state.receipts[message.id] = { ...state.receipts[message.id], owner: item.owner, cid: item.cid, complete: true, date: item.summary?.date || '' }; delete state.items[message.id]; });
+                state.receipts[message.id] = { ...state.receipts[message.id], owner: item.owner, cid: item.cid, complete: true, date: item.summary?.date || '', at: clock() }; delete state.items[message.id]; });
             await store.mutate(releaseCapacity);
             await reconcile(); return { ok: true };
         },
@@ -470,7 +483,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
             await store.mutate(state => {
                 const receipt = state.receipts[job.activityId];
                 if (state.items[job.activityId] || (receipt && receipt.jobId !== job.id)) throw new GarminError('duplicate');
-                state.receipts[job.activityId] ||= { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {} };
+                state.receipts[job.activityId] ||= { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {}, at: clock() };
             });
         },
         async captureSaved(job: CaptureJob, peakId: string, aid: string) {
@@ -500,7 +513,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 if (jobId && (item.handoff?.jobId !== jobId || String(item.cid) !== cid)) return;
                 item.saved = [...new Set([...item.saved, peakId])];
                 const receipt = state.receipts[activityId] ||= { owner: item.owner, cid: item.cid, peaks: {}, date: item.summary?.date || '' };
-                receipt.peaks![peakId] = aid;
+                receipt.peaks![peakId] = aid; receipt.at = clock();
                 if (item.analysis?.matches.every(match => item.saved.includes(String(match.id)))) { delete state.items[activityId]; receipt.complete = true; }
                 releaseCapacity(state);
             });
