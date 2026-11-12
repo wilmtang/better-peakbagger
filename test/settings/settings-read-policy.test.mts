@@ -38,7 +38,7 @@ const AUTHORITATIVE = Object.freeze({
     'options/garmin.ts': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
     'src/garmin/garmin-badge.ts': [{ count: 1, kind: 'privacy', reason: 'keep the last accurate badge instead of drawing the queue from default settings' }],
     'options/inbox-toolbar-setting.ts': [{ count: 1, kind: 'preservation', reason: 'populate the toolbar count control without replacing unreadable settings with defaults' }],
-    'src/garmin/garmin-imports.ts': [{ count: 7, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],
+    'src/garmin/garmin-imports.ts': [{ count: 9, kind: 'privacy', reason: 'read schedule, discovery scope, retention preferences and whether import history applies to toolbar captures authoritatively' }],
     'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
     'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
     'src/weather/summit-cloud.ts': [{ count: 1, kind: 'privacy', reason: 'respect summit-cloud visibility and the saved model before profile requests' }],

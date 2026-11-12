@@ -27,6 +27,8 @@ interface GarminReceipt {
     fromToolbar?: boolean; jobId?: string; peaks?: Record<string, string>;
     // When the receipt was last written. Older receipts have none.
     at?: number;
+    // Earlier toolbar jobs whose surviving draft tabs may still be saved.
+    previousJobIds?: string[];
 }
 interface GarminConnection { key: string | null; subject?: string; owner?: string | null; cid?: string | null; connectedDate?: string; enabled?: boolean }
 interface GarminScan { from: string; to: string; scope: string; signature: string; offset: number; full: boolean; head: string | null }
@@ -187,6 +189,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
     };
     // A dismissed item without a finite Undo deadline (left by an earlier repeated
     // Dismiss) counts as expired, so it cannot stay hidden in the inbox forever.
+    const savedPeaks = (receipt: GarminReceipt) => Object.keys(receipt.peaks || {}).length;
     const undoExpired = (item: GarminItem) => item.phase === 'dismissed' && !((item.undoUntil as number) > clock());
     const pruneDismissed = (state: GarminState) => {
         let removed = false;
@@ -493,17 +496,44 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
             if (result.replaced) { controller?.abort(); clientEpoch = -1; client = null; await reconcile(); }
             return result;
         },
+        // Whether a toolbar capture of this activity belongs in the inbox instead.
+        // With the inbox off, import history is not consulted at all.
+        async captureBlocked(activityId: string, currentJobId?: string) {
+            if (!(await settings.requireCurrent()).enableGarminInbox) return false;
+            const state = await store.read();
+            if (state.items[activityId]) return true;
+            const receipt = state.receipts[activityId];
+            return !!receipt && receipt.jobId !== currentJobId && !(receipt.fromToolbar && !savedPeaks(receipt));
+        },
+        // A new toolbar job takes over a toolbar receipt that recorded no saved
+        // peak (an abandoned, expired or rolled-back capture). With the inbox
+        // off it also takes over one that did, for the same climber, keeping
+        // those saves. Earlier job ids are kept so a surviving draft tab of an
+        // earlier capture can still record its Save.
         async reserveCapture(job: CaptureJob) {
+            const enforce = (await settings.requireCurrent()).enableGarminInbox;
             await store.mutate(state => {
                 const receipt = state.receipts[job.activityId];
-                if (state.items[job.activityId] || (receipt && receipt.jobId !== job.id)) throw new GarminError('duplicate');
-                state.receipts[job.activityId] ||= { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {}, at: clock() };
+                if (receipt?.jobId === job.id) return;
+                const adoptable = !!receipt?.fromToolbar && (!savedPeaks(receipt)
+                    || (!enforce && String(receipt.cid) === String(job.cid)));
+                if (state.items[job.activityId] || (receipt && !adoptable)) {
+                    if (enforce) throw new GarminError('duplicate');
+                    return;
+                }
+                if (receipt) {
+                    receipt.previousJobIds = [...(receipt.previousJobIds || []), receipt.jobId as string].filter(Boolean).slice(-8);
+                    receipt.jobId = job.id; receipt.cid = job.cid; receipt.at = clock();
+                    return;
+                }
+                state.receipts[job.activityId] = { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {}, at: clock() };
             });
         },
         async captureSaved(job: CaptureJob, peakId: string, aid: string) {
             await store.mutate(state => {
                 const receipt = state.receipts[job.activityId];
-                if (receipt?.jobId !== job.id || String(receipt.cid) !== String(job.cid)) return;
+                if (!receipt || (receipt.jobId !== job.id && !receipt.previousJobIds?.includes(job.id))
+                    || String(receipt.cid) !== String(job.cid)) return;
                 receipt.peaks![peakId] = aid;
                 receipt.complete = job.selectedIds.every(id => receipt.peaks![String(id)]);
             });

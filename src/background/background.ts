@@ -2043,10 +2043,8 @@ type DraftMap = Record<string, DraftRecord>;
             };
         }
         if (activity.provider === 'garmin' && globalThis.indexedDB) {
-            const imports = await garminImports.store.read();
             const current = (await readMap(JOBS_KEY))[tabId];
-            if (imports.items[activity.activityId] || (imports.receipts[activity.activityId]
-                && imports.receipts[activity.activityId].jobId !== current?.id)) {
+            if (await garminImports.captureBlocked(activity.activityId, current?.id)) {
                 return { kind: 'complete', value: { phase: 'error', error: {
                     code: 'garmin-inbox-activity', message: 'This Garmin activity is already in your import history. Open the activity inbox to review its drafts.',
                 } } };
