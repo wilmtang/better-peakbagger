@@ -109,19 +109,32 @@ tracked lines.
 
 ### Phase 1 — Remove records git already keeps (about −34,000)
 
-1. Tag the last commit that contains `docs/archive/`, then delete the directory
-   (32,800 lines, 115 files).
+1. Record the last commit on `main` that contains `docs/archive/` (the
+   "archive commit"), then delete the directory (32,800 lines, 115 files). No
+   tag is created: `v*` tags drive the release workflows, and a commit on
+   `main` is already a permanent address.
 2. Delete `docs/plans/mocks/` (1,280 lines and 32 images); nothing references
    it. Keep `experiments/` and `evidence/`.
-3. Rewrite or drop the 77 archive links in 20 maintained documents. Most of
-   `docs/plans/README.md` is archive summaries and goes with them.
+3. Point every one of the 77 archive links in 20 maintained documents at its
+   GitHub permalink,
+   `https://github.com/wilmtang/better-peakbagger/blob/<archive commit>/docs/archive/<file>`,
+   keeping any `#fragment`. No link is dropped. `docs/plans/README.md` keeps
+   one line per archived record with its permalink and loses the summary
+   paragraphs; it also names the archive commit so the whole directory can be
+   browsed at
+   `https://github.com/wilmtang/better-peakbagger/tree/<archive commit>/docs/archive`.
 4. Update `test/project/documentation.test.mjs` and the archive comment in
    `scripts/verify-terrain-lod.mts`.
-5. Reword the archiving rule in `AGENTS.md` and `docs/plans/README.md` to match
-   the decision below.
+5. Reword the archiving rule in `AGENTS.md` and `docs/plans/README.md`: a
+   completed plan is removed from the tree and its index line points at the
+   permalink of its final version, ledger intact.
 6. Mark `.agents/skills/ui-ux-pro-max` as `linguist-vendored`.
 
-Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
+Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`, and a
+scripted check that all 77 permalinks name a path that exists at the archive
+commit (`git cat-file -e <archive commit>:<path>`). The permalinks resolve on
+GitHub only once that commit is pushed; the documentation test checks relative
+links and will not see them.
 
 ### Phase 2 — Shared verifier launch (about −700)
 
@@ -182,9 +195,9 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 ## Owner decisions
 
 1. **Archive deletion.** `AGENTS.md` requires closure ledgers to be preserved
-   when a plan is archived. Phase 1 assumes "preserved in git history under a
-   tag" satisfies that. If it does not, phase 1 shrinks to steps 2 and 6
-   (about −1,300).
+   when a plan is archived. Decided 2026-11-13: deletion is acceptable
+   provided every reference points at the git permalink of the removed file.
+   Phase 1 step 3 implements that condition.
 2. **How far to go.** Phases 1 and 4 are cleanup. Phase 3 is the only route to
    a materially smaller test and script tree, and it removes coverage.
 3. **Whether phase 2 is worth its verification cost.**
