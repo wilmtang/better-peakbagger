@@ -4,11 +4,14 @@
 import { mountIsland, type Island } from '../../../../src/ui/svelte-island.ts';
 import { projectUnitSettings, type UnitSettingsPatch } from '../../../../options/unit-settings-contract.ts';
 import UnitsIsland from './UnitsIsland.svelte';
+import FailingIsland from './FailingIsland.svelte';
 
 type Props = { settings: ReturnType<typeof projectUnitSettings>; onSave: (patch: UnitSettingsPatch, draft: object) => void };
 
 export interface IslandFixture {
     mount(selector: string, settings: unknown, anchorSelector?: string): void;
+    // Mounts a component whose first effect throws; returns the error message.
+    mountFailing(selector: string): string | null;
     update(settings: unknown): void;
     dispose(): void;
     readonly state: string | null;
@@ -34,6 +37,12 @@ const fixture: IslandFixture = {
                 },
             },
         });
+    },
+    mountFailing(selector) {
+        try {
+            mountIsland(FailingIsland, { target: document.querySelector(selector)!, ownerWindow: window, props: {} });
+            return null;
+        } catch (error) { return (error as Error).message; }
     },
     update(settings) { island?.update({ settings: projectUnitSettings(settings) }); },
     dispose() { island?.dispose(); },

@@ -35,13 +35,10 @@ export function mountIsland<Props extends object>(
     { target, props, ownerWindow, anchor = null }: IslandOptions<Props>,
 ): Island<Props> {
     const reactive = createIslandProps(props);
-    // Components declare props as interfaces, which svelte's `Record<string,
-    // any>` constraint on mount() does not admit; the component and its props
-    // were already checked against each other through `Component<Props>`.
-    const instance = mount(component as unknown as Component<Record<string, unknown>>,
-        { target, anchor: anchor ?? undefined, props: reactive.value as Record<string, unknown> });
-    flushSync();
+    let instance: Record<string, unknown> | null = null;
     let held: Partial<Props> | null = null;
+    // The lifecycle exists before anything renders, so a mount or first-flush
+    // failure can dispose what was created instead of orphaning it.
     const lifecycle = createPageLifecycle({
         ownerWindow,
         onResume: () => {
@@ -53,9 +50,22 @@ export function mountIsland<Props extends object>(
         },
         onDispose: () => {
             held = null;
-            void unmount(instance);
+            if (instance) void unmount(instance);
+            instance = null;
         },
     });
+    try {
+        // Components declare props as interfaces, which svelte's
+        // `Record<string, any>` constraint on mount() does not admit; the
+        // component and its props were already checked against each other
+        // through `Component<Props>`.
+        instance = mount(component as unknown as Component<Record<string, unknown>>,
+            { target, anchor: anchor ?? undefined, props: reactive.value as Record<string, unknown> });
+        flushSync();
+    } catch (error) {
+        lifecycle.dispose();
+        throw error;
+    }
     return Object.freeze({
         get state() { return lifecycle.state; },
         update(patch: Partial<Props>) {

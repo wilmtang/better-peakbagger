@@ -29,6 +29,11 @@ test('Svelte components and rune modules in runtime roots lint as TypeScript', a
     assert.deepEqual(await lint('src/ui/probe.svelte.ts',
         'export function make(): { value: number } {\n    const value = $state({ value: 1 });\n    const unused = 2;\n    return value;\n}\n'),
     ['@typescript-eslint/no-unused-vars:3']);
+    assert.deepEqual(await lint('options/probe-controller.ts', "import Panel from './Panel.svelte';\nimport { tally } from '../src/ui/tally.svelte.ts';\nexport default [Panel, tally];\n"),
+        ['no-restricted-imports:1', 'no-restricted-imports:2'], 'controllers reach components only through the island adapter');
+    assert.deepEqual(await lint('src/ui/svelte-island.ts', "import { createIslandProps } from './svelte-island-props.svelte.ts';\nexport default createIslandProps;\n"), []);
+    const sveltePluginRules = (await eslint.calculateConfigForFile(path.join(root, 'scripts/example.mts'))).rules;
+    assert.equal(Object.keys(sveltePluginRules ?? {}).some(rule => rule.startsWith('svelte/')), false, 'Svelte rules stay on Svelte files');
     assert.deepEqual(await lint('src/ui/probe-any.svelte',
         '<script lang="ts">\n    export const value: any = 1;\n</script>\n'), ['@typescript-eslint/no-explicit-any:2']);
 });
@@ -53,8 +58,13 @@ test('a component and its rune module compile through the normal, minified and i
                 assert.ok(inputs.includes(expected), `${expected} is compiled into the bundle`);
             }
             assert.ok(inputs.some(file => file.startsWith('node_modules/svelte/src/internal/client/')), 'the client runtime is bundled');
-            assert.deepEqual(inputs.filter(file => /node_modules\/(?:svelte\/src\/compiler|acorn|magic-string|esrap|zimmerframe)\//.test(file)), [],
-                'no compiler code ships');
+            // An allowlist: anything else from node_modules, such as the compiler
+            // or its parser dependencies, fails here by name.
+            const runtime = /^node_modules\/(?:svelte\/src\/(?:internal\/(?:client|shared|flags)\/.+|internal\/disclose-version\.js|(?:attachments|reactivity|store|legacy)\/.+|[^/]+\.js)|esm-env\/(?:index|true|false)\.js|clsx\/dist\/.+)$/;
+            assert.deepEqual(inputs.filter(file => file.startsWith('node_modules/') && !runtime.test(file)), [],
+                'only the Svelte client runtime and its two small dependencies ship');
+            assert.ok(inputs.includes('node_modules/esm-env/false.js') && !inputs.includes('node_modules/esm-env/dev-fallback.js'),
+                'the runtime\'s DEV flag is pinned to production');
             const code = await readFile(path.join(outputDir, 'svelte-fixture', 'island.js'), 'utf8');
             assert.doesNotMatch(code, /\bnew Function\s*\(|\beval\s*\(|\bimportScripts\s*\(|\bimport\s*\(/, 'no runtime code generation or loading');
             // Exactly these, none loadable: XML namespace identifiers and
@@ -63,11 +73,21 @@ test('a component and its rune module compile through the normal, minified and i
             const origins = [...new Set([...code.matchAll(/https?:\/\/[\w.-]+/g)].map(match => match[0]))].sort();
             assert.deepEqual(origins, ['http://www.w3.org', 'https://github.com', 'https://relay.bpb.example', 'https://svelte.dev']);
             assert.doesNotMatch(code, /\bfetch\s*\(|XMLHttpRequest|WebSocket/, 'the fixture bundle makes no network request');
+            assert.doesNotMatch(code, /globalThis\.process/, 'no environment probe decides development behavior at runtime');
             assert.match(code, /bpb-units-island/, 'component styles are injected from the bundle');
             assert.equal(/sourceMappingURL=/.test(code), !minify);
             outputs.set(minify ? 'minified' : 'normal', code);
         }
         assert.ok(outputs.get('minified')!.length < outputs.get('normal')!.length);
+        // Builds are reproducible from any working directory: scoped class
+        // names hash the CSS rather than a cwd-relative file name.
+        const elsewhere = path.join(directory, 'elsewhere');
+        const previous = process.cwd();
+        try {
+            process.chdir(directory);
+            await build(esbuildOptions(fixtureEntry, { minify: true, outputDir: elsewhere }));
+        } finally { process.chdir(previous); }
+        assert.equal(await readFile(path.join(elsewhere, 'svelte-fixture', 'island.js'), 'utf8'), outputs.get('minified'));
         const incremental = await context(esbuildOptions(fixtureEntry, { minify: false, outputDir: path.join(directory, 'incremental') }));
         try {
             for (let round = 0; round < 2; round++) {
@@ -95,9 +115,13 @@ test('svelte-check accepts the valid fixture and rejects invalid props and missi
     assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
     const errors = invalid.stdout.split('\n').filter(line => / ERROR /.test(line))
         .map(line => line.replace(/^\d+ ERROR /, '').replace(/\\n[\s\S]*$/, '"'));
+    // Exact messages on purpose: a checker release that stops reporting one of
+    // these, or reports it differently, must be reviewed rather than auto-merged.
     assert.deepEqual(errors.sort(), [
         '"test/fixtures/svelte/invalid/BadChild.svelte" 6:14 "Type \'string\' is not assignable to type \'UnitSettings\'."',
         '"test/fixtures/svelte/invalid/MissingName.svelte" 6:34 "Cannot find name \'coutn\'. Did you mean \'count\'?"',
+        '"test/fixtures/svelte/invalid/bad-island.ts" 5:75 "Type \'string\' is not assignable to type \'UnitSettings\'."',
+        '"test/fixtures/svelte/invalid/bad-island.ts" 6:17 "Type \'number\' is not assignable to type \'UnitSettings\'."',
         '"test/fixtures/svelte/invalid/bad-props.ts" 5:54 "Type \'number\' is not assignable to type \'UnitSettings\'."',
     ]);
 });

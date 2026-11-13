@@ -419,13 +419,16 @@ manifest, execution worlds, worker and bridge.
 Status: complete on November 13, 2026.
 
 - **Fixed and verified:**
-  - The set resolves cleanly against TypeScript 6.0.3, ESLint 10.14, esbuild
-    0.28.2 and Node 26 locally. The three tools are in `DEVELOPMENT_TOOLS`,
+  - The set resolves cleanly against TypeScript 6.0.3, ESLint 10.14 and
+    esbuild 0.28.2. Local runs used Node 26; CI's Node 24 has not run them. The three tools are in `DEVELOPMENT_TOOLS`,
     and the four packages share a `svelte` Dependabot group.
   - [svelte-build.mts](../../scripts/svelte-build.mts) gives every bundle one
     compiler definition: runes, production client output in every mode, and
-    injected styles. All 212 development and minified outputs are
-    byte-identical with the plugin added.
+    injected styles, with scoped style names hashed from CSS rather than a
+    cwd-relative path, the runtime's development flag pinned off and the
+    plugin's mtime cache disabled. Every file in `dist/` (212 in the
+    development build, including all 67 bundles and maps) and every minified
+    output is byte-identical with the plugin added.
   - `npm run typecheck` adds `svelte-check --tsconfig ./tsconfig.check.json`.
   - ESLint lints runtime-root components and rune modules as TypeScript and
     requires `<script lang="ts">`.
@@ -446,16 +449,28 @@ Status: complete on November 13, 2026.
     Controller updates re-render. A persisted pagehide holds updates until
     pageshow. A final pagehide removes only the island's DOM and ignores later
     updates. A re-mount works, and legacy listeners and node identity survive
-    throughout.
+    throughout, including after a re-mount and a direct `dispose()`. A
+    component whose first effect throws reports the error and leaves no DOM.
   - The case failed in both engines when the adapter applied updates while
-    suspended, and when disposal skipped unmounting.
+    suspended, when disposal skipped unmounting, and when a failed first
+    flush was not disposed.
+  - svelte-check also rejects wrong props passed to `mountIsland` and to
+    `island.update`; the build test allowlists every bundled `node_modules`
+    file, asserts the runtime's development flag is pinned, and rebuilds from
+    another working directory to compare bytes.
 - **Intentionally not changed:**
   - No production surface imports a component. The `svelte` runtime stays
     counted as shipped by the audit, the conservative side.
-  - Bundles use no `production` resolve condition, because it would change
-    existing outputs. Svelte's runtime therefore detects dev mode from
-    `globalThis.process`, which extension contexts lack, so it runs its
-    production paths but carries its dev warning strings.
+  - Bundles use no global `production` resolve condition, because it would
+    change existing outputs; only Svelte's `esm-env/development` import is
+    pinned to its production module.
+  - `.svelte.ts` source maps point at type-stripped JavaScript labelled with
+    the `.ts` name.
+  - Exact svelte-check messages and bundle origins are pinned on purpose, so a
+    `svelte` group update that changes them needs review.
+  - The adapter's ordinary TypeScript imports its one rune module; ESLint
+    forbids any other runtime TypeScript from importing components or rune
+    modules, and island owners are tested through bundles or the DOM tier.
 - **Changed but not fully proven:**
   - Injected component styles under production CSP, AMO review and the Chrome
     128/Firefox 152 floors.

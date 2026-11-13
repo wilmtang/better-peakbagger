@@ -127,6 +127,19 @@ export default defineDomSuite({
             await page.waitForFunction(() => (globalThis as unknown as FixtureWindow).__bpbIslandFixture.saves.length === 2);
             assert.equal((await call(page, 'saves') as IslandFixture['saves'])[1]!.patch.units, 'metric');
             assert.equal(await islandState(page), 'active');
+            assert.deepEqual(await legacyIntact(page), { clicked: true, sibling: true, order: ['legacy-sibling', 'bpb-units-island'] });
+
+            // Disabling the feature disposes directly, without a page transition.
+            await call(page, 'dispose()');
+            assert.equal(await islandState(page), 'disposed');
+            await page.waitForFunction(() => !document.querySelector('#host .bpb-units-island'));
+            assert.deepEqual(await legacyIntact(page), { clicked: true, sibling: true, order: ['legacy-sibling'] });
+
+            // A component whose first effect throws leaves nothing behind: the
+            // caller gets the error and the half-mounted DOM is removed.
+            assert.equal(await call(page, 'mountFailing(\'#host\')'), 'fixture effect failed');
+            await page.waitForFunction(() => !document.querySelector('.bpb-failing-island'));
+            assert.deepEqual(await legacyIntact(page), { clicked: true, sibling: true, order: ['legacy-sibling'] });
         },
     }],
 });

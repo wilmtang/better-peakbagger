@@ -83,8 +83,13 @@ one output file. `npm run typecheck` runs
 ESLint lints components and rune modules in the runtime roots with the
 TypeScript rules, requiring `<script lang="ts">`. Mount a component beside
 legacy DOM through [svelte-island.ts](../src/ui/svelte-island.ts), which owns
-mount, prop updates and BFCache-aware disposal; controllers never import rune
-modules directly. Test-only components live in `test/fixtures/svelte/`, with
+mount, prop updates and BFCache-aware disposal, and removes a half-mounted
+component if its first update throws. ESLint forbids other runtime TypeScript
+from importing components or rune modules. Svelte resolves to its server build
+in Node and rune modules only run compiled, so test an island's owner through
+its built bundle or the browser DOM tier, not unbundled jsdom imports. Scoped
+style names hash the CSS, so builds are identical from any working directory,
+and the runtime's development flag is pinned off. Test-only components live in `test/fixtures/svelte/`, with
 `valid.check.json` and `invalid.check.json` as their explicitly selected checking
 projects; [svelte-tooling.test.mts](../test/project/svelte-tooling.test.mts)
 compiles, checks, lints and watches them, and
