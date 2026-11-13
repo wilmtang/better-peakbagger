@@ -152,7 +152,8 @@ export default defineConfig([
     {
         // Ordinary runtime TypeScript stays independent of compiled Svelte:
         // it reaches a component only through the island adapter.
-        files: runtimeRoots.map(directory => `${directory}/**/*.ts`),
+        // Legacy runtime JavaScript is covered too until M7 converts it.
+        files: runtimeRoots.map(directory => `${directory}/**/*.{js,mjs,ts}`),
         ignores: [...svelteModuleFiles, 'src/ui/svelte-island.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: [{

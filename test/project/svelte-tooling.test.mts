@@ -31,6 +31,8 @@ test('Svelte components and rune modules in runtime roots lint as TypeScript', a
     ['@typescript-eslint/no-unused-vars:3']);
     assert.deepEqual(await lint('options/probe-controller.ts', "import Panel from './Panel.svelte';\nimport { tally } from '../src/ui/tally.svelte.ts';\nexport default [Panel, tally];\n"),
         ['no-restricted-imports:1', 'no-restricted-imports:2'], 'controllers reach components only through the island adapter');
+    assert.deepEqual(await lint('options/probe-legacy.js', "import Panel from './Panel.svelte';\nexport default Panel;\n"),
+        ['no-restricted-imports:1'], 'legacy runtime JavaScript is held to the same boundary');
     assert.deepEqual(await lint('src/ui/svelte-island.ts', "import { createIslandProps } from './svelte-island-props.svelte.ts';\nexport default createIslandProps;\n"), []);
     const sveltePluginRules = (await eslint.calculateConfigForFile(path.join(root, 'scripts/example.mts'))).rules;
     assert.equal(Object.keys(sveltePluginRules ?? {}).some(rule => rule.startsWith('svelte/')), false, 'Svelte rules stay on Svelte files');

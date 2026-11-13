@@ -140,6 +140,13 @@ export default defineDomSuite({
             assert.equal(await call(page, 'mountFailing(\'#host\')'), 'fixture effect failed');
             await page.waitForFunction(() => !document.querySelector('.bpb-failing-island'));
             assert.deepEqual(await legacyIntact(page), { clicked: true, sibling: true, order: ['legacy-sibling'] });
+
+            // The runtime recovers: a later island mounts and updates normally.
+            await call(page, 'mount(\'#host\', { units: \'metric\' })');
+            await page.locator('#host .bpb-units-island').waitFor();
+            await call(page, 'update({ units: \'imperial\' })');
+            assert.equal(await page.locator('#host .bpb-units-island select').inputValue(), 'imperial');
+            assert.equal(await islandState(page), 'active');
         },
     }],
 });
