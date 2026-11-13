@@ -1362,21 +1362,6 @@ for (const [hash, parentHash] of [['#capture-gpx', '#capture'], ['#map-handoffs'
     });
 }
 
-test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
-    // jsdom reports every offset/rect as 0 and nothing scrolls; the scroll
-    // handler must not throw and must keep exactly one link active. The offset
-    // math itself is only provable in a real browser (see the plan's step 5).
-    const dom = await loadOptions({ enableReportEditor: false });
-    const content = dom.window.document.querySelector('.content');
-    assert.doesNotThrow(() => content.dispatchEvent(new dom.window.Event('scroll')));
-    assert.equal(activeLinks(dom).length, 1);
-    const active = activeLinks(dom)[0];
-    assert.equal(active.closest('[hidden]'), null,
-        'a hidden editor-dependent nav item must not become current');
-    assert.equal(el(dom, active.hash.slice(1)).hidden, false,
-        'the scroll-spy must resolve to a visible settings section');
-});
-
 test('Garmin credential import names the key and requires API permission before writing', async () => {
     const messages: StubMessage[] = []; const requested: unknown[] = [];
     const dom = await loadOptions({ theme: 'dark' }, { prepareChrome: (chrome: ChromeStub) => {

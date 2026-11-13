@@ -9,6 +9,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { fixtureEvidenceUrl, retainBrowserFailure, verificationScreenshots, watchFixtureRequests } from '../../scripts/browser-verification-evidence.mjs';
 
+// The evidence helpers are JavaScript whose parameter types are inferred from
+// their defaults; these are the option bags and arguments the tests exercise.
+const retain = retainBrowserFailure as unknown as (options: Record<string, unknown>) => Promise<void>;
+const evidenceUrl = fixtureEvidenceUrl as (value: string, fixtureOrigin: string, extensionBaseUrl?: string | null) => string | null;
+interface ScreenshotOptions { mask: unknown[]; fullPage: boolean }
+
 test('reference mode suppresses passing intermediate screenshots without disabling reference captures', () => {
     assert.equal(verificationScreenshots('references')(), false);
     assert.equal(verificationScreenshots('references')(true), true);
@@ -19,11 +25,11 @@ test('reference mode suppresses passing intermediate screenshots without disabli
 
 test('explicit Firefox screenshot transport is restricted to the fixture origin', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-fixture-evidence-'));
-    const captures = [];
+    const captures: string[] = [];
     try {
         for (const url of [`${origin}/peak.aspx`, 'https://live.example/peak.aspx', 'moz-extension://verification-only/options/options.html']) {
-            await retainBrowserFailure({ directory, fixtureOrigin: origin, extensionBaseUrl: 'moz-extension://verification-only/',
-                fixtureScreenshot: async file => captures.push(file), driver: {
+            await retain({ directory, fixtureOrigin: origin, extensionBaseUrl: 'moz-extension://verification-only/',
+                fixtureScreenshot: async (file: string) => captures.push(file), driver: {
                     getCapabilities: async () => ({ getBrowserVersion: () => '158' }),
                     getCurrentUrl: async () => url, executeScript: async () => ({ readyState: 'complete' }),
                 } });
@@ -35,23 +41,23 @@ test('explicit Firefox screenshot transport is restricted to the fixture origin'
 const origin = 'https://www.peakbagger.com:12345';
 
 test('failure evidence excludes other origins and URL credentials, queries, and fragments', () => {
-    assert.equal(fixtureEvidenceUrl(`${origin}/climber/ascentedit.aspx?token=secret#private`, origin),
+    assert.equal(evidenceUrl(`${origin}/climber/ascentedit.aspx?token=secret#private`, origin),
         `${origin}/climber/ascentedit.aspx`);
-    assert.equal(fixtureEvidenceUrl('https://user:password@www.peakbagger.com:12345/a', origin), `${origin}/a`);
-    assert.equal(fixtureEvidenceUrl('https://www.peakbagger.com/a', origin), null);
-    assert.equal(fixtureEvidenceUrl('https://connect.garmin.com/modern/activity/1', origin), null);
-    assert.equal(fixtureEvidenceUrl('not a URL', origin), null);
+    assert.equal(evidenceUrl('https://user:password@www.peakbagger.com:12345/a', origin), `${origin}/a`);
+    assert.equal(evidenceUrl('https://www.peakbagger.com/a', origin), null);
+    assert.equal(evidenceUrl('https://connect.garmin.com/modern/activity/1', origin), null);
+    assert.equal(evidenceUrl('not a URL', origin), null);
 });
 
 test('Firefox failure evidence includes only the identified isolated extension without URL secrets', async () => {
     const extensionBaseUrl = 'moz-extension://verification-only/';
     const target = `${extensionBaseUrl}options/options.html`;
-    assert.equal(fixtureEvidenceUrl(`${target}?token=secret#github`, origin, extensionBaseUrl), target);
-    assert.equal(fixtureEvidenceUrl('moz-extension://another-extension/options/options.html', origin, extensionBaseUrl), null);
-    assert.equal(fixtureEvidenceUrl('chrome-extension://verification-only/options/options.html', origin, extensionBaseUrl), null);
+    assert.equal(evidenceUrl(`${target}?token=secret#github`, origin, extensionBaseUrl), target);
+    assert.equal(evidenceUrl('moz-extension://another-extension/options/options.html', origin, extensionBaseUrl), null);
+    assert.equal(evidenceUrl('chrome-extension://verification-only/options/options.html', origin, extensionBaseUrl), null);
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-extension-evidence-'));
     try {
-        await retainBrowserFailure({ directory, fixtureOrigin: origin, extensionBaseUrl, driver: {
+        await retain({ directory, fixtureOrigin: origin, extensionBaseUrl, driver: {
             getCapabilities: async () => ({ getBrowserVersion: () => '157' }),
             getCurrentUrl: async () => `${target}?token=secret#github`,
             executeScript: async () => ({ readyState: 'complete', formFields: 17 }),
@@ -84,15 +90,15 @@ test('pending and failed request evidence remains bounded without storing reques
 
 test('an inaccessible page cannot block evidence for other pages or teardown', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-evidence-'));
-    let screenshotOptions;
+    let screenshotOptions: ScreenshotOptions | undefined;
     const page = {
         url: () => `${origin}/ok?secret=private`,
         evaluate: async () => ({ readyState: 'complete', canvases: 1 }),
-        locator: selector => selector,
-        screenshot: async options => { screenshotOptions = options; },
+        locator: (selector: string) => selector,
+        screenshot: async (options: ScreenshotOptions) => { screenshotOptions = options; },
     };
     try {
-        await retainBrowserFailure({ directory, fixtureOrigin: origin, timeoutMs: 20, context: {
+        await retain({ directory, fixtureOrigin: origin, timeoutMs: 20, context: {
             browser: () => ({ version: () => 'test browser' }),
             pages: () => [
                 { ...page, url: () => `${origin}/hung`, evaluate: () => new Promise(() => {}) },
@@ -104,12 +110,12 @@ test('an inaccessible page cannot block evidence for other pages or teardown', a
         assert.equal(evidence.pages.length, 2);
         assert.equal(evidence.pages[0].inaccessible, true);
         assert.equal(evidence.pages[1].state.canvases, 1);
-        assert.deepEqual(screenshotOptions.mask, ['input,textarea,[contenteditable]']);
-        assert.equal(screenshotOptions.fullPage, false);
+        assert.deepEqual(screenshotOptions!.mask, ['input,textarea,[contenteditable]']);
+        assert.equal(screenshotOptions!.fullPage, false);
         assert.doesNotMatch(JSON.stringify(evidence), /secret|private|live\.example/);
         // A destination write failure also resolves: the caller's primary
         // error remains the one supplied to its resource-stack teardown.
-        await retainBrowserFailure({ directory: path.join(directory, 'state.json'), context: {} });
+        await retain({ directory: path.join(directory, 'state.json'), context: {} });
     } finally {
         await rm(directory, { recursive: true, force: true });
     }
@@ -118,7 +124,7 @@ test('an inaccessible page cannot block evidence for other pages or teardown', a
 test('Firefox evidence retains structural state without screenshotting form values', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-firefox-evidence-'));
     try {
-        await retainBrowserFailure({ directory, fixtureOrigin: origin, driver: {
+        await retain({ directory, fixtureOrigin: origin, driver: {
             getCapabilities: async () => ({ getBrowserVersion: () => '157' }),
             getCurrentUrl: async () => `${origin}/edit?secret=private`,
             executeScript: async () => ({ readyState: 'interactive', formFields: 12 }),
@@ -136,8 +142,8 @@ test('Firefox evidence retains structural state without screenshotting form valu
 test('CI preserves pipeline failures and uploads bounded browser evidence only on failure', async () => {
     const workflow = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
     assert.match(workflow, /defaults:\s+run:\s+shell: bash/);
-    assert.equal(workflow.match(/name: Retain browser failure evidence\s+if: failure\(\)/g)?.length, 6);
-    assert.equal(workflow.match(/BPB_VERIFY_ARTIFACTS: browser-evidence/g)?.length, 7);
+    assert.equal(workflow.match(/name: Retain browser failure evidence\s+if: failure\(\)/g)?.length, 7);
+    assert.equal(workflow.match(/BPB_VERIFY_ARTIFACTS: browser-evidence/g)?.length, 8);
     assert.match(workflow, /npm run verify -- terrain chrome browser-evidence\/terrain 2>&1 \| tee/);
     assert.doesNotMatch(workflow, /continue-on-error: true/);
 });

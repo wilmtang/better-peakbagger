@@ -20,6 +20,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'photo-output': [['verify-photo-output.mts']],
     'layout-stability': [['verify-layout-stability.mts']],
     'fixture-preflight': [['verify-fixture-preflight.mjs']],
+    dom: [['verify-dom.mts']],
     'gpx-header': [['verify-gpx-header.mjs']],
     'multi-summit': [['verify-multi-summit.mjs']],
     'draft-recovery': [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']],

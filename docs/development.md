@@ -392,6 +392,18 @@ script is added or removed without updating it.
 
 ### Verification targets
 
+`npm run verify -- dom [chrome] [firefox] [--case TEXT] [--dist DIR]` runs the
+browser DOM tier: the suites in `test/dom/`, each case in a fresh context of one
+hidden browser per engine (Chrome for Testing in new headless mode, and
+Playwright's Firefox). Pages load at their real HTTPS Peakbagger URL entirely
+through request routing; any other request is aborted, a `chrome`/`browser` stub
+is installed by init script, and built bundles come from `dist/` or `--dist`, a
+disposable copy for proving a case fails. Retries are off, unknown arguments and
+an empty selection are rejected, and `BPB_VERIFY_ARTIFACTS` retains failure
+evidence. CI runs it in the required `dom-tier` job. It does not load the
+extension, Playwright's Firefox is a patched build, and hidden runs do not
+establish native focus or window placement.
+
 Pass one target after `npm run verify --`. Arguments after the target go to each
 selected verifier; there is no second npm `--` separator. For example:
 
@@ -721,6 +733,15 @@ build config does not ship.
   ships and needs no Better Peakbagger module globals. Feed settings through a
   `chrome.storage` stub (`makeChromeStub`), not a `globalThis.BPBSettings` stub
   — modules import settings now.
+- **Behaviour that depends on layout, scrolling, trusted input, focus or
+  browser-specific DOM**: write a new test for the browser DOM tier in
+  `test/dom/*.dom.mts` (a default-exported `defineDomSuite` from
+  [dom-tier.mts](../scripts/dom-tier.mts)), not in jsdom. It runs in hidden
+  Chromium and Firefox through `npm run verify -- dom`, never in `npm test`.
+
+Routing rule: pure logic stays in `node:test` with no DOM; new DOM-behaviour
+tests use the browser tier; legacy jsdom tests stay on typed jsdom until M7.5
+of the [stack adoption plan](plans/modern-stack-adoption.md) moves them.
 
 Keep degradation tests for genuinely absent third-party globals where the
 runtime supports that fallback. Do not recreate removed `BPB*` module globals

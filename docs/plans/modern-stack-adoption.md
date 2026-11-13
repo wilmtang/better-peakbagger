@@ -57,8 +57,7 @@ evidence.
 
 ## Current progress
 
-**Next: M4.5, then M5.** M4.5's typing step is
-small and unblocks every test conversion. M0–M4 are
+**Next: M5.** M0–M4.5 are
 complete; M7's pure-TS batches are also unblocked by M3. Production Svelte adoption has not started: nothing ships
 through Svelte, and Svelte is not installed.
 
@@ -69,7 +68,7 @@ through Svelte, and Svelte is not installed.
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
-| M4.5 | Step 1 done; browser tier not started | `@types/jsdom` 30 types every jsdom test; [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest of the Node project without it. No suppressed jsdom import or hand-typed constructor remains. No `verify` target for DOM-behavior tests exists yet. |
+| M4.5 | Done | `@types/jsdom` 30 types every jsdom test; [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
 | M6 | Not started | `options/unit-settings.ts` is typed but still imperative DOM; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
 | M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
@@ -294,6 +293,35 @@ Step 1 status (November 13, 2026):
   shipped code changed. Ten browser-driving verify scripts gained a
   `/// <reference lib="dom" />` they previously inherited; they were
   typechecked, not run.
+
+Steps 2–4 status (November 13, 2026):
+
+- **Fixed and verified:** [dom-tier.mts](../../scripts/dom-tier.mts) and
+  `npm run verify -- dom` run `test/dom/*.dom.mts` with one browser per engine
+  and a fresh context per case: Chrome for Testing through `channel:
+  'chromium'` after `assertChromeLaunchAllowed()`, and Playwright's Firefox.
+  Pages load at their real HTTPS Peakbagger URL purely through request
+  routing (every other request is aborted), with an init-script
+  `chrome`/`browser` stub and built bundles from `dist/` or a disposable
+  `--dist` copy. Unknown arguments and empty selections are rejected,
+  retries are off, failure evidence goes through `retainBrowserFailure`, and
+  the required `chrome-required` aggregate now needs the `dom-tier` job.
+  [options-scroll-spy.dom.mts](../../test/dom/options-scroll-spy.dom.mts)
+  replaces the jsdom "zero-layout world" test, which could only show the spy
+  did not throw. It proves the 40px activation marker, trusted-click
+  alignment to the scroll margin, and that hidden editor navigation never
+  becomes current. Against disposable copies of `dist/`, a marker of 0 failed
+  the first case in both engines, and removing the hidden-entry filter failed
+  the third in Chromium. All six cases pass in Chromium 156 and Firefox 157,
+  hidden, at 1000×760. The routing rule is recorded in
+  [development.md](../development.md).
+- **Intentionally not changed:** the tier does not load the extension. The
+  stub answers unknown runtime routes with `{}` and keeps settings writes
+  page-local. Bundles are injected by each case (`inject`) rather than derived
+  from the manifest, because the tier never reproduces execution worlds.
+- **Changed but not fully proven:** hosted CI has not run the new `dom-tier`
+  job yet. The tier relies on `setup-verification` installing the selected
+  browser, as the `fixture-preflight` job does.
 
 `npm test` evaluates the shipped IIFE bundles in jsdom: 118 test files construct
 it 297 times. jsdom ships no type declarations, so 18 converted tests suppress
