@@ -12,7 +12,7 @@ import { JSDOM, type ConstructorOptions, type DOMWindow } from 'jsdom';
 import type { PageDocument, TestWindow } from './page-types.mts';
 
 // `chrome` is whatever stub the test installs, not the real extension API.
-export type FixtureWindow = Omit<TestWindow, 'document' | 'chrome'> & { document: PageDocument; [stub: string]: unknown };
+export type FixtureWindow = Omit<TestWindow, 'document' | 'chrome'> & { document: PageDocument; chrome?: unknown };
 
 export interface FixtureDom extends Omit<JSDOM, 'window'> {
     readonly window: FixtureWindow;
@@ -24,4 +24,4 @@ export const fixtureDom = (html?: string, options?: ConstructorOptions): Fixture
 // jsdom declares its window apart from the browser's global object, but it is
 // the global these tests evaluate bundles and pass to production owners
 // against. This is the one place that asserts the stand-in.
-export const browserWindow = <W extends TestWindow = TestWindow>(window: DOMWindow) => window as unknown as W;
+export const browserWindow = <W extends TestWindow = TestWindow>(window: DOMWindow | FixtureWindow) => window as unknown as W;

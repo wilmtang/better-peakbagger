@@ -9,6 +9,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
+import ts from 'typescript';
 import { AUTHORED_SOURCE_ROOTS } from '../../scripts/build-config.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -110,6 +111,24 @@ test('the Node typecheck gives DOM types only to files that reach jsdom, extensi
     }
 });
 
+test('the Node program is rejected when a dependency pulls DOM declarations into it', async () => {
+    const { domLibraryFiles, parseProject } = await import('../../scripts/typecheck-node.mts');
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-typecheck-leak-'));
+    try {
+        await mkdir(path.join(directory, 'node_modules', 'leaky'), { recursive: true });
+        await writeFile(path.join(directory, 'node_modules', 'leaky', 'package.json'), JSON.stringify({ name: 'leaky', types: 'index.d.ts' }));
+        await writeFile(path.join(directory, 'node_modules', 'leaky', 'index.d.ts'), '/// <reference lib="dom" />\nexport declare const leak: number;\n');
+        await writeFile(path.join(directory, 'pure.mts'), "import { leak } from 'leaky';\nexport default leak;\n");
+        await writeFile(path.join(directory, 'clean.mts'), 'export const clean = 1;\n');
+        const { options } = parseProject(path.join(root, 'tsconfig.node.check.json'));
+        const program = (files: string[]) => ts.createProgram({ rootNames: files.map(file => path.join(directory, file)), options });
+        assert.deepEqual(domLibraryFiles(program(['clean.mts'])), []);
+        assert.ok(domLibraryFiles(program(['pure.mts'])).some(file => path.basename(file) === 'lib.dom.d.ts'));
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
 test('jsdom tests use the published declarations, with no suppressed or hand-typed jsdom import', async () => {
     const { parseProject } = await import('../../scripts/typecheck-node.mts');
     const dom = JSON.parse(await readFile(path.join(root, 'tsconfig.dom.check.json'), 'utf8'));
@@ -121,10 +140,18 @@ test('jsdom tests use the published declarations, with no suppressed or hand-typ
     assert.equal(pkg.devDependencies['@types/jsdom'].split('.')[0], pkg.devDependencies.jsdom.replace(/^\^/, '').split('.')[0],
         'jsdom and its declarations share a major');
     const offenders: string[] = [];
-    for (const file of parseProject(path.join(root, 'tsconfig.node.check.json')).fileNames) {
+    // This file names the forbidden patterns in its own fixtures.
+    const self = fileURLToPath(import.meta.url);
+    for (const file of parseProject(path.join(root, 'tsconfig.node.check.json')).fileNames.filter(name => path.resolve(name) !== self)) {
         const text = await readFile(file, 'utf8');
-        if (/@ts-(?:expect-error|ignore|nocheck)[^\n]*\n[^\n]*['"]jsdom['"]/.test(text)
-            || /[rR]equire\([^)]*\)\(\s*['"]jsdom['"]\s*\)/.test(text)) offenders.push(path.relative(root, file));
+        const jsdomImport = /^.*['"]jsdom(?:\/[^'"]*)?['"].*$/gm;
+        const lines = text.split('\n');
+        const suppressedImport = [...text.matchAll(jsdomImport)].some(match => {
+            const line = text.slice(0, match.index).split('\n').length - 1;
+            return lines.slice(Math.max(0, line - 3), line).some(previous => /@ts-(?:expect-error|ignore)/.test(previous));
+        });
+        if (suppressedImport || /@ts-nocheck/.test(text) || /declare\s+module\s+['"]jsdom['"]/.test(text)
+            || (/createRequire/.test(text) && /\(\s*['"]jsdom['"]\s*\)/.test(text))) offenders.push(path.relative(root, file));
     }
     assert.deepEqual(offenders, []);
 });

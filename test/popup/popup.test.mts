@@ -199,7 +199,7 @@ test('popup reads cached results before units resolve and delays the first resul
     const settings = new Promise(resolve => { resolveSettings = resolve; });
     const messages: PopupMessage[] = [];
     const diagnostics = [];
-    dom.window.BPB_CAPTURE_DIAGNOSTICS = true;
+    (dom.window as { BPB_CAPTURE_DIAGNOSTICS?: boolean }).BPB_CAPTURE_DIAGNOSTICS = true;
     dom.window.console.debug = (...args: unknown[]) => diagnostics.push(args);
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },

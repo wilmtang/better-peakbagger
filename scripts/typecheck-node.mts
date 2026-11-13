@@ -1,12 +1,14 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Checks the Node TypeScript project as two programs. Files whose static
-// import closure reaches `jsdom` drive pages and are checked with the DOM
-// library (tsconfig.dom.check.json); every other script, test and tool is
-// checked without DOM globals (tsconfig.node.check.json), so Node code cannot
-// silently start depending on browser types. The split follows the imports
-// themselves, so there is no hand-kept list of jsdom tests to drift.
+// Checks the Node TypeScript project as two programs. Files that need DOM
+// types (see domRootFiles: their static, dynamic or type-only import closure
+// reaches jsdom or extension source, or they declare a DOM lib reference) are
+// checked with the DOM library (tsconfig.dom.check.json); every other script,
+// test and tool is checked without DOM globals (tsconfig.node.check.json), so
+// Node code cannot silently start depending on browser types. The split
+// follows the files themselves, so there is no hand-kept list to drift, and
+// the Node program is rejected if a dependency's declarations pull DOM in.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -67,21 +69,34 @@ export const domRootFiles = (fileNames: readonly string[], options: ts.CompilerO
 // The DOM project lists no files of its own: its roots come from the split.
 const NO_INPUTS = new Set([18002, 18003]);
 
-const check = (label: string, fileNames: string[], options: ts.CompilerOptions): readonly ts.Diagnostic[] => {
+const createChecked = (label: string, fileNames: string[], options: ts.CompilerOptions) => {
     if (!fileNames.length) throw new Error(`The ${label} checking program has no files.`);
-    const program = ts.createProgram({ rootNames: fileNames, options });
-    return ts.getPreEmitDiagnostics(program);
+    return ts.createProgram({ rootNames: fileNames, options });
 };
+
+// DOM library files a program loaded, for example through a dependency's
+// `/// <reference lib="dom" />`; the root-file split cannot see those.
+export const domLibraryFiles = (program: ts.Program): string[] => program.getSourceFiles()
+    .map(file => file.fileName).filter(file => /[\\/]lib\.dom(?:\.[\w.]+)?\.d\.ts$/.test(file));
+
+const leakDiagnostic = (files: string[]): ts.Diagnostic => ({
+    category: ts.DiagnosticCategory.Error, code: 0, file: undefined, start: undefined, length: undefined,
+    messageText: `The Node checking program loaded DOM declarations (${files.map(file => path.basename(file)).join(', ')}); `
+        + 'a dependency or reference pulled them in. Move the importing file to the DOM program or drop the reference.',
+});
 
 export const runNodeTypecheck = (cwd = root): number => {
     const node = parseProject(path.join(cwd, 'tsconfig.node.check.json'));
     const dom = parseProject(path.join(cwd, 'tsconfig.dom.check.json'));
     const errors = [...node.errors, ...dom.errors.filter(error => !NO_INPUTS.has(error.code))];
     const domFiles = new Set(domRootFiles(node.fileNames, node.options, cwd));
+    const nodeProgram = createChecked('Node', node.fileNames.filter(file => !domFiles.has(file)), node.options);
+    const leaked = domLibraryFiles(nodeProgram);
     const diagnostics = [
         ...errors,
-        ...check('Node', node.fileNames.filter(file => !domFiles.has(file)), node.options),
-        ...check('DOM test', [...domFiles], dom.options),
+        ...(leaked.length ? [leakDiagnostic(leaked)] : []),
+        ...ts.getPreEmitDiagnostics(nodeProgram),
+        ...ts.getPreEmitDiagnostics(createChecked('DOM test', [...domFiles], dom.options)),
     ];
     if (diagnostics.length) {
         const host: ts.FormatDiagnosticsHost = {

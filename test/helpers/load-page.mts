@@ -56,7 +56,7 @@ export interface PageChrome extends ChromeStub {
 
 // A jsdom page whose document lookups are typed as this repository's known
 // fixture markup (see page-types.mts), plus the extension stub it runs with.
-export type PageWindow = Omit<TestWindow, 'document' | 'chrome'> & { document: PageDocument; chrome: PageChrome; [stub: string]: unknown };
+export type PageWindow = Omit<TestWindow, 'document' | 'chrome'> & { document: PageDocument; chrome: PageChrome };
 export interface LoadedPage extends Omit<JSDOM, 'window'> {
     readonly window: PageWindow;
     chrome: PageChrome;

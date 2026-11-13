@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtureDom } from '../helpers/page-dom.mts';
+import { browserWindow, fixtureDom } from '../helpers/page-dom.mts';
 import { rect } from '../helpers/page-types.mts';
 import { installMapLayers } from '../../src/maps/map-layers.ts';
 
@@ -41,11 +41,11 @@ function setup(terrain = false, { preferences = true } = {}) {
     divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) });
     win.postMessage = ((message: Posted) => messages.push(message)) as typeof win.postMessage;
     // The stubbed window carries only the Leaflet globals the owner reads.
-    const owner = installMapLayers(win as unknown as OwnerWindow);
+    const owner = installMapLayers(browserWindow<OwnerWindow>(win));
     const send = (detail: Record<string, unknown>, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
-        source: win as unknown as Window, origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
+        source: browserWindow(win), origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
     if (preferences) send({ type: 'preferences', snotel: true });
-    if (terrain) { win.dispatchEvent(new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type: 'init' } })); send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
+    if (terrain) { win.dispatchEvent(new win.MessageEvent('message', { source: browserWindow(win), origin: win.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type: 'init' } })); send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input')!.click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
     const panStart = () => { for (const handler of events.get('movestart') || []) handler({ target: map }); };

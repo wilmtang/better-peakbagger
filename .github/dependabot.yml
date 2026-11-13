@@ -39,8 +39,8 @@ updates:
     # TipTap also uses exact manifest pins: untouched caret ranges previously
     # resolved newer siblings despite this strategy (PR #19).
     versioning-strategy: increase
-    # One per group.
-    open-pull-requests-limit: 3
+    # One per version-update group.
+    open-pull-requests-limit: 5
     # Version updates wait out their initial release churn. Security updates
     # ignore cooldown and still arrive immediately.
     cooldown:
@@ -52,9 +52,12 @@ updates:
       - dependency-name: typescript
         update-types: [version-update:semver-major]
       # The jsdom tests are typed by @types/jsdom, which trails jsdom's majors
-      # (jsdom 31 exists; @types/jsdom 31 does not). Lift this once a matching
-      # @types/jsdom major is published; the `jsdom` group then moves both.
+      # (jsdom 31 exists; @types/jsdom 31 does not). Hold both majors and lift
+      # both rules together once matching majors exist; the `jsdom` group then
+      # moves them in one pull request.
       - dependency-name: jsdom
+        update-types: [version-update:semver-major]
+      - dependency-name: "@types/jsdom"
         update-types: [version-update:semver-major]
     groups:
       # Bundled into the shipped extension by esbuild.

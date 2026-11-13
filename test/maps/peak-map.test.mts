@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { fixtureDom, type FixtureWindow } from '../helpers/page-dom.mts';
+import { browserWindow, fixtureDom, type FixtureWindow } from '../helpers/page-dom.mts';
 import { makeChromeStub, waitFor, type PageChrome } from '../helpers/load-page.mts';
 import { rect } from '../helpers/page-types.mts';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
@@ -73,7 +73,7 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
     const postMessage = (message: BridgeMessage) => {
         messages.push(structuredClone(message));
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window as unknown as Window,
+            source: browserWindow(window),
             origin: window.location.origin,
             data: message
         })));
@@ -206,7 +206,7 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal('routeSegments' in init!, false, 'Peak pages do not invent a fake GPX route');
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window as unknown as Window,
+        source: browserWindow(window),
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded', navTop: 88 }
     }));
@@ -216,7 +216,7 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(toggle.getAttribute('aria-pressed'), 'true');
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window as unknown as Window,
+        source: browserWindow(window),
         origin: window.location.origin,
         data: {
             __bpbTerrain: true,
@@ -229,7 +229,7 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(messages.at(-1)!.type, 'cameraRequest');
     const cameraRequestId = messages.at(-1)!.requestId;
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window as unknown as Window,
+        source: browserWindow(window),
         origin: window.location.origin,
         data: {
             __bpbTerrain: true,
@@ -381,7 +381,7 @@ test('Peak-page 3D loading can be canceled and renderer failures are announced',
     toggle.click();
     await waitFor(dom, () => messages.filter((message: BridgeMessage) => message.__bpbTerrain === true && message.type === 'init').length === 2);
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window as unknown as Window,
+        source: browserWindow(window),
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'unavailable' }
     }));
@@ -447,7 +447,7 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
     await waitFor(dom, () => messages.some((message: BridgeMessage) => message.__bpbTerrain === true && message.type === 'init'));
 
     const dispatchPage = (data: BridgeMessage) => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window as unknown as Window, origin: window.location.origin,
+        source: browserWindow(window), origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', ...data }
     }));
     dispatchPage({ type: 'loaded', navTop: 88 });
@@ -493,13 +493,13 @@ test('Peak-page 3D uses the extension-owned consent gate when the feature is off
         'the page cannot start third-party tile requests before consent');
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window as unknown as Window,
+        source: browserWindow(window),
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: true }
     }));
     await waitFor(dom, () => messages.some((message: BridgeMessage) => message.__bpbTerrain === true && message.type === 'init'));
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window as unknown as Window,
+        source: browserWindow(window),
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
     }));

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fixtureDom, type FixtureWindow } from '../helpers/page-dom.mts';
+import { browserWindow, fixtureDom, type FixtureWindow } from '../helpers/page-dom.mts';
 import { rect } from '../helpers/page-types.mts';
 import type * as MapLocationMenu from '../../src/maps/map-location-menu.ts';
 import { build } from 'esbuild';
@@ -97,9 +97,9 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
             Date.parse(new Date(clock).toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400])));
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     };
-    win.postMessage = (data: unknown) => win.dispatchEvent(new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin, data }));
+    win.postMessage = (data: unknown) => win.dispatchEvent(new win.MessageEvent('message', { source: browserWindow(win), origin: win.location.origin, data }));
     win.eval(menuBundle);
-    const locationMenu = win.testMapMenu.createMapLocationMenu({ window: win as unknown as Window, client: { lookup: async () => 1957, clear() {} } });
+    const locationMenu = win.testMapMenu.createMapLocationMenu({ window: browserWindow(win), client: { lookup: async () => 1957, clear() {} } });
     win.eval(bundle);
     return { win, locationMenu, doc: win.document, requests, metadataRequests, listeners, observers, resizeObservers,
         setNow: (next: string) => { clock = Date.parse(next); },

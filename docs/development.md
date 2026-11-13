@@ -921,6 +921,7 @@ attributed:
 | `bundled-runtime` | bundled by esbuild | yes |
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
 | `tooling` | nothing; build and test only | no |
+| `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
 
@@ -940,11 +941,11 @@ counts. Counts cannot detect a replacement warning of the same type in the same
 file, so dependency source review remains necessary.
 
 Every package is declared under `devDependencies`, so that field says nothing
-about whether a package ships. The three named release-path groups do; updates
+about whether a package ships. The four named release-path groups do; updates
 in either catch-all require tracing the package through its parent dependency.
 
 Dependabot assigns a version update to the first matching group. The
-`remaining-npm` wildcard therefore stays after the three release-path groups
+`remaining-npm` wildcard therefore stays after the four release-path groups
 and combines only otherwise unmatched direct and transitive updates. This
 prevents separate incomplete lockfile repairs from deadlocking the
 shipped-code advisory check. `security-fixes` applies the same all-npm grouping to

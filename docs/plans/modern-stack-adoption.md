@@ -68,7 +68,7 @@ through Svelte, and Svelte is not installed.
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
-| M4.5 | Done | `@types/jsdom` 30 types every jsdom test; [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
+| M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
 | M6 | Not started | `options/unit-settings.ts` is typed but still imperative DOM; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
 | M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
@@ -285,14 +285,22 @@ Step 1 status (November 13, 2026):
 - **Intentionally not changed:** fixture pages are typed through
   [page-dom.mts](../../test/helpers/page-dom.mts) and `page-types.mts`, which
   treat lookups in this repository's known markup as present; tests stub
-  window members through narrow `as { member: unknown }` assignments, and a
-  formerly loose test uses `!` where a missing fixture node already threw.
+  window members through narrow `as { member: unknown }` assignments, pass a
+  jsdom window where a browser global is expected only through
+  `browserWindow`, and use `!` where a missing fixture node already threw.
   `options-helpers.mjs` and other JavaScript helpers stay JavaScript, so their
-  callers keep one documented cast each.
+  callers keep one documented cast each; the 114 JavaScript test files that reach jsdom stay
+  unchecked (`checkJs: false`) until M7 converts them. Because the split
+  follows imports, Node release tooling that imports one extension-source
+  module (for example `publish-chrome.mts`) is checked in the DOM program.
+  `fireTrustedEvent` is pinned to jsdom's major, and
+  [jsdom-trusted-event.test.mts](../../test/project/jsdom-trusted-event.test.mts)
+  proves on every run that it still dispatches trusted events of the right
+  interface.
 - **Changed but not fully proven:** type-only changes; no runtime behavior of
-  shipped code changed. Ten browser-driving verify scripts gained a
-  `/// <reference lib="dom" />` they previously inherited; they were
-  typechecked, not run.
+  shipped code changed. Ten browser-driving scripts (nine verifiers and the
+  shared `weather-verification-types.mts`) gained a `/// <reference lib="dom" />`
+  they previously inherited; they were typechecked, not run.
 
 Steps 2–4 status (November 13, 2026):
 
@@ -324,14 +332,14 @@ Steps 2–4 status (November 13, 2026):
   browser, as the `fixture-preflight` job does.
 
 `npm test` evaluates the shipped IIFE bundles in jsdom: 118 test files construct
-it 297 times. jsdom ships no type declarations, so 18 converted tests suppress
-the import (for example
+it 297 times. When M4.5 started, jsdom shipped no type declarations here, so 18
+converted tests suppressed the import (for example
 [page-lifecycle.test.mts](../../test/ui/page-lifecycle.test.mts)) and two files
-hand-type a constructor:
+hand-typed a constructor:
 [map-layer-inspection.test.mts](../../test/maps/map-layer-inspection.test.mts)
 and the shared [test-dom.mts](../../test/helpers/test-dom.mts), which 14 tests
-now import as an interim stand-in for step 1. Every M7 test batch would repeat
-one of those. jsdom also has no layout, mints only
+imported as an interim stand-in. Every M7 test batch would have repeated one of
+those. jsdom also has no layout, mints only
 untrusted events and is not Firefox; the shared
 [page loader](../../test/helpers/load-page.mts) already reaches into jsdom
 internals to dispatch trusted input. Settle both before M5 adds component tests
