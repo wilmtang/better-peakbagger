@@ -3,11 +3,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent, accelerateTimeout } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent, accelerateTimeout, type LoadedPage } from '../helpers/load-page.mts';
+import { rect as domRect } from '../helpers/page-types.mts';
 
-type LoadedPage = Awaited<ReturnType<typeof loadPage>>;
-// The JS-inferred helper signature reflects default values, not its contract.
-const openPage = loadPage as unknown as (fixture: string, options: Record<string, unknown>) => Promise<LoadedPage>;
+// Test stubs for page APIs jsdom lacks; each implements only what the card reads.
+interface VisualViewportStub { offsetTop: number; offsetLeft: number; width: number; height: number }
+const rectList = (...rects: DOMRect[]) => rects as unknown as DOMRectList;
 const escapeKey = { key: 'Escape', bubbles: true };
 const favoritesKey = 'bpbFavoriteClimbers', ignoredKey = 'bpbIgnoredClimbers';
 const buddies = await readFile(new URL('../fixtures/pages/report-buddy-list.html', import.meta.url), 'utf8');
@@ -15,14 +16,14 @@ const buddyForm = await readFile(new URL('../fixtures/pages/climber-buddy-form.h
 const buddyDocument = (entries: number[]) => buddies.replace(/(<table[^>]*id="RGridView"[^>]*>)[\s\S]*?(<\/table>)/i,
     `$1<tr><th>Climber</th></tr>${entries.map((cid: number) => `<tr><td><a href="/climber/climber.aspx?cid=${cid}">Casey Alpine</a></td></tr>`).join('')}$2`);
 const load = async ({ settings = { favoritesSource: 'custom' }, local = {}, prepare }: { settings?: Record<string, unknown>; local?: Record<string, unknown>; prepare?: (dom: LoadedPage) => void } = {}) => {
-    const dom = await openPage('climber-other.html', { fixtures: PAGE_FIXTURES,
+    const dom = await loadPage('climber-other.html', { fixtures: PAGE_FIXTURES,
         url: 'https://www.peakbagger.com/climber/climber.aspx?cid=900002',
         bundles: ['content/climber-hover-card.js'], settings, local,
         prepare: (page: LoadedPage) => {
             page.window.HTMLElement.prototype.getClientRects = function () {
-                return this.closest('[hidden]') ? [] : [{ left: 10, right: 140, top: 20, bottom: 44, width: 130, height: 24 }];
+                return this.closest('[hidden]') ? rectList() : rectList(domRect({ left: 10, right: 140, top: 20, bottom: 44, width: 130, height: 24 }));
             };
-            page.window.HTMLElement.prototype.getBoundingClientRect = () => ({ left: 10, right: 140,
+            page.window.HTMLElement.prototype.getBoundingClientRect = () => domRect({ left: 10, right: 140,
                 top: 20, bottom: 44, width: 130, height: 24 });
             const list = page.window.document.createElement('section'); list.id = 'names';
             list.innerHTML = '<a id="casey" href="/climber/climber.aspx?cid=900002">Casey Alpine</a> '
@@ -39,7 +40,7 @@ const load = async ({ settings = { favoritesSource: 'custom' }, local = {}, prep
     return dom;
 };
 const open = async (dom: LoadedPage, id = 'casey') => {
-    const trigger = dom.window.document.getElementById(id).nextElementSibling;
+    const trigger = dom.window.document.getElementById(id).nextElementSibling!;
     fireTrustedEvent(trigger, 'click');
     await waitFor(dom, () => !dom.window.document.getElementById('bpb-climber-card').hidden);
     return dom.window.document.getElementById('bpb-climber-card');
@@ -59,16 +60,16 @@ test('negative visual viewport offsets preserve visible cards while panning and 
         Object.defineProperty(page.window, 'visualViewport', { value: visual, configurable: true });
         Object.assign(page.window, { innerWidth: 1000, innerHeight: 760 });
         const anchor = page.window.document.getElementById('casey');
-        anchor.getBoundingClientRect = () => ({ ...rect });
-        anchor.getClientRects = () => [{ ...rect }];
+        anchor.getBoundingClientRect = () => domRect({ ...rect });
+        anchor.getClientRects = () => rectList(domRect({ ...rect }));
     } });
     t.after(() => dom.window.close());
-    const visual = dom.window.visualViewport;
+    const visual = dom.window.visualViewport as unknown as VisualViewportStub;
     const card = dom.window.document.getElementById('bpb-climber-card');
-    const trigger = dom.window.document.getElementById('casey').nextElementSibling;
+    const trigger = dom.window.document.getElementById('casey').nextElementSibling!;
     fireTrustedEvent(trigger, 'click');
     assert.equal(card.hidden, false, 'captured Firefox resize geometry must not dismiss an onscreen anchor');
-    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(trigger!.getAttribute('aria-expanded'), 'true');
     assert.equal(card.contains(dom.window.document.activeElement), true);
     visual.offsetLeft = -1200;
     dom.window.dispatchEvent(new dom.window.Event('resize'));
@@ -135,7 +136,7 @@ test('own profile links stay undecorated in headings, lists, report rows, and la
         assert.equal(card.hidden, true, 'hover and keyboard focus must not open a self card');
         pointer(dom, link, 'pointerout'); link.blur();
     }
-    assert.equal(doc.getElementById('same-name').nextElementSibling.matches('.bpb-climber-actions-trigger'), true,
+    assert.equal(doc.getElementById('same-name').nextElementSibling!.matches('.bpb-climber-actions-trigger'), true,
         'identity comes from the climber ID, not the displayed name');
     doc.querySelector('main').insertAdjacentHTML('beforeend',
         '<p id="late-person"><a href="/climber/climber.aspx?cid=900001">Alex Doe</a></p>');
@@ -180,10 +181,10 @@ test('card keeps name links intact and exposes only eligible, visible people', a
 
 test('without a signed-in identity, profile links still offer climber actions', async t => {
     const dom = await load({ prepare: page => {
-        [...page.window.document.querySelectorAll('a')].find(link => link.textContent === 'My Home Page').remove();
+        [...page.window.document.querySelectorAll('a')].find(link => link.textContent === 'My Home Page')!.remove();
     } });
     t.after(() => dom.window.close());
-    assert.equal(dom.window.document.getElementById('owner').nextElementSibling.matches('.bpb-climber-actions-trigger'), true);
+    assert.equal(dom.window.document.getElementById('owner').nextElementSibling!.matches('.bpb-climber-actions-trigger'), true);
     const card = await open(dom, 'owner');
     assert.equal(card.querySelector('.bpb-climber-card-buddy').hidden, true);
     assert.equal(card.querySelector('a.bpb-climber-card-buddy').hidden, false);
@@ -201,7 +202,7 @@ test('one-second hover dwell cancels on departure; Escape suppresses the same se
     pointer(dom, name, 'pointerover');
     await waitFor(dom, () => !card.hidden);
     assert.ok(opens.length >= 2);
-    const trigger = name.nextElementSibling;
+    const trigger = name.nextElementSibling!;
     fireTrustedEvent(trigger, 'click');
     assert.equal(dom.window.document.activeElement.id, 'bpb-climber-card-buddy');
     fireTrustedEvent(card, 'keydown', escapeKey);
@@ -217,7 +218,7 @@ test('one-second hover dwell cancels on departure; Escape suppresses the same se
 
 test('favorite and Ignore changes use operation APIs and confirmed reverse actions', async t => {
     const dom = await load(); t.after(() => dom.window.close());
-    dom.window.fetch = async () => ({ status: 200, headers: {}, text: async () => buddyDocument([]) });
+    (dom.window as { fetch: unknown }).fetch = async () => ({ status: 200, headers: {}, text: async () => buddyDocument([]) });
     const card = await open(dom);
     const favorite = card.querySelector('#bpb-climber-card-favorite'), ignore = card.querySelector('#bpb-climber-card-ignore');
     await waitFor(dom, () => !favorite.disabled);
@@ -226,7 +227,7 @@ test('favorite and Ignore changes use operation APIs and confirmed reverse actio
     assert.equal(favorite.textContent, 'Saving…');
     await waitFor(dom, () => favorite.textContent === 'Remove favorite climber');
     assert.equal(ignore.disabled, true);
-    assert.equal(dom.chrome._favoriteMutations[0].kind, 'add');
+    assert.equal((dom.chrome._favoriteMutations[0] as { kind: string }).kind, 'add');
     fireTrustedEvent(favorite, 'click');
     await waitFor(dom, () => !ignore.disabled);
     fireTrustedEvent(ignore, 'click');
@@ -281,7 +282,7 @@ test('inline Buddy saves wait for confirmation, reject synthetic activation and 
     let included = false, posts = 0, failedConfirmation = false, gets = 0;
     const form = () => included ? buddyForm.replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
         .replaceAll('AddBuddy', 'RemoveBuddy').replace('Add to your Buddy List', 'Remove from your Buddy List') : buddyForm;
-    dom.window.fetch = async (url: string, init: RequestInit) => {
+    (dom.window as { fetch: unknown }).fetch = async (url: string, init: RequestInit) => {
         if (init.method === 'POST') { posts++; included = new URLSearchParams(init.body as string).has('AddBuddy'); }
         else if (++gets === 2 && failedConfirmation) throw new Error('offline');
         return { status: 200, headers: {}, url: String(url), text: async () => form() };
@@ -309,11 +310,11 @@ test('Ignore rechecks live Buddy membership and never treats a failed read as em
     const card = await open(dom);
     const ignore = card.querySelector('#bpb-climber-card-ignore');
     await waitFor(dom, () => !ignore.disabled);
-    dom.window.fetch = async () => { throw new Error('offline'); };
+    (dom.window as { fetch: unknown }).fetch = async () => { throw new Error('offline'); };
     fireTrustedEvent(ignore, 'click');
     await waitFor(dom, () => !card.querySelector('.bpb-climber-card-retry').hidden);
     assert.equal(dom.chrome._localStore[ignoredKey], undefined);
-    dom.window.fetch = async () => ({ status: 200, headers: {}, text: async () => buddyDocument([900002]) });
+    (dom.window as { fetch: unknown }).fetch = async () => ({ status: 200, headers: {}, text: async () => buddyDocument([900002]) });
     fireTrustedEvent(ignore, 'click');
     await waitFor(dom, () => card.querySelector('.bpb-climber-card-feedback').textContent.includes('Remove from your Buddy List'));
     assert.equal(dom.chrome._localStore[ignoredKey], undefined);
@@ -334,7 +335,7 @@ test('closing during a save cannot repaint another climber, and dynamic links re
     fireTrustedEvent(favorite, 'click');
     await waitFor(dom, () => release);
     fireTrustedEvent(card.querySelector('.bpb-climber-card-close'), 'click');
-    fireTrustedEvent(dom.window.document.getElementById('morgan').nextElementSibling, 'click');
+    fireTrustedEvent(dom.window.document.getElementById('morgan').nextElementSibling!, 'click');
     assert.equal(card.hidden, true, 'another climber must not take over the pending card');
     release!(undefined);
     await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-card-announcement').textContent.includes('Casey Alpine added'));
@@ -378,7 +379,7 @@ test('changed identities close the card; hiding its report returns focus to the 
         'changing a live identity preserves owned focus without reopening its card');
     await open(dom);
     card.querySelector('.bpb-climber-card-close').focus();
-    anchor.closest('article').hidden = true;
+    anchor.closest('article')!.hidden = true;
     await waitFor(dom, () => card.hidden);
     assert.equal(dom.window.document.activeElement, dom.window.document.getElementById('morgan'));
     const moved = dom.window.document.getElementById('morgan');
@@ -403,14 +404,14 @@ test('disappearing card focus skips hidden rows, follows replacements, and uses 
         try {
             const doc = dom.window.document;
             const card = action === 'trigger' ? doc.getElementById('bpb-climber-card') : await open(dom, action === 'last' ? 'owner' : 'casey');
-            if (action === 'trigger') doc.getElementById('casey').nextElementSibling.focus();
+            if (action === 'trigger') doc.getElementById('casey').nextElementSibling!.focus();
             else card.querySelector('.bpb-climber-card-close').focus();
             if (action === 'external') doc.getElementById('stable-control').focus();
             let expected = doc.getElementById('morgan');
             if (action === 'replace') {
                 const row = doc.createElement('article');
                 row.innerHTML = '<a id="replacement" href="/climber/climber.aspx?cid=900002">Casey Alpine</a>';
-                doc.getElementById('casey-row').replaceWith(row); expected = row.firstElementChild;
+                doc.getElementById('casey-row').replaceWith(row); expected = doc.getElementById('replacement');
             } else if (action === 'remove') doc.getElementById('casey-row').remove();
             else if (action === 'last') {
                 doc.getElementById('stable-control').remove(); doc.getElementById('owner-row').remove();
@@ -455,7 +456,7 @@ test('failed settings refresh cannot retain an obsolete writable favorite source
 test('an account change during Buddy verification cannot authorize Ignore or save its cache', async t => {
     const dom = await load(); t.after(() => dom.window.close());
     let finish: (() => void) | undefined;
-    dom.window.fetch = async () => new Promise(resolve => { finish = () => resolve({
+    (dom.window as { fetch: unknown }).fetch = async () => new Promise(resolve => { finish = () => resolve({
         status: 200, headers: {}, text: async () => buddyDocument([]),
     }); });
     const card = await open(dom);
@@ -464,7 +465,7 @@ test('an account change during Buddy verification cannot authorize Ignore or sav
     fireTrustedEvent(ignore, 'click');
     await waitFor(dom, () => finish);
     const home = [...dom.window.document.querySelectorAll('a')].find(link => link.textContent === 'My Home Page');
-    home.href = '/climber/climber.aspx?cid=900009';
+    home!.href = '/climber/climber.aspx?cid=900009';
     finish!();
     await waitFor(dom, () => !card.querySelector('.bpb-climber-card-retry').hidden);
     assert.equal(dom.chrome._localStore[ignoredKey], undefined);
@@ -475,7 +476,7 @@ test('Ignore shows a Peakbagger limit without saving an unverified absence', asy
     const dom = await load(); t.after(() => dom.window.close());
     const card = await open(dom), ignore = card.querySelector('#bpb-climber-card-ignore');
     await waitFor(dom, () => !ignore.disabled);
-    dom.window.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
+    (dom.window as { fetch: unknown }).fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
     fireTrustedEvent(ignore, 'click');
     await waitFor(dom, () => card.querySelector('.bpb-climber-card-feedback').textContent.includes('Peakbagger request limit reached'));
     assert.equal(dom.chrome._localStore[ignoredKey], undefined);

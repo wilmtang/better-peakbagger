@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, waitFor, evalBundle } from '../helpers/load-page.mjs';
+import { makeChromeStub, waitFor, evalBundle } from '../helpers/load-page.mts';
 
 const loadBridge = async ({ failSet = false } = {}) => {
     const dom = new JSDOM('<!doctype html><body></body>', {

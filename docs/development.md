@@ -88,6 +88,16 @@ read counts and module-specific exceptions must be updated explicitly when an
 owner changes. Svelte compilation and the build-watcher work remain separate.
 
 `npm run typecheck` checks separate browser/Node projects without emitting files.
+[typecheck-node.mts](../scripts/typecheck-node.mts) splits the Node project by
+import closure: a script or test that imports `jsdom` or extension source, or
+declares `/// <reference lib="dom" />` for browser callbacks, is checked with the
+DOM library through `tsconfig.dom.check.json`; every other Node file is checked
+without DOM globals. jsdom tests use the published `@types/jsdom` declarations;
+[page-dom.mts](../test/helpers/page-dom.mts) and
+[page-types.mts](../test/helpers/page-types.mts) type fixture pages as known
+markup, and [load-page.mts](../test/helpers/load-page.mts) keeps its
+trusted-event internals behind one local declaration pinned to jsdom's major.
+Do not suppress a jsdom import or hand-type its constructor.
 The current Chrome definitions include the cross-browser `browser` alias; do not
 install conflicting global definitions or assume these types prove Firefox API
 support. ESLint loads [its TypeScript config](../eslint.config.mts) through the
@@ -351,7 +361,7 @@ script is added or removed without updating it.
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. Runs three test files in parallel locally and Node's default when `CI` is set. Flags appended after `npm test --` have no effect, because Node ignores flags after the file globs; to change the concurrency, build and then run `node --test --test-concurrency=N` with the flag before the glob. The override uses POSIX shell syntax. |
-| `npm run typecheck` | Strict, no-emit TypeScript checks using separate browser and Node checking projects; runs in Test CI and release verification. |
+| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project, then the Node project split into a DOM-free program and a jsdom/DOM program; runs in Test CI and release verification. |
 | `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, the full 1,500-entry favorite manager/search/backup path, and a 1,200-photo library; discovers JavaScript and TypeScript scale tests separately from the fast default suite. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
@@ -707,7 +717,7 @@ build config does not ship.
   `test/<domain>/*.test.mts` and call it. Set any ambient browser global the
   module reads (`DOMParser`, `location`, …) from a throwaway jsdom.
 - **Content-script behaviour**: evaluate the *built bundle* into a jsdom page
-  with `evalBundle` from `test/helpers/load-page.mjs`. This runs exactly what
+  with `evalBundle` from `test/helpers/load-page.mts`. This runs exactly what
   ships and needs no Better Peakbagger module globals. Feed settings through a
   `chrome.storage` stub (`makeChromeStub`), not a `globalThis.BPBSettings` stub
   — modules import settings now.

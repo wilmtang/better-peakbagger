@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
+import { browserWindow } from '../helpers/page-dom.mts';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { build } from 'esbuild';
@@ -32,7 +33,7 @@ test('initial partial failure waits for usable tiles after the one-time load eve
         },
     }] });
     const dom = new JSDOM('<div id="map"></div>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', runScripts: 'outside-only' });
-    const win = dom.window as FrameWindow, messages: FrameMessage[] = [];
+    const win = browserWindow<FrameWindow>(dom.window), messages: FrameMessage[] = [];
     const snapshots: ((snapshot: FrameSnapshot) => void)[] = [];
     const deadlines: (() => void)[] = [], setTimeout = win.setTimeout.bind(win) as (callback: () => void, ms?: number, ...args: unknown[]) => number;
     Object.assign(win, { setTimeout(callback: () => void, ms?: number, ...args: unknown[]) { if (ms === 15000) deadlines.push(callback); return setTimeout(callback, ms, ...args); } });

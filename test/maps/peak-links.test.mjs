@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { loadPage, PAGE_FIXTURES, makeChromeStub } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, makeChromeStub } from '../helpers/load-page.mts';
 import { enablePeakLinkOrder } from '../../src/maps/peak-link-order.js';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';

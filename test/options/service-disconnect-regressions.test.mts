@@ -7,7 +7,7 @@ import { createGarminStore } from '../../src/garmin/garmin-store.js';
 import { createGarminImports } from '../../src/garmin/garmin-imports.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { loadOptions as untypedLoadOptions, registerCleanup } from '../helpers/options-helpers.mjs';
-import { waitFor } from '../helpers/load-page.mjs';
+import { waitFor } from '../helpers/load-page.mts';
 import type { ChromeStub, LoadPage, PageDom, StubMessage } from '../helpers/page-types.mts';
 
 type ImportOptions = Parameters<typeof createGarminImports>[0];
@@ -16,7 +16,7 @@ interface HookWindow { setInterval: (callback: () => void) => number; confirm: (
 // The in-page deletion question, or null while none is shown.
 const deleteQuestion = (dom: PageDom) => byId(dom, 'garmin-delete-confirmation').hidden ? null
     : byId(dom, 'garmin-delete-confirmation-title').textContent;
-const loadOptions = untypedLoadOptions as LoadPage;
+const loadOptions = untypedLoadOptions as unknown as LoadPage;
 registerCleanup();
 const byId = (dom: PageDom, id: string) => dom.window.document.getElementById(id);
 

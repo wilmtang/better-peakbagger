@@ -14,17 +14,23 @@ export type TestWindow = Window & typeof globalThis;
 type ElementBase = HTMLElement & HTMLInputElement & HTMLSelectElement & HTMLDialogElement & HTMLAnchorElement;
 // Lookups from a page element stay page elements. Like the document's, they
 // are typed as present: a missing node fails the test at the lookup.
-export interface PageElement extends Omit<ElementBase, 'querySelector' | 'querySelectorAll' | 'closest' | 'parentElement'> {
-    querySelector(selectors: string): PageElement;
-    querySelectorAll(selectors: string): NodeListOf<PageElement>;
+export interface PageElement extends Omit<ElementBase, 'querySelector' | 'querySelectorAll' | 'closest' | 'parentElement'
+    | 'nextElementSibling' | 'previousElementSibling' | 'firstElementChild' | 'lastElementChild'> {
+    querySelector<E extends Element = PageElement>(selectors: string): E;
+    querySelectorAll<E extends Element = PageElement>(selectors: string): NodeListOf<E>;
     closest(selectors: string): PageElement | null;
     readonly parentElement: PageElement | null;
+    readonly nextElementSibling: PageElement | null;
+    readonly previousElementSibling: PageElement | null;
+    readonly firstElementChild: PageElement | null;
+    readonly lastElementChild: PageElement | null;
 }
 
 export interface PageDocument extends Omit<Document, 'getElementById' | 'querySelector' | 'querySelectorAll' | 'activeElement'> {
     getElementById(id: string): PageElement;
-    querySelector(selectors: string): PageElement;
-    querySelectorAll(selectors: string): NodeListOf<PageElement>;
+    // Name a specific element type where a test needs its own API.
+    querySelector<E extends Element = PageElement>(selectors: string): E;
+    querySelectorAll<E extends Element = PageElement>(selectors: string): NodeListOf<E>;
     // A loaded page always has a focused element, the body at least.
     readonly activeElement: PageElement;
 }
@@ -63,7 +69,7 @@ export interface StoredRecord {
 export interface ChromeStub {
     runtime: {
         id?: string;
-        sendMessage: (message: StubMessage, ...rest: unknown[]) => unknown;
+        sendMessage: (message: StubMessage, callback?: (response: unknown) => void) => unknown;
         [member: string]: unknown;
     };
     permissions?: {
@@ -95,3 +101,11 @@ export interface PageLoadOptions {
 }
 export type LoadPage = (settings?: Record<string, unknown>, options?: PageLoadOptions) => Promise<PageDom>;
 export type WaitFor = (dom: { window: unknown }, condition: () => unknown, timeoutMs?: number) => Promise<void>;
+
+// jsdom has no layout. Tests that exercise geometry-driven code stub only the
+// readings the feature takes; these complete the stub into the DOM type.
+export const rect = (box: Partial<Omit<DOMRect, 'toJSON'>> = {}): DOMRect => {
+    const value = { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, ...box };
+    return { ...value, toJSON: () => value };
+};
+export const computedStyle = (style: Partial<CSSStyleDeclaration>) => style as CSSStyleDeclaration;

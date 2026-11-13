@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
 
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=3273892&cid=900001';
 const DRAFT_KEY = 'bpbReportDraft:900001:a3273892';

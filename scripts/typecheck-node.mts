@@ -1,0 +1,100 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Checks the Node TypeScript project as two programs. Files whose static
+// import closure reaches `jsdom` drive pages and are checked with the DOM
+// library (tsconfig.dom.check.json); every other script, test and tool is
+// checked without DOM globals (tsconfig.node.check.json), so Node code cannot
+// silently start depending on browser types. The split follows the imports
+// themselves, so there is no hand-kept list of jsdom tests to drift.
+
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+import { AUTHORED_SOURCE_ROOTS } from './build-config.mts';
+
+export const DOM_MODULE = 'jsdom';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+export const parseProject = (configPath: string): ts.ParsedCommandLine => {
+    const parsed = ts.getParsedCommandLineOfConfigFile(configPath, undefined, {
+        ...ts.sys, onUnRecoverableConfigFileDiagnostic: diagnostic => { throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')); },
+    });
+    if (!parsed) throw new Error(`Unable to read ${configPath}.`);
+    return parsed;
+};
+
+// Every root file that needs DOM types: it imports the DOM module, imports
+// extension source (whose browser modules are written against DOM and
+// extension globals), or declares `/// <reference lib="dom" />` itself
+// (browser callbacks evaluated by a Playwright or WebDriver script); or it
+// imports such a file, statically, dynamically or type-only, through
+// JavaScript helpers too. A lib reference applies to its whole program, so
+// leaving one in the Node program would give every Node file DOM globals.
+export const domRootFiles = (fileNames: readonly string[], options: ts.CompilerOptions, cwd = root): string[] => {
+    const browserRoots = AUTHORED_SOURCE_ROOTS.map(directory => path.join(cwd, directory) + path.sep);
+    const importers = new Map<string, Set<string>>();
+    const marked = new Set<string>();
+    const visited = new Set<string>();
+    const pending = [...fileNames];
+    for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+        if (visited.has(file)) continue;
+        visited.add(file);
+        const { importedFiles, libReferenceDirectives } = ts.preProcessFile(readFileSync(file, 'utf8'), true, true);
+        if (libReferenceDirectives.some(({ fileName }) => /^dom(?:\.|$)/i.test(fileName))) marked.add(file);
+        for (const { fileName } of importedFiles) {
+            if (fileName === DOM_MODULE || fileName.startsWith(`${DOM_MODULE}/`)) { marked.add(file); continue; }
+            const resolved = ts.resolveModuleName(fileName, file, options, ts.sys).resolvedModule;
+            if (!resolved || resolved.isExternalLibraryImport || /[\\/]node_modules[\\/]/.test(resolved.resolvedFileName)) continue;
+            const dependency = resolved.resolvedFileName;
+            if (browserRoots.some(directory => path.resolve(dependency).startsWith(directory))) { marked.add(file); continue; }
+            if (!importers.has(dependency)) importers.set(dependency, new Set());
+            importers.get(dependency)!.add(file);
+            pending.push(dependency);
+        }
+    }
+    // Walk importer edges back from every direct DOM-module importer.
+    const reached = [...marked];
+    for (let file = reached.pop(); file !== undefined; file = reached.pop()) {
+        for (const importer of importers.get(file) ?? []) {
+            if (!marked.has(importer)) { marked.add(importer); reached.push(importer); }
+        }
+    }
+    return fileNames.filter(file => marked.has(file));
+};
+
+// The DOM project lists no files of its own: its roots come from the split.
+const NO_INPUTS = new Set([18002, 18003]);
+
+const check = (label: string, fileNames: string[], options: ts.CompilerOptions): readonly ts.Diagnostic[] => {
+    if (!fileNames.length) throw new Error(`The ${label} checking program has no files.`);
+    const program = ts.createProgram({ rootNames: fileNames, options });
+    return ts.getPreEmitDiagnostics(program);
+};
+
+export const runNodeTypecheck = (cwd = root): number => {
+    const node = parseProject(path.join(cwd, 'tsconfig.node.check.json'));
+    const dom = parseProject(path.join(cwd, 'tsconfig.dom.check.json'));
+    const errors = [...node.errors, ...dom.errors.filter(error => !NO_INPUTS.has(error.code))];
+    const domFiles = new Set(domRootFiles(node.fileNames, node.options, cwd));
+    const diagnostics = [
+        ...errors,
+        ...check('Node', node.fileNames.filter(file => !domFiles.has(file)), node.options),
+        ...check('DOM test', [...domFiles], dom.options),
+    ];
+    if (diagnostics.length) {
+        const host: ts.FormatDiagnosticsHost = {
+            getCanonicalFileName: file => file, getCurrentDirectory: () => cwd, getNewLine: () => '\n',
+        };
+        const format = process.stdout.isTTY ? ts.formatDiagnosticsWithColorAndContext : ts.formatDiagnostics;
+        process.stdout.write(format(diagnostics, host));
+        process.stdout.write(`\nFound ${diagnostics.length} error${diagnostics.length === 1 ? '' : 's'}.\n`);
+        return 2;
+    }
+    return 0;
+};
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    process.exitCode = runNodeTypecheck();
+}

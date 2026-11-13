@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { climberProfileLists } from '../../src/favorites/climber-card-state.js';
-import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent } from '../helpers/load-page.mts';
 
 const origin = 'https://www.peakbagger.com', profileUrl = `${origin}/climber/climber.aspx?cid=900002`;
 const social = (reports = ['b', 'rb']) => '<h4>Social Networking</h4><p>Reports showing a climber\'s buddies and other climbers.</p><ul>'

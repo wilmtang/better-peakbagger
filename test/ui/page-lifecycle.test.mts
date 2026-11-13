@@ -3,7 +3,6 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-// @ts-expect-error jsdom ships no declarations.
 import { JSDOM } from 'jsdom';
 import {
     createPageLifecycle,

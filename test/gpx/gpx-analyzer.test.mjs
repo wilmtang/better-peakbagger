@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
 import { suspectSegments, segmentsGpx } from '../helpers/suspect-gpx.mjs';
-import { waitFor } from '../helpers/load-page.mjs';
+import { waitFor } from '../helpers/load-page.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The MAIN-world analyzer bundle carries tz-lookup, metrics, basemap, the

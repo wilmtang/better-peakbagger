@@ -7,13 +7,14 @@
 // exercised the way a user performs them rather than asserted from source.
 
 import test from 'node:test';
+import { browserWindow } from '../helpers/page-dom.mts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mts';
 import { photoArchive as Archive } from '../../src/photos/photo-archive.js';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 import { photoProject as Project } from '../../src/photos/photo-project.js';
@@ -114,7 +115,7 @@ const loadEditor = async ({
         runScripts: 'outside-only',
         pretendToBeVisual: true,
     });
-    const win = dom.window as EditorWindow;
+    const win = browserWindow<EditorWindow>(dom.window);
     if (nativeBlobs) win.Blob = Blob as typeof win.Blob;
     const doc = win.document as unknown as PageDocument;
     if (fixedNow) {

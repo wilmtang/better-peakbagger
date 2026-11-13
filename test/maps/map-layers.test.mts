@@ -2,103 +2,114 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-// @ts-expect-error jsdom ships no type declarations, so page objects stay untyped here.
-import { JSDOM } from 'jsdom';
-type PageValue = JSDOM;
+import { fixtureDom } from '../helpers/page-dom.mts';
+import { rect } from '../helpers/page-types.mts';
 import { installMapLayers } from '../../src/maps/map-layers.ts';
+
+type OwnerWindow = NonNullable<Parameters<typeof installMapLayers>[0]>;
+// A message the layer owner posted, as the assertions read it.
+interface Posted {
+    type?: string; requestId: number; reveal?: boolean; occlusions?: number[][]; conditions: string[];
+    __bpbMapLayers?: boolean; __bpbPeakSnow?: boolean; preferences: { landTypes: string[] };
+    snapshot: { revision: number; state: Record<string, { enabled: boolean; opacity: number }>; cooldowns: Record<string, number>; landTypes: string[] };
+}
+type MapHandler = (event: { target: object }) => void;
 
 const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longitude: -121.74767, elevation: 1570 };
 const bounds = [-121.77, 46.84, -121.75, 46.86];
 function setup(terrain = false, { preferences = true } = {}) {
-    const dom = new JSDOM('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
-    const win = dom.window, messages: PageValue[] = [], moves: PageValue[] = [], removed: PageValue[] = [], popups: PageValue[] = [], rasterPaints: PageValue[] = [], events = new Map(); let currentBounds = bounds;
-    const container = win.document.getElementById('map');
-    container.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
+    const dom = fixtureDom('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
+    const win = dom.window, messages: Posted[] = [], moves: unknown[] = [], removed: unknown[] = [], popups: HTMLElement[] = [], rasterPaints: [string, number][] = [], events = new Map<string, Set<MapHandler>>(); let currentBounds = bounds;
+    const container = win.document.getElementById('map')!;
+    container.getBoundingClientRect = () => rect({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
     const map = { getBounds: () => ({ getWest: () => currentBounds[0], getSouth: () => currentBounds[1], getEast: () => currentBounds[2], getNorth: () => currentBounds[3] }),
         getCenter: () => ({ lat: 46.85, lng: -121.76 }), getZoom: () => 17, getSize: () => ({ x: 800, y: 400 }),
-        getContainer: () => container, eachLayer() {}, removeLayer: (layer: PageValue) => removed.push(layer), getPane: () => ({}),
+        getContainer: () => container, eachLayer() {}, removeLayer: (layer: unknown) => removed.push(layer), getPane: () => ({}),
         latLngToContainerPoint: ([lat, lon]: number[]) => ({ x: lon >= currentBounds[0] && lon <= currentBounds[2] && lat >= currentBounds[1] && lat <= currentBounds[3] ? 400 : -1000, y: 200 }),
-        on(name: string, handler: PageValue) { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(handler); },
-        off(name: string, handler: PageValue) { events.get(name)?.delete(handler); }, flyToBounds: (...args: PageValue[]) => moves.push(args), stop() {} };
+        on(name: string, handler: MapHandler) { if (!events.has(name)) events.set(name, new Set()); events.get(name)!.add(handler); },
+        off(name: string, handler: MapHandler) { events.get(name)?.delete(handler); }, flyToBounds: (...args: unknown[]) => moves.push(args), stop() {} };
     if (terrain) { const frame = win.document.createElement('div'); frame.id = 'bpb-terrain-frame'; frame.getBoundingClientRect = container.getBoundingClientRect; win.document.body.append(frame); }
-    win.mapsPlaceholder = map; win.fetch = async () => { throw new Error('Unexpected provider request'); };
-    win.L = { GridLayer: { extend: () => class {
+    // Leaflet page globals; the stubs implement only what the owner calls.
+    const leafletPage = win as { mapsPlaceholder?: unknown; L?: unknown };
+    leafletPage.mapsPlaceholder = map; win.fetch = async () => { throw new Error('Unexpected provider request'); };
+    leafletPage.L = ({ GridLayer: { extend: () => class {
         declare id: string;
-        constructor(options: PageValue) { this.id = options.pane.replace('bpb-overlay-', ''); }
+        constructor(options: { pane: string }) { this.id = options.pane.replace('bpb-overlay-', ''); }
         on() { return this; } addTo() { return this; }
         setOpacity(opacity: number) { rasterPaints.push([this.id, opacity]); return this; }
-    } }, marker: () => ({ bindPopup(content: PageValue) { popups.push(content); return this; }, addTo() { return this; } }),
-    divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) };
-    win.postMessage = (message: PageValue) => messages.push(message);
-    const owner = installMapLayers(win);
-    const send = (detail: PageValue, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
-        source: win, origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
+    } }, marker: () => ({ bindPopup(content: HTMLElement) { popups.push(content); return this; }, addTo() { return this; } }),
+    divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) });
+    win.postMessage = ((message: Posted) => messages.push(message)) as typeof win.postMessage;
+    // The stubbed window carries only the Leaflet globals the owner reads.
+    const owner = installMapLayers(win as unknown as OwnerWindow);
+    const send = (detail: Record<string, unknown>, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window, origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
     if (preferences) send({ type: 'preferences', snotel: true });
-    if (terrain) { win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type: 'init' } })); send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
-    const toggle = () => win.document.querySelector('[data-layer="snotel"] input').click();
+    if (terrain) { win.dispatchEvent(new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type: 'init' } })); send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
+    const toggle = () => win.document.querySelector('[data-layer="snotel"] input')!.click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
     const panStart = () => { for (const handler of events.get('movestart') || []) handler({ target: map }); };
     const pan = () => { for (const handler of events.get('moveend') || []) handler({ target: map }); };
     return { win, messages, moves, removed, popups, rasterPaints, events, send, toggle, request, pan, panStart,
-        view(value: PageValue) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
+        view(value: number[]) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner!.dispose(); win.close(); } };
 }
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} controls wait for opacity preferences before accepting interaction`, () => {
     const env = setup(terrain, { preferences: false }), doc = env.win.document;
     try {
-        assert.equal(doc.querySelector('.bpb-map-layers').hidden, true, 'unknown preferences cannot expose editable defaults');
+        assert.equal(doc.querySelector('.bpb-map-layers')!.hidden, true, 'unknown preferences cannot expose editable defaults');
         env.send({ type: 'preferences', snotel: true, preferences: { sentinel: 31, slope: 42, land: 73 } });
-        assert.equal(doc.querySelector('.bpb-map-layers').hidden, false);
-        assert.equal(doc.querySelector('[data-layer="land"] .bpb-layers-value-number').textContent, '73%');
-        doc.querySelector('[data-layer="land"] input').click();
-        const saved = env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.state.land;
+        assert.equal(doc.querySelector('.bpb-map-layers')!.hidden, false);
+        assert.equal(doc.querySelector('[data-layer="land"] .bpb-layers-value-number')!.textContent, '73%');
+        doc.querySelector('[data-layer="land"] input')!.click();
+        const saved = env.messages.filter(message => message.type === 'handoffState').at(-1)!.snapshot.state.land;
         assert.equal(saved.enabled, true); assert.equal(saved.opacity, 73);
-        if (!terrain) assert.equal(env.rasterPaints.at(-1)[1], .73);
+        if (!terrain) assert.equal(env.rasterPaints.at(-1)![1], .73);
     } finally { env.close(); }
 });
 for (const id of ['slope', 'sentinel']) test(`3D ${id} status updates cannot shorten the cooldown relayed to 2D`, () => {
     const env = setup(true), retryAt = Date.now() + 600000;
     try {
-        env.win.document.querySelector(`[data-layer="${id}"] input`).click();
-        const revision = env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.revision;
+        env.win.document.querySelector(`[data-layer="${id}"] input`)!.click();
+        const revision = env.messages.filter(message => message.type === 'handoffState').at(-1)!.snapshot.revision;
         for (const deadline of [retryAt, Date.now() + 5000, 0]) {
             env.send({ type: 'layerStatus', revision, id, error: true, retry: true, retryAt: deadline }, '__bpbTerrain');
         }
         // Returning to 2D publishes the same retained cooldown in the handoff.
         env.send({ type: 'destroyed' }, '__bpbTerrain');
-        assert.equal(env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.cooldowns[id], retryAt);
+        assert.equal(env.messages.filter(message => message.type === 'handoffState').at(-1)!.snapshot.cooldowns[id], retryAt);
     } finally { env.close(); }
 });
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} opacity dragging updates only the edited overlay`, () => {
     const env = setup(terrain), doc = env.win.document;
     try {
-        for (const id of ['slope', 'land']) doc.querySelector(`[data-layer="${id}"] input`).click();
-        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [station] });
-        doc.querySelector('.bpb-layers-trigger').click(); doc.querySelector('[data-layer="slope"] button').click();
+        for (const id of ['slope', 'land']) doc.querySelector(`[data-layer="${id}"] input`)!.click();
+        env.toggle(); env.send({ type: 'stations', requestId: env.request()!.requestId, stations: [station] });
+        doc.querySelector('.bpb-layers-trigger')!.click(); doc.querySelector('[data-layer="slope"] button')!.click();
         env.rasterPaints.length = 0; env.messages.length = 0;
-        const slider = doc.querySelector('[aria-label="Slope angle opacity"]'); slider.focus();
-        for (const opacity of [30, 40, 50]) { slider.value = String(opacity); slider.dispatchEvent(new env.win.Event('input')); }
+        const slider = doc.querySelector('[aria-label="Slope angle opacity"]'); slider!.focus();
+        for (const opacity of [30, 40, 50]) { slider!.value = String(opacity); slider!.dispatchEvent(new env.win.Event('input')); }
         assert.equal(doc.activeElement, slider);
-        assert.equal(doc.querySelector('[data-layer="slope"] .bpb-layers-value-number').textContent, '50%', 'feedback updates in the input event');
+        assert.equal(doc.querySelector('[data-layer="slope"] .bpb-layers-value-number')!.textContent, '50%', 'feedback updates in the input event');
         if (terrain) assert.equal(env.messages.filter(message => message.type === 'snowStations').length, 0, 'opacity does not resend station markers');
         else assert.deepEqual(env.rasterPaints, [['slope', .3], ['slope', .4], ['slope', .5]], 'opacity does not repaint unrelated raster layers');
         assert.equal(env.messages.filter(message => message.type === 'stations').length, 0);
-        const state = env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.state;
+        const state = env.messages.filter(message => message.type === 'handoffState').at(-1)!.snapshot.state;
         assert.equal(state.land.enabled, true); assert.equal(state.snotel.enabled, true); assert.equal(state.slope.opacity, 50);
     } finally { env.close(); }
 });
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} delayed snow-card availability updates existing station actions without a pan`, () => {
     const env = setup(terrain);
-    const card = (detail: PageValue) => env.send(detail, '__bpbPeakSnow');
+    const card = (detail: Record<string, unknown>) => env.send(detail, '__bpbPeakSnow');
     const gets = () => env.messages.filter(message => message.__bpbPeakSnow && message.type === 'get');
     const hasConditions = () => terrain
         ? env.messages.filter(message => message.type === 'snowStations').at(-1)?.conditions.includes(station.id)
         : Boolean(env.popups.at(-1)?.querySelector('.bpb-snotel-show-conditions'));
     try {
-        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [station], nearby: true });
+        env.toggle(); env.send({ type: 'stations', requestId: env.request()!.requestId, stations: [station], nearby: true });
         assert.equal(hasConditions(), false);
         card({ type: 'availability', enabled: true });
         assert.equal(gets().length, 1, 'card readiness loads authorized membership immediately');
@@ -116,8 +127,8 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} delayed 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL activation reveals once and ignores passive updates`, () => {
     const env = setup(terrain);
     try {
-        env.toggle(); const request = env.request(); assert.equal(request.reveal, true);
-        env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true });
+        env.toggle(); const request = env.request(); assert.equal(request!.reveal, true);
+        env.send({ type: 'stations', requestId: request!.requestId, stations: [station], nearby: true });
         env.send({ type: 'preferences', snotel: true });
         if (terrain) assert.equal(env.messages.filter(message => message.type === 'snowStations' && message.reveal === true).length, 1);
         else assert.equal(env.moves.length, 1);
@@ -131,15 +142,15 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} leaving 
         const cancellations = env.messages.filter(message => message.type === 'cancel').length;
         env.view([7.6, 45.9, 7.7, 46]);
         const checkbox = env.win.document.querySelector('[data-layer="snotel"] input');
-        assert.equal(checkbox.disabled, true); assert.equal(checkbox.checked, false);
-        for (const id of ['slope', 'land']) assert.equal(env.win.document.querySelector(`[data-layer="${id}"] input`).disabled, true);
+        assert.equal(checkbox!.disabled, true); assert.equal(checkbox!.checked, false);
+        for (const id of ['slope', 'land']) assert.equal(env.win.document.querySelector(`[data-layer="${id}"] input`)!.disabled, true);
         assert.ok(env.messages.filter(message => message.type === 'cancel').length > cancellations);
-        env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true });
+        env.send({ type: 'stations', requestId: request!.requestId, stations: [station], nearby: true });
         assert.equal(env.moves.length, 0);
-        assert.equal(env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.state.snotel.enabled, false,
+        assert.equal(env.messages.filter(message => message.type === 'handoffState').at(-1)!.snapshot.state.snotel.enabled, false,
             'the parked renderer and Full Screen receive the disabled state');
-        env.view(bounds); assert.equal(checkbox.disabled, false); assert.equal(checkbox.checked, false);
-        env.toggle(); assert.ok(env.request().requestId > request.requestId);
+        env.view(bounds); assert.equal(checkbox!.disabled, false); assert.equal(checkbox!.checked, false);
+        env.toggle(); assert.ok(env.request()!.requestId > request!.requestId);
     } finally { env.close(); }
 });
 
@@ -147,31 +158,31 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL r
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const env = setup(terrain), visibleStation = { ...station, latitude: 46.85, longitude: -121.76 };
     try {
-        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [visibleStation] });
-        env.win.document.querySelector('.bpb-layers-trigger').click();
+        env.toggle(); env.send({ type: 'stations', requestId: env.request()!.requestId, stations: [visibleStation] });
+        env.win.document.querySelector('.bpb-layers-trigger')!.click();
         env.view(bounds); t.mock.timers.tick(300);
-        env.send({ type: 'stations', requestId: env.request().requestId, error: true });
-        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Refresh failed');
-        assert.match(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Showing loaded locations/);
+        env.send({ type: 'stations', requestId: env.request()!.requestId, error: true });
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status')!.textContent, 'Refresh failed');
+        assert.match(env.win.document.querySelector('.bpb-layers-detail:not([hidden])')!.textContent, /Showing loaded locations/);
         assert.equal(env.removed.length, 0, 'the existing marker group remains intact');
-        env.win.document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry').click();
-        assert.equal(env.request().reveal, false, 'retry cannot repeat the activation auto-zoom');
-        env.send({ type: 'stations', requestId: env.request().requestId, stations: [visibleStation] });
+        env.win.document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry')!.click();
+        assert.equal(env.request()!.reveal, false, 'retry cannot repeat the activation auto-zoom');
+        env.send({ type: 'stations', requestId: env.request()!.requestId, stations: [visibleStation] });
         assert.equal(env.moves.length, 0);
         env.view([-122,45,-121,46]); t.mock.timers.tick(300);
-        env.send({ type: 'stations', requestId: env.request().requestId, error: true });
-        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Couldn’t load');
-        assert.doesNotMatch(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /No SNOTEL stations/);
+        env.send({ type: 'stations', requestId: env.request()!.requestId, error: true });
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status')!.textContent, 'Couldn’t load');
+        assert.doesNotMatch(env.win.document.querySelector('.bpb-layers-detail:not([hidden])')!.textContent, /No SNOTEL stations/);
     } finally { env.close(); }
 });
 
 test('SNOTEL overflow asks for a closer view instead of claiming zero stations', () => {
     const env = setup();
     try {
-        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [], overflow: true });
-        env.win.document.querySelector('.bpb-layers-trigger').click();
-        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Zoom in');
-        assert.match(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /More than 50 stations/);
+        env.toggle(); env.send({ type: 'stations', requestId: env.request()!.requestId, stations: [], overflow: true });
+        env.win.document.querySelector('.bpb-layers-trigger')!.click();
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status')!.textContent, 'Zoom in');
+        assert.match(env.win.document.querySelector('.bpb-layers-detail:not([hidden])')!.textContent, /More than 50 stations/);
         assert.equal(env.moves.length, 0);
     } finally { env.close(); }
 });
@@ -180,14 +191,14 @@ test('turning SNOTEL off clears loaded-location feedback even during a provider 
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const env = setup(), visibleStation = { ...station, latitude: 46.85, longitude: -121.76 };
     try {
-        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [visibleStation] });
-        env.win.document.querySelector('.bpb-layers-trigger').click();
+        env.toggle(); env.send({ type: 'stations', requestId: env.request()!.requestId, stations: [visibleStation] });
+        env.win.document.querySelector('.bpb-layers-trigger')!.click();
         env.pan(); t.mock.timers.tick(300);
-        env.send({ type: 'stations', requestId: env.request().requestId, error: true, retryAt: Date.now() + 120000 });
-        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Refresh failed');
+        env.send({ type: 'stations', requestId: env.request()!.requestId, error: true, retryAt: Date.now() + 120000 });
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status')!.textContent, 'Refresh failed');
         env.toggle(); env.toggle();
-        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status').textContent, 'Service busy');
-        assert.doesNotMatch(env.win.document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Showing loaded locations/);
+        assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status')!.textContent, 'Service busy');
+        assert.doesNotMatch(env.win.document.querySelector('.bpb-layers-detail:not([hidden])')!.textContent, /Showing loaded locations/);
     } finally { env.close(); }
 });
 
@@ -198,7 +209,7 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} user mov
         const cancellations = env.messages.filter(message => message.type === 'cancel').length;
         if (terrain) env.send({ type: 'layerView', bounds: [-121.78, 46.84, -121.76, 46.86], zoom: 16 }, '__bpbTerrain');
         else env.pan();
-        env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true });
+        env.send({ type: 'stations', requestId: request!.requestId, stations: [station], nearby: true });
         assert.equal(env.moves.length, 0);
         assert.equal(env.messages.some(message => message.type === 'snowStations' && message.reveal === true), false);
         assert.ok(env.messages.filter(message => message.type === 'cancel').length > cancellations, 'the pan cancels the pending reveal request');
@@ -209,12 +220,12 @@ test('turning SNOTEL off rejects late reveal data, while retry retains unfulfill
     const env = setup();
     try {
         env.toggle(); let request = env.request(); env.toggle();
-        env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true }); assert.equal(env.moves.length, 0);
-        env.toggle(); request = env.request(); env.send({ type: 'stations', requestId: request.requestId, error: true });
-        env.win.document.querySelector('.bpb-layers-trigger').click(); env.win.document.querySelector('[data-layer="snotel"] button').click();
-        env.win.document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry').click();
-        const retry = env.request(); assert.ok(retry.requestId > request.requestId); assert.equal(retry.reveal, true);
-        env.send({ type: 'stations', requestId: retry.requestId, stations: [station], nearby: true }); assert.equal(env.moves.length, 1);
+        env.send({ type: 'stations', requestId: request!.requestId, stations: [station], nearby: true }); assert.equal(env.moves.length, 0);
+        env.toggle(); request = env.request(); env.send({ type: 'stations', requestId: request!.requestId, error: true });
+        env.win.document.querySelector('.bpb-layers-trigger')!.click(); env.win.document.querySelector('[data-layer="snotel"] button')!.click();
+        env.win.document.querySelector('[aria-label="SNOTEL stations settings"] .bpb-layers-retry')!.click();
+        const retry = env.request(); assert.ok(retry!.requestId > request!.requestId); assert.equal(retry!.reveal, true);
+        env.send({ type: 'stations', requestId: retry!.requestId, stations: [station], nearby: true }); assert.equal(env.moves.length, 1);
     } finally { env.close(); }
 });
 
@@ -222,19 +233,19 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} land fil
     const env = setup(terrain), doc = env.win.document;
     try {
         env.send({ type: 'preferences', snotel: true, preferences: { landTypes: ['USFS'], land: 35 } });
-        doc.querySelector('[data-layer="land"] input').click();
-        assert.equal(doc.querySelector('[aria-label="USFS land"]').checked, true);
-        assert.equal(doc.querySelector('[aria-label="BLM land"]').checked, false);
-        doc.querySelector('[aria-label="Show only BLM land"]').click();
-        assert.deepEqual(env.messages.filter(message => message.type === 'save').at(-1).preferences.landTypes, ['BLM']);
-        assert.deepEqual(env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.landTypes, ['BLM']);
+        doc.querySelector('[data-layer="land"] input')!.click();
+        assert.equal(doc.querySelector('[aria-label="USFS land"]')!.checked, true);
+        assert.equal(doc.querySelector('[aria-label="BLM land"]')!.checked, false);
+        doc.querySelector('[aria-label="Show only BLM land"]')!.click();
+        assert.deepEqual(env.messages.filter(message => message.type === 'save').at(-1)!.preferences.landTypes, ['BLM']);
+        assert.deepEqual(env.messages.filter(message => message.type === 'handoffState').at(-1)!.snapshot.landTypes, ['BLM']);
         const saves = env.messages.filter(message => message.type === 'save').length;
-        doc.querySelector('[aria-label="Show only BLM land"]').click();
+        doc.querySelector('[aria-label="Show only BLM land"]')!.click();
         assert.equal(env.messages.filter(message => message.type === 'save').length, saves, 'reselecting Only neither restarts work nor clears provider feedback');
-        const all = doc.querySelector('[aria-label="All land types"]'); all.click(); all.click();
-        assert.deepEqual(env.messages.filter(message => message.type === 'save').at(-1).preferences.landTypes, []);
+        const all = doc.querySelector('[aria-label="All land types"]'); all!.click(); all!.click();
+        assert.deepEqual(env.messages.filter(message => message.type === 'save').at(-1)!.preferences.landTypes, []);
         env.send({ type: 'preferences', snotel: true, preferences: { landTypes: ['USFS'] } });
-        assert.equal(doc.querySelector('[aria-label="USFS land"]').checked, false, 'late saved preferences cannot overwrite a new choice');
+        assert.equal(doc.querySelector('[aria-label="USFS land"]')!.checked, false, 'late saved preferences cannot overwrite a new choice');
     } finally { env.close(); }
 });
 
@@ -244,11 +255,11 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} navigati
     const start = () => terrain ? env.send({ type: 'layerMoveStart' }, '__bpbTerrain') : env.panStart();
     try {
         env.toggle(); const request = env.request(); start();
-        env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true });
+        env.send({ type: 'stations', requestId: request!.requestId, stations: [station], nearby: true });
         assert.equal(env.moves.length, 0);
         assert.equal(env.messages.some(message => message.type === 'snowStations' && message.reveal === true), false);
         env.toggle(); env.toggle();
-        assert.equal(env.request().reveal, false, 'activation during a gesture must not schedule a delayed camera move');
+        assert.equal(env.request()!.reveal, false, 'activation during a gesture must not schedule a delayed camera move');
     } finally { env.close(); }
 });
 
@@ -256,27 +267,27 @@ test('terrain discovery receives the union of the overlay trigger and expanded m
     const env = setup(true), doc = env.win.document;
     try {
         const frame = doc.createElement('div'); frame.id = 'bpb-terrain-frame'; doc.body.append(frame);
-        frame.getBoundingClientRect = () => ({left:20,top:40,bottom:440,width:800,height:400});
-        doc.querySelector('.bpb-layers-trigger').getBoundingClientRect = () => ({left:30,top:50,right:140,bottom:82});
-        doc.querySelector('.bpb-layers-panel').getBoundingClientRect = () => ({left:30,top:88,right:262,bottom:360});
-        doc.querySelector('.bpb-layers-trigger').click(); env.toggle();
-        const request = env.request(); env.send({type:'stations',requestId:request.requestId,stations:[station],nearby:true});
+        frame.getBoundingClientRect = () => rect({left:20,top:40,bottom:440,width:800,height:400});
+        doc.querySelector('.bpb-layers-trigger')!.getBoundingClientRect = () => rect({left:30,top:50,right:140,bottom:82});
+        doc.querySelector('.bpb-layers-panel')!.getBoundingClientRect = () => rect({left:30,top:88,right:262,bottom:360});
+        doc.querySelector('.bpb-layers-trigger')!.click(); env.toggle();
+        const request = env.request(); env.send({type:'stations',requestId:request!.requestId,stations:[station],nearby:true});
         const reveal = env.messages.filter(message => message.type === 'snowStations' && message.reveal).at(-1);
-        assert.deepEqual(reveal.occlusions, [[.0125,.025,.3025,.8]]);
+        assert.deepEqual(reveal!.occlusions, [[.0125,.025,.3025,.8]]);
     } finally { env.close(); }
 });
 
 test('native adapter stays up through terrain boot, detaches once 3D covers the map and rebinds on return', () => {
     const env = setup();
     try {
-        assert.equal(env.events.get('moveend').size, 1);
+        assert.equal(env.events.get('moveend')!.size, 1);
         env.send({ type: 'init', dir: 'toCS' }, '__bpbTerrain');
-        assert.equal(env.events.get('moveend').size, 1, 'overlays stay on the native map until 3D covers it');
+        assert.equal(env.events.get('moveend')!.size, 1, 'overlays stay on the native map until 3D covers it');
         env.send({ type: 'loaded' }, '__bpbTerrain');
-        assert.equal(env.events.get('moveend').size, 0, '3D owning the map releases the native adapter');
+        assert.equal(env.events.get('moveend')!.size, 0, '3D owning the map releases the native adapter');
         env.send({ type: 'destroyed' }, '__bpbTerrain');
-        assert.equal(env.events.get('moveend').size, 1, 'returning to 2D restores exactly one adapter');
+        assert.equal(env.events.get('moveend')!.size, 1, 'returning to 2D restores exactly one adapter');
         env.send({ type: 'init', dir: 'toCS' }, '__bpbTerrain'); env.send({ type: 'destroy', dir: 'toCS' }, '__bpbTerrain'); env.send({ type: 'loaded' }, '__bpbTerrain');
-        assert.equal(env.events.get('moveend').size, 1, 'a loaded queued behind a cancel cannot take the map from 2D');
+        assert.equal(env.events.get('moveend')!.size, 1, 'a loaded queued behind a cancel cannot take the map from 2D');
     } finally { env.close(); }
 });

@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fireTrustedEvent, loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
 
 const FAVORITES_KEY = 'bpbFavoriteClimbers';
 const BUDDY_CACHE_KEY = 'bpbBuddyCache';

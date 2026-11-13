@@ -386,7 +386,7 @@ The plan is complete when:
   cleanup of the derived Firefox source tree.
 - [`scripts/build-firefox-package.mjs`](../../scripts/build-firefox-package.mjs)
   — Firefox manifest transformation shared by development and release.
-- [`test/helpers/load-page.mjs`](../../test/helpers/load-page.mjs) — current
+- [`test/helpers/load-page.mts`](../../test/helpers/load-page.mts) — current
   jsdom bundle harness and the limits the browser smoke must cover.
 - [Playwright extension testing](https://playwright.dev/docs/chrome-extensions)
   — Playwright's extension loader is Chromium-specific.

@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, waitFor } from '../helpers/load-page.mjs';
+import { makeChromeStub, waitFor } from '../helpers/load-page.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The BigMap page loads the isolated settings-bridge bundle then the MAIN-world

@@ -2,8 +2,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
+import { browserWindow } from '../helpers/page-dom.mts';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
+import { JSDOM } from 'jsdom';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { readSnowDepthLegend } from '../../src/maps/snow-depth.js';
 import { readFile } from 'node:fs/promises';
@@ -13,10 +14,6 @@ import type { LayerInspectionContext, InspectionPoint, InspectableMapLayer, Laye
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
 import { createMapLocationMenu } from '../../src/maps/map-location-menu.ts';
 
-// Keep the untyped jsdom dependency behind the DOM contract consumed here.
-const { JSDOM } = createRequire(import.meta.url)('jsdom') as {
-    JSDOM: new (html: string, options: {url: string; pretendToBeVisual: boolean}) => {window: Window & typeof globalThis};
-};
 const legend = readSnowDepthLegend(JSON.parse(await readFile(new URL('../fixtures/maps/snow-depth-legend.json', import.meta.url), 'utf8')));
 const point: InspectionPoint = {latitude: 46.85, longitude: -121.76, x: 100, y: 120};
 const context = (): LayerInspectionContext => ({state: Schema.mapOverlayState({snow: {enabled: true}, land: {enabled: true}, slope: {enabled: true}}),
@@ -157,7 +154,7 @@ test('control supplies document-local context; menu cancels stale rows and inval
     const calls: {resolve: (reading: LayerReading) => void; signal: AbortSignal}[] = [];
     const layer: InspectableMapLayer = {id: 'snow', label: 'Snow depth', applicable: () => true,
         rightClick: (_point, _context, requestSignal) => new Promise(resolve => calls.push({resolve, signal: requestSignal}))};
-    const menu = createMapLocationMenu({window: win, layers: [layer], client: {lookup: async () => 100, clear() {}}});
+    const menu = createMapLocationMenu({window: browserWindow(win), layers: [layer], client: {lookup: async () => 100, clear() {}}});
     const node = doc.getElementById('bpb-peak-weather-menu')!;
     try {
         assert.ok(inspectionContext(doc, point)); assert.equal(inspectionContext(doc, {...point, x: 600}), null);

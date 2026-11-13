@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
 import { editorReady, editors, typeRich, typeMarkdown, modeButton } from '../helpers/report-editor-helpers.mjs';
 
 const loadProfile = async (t, { text = '', settings = {}, prepare, url } = {}) => {

@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent } from '../helpers/load-page.mts';
 
 const bundle = ['content/climber-favorite.js'];
 const otherUrl = 'https://www.peakbagger.com/climber/climber.aspx?cid=900002';

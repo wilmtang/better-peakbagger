@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-// @ts-expect-error jsdom ships no declarations in this repository.
-import { JSDOM } from 'jsdom';
+import { fixtureDom } from '../helpers/page-dom.mts';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { cloudResponseForUrl } from '../helpers/summit-cloud-fixture.mjs';
 
@@ -16,27 +15,27 @@ const wait = async (predicate: () => unknown) => {
     while (!predicate()) { if (Date.now() > end) throw new Error('Summit cloud UI did not settle'); await new Promise(resolve => setTimeout(resolve, 0)); }
 };
 function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false, manualClock = false } = {}) {
-    const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
+    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window;
     const requests: { url: string; options: RequestInit & { signal: AbortSignal }; mode: string }[] = [], writes: Record<string, unknown>[] = [];
     const listeners = new Set<(changes: unknown, area: string) => void>(), observers: { fn: (entries: { isIntersecting: boolean }[]) => void }[] = [], held: (() => void)[] = [];
     let stored = settingsSchema.clean(preferences), mode = 'complete';
     win.Date.now = () => Date.parse(now); win.AbortController = AbortController; win.TextDecoder = TextDecoder;
-    const minuteJobs = new Map<unknown, () => void>(), setTimer = win.setTimeout.bind(win), clearTimer = win.clearTimeout.bind(win);
+    const minuteJobs = new Map<number, () => void>(), setTimer = win.setTimeout.bind(win), clearTimer = win.clearTimeout.bind(win);
     if (manualClock) {
-        win.setTimeout = (callback: () => void, delay: number, ...args: unknown[]) => {
+        (win as { setTimeout: unknown }).setTimeout = (callback: () => void, delay: number, ...args: unknown[]) => {
             const id = setTimer(callback, delay, ...args);
             if (delay === 60000 - win.Date.now() % 60000) minuteJobs.set(id, callback);
             return id;
         };
-        win.clearTimeout = (id: unknown) => { minuteJobs.delete(id); clearTimer(id); };
+        (win as { clearTimeout: unknown }).clearTimeout = (id: number) => { minuteJobs.delete(id); clearTimer(id); };
     }
     win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: stored }) }, local: { get: async () => ({}) }, onChanged: {
         addListener: (fn: (changes: unknown, area: string) => void) => listeners.add(fn), removeListener: (fn: (changes: unknown, area: string) => void) => listeners.delete(fn),
     } }, runtime: { sendMessage: async (message: { patch: Record<string, unknown> }) => { writes.push(message.patch); update(message.patch); return { ok: true, settings: stored }; } } };
     const update = (patch: Record<string, unknown>) => { const oldValue = stored; stored = settingsSchema.clean({ ...stored, ...patch }); listeners.forEach(fn => fn({ bpbSettings: { oldValue, newValue: stored } }, 'sync')); };
-    if (lazy) win.IntersectionObserver = class { fn; constructor(fn: (entries: { isIntersecting: boolean }[]) => void) { this.fn = fn; observers.push(this); } observe() {} disconnect() {} };
-    win.fetch = async (url: string, options: RequestInit & { signal: AbortSignal }) => {
+    if (lazy) (win as { IntersectionObserver: unknown }).IntersectionObserver = class { fn; constructor(fn: (entries: { isIntersecting: boolean }[]) => void) { this.fn = fn; observers.push(this); } observe() {} disconnect() {} };
+    (win as { fetch: unknown }).fetch = async (url: string, options: RequestInit & { signal: AbortSignal }) => {
         if (new URL(url).pathname.startsWith('/data/')) return new Response(JSON.stringify({ last_run_initialisation_time: Date.parse(now) / 1000 - 3600, last_run_availability_time: Date.parse(now) / 1000 - 600, update_interval_seconds: 21600 }), { headers: { 'content-type': 'application/json' } });
         const request = { url, options, mode }; requests.push(request);
         if (mode === 'hold') await new Promise<void>(resolve => held.push(resolve));
@@ -48,7 +47,7 @@ function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false, manu
     win.eval(bundle); win.eval(layout);
     const doc = win.document, card = () => doc.querySelector('#bpb-summit-cloud');
     return { win, doc, requests, writes, observers, update, card, get stored() { return stored; },
-        minuteJobs, tick(value: string) { const [id, callback] = minuteJobs.entries().next().value as [unknown, () => void]; win.clearTimeout(id); win.Date.now = () => Date.parse(value); callback(); },
+        minuteJobs, tick(value: string) { const [id, callback] = minuteJobs.entries().next().value as [number, () => void]; win.clearTimeout(id); win.Date.now = () => Date.parse(value); callback(); },
         mode: (value: string) => { mode = value; }, release: () => held.splice(0).forEach(resolve => resolve()),
         choose: (id: string, value: string) => { const node = doc.getElementById(`bpb-summit-cloud-${id}`); node.value = value; node.dispatchEvent(new win.Event('change')); },
         close: () => { held.splice(0).forEach(resolve => resolve()); win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
@@ -125,7 +124,7 @@ test('card shares layout ownership, uses saved model, exposes all hours and reme
         await settled(env);
         assert.equal(env.card().dataset.bpbPeakCard, 'cloud');
         assert.equal(env.doc.querySelectorAll('#bpb-summit-cloud .bpb-peak-card-toggle').length, 1);
-        assert.equal(env.card().closest('tr').id, 'bpb-summit-cloud-row');
+        assert.equal(env.card().closest('tr')!.id, 'bpb-summit-cloud-row');
         assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour').length, 24);
         assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'gfs_global');
         assert.equal(env.doc.querySelectorAll('#bpb-summit-cloud-date option').length, 16);
@@ -182,7 +181,7 @@ test('reserved lines cover the real Automatic source and every confidence label'
     const env = setup();
     try {
         await settled(env);
-        const reserved = (selector: string) => [...env.doc.querySelectorAll(`${selector} [data-sizing-text]`)].map((node: { dataset: { sizingText: string } }) => node.dataset.sizingText);
+        const reserved = (selector: string) => [...env.doc.querySelectorAll(`${selector} [data-sizing-text]`)].map(node => node.dataset.sizingText!);
         const source = reserved('.bpb-cloud-source');
         for (const label of ['HRRR + HRDPS Continental', 'HRRR + GFS', 'GFS + IFS']) assert.ok(source.some(text => text.startsWith(`Showing: ${label}`)), `${label} in ${source.join(' | ')}`);
         assert.deepEqual(reserved('.bpb-cloud-confidence'), ['Experimental estimate', 'Low confidence', 'Unavailable']);
@@ -205,7 +204,7 @@ test('DST days keep distinct hourly identities and BFCache suspension aborts wit
         const env = setup({ now, preferences: { bpbSummitCloudModel: 'gfs_global' } });
         try {
             await settled(env); assert.equal(env.doc.querySelectorAll('.bpb-cloud-hour').length, expected);
-            assert.match(env.doc.querySelector('.bpb-cloud-hours').getAttribute('aria-label'), new RegExp(`${expected} hours`));
+            assert.match(env.doc.querySelector('.bpb-cloud-hours').getAttribute('aria-label')!, new RegExp(`${expected} hours`));
             const nodes = [...env.doc.querySelectorAll('.bpb-cloud-hour')];
             assert.equal(new Set(nodes.map(node => node.dataset.time)).size, expected);
             if (expected === 25) {

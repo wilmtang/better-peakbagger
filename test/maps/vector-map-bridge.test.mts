@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
+import { browserWindow } from '../helpers/page-dom.mts';
 import assert from 'node:assert/strict';
 import { JSDOM } from '../helpers/test-dom.mts';
-import type { TestWindow } from '../helpers/test-dom.mts';
 import { installVectorMapBridge } from '../../src/maps/vector-map-bridge.ts';
 import { MAPTOOLKIT_BASEMAP, VECTOR_MESSAGE, readVectorView, readVectorPaint } from '../../src/maps/vector-basemap.ts';
 import { terrainBasemap } from '../../src/terrain/terrain-basemap.ts';
@@ -19,11 +19,11 @@ function setup({ sendMessage }: { sendMessage?: (message: BridgeMessage) => Acti
     const add = win.document.addEventListener.bind(win.document);
     Object.assign(win.document, { addEventListener(type: string, callback: (event: unknown) => void, options?: boolean) { if (options === true) captures.set(type, callback); add(type, callback as EventListener, options); } });
     Object.assign(win, { postMessage(message: BridgeMessage) { messages.push(message); } });
-    const bridge = installVectorMapBridge(win, { runtime: {
+    const bridge = installVectorMapBridge(browserWindow(win), { runtime: {
         getURL: value => `chrome-extension://test/${value}`,
         sendMessage: async (message: unknown) => { calls.push(message as BridgeMessage); return sendMessage ? sendMessage(message as BridgeMessage) : { ok: true, token: 'opaque' }; },
     } });
-    const send = (type: string, extra: BridgeMessage = {}, source: unknown = win, origin = win.location.origin) => win.dispatchEvent(new (win as TestWindow).MessageEvent('message', {
+    const send = (type: string, extra: BridgeMessage = {}, source: unknown = win, origin = win.location.origin) => win.dispatchEvent(new win.MessageEvent('message', {
         source: source as MessageEventSource, origin, data: { [VECTOR_MESSAGE]: true, dir: 'toCS', id: 'test', type, view, ...extra },
     }));
     const choose = (trusted = true, control = win.document.querySelector('select')) => captures.get('change')!({ type: 'change', isTrusted: trusted, target: control });

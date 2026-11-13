@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { paintReveal } from '../../src/favorites/report-controls.js';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
 const entry = cid => ({ cid, name: `Climber ${cid}`, addedAt: 1 });
 const load = local => loadPage('peak-rainier.html', { fixtures: PAGE_FIXTURES,
     url: 'https://www.peakbagger.com/peak.aspx?pid=2296', bundles: ['content/peak-report-filter.js'],

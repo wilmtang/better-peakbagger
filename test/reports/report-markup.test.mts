@@ -10,11 +10,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-// @ts-expect-error jsdom ships no type declarations.
-import { JSDOM } from 'jsdom';
+import { fixtureDom } from '../helpers/page-dom.mts';
 import { reportMarkup as Markup } from '../../src/reports/report-markup.ts';
 
-const browserDom = new JSDOM('');
+const browserDom = fixtureDom('');
 globalThis.DOMParser = browserDom.window.DOMParser;
 const markedContext = vm.createContext({});
 vm.runInContext(await readFile(new URL('../../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
@@ -495,7 +494,7 @@ test('table cells preserve lists, nesting, and surrounding paragraphs through ev
     assert.equal(preview.querySelectorAll('td > ul > li').length, 2);
     assert.equal(preview.querySelectorAll('td > ol > li').length, 2);
     assert.equal(preview.querySelectorAll('ul ol > li').length, 2);
-    assert.equal(preview.querySelector('td').lastElementChild.textContent, 'After the list');
+    assert.equal(preview.querySelector('td').lastElementChild!.textContent, 'After the list');
     assert.equal(Markup.bracketToMarkdown(Markup.markdownToBracket(markdown)), markdown);
 });
 
@@ -529,7 +528,7 @@ test('Markdown HTML table support keeps unsafe and malformed markup inert', () =
 // ---- editor DOM → bracket ----------------------------------------------------
 
 const body = (html: string) => {
-    const dom = new JSDOM(`<div id="root">${html}</div>`);
+    const dom = fixtureDom(`<div id="root">${html}</div>`);
     return dom.window.document.getElementById('root');
 };
 
@@ -696,9 +695,9 @@ test('formatted captions survive every conversion and stay inline', () => {
     }
     const preview = new browserDom.window.DOMParser().parseFromString(Markup.bracketToPreviewHtml(figure), 'text/html');
     const rendered = preview.querySelector('figcaption');
-    assert.equal(rendered.querySelector('b i').textContent, 'from');
-    assert.equal(rendered.querySelector('a[target="_blank"]').getAttribute('rel'), 'noopener noreferrer');
-    assert.equal(rendered.querySelector('span').getAttribute('style'), 'color:#b03a2e');
+    assert.equal(rendered!.querySelector('b i')!.textContent, 'from');
+    assert.equal(rendered!.querySelector('a[target="_blank"]')!.getAttribute('rel'), 'noopener noreferrer');
+    assert.equal(rendered!.querySelector('span')!.getAttribute('style'), 'color:#b03a2e');
 });
 
 test('Markdown shows caption formatting as narrow HTML with literal delimiters', () => {
@@ -757,7 +756,7 @@ test('standalone Instagram posts round-trip as ordinary canonical links without 
     assert.equal(Markup.markdownToBracket(url+'?utm_source=share'),bracket);
     assert.equal(Markup.bracketToMarkdown(bracket),url);
     assert.equal(Markup.bracketToEditorHtml(bracket),`<p><a href="${url}">${url}</a></p>`);
-    assert.equal(Markup.domToBracket(new JSDOM(Markup.bracketToEditorHtml(bracket)).window.document.body),bracket);
+    assert.equal(Markup.domToBracket(fixtureDom(Markup.bracketToEditorHtml(bracket)).window.document.body),bracket);
     assert.equal(Markup.markdownToBracket('See '+url),`See [a href="${url}"]${url}[/a]`);
     const pasted=`<blockquote class="instagram-media" data-instgrm-permalink="${url}"><a href="${url}">View this post</a></blockquote>`;
     assert.equal(Markup.markdownToBracket(pasted),bracket);

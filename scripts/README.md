@@ -47,6 +47,7 @@ independent of the existing targets.
 - [create-chrome-description.mjs](create-chrome-description.mjs)
 - [dependency-metadata.mjs](dependency-metadata.mjs)
 - [privacy-guard.mjs](privacy-guard.mjs)
+- [typecheck-node.mts](typecheck-node.mts) — Checks the Node TypeScript project as two programs: jsdom/DOM-driving files with the DOM library (`tsconfig.dom.check.json`), everything else without DOM globals.
 - [typescript-policy.mts](typescript-policy.mts) — Rejects new or modified authored JavaScript in the staged index or a committed comparison; preserves generated/vendor formats.
 - [publish-chrome.mts](publish-chrome.mts)
 - [release-bump.mjs](release-bump.mjs)

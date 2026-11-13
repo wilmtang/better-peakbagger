@@ -5,8 +5,8 @@
 // input blocked. The built ascent-editor bundle runs on the captured form.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mjs';
-import type { PageDom, StubMessage } from '../helpers/page-types.mts';
+import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES, type LoadedPage } from '../helpers/load-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=900001';
 const GPX = `<?xml version="1.0"?><gpx creator="SourceApp" xmlns="http://www.topografix.com/GPX/1/1">
@@ -16,17 +16,17 @@ const GPX = `<?xml version="1.0"?><gpx creator="SourceApp" xmlns="http://www.top
   </trkseg></trk></gpx>`;
 const match = (id: number, name: string, confidence: number) => ({ id, name, classification: 'strong', confidence, time: '9:00 AM', upDistanceM: 1000 });
 
-type EditorDom = PageDom & { holdNextPreparation: () => void; release: () => void };
+type EditorDom = LoadedPage & { holdNextPreparation: () => void; release: () => void };
 
 // Every GPX_PROCESS_INVALIDATE answers at once, except the one a test chose
 // to hold: that is the re-preparation in flight.
 const loadEditor = async (startReply: Record<string, unknown>, settings: Record<string, unknown> = { removeGpxTimestamps: true }) => {
     let hold = false; let releaseHeld: (() => void) | null = null;
-    const dom = await (loadPage as (fixture: string, options: Record<string, unknown>) => Promise<EditorDom>)('climber-ascentedit.html', {
+    const dom = await loadPage('climber-ascentedit.html', {
         url: URL, settings, bundles: ['vendor/marked.umd.js', 'content/ascent-editor.js'], fixtures: PAGE_FIXTURES,
-        prepare: (d: EditorDom) => {
+        prepare: d => {
             class DataTransferMock { files: File[] = []; items = { add: (file: File) => this.files.push(file) }; }
-            (d.window as unknown as { DataTransfer: unknown }).DataTransfer = DataTransferMock;
+            (d.window as { DataTransfer: unknown }).DataTransfer = DataTransferMock;
             d.chrome.runtime.sendMessage = async (message: StubMessage) => {
                 if (message.type === 'GPX_PROCESS_INVALIDATE') {
                     if (hold) { hold = false; await new Promise<void>(resolve => { releaseHeld = resolve; }); }
@@ -36,11 +36,12 @@ const loadEditor = async (startReply: Record<string, unknown>, settings: Record<
                     selectionGeneration: message.selectionGeneration, selectionNonce: message.selectionNonce };
                 return { action: 'ignore' };
             };
-            d.holdNextPreparation = () => { hold = true; };
-            d.release = () => { releaseHeld?.(); };
         },
     });
-    return dom;
+    return Object.assign(dom, {
+        holdNextPreparation: () => { hold = true; },
+        release: () => { releaseHeld?.(); },
+    }) satisfies EditorDom;
 };
 
 const chooseGpx = async (dom: EditorDom) => {

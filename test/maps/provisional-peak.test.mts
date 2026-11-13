@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES } from '../helpers/load-page.mts';
 import type { TestWindow } from '../helpers/page-types.mts';
 
 // The JavaScript helper infers `prepare: null`; state the callback it accepts.

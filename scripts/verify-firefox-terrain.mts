@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global location, requestAnimationFrame */

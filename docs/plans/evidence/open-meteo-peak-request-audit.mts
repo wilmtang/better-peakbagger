@@ -5,8 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
-// @ts-expect-error jsdom ships no declarations in this repository.
-import { JSDOM } from 'jsdom';
+import { fixtureDom } from '../../../test/helpers/page-dom.mts';
 import { settingsSchema } from '../../../src/settings/settings-schema.ts';
 import { weatherFixture, weatherModelFixture } from '../../../test/helpers/weather-fixture.mjs';
 import { cloudResponseForUrl } from '../../../test/helpers/summit-cloud-fixture.mjs';
@@ -33,11 +32,11 @@ type Preferences = Record<string, unknown>;
 type Listener = (changes: unknown, area: string) => void;
 const results: Record<string, unknown>[] = [];
 function setup(preferences: Preferences = {}, { limitedCloud = false } = {}) {
-    const dom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
+    const dom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = dom.window, doc = win.document, calls: AuditCall[] = [], observers: AuditObserver[] = [], listeners = new Set<Listener>();
     let clock = Date.parse('2026-10-24T18:00:00Z'), stored = settingsSchema.clean(preferences);
     const NativeDate = win.Date;
-    win.Date = class extends NativeDate { constructor(...args: unknown[]) { super(...(args.length ? args : [clock])); } static now() { return clock; } };
+    (win as { Date: unknown }).Date = class extends NativeDate { constructor(...args: [number?]) { super(...(args.length ? args as [number] : [clock] as [number])); } static now() { return clock; } };
     Object.assign(win, { AbortController, TextDecoder, TextEncoder, scrollBy() {} });
     win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: stored }) }, local: { get: async () => ({}) }, onChanged: {
         addListener: (fn: Listener) => listeners.add(fn), removeListener: (fn: Listener) => listeners.delete(fn),
@@ -46,13 +45,13 @@ function setup(preferences: Preferences = {}, { limitedCloud = false } = {}) {
         listeners.forEach(fn => fn({ bpbSettings: { oldValue, newValue: stored } }, 'sync'));
         return { ok: true, settings: stored };
     } } };
-    win.IntersectionObserver = class implements AuditObserver {
+    (win as { IntersectionObserver: unknown }).IntersectionObserver = class implements AuditObserver {
         fn; target?: { id: string }; connected?: boolean;
         constructor(fn: AuditObserver['fn']) { this.fn = fn; observers.push(this); }
         observe(target: { id: string }) { this.target = target; this.connected = true; }
         disconnect() { this.connected = false; }
     };
-    win.fetch = async (input: string, init: RequestInit) => {
+    (win as { fetch: unknown }).fetch = async (input: string, init: RequestInit) => {
         const url = new URL(input), q = url.searchParams;
         const kind = url.pathname.startsWith('/data/') ? 'metadata' : url.hostname.startsWith('air-quality-api.') ? 'airQuality'
             : q.get('hourly')?.includes('hPa') ? 'cloud' : 'weather';
@@ -75,8 +74,8 @@ function setup(preferences: Preferences = {}, { limitedCloud = false } = {}) {
             await wait(() => [...doc.querySelectorAll('[aria-busy]')].every((node: Element) => node.getAttribute('aria-busy') !== 'true'));
             await tick();
         },
-        async change(id: string, value: string) { const node = doc.getElementById(id); node.value = value; node.dispatchEvent(new win.Event('change')); await this.settle(); },
-        async click(selector: string) { doc.querySelector(selector).click(); await this.settle(); },
+        async change(id: string, value: string) { const node = doc.getElementById(id); node!.value = value; node!.dispatchEvent(new win.Event('change')); await this.settle(); },
+        async click(selector: string) { doc.querySelector(selector)!.click(); await this.settle(); },
         async settle() { await tick(); await wait(() => [...doc.querySelectorAll('[aria-busy]')].every((node: Element) => node.getAttribute('aria-busy') !== 'true')); await tick(); },
         advance(ms: number) { clock += ms; },
         close() { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); },
@@ -93,7 +92,7 @@ async function scenario(preferences: Preferences, name: string, expected: number
     try {
         await env.ready(); await env.enter(); record(name, env, expected);
         if (preferences.bpbPeakWeatherModelForecast) assert.equal(new URL(env.calls.find(call => call.kind === 'weather')!.url).searchParams.get('models'), 'gfs_global,icon_global');
-        if (preferences.peakWeatherCollapsed) assert.equal(env.doc.querySelector('#bpb-peak-weather').dataset.bpbCardCollapsed, 'true');
+        if (preferences.peakWeatherCollapsed) assert.equal(env.doc.querySelector('#bpb-peak-weather')!.dataset.bpbCardCollapsed, 'true');
     }
     finally { env.close(); }
 }
@@ -116,7 +115,7 @@ try {
     let start = env.calls.length;
     await env.click('#bpb-peak-weather-past'); await env.click('#bpb-peak-weather-forecast');
     await env.click('[aria-label="Show earlier hours"]'); await env.click('.bpb-cloud-hour');
-    env.doc.querySelector('.bpb-cloud-details').open = true; await env.settle();
+    env.doc.querySelector('.bpb-cloud-details')!.open = true; await env.settle();
     record('Period/hour/Why navigation: additional', env, [0, 0, 0, 0, 0], start);
     start = env.calls.length;
     await env.click('.bpb-week-refresh'); record('Weather Refresh with Source details closed: additional', env, [1, 0, 0, 0, 1], start);
@@ -127,7 +126,7 @@ try {
     start = env.calls.length;
     await env.change('bpb-summit-cloud-date', '2026-10-24'); record('Return to cached day: additional', env, [0, 0, 0, 0, 0], start);
     start = env.calls.length;
-    env.doc.querySelector('.bpb-week-source').open = true; await env.settle(); await wait(() => env.calls.length >= start + 2);
+    env.doc.querySelector('.bpb-week-source')!.open = true; await env.settle(); await wait(() => env.calls.length >= start + 2);
     record('Open GFS Source details: additional', env, [0, 0, 2, 0, 2], start);
     start = env.calls.length;
     await env.click('.bpb-week-refresh'); record('Weather Refresh with Source details open: additional', env, [1, 0, 2, 0, 3], start);
@@ -152,7 +151,7 @@ const duplicate = setup({ bpbSummitCloudModel: 'gfs_global' });
 try {
     await duplicate.ready(); await duplicate.enter();
     const start = duplicate.calls.length;
-    duplicate.doc.querySelector('.bpb-week-source').open = true; await duplicate.settle();
+    duplicate.doc.querySelector('.bpb-week-source')!.open = true; await duplicate.settle();
     await wait(() => duplicate.calls.length >= start + 2);
     record('Manual GFS: opening Source repeats cloud GFS025 metadata', duplicate, [0, 0, 2, 0, 2], start);
     assert.equal(duplicate.calls.filter(call => call.url.endsWith('/data/ncep_gfs025/static/meta.json')).length, 2);

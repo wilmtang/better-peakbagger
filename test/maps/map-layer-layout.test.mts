@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-// @ts-expect-error jsdom ships no declarations in this repository.
 import { JSDOM } from 'jsdom';
 import { installMapLayers } from '../../src/maps/map-layers.ts';
 
@@ -11,7 +10,7 @@ function setup() {
     const dom = new JSDOM('<main id="layout"><div id="map"></div></main>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', pretendToBeVisual: true,
     });
-    const win = dom.window as OwnerWindow, observers = new Set<LayoutObserver>();
+    const win = dom.window as unknown as OwnerWindow, observers = new Set<LayoutObserver>();
     class LayoutObserver implements ResizeObserver {
         targets = new Set<Element>();
         readonly callback: ResizeObserverCallback;

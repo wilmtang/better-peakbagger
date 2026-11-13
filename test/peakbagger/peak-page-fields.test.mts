@@ -4,8 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-// @ts-expect-error jsdom ships no declarations.
-import { JSDOM } from 'jsdom';
+import { fixtureDom } from '../helpers/page-dom.mts';
 import { parsePeakId, readPeakDecimalCoordinate, readPeakElevationText } from '../../src/peakbagger/peak-page-fields.ts';
 import { readPeakUnitSystem } from '../../src/peakbagger/peak-units.ts';
 import { readPeakNations } from '../../src/avalanche/avalanche-location.ts';
@@ -14,8 +13,8 @@ import { readWeatherSubject, readWeatherSummit } from '../../src/ascent/ascent-w
 
 const PROVISIONAL_URL = 'https://www.peakbagger.com/peak.aspx?pid=-34225';
 const fixture = async (name: string): Promise<Document> =>
-    new JSDOM(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8'), { url: PROVISIONAL_URL }).window.document;
-const cell = (html: string): Element => new JSDOM(`<table><tr><td>${html}</td></tr></table>`).window.document.querySelector('td');
+    fixtureDom(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8'), { url: PROVISIONAL_URL }).window.document;
+const cell = (html: string): Element => fixtureDom(`<table><tr><td>${html}</td></tr></table>`).window.document.querySelector('td');
 const coordinateCell = (doc: Document) => [...doc.querySelectorAll('tr')]
     .find(row => row.cells[0]?.textContent?.trim() === 'Latitude/Longitude (WGS84)')!.cells[1];
 
@@ -41,7 +40,7 @@ test('decimal coordinates come only from the labelled line, in either native ord
 });
 
 test('elevation text accepts the labelled heading or the bare provisional pair after the title', () => {
-    const read = (html: string) => readPeakElevationText(new JSDOM(html).window.document);
+    const read = (html: string) => readPeakElevationText(fixtureDom(html).window.document);
     assert.equal(read('<h1>Mount Rainier</h1><h2>Elevation: 14,406.2 feet, 4391.0 meters</h2>'), '14,406.2 feet, 4391.0 meters');
     assert.equal(read('<h1>Icicle Buttress, Washington</h1><h2>2375 feet, 723.9 meters</h2>'), '2375 feet, 723.9 meters');
     assert.equal(read('<h1>Peak</h1><h2>723.9 m, 2,375 ft</h2>'), '723.9 m, 2,375 ft');
@@ -81,7 +80,7 @@ test('country rows still require one unambiguous native value', async () => {
 });
 
 test('a saved ascent of a provisional peak identifies and reads its negative-pid summit', async () => {
-    const doc = new JSDOM(`<h1>Ascent of <a href="/peak.aspx?pid=-34225">Icicle Buttress</a></h1>
+    const doc = fixtureDom(`<h1>Ascent of <a href="/peak.aspx?pid=-34225">Icicle Buttress</a></h1>
         <table><tr><td>Date:</td><td>2024-04-12</td></tr><tr><td>Peak:</td><td><a href="/peak.aspx?pid=-34225">Icicle Buttress</a></td></tr></table>`).window.document;
     const subject = readWeatherSubject(doc, 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321');
     assert.ok('peak' in subject, JSON.stringify(subject));

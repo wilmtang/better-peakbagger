@@ -4,12 +4,18 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer } from '../../src/settings/settings-transfer.js';
-// @ts-expect-error jsdom ships no type declarations, so page objects stay untyped here.
-import type { JSDOM as PageValue } from 'jsdom';
 import * as helpers from '../helpers/options-helpers.mjs';
+import { rect, type ChromeStub, type LoadPage, type PageDom, type PageElement, type StubMessage, type WaitFor } from '../helpers/page-types.mts';
 
-const { el, waitFor, withGithubBackground, registerCleanup, root, makeCacheStorage } = helpers as PageValue;
-const loadOptions = helpers.loadOptions as unknown as (settings?: PageValue, options?: PageValue) => Promise<PageValue>;
+// The JavaScript helpers infer their signatures from defaults; these are the
+// contracts the tests rely on (see page-types.mts).
+const { registerCleanup, root, makeCacheStorage } = helpers;
+const el = helpers.el as unknown as (dom: PageDom, id: string) => PageElement;
+const waitFor = helpers.waitFor as unknown as WaitFor;
+const withGithubBackground = helpers.withGithubBackground as unknown as
+    (status: Record<string, unknown>, options?: { grant?: boolean; ascentCount?: number }) => (chrome: ChromeStub) => void;
+const loadOptions = helpers.loadOptions as unknown as LoadPage;
+type Reply = (response: unknown) => void;
 
 registerCleanup();
 
@@ -17,7 +23,7 @@ test('General display controls default on and save independent synced preference
     const dom = await loadOptions({});
     for (const [id, key] of [['show-sun-moon', 'showSunMoon'], ['show-weather', 'showWeather'], ['show-summit-cloud', 'showSummitCloud'], ['show-snotel', 'showSnotel']]) {
         const control = el(dom, id);
-        assert.equal(control.closest('section').id, 'general');
+        assert.equal(control.closest('section')!.id, 'general');
         assert.equal(control.labels.length, 1, 'the checkbox has one concise accessible name');
         assert.equal(control.checked, true);
         control.checked = false; control.dispatchEvent(new dom.window.Event('change'));
@@ -40,20 +46,20 @@ test('General display controls default on and save independent synced preference
 });
 
 test('settings GitHub controls back up, confirm restore, and persist automatic backup', async () => {
-    const messages: PageValue[] = [];
-    const status: PageValue = {
+    const messages: StubMessage[] = [];
+    const status: Record<string, unknown> = {
         connected: true,
         hasToken: true,
         repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
-    const restored = (settingsTransfer as PageValue).buildPayload({ theme: 'light', units: 'metric' }, {
+    const restored = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
         extensionVersion: '3.0.0',
         exportedAt: '2026-07-22T12:00:00.000Z'
-    });
+    } as Parameters<typeof settingsTransfer.buildPayload>[1]);
     const dom = await loadOptions({ theme: 'dark', units: 'imperial' }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message: PageValue, callback: PageValue) => {
+            chrome.runtime.sendMessage = (message: StubMessage, callback?: Reply) => {
                 messages.push(structuredClone(message));
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
@@ -115,15 +121,15 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
 test('settings backup reports in-row progress before its persistent success state', async () => {
     let finishBackup!: (value: unknown) => void;
     const backupResponse = new Promise(resolve => { finishBackup = resolve; });
-    const status: PageValue = {
+    const status: Record<string, unknown> = {
         connected: true,
         hasToken: true,
         repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
     const dom = await loadOptions({ theme: 'dark' }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message: PageValue) => {
+            chrome.runtime.sendMessage = (message: StubMessage) => {
                 if (message.type === 'GITHUB_AUTH_STATUS') return Promise.resolve(status);
                 if (message.type === 'GITHUB_SETTINGS_BACKUP') return backupResponse;
                 return Promise.resolve({});
@@ -156,11 +162,11 @@ test('settings GitHub controls point disconnected users to the shared connection
 });
 
 test('settings GitHub controls refresh after an in-page repository selection', async () => {
-    let status: PageValue = { connected: false, hasToken: false };
+    let status: Record<string, unknown> = { connected: false, hasToken: false };
     const dom = await loadOptions({}, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
-            chrome.runtime.sendMessage = (message: PageValue, callback: PageValue) => {
+            chrome.runtime.sendMessage = (message: StubMessage, callback?: Reply) => {
                 const reply = message.type === 'GITHUB_AUTH_STATUS' ? status : {};
                 if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
                 return Promise.resolve(reply);
@@ -198,8 +204,8 @@ test('trip report credit is off by default and persists as an explicit opt-in', 
     const row = checkbox.closest('.row');
 
     assert.equal(checkbox.checked, false);
-    assert.match(row.querySelector('.title').textContent, /^Support development by crediting Better Peakbagger$/);
-    assert.match(row.querySelector('.desc').textContent, /small, editable store link.*change or remove/i);
+    assert.match(row!.querySelector('.title').textContent, /^Support development by crediting Better Peakbagger$/);
+    assert.match(row!.querySelector('.desc').textContent, /small, editable store link.*change or remove/i);
     const invalidDom = await loadOptions({ addReportCredit: 'yes' });
     assert.equal(el(invalidDom, 'add-report-credit').checked, false);
 
@@ -213,11 +219,11 @@ test('experimental 3D map is off by default and discloses external DEM requests'
     const checkbox = el(defaultDom, 'enable-3d-map');
     const row = checkbox.closest('.row');
     assert.equal(checkbox.checked, false);
-    assert.match(row.querySelector('.title').textContent, /^Enable experimental 3D map$/);
-    assert.match(row.querySelector('.experimental-badge').textContent, /^Experimental$/);
-    assert.match(row.querySelector('.desc').textContent, /ascent maps.*Full Screen GPS maps.*Peak pages/i);
-    assert.match(row.querySelector('.desc').textContent, /Mapterhorn.*Maptoolkit.*viewed map area and request metadata/i);
-    assert.deepEqual(Array.from(row.querySelectorAll('.desc a'), (link: PageValue) => new URL(link.href).hostname), [
+    assert.match(row!.querySelector('.title').textContent, /^Enable experimental 3D map$/);
+    assert.match(row!.querySelector('.experimental-badge').textContent, /^Experimental$/);
+    assert.match(row!.querySelector('.desc').textContent, /ascent maps.*Full Screen GPS maps.*Peak pages/i);
+    assert.match(row!.querySelector('.desc').textContent, /Mapterhorn.*Maptoolkit.*viewed map area and request metadata/i);
+    assert.deepEqual(Array.from(row!.querySelectorAll('.desc a'), (link: PageElement) => new URL(link.href).hostname), [
         'mapterhorn.com',
         'www.maptoolkit.org'
     ]);
@@ -430,18 +436,18 @@ test('the removed "minimum trip-report words" control is gone', async () => {
 test('provider and filter order controls save independently and reflect remote changes', async () => {
     const dom = await loadOptions({});
     const providers = el(dom, 'map-provider-order');
-    const ids = (list: PageValue) => [...list.children].map((row: PageValue) => row.dataset.orderItem);
+    const ids = (list: PageElement) => [...(list.children as HTMLCollectionOf<HTMLElement>)].map(row => row.dataset.orderItem);
     const gaia = providers.querySelector('[data-order-item="gaia"]');
     assert.equal(providers.querySelectorAll('input:checked').length, 4);
     gaia.querySelector('.order-grip').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'onx');
+    await waitFor(dom, () => (dom.chrome._store.bpbSettings.mapProviderOrder as string[] | undefined)?.[0] === 'onx');
     assert.deepEqual(ids(providers), ['onx', 'gaia', 'alltrails', 'caltopo']);
     await waitFor(dom, () => !gaia.querySelector('input').disabled);
     gaia.querySelector('input').click();
     await waitFor(dom, () => Array.isArray(dom.chrome._store.bpbSettings.mapProvidersEnabled) && !dom.chrome._store.bpbSettings.mapProvidersEnabled.includes('gaia'));
     const peak = el(dom, 'beta-peak-order');
     peak.querySelector('[data-order-item="beta"] .order-grip').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[3] === 'beta');
+    await waitFor(dom, () => (dom.chrome._store.bpbSettings.betaPeakFilterOrder as string[] | undefined)?.[3] === 'beta');
     assert.deepEqual(ids(el(dom, 'beta-personal-order')), ['gps', 'tr', 'link', 'beta']);
     await dom.chrome.storage.sync.set({ bpbSettings: settingsSchema.clean({ mapProviderOrder: ['caltopo'], mapProvidersEnabled: [] }) });
     assert.equal(ids(providers)[0], 'caltopo');
@@ -453,29 +459,29 @@ test('keyboard reordering keeps focus on the grip at the first position', async 
     const grip = el(dom, 'map-provider-order').querySelector('[data-order-item="onx"] .order-grip');
     grip.focus();
     grip.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'onx');
+    await waitFor(dom, () => (dom.chrome._store.bpbSettings.mapProviderOrder as string[] | undefined)?.[0] === 'onx');
     await waitFor(dom, () => grip.getAttribute('aria-disabled') === 'false');
     assert.equal(dom.window.document.activeElement, grip);
-    assert.match(grip.getAttribute('aria-label'), /Reorder onX/);
-    assert.match(dom.window.document.getElementById(grip.getAttribute('aria-describedby')).textContent, /Up and Down/);
+    assert.match(grip.getAttribute('aria-label')!, /Reorder onX/);
+    assert.match(dom.window.document.getElementById(grip.getAttribute('aria-describedby')!).textContent, /Up and Down/);
 });
 
 const orderDragFixture = async () => {
-    const dom = await loadOptions({}, { prepareWindow: (win: PageValue) => {
-        win.requestAnimationFrame = (callback: PageValue) => win.setTimeout(() => callback(0), 16);
-        win.cancelAnimationFrame = (id: PageValue) => win.clearTimeout(id);
+    const dom = await loadOptions({}, { prepareWindow: (win: PageDom['window']) => {
+        win.requestAnimationFrame = (callback: FrameRequestCallback) => win.setTimeout(() => callback(0), 16);
+        win.cancelAnimationFrame = (id: number) => win.clearTimeout(id);
     } });
     const list = el(dom, 'map-provider-order');
-    list.getBoundingClientRect = () => ({ top: 0, bottom: 192 });
-    for (const row of list.children) {
+    list.getBoundingClientRect = () => rect({ top: 0, bottom: 192 });
+    for (const row of list.children as HTMLCollectionOf<HTMLElement>) {
         Object.defineProperty(row, 'offsetTop', { get: () => [...list.children].indexOf(row) * 48 });
         Object.defineProperty(row, 'offsetHeight', { get: () => 44 });
-        row.getBoundingClientRect = () => ({ top: row.offsetTop, bottom: row.offsetTop + 44 });
+        row.getBoundingClientRect = () => rect({ top: row.offsetTop, bottom: row.offsetTop + 44 });
     }
-    const pointer = (target: PageValue, type: string, y: number) => target.dispatchEvent(new dom.window.MouseEvent(type, {
+    const pointer = (target: EventTarget, type: string, y: number) => target.dispatchEvent(new dom.window.MouseEvent(type, {
         bubbles: true, cancelable: true, button: 0, clientY: y,
     }));
-    const ids = () => [...list.children].map(row => row.dataset.orderItem);
+    const ids = () => [...(list.children as HTMLCollectionOf<HTMLElement>)].map(row => row.dataset.orderItem);
     return { dom, list, pointer, ids };
 };
 
@@ -492,7 +498,7 @@ test('grip drag previews order and only saves on release without toggling provid
     await dom.chrome.storage.sync.set({ bpbSettings: settingsSchema.clean({ theme: 'dark' }) });
     assert.equal(list.hasAttribute('data-reordering'), true, 'unrelated settings updates preserve the drag');
     pointer(dom.window, 'pointerup', 18);
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'caltopo');
+    await waitFor(dom, () => (dom.chrome._store.bpbSettings.mapProviderOrder as string[] | undefined)?.[0] === 'caltopo');
     assert.equal(list.hasAttribute('data-reordering'), false);
     assert.equal(list.querySelectorAll('input:checked').length, 4);
 });
@@ -556,7 +562,7 @@ test('timestamp removal is an Options preference stored in browser sync', async 
     const dom = await loadOptions({});
     const control = el(dom, 'remove-gpx-timestamps');
     assert.equal(control.checked, false);
-    assert.equal(control.closest('.subsection').id, 'capture-gpx');
+    assert.equal(control.closest('.subsection')!.id, 'capture-gpx');
     control.checked = true;
     control.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.removeGpxTimestamps === true);
@@ -568,12 +574,12 @@ test('the General Garmin switch stops imports while keeping connection managemen
     const dom = await loadOptions({});
     const control = el(dom, 'enable-garmin-inbox');
     assert.equal(control.checked, true);
-    assert.equal(control.closest('section').id, 'general');
+    assert.equal(control.closest('section')!.id, 'general');
     control.checked = false; control.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'garmin-key').disabled);
     assert.equal(dom.chrome._store.bpbSettings.enableGarminInbox, false);
     assert.equal(el(dom, 'capture-garmin').hidden, false);
-    assert.equal(dom.window.document.querySelector('a[href="#capture-garmin"]').closest('li').hidden, false);
+    assert.equal(dom.window.document.querySelector('a[href="#capture-garmin"]').closest('li')!.hidden, false);
     control.checked = true; control.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => !el(dom, 'garmin-key').disabled);
     const disabled = await loadOptions({ enableGarminInbox: false }, { hash: '#capture-garmin' });

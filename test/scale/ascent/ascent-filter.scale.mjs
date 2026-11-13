@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPageWithBar } from '../../helpers/load-page.mjs';
+import { loadPageWithBar } from '../../helpers/load-page.mts';
 
 const FIXTURE = '2296-rainier-y9999-sort-ascentdate.html';
 const URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296&sort=AscentDate&u=ft&y=9999';

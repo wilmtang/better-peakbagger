@@ -3,8 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-// @ts-expect-error jsdom ships no type declarations.
-import { JSDOM } from 'jsdom';
+import { fixtureDom } from '../helpers/page-dom.mts';
 
 interface UiMessage { type: string; [key: string]: unknown }
 type Callback = () => unknown;
@@ -14,7 +13,7 @@ const inboxSource = await readFile(new URL('../../dist/options/inbox.js', import
 const inboxHtml = await readFile(new URL('../../options/inbox.html', import.meta.url), 'utf8');
 const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
 test('Garmin disconnect is exposed with imports off and guards retry, focus and repeat activation', async () => {
-    const dom = new JSDOM('<div data-garmin-settings hidden></div>', { url: 'chrome-extension://test/options/options.html#capture-garmin', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings hidden></div>', { url: 'chrome-extension://test/options/options.html#capture-garmin', runScripts: 'outside-only' });
     let finish: (value: Reply) => void = () => {}, removals = 0;
     const calls: string[] = [];
     dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } },
@@ -46,9 +45,9 @@ test('Garmin disconnect is exposed with imports off and guards retry, focus and 
     } finally { dom.window.close(); }
 });
 test('Garmin setup links directly to key creation and requests permission only on Connect', async () => {
-    const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
     const messages: UiMessage[] = []; let permissions = 0;
-    const intervals: Callback[] = []; dom.window.setInterval = (callback: Callback) => { intervals.push(callback); return intervals.length; };
+    const intervals: Callback[] = []; (dom.window as { setInterval: unknown }).setInterval = (callback: Callback) => { intervals.push(callback); return intervals.length; };
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
         storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
         runtime: { sendMessage: async (message: UiMessage) => {
@@ -71,10 +70,10 @@ test('Garmin setup links directly to key creation and requests permission only o
     dom.window.close();
 });
 test('Garmin setup finishes on Connect and only offers a second action for revoked access', async () => {
-    const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
     const messages: UiMessage[] = [], intervals: Callback[] = []; let permissions = 0;
     const state: Reply = { configured: false, enabled: false, pending: 0, cid: null, items: [] };
-    dom.window.setInterval = (callback: Callback) => (intervals.push(callback), intervals.length);
+    (dom.window as { setInterval: unknown }).setInterval = (callback: Callback) => (intervals.push(callback), intervals.length);
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
         storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
@@ -109,7 +108,7 @@ test('Garmin setup finishes on Connect and only offers a second action for revok
     } finally { dom.window.close(); }
 });
 test('inbox keeps drafts visible during a rejected-key state', async () => {
-    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
     dom.window.chrome = { runtime: { sendMessage: async () => ({ ok: true, configured: true, enabled: true, pending: 1,
         error: { code: 'key-rejected', message: 'Garmin needs a new API key. Imports paused; your drafts are safe.' },
         items: [{ id: '123', summary: { date: '2026-10-23', type: 'hiking' }, phase: 'ready', saved: [],
@@ -125,8 +124,8 @@ test('inbox keeps drafts visible during a rejected-key state', async () => {
 });
 
 test('review exposes refreshed results explicitly and updates handoff recovery without reopening', async () => {
-    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
-    const intervals: Callback[] = []; dom.window.setInterval = (fn: Callback) => { intervals.push(fn); return intervals.length; };
+    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const intervals: Callback[] = []; (dom.window as { setInterval: unknown }).setInterval = (fn: Callback) => { intervals.push(fn); return intervals.length; };
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
     const item: Reply = { id: '123', phase: 'waiting', saved: [], summary: { date: '2026-10-23', type: 'hiking' }, analysis: null };
     const state = { configured: true, enabled: true, cid: '456', items: [item] }; const calls: UiMessage[] = [];
@@ -151,7 +150,7 @@ test('review exposes refreshed results explicitly and updates handoff recovery w
 });
 
 test('inbox identifies queued activities and preserves them during a human check', async () => {
-    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
     dom.window.chrome = { runtime: { sendMessage: async () => ({ ok: true, configured: true, enabled: true,
         queued: 2, peakbaggerBlocked: { code: 'cloudflare' }, history: [], items: [1, 2].map(id => ({ id: String(id), phase: 'waiting', summary: { date: '2026-10-23', type: 'hiking' } })) }) },
     storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
@@ -166,7 +165,7 @@ test('inbox identifies queued activities and preserves them during a human check
 });
 
 test('a bookmarked inbox stays hidden while disabled and does not poll its data', async () => {
-    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
     let messages = 0;
     dom.window.chrome = { runtime: { sendMessage: async () => { messages++; return { ok: true, items: [] }; } },
         storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } } };
@@ -180,12 +179,12 @@ test('a bookmarked inbox stays hidden while disabled and does not poll its data'
 });
 
 const auditInbox = async (overrides: Reply = {}) => {
-    const dom = new JSDOM(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
     const intervals: Callback[] = [], calls: UiMessage[] = [];
     const item: Reply = { id: '123', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
         analysis: { matches: [{ id: 1, name: 'Example Peak', classification: 'strong' }], hasTimestamps: true } };
     const state: { items: Reply[]; history: Reply[]; undoError?: string; [key: string]: unknown } = { configured: true, enabled: true, cid: '456', items: [item], history: [], ...overrides };
-    dom.window.setInterval = (fn: Callback) => (intervals.push(fn), intervals.length);
+    (dom.window as { setInterval: unknown }).setInterval = (fn: Callback) => (intervals.push(fn), intervals.length);
     dom.window.confirm = () => false;
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
     const get = async () => ({ bpbSettings: { removeGpxTimestamps: true },
@@ -351,7 +350,7 @@ test('A failed Undo is reported without losing the control', async () => {
 });
 
 test('Garmin Settings refreshes imported credentials and leaves cancelled deletion idle', async () => {
-    const dom = new JSDOM('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
     let configured = false, deletes = 0;
     dom.window.chrome = { storage: { sync: { get: async () => ({}) }, local: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } },
         runtime: { sendMessage: async (message: UiMessage) => {

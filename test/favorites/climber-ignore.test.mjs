@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
 const load = (source, cid = 900002, options = {}) => loadPage(cid === 900001 ? 'climber-home.html' : 'climber-other.html', {
     bundles: ['content/climber-favorite.js'], settings: { favoritesSource: source }, fixtures: PAGE_FIXTURES,
     url: `https://www.peakbagger.com/climber/climber.aspx?cid=${cid}`, ...options });

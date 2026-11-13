@@ -8,7 +8,6 @@ import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
-// @ts-expect-error jsdom ships no declarations, and this Node-side use is a parse and serialize.
 import { JSDOM } from 'jsdom';
 import { layoutVerificationPlan } from './layout-verification-plan.mjs';
 import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mjs';

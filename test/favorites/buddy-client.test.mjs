@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { changeBuddy, readBuddyProfile } from '../../src/favorites/buddy-client.js';
 import { BUDDY_INTENTS_KEY } from '../../src/favorites/buddy-state.js';
-import { makeChromeStub } from '../helpers/load-page.mjs';
+import { makeChromeStub } from '../helpers/load-page.mts';
 
 const html = await readFile(new URL('../fixtures/pages/climber-buddy-form.html', import.meta.url), 'utf8');
 const origin = 'https://www.peakbagger.com', url = `${origin}/climber/climber.aspx?cid=900002`;

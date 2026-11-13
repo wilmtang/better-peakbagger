@@ -21,7 +21,7 @@ import {
     IDBKeyRange,
     IDBTransaction,
 } from 'fake-indexeddb';
-import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mjs';
+import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mts';
 import { photoLibrary as Library } from '../../../src/photos/photo-library.js';
 import { photoStore as Store } from '../../../src/photos/photo-store.js';
 
@@ -108,7 +108,7 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         return url;
     };
     win.URL.revokeObjectURL = url => revokedUrls.push(url);
-    win.indexedDB = indexedDB;
+    (win as { indexedDB: unknown }).indexedDB = indexedDB;
     win.IDBKeyRange = IDBKeyRange;
     win.structuredClone = globalThis.structuredClone;
     Object.defineProperty(win.crypto, 'subtle', {

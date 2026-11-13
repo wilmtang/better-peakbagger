@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as nextTask } from 'node:timers/promises';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, evalBundle, waitFor } from '../helpers/load-page.mjs';
+import { makeChromeStub, evalBundle, waitFor } from '../helpers/load-page.mts';
 
 const load = async ({ theme = 'light', cached = null, prepare = () => {} } = {}) => {
     const dom = new JSDOM('<html><body></body></html>', {

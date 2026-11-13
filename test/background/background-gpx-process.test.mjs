@@ -13,7 +13,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mjs';
 import { MAX_GPX_TRACK_POINTS } from '../../src/capture/capture-resource-limits.js';
-import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mjs';
+import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mts';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 

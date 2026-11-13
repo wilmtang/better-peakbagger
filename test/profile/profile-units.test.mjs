@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
 
 const headers = doc => [...doc.querySelectorAll('#StatsLabel th')].filter(node => /^(Elev|Prom)-/.test(node.textContent));
 const reading = heading => heading.parentElement.nextElementSibling.cells[heading.cellIndex];

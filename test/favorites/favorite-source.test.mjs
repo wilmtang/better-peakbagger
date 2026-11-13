@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createFavoriteSource } from '../../src/favorites/favorite-source.js';
-import { makeChromeStub } from '../helpers/load-page.mjs';
+import { makeChromeStub } from '../helpers/load-page.mts';
 import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.js';
 const harness = (cache, owner = 1) => {
     const dom = new JSDOM(owner ? `<div>Logged in: Test | <a href="/climber/climber.aspx?cid=${owner}">My Home Page</a></div>` : '',

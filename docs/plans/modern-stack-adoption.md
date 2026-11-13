@@ -69,7 +69,7 @@ through Svelte, and Svelte is not installed.
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
-| M4.5 | Not started; interim helper exists | 107 test files reference jsdom 30, which ships no declarations. 18 converted tests suppress the import; [test-dom.mts](../../test/helpers/test-dom.mts) hand-types the constructor for 14 more. No `verify` target for DOM-behavior tests exists yet. |
+| M4.5 | Step 1 done; browser tier not started | `@types/jsdom` 30 types every jsdom test; [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest of the Node project without it. No suppressed jsdom import or hand-typed constructor remains. No `verify` target for DOM-behavior tests exists yet. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
 | M6 | Not started | `options/unit-settings.ts` is typed but still imperative DOM; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
 | M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
@@ -268,6 +268,33 @@ an assertion that all imported JavaScript is trusted.
 
 ### M4.5 — Choose the DOM test environment
 
+Step 1 status (November 13, 2026):
+
+- **Fixed and verified:** `@types/jsdom` 30.0.0 is pinned, grouped with jsdom in
+  Dependabot (jsdom majors are held until a matching declaration major exists)
+  and listed in `DEVELOPMENT_TOOLS`. `npm run typecheck` now runs
+  [typecheck-node.mts](../../scripts/typecheck-node.mts), which derives the
+  DOM program from import closures (jsdom, extension source, or a
+  `/// <reference lib="dom" />`) instead of a hand-kept list, so the remaining
+  Node files are checked without DOM globals. The page loader is
+  [load-page.mts](../../test/helpers/load-page.mts) with typed `LoadedPage`
+  and `PageChrome`; its trusted-dispatch internals sit behind one declaration
+  that throws on a different jsdom major. All suppressed jsdom imports and both
+  hand-typed constructors are gone; `test-dom.mts` only re-exports jsdom's
+  types. Guard tests in `test/project/typescript-tooling.test.mts` pin the
+  split and reject a suppressed or `require`d jsdom import.
+- **Intentionally not changed:** fixture pages are typed through
+  [page-dom.mts](../../test/helpers/page-dom.mts) and `page-types.mts`, which
+  treat lookups in this repository's known markup as present; tests stub
+  window members through narrow `as { member: unknown }` assignments, and a
+  formerly loose test uses `!` where a missing fixture node already threw.
+  `options-helpers.mjs` and other JavaScript helpers stay JavaScript, so their
+  callers keep one documented cast each.
+- **Changed but not fully proven:** type-only changes; no runtime behavior of
+  shipped code changed. Ten browser-driving verify scripts gained a
+  `/// <reference lib="dom" />` they previously inherited; they were
+  typechecked, not run.
+
 `npm test` evaluates the shipped IIFE bundles in jsdom: 118 test files construct
 it 297 times. jsdom ships no type declarations, so 18 converted tests suppress
 the import (for example
@@ -278,7 +305,7 @@ and the shared [test-dom.mts](../../test/helpers/test-dom.mts), which 14 tests
 now import as an interim stand-in for step 1. Every M7 test batch would repeat
 one of those. jsdom also has no layout, mints only
 untrusted events and is not Firefox; the shared
-[page loader](../../test/helpers/load-page.mjs) already reaches into jsdom
+[page loader](../../test/helpers/load-page.mts) already reaches into jsdom
 internals to dispatch trusted input. Settle both before M5 adds component tests
 and before M7 converts DOM tests to TypeScript. This milestone changes test tooling only; no
 shipped output changes.
