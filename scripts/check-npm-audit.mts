@@ -15,8 +15,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // auditing them. Every direct dependency not named below therefore counts as
 // shipped, including new ones, and so does anything those packages depend on.
 export const DEVELOPMENT_TOOLS: ReadonlySet<string> = new Set([
-    '@types/chrome', '@types/jsdom', '@types/node', '@types/selenium-webdriver', 'esbuild', 'eslint', 'fake-indexeddb',
-    'globals', 'jiti', 'jsdom', 'playwright', 'selenium-webdriver', 'semver', 'typescript',
+    '@types/chrome', '@types/jsdom', '@types/node', '@types/selenium-webdriver', 'esbuild', 'esbuild-svelte', 'eslint', 'eslint-plugin-svelte', 'fake-indexeddb',
+    'globals', 'jiti', 'jsdom', 'playwright', 'selenium-webdriver', 'semver', 'svelte-check', 'typescript',
     'typescript-eslint', 'web-ext',
 ]);
 

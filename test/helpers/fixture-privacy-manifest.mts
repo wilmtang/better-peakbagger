@@ -29,6 +29,9 @@ export const FIXTURE_PRIVACY_MANIFEST = Object.freeze([
     Object.freeze({ suffix: '.xml', format: 'xml', decoder: 'utf8' }),
     Object.freeze({ suffix: '.md', format: 'markdown', decoder: 'utf8' }),
     Object.freeze({ suffix: '.json', format: 'json', decoder: 'json+utf8' }),
+    // Test-only Svelte components and their TypeScript (test/fixtures/svelte/).
+    Object.freeze({ suffix: '.svelte', format: 'svelte', decoder: 'utf8' }),
+    Object.freeze({ suffix: '.ts', format: 'typescript', decoder: 'utf8' }),
 ] as const);
 
 const DECODERS = Object.freeze({

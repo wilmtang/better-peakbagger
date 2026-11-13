@@ -2,6 +2,7 @@ import globals from 'globals';
 import { defineConfig } from 'eslint/config';
 import type { Linter } from 'eslint';
 import tseslint from 'typescript-eslint';
+import svelte from 'eslint-plugin-svelte';
 
 const rules: Linter.RulesRecord = {
     'no-undef': 'error',
@@ -28,6 +29,9 @@ const rules: Linter.RulesRecord = {
 };
 
 const typescriptFiles = ['**/*.ts', '**/*.mts'];
+// Authored runtime roots only; test fixtures are linted by their own checks.
+const svelteFiles = ['src/**/*.svelte', 'options/**/*.svelte', 'popup/**/*.svelte', 'photos/**/*.svelte',
+    'src/**/*.svelte.ts', 'options/**/*.svelte.ts', 'popup/**/*.svelte.ts', 'photos/**/*.svelte.ts'];
 
 export default defineConfig([
     {
@@ -108,6 +112,32 @@ export default defineConfig([
     {
         files: ['src/**/*.ts', 'options/**/*.ts', 'popup/**/*.ts', 'photos/**/*.ts'],
         languageOptions: { globals: { ...globals.browser, ...globals.webextensions } },
+    },
+    // Svelte components and rune modules. Component scripts must be TypeScript
+    // (the plugin's block-lang rule), parsed by typescript-eslint inside the
+    // Svelte parser, with the same TypeScript rules as plain modules.
+    ...svelte.configs.recommended.map(config => config.files ? { ...config, files: svelteFiles } : config),
+    {
+        files: svelteFiles,
+        languageOptions: {
+            globals: { ...globals.browser, ...globals.webextensions },
+            parserOptions: { parser: tseslint.parser, extraFileExtensions: ['.svelte'] },
+        },
+        plugins: { '@typescript-eslint': tseslint.plugin },
+        rules: {
+            ...rules,
+            ...Object.assign({}, ...tseslint.configs.recommended.map(config => config.rules ?? {})),
+            'no-undef': 'off',
+            'no-unused-vars': 'off',
+            'no-shadow': 'off',
+            // Svelte markup does not follow the script indentation rule.
+            indent: 'off',
+            '@typescript-eslint/no-unused-vars': ['error', {
+                argsIgnorePattern: '^_', caughtErrors: 'none',
+            }],
+            '@typescript-eslint/no-shadow': 'error',
+            'svelte/block-lang': ['error', { script: 'ts', style: null }],
+        },
     },
     {
         files: ['*.mts', 'scripts/**/*.{ts,mts}', 'test/**/*.{ts,mts}',

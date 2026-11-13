@@ -196,8 +196,10 @@ const createContext = async (browser: Browser, engine: DomEngine, item: DomCase,
             const fixture = routes.get(url.pathname);
             if (fixture) return route.fulfill({ status: 200, body: fixture.body, contentType: fixture.contentType });
             if (url.pathname.startsWith('/dist/')) {
-                const file = decodeURIComponent(url.pathname.slice('/dist/'.length));
-                try { return await route.fulfill({ status: 200, body: await built(file), contentType: fixtureContentType(file) }); }
+                try {
+                    const file = decodeURIComponent(url.pathname.slice('/dist/'.length));
+                    return await route.fulfill({ status: 200, body: await built(file), contentType: fixtureContentType(file) });
+                }
                 catch { unexpected.push(`missing ${url.pathname}`); return route.fulfill({ status: 404, body: 'Missing built file' }); }
             }
             unexpected.push(`unrouted ${url.pathname}`);

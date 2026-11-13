@@ -84,6 +84,8 @@ test('every fixture format is registered and encoded XML is structurally sanitiz
         { suffix: '.xml', format: 'xml', decoder: 'utf8' },
         { suffix: '.md', format: 'markdown', decoder: 'utf8' },
         { suffix: '.json', format: 'json', decoder: 'json+utf8' },
+        { suffix: '.svelte', format: 'svelte', decoder: 'utf8' },
+        { suffix: '.ts', format: 'typescript', decoder: 'utf8' },
     ]);
     assert.throws(() => decodeFixtureForPrivacy('fixture.zip', Buffer.from('not a fixture')),
         /Unregistered fixture extension/);

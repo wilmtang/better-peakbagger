@@ -57,9 +57,9 @@ evidence.
 
 ## Current progress
 
-**Next: M5.** M0–M4.5 are
-complete; M7's pure-TS batches are also unblocked by M3. Production Svelte adoption has not started: nothing ships
-through Svelte, and Svelte is not installed.
+**Next: M6.** M0–M5 are
+complete; M7's pure-TS batches are also unblocked by M3. Production Svelte adoption has not started: Svelte is installed
+and compiles, but nothing ships through it.
 
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
@@ -69,7 +69,7 @@ through Svelte, and Svelte is not installed.
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
-| M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
+| M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical production output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; no shipped bundle imports a component. |
 | M6 | Not started | `options/unit-settings.ts` is typed but still imperative DOM; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
 | M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
 | M7.5 | Not started | 118 test files construct jsdom 297 times; six `scripts/verify-*` files and two `docs/plans/evidence/` scripts import it too. Depends on M4.5's browser tier. |
@@ -85,7 +85,7 @@ Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 | Other (root config, `docs/plans/`, `store-assets/`) | 3 | 15 |
 
 These are a dated snapshot, not a target to maintain by hand. There are no
-Svelte components. The build produces 67 outputs: 65 IIFEs and two ESM frames.
+production Svelte components. The build produces 67 outputs: 65 IIFEs and two ESM frames.
 Recompute the runtime counts with
 [`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts), and the others
 with `git ls-files` filtered by extension, when starting a batch.
@@ -415,6 +415,55 @@ placement. `npm run verify -- browsers` stays the only check for the real
 manifest, execution worlds, worker and bridge.
 
 ### M5 — Enable and prove Svelte compilation
+
+Status: complete on November 13, 2026.
+
+- **Fixed and verified:**
+  - The set resolves cleanly against TypeScript 6.0.3, ESLint 10.14, esbuild
+    0.28.2 and Node 26 locally. The three tools are in `DEVELOPMENT_TOOLS`,
+    and the four packages share a `svelte` Dependabot group.
+  - [svelte-build.mts](../../scripts/svelte-build.mts) gives every bundle one
+    compiler definition: runes, production client output in every mode, and
+    injected styles. All 212 development and minified outputs are
+    byte-identical with the plugin added.
+  - `npm run typecheck` adds `svelte-check --tsconfig ./tsconfig.check.json`.
+  - ESLint lints runtime-root components and rune modules as TypeScript and
+    requires `<script lang="ts">`.
+  - [svelte-tooling.test.mts](../../test/project/svelte-tooling.test.mts)
+    compiles a test-only component and `.svelte.ts` dependency through the real
+    normal, minified and incremental `esbuildOptions`, and asserts there is one
+    output, no compiler code, no code loading or network calls, and only
+    namespace and error-text URLs. Against `test/fixtures/svelte/`'s explicitly
+    selected checking projects, it shows svelte-check rejecting wrong props at
+    a mount site and on a child, plus a missing template name. It drives
+    `watchAll` in a disposable checkout through transitive child-component and
+    rune edits, a component syntax error that keeps the generation and token,
+    and recovery.
+  - [svelte-island.dom.mts](../../test/dom/svelte-island.dom.mts) mounts the
+    minified fixture through the typed adapter beside legacy DOM in hidden
+    Chromium 156 and Firefox 157. A trusted edit saves a frozen, allowlisted
+    plain patch built from nested `$state`, which itself cannot be cloned.
+    Controller updates re-render. A persisted pagehide holds updates until
+    pageshow. A final pagehide removes only the island's DOM and ignores later
+    updates. A re-mount works, and legacy listeners and node identity survive
+    throughout.
+  - The case failed in both engines when the adapter applied updates while
+    suspended, and when disposal skipped unmounting.
+- **Intentionally not changed:**
+  - No production surface imports a component. The `svelte` runtime stays
+    counted as shipped by the audit, the conservative side.
+  - Bundles use no `production` resolve condition, because it would change
+    existing outputs. Svelte's runtime therefore detects dev mode from
+    `globalThis.process`, which extension contexts lack, so it runs its
+    production paths but carries its dev warning strings.
+- **Changed but not fully proven:**
+  - Injected component styles under production CSP, AMO review and the Chrome
+    128/Firefox 152 floors.
+  - BFCache is simulated with synthetic page-transition events, not a real
+    back/forward navigation.
+  - The fixture is served at the routed Peakbagger origin, not an extension
+    page.
+  - Hosted CI has not run these checks.
 
 1. Resolve and lock a compatible Svelte 5/compiler-adapter/checker/lint set
    against this checkout's TypeScript 6.0.3, ESLint 10, esbuild 0.28 and Node 24.

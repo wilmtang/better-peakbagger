@@ -40,7 +40,7 @@ updates:
     # resolved newer siblings despite this strategy (PR #19).
     versioning-strategy: increase
     # One per version-update group.
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 6
     # Version updates wait out their initial release churn. Security updates
     # ignore cooldown and still arrive immediately.
     cooldown:
@@ -93,6 +93,17 @@ updates:
           - jiti
           - "@types/node"
           - "@types/chrome"
+
+      # The Svelte compiler/runtime and the tools that compile, check and lint
+      # it. They move together so a compiler release cannot outpace its checker
+      # or lint parser. The svelte runtime ships once M6 imports a component.
+      svelte:
+        patterns:
+          - svelte
+          - esbuild-svelte
+          - svelte-check
+          - eslint-plugin-svelte
+          - svelte-eslint-parser
 
       # Test only. jsdom and its declarations must change majors together.
       jsdom:

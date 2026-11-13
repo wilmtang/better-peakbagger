@@ -34,9 +34,10 @@ not a general exclusion of scripts or tests. Follow the compatibility checklist
 in `docs/plans/modern-stack-adoption.md` for runtime conversions. Repository-wide
 runtime source checks must use `test/helpers/runtime-sources.mts` so authored
 TypeScript and Svelte files cannot disappear from policy scans. Keep owner
-exceptions explicit. Svelte compilation and UI integration remain tracked
-separately in the adoption plan. Svelte
-is not enabled by this policy; when enabled, component scripts must use TypeScript.
+exceptions explicit. Svelte compiles through `scripts/svelte-build.mts` and is
+checked by `svelte-check` in `npm run typecheck`; component scripts must use
+TypeScript (lint-enforced). Shipping a Svelte UI is tracked separately in the
+adoption plan (M6).
 
 Run `npm run typecheck`, `npm run lint`, and the appropriate tests. Before
 committing, `npm run check:typescript-policy` checks staged additions and changes;

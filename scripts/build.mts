@@ -22,6 +22,7 @@
 import { build, context, type BuildOptions, type Plugin } from 'esbuild';
 import { jsZipCspPlugin } from './jszip-csp-patch.mjs';
 import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mts';
+import { sveltePlugins } from './svelte-build.mts';
 import {
     access,
     copyFile,
@@ -129,7 +130,7 @@ function browserImportPlugins(imports: Record<string, string> = {}): Plugin[] {
     }];
 }
 
-function esbuildOptions(entry: BundleEntry, {
+export function esbuildOptions(entry: BundleEntry, {
     minify = MINIFY,
     outputDir = distDir,
     projectRoot = root,
@@ -152,7 +153,7 @@ function esbuildOptions(entry: BundleEntry, {
         minify,
         sourcemap: minify ? false : 'linked',
         logLevel: 'warning',
-        plugins: [...browserImportPlugins(entry.browserImports), ...(entry.patchJsZip ? [jsZipCspPlugin() as Plugin] : [])],
+        plugins: [...browserImportPlugins(entry.browserImports), ...(entry.patchJsZip ? [jsZipCspPlugin() as Plugin] : []), ...sveltePlugins()],
     };
 }
 

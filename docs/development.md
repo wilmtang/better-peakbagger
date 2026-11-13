@@ -71,8 +71,25 @@ generated `.js` filenames consumed by the manifest and pages. New Node tests use
 `.test.mts`; run converted scale tests explicitly until their owning runner is
 updated. Do not add forwarding JavaScript stubs or disable checking. Runtime
 conversion must also update the relevant source guards and watch coverage from
-[the adoption plan](plans/modern-stack-adoption.md). This setup does not install
-Svelte or replace existing runtime owners.
+[the adoption plan](plans/modern-stack-adoption.md). Svelte is installed and
+compiles, but no shipped bundle imports a component yet (M6).
+
+Svelte components (`.svelte`) and rune modules (`.svelte.ts`) compile through
+[svelte-build.mts](../scripts/svelte-build.mts), which every bundle in
+`scripts/build.mts` receives: runes mode, production client output in every
+build including watch, and styles injected by the component so a bundle keeps
+one output file. `npm run typecheck` runs
+`svelte-check --tsconfig ./tsconfig.check.json` over the browser project, and
+ESLint lints components and rune modules in the runtime roots with the
+TypeScript rules, requiring `<script lang="ts">`. Mount a component beside
+legacy DOM through [svelte-island.ts](../src/ui/svelte-island.ts), which owns
+mount, prop updates and BFCache-aware disposal; controllers never import rune
+modules directly. Test-only components live in `test/fixtures/svelte/`, with
+`valid.check.json` and `invalid.check.json` as their explicitly selected checking
+projects; [svelte-tooling.test.mts](../test/project/svelte-tooling.test.mts)
+compiles, checks, lints and watches them, and
+[svelte-island.dom.mts](../test/dom/svelte-island.dom.mts) mounts one in the
+browser DOM tier.
 
 Repository-wide runtime policy checks use
 [test/helpers/runtime-sources.mts](../test/helpers/runtime-sources.mts), which
@@ -85,7 +102,7 @@ while template handlers remain visible in the raw scan. The actual policy
 functions live in [source-policies.mts](../test/helpers/source-policies.mts),
 shared by the repository checks and failing fixture tests. Reviewed settings
 read counts and module-specific exceptions must be updated explicitly when an
-owner changes. Svelte compilation and the build-watcher work remain separate.
+owner changes.
 
 `npm run typecheck` checks separate browser/Node projects without emitting files.
 [typecheck-node.mts](../scripts/typecheck-node.mts) splits the Node project by
@@ -361,7 +378,7 @@ script is added or removed without updating it.
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. Runs three test files in parallel locally and Node's default when `CI` is set. Flags appended after `npm test --` have no effect, because Node ignores flags after the file globs; to change the concurrency, build and then run `node --test --test-concurrency=N` with the flag before the glob. The override uses POSIX shell syntax. |
-| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project, then the Node project split into a DOM-free program and a jsdom/DOM program; runs in Test CI and release verification. |
+| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project with `tsc` and `svelte-check`, then the Node project split into a DOM-free program and a jsdom/DOM program; runs in Test CI and release verification. |
 | `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, the full 1,500-entry favorite manager/search/backup path, and a 1,200-photo library; discovers JavaScript and TypeScript scale tests separately from the fast default suite. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
@@ -922,6 +939,7 @@ attributed:
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
 | `tooling` | nothing; build and test only | no |
 | `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
+| `svelte` | the `svelte` runtime once a bundle imports a component; the compiler, checker and lint tools never | not yet (M6) |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
 
@@ -941,11 +959,11 @@ counts. Counts cannot detect a replacement warning of the same type in the same
 file, so dependency source review remains necessary.
 
 Every package is declared under `devDependencies`, so that field says nothing
-about whether a package ships. The four named release-path groups do; updates
+about whether a package ships. The named groups do; updates
 in either catch-all require tracing the package through its parent dependency.
 
 Dependabot assigns a version update to the first matching group. The
-`remaining-npm` wildcard therefore stays after the four release-path groups
+`remaining-npm` wildcard therefore stays after the named groups
 and combines only otherwise unmatched direct and transitive updates. This
 prevents separate incomplete lockfile repairs from deadlocking the
 shipped-code advisory check. `security-fixes` applies the same all-npm grouping to
