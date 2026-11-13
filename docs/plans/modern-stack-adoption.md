@@ -57,8 +57,8 @@ evidence.
 
 ## Current progress
 
-**Next: M4 and M4.5, then M5.** They are independent; M4.5's typing step is
-small and unblocks every test conversion, so it can go first. M0–M3 are
+**Next: M4.5, then M5.** M4.5's typing step is
+small and unblocks every test conversion. M0–M4 are
 complete; M7's pure-TS batches are also unblocked by M3. Production Svelte adoption has not started: nothing ships
 through Svelte, and Svelte is not installed.
 
@@ -68,10 +68,10 @@ through Svelte, and Svelte is not installed.
 | M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`, `a9de7d7b`. `npm run audit:ci` passes with zero advisories in shipped code; Results are in the [follow-up ledger](follow-ups.md). |
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
-| M4 | Not started | The Units panel's write route (`settings.js` `set` → `SETTINGS_PATCH` → worker) is untyped on the page side; the worker end is TypeScript since `c45d32ef`. No Units panel contract exists. |
+| M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) types the page side of `SETTINGS_PATCH` around the unchanged `settings.js`; `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
 | M4.5 | Not started; interim helper exists | 107 test files reference jsdom 30, which ships no declarations. 18 converted tests suppress the import; [test-dom.mts](../../test/helpers/test-dom.mts) hand-types the constructor for 14 more. No `verify` target for DOM-behavior tests exists yet. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
-| M6 | Not started | `options/unit-settings.js` is unchanged; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
+| M6 | Not started | `options/unit-settings.ts` is typed but still imperative DOM; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
 | M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
 | M7.5 | Not started | 118 test files construct jsdom 297 times; six `scripts/verify-*` files and two `docs/plans/evidence/` scripts import it too. Depends on M4.5's browser tier. |
 | M8 | Not started | Depends on M6. |
@@ -208,6 +208,27 @@ and Chrome/Firefox development reload paths still work. Type errors remain the
 separate checker's responsibility; a green esbuild run is not type safety.
 
 ### M4 — Type the pilot's boundaries
+
+Status: complete on November 13, 2026.
+
+- **Fixed and verified:** the Units owner is TypeScript and writes only
+  frozen plain patches rebuilt from its allowlist and validated through the
+  shared schema (`unitSettingsPatch`), so nested proxies and unrelated fields
+  never reach `set`. The `SETTINGS_PATCH` request, success, sender-refusal and
+  listener-failure replies are declared in `settings-patch-route.ts`, whose
+  `settingsPatchRoute(transport)` delegates to the real `createSettingsStore`
+  `set` rather than reimplementing it. Tests cross a real structured clone into
+  the worker's `applyPatch`, and cover transport loss, invalid replies,
+  rejected writes and storage failure; ten `@ts-expect-error` examples fail the
+  checker on misuse.
+- **Intentionally not changed:** `src/settings/settings.js` and the options
+  controller `options/options.js` stay JavaScript (M7). The controller's `save`
+  still calls the store's `set` directly; the Units owner sees it only through
+  the typed `UnitSettingsSave` contract. Reply validation and error messages are
+  settings.js's own, including its existing acceptance of `{ ok: true }` with
+  any truthy `settings` value, which it cleans to defaults.
+- **Changed but not fully proven:** no real-browser run; the options page's
+  jsdom suites (`test/options`, 326 tests) and `test/settings` pass.
 
 The Units panel never touches `src/ui/runtime-message.js`. Its `save` goes from
 the options controller to `set` in [settings.js](../../src/settings/settings.js),
@@ -348,7 +369,7 @@ proves tooling and a fixture contract, not production CSP or host integration.
 ### M6 — Ship one bounded Svelte island
 
 1. Confirm the hidden verifier can load the real options page before editing UI.
-   Use [the Units panel](../../options/unit-settings.js) as the default pilot:
+   Use [the Units panel](../../options/unit-settings.ts) as the default pilot:
    it already has a small `initUnitSettings({ save })` / `populate` boundary,
    no native permission prompt and [focused behavior tests](../../test/options/options-units.test.mjs).
    Preserve the existing settings choices, IDs, examples, disclosure behavior

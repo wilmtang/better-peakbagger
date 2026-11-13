@@ -15,7 +15,7 @@ import { initImgbbKey } from './imgbb.ts';
 import { initSettingsBackup } from './settings-backup.js';
 import { initPhotoBackup } from './photos.js';
 import { initSectionNav } from '../src/ui/section-nav.js';
-import { initUnitSettings } from './unit-settings.js';
+import { initUnitSettings } from './unit-settings.ts';
 import { initCustomLayers } from './custom-layers.js';
 import { initInstagramDisplay } from './instagram-display.js';
 
