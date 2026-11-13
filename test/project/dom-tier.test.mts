@@ -18,14 +18,18 @@ test('DOM tier selection defaults to both engines and rejects anything it would 
     assert.deepEqual(domSelection([], root), { engines: ['chrome', 'firefox'], filter: null, dist: path.join(root, 'dist') });
     assert.deepEqual(domSelection(['firefox', '--case', 'scroll', '--dist', 'tmp/copy'], root),
         { engines: ['firefox'], filter: 'scroll', dist: path.join(root, 'tmp/copy') });
-    for (const args of [['safari'], ['chrome', 'chrome'], ['--case'], ['--case', '--dist'], ['--retries', '2'], ['--headed']]) {
+    for (const args of [['safari'], ['--case'], ['--case', '--dist'], ['--retries', '2'], ['--headed']]) {
         assert.throws(() => domSelection(args, root), /Unknown DOM tier argument/, args.join(' '));
     }
+    assert.throws(() => domSelection(['chrome', 'chrome'], root), /selected twice/);
+    assert.throws(() => domSelection(['--case', 'a', '--case', 'b'], root), /--case was given twice/);
 });
 
-test('an empty DOM tier selection fails before any browser launches', async () => {
-    await assert.rejects(runDomTier(['--case', 'no case has this name'], [{ name: 'fixture', cases: [{ name: 'only', run: async () => {} }] }]),
-        /No DOM tier case matches/);
+test('an empty selection or a missing build fails before any browser launches', async () => {
+    const suites = [{ name: 'fixture', cases: [{ name: 'only', run: async () => {} }] }];
+    await assert.rejects(runDomTier(['--case', 'no case has this name'], suites), /No DOM tier case matches/);
+    await assert.rejects(runDomTier(['--dist', 'no-such-build'], suites), /does not exist; run npm run build/);
+    await assert.rejects(runDomTier(['--dist', 'test'], suites), /is not a built extension/);
 });
 
 test('DOM tier suites are discovered, outside the npm test glob, and wired into verify and required CI', async () => {
@@ -40,6 +44,10 @@ test('DOM tier suites are discovered, outside the npm test glob, and wired into 
         { build: true, commands: [[path.join(root, 'scripts', 'verify-dom.mts'), 'firefox']] });
     const workflow = await readFile(path.join(root, '.github/workflows/test.yml'), 'utf8');
     assert.match(workflow, /npm run verify -- dom \$\{\{ matrix\.browser \}\}/);
+    const job = workflow.slice(workflow.indexOf('  dom-tier:'), workflow.indexOf('\n  layout:'));
+    assert.match(job, /BPB_VERIFY_ARTIFACTS: browser-evidence\/dom/);
+    assert.match(job, /name: Retain browser failure evidence\s+if: failure\(\)[\s\S]*name: browser-failure-dom-\$\{\{ matrix\.browser \}\}/);
+    assert.match(job, /fixture-browser: \$\{\{ matrix\.browser \}\}/);
     const aggregate = workflow.slice(workflow.indexOf('  chrome-required:'));
     assert.match(aggregate, /needs:[\s\S]*- dom-tier/);
     assert.match(aggregate, /test "\$DOM_TIER_RESULT" = success/);

@@ -17,11 +17,11 @@
 // worker and bridge remain `npm run verify -- browsers` territory.
 
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
+import { access, readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium, firefox, type Browser, type Page, type Route } from 'playwright';
-import { retainBrowserFailure } from './browser-verification-evidence.mjs';
+import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
 import { fixtureContentType, fixtureHost, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
@@ -46,7 +46,7 @@ export interface DomContext {
     open(pathname: string): Promise<void>;
     // Evaluates built bundles (dist-relative) in the page, in the given order.
     inject(...bundles: string[]): Promise<void>;
-    // Reads a built file from the selected dist directory.
+    // Reads a built file from the selected build directory.
     built(file: string): Promise<Buffer>;
 }
 
@@ -72,11 +72,13 @@ function installExtensionStub({ settings, local }: { settings: Record<string, un
     const listeners = new Set<Listener>();
     const messages: unknown[] = [];
     const area = (values: Values, name: string) => ({
+        // Like the real API, a missing key is absent from the result.
         async get(keys?: string | string[] | Values | null) {
             if (keys == null) return { ...values };
-            if (typeof keys === 'string') return { [keys]: values[keys] };
-            if (Array.isArray(keys)) return Object.fromEntries(keys.map(key => [key, values[key]]));
-            return Object.fromEntries(Object.entries(keys).map(([key, fallback]) => [key, values[key] ?? fallback]));
+            const present = (key: string) => Object.hasOwn(values, key);
+            if (typeof keys === 'string') return present(keys) ? { [keys]: values[keys] } : {};
+            if (Array.isArray(keys)) return Object.fromEntries(keys.filter(present).map(key => [key, values[key]]));
+            return Object.fromEntries(Object.entries(keys).map(([key, fallback]) => [key, present(key) ? values[key] : fallback]));
         },
         async set(patch: Values) {
             const changes: Record<string, { oldValue?: unknown; newValue?: unknown }> = {};
@@ -87,7 +89,13 @@ function installExtensionStub({ settings, local }: { settings: Record<string, un
             for (const listener of listeners) listener(changes, name);
         },
         async remove(keys: string | string[]) {
-            for (const key of Array.isArray(keys) ? keys : [keys]) delete values[key];
+            const changes: Record<string, { oldValue?: unknown; newValue?: unknown }> = {};
+            for (const key of Array.isArray(keys) ? keys : [keys]) {
+                if (!Object.hasOwn(values, key)) continue;
+                changes[key] = { oldValue: values[key] };
+                delete values[key];
+            }
+            if (Object.keys(changes).length) for (const listener of listeners) listener(changes, name);
         },
     });
     const event = () => ({ addListener() {}, removeListener() {}, hasListener: () => false });
@@ -134,10 +142,14 @@ export function domSelection(args: readonly string[], cwd = projectRoot): DomSel
     let filter: string | null = null, dist = path.join(cwd, 'dist');
     for (let index = 0; index < args.length; index++) {
         const value = args[index]!;
-        if ((DOM_ENGINES as readonly string[]).includes(value) && !engines.includes(value as DomEngine)) engines.push(value as DomEngine);
-        else if ((value === '--case' || value === '--dist') && args[index + 1] && !args[index + 1]!.startsWith('--')) {
-            if (value === '--case') filter = args[++index]!;
-            else dist = path.resolve(cwd, args[++index]!);
+        if ((DOM_ENGINES as readonly string[]).includes(value)) {
+            if (engines.includes(value as DomEngine)) throw new Error(`DOM tier engine ${value} was selected twice.`);
+            engines.push(value as DomEngine);
+        } else if ((value === '--case' || value === '--dist') && args[index + 1] && !args[index + 1]!.startsWith('--')) {
+            if (value === '--case') {
+                if (filter !== null) throw new Error('DOM tier --case was given twice.');
+                filter = args[++index]!;
+            } else dist = path.resolve(cwd, args[++index]!);
         } else throw new Error(`Unknown DOM tier argument: ${value}. Usage: verify -- dom [chrome] [firefox] [--case TEXT] [--dist DIR]`);
     }
     return { engines: engines.length ? engines : [...DOM_ENGINES], filter, dist };
@@ -154,42 +166,62 @@ export async function loadDomSuites(directory = path.join(projectRoot, 'test', '
     return suites;
 }
 
-const createContext = async (browser: Browser, engine: DomEngine, item: DomCase, dist: string) => {
-    const context = await browser.newContext({ viewport: item.viewport ?? { width: 1000, height: 760 } });
-    const routes = new Map<string, { body: string | Buffer; contentType: string }>();
-    const built = (file: string) => {
-        const resolved = path.resolve(dist, file);
-        if (!resolved.startsWith(dist + path.sep)) throw new Error(`Refusing a path outside dist: ${file}`);
+// Serves files from the selected build directory only, after resolving
+// symlinks, so a routed path cannot escape it.
+const builtReader = async (dist: string) => {
+    const base = await realpath(dist).catch(() => { throw new Error(`DOM tier build directory ${dist} does not exist; run npm run build.`); });
+    await access(path.join(base, 'manifest.json')).catch(() => { throw new Error(`${dist} is not a built extension (no manifest.json).`); });
+    return async (file: string) => {
+        const resolved = await realpath(path.resolve(base, file));
+        if (!resolved.startsWith(base + path.sep)) throw new Error(`Refusing a path outside the build directory: ${file}`);
         return readFile(resolved);
     };
-    // Abort everything that is not a routed fixture or a built file: no live
-    // network, and a missing asset fails visibly instead of hanging.
-    await context.route('**/*', async (route: Route) => {
-        const url = new URL(route.request().url());
-        if (url.origin !== DOM_ORIGIN) return route.abort();
-        const fixture = routes.get(url.pathname);
-        if (fixture) return route.fulfill({ status: 200, body: fixture.body, contentType: fixture.contentType });
-        if (url.pathname.startsWith('/dist/')) {
-            const file = url.pathname.slice('/dist/'.length);
-            try { return await route.fulfill({ status: 200, body: await built(file), contentType: fixtureContentType(file) }); }
-            catch { return route.fulfill({ status: 404, body: 'Missing built file' }); }
-        }
-        return route.fulfill({ status: 404, body: 'Not a DOM tier fixture' });
-    });
-    await context.addInitScript(installExtensionStub, { settings: item.stub?.settings ?? {}, local: item.stub?.local ?? {} });
-    const page = await context.newPage();
-    page.setDefaultTimeout(10_000);
-    const pageErrors: string[] = [];
-    page.on('pageerror', error => pageErrors.push(error.message));
-    const domContext: DomContext = {
-        page, engine, built,
-        async route(pathname, body, contentType = 'text/html') { routes.set(pathname, { body, contentType }); },
-        async open(pathname) { await page.goto(new URL(pathname, DOM_ORIGIN).href, { waitUntil: 'load' }); },
-        async inject(...bundles) {
-            for (const bundle of bundles) await page.addScriptTag({ content: (await built(bundle)).toString('utf8') });
-        },
-    };
-    return { context, domContext, pageErrors };
+};
+
+type BuiltReader = Awaited<ReturnType<typeof builtReader>>;
+
+const createContext = async (browser: Browser, engine: DomEngine, item: DomCase, built: BuiltReader) => {
+    const context = await browser.newContext({ viewport: item.viewport ?? { width: 1000, height: 760 } });
+    try {
+        const routes = new Map<string, { body: string | Buffer; contentType: string }>();
+        // Every request a case causes must be one it planned: a missing built
+        // asset or a request leaving the fixture origin fails the case.
+        const unexpected: string[] = [];
+        await context.route('**/*', async (route: Route) => {
+            const url = new URL(route.request().url());
+            if (url.origin !== DOM_ORIGIN) {
+                unexpected.push(`aborted ${url.origin}`);
+                return route.abort();
+            }
+            const fixture = routes.get(url.pathname);
+            if (fixture) return route.fulfill({ status: 200, body: fixture.body, contentType: fixture.contentType });
+            if (url.pathname.startsWith('/dist/')) {
+                const file = decodeURIComponent(url.pathname.slice('/dist/'.length));
+                try { return await route.fulfill({ status: 200, body: await built(file), contentType: fixtureContentType(file) }); }
+                catch { unexpected.push(`missing ${url.pathname}`); return route.fulfill({ status: 404, body: 'Missing built file' }); }
+            }
+            unexpected.push(`unrouted ${url.pathname}`);
+            return route.fulfill({ status: 404, body: 'Not a DOM tier fixture' });
+        });
+        const requests = watchFixtureRequests(context, DOM_ORIGIN);
+        await context.addInitScript(installExtensionStub, { settings: item.stub?.settings ?? {}, local: item.stub?.local ?? {} });
+        const page = await context.newPage();
+        page.setDefaultTimeout(10_000);
+        const pageErrors: string[] = [];
+        page.on('pageerror', error => pageErrors.push(error.message));
+        const domContext: DomContext = {
+            page, engine, built,
+            async route(pathname, body, contentType = 'text/html') { routes.set(pathname, { body, contentType }); },
+            async open(pathname) { await page.goto(new URL(pathname, DOM_ORIGIN).href, { waitUntil: 'load' }); },
+            async inject(...bundles) {
+                for (const bundle of bundles) await page.addScriptTag({ content: (await built(bundle)).toString('utf8') });
+            },
+        };
+        return { context, domContext, pageErrors, unexpected, requests };
+    } catch (error) {
+        await context.close().catch(() => {});
+        throw error;
+    }
 };
 
 export async function runDomTier(args: readonly string[], suites?: DomSuite[]): Promise<number> {
@@ -198,6 +230,7 @@ export async function runDomTier(args: readonly string[], suites?: DomSuite[]): 
     const selected = loaded.flatMap(suite => suite.cases.map(item => ({ suite, item, label: `${suite.name}: ${item.name}` })))
         .filter(({ label }) => !selection.filter || label.includes(selection.filter));
     if (!selected.length) throw new Error(`No DOM tier case matches ${JSON.stringify(selection.filter)}.`);
+    const built = await builtReader(selection.dist);
     const resources = createResourceStack();
     let failure: unknown = null, executed = 0;
     try {
@@ -210,18 +243,26 @@ export async function runDomTier(args: readonly string[], suites?: DomSuite[]): 
             resources.defer(`${engine} DOM tier browser`, () => browser.close());
             for (const { item, label } of selected) {
                 const startedAt = performance.now();
-                const { context, domContext, pageErrors } = await createContext(browser, engine, item, selection.dist);
+                const { context, domContext, pageErrors, unexpected, requests } = await createContext(browser, engine, item, built);
+                let caseError: unknown = null;
                 try {
                     await item.run(domContext);
                     assert.deepEqual(pageErrors, [], `${label}: uncaught page errors`);
+                    assert.deepEqual(unexpected, [], `${label}: unexpected requests`);
                     executed++;
                     console.log(JSON.stringify({ tier: 'dom', engine, version: browser.version(), hidden: true, case: label,
                         viewport: item.viewport ?? { width: 1000, height: 760 }, durationMs: Math.round(performance.now() - startedAt), result: 'passed' }));
                 } catch (error) {
-                    await retainBrowserFailure({ context, fixtureOrigin: DOM_ORIGIN } as Parameters<typeof retainBrowserFailure>[0]);
+                    caseError = error;
+                    await retainBrowserFailure({ context, fixtureOrigin: DOM_ORIGIN, requests } as unknown as Parameters<typeof retainBrowserFailure>[0]);
                     throw new Error(`${engine} ${label} failed: ${(error as Error).message}`, { cause: error });
-                } finally { await context.close(); }
+                } finally {
+                    // A close failure must not replace the case's own error.
+                    await context.close().catch(error => { if (!caseError) throw error; });
+                }
             }
+            // Release this engine before launching the next.
+            await browser.close();
         }
         // Retries are off: a case that passes only on re-run is a bug in the case.
         assert.equal(executed, selected.length * selection.engines.length, 'every selected DOM tier case must execute');

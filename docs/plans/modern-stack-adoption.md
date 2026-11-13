@@ -316,17 +316,25 @@ Steps 2–4 status (November 13, 2026):
   the required `chrome-required` aggregate now needs the `dom-tier` job.
   [options-scroll-spy.dom.mts](../../test/dom/options-scroll-spy.dom.mts)
   replaces the jsdom "zero-layout world" test, which could only show the spy
-  did not throw. It proves the 40px activation marker, trusted-click
-  alignment to the scroll margin, and that hidden editor navigation never
-  becomes current. Against disposable copies of `dist/`, a marker of 0 failed
-  the first case in both engines, and removing the hidden-entry filter failed
-  the third in Chromium. All six cases pass in Chromium 156 and Firefox 157,
-  hidden, at 1000×760. The routing rule is recorded in
-  [development.md](../development.md).
+  did not throw. Its cases gate on the spy's own output, never on frames or
+  time, and prove three things: the 40px activation marker to the pixel; that
+  a trusted click keeps its link current through every scroll event of the
+  smooth scroll and after `scrollend`; and that with the editor off every
+  scroll position reports the section an independent layout computation
+  expects. Against disposable copies of `dist/`, each case failed in both
+  engines on its own mutation: a 41px marker, a disabled navigation lock and
+  a removed hidden-entry filter. A case also fails on any unplanned request
+  (a missing built asset or one leaving the fixture origin). All six cases
+  pass in Chromium 156 and Firefox 157, hidden, at 1000×760. The routing rule
+  is recorded in [development.md](../development.md).
 - **Intentionally not changed:** the tier does not load the extension. The
-  stub answers unknown runtime routes with `{}` and keeps settings writes
-  page-local. Bundles are injected by each case (`inject`) rather than derived
-  from the manifest, because the tier never reproduces execution worlds.
+  stub follows the storage API's absent-key and `onChanged` semantics, answers
+  unknown runtime routes with `{}` and keeps settings writes page-local, so
+  worker-driven sections such as `#capture-garmin` stay hidden and the options
+  layout differs from the real extension's. Extension pages are served at
+  `https://www.peakbagger.com/dist/...`. Bundles are injected by each case
+  (`inject`) rather than derived from manifest order, because the tier never
+  reproduces execution worlds; step 2 had asked for manifest order.
 - **Changed but not fully proven:** hosted CI has not run the new `dom-tier`
   job yet. The tier relies on `setup-verification` installing the selected
   browser, as the `fixture-preflight` job does.
