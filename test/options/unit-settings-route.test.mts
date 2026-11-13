@@ -105,7 +105,7 @@ test('the panel projection holds exactly the unit keys, cleaned', () => {
     assert.deepEqual(projectUnitSettings(reactive({ units: 'imperial' })).units, 'imperial');
 });
 
-test('a successful reply resolves with the cleaned stored settings and onlyIfUnset stays on the wire', async () => {
+test('a successful reply resolves with the cleaned stored settings; settings.js sends onlyIfUnset only when true', async () => {
     const { route, requests, reply } = wire({ units: 'imperial' });
     const settings = await route.set({ windUnits: 'metric' });
     assert.equal(settings.windUnits, 'metric');
@@ -143,7 +143,7 @@ test('transport loss, invalid replies and rejected writes reject with the curren
     }
 });
 
-test('a failed write leaves storage unchanged for the controller to roll back', async () => {
+test('a failed storage write rejects the route and leaves storage unchanged', async () => {
     const { area, route } = wire({ units: 'imperial', temperatureUnits: 'metric' });
     area.set = async () => { throw new Error('fixture storage failure'); };
     await assert.rejects(route.set(unitSettingsPatch({ temperatureUnits: 'default' })), /fixture storage failure/);

@@ -10,8 +10,15 @@
 // route around it instead of converting it (see the modern stack adoption
 // plan, M4). It adds no second implementation: the request envelope, the
 // reply handling and every error message remain settings.js's own, and
-// test/options/settings-patch-route.test.mts pins that these declarations
+// test/options/unit-settings-route.test.mts pins that these declarations
 // describe what it actually sends and accepts.
+//
+// No production caller goes through settingsPatchRoute yet: the options
+// controller (options/options.js) still calls the store's `set` directly and
+// converts in M7. `SettingsPatch` checks keys, not values: the schema's
+// DEFAULTS are widened (`units` is `string`) and its computed photo-tool keys
+// are absent, so value validation stays with owner contracts such as
+// options/unit-settings-contract.ts.
 
 import type { settingsSchema } from '../src/settings/settings-schema.ts';
 import { createSettingsStore } from '../src/settings/settings.js';

@@ -68,7 +68,7 @@ through Svelte, and Svelte is not installed.
 | M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`, `a9de7d7b`. `npm run audit:ci` passes with zero advisories in shipped code; Results are in the [follow-up ledger](follow-ups.md). |
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
-| M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) types the page side of `SETTINGS_PATCH` around the unchanged `settings.js`; `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
+| M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
 | M4.5 | Not started; interim helper exists | 107 test files reference jsdom 30, which ships no declarations. 18 converted tests suppress the import; [test-dom.mts](../../test/helpers/test-dom.mts) hand-types the constructor for 14 more. No `verify` target for DOM-behavior tests exists yet. |
 | M5 | Not started | No Svelte compiler, checker or lint packages in `package.json`. |
 | M6 | Not started | `options/unit-settings.ts` is typed but still imperative DOM; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
@@ -217,7 +217,8 @@ Status: complete on November 13, 2026.
   never reach `set`. The `SETTINGS_PATCH` request, success, sender-refusal and
   listener-failure replies are declared in `settings-patch-route.ts`, whose
   `settingsPatchRoute(transport)` delegates to the real `createSettingsStore`
-  `set` rather than reimplementing it. Tests cross a real structured clone into
+  `set` rather than reimplementing it; it has no production caller yet. Tests
+  cross a real structured clone into
   the worker's `applyPatch`, and cover transport loss, invalid replies,
   rejected writes and storage failure; ten `@ts-expect-error` examples fail the
   checker on misuse.
@@ -227,8 +228,14 @@ Status: complete on November 13, 2026.
   the typed `UnitSettingsSave` contract. Reply validation and error messages are
   settings.js's own, including its existing acceptance of `{ ok: true }` with
   any truthy `settings` value, which it cleans to defaults.
-- **Changed but not fully proven:** no real-browser run; the options page's
-  jsdom suites (`test/options`, 326 tests) and `test/settings` pass.
+- **Changed but not fully proven:** the live write path is typed only from the
+  Units owner's side (`UnitSettingsSave`); the controller's `save` and its
+  `S.set` call stay unchecked JavaScript. `SettingsPatch` checks keys, not
+  values, and omits the computed `bpbPhotoTool:*` keys. A select value the
+  schema rejects now throws in the panel's listener instead of being saved and
+  cleaned; current markup cannot produce one, and no test drives that path.
+  Node's `structuredClone` is not proof of Chrome's JSON messaging. No
+  real-browser run; `test/options` and `test/settings` pass.
 
 The Units panel never touches `src/ui/runtime-message.js`. Its `save` goes from
 the options controller to `set` in [settings.js](../../src/settings/settings.js),
