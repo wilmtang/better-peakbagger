@@ -10,15 +10,16 @@
   parallel browser checks and a protected post-upload Chrome checkpoint.
 
 - [Repository follow-up ledger](follow-ups.md)
-  — the single list of what completed audits left open: the deepmerge release
-  blocker, terrain warming timing, Linux backup widths, hosted CI and manual
+  — the single list of what completed audits left open: the unpatched deepmerge
+  advisory (tooling only, no longer a release blocker), terrain warming timing, Linux backup widths, hosted CI and manual
   release checks. Includes the latest full acceptance run.
 
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
-  — goal, milestones and current progress. M0 and M1 are done; next are the small
-  helper conversions, then watch/boundary support, Svelte compilation, a Units
-  panel pilot, converting all remaining JavaScript and optional WXT/Vite cutover.
+  — goal, milestones and current progress. M0–M3 are done; next are the Units
+  panel's typed boundary and the DOM test environment, then Svelte compilation,
+  a Units panel pilot, converting all remaining JavaScript and optional WXT/Vite
+  cutover. Three owner decisions are open.
 
 - [Weather guide and open API optimizations](../weather.md)
   — cloud-request cost and cross-card/page caching remain open in its ledger.
