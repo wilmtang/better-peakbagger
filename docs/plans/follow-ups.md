@@ -51,6 +51,9 @@ ran hidden.
   The chain is development-only, and upstream lists no patched release. It stays
   a release blocker until the chain is patched or someone reviews it again. See
   [the release guide](../releasing.md).
+  *Superseded November 6 by `a9de7d7b`:* `npm run audit:ci` now reports
+  advisories confined to development tooling without failing, so this chain no
+  longer blocks a release. The advisory itself is still unpatched upstream.
 - **Terrain warming budget.** The 120ms budget was not loosened to turn the check
   green.
 - **Historical-tag Firefox recovery.** It stays limited by current-main metadata;
