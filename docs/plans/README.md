@@ -1,7 +1,8 @@
 # Active plans
 
 - [Codebase size and redundancy reduction](codebase-reduction-2026-11-13.md)
-  — proposed; five phases, none started. Archive deletion waits on an owner
+  — proposed and reviewed once; none of its five phases is started. About
+  34,000 removable lines are documents; archive deletion waits on an owner
   decision.
 
 - [November 11 bugs, performance, engineering and UX audit](codebase-audit-2026-11-11.md)

@@ -26,7 +26,8 @@ characters), a same-name helper count, and an export-reference scan.
 - Tests were counted and sampled, not read. Which source-text assertions are
   redundant is unknown until phase 3 reads each file.
 - No test, build or verifier was run for this review.
-- Every saving below is an estimate from these counts.
+- Every saving below is an estimate from these counts, corrected once; see
+  the review section.
 
 ## Findings
 
@@ -35,7 +36,7 @@ characters), a same-name helper count, and an export-reference scan.
 | `test/` | 98,400 | 1.3 times the runtime. `test/project/` is 10,300 lines about tooling, workflows and docs. 36 files read source text, with about 290 regex assertions on source or prose. Local helpers recur per file: `setup` in 23 files, `harness` in 16, `tick` in 13, `waitFor` in 9. |
 | `src/`, `options/`, `popup/`, `photos/` | 75,000 | Four files hold 13,400 lines: `background.ts` (4,358), `photos.ts` (4,327), `terrain-frame-runtime.ts` (2,698), `github-routes.js` (2,019). Five exports are never referenced. Comments are 8% of lines. |
 | `.agents/skills/ui-ux-pro-max` | 63,300 | Vendored upstream skill data. |
-| `docs/` | 55,100 | `docs/archive/` is 32,800 lines in 115 files. `docs/plans/experiments`, `evidence` and `mocks` with `scripts/prototypes` add 11,100. `architecture.md` and `development.md` are 17,600 and 14,500 words. |
+| `docs/` | 55,100 | `docs/archive/` is 32,800 lines in 115 files. `docs/plans/experiments`, `evidence` and `mocks` add 5,560. `architecture.md` and `development.md` are 17,600 and 14,500 words. |
 | `scripts/` | 48,200 | 93 `verify-*` scripts. 65 import `browser-verification-fixtures.mjs`, yet 43 call `launchPersistentContext` themselves, 44 hand-write the host-resolver rule, 56 create their own temporary profile and 24 their own server. `verify-extension.mts` is 6,790 lines and `verify-firefox-extension.mts` 3,379. |
 
 Exact copy-paste is about 1% of authored code (test 1,159 lines, scripts 538,
@@ -65,74 +66,116 @@ and `relayResource` (`src/maps/custom-overlay-private.js`).
   `linguist-vendored` attribute is enough to keep it out of language statistics
   and diffs.
 
+## Review of this plan — 2026-11-13
+
+The first version of this plan was checked against the repository after it was
+committed. Its phase 2 and phase 3 savings were overstated by roughly ten times
+and several steps were wrong. The phases below are the corrected version.
+
+- `scripts/prototypes/` has no tracked files. The 11,100-line figure for
+  experiments, evidence, mocks and prototypes counted PNG bytes as lines; the
+  text is 5,560 lines.
+- `docs/plans/experiments/` is read by `test/garmin/fit-activity.test.mjs` and
+  `test/garmin/zip-csp.test.mjs`. `docs/plans/evidence/` is referenced by
+  `src/weather/summit-cloud-models.ts`, `test/weather/summit-cloud.test.mts` and
+  the TypeScript policy. Neither can simply be deleted.
+- 77 links in 20 maintained documents point into `docs/archive/`, not the four
+  files first listed.
+- 49 verify scripts already use `resource-stack.mjs`. What each still repeats
+  is 10–15 lines of profile, launch and deferral, so a shared launcher saves
+  about 600 lines, not 12,000.
+- `verify-extension.mts` drives Chrome through Playwright and
+  `verify-firefox-extension.mts` drives Firefox through Selenium WebDriver.
+  Merging them is a rewrite of 10,000 lines of proven checks, not a
+  deduplication. Dropped.
+- The repeated test `setup` helpers are 5–19 lines each and file-specific.
+  Sharing them saves a few hundred lines at most.
+- Every `verify-*` script is reachable from `scripts/verify.mts`, a workflow or
+  another script. There are no orphan verifiers.
+- `scripts/build-config.mts` lists every source file of the worker bundle, and
+  `test/project/manifest-capture.test.mts` pins that list. Splitting
+  `background.ts` changes both; three tests also read its source text.
+- The five unreferenced exports were re-confirmed: one occurrence each.
+
+The conclusion that follows: the mechanically removable redundancy is about
+34,000 lines of documents and 1,000–2,000 lines of code. The remaining volume
+is verification and features. Shrinking it further means deleting coverage or
+functionality, which is an owner decision and not a cleanup.
+
 ## Phases
 
 Each phase is independent and lands as focused commits. Estimates are net
 tracked lines.
 
-### Phase 1 — Remove records git already keeps (about −44,000)
+### Phase 1 — Remove records git already keeps (about −34,000)
 
-1. Tag the last commit that contains `docs/archive/`, then delete the directory.
-2. Delete `docs/plans/experiments/`, `docs/plans/evidence/`, `docs/plans/mocks/`
-   and `scripts/prototypes/` after confirming nothing maintained reads them.
-3. Repair what pointed there: `docs/plans/README.md` (most of its body is
-   archive summaries), `follow-ups.md`, `test/project/documentation.test.mjs`
-   and the archive reference in `scripts/verify-terrain-lod.mts`.
-4. Reword the archiving rule in `AGENTS.md` and `docs/plans/README.md` to match
+1. Tag the last commit that contains `docs/archive/`, then delete the directory
+   (32,800 lines, 115 files).
+2. Delete `docs/plans/mocks/` (1,280 lines and 32 images); nothing references
+   it. Keep `experiments/` and `evidence/`.
+3. Rewrite or drop the 77 archive links in 20 maintained documents. Most of
+   `docs/plans/README.md` is archive summaries and goes with them.
+4. Update `test/project/documentation.test.mjs` and the archive comment in
+   `scripts/verify-terrain-lod.mts`.
+5. Reword the archiving rule in `AGENTS.md` and `docs/plans/README.md` to match
    the decision below.
-5. Mark `.agents/skills/ui-ux-pro-max` as `linguist-vendored`.
+6. Mark `.agents/skills/ui-ux-pro-max` as `linguist-vendored`.
 
 Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 
-### Phase 2 — One browser verification harness (about −12,000)
+### Phase 2 — Shared verifier launch (about −700)
 
-1. Add one helper that owns the temporary profile, fixture certificate, HTTPS
-   fixture server, launch flags, the Chrome launch guard and teardown. It
-   extends `browser-verification-fixtures.mjs` and `resource-stack.mjs` rather
-   than adding a third layer.
+1. Add one launcher to `browser-verification-fixtures.mjs` that owns the
+   temporary profile, the launch guard, the extension and host-resolver flags
+   and the deferred teardown.
 2. Migrate the 43 self-launching scripts in small batches by surface.
-3. Express `verify-extension.mts` and `verify-firefox-extension.mts` as one case
-   table with a Chrome driver and a Firefox driver.
-4. Extract the shared part of `verify-terrain-lod.mts` and
+3. Extract the shared part of `verify-terrain-lod.mts` and
    `verify-terrain-visual.mts`.
 
 Checks: each migrated verifier run alone, in every browser it covers, with the
-same case count before and after; `npm run verify -- browsers` after step 3.
-State hidden or visible, renderer and viewport per the verification rules.
+same case count before and after. State hidden or visible, renderer and
+viewport per the verification rules.
 
-### Phase 3 — Prune and share test code (about −15,000)
+The saving is small against the cost of re-running 43 verifiers. Do this only
+if a single launch definition is wanted for its own sake.
 
-1. Read each of the 36 source-text test files. Delete an assertion only when a
-   behavior test covers it; convert what is really a lint rule into one.
-2. Reduce `test/project/` to guards with a recorded breakage or a release
-   consequence. List each removed file with its reason.
-3. Move the repeated `setup`, `harness`, `tick` and `waitFor` into
-   `test/helpers/`.
-4. Make the largest files table-driven where cases differ only in data:
-   `background-capture`, `photo-editor`, `terrain-map`,
-   `github-backup-integration`.
+### Phase 3 — Test and verifier coverage review (no estimate)
+
+This is a coverage decision, not a cleanup, and has no estimate until the
+files are read.
+
+1. Read `test/project/` (10,300 lines). For each file record the breakage it
+   guards. Propose removals to the owner; delete nothing unprompted.
+2. Read the 36 source-text test files. Propose removing an assertion only when
+   a named behavior test covers the same defect.
+3. Propose table-driven rewrites only where cases differ in data alone.
 
 Checks: `npm test` with the executed-test count recorded before and after each
 commit; the count may fall only by the cases the ledger names.
 
-### Phase 4 — Runtime structure (few lines, less sprawl)
+### Phase 4 — Runtime structure (about −100, less sprawl)
 
-1. Remove the five unreferenced exports after confirming each by search.
+1. Remove the five unreferenced exports.
 2. Split `background.ts` along the existing `*-routes` pattern, one route family
-   per commit, with the bundle composition unchanged in
-   `scripts/build-config.mts`.
+   per commit. Each commit updates the `background.js` source list in
+   `scripts/build-config.mts`, the pin in `manifest-capture.test.mts` and the
+   three tests that read the worker's source.
 3. Share the common core of `big-map-bridge.js` and `peak-map-bridge.js`.
-4. Trim comments that narrate history; keep those that state a constraint.
+
+Comment trimming is dropped: it is a judgement call per comment and the
+repository forbids unrelated refactors.
 
 Checks: `npm test`, `npm run typecheck`, `npm run lint`, and
-`npm run verify -- chrome` after any worker or content-script change.
+`npm run verify -- chrome` after every worker change.
 
-### Phase 5 — Maintained prose and regrowth guards
+### Phase 5 — Maintained prose
 
-1. Cut incident narratives from `AGENTS.md`, `docs/architecture.md` and
-   `docs/development.md` down to the rule each one supports.
-2. Add `knip` (unused files and exports) and `jscpd` (clones) to `npm run lint`
-   with thresholds set at the post-reduction level.
+Cut incident narratives from `AGENTS.md`, `docs/architecture.md` and
+`docs/development.md` down to the rule each one supports. Each cut needs the
+owner's eye, because those narratives are why the rules exist.
+
+A clone checker is dropped: exact duplication is already about 1%. `knip` is
+optional and would add a tracked development dependency for five findings.
 
 Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 
@@ -140,11 +183,11 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 
 1. **Archive deletion.** `AGENTS.md` requires closure ledgers to be preserved
    when a plan is archived. Phase 1 assumes "preserved in git history under a
-   tag" satisfies that. If it does not, phase 1 shrinks to step 2 and step 5
-   (about −11,000).
-2. **Order.** Recommended: 1, 2, 3, 4, 5. Phase 1 is the largest cut and touches
-   no code; phase 2 removes the setup that makes every later verifier change
-   expensive.
+   tag" satisfies that. If it does not, phase 1 shrinks to steps 2 and 6
+   (about −1,300).
+2. **How far to go.** Phases 1 and 4 are cleanup. Phase 3 is the only route to
+   a materially smaller test and script tree, and it removes coverage.
+3. **Whether phase 2 is worth its verification cost.**
 
 ## Closure ledger
 
