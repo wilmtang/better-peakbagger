@@ -1,0 +1,2 @@
+# Vendored upstream skill data: keep it out of language statistics and diffs.
+.agents/skills/ui-ux-pro-max/** linguist-vendored -diff

@@ -1,6 +1,6 @@
 # Codebase size and redundancy reduction — 2026-11-13
 
-Status: plan only. Nothing has been removed or changed by this review.
+Status: in progress. Phase 1 is done; see the closure ledger.
 
 Baseline: clean `main` at `0ee05171`, 1,313 tracked files, about 340,000 tracked
 text lines.
@@ -36,7 +36,7 @@ characters), a same-name helper count, and an export-reference scan.
 | `test/` | 98,400 | 1.3 times the runtime. `test/project/` is 10,300 lines about tooling, workflows and docs. 36 files read source text, with about 290 regex assertions on source or prose. Local helpers recur per file: `setup` in 23 files, `harness` in 16, `tick` in 13, `waitFor` in 9. |
 | `src/`, `options/`, `popup/`, `photos/` | 75,000 | Four files hold 13,400 lines: `background.ts` (4,358), `photos.ts` (4,327), `terrain-frame-runtime.ts` (2,698), `github-routes.js` (2,019). Five exports are never referenced. Comments are 8% of lines. |
 | `.agents/skills/ui-ux-pro-max` | 63,300 | Vendored upstream skill data. |
-| `docs/` | 55,100 | `docs/archive/` is 32,800 lines in 115 files. `docs/plans/experiments`, `evidence` and `mocks` add 5,560. `architecture.md` and `development.md` are 17,600 and 14,500 words. |
+| `docs/` | 55,100 | docs/archive/ is 32,800 lines in 115 files. `docs/plans/experiments`, `evidence` and `mocks` add 5,560. `architecture.md` and `development.md` are 17,600 and 14,500 words. |
 | `scripts/` | 48,200 | 93 `verify-*` scripts. 65 import `browser-verification-fixtures.mjs`, yet 43 call `launchPersistentContext` themselves, 44 hand-write the host-resolver rule, 56 create their own temporary profile and 24 their own server. `verify-extension.mts` is 6,790 lines and `verify-firefox-extension.mts` 3,379. |
 
 Exact copy-paste is about 1% of authored code (test 1,159 lines, scripts 538,
@@ -79,7 +79,7 @@ and several steps were wrong. The phases below are the corrected version.
   `test/garmin/zip-csp.test.mjs`. `docs/plans/evidence/` is referenced by
   `src/weather/summit-cloud-models.ts`, `test/weather/summit-cloud.test.mts` and
   the TypeScript policy. Neither can simply be deleted.
-- 77 links in 20 maintained documents point into `docs/archive/`, not the four
+- 77 links in 20 maintained documents point into docs/archive/, not the four
   files first listed.
 - 49 verify scripts already use `resource-stack.mjs`. What each still repeats
   is 10–15 lines of profile, launch and deferral, so a shared launcher saves
@@ -109,11 +109,11 @@ tracked lines.
 
 ### Phase 1 — Remove records git already keeps (about −34,000)
 
-1. Record the last commit on `main` that contains `docs/archive/` (the
+1. Record the last commit on `main` that contains docs/archive/ (the
    "archive commit"), then delete the directory (32,800 lines, 115 files). No
    tag is created: `v*` tags drive the release workflows, and a commit on
    `main` is already a permanent address.
-2. Delete `docs/plans/mocks/` (1,280 lines and 32 images); nothing references
+2. Delete docs/plans/mocks/ (1,280 lines and 32 images); nothing references
    it. Keep `experiments/` and `evidence/`.
 3. Point every one of the 77 archive links in 20 maintained documents at its
    GitHub permalink,
@@ -123,7 +123,7 @@ tracked lines.
    paragraphs; it also names the archive commit so the whole directory can be
    browsed at
    `https://github.com/wilmtang/better-peakbagger/tree/<archive commit>/docs/archive`.
-4. Update `test/project/documentation.test.mjs` and the archive comment in
+4. Update `test/project/documentation.test.mts` (then `.mjs`) and the archive comment in
    `scripts/verify-terrain-lod.mts`.
 5. Reword the archiving rule in `AGENTS.md` and `docs/plans/README.md`: a
    completed plan is removed from the tree and its index line points at the
@@ -206,7 +206,17 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 
 ### Fixed and verified
 
-Nothing yet.
+- Phase 1. Archive commit `9bcb42a3e0572218f7fe244eeaacf6197fab54f1`.
+  docs/archive/ (116 files including its README) and docs/plans/mocks/ (33
+  files) are deleted. 65 inline archive links in 17 documents now use GitHub
+  permalinks with fragments kept; the other 12 hits of the original count were
+  prose, code blocks, the deleted mock guide or this plan. Two backticked paths
+  and the `verify-terrain-lod.mts` comment became permalinks. The plans index
+  lists all 115 records by permalink. `documentation.test.mts` (converted from
+  `.mjs`) no longer scans the archive. Checks: project tests 537/537, lint,
+  typecheck, TypeScript policy, and every permalink path and fragment checked
+  with `git cat-file -e` and the heading list at the archive commit. The links
+  resolve on GitHub only once that commit is pushed.
 
 ### Intentionally not changed
 
@@ -218,4 +228,4 @@ Nothing yet.
 
 ### Not started
 
-Phases 1–5.
+Phases 2–5.

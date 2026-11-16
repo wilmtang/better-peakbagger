@@ -334,7 +334,7 @@ Existing checks to run during implementation, scaled to each affected unit:
 ```sh
 npm run build
 node --test test/capture/provider-url.test.mjs test/capture/provider-page.test.mjs test/background/background-capture.test.mjs test/popup/popup.test.mjs test/project/manifest-capture.test.mts
-node --test test/project/documentation.test.mjs test/project/fixtures-privacy.test.mjs
+node --test test/project/documentation.test.mts test/project/fixtures-privacy.test.mjs
 npm test
 npm run lint
 npm run verify -- capture-flow
@@ -384,9 +384,9 @@ current release workflow; this plan does not authorize signing or publication.
 
 ### Planning verification
 
-- Before authoring: `node --test test/project/documentation.test.mjs` passed all
+- Before authoring: `node --test test/project/documentation.test.mts` passed all
   3 tests. The working tree contained unrelated changes; none was included here.
-- After authoring: `node --test test/project/documentation.test.mjs` passed all
+- After authoring: `node --test test/project/documentation.test.mts` passed all
   3 tests, including link/path validation for this plan and its index entry.
   `git diff --check` passed for the two-document unit, including its staged
   additions. Runtime and browser suites are deferred to implementation.

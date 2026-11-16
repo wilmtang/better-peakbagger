@@ -563,7 +563,7 @@ MAIN-world GPX/Sun ownership and worker-owned mutations remain distinct.
 | 3D point-weather integration | `node scripts/verify-peak-weather-3d.mjs` |
 | Real manifest startup | `npm run verify -- chrome` |
 | Request-count / axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mts`; `node docs/plans/evidence/card-reuse-audit.mjs` |
-| Documentation integrity | `node --test test/project/documentation.test.mjs`; `git diff --check` |
+| Documentation integrity | `node --test test/project/documentation.test.mts`; `git diff --check` |
 
 Follow [development](development.md) and AGENTS for hidden HTTPS Peakbagger fixtures,
 Chrome launch guards, real browser zoom, renderer checks when terrain is involved,
@@ -641,7 +641,7 @@ that comparison. Do not repeat its historical “missing” claims as current fa
 | Location L1–L4 / L5–L7 | Same-point retry, failed reset, cooldown copy/model restoration (`a2c101f7`); map-menu Tab/wheel/expiry (`5138fd6c`) |
 | Location L8–L12 | Native/modified Escape (`ba41a729`, `d7922815`), parked terrain messages (`f9276fec`), first-load point identity (`364ca588`), identity-free challenge fixtures (`681747b4`). Final location audit 2,666 tests, Chrome/Firefox weather and Chrome Metal 3D checks passed |
 | Weather rate-limit audit, October 11 | Provider-named 429/cooldown, bounded readable Retry-After, retained weather, typed first-party lookup errors even with unreadable bodies. Build, 63 weather/helper and 19 ascent tests, focused ESLint; hidden Chrome 153/Firefox 157.0.1 at 375/681/768/1440×1100. Corrected missing fixture CORS exposure; live throttling was not induced |
-| Card reuse CR-01–CR-06, October 24–25 | Collapsed reads and calm-axis defects fixed; shared eligibility, scale/series, card styles, pointer core and latest-read ownership; shared contracts exercised against both layouts. Full ledger and focused commits remain in the cross-feature [card audit](archive/card-reuse-audit-2026-10-24.md#closure-ledger) |
+| Card reuse CR-01–CR-06, October 24–25 | Collapsed reads and calm-axis defects fixed; shared eligibility, scale/series, card styles, pointer core and latest-read ownership; shared contracts exercised against both layouts. Full ledger and focused commits remain in the cross-feature [card audit](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/card-reuse-audit-2026-10-24.md#closure-ledger) |
 | Request audit OM-01 | Fixed: both saved collapsed cards issue zero requests; expansion starts one weather read and collapse aborts a held read. Current 23-scenario evidence retained |
 
 ### Intentionally not changed

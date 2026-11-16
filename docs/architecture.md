@@ -7,8 +7,8 @@ that must remain true as the extension changes.
 Use [development.md](development.md) for build and test operations and
 [releasing.md](releasing.md) for store releases. Root-level documents in this
 directory are living design notes. Unfinished proposals belong in
-[plans/](plans/); completed plans and point-in-time investigations belong in
-[archive/](archive/) and are not descriptions of the current runtime.
+[plans/](plans/); completed plans and point-in-time investigations are
+[archived records](plans/README.md#archived-records) and are not descriptions of the current runtime.
 
 ## Architecture at a glance
 
@@ -593,7 +593,7 @@ make suffixes change when scoring changes.
 
 The original detector research and implementation rationale is retained as a
 historical note in
-[archive/peakbagger-gpx-ascent-detection-research.md](archive/peakbagger-gpx-ascent-detection-research.md);
+[archive/peakbagger-gpx-ascent-detection-research.md](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/peakbagger-gpx-ascent-detection-research.md);
 the current code and this guide own shipped behavior.
 
 ### 5. Capture resource and cancellation contract
@@ -759,7 +759,7 @@ on-page picker; siblings become ordinary prepared draft tabs. A bound page whose
 peak only brushes the track shows an explicit “use anyway” closest-approach
 choice rather than promoting it silently. The completed implementation plan is
 archived at
-[archive/gpx-upload-processing.md](archive/gpx-upload-processing.md).
+[archive/gpx-upload-processing.md](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/gpx-upload-processing.md).
 
 The field-level data disclosure is canonical in [PRIVACY.md](../PRIVACY.md).
 
@@ -1080,7 +1080,7 @@ cache failure falls back to network.
 
 [3d-map.md](3d-map.md) owns the lifecycle, protocol, validation limits, request
 policy, cache/prefetch rules, failure taxonomy, and verification matrix. Earlier
-provider and rendering investigations remain in [archive/](archive/).
+provider and rendering investigations remain in [archive/](https://github.com/wilmtang/better-peakbagger/tree/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive).
 
 ## Deep dive: peak markers and non-ascent map surfaces
 
@@ -1202,7 +1202,7 @@ guessing column positions.
 ## Climber lists and ignored-report boundaries
 
 See the maintained [climber lists guide](climber-lists.md) and
-[delivery ledger](archive/ignored-climbers.md). The existing favorites contract
+[delivery ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ignored-climbers.md). The existing favorites contract
 below remains independent of ignored membership.
 
 | Module | Boundary and responsibility |
@@ -1251,7 +1251,7 @@ settings. A failed local update retains a confirmed intent and reports partial
 success so Retry can reconcile locally without repeating the server write.
 Dismissed writes remain bound to their original climber, and BFCache restoration
 refreshes lists and settings before enabling actions. See the
-[hover-card delivery ledger](archive/climber-hover-card.md) for local evidence and
+[hover-card delivery ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/climber-hover-card.md) for local evidence and
 remaining live-server/native accessibility release checks.
 
 The new peak and detail bundles run isolated at `document_start`. They conceal
@@ -1878,7 +1878,7 @@ requirements live in
 [development.md](development.md) and [releasing.md](releasing.md).
 
 The completed cross-browser verification rollout is retained in
-[archive/cross-browser-verification.md](archive/cross-browser-verification.md).
+[archive/cross-browser-verification.md](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/cross-browser-verification.md).
 
 ## Private custom-layer requests
 

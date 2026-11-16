@@ -300,7 +300,7 @@ than waiting for the typing debounce.
 ## Color conversion boundary
 
 Color conversion follows the raw-token decision recorded in the archived
-[color-conversion spike](archive/trip-report-color-conversion-spike.md). For
+[color-conversion spike](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/trip-report-color-conversion-spike.md). For
 ordinary DOM input, the converter reads the last raw inline `color` declaration
 instead of `element.style.color`, then validates the token. For Rich output,
 TipTap's internal `data-bpb-report-color` attribute preserves the parsed token
@@ -558,7 +558,7 @@ field. The public report renders both image/caption pairs in a separate logged-o
 browser without the extension. Peakbagger's native page shows captions as plain,
 left-aligned text; the centered italic styling described above applies to Rich
 editing and preview. The original Save action was not observed during this check.
-See the [archived verification record](archive/report-image-captions.md).
+See the [archived verification record](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/report-image-captions.md).
 That evidence covers plain captions. Formatted captions use the same inline tags
 Peakbagger renders elsewhere, but a saved formatted caption has not been checked on
 the live site.

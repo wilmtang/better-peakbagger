@@ -21,12 +21,14 @@ const REPOSITORY_PATH_PREFIX =
 const REPOSITORY_ROOT_FILE =
     /^(?:manifest\.json|package(?:-lock)?\.json|README\.md|PRIVACY\.md|ROADMAP\.md)$/;
 
-const withoutFencedCode = markdown =>
+const withoutFencedCode = (markdown: string): string =>
     markdown.replace(/^(?:```|~~~)[^\n]*\n[\s\S]*?^(?:```|~~~)\s*$/gm, '');
 
 // Split a link target into its path and its fragment. `path` is null for a
 // same-document `#anchor`; `fragment` is null when the link carries none.
-const normalizeLinkTarget = raw => {
+type LinkTarget = { path: string | null, fragment: string | null };
+
+const normalizeLinkTarget = (raw: string): LinkTarget | null => {
     const trimmed = raw.trim();
     const target = trimmed.startsWith('<')
         ? /^<([^>]+)>/.exec(trimmed)?.[1]
@@ -42,9 +44,9 @@ const normalizeLinkTarget = raw => {
     return { path: file || null, fragment };
 };
 
-const relativeLinks = markdown => {
+const relativeLinks = (markdown: string): LinkTarget[] => {
     const text = withoutFencedCode(markdown);
-    const targets = [];
+    const targets: LinkTarget[] = [];
     for (const match of text.matchAll(/!?\[[^\]]*]\((<[^>]+>|[^)\n]+)\)/g)) {
         const target = normalizeLinkTarget(match[1]);
         if (target) targets.push(target);
@@ -61,7 +63,7 @@ const relativeLinks = markdown => {
 // remaining space into a hyphen. Spaces are not collapsed first, so a heading
 // with an em dash keeps the double hyphen its surrounding spaces produce.
 // Repeated slugs in one document gain -1, -2, ... in document order.
-const slugify = heading => heading
+const slugify = (heading: string): string => heading
     .replace(/!?\[([^\]]*)]\([^)]*\)/g, '$1')
     .replace(/[`*_~]/g, '')
     .trim()
@@ -69,9 +71,9 @@ const slugify = heading => heading
     .replace(/[^\p{L}\p{N} _-]/gu, '')
     .replace(/ /g, '-');
 
-const headingSlugs = markdown => {
-    const slugs = new Set();
-    const seen = new Map();
+const headingSlugs = (markdown: string): Set<string> => {
+    const slugs = new Set<string>();
+    const seen = new Map<string, number>();
     for (const line of withoutFencedCode(markdown).split('\n')) {
         const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
         if (!heading) continue;
@@ -86,9 +88,9 @@ const headingSlugs = markdown => {
     return slugs;
 };
 
-const repositoryPaths = markdown => {
+const repositoryPaths = (markdown: string): string[] => {
     const text = withoutFencedCode(markdown);
-    const targets = [];
+    const targets: string[] = [];
     for (const match of text.matchAll(/(?<!`)`([^`\n]+)`(?!`)/g)) {
         const target = match[1].split(/[?#]/, 1)[0];
         if ((REPOSITORY_PATH_PREFIX.test(target) || REPOSITORY_ROOT_FILE.test(target))
@@ -97,25 +99,16 @@ const repositoryPaths = markdown => {
     return targets;
 };
 
-const inDirectory = async directory => (await readdir(path.join(root, directory)))
+const inDirectory = async (directory: string): Promise<string[]> => (await readdir(path.join(root, directory)))
     .filter(name => name.endsWith('.md'))
     .map(name => path.join(directory, name));
 
-const maintainedDocuments = async () => [
+const maintainedDocuments = async (): Promise<string[]> => [
     ...ROOT_LIVING_DOCS,
     ...await inDirectory('docs'),
     ...await inDirectory('docs/plans'),
 ].sort();
 
-// Every checked-in Markdown file, archive included. Archived notes are
-// point-in-time records whose prose, file names, and line references are
-// allowed to be stale — but a link that resolves to nothing costs a reader the
-// same time either way, which is why they are held to link resolution and not
-// to the backticked repository paths in their prose.
-const allDocuments = async () => [
-    ...await maintainedDocuments(),
-    ...await inDirectory('docs/archive'),
-].sort();
 
 test('maintained-document target extraction distinguishes links and repository paths', () => {
     const sample = [
@@ -153,18 +146,17 @@ test('heading slugs follow GitHub rules', () => {
     ]);
 });
 
-test('every relative link resolves, in maintained and archived documents alike', async () => {
-    const maintained = new Set(await maintainedDocuments());
-    const slugCache = new Map();
-    const slugsFor = async absolute => {
+test('every relative link and backticked repository path resolves', async () => {
+    const slugCache = new Map<string, Set<string>>();
+    const slugsFor = async (absolute: string): Promise<Set<string>> => {
         if (!slugCache.has(absolute)) {
             slugCache.set(absolute, headingSlugs(await readFile(absolute, 'utf8')));
         }
-        return slugCache.get(absolute);
+        return slugCache.get(absolute)!;
     };
 
-    const missing = [];
-    for (const relativeDocument of await allDocuments()) {
+    const missing: string[] = [];
+    for (const relativeDocument of await maintainedDocuments()) {
         const absoluteDocument = path.join(root, relativeDocument);
         const markdown = await readFile(absoluteDocument, 'utf8');
 
@@ -188,9 +180,7 @@ test('every relative link resolves, in maintained and archived documents alike',
             }
         }
 
-        // Backticked repository paths are prose about the current tree, so only
-        // maintained documents are held to them.
-        if (!maintained.has(relativeDocument)) continue;
+        // Backticked repository paths are prose about the current tree.
         for (const target of new Set(repositoryPaths(markdown))) {
             const absolute = path.resolve(root, target);
             try {

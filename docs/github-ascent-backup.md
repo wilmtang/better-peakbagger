@@ -8,9 +8,9 @@ the photo-library metadata recovery file, authentication, failure handling, and
 the regressions that established the current invariants.
 
 The completed implementation records remain in
-[archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md) and
-[archive/full-profile-backup.md](archive/full-profile-backup.md), with favorite
-climbers in [archive/favorite-climbers.md](archive/favorite-climbers.md). Those
+[archive/github-ascent-backup-plan.md](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/github-ascent-backup-plan.md) and
+[archive/full-profile-backup.md](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/full-profile-backup.md), with favorite
+climbers in [archive/favorite-climbers.md](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/favorite-climbers.md). Those
 files are historical. When they disagree with this document or current code,
 this document and current code win.
 

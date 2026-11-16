@@ -626,9 +626,9 @@ keyboard station popups, card selection, pending/error/retry, opt-out, renderer
 handoff and narrow/zoomed layouts. Terrain and general extension verification
 remain separate. Hidden fixtures do not establish live Peakbagger/provider
 compatibility, native browser menus, OS focus, physical touch or screen-reader
-speech. The [archived implementation ledger](archive/map-layers-and-overlays-2026-10-21.md)
+speech. The [archived implementation ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/map-layers-and-overlays-2026-10-21.md)
 retains the exact evidence and open proof gaps.
-The [October 21 follow-up audit](archive/map-overlays-audit-2026-10-21.md)
+The [October 21 follow-up audit](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/map-overlays-audit-2026-10-21.md)
 records the label, zoom feedback, settings races and popup-membership fixes.
 
 
@@ -638,7 +638,7 @@ visibility beside open controls, unchanged already-visible/empty cameras,
 passive pan behavior, navigation-start cancellation, and stable surrounding
 layout at 1440/375 × 1100 in light/dark native and hardware 3D views. Unknown
 case selections and zero executed cases fail. The
-[SNOTEL camera audit ledger](archive/snotel-map-camera-audit-2026-10-22.md)
+[SNOTEL camera audit ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/snotel-map-camera-audit-2026-10-22.md)
 records the findings and the broader popup-theme verification limitation.
 
 ## Private request parameters

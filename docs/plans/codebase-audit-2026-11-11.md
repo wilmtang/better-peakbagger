@@ -182,7 +182,7 @@ completion status "must not look clickable unless it has a real action".
 
 No earlier audit declined a visible Undo; the archived design only describes
 history as a secondary view
-(`docs/archive/garmin-personal-api-draft-inbox.md`).
+([Garmin personal API draft inbox](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/garmin-personal-api-draft-inbox.md)).
 
 **Impact.** A mis-click on Dismiss makes the activity disappear with no
 acknowledgement, and the user has one minute to discover that recovery is

@@ -906,7 +906,7 @@ compiler behavior without shipping a demonstration UI.
 - Before each commit, stage only the completed unit and run
   `npm run check:typescript-policy`. Do not weaken the policy to avoid a build,
   test or controller conversion; update exact filename references instead.
-- Run `node --test test/project/documentation.test.mjs` for plan and guide
+- Run `node --test test/project/documentation.test.mts` for plan and guide
   edits, including backticked repository paths as well as Markdown links.
 - After changing build/load dependencies run `npm run verify -- browsers`, which
   loads real unpacked `dist/`. Keep the new UI's assertions alongside existing

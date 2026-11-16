@@ -1,7 +1,7 @@
 # Repository follow-up ledger
 
 Status: opened November 6, 2026, when the completed audit and implementation
-records moved to [the archive](../archive/README.md). This is the single list of
+records moved to [the archive](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/README.md). This is the single list of
 what those records left open. Their original evidence and limits stay in the
 archived documents; add new open items here rather than reopening them.
 
@@ -17,7 +17,7 @@ Feature backlog is not tracked here. It stays in its own
 | Moderate minimatch advisories in the lint toolchain | `01616f47`: scoped to former 10.x consumers | Nine findings removed; production audit is zero |
 | Custom-overlay reorder check failed in Chrome | `7719f08d`: waits for the deep-link scroll to settle. The product did not move | Probe saw a 305px pane scroll; settled geometry matched exactly |
 | Recorded editor Chrome zoom-fit and Firefox hover-help failures | Did not reproduce | Full custom-overlay runs pass in hidden Chrome 156 and Firefox 159 |
-| Firefox custom-overlay GeoJSON stuck on "Loading" | No longer occurs | Same Firefox run; see the [October 27 ledger](../archive/codebase-audit-2026-10-27.md) |
+| Firefox custom-overlay GeoJSON stuck on "Loading" | No longer occurs | Same Firefox run; see the [October 27 ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-2026-10-27.md) |
 | Intermittent climber-hover late-content timeout | Product defect, fixed in `e9a0b694`: replacement focus opened the next climber's card | Test file failed 4 of 5 runs before the fix, passed 8 of 8 after |
 | `verify -- chrome` and `-- firefox` stopped at the Garmin section check | `69c7a321`: the verifier expected the section to hide, but `132303e1` keeps it available for Disconnect | Failed 4 of 4 runs before; both browsers pass after |
 | Terrain visual 2D gap (41px against 40px) and Firefox Sentinel trigger | No longer occur | `verify -- terrain chrome` and `firefox` pass on Metal |
@@ -74,7 +74,7 @@ ran hidden.
 - **Linux backup actions.** Fallback fonts caused a 1.2–1.6px ascent action-width
   shift and equal-width profile actions on hosted Linux. There is no local Linux
   or container runtime, so this was not rerun; the suite stays on macOS runners,
-  where it passes. See the [CI latency record](../archive/ci-latency-2026-10-25.md).
+  where it passes. See the [CI latency record](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-latency-2026-10-25.md).
 - **Firefox verifier isolation.** `verify-custom-overlays` exited before its first
   page in one run while a personal Firefox was open, and passed with `-no-remote`.
   Other Selenium verifiers have not adopted it. `verify -- firefox` passes without
@@ -87,7 +87,7 @@ ran hidden.
   remain unverified. Hidden fixtures prove source switching and layout stability
   with normal/doubled inspector text; the focused change handler preserves focus.
   Live provider playback and unknown server-side URL rewrites remain outside that
-  evidence. See the [report protection closure ledger](../archive/report-protection-remediation-2026-11-07.md).
+  evidence. See the [report protection closure ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/report-protection-remediation-2026-11-07.md).
 - **Replacement focus.** The fix is proven in jsdom. Real-browser transition runs
   pass but do not drive a row disappearing under an open card.
 - **Hosted CI.** The commits behind this ledger are local and unpushed. No hosted

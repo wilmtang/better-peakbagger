@@ -4,7 +4,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Better Peakbagger — the repeatable form of the measurement that diagnosed the
-// 3D tilt detail collapse (docs/archive/3d-tilt-detail-blink.md, section 9).
+// 3D tilt detail collapse (section 9 of
+// https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-tilt-detail-blink.md).
 //
 // It drives the real extension frame — the same dist/ bundle verify -- terrain
 // loads — on hardware GL, headless, with locally generated Terrarium DEM tiles

@@ -619,7 +619,7 @@ unchecked during an ordinary-use capture. Cache bypass reproduced the reported
 block, and disabling that option restored the user's 3D map. The raster path
 leaves HTTP caching and request identity with the browser; changing the tile
 transport or spoofing headers is not an established fix. See the
-[policy/recovery closure ledger](archive/2026-10-24-osm-terrain-policy.md).
+[policy/recovery closure ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/2026-10-24-osm-terrain-policy.md).
 
 Ordinary Test CI runs `snow`, `peak-cards`, `peak-card-placement` and `weather-interactions` per browser after the generic
 layout matrix, reusing its completed `dist/` build. A separate always-run
@@ -1269,7 +1269,7 @@ toolbar click that grants `activeTab`. Those remain explicit release checks.
 ### Climber-list verification
 
 The [climber lists guide](climber-lists.md) describes behavior; the
-[archived ledger](archive/ignored-climbers.md) records proof and release gaps.
+[archived ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ignored-climbers.md) records proof and release gaps.
 Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.test.mjs`,
 `test/ascent/ascent-report-visibility.test.mjs`,
 `test/background/climber-list-sync.test.mjs` and

@@ -113,7 +113,7 @@ The saved GPX, download link, and files sent to Gaia, onX, AllTrails, and CalTop
 remain original. Interpretation changes no provider payload, stored setting,
 permission, source timestamp/elevation, or saved ascent. No cleaned export is
 created. The motivating source diagnosis and verification record are in the
-[archived segment plan](archive/gpx-suspect-segments.md).
+[archived segment plan](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/gpx-suspect-segments.md).
 
 ## Prepared ascent fields
 
