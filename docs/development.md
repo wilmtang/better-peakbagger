@@ -460,7 +460,7 @@ still available for evidence.
 `report-security` checks hostile saved-ascent documents against the real Chrome
 response rules and Firefox header listener, including native map and Quick Search
 compatibility, ordinary list pages and Cloudflare exceptions. After building,
-`node scripts/verify-report-security.mjs chrome --baseline` removes protection
+`node scripts/verify-report-security.mts chrome --baseline` removes protection
 from a disposable copy and must fail on observed execution.
 
 `instagram` uses real packaged extension frames with a local HTTPS provider

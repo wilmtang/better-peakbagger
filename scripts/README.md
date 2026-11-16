@@ -78,6 +78,7 @@ independent of the existing targets.
 - [layout-verification-plan.mjs](layout-verification-plan.mjs) — Exact-once browser/theme/viewport partitions and focused preflight selection.
 - [peak-map-links-verification.mjs](peak-map-links-verification.mjs)
 - [resource-stack.mjs](resource-stack.mjs)
+- [verification-launch.mts](verification-launch.mts) — The one launch definition for hidden Playwright verifiers: disposable root, Seatbelt preflight, Chrome for Testing or an exact binary, exclusive extension and host-resolver flags, Firefox local DNS and deferred teardown.
 - [verification-browser-identity.mjs](verification-browser-identity.mjs)
 - [verification-repetitions.mjs](verification-repetitions.mjs)
 - [verify.mts](verify.mts)
@@ -154,9 +155,9 @@ independent of the existing targets.
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
 - [verify-custom-overlays.mts](verify-custom-overlays.mts) — real unpacked editor, 18 transition and 24 keyboard-help cases at asserted content widths/zoom, negative geometry checks, direct HTTPS/CORS tiles, packaged workers and hardware 2D/3D rendering. `--loading-only` explicitly excludes editor/help matrices; unknown or duplicate selections fail before launch.
 - [verify-custom-overlay-lifecycle.mjs](verify-custom-overlay-lifecycle.mjs) — `chrome|firefox startup|lifetime|cache`: real Leaflet and bundled renderer, fresh asynchronous startup, bounded canvas/listener ownership and real HTTP-cache revalidation with changed pixels, conditional responses and ordinary reuse at desktop/narrow widths; controlled providers, without the Settings editor or worker.
-- [verify-custom-overlay-replacement.mjs](verify-custom-overlay-replacement.mjs) — hidden hardware Chrome at 1000×760: real MapLibre raster pixels through held replacement, viewport cancellation, rendered acceptance and source/listener teardown; controlled HTTPS provider, without the Settings editor or worker.
+- [verify-custom-overlay-replacement.mts](verify-custom-overlay-replacement.mts) — hidden hardware Chrome at 1000×760: real MapLibre raster pixels through held replacement, viewport cancellation, rendered acceptance and source/listener teardown; controlled HTTPS provider, without the Settings editor or worker.
 - [verify-custom-layer-settings.mjs](verify-custom-layer-settings.mjs) — `chrome|firefox` checks saved-source actions, alignment, long names, light/dark narrow layouts, enlarged text, guarded reorder/error/retry and delete cancellation. Twelve disclosure cases at 900/540 px heights check matching compact headers, Space/Enter expansion, retained focus, a pinned footer, reachable final content and scroll-aware keyboard tooltips. Opacity remains a map-only control.
-- [verify-custom-layer-menu.mjs](verify-custom-layer-menu.mjs) — `chrome|firefox` compares built-in/custom row alignment, fonts, colors, checkbox/chevron dimensions, keyboard opacity/disclosure and anchored loading/error/retry/overzoom states at 736/320 × 800, both themes and normal/1.5x text. Presentation fixtures stub I/O; the unpacked integration verifiers cover real loading.
+- [verify-custom-layer-menu.mts](verify-custom-layer-menu.mts) — `chrome|firefox` compares built-in/custom row alignment, fonts, colors, checkbox/chevron dimensions, keyboard opacity/disclosure and anchored loading/error/retry/overzoom states at 736/320 × 800, both themes and normal/1.5x text. Presentation fixtures stub I/O; the unpacked integration verifiers cover real loading.
 - [verify-private-layers.mjs](verify-private-layers.mjs) — protected query parameters and automatic TileJSON detection in real Settings, private map settings-file round-trip, private worker GETs without provider CORS, per-map approval, forged destination rejection and hardware 2D/3D in hidden Chrome/Firefox; test-only host pregrant does not prove native permission prompts.
 - [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — 18 shared Chrome/Firefox editor cases for compact spacing, field help, name/URL-only source setup, metadata/manual overrides and stable Save/detection pending/error/retry status; invoked by the custom-overlay verifier. The broader Firefox terrain GeoJSON proof gap is tracked in the private-relay closure ledger.
 - [verify-peak-cards.mjs](verify-peak-cards.mjs)
@@ -174,7 +175,7 @@ independent of the existing targets.
 - [verify-weather-card-drag.mjs](verify-weather-card-drag.mjs)
 - [verify-weather-clouds.mjs](verify-weather-clouds.mjs)
 - [verify-weather-day-switches.mts](verify-weather-day-switches.mts)
-- [verify-weather-intervals.mjs](verify-weather-intervals.mjs)
+- [verify-weather-intervals.mts](verify-weather-intervals.mts)
 - [verify-weather-location.mjs](verify-weather-location.mjs)
 - [verify-weather-model-refresh.mjs](verify-weather-model-refresh.mjs)
 - [weather-verification-types.mts](weather-verification-types.mts) — typed controls shared by weather browser assertions.
@@ -184,7 +185,7 @@ independent of the existing targets.
 
 - [render-showcase.mjs](render-showcase.mjs)
 - [report-table-selection.mjs](report-table-selection.mjs)
-- [verify-api-rate-limits.mjs](verify-api-rate-limits.mjs)
+- [verify-api-rate-limits.mts](verify-api-rate-limits.mts)
 - [verify-ascent-backup-lifecycle.mjs](verify-ascent-backup-lifecycle.mjs)
 - [verify-firefox-terrain.mts](verify-firefox-terrain.mts)
 - [verify-layout-stability.mts](verify-layout-stability.mts)
@@ -197,18 +198,18 @@ independent of the existing targets.
 - [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
 - [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
 - [verify-report-caption-stability.mts](verify-report-caption-stability.mts)
-- [verify-report-security.mjs](verify-report-security.mjs) — real response protection, hostile reports, native map scripts, Quick Search and Cloudflare exceptions in hidden Chrome/Firefox.
+- [verify-report-security.mts](verify-report-security.mts) — real response protection, hostile reports, native map scripts, Quick Search and Cloudflare exceptions in hidden Chrome/Firefox.
 - [verify-report-routes.mts](verify-report-routes.mts) — compiled-rule validation, encoded report/profile/editor routes, priority exclusions and native/encoded map children under the real report policy.
 - [generate-report-protection.mts](generate-report-protection.mts) — readable source for the generated report-response rules; use `--write` to regenerate or `--check` to reject drift.
 - [verify-instagram.mjs](verify-instagram.mjs) — packaged per-post grants, native captions, bounded player sizing, compact placeholders, consent, error/retry/cancel geometry and Rich paste in hidden Chrome/Firefox. Includes same-origin lazy-video playback and sandbox isolation. `npm run verify -- instagram`; `--live` checks public post/Reel samples and all slides plus decoded video playback in the reported mixed carousel. `--display` pregrants the optional host only in a disposable test copy, then checks native terminal navigation, identical pending/loaded viewport widths and live light/dark transitions with unchanged media colors/geometry. It does not prove the native permission prompt. `BPB_INSTAGRAM_LIVE_POST` adds one validated public sample.
 - [verify-report-image-help.mjs](verify-report-image-help.mjs) — image-popover Instagram help: hover, keyboard dismissal, tooltip bounds and stable geometry at desktop/narrow widths in both themes and enlarged text; invoked by the Instagram verifier.
-- [verify-report-draft-ownership.mjs](verify-report-draft-ownership.mjs)
+- [verify-report-draft-ownership.mts](verify-report-draft-ownership.mts)
 - [verify-report-photos.mts](verify-report-photos.mts)
 - [verify-climber-files.mjs](verify-climber-files.mjs) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
 - [verify-settings-actions.mts](verify-settings-actions.mts) — held Settings actions and restore focus, run by `layout-stability`.
 - [settings-fragment-verification.mjs](settings-fragment-verification.mjs) — shared assertions for the packaged Settings anchor verifier.
 - [verify-settings-navigation.mts](verify-settings-navigation.mts)
-- [verify-settings-fragments.mjs](verify-settings-fragments.mjs) — real packaged Chrome/Firefox Settings anchors, refresh, keyboard navigation, Back/Forward and manual reading positions; run `npm run verify -- settings-navigation`.
+- [verify-settings-fragments.mts](verify-settings-fragments.mts) — real packaged Chrome/Firefox Settings anchors, refresh, keyboard navigation, Back/Forward and manual reading positions; run `npm run verify -- settings-navigation`.
 - [verify-signed-out.mjs](verify-signed-out.mjs) — signed-out recovery and held filter retries in Chrome/Firefox; run with `npm run verify -- signed-out`.
 
 

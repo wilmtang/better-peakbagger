@@ -4,7 +4,7 @@
 // the maintained security boundary instead of expecting the fixed build to run
 // report-supplied scripts. --baseline must fail on observed execution.
 import assert from 'node:assert/strict';
-import { verifyReportSecurity } from '../../../../scripts/verify-report-security.mjs';
+import { verifyReportSecurity } from '../../../../scripts/verify-report-security.mts';
 const args=process.argv.slice(2);
 assert(args.length<=1&&(!args.length||args[0]==='--baseline'),'Usage: security-probe.mjs [--baseline]');
 await verifyReportSecurity('chrome',{baseline:args.includes('--baseline')});

@@ -25,7 +25,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
         [['profile-editor'], [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']]],
         [['instagram'], [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']]],
-        [['report-security'], [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
+        [['report-security'], [['verify-report-security.mts', 'chrome'], ['verify-report-security.mts', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
         [['inline-buddies'], [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']]],
         [['capture-flow'], [['verify-capture-flow.mts']]],
         [['capture-readiness', 'firefox'], [['verify-capture-readiness.mjs', 'firefox']]],
@@ -34,12 +34,12 @@ test('verification targets preserve the existing checks and browser order with o
         [['map-handoffs'], [['verify-map-handoffs.mjs']]],
         [['onx'], [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']]],
         [['map-layers'], [['verify-map-layer-control.mts'], ['verify-map-layers.mts']]],
-        [['settings-navigation'], [['verify-settings-fragments.mjs', 'chrome'], ['verify-settings-fragments.mjs', 'firefox']]],
+        [['settings-navigation'], [['verify-settings-fragments.mts', 'chrome'], ['verify-settings-fragments.mts', 'firefox']]],
         [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
-        [['api-rate-limits'], [['verify-api-rate-limits.mjs']]],
+        [['api-rate-limits'], [['verify-api-rate-limits.mts']]],
         [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mjs']]],
         [['peak-map-layout'], [['verify-peak-map-layout.mts']]],
-        [['weather-intervals'], [['verify-weather-intervals.mjs']]],
+        [['weather-intervals'], [['verify-weather-intervals.mts']]],
         [['weather', '--live'], [['verify-ascent-weather.mjs', '--live'], ['verify-ascent-weather.mjs', '--firefox', '--live']]],
         [['peak-weather'], [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']]],
         [['snow'], [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']]],
@@ -126,14 +126,14 @@ test('profile editor rejects missing, unknown and extra selections before openin
 
 test('settings navigation rejects unknown and extra selections before opening a browser', () => {
     for (const args of [['chromee'], ['chrome', '--unknown']]) {
-        const result = spawnSync(process.execPath, [script('verify-settings-fragments.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        const result = spawnSync(process.execPath, [script('verify-settings-fragments.mts'), ...args], { encoding: 'utf8', timeout: 5000 });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: node scripts\/verify-settings-fragments/);
     }
 });
 
 test('focused no-argument verifiers reject unknown selections before opening a browser', () => {
-    for (const name of ['verify-api-rate-limits.mjs', 'verify-ascent-backup-lifecycle.mjs', 'verify-peak-map-layout.mts', 'verify-weather-intervals.mjs']) {
+    for (const name of ['verify-api-rate-limits.mts', 'verify-ascent-backup-lifecycle.mjs', 'verify-peak-map-layout.mts', 'verify-weather-intervals.mts']) {
         const result = spawnSync(process.execPath, [script(name), '--unknown'], { encoding: 'utf8', timeout: 5000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Usage: node scripts\//);

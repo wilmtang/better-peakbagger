@@ -1355,7 +1355,7 @@ markup submitted to Peakbagger is still the author's responsibility for readers
 without BPB. This is not a guarantee against an already-compromised site or a
 pre-existing service worker synthesizing documents outside the network stack.
 
-Run `node scripts/verify-report-security.mjs chrome` and the `firefox` variant
+Run `node scripts/verify-report-security.mts chrome` and the `firefox` variant
 after building. `chrome --baseline` deliberately removes the response rules from
 a disposable copy and must fail on observed script execution. The fixture never
 submits report content or reads live cookies.
