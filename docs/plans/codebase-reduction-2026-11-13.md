@@ -228,6 +228,15 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   own stale `.js` paths, fixed and rechecked with the project tests, 537
   pass), typecheck, lint, TypeScript policy, and `npm run verify -- chrome`
   (hidden, Chromium 156, 1000×760, teardown passed).
+- Phase 4 step 3. The BigMap and Peak-page settings bridges share
+  `src/maps/map-settings-bridge.ts` (request handling, generation guard,
+  subscription and BFCache refresh); each bridge, now TypeScript, keeps only
+  its marker and field projection. Both bundle source lists, their pins and
+  the settings-read policy (the one fail-soft read moved to the shared module)
+  are updated. The per-bundle behavior tests in
+  `passive-settings-ownership.test.mjs`, `big-map.test.mjs` and
+  `peak-map.test.mts` exercise both bridges unchanged. Checks: build, those
+  tests plus the settings and project tests (662 pass), typecheck, lint.
 
 ### Intentionally not changed
 
@@ -242,4 +251,4 @@ Nothing yet.
 
 ### Not started
 
-Phases 2, 3 and 5; phase 4 steps 2 and 3.
+Phases 2, 3 and 5; phase 4 step 2.

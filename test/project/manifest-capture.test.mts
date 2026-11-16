@@ -320,7 +320,7 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     const pageEntry = contentEntry('content/big-map.js');
     assert.ok(bridgeEntry);
     assert.deepEqual(bridgeEntry.js, ['content/big-map-bridge.js']);
-    assert.deepEqual(bundleSources('content/big-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/big-map-bridge.js']);
+    assert.deepEqual(bundleSources('content/big-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/map-settings-bridge.ts', 'maps/big-map-bridge.ts']);
     assert.equal(bridgeEntry.world, undefined);
     assert.ok(pageEntry);
     // The MAIN-world enhancer also bundles the shared metrics + basemap +
@@ -446,7 +446,7 @@ test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated
 
     assert.ok(settingsBridge);
     assert.deepEqual(settingsBridge.js, ['content/peak-map-bridge.js']);
-    assert.deepEqual(bundleSources('content/peak-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/peak-map-bridge.js']);
+    assert.deepEqual(bundleSources('content/peak-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/map-settings-bridge.ts', 'maps/peak-map-bridge.ts']);
     assert.equal(settingsBridge.run_at, 'document_start');
     assert.equal(settingsBridge.world, undefined);
 
