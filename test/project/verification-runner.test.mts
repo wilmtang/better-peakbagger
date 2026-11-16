@@ -21,7 +21,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['gpx-header'], [['verify-gpx-header.mts']]],
         [['layout-stability', '--firefox-only', '--surface=maps'],
             [['verify-layout-stability.mts', '--firefox-only', '--surface=maps']]],
-        [['multi-summit'], [['verify-multi-summit.mjs']]],
+        [['multi-summit'], [['verify-multi-summit.mts']]],
         [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
         [['profile-editor'], [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']]],
         [['instagram'], [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']]],

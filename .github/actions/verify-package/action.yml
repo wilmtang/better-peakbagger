@@ -25,4 +25,4 @@ runs:
       shell: bash
       env:
         DEBUG: pw:browser
-      run: node scripts/verify-multi-summit.mjs 2>&1 | tee browser-evidence/verify-multi-summit.log
+      run: node scripts/verify-multi-summit.mts 2>&1 | tee browser-evidence/verify-multi-summit.log

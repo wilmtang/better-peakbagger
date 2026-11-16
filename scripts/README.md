@@ -101,7 +101,7 @@ independent of the existing targets.
 - [jszip-csp-patch.mjs](jszip-csp-patch.mjs) — Version-checked removal of JSZip's legacy string-evaluation scheduler fallback.
 - [verify-capture-readiness.mjs](verify-capture-readiness.mjs)
 - [verify-draft-recovery.mjs](verify-draft-recovery.mjs)
-- [verify-multi-summit.mjs](verify-multi-summit.mjs)
+- [verify-multi-summit.mts](verify-multi-summit.mts)
 - [verify-provider-contracts.mjs](verify-provider-contracts.mjs)
 - [verify-provider-performance.mjs](verify-provider-performance.mjs)
 
@@ -154,7 +154,7 @@ independent of the existing targets.
 
 - [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
 - [verify-custom-overlays.mts](verify-custom-overlays.mts) — real unpacked editor, 18 transition and 24 keyboard-help cases at asserted content widths/zoom, negative geometry checks, direct HTTPS/CORS tiles, packaged workers and hardware 2D/3D rendering. `--loading-only` explicitly excludes editor/help matrices; unknown or duplicate selections fail before launch.
-- [verify-custom-overlay-lifecycle.mjs](verify-custom-overlay-lifecycle.mjs) — `chrome|firefox startup|lifetime|cache`: real Leaflet and bundled renderer, fresh asynchronous startup, bounded canvas/listener ownership and real HTTP-cache revalidation with changed pixels, conditional responses and ordinary reuse at desktop/narrow widths; controlled providers, without the Settings editor or worker.
+- [verify-custom-overlay-lifecycle.mts](verify-custom-overlay-lifecycle.mts) — `chrome|firefox startup|lifetime|cache`: real Leaflet and bundled renderer, fresh asynchronous startup, bounded canvas/listener ownership and real HTTP-cache revalidation with changed pixels, conditional responses and ordinary reuse at desktop/narrow widths; controlled providers, without the Settings editor or worker.
 - [verify-custom-overlay-replacement.mts](verify-custom-overlay-replacement.mts) — hidden hardware Chrome at 1000×760: real MapLibre raster pixels through held replacement, viewport cancellation, rendered acceptance and source/listener teardown; controlled HTTPS provider, without the Settings editor or worker.
 - [verify-custom-layer-settings.mts](verify-custom-layer-settings.mts) — `chrome|firefox` checks saved-source actions, alignment, long names, light/dark narrow layouts, enlarged text, guarded reorder/error/retry and delete cancellation. Twelve disclosure cases at 900/540 px heights check matching compact headers, Space/Enter expansion, retained focus, a pinned footer, reachable final content and scroll-aware keyboard tooltips. Opacity remains a map-only control.
 - [verify-custom-layer-menu.mts](verify-custom-layer-menu.mts) — `chrome|firefox` compares built-in/custom row alignment, fonts, colors, checkbox/chevron dimensions, keyboard opacity/disclosure and anchored loading/error/retry/overzoom states at 736/320 × 800, both themes and normal/1.5x text. Presentation fixtures stub I/O; the unpacked integration verifiers cover real loading.
