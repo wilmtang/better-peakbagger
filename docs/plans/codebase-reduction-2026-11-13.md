@@ -167,6 +167,46 @@ files are read.
 Checks: `npm test` with the executed-test count recorded before and after each
 commit; the count may fall only by the cases the ledger names.
 
+#### Phase 3 review — 2026-11-16 (proposal; nothing deleted)
+
+Read: every test title in `test/project/` (71 test files, 10,284 lines), the
+bodies of its source-text tests, and the source-text assertions in the 16
+other test files that read authored source (not the 36 the first count gave,
+which included `dist/` readers). Findings:
+
+- `test/project/` is not redundant. All but about a dozen of its 454 declared tests (537 executed)
+  execute script logic with fixtures: release evidence and publisher state
+  machines, Dependabot queue and cleanup, resource teardown, privacy and
+  TypeScript policy, build watch generations. Each guards a scripted path no
+  other check executes. Proposed removals: none.
+- Protected guards (Boundaries): `manifest-capture`, `fixtures-privacy`,
+  `typescript-policy`, the settings-schema scan and `showcase`. Also keep the
+  workflow pins in `release.test.mts` ("CI tests, lints…", "release
+  publication waits…") and `dependabot-auto-merge.test.mjs`: workflow YAML has
+  no other test, and those pins encode permission and ordering decisions.
+- Removal candidates, each needing the owner's call because the surviving check
+  is a browser verifier that `npm test` does not run:
+  1. `release.test.mts` "Firefox verification waits for rendered postconditions
+     instead of fixed frames" and "Firefox topo actions re-center overlay…"
+     (about 90 lines) pin the text of `verify-firefox-extension.mts`. The
+     surviving check is that verifier itself; what it cannot show is a
+     reintroduced fixed sleep that still passes on an idle machine.
+  2. `copied-runtime-impact.test.mjs` "Firefox GPU gestures…", "Chrome solar
+     bearing…", "Chrome terrain verification waits out…" and "Chrome
+     tilted-peak verification…" pin GPU-verifier text, with the same trade-off
+     against `verify -- terrain`.
+  3. `sun-calculator.test.mjs` (lines 696–704) and `photo-page.test.mts` pin
+     exact `block-size` values in CSS. The surviving checks are the browser
+     geometry probes (`readSunCalculatorGeometry` in both extension
+     verifiers, `verify-layout-stability.mts`); the pins are the only
+     `npm test`-level guard against layout jitter.
+  Recommendation: keep 3, remove 1 and 2 only if verifier-text pins are judged
+  less valuable than the churn they cause on every verifier edit.
+- Table-driven rewrites (data-only cases, no coverage change): the five
+  optional-host-permission tests in `manifest-capture.test.mts` (ImgBB, Gaia,
+  CalTopo, AllTrails, onX; about 10 lines saved). No other data-only group of
+  more than two cases was found in the files read.
+
 ### Phase 4 — Runtime structure (about −100, less sprawl)
 
 1. Remove the five unreferenced exports.
@@ -240,11 +280,13 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 - Phase 4 step 2, one family. `OPTIONS_TAB_REGISTER`, `OPEN_BETA_SETTINGS`,
   `OPEN_CUSTOM_LAYER_SETTINGS` and `OPEN_DRAFTS_MANAGER`, with the registered
   Settings tab bookkeeping and their error constants, moved unchanged from
-  `background.ts` into `src/background/options-tab-routes.ts` (4,358 → 4,203
+  `background.ts` into `src/background/options-tab-routes.ts` (4,358 → 4,205
   lines). The worker source list, its pin, and the Save-control source guard in
   `manifest-capture.test.mts` include the new file. The bundled-worker tests in
   `background-capture.test.mjs` exercise these routes. Checks: build, the
-  background, settings and project tests (1,102 pass), typecheck, lint.
+  background, settings and project tests (1,102 pass), typecheck, lint, and
+  `npm run verify -- chrome` after the bridge and worker changes (hidden,
+  Chromium 156, 1000×760, teardown passed).
 
 ### Intentionally not changed
 
@@ -268,4 +310,5 @@ Nothing yet.
 
 ### Not started
 
-Phases 2, 3 and 5; phase 4 step 2.
+Phases 2 and 5. Phase 3 removals and the table-driven rewrite await the
+owner's choice on the proposal above.
