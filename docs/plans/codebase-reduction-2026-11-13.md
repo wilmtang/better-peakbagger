@@ -63,8 +63,9 @@ and `relayResource` (`src/maps/custom-overlay-private.ts` (then `.js`)).
   therefore convert files as they touch them, which adds churn but not scope.
 - The vendored skill stays. Removing it trades inert data for a setup step that
   fresh clones, worktrees and cloud agents would each need. A
-  `linguist-vendored` attribute is enough to keep it out of language statistics
-  and diffs.
+  `linguist-vendored` attribute is enough to keep it out of GitHub language
+  statistics; it does not hide diffs, and `-diff` must not be added (it turns
+  off `git diff --check` and `git grep` for the skill's scripts).
 
 ## Review of this plan — 2026-11-13
 
@@ -223,10 +224,16 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   three edited legacy modules (`fit-message-reader`, `garmin-api`,
   `custom-overlay-private`) are converted to TypeScript under the policy; the
   worker source list and its pin in `manifest-capture.test.mts` name the new
-  files. Checks: `npm test` (4,193 pass), typecheck, lint, TypeScript policy.
+  files. Checks: `npm test` (4,192 of 4,193; the failure was this plan's
+  own stale `.js` paths, fixed and rechecked with the project tests, 537
+  pass), typecheck, lint, TypeScript policy, and `npm run verify -- chrome`
+  (hidden, Chromium 156, 1000×760, teardown passed).
 
 ### Intentionally not changed
 
+- `garmin-api.ts` `list()` accepts any `startTimeLocal` whose string form
+  matches the date pattern (an array, for example), as the JavaScript did.
+  A `typeof` guard is a behavior change and belongs in its own fix.
 - `.agents/skills/ui-ux-pro-max` stays vendored; see Boundaries.
 
 ### Changed but not fully proven
