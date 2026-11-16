@@ -1,44 +1,40 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Chrome loads real dist; Firefox renders its bundle with settings APIs stubbed.
-/* global document, window, chrome, scrollX, scrollY */
+/// <reference lib="dom" />
+/// <reference types="chrome" />
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium, firefox } from 'playwright';
+import { firefox, type BrowserContext, type Page } from 'playwright';
 import { JSDOM } from 'jsdom';
 import { units } from '../src/ui/units.js';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 const [browserName, mode, ...extra] = process.argv.slice(2);
 assert.ok(['chrome', 'firefox'].includes(browserName) && (!mode || mode === '--baseline') && !extra.length,
-    'Usage: node scripts/verify-profile-units.mjs chrome|firefox [--baseline]');
+    'Usage: node scripts/verify-profile-units.mts chrome|firefox [--baseline]');
 const output = process.env.BPB_PROFILE_UNITS_OUTPUT;
 if (output) await mkdir(output, { recursive: true });
 const resources = createResourceStack();
-let failure;
+let failure: unknown = null;
 try {
-    const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-profile-units-'));
-    resources.defer('profile units test profile', () => rm(profile, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
+    const profile = await createVerificationRoot(resources, 'bpb-profile-units-', 'profile units test profile');
+    // Preserve the required helper option despite its incomplete JS-inferred signature.
+    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile } as never);
     resources.defer('profile units HTTPS fixture', () => fixture.close());
-    let context, settingsPage;
+    let context: BrowserContext, settingsPage: Page | undefined;
     if (browserName === 'chrome') {
-        assertChromeLaunchAllowed();
-        context = await chromium.launchPersistentContext(profile, {
-            channel: 'chromium', headless: true, viewport: { width: 1280, height: 900 },
-            args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${path.resolve('dist')}`,
-                `--load-extension=${path.resolve('dist')}`,
-                '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
+        context = await launchVerificationChrome(resources, 'profile units Chrome', profile, {
+            viewport: { width: 1280, height: 900 }, trustArgs: fixture.chromeTrustArgs,
+            extension: path.resolve('dist'), hosts: [PEAKBAGGER_HOST_RULE],
         });
-        resources.defer('profile units Chrome', () => context.close());
         settingsPage = await context.newPage();
         await settingsPage.goto('chrome://extensions-internals/');
         const record = await settingsPage.waitForFunction(() => {
-            try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); }
+            try { return JSON.parse(document.body.innerText).find((item: { name: string; id: string }) => item.name === 'Better Peakbagger'); }
             catch { return false; }
         }).then(handle => handle.jsonValue());
         await settingsPage.goto(`chrome-extension://${record.id}/options/options.html`);
@@ -48,26 +44,28 @@ try {
         resources.defer('profile units Firefox', () => browser.close());
         context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
         await context.addInitScript(() => {
-            const listeners = [];
+            type Listener = (changes: object, area: string) => void;
+            const listeners: Listener[] = [];
             let settings = {};
-            window.chrome = {
-                storage: { sync: { get: async () => ({ bpbSettings: settings }), set: async value => {
+            (window as unknown as { chrome: unknown }).chrome = {
+                storage: { sync: { get: async () => ({ bpbSettings: settings }), set: async (value: { bpbSettings: object }) => {
                     settings = value.bpbSettings;
                     for (const listener of listeners) listener({ bpbSettings: { newValue: settings } }, 'sync');
                 } }, local: { get: async () => ({}) },
-                onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
+                onChanged: { addListener: (listener: Listener) => listeners.push(listener), removeListener() {} } },
             };
         });
     }
     const html = await readFile('test/fixtures/pages/climber-home.html', 'utf8');
     const metric = new JSDOM(html);
     for (const heading of metric.window.document.querySelectorAll('#StatsLabel th')) {
-        if (!/^(Elev|Prom)-ft$/.test(heading.textContent)) continue;
-        for (const row of [...heading.closest('table').rows].slice(heading.parentElement.rowIndex + 1)) {
-            const cell = row.cells[heading.cellIndex];
-            cell.textContent = (Number(cell.textContent.replaceAll(',', '')) / units.FEET_PER_METER).toFixed(1);
+        if (!/^(Elev|Prom)-ft$/.test(heading.textContent || '')) continue;
+        const cellIndex = (heading as HTMLTableCellElement).cellIndex;
+        for (const row of [...heading.closest('table')!.rows].slice((heading.parentElement as HTMLTableRowElement).rowIndex + 1)) {
+            const cell = row.cells[cellIndex];
+            cell.textContent = (Number(cell.textContent!.replaceAll(',', '')) / units.FEET_PER_METER).toFixed(1);
         }
-        heading.textContent = heading.textContent.replace('-ft', '-m');
+        heading.textContent = heading.textContent!.replace('-ft', '-m');
     }
     const metricHtml = metric.serialize();
     metric.window.close();
@@ -82,14 +80,14 @@ try {
         await page.addScriptTag({ path: 'dist/content/theme.js' });
         await page.addScriptTag({ path: 'dist/content/profile-units.js' });
     }
-    const apply = patch => (settingsPage || page).evaluate(async patch => {
-        await chrome.storage.sync.set({ bpbSettings: { units: 'auto', elevationUnits: 'default', theme: 'light', ...patch } });
+    const apply = (patch: object) => (settingsPage || page).evaluate(async next => {
+        await chrome.storage.sync.set({ bpbSettings: { units: 'auto', elevationUnits: 'default', theme: 'light', ...next } });
     }, patch);
     const heading = page.locator('#StatsLabel th').filter({ hasText: /^Elev-/ });
     const prominent = page.locator('#StatsLabel th').filter({ hasText: /^Prom-/ });
-    const expectUnits = async unit => {
-        await page.waitForFunction(unit => [...document.querySelectorAll('#StatsLabel th')]
-            .some(node => node.textContent === `Elev-${unit}`), unit, { timeout: 3000 }).catch(() => {});
+    const expectUnits = async (unit: string) => {
+        await page.waitForFunction(expected => [...document.querySelectorAll('#StatsLabel th')]
+            .some(node => node.textContent === `Elev-${expected}`), unit, { timeout: 3000 }).catch(() => {});
         assert.equal(await heading.textContent(), `Elev-${unit}`, 'profile elevation header must follow BPB elevation preference');
         assert.equal(await prominent.textContent(), `Prom-${unit}`, 'profile prominence header must follow BPB elevation preference');
     };
@@ -102,13 +100,13 @@ try {
         await expectUnits('m');
         assert.equal(await heading.locator('xpath=../following-sibling::tr[1]/td[2]').textContent(), '4420');
         const geometry = () => page.evaluate(() => {
-            const box = node => {
+            const box = (node: Element) => {
                 const { x, y, width, height } = node.getBoundingClientRect();
                 return { x: x + scrollX, y: y + scrollY, width, height };
             };
-            const stats = document.getElementById('StatsLabel');
-            return { heading: box(stats.querySelector('h2')), panel: box(stats),
-                following: box(stats.querySelector('table:last-of-type')), scrollX, scrollY };
+            const stats = document.getElementById('StatsLabel')!;
+            return { heading: box(stats.querySelector('h2')!), panel: box(stats),
+                following: box(stats.querySelector('table:last-of-type')!), scrollX, scrollY };
         });
         let cases = 0;
         for (const nativeUnits of ['imperial', 'metric']) {
@@ -124,11 +122,11 @@ try {
                 await expectUnits(displayUnits === 'metric' ? 'm' : 'ft');
                 assert.equal(await heading.locator('xpath=../following-sibling::tr[1]/td[2]').textContent(), displayUnits === 'metric' ? '4420' : '14501');
                 assert.equal(await prominent.locator('xpath=../following-sibling::tr[1]/td[2]').textContent(), displayUnits === 'metric' ? '4036' : '13241');
-                await page.waitForFunction(theme => document.documentElement.dataset.bpbTheme === theme, theme);
+                await page.waitForFunction(expected => document.documentElement.dataset.bpbTheme === expected, theme);
                 await heading.scrollIntoViewIfNeeded();
                 const before = await geometry();
                 for (const [patch, expected] of [[{ units: 'imperial' }, 'ft'], [{ units: 'metric', elevationUnits: 'imperial' }, 'ft'],
-                    [{ units: 'imperial', elevationUnits: 'metric' }, 'm'], [{ units: 'auto' }, nativeUnits === 'metric' ? 'm' : 'ft']]) {
+                    [{ units: 'imperial', elevationUnits: 'metric' }, 'm'], [{ units: 'auto' }, nativeUnits === 'metric' ? 'm' : 'ft']] as const) {
                     await apply({ ...patch, theme });
                     await expectUnits(expected);
                     assert.deepEqual(await geometry(), before, 'changing profile units must keep the panel and reading position stable');
@@ -146,4 +144,4 @@ try {
             extension: browserName === 'chrome' ? 'real unpacked dist' : 'shipped bundles; settings APIs stubbed' }));
     }
 } catch (error) { failure = error; }
-await resources.dispose(failure);
+await resources.dispose(failure as null);

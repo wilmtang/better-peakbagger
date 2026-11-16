@@ -1,44 +1,46 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, chrome, requestAnimationFrame */
+/// <reference lib="dom" />
+/// <reference types="chrome" />
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from 'playwright';
-import { createBrowserFixtureServer, waitForCondition } from './browser-verification-fixtures.mjs';
+import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
+
+const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => Promise<T>, options: { description: string; isReady: (value: T) => boolean }) => Promise<T>;
+// Page-world probes; callbacks cast in place so the shared program keeps Window unchanged.
+interface WeatherProbe { __bpbWeatherCameraSettled: number; __bpbWeatherFrameGeneration: number; __bpbWeatherParkedContextReceived: boolean }
 
 assertChromeLaunchAllowed();
 const root = path.resolve(import.meta.dirname, '..'), resources = createResourceStack();
 const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
-let failure;
+let failure: unknown = null;
 try {
-    const profile = await mkdtemp(path.join(tmpdir(), 'bpb-weather-3d-'));
-    resources.defer('3D weather profile', () => rm(profile, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
+    const profile = await createVerificationRoot(resources, 'bpb-weather-3d-', '3D weather profile');
+    // Preserve the required helper option despite its incomplete JS-inferred signature.
+    const fixture = await createBrowserFixtureServer({ temporaryRoot: profile } as never);
     resources.defer('3D weather HTTPS fixtures', () => fixture.close());
-    assertChromeLaunchAllowed();
-    const context = await chromium.launchPersistentContext(profile, { channel: 'chromium', headless: true,
+    const context = await launchVerificationChrome(resources, '3D weather browser', profile, {
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], viewport: { width: 1440, height: 1100 },
-        args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${path.join(root, 'dist')}`,
-            `--load-extension=${path.join(root, 'dist')}`, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] });
-    resources.defer('3D weather browser', () => context.close());
-    const requests = [];
+        trustArgs: fixture.chromeTrustArgs, extension: path.join(root, 'dist'), hosts: [PEAKBAGGER_HOST_RULE] });
+    const requests: Record<string, string>[] = [];
     await context.route('https://api.open-meteo.com/v1/forecast?*', async route => {
         const query = new URL(route.request().url()).searchParams;
         requests.push(Object.fromEntries(query));
-        const body = weatherFixture({ startDate: query.get('start_date'),
-            hours: (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24,
+        const startDate = query.get('start_date')!, endDate = query.get('end_date')!;
+        const body = weatherFixture({ startDate,
+            hours: (Date.parse(endDate) - Date.parse(startDate)) / 3600_000 + 24,
             latitude: Number(query.get('latitude')), longitude: Number(query.get('longitude')),
             elevation: query.has('elevation') ? Number(query.get('elevation')) : 1200 });
         await route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
     });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: { enable3dMap: true, showSunMoon: false, theme: 'light', units: 'imperial' } }));
-    const page = await context.newPage(), errors = [];
+    const page = await context.newPage(), errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`https://www.peakbagger.com:${fixture.port}/peak.aspx?pid=2296&week-weather=map`);
     await page.locator('#bpb-peak-weather').scrollIntoViewIfNeeded();
@@ -48,15 +50,16 @@ try {
     await page.waitForFunction(() => document.getElementById('bpb-terrain-frame')?.style.opacity === '1', null, { timeout: 60_000 });
     const canvas = page.frameLocator('#bpb-terrain-frame').locator('.maplibregl-canvas');
     const renderer = await canvas.evaluate(node => {
-        const gl = node.getContext('webgl2'), info = gl?.getExtension('WEBGL_debug_renderer_info');
-        return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null;
+        const gl = (node as HTMLCanvasElement).getContext('webgl2'), info = gl?.getExtension('WEBGL_debug_renderer_info');
+        return info ? gl!.getParameter(info.UNMASKED_RENDERER_WEBGL) as string : null;
     });
     await page.evaluate(() => {
-        window.__bpbWeatherCameraSettled = 0;
+        const probe = window as unknown as WeatherProbe;
+        probe.__bpbWeatherCameraSettled = 0;
         window.addEventListener('message', event => {
-            if (event.data?.__bpbTerrain && event.data.dir === 'toPage' && event.data.type === 'camera') window.__bpbWeatherCameraSettled++;
-            if (event.data?.__bpbTerrainFrame && Number.isSafeInteger(event.data.generation)) window.__bpbWeatherFrameGeneration = event.data.generation;
-            if (event.data?.auditParkedContext) window.__bpbWeatherParkedContextReceived = true;
+            if (event.data?.__bpbTerrain && event.data.dir === 'toPage' && event.data.type === 'camera') probe.__bpbWeatherCameraSettled++;
+            if (event.data?.__bpbTerrainFrame && Number.isSafeInteger(event.data.generation)) probe.__bpbWeatherFrameGeneration = event.data.generation;
+            if (event.data?.auditParkedContext) probe.__bpbWeatherParkedContextReceived = true;
         });
     });
     assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware WebGL required: ${renderer}`);
@@ -64,14 +67,14 @@ try {
     for (const width of [1440, 375]) {
         await page.setViewportSize({ width, height: 1100 });
         await page.locator('#bpb-terrain-frame').evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
-        let previousBounds, stable = 0;
+        let previousBounds: string | undefined, stable = 0;
         await waitForCondition(async () => {
             const bounds = await canvas.boundingBox();
             const value = JSON.stringify(bounds);
             stable = bounds && value === previousBounds ? stable + 1 : 0; previousBounds = value;
             return { stable, bounds };
         }, { description: '3D canvas settles after viewport resizing', isReady: value => value.stable >= 3 });
-        const bounds = await canvas.boundingBox();
+        const bounds = (await canvas.boundingBox())!;
         await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
         if (output) await page.screenshot({ path: path.join(output, `chrome-peak-3d-location-menu-${width}.png`) });
@@ -79,20 +82,20 @@ try {
         await page.keyboard.press('Tab');
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'hidden' });
         assert.equal(await page.evaluate(() => window.scrollY), scroll);
-        assert.equal(await page.evaluate(() => document.activeElement === document.getElementById('bpb-terrain-frame')), true);
+        assert.equal(await page.evaluate(() => document.activeElement === document.getElementById('bpb-terrain-frame')!), true);
         await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
-        const cameraBeforeWheel = await page.evaluate(() => window.__bpbWeatherCameraSettled);
+        const cameraBeforeWheel = await page.evaluate(() => (window as unknown as WeatherProbe).__bpbWeatherCameraSettled);
         // The menu overlaps the original click. Zoom an exposed canvas pixel,
         // otherwise the wheel scrolls the parent page and never moves the map.
         await page.mouse.move(bounds.x + bounds.width * .15, bounds.y + bounds.height * .25);
         await page.mouse.wheel(0, 120);
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'hidden' });
-        await page.waitForFunction(count => window.__bpbWeatherCameraSettled > count, cameraBeforeWheel);
+        await page.waitForFunction(count => (window as unknown as WeatherProbe).__bpbWeatherCameraSettled > count, cameraBeforeWheel);
         await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
         const picker = page.frameLocator('#bpb-terrain-frame').locator('.bpb-terrain-picker');
-        const pickerBounds = await picker.boundingBox();
+        const pickerBounds = (await picker.boundingBox())!;
         await page.mouse.click(pickerBounds.x + pickerBounds.width / 2, pickerBounds.y + pickerBounds.height / 2);
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'hidden' });
         await page.keyboard.press('Escape');
@@ -104,41 +107,41 @@ try {
         await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
         await page.locator('#bpb-peak-weather-menu button').click();
-        await page.waitForFunction(() => document.querySelector('.bpb-week-location-name').textContent !== 'At the summit'
-            && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false');
-        assert.ok(!Object.hasOwn(requests.at(-1), 'elevation'));
+        await page.waitForFunction(() => document.querySelector('.bpb-week-location-name')!.textContent !== 'At the summit'
+            && document.getElementById('bpb-peak-weather')!.getAttribute('aria-busy') === 'false');
+        assert.ok(!Object.hasOwn(requests.at(-1)!, 'elevation'));
         await page.locator('.bpb-week-location-reset').click();
-        await page.waitForFunction(() => document.querySelector('.bpb-week-location-name').textContent === 'At the summit');
+        await page.waitForFunction(() => document.querySelector('.bpb-week-location-name')!.textContent === 'At the summit');
         await page.locator('#bpb-terrain-frame').evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
-        const drag = await canvas.boundingBox();
+        const drag = (await canvas.boundingBox())!;
         const beforeView = await page.locator('.bpb-map-compass-disc').getAttribute('style');
         await page.mouse.move(drag.x + drag.width * .35, drag.y + drag.height * .45);
         await page.mouse.down({ button: 'right' });
         await page.mouse.move(drag.x + drag.width * .35 + 55, drag.y + drag.height * .45 + 45, { steps: 8 });
         await page.mouse.up({ button: 'right' });
-        try { await page.waitForFunction(value => document.querySelector('.bpb-map-compass-disc').getAttribute('style') !== value, beforeView); }
+        try { await page.waitForFunction(value => document.querySelector('.bpb-map-compass-disc')!.getAttribute('style') !== value, beforeView); }
         catch (error) {
-            const state = await page.evaluate(() => ({ toggle: document.getElementById('bpb-terrain-toggle').textContent,
+            const state = await page.evaluate(() => ({ toggle: document.getElementById('bpb-terrain-toggle')!.textContent,
                 frame: document.getElementById('bpb-terrain-frame')?.style.cssText,
-                compass: document.querySelector('.bpb-map-compass-disc').getAttribute('style'),
-                menu: document.getElementById('bpb-peak-weather-menu').hidden }));
-            throw new Error(`${error.message}: ${JSON.stringify(state)}`);
+                compass: document.querySelector('.bpb-map-compass-disc')!.getAttribute('style'),
+                menu: document.getElementById('bpb-peak-weather-menu')!.hidden }));
+            throw new Error(`${(error as Error).message}: ${JSON.stringify(state)}`);
         }
         await page.evaluate(async () => { for (let frame = 0; frame < 5; frame++) await new Promise(resolve => requestAnimationFrame(resolve)); });
-        assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => node.hidden), true, 'right-drag rotates without opening a weather menu');
+        assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => (node as HTMLElement).hidden), true, 'right-drag rotates without opening a weather menu');
     }
-    const generation = await page.evaluate(() => window.__bpbWeatherFrameGeneration);
+    const generation = await page.evaluate(() => (window as unknown as WeatherProbe).__bpbWeatherFrameGeneration);
     assert.ok(Number.isSafeInteger(generation));
     await page.locator('#bpb-terrain-toggle').click();
-    await page.waitForFunction(() => document.getElementById('bpb-terrain-frame').style.opacity === '0');
-    await canvas.evaluate((node, data) => window.parent.postMessage({ __bpbTerrainFrame: true, dir: 'toParent',
+    await page.waitForFunction(() => document.getElementById('bpb-terrain-frame')!.style.opacity === '0');
+    await canvas.evaluate((_node, data) => window.parent.postMessage({ __bpbTerrainFrame: true, dir: 'toParent',
         type: 'locationContext', generation: data.generation, latitude: 46.8, longitude: -121.7, x: 100, y: 100,
         auditParkedContext: true }, data.origin), { generation, origin: `https://www.peakbagger.com:${fixture.port}` });
-    await page.waitForFunction(() => window.__bpbWeatherParkedContextReceived);
+    await page.waitForFunction(() => (window as unknown as WeatherProbe).__bpbWeatherParkedContextReceived);
     await page.evaluate(async () => { for (let frame = 0; frame < 2; frame++) await new Promise(resolve => requestAnimationFrame(resolve)); });
-    assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => node.hidden), true, 'a parked 3D frame cannot open the weather menu');
+    assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => (node as HTMLElement).hidden), true, 'a parked 3D frame cannot open the weather menu');
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, profile, renderer,
+    console.log(JSON.stringify({ browser: context.browser()!.version(), hidden: true, profile, renderer,
         viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal', 'picker and modified Escape stay in 3D', 'parked-frame rejection'] }));
 } catch (error) { failure = error; }
-await resources.dispose(failure);
+await resources.dispose(failure as null);

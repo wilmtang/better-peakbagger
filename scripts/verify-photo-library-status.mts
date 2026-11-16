@@ -1,14 +1,14 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden shipped-library geometry checks with synthetic, device-local photos.
-/* global document, chrome, indexedDB, getComputedStyle, innerWidth */
+/// <reference lib="dom" />
+/// <reference types="chrome" />
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 import { photoLibrary as Library } from '../src/photos/photo-library.js';
 import { photoProject as Project } from '../src/photos/photo-project.js';
 import { verifyPhotoBackupStatus } from './verify-photo-backup-status.mjs';
@@ -19,12 +19,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const screenshots = process.env.BPB_PHOTO_SCREENSHOTS;
 const now = '2026-10-09T12:00:00.000Z';
-const drafts = ['status-one', 'status-two'].map((localId, index) => Library.createDraft({
+// photo-library.js is untyped; its inferred signatures omit fields these records carry.
+interface LibraryPhoto { localId: string; source: { sha256: string; [field: string]: unknown }; remote: object; [field: string]: unknown }
+const library = Library as unknown as { createDraft(options: object): LibraryPhoto; completeUpload(photo: LibraryPhoto, source: object, upload: object, at: string): LibraryPhoto; cleanPhoto(photo: object): LibraryPhoto | null };
+const drafts = ['status-one', 'status-two'].map((localId, index) => library.createDraft({
     localId, title: 'Alpine ridge', now,
     source: { fileName: 'ridge.png', mime: 'image/png', width: 1200, height: 900,
         bytes: 1000, sha256: (index ? 'b' : 'a').repeat(64) },
 }));
-const uploaded = drafts.map(photo => Library.completeUpload(photo, photo.source, {
+const uploaded = drafts.map(photo => library.completeUpload(photo, photo.source, {
     providerId: photo.localId, url: 'https://i.ibb.co/example/ridge.png',
     displayUrl: 'https://i.ibb.co/example/ridge.png', viewerUrl: 'https://ibb.co/example',
     thumbnailUrl: 'https://i.ibb.co/example/thumb.png', uploadedAt: now,
@@ -48,24 +51,27 @@ const states = [
     { name: 'unreachable', base: uploaded, remote: 'unreachable', backup: 'failed', used: true,
         labels: ['Image unreachable', 'In report', 'Backup failed'] },
 ];
-const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-photo-status-'));
-let context;
+type State = (typeof states)[number];
+interface CardGeometry { id: string | undefined; height: number; top: number; actions: number; row: number; overflow: boolean;
+    chips: { text: string | null; title: string; singleLine: boolean; inside: boolean; height: number; width: number; scrollWidth: number; clientWidth: number; clipped: boolean }[] }
+const resources = createResourceStack();
+const profile = await createVerificationRoot(resources, 'bpb-photo-status-', 'photo status profile');
+let failure: unknown = null;
 try {
-    assertChromeLaunchAllowed();
-    context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium', headless: true, viewport: { width: 1440, height: 1100 },
+    const context = await launchVerificationChrome(resources, 'photo status browser', profile, {
+        viewport: { width: 1440, height: 1100 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
+        extension: dist,
     });
     const page = await context.newPage();
-    const errors = [];
+    const errors: string[] = [];
     page.on('pageerror', error => errors.push(String(error)));
     // No live provider or GitHub requests are part of this check.
     await context.route(/^https?:/, route => route.abort());
     await page.goto('chrome://extensions-internals/');
     const id = await page.waitForFunction(() => {
         try {
-            return JSON.parse(document.body.innerText).find(record =>
+            return JSON.parse(document.body.innerText).find((record: { name: string; location: string; id: string }) =>
                 record.name === 'Better Peakbagger' && record.location === 'COMMAND_LINE')?.id;
         } catch { return false; }
     }).then(handle => handle.jsonValue());
@@ -73,15 +79,15 @@ try {
     await page.locator('#library-empty').waitFor({ state: 'visible' });
     const projects = drafts.map(photo => Project.createProject({ localId: photo.localId,
         width: 1200, height: 900, sourceSha256: photo.source.sha256, updatedAt: now }));
-    await page.evaluate(async ({ photos, projects }) => {
+    await page.evaluate(async ({ photos, projects: projectRecords }) => {
         const canvas = document.createElement('canvas');
         canvas.width = 1200; canvas.height = 900;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d')!;
         ctx.fillStyle = '#819bb5'; ctx.fillRect(0, 0, 1200, 900);
         ctx.fillStyle = '#4c5555'; ctx.beginPath();
         ctx.moveTo(0, 850); ctx.lineTo(500, 100); ctx.lineTo(1200, 900); ctx.fill();
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        await new Promise((resolve, reject) => {
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+        await new Promise<void>((resolve, reject) => {
             const open = indexedDB.open('betterPeakbaggerPhotos');
             open.onerror = () => reject(open.error);
             open.onsuccess = () => {
@@ -89,7 +95,7 @@ try {
                 const tx = database.transaction(['photos', 'projects', 'originals', 'thumbnails'], 'readwrite');
                 for (const [index, photo] of photos.entries()) {
                     tx.objectStore('photos').put(photo);
-                    tx.objectStore('projects').put(projects[index]);
+                    tx.objectStore('projects').put(projectRecords[index]);
                     for (const name of ['originals', 'thumbnails']) tx.objectStore(name).put({ localId: photo.localId, blob });
                 }
                 tx.oncomplete = () => { database.close(); resolve(); };
@@ -97,13 +103,13 @@ try {
             };
         });
     }, { photos: drafts, projects });
-    const setState = async (state, serial) => {
-        const changed = Library.cleanPhoto({ ...state.base[0], remote: { ...state.base[0].remote, state: state.remote },
+    const setState = async (state: State, serial: number) => {
+        const changed = library.cleanPhoto({ ...state.base[0], remote: { ...state.base[0].remote, state: state.remote },
             references: state.used ? [{ kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: now }] : [],
             backup: { state: state.backup, signature: null, backedUpAt: null, commitUrl: null } });
         assert.ok(changed);
-        await page.evaluate(async ({ photos, serial }) => {
-            await new Promise((resolve, reject) => {
+        await page.evaluate(async ({ photos, serial: verificationSerial }) => {
+            await new Promise<void>((resolve, reject) => {
                 const open = indexedDB.open('betterPeakbaggerPhotos');
                 open.onerror = () => reject(open.error);
                 open.onsuccess = () => {
@@ -115,22 +121,23 @@ try {
                 };
             });
             // Exercise the completion notification used by automatic backup.
-            await chrome.storage.local.set({ bpbPhotoLibraryBackupState: { verificationSerial: serial } });
+            await chrome.storage.local.set({ bpbPhotoLibraryBackupState: { verificationSerial } });
         }, { photos: [changed, state.base[1]], serial });
         await page.waitForFunction(labels => {
             const card = document.querySelector('[data-local-id="status-one"]');
             return card && JSON.stringify([...card.querySelectorAll('.status-chip')].map(chip => chip.textContent)) === JSON.stringify(labels)
-                && [...document.querySelectorAll('.photo-card img')].every(img => img.complete && img.naturalWidth > 0);
+                && [...document.querySelectorAll<HTMLImageElement>('.photo-card img')].every(img => img.complete && img.naturalWidth > 0);
         }, state.labels);
     };
-    const geometry = () => page.evaluate(() => [...document.querySelectorAll('.photo-card')].map(card => {
+    const geometry = () => page.evaluate((): CardGeometry[] => [...document.querySelectorAll<HTMLElement>('.photo-card')].map(card => {
         const bounds = card.getBoundingClientRect();
-        const chips = card.querySelector('.status-chips');
+        const chips = card.querySelector('.status-chips')!;
         const row = chips.getBoundingClientRect();
         return { id: card.dataset.localId, height: bounds.height, top: bounds.top,
-            actions: card.querySelector('.card-actions').getBoundingClientRect().top - bounds.top,
+            actions: card.querySelector('.card-actions')!.getBoundingClientRect().top - bounds.top,
             row: row.height, overflow: document.documentElement.scrollWidth > innerWidth,
-            chips: [...chips.children].map(chip => {
+            chips: [...chips.children].map(element => {
+                const chip = element as HTMLElement;
                 const rect = chip.getBoundingClientRect();
                 return { text: chip.textContent, title: chip.title, singleLine: getComputedStyle(chip).whiteSpace === 'nowrap',
                     inside: rect.left >= row.left && rect.right <= row.right + 0.5,
@@ -142,19 +149,19 @@ try {
     let serial = 0;
     const widths = [1440, 650, 600, 520, 390, 320];
     for (const theme of ['light', 'dark']) {
-        await page.locator('html').evaluate((html, theme) => { html.dataset.bpbTheme = theme; }, theme);
+        await page.locator('html').evaluate((html, next) => { (html as HTMLElement).dataset.bpbTheme = next; }, theme);
         for (const width of widths) {
             await page.setViewportSize({ width, height: 1100 });
-            const baseline = new Map();
+            const baseline = new Map<string, CardGeometry>();
             for (const state of states) {
                 await setState(state, ++serial);
                 const cards = await geometry();
-                const card = cards.find(item => item.id === 'status-one');
+                const card = cards.find(item => item.id === 'status-one')!;
                 const group = state.base === drafts ? 'draft' : 'uploaded';
                 if (!baseline.has(group)) baseline.set(group, card);
-                const before = baseline.get(group);
+                const before = baseline.get(group)!;
                 assert.equal(card.row, before.row, `${theme}/${width}/${state.name}: status row stays fixed`);
-                assert.equal(card.actions, baseline.get('draft').actions, `${theme}/${width}/${state.name}: actions stay aligned`);
+                assert.equal(card.actions, baseline.get('draft')!.actions, `${theme}/${width}/${state.name}: actions stay aligned`);
                 assert.equal(card.height, before.height, `${theme}/${width}/${state.name}: tags do not grow the card`);
                 assert.equal(card.overflow, false, `${theme}/${width}/${state.name}: page fits the viewport`);
                 for (const chip of card.chips) {
@@ -173,15 +180,13 @@ try {
     }
     const backupStatus = await verifyPhotoBackupStatus({ context, extensionId: id, screenshots });
     const renderer = await page.evaluate(() => {
-        const gl = document.createElement('canvas').getContext('webgl');
-        const extension = gl.getExtension('WEBGL_debug_renderer_info');
-        return gl.getParameter(extension.UNMASKED_RENDERER_WEBGL);
+        const gl = document.createElement('canvas').getContext('webgl')!;
+        const extension = gl.getExtension('WEBGL_debug_renderer_info')!;
+        return gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) as string;
     });
     assert.doesNotMatch(renderer, /swiftshader|llvmpipe|software/i);
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ passed: true, browser: context.browser().version(), hidden: true, renderer,
+    console.log(JSON.stringify({ passed: true, browser: context.browser()!.version(), hidden: true, renderer,
         widths, height: 1100, states: states.length, themes: ['light', 'dark'], backupStatus, profile }));
-} finally {
-    await context?.close();
-    await rm(profile, { recursive: true, force: true });
-}
+} catch (error) { failure = error; }
+await resources.dispose(failure as null);

@@ -32,12 +32,12 @@ test('verification targets preserve the existing checks and browser order with o
         [['provider-contracts'], [['verify-provider-contracts.mjs']]],
         [['provider-performance'], [['verify-provider-performance.mjs']]],
         [['map-handoffs'], [['verify-map-handoffs.mjs']]],
-        [['onx'], [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']]],
+        [['onx'], [['verify-onx.mts', 'chrome'], ['verify-onx.mts', 'firefox']]],
         [['map-layers'], [['verify-map-layer-control.mts'], ['verify-map-layers.mts']]],
         [['settings-navigation'], [['verify-settings-fragments.mts', 'chrome'], ['verify-settings-fragments.mts', 'firefox']]],
         [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
         [['api-rate-limits'], [['verify-api-rate-limits.mts']]],
-        [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mjs']]],
+        [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mts']]],
         [['peak-map-layout'], [['verify-peak-map-layout.mts']]],
         [['weather-intervals'], [['verify-weather-intervals.mts']]],
         [['weather', '--live'], [['verify-ascent-weather.mjs', '--live'], ['verify-ascent-weather.mjs', '--firefox', '--live']]],
@@ -133,7 +133,7 @@ test('settings navigation rejects unknown and extra selections before opening a 
 });
 
 test('focused no-argument verifiers reject unknown selections before opening a browser', () => {
-    for (const name of ['verify-api-rate-limits.mts', 'verify-ascent-backup-lifecycle.mjs', 'verify-peak-map-layout.mts', 'verify-weather-intervals.mts']) {
+    for (const name of ['verify-api-rate-limits.mts', 'verify-ascent-backup-lifecycle.mts', 'verify-peak-map-layout.mts', 'verify-weather-intervals.mts']) {
         const result = spawnSync(process.execPath, [script(name), '--unknown'], { encoding: 'utf8', timeout: 5000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Usage: node scripts\//);
@@ -151,7 +151,7 @@ test('peak-card placement rejects unknown and conflicting selections before open
 
 test('onX verification rejects unknown or empty selections before opening a browser', () => {
     for (const args of [[], ['chromee'], ['chrome', '--unknown'], ['firefox', '--screenshots=a', '--screenshots=b']]) {
-        const result = spawnSync(process.execPath, [script('verify-onx.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        const result = spawnSync(process.execPath, [script('verify-onx.mts'), ...args], { encoding: 'utf8', timeout: 5000 });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: verify-onx/);
     }

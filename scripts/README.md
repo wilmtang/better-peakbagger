@@ -115,7 +115,7 @@ independent of the existing targets.
 - [verify-gpx-segments.mjs](verify-gpx-segments.mjs)
 - [verify-map-controls.mjs](verify-map-controls.mjs)
 - [verify-map-handoffs.mjs](verify-map-handoffs.mjs)
-- [verify-onx.mjs](verify-onx.mjs)
+- [verify-onx.mts](verify-onx.mts)
 - [verify-map-layer-control.mts](verify-map-layer-control.mts)
 - [verify-map-layers.mts](verify-map-layers.mts)
 - [verify-vector-map.mts](verify-vector-map.mts)
@@ -143,7 +143,7 @@ independent of the existing targets.
 - [verify-inline-buddies.mjs](verify-inline-buddies.mjs)
 - [verify-profile-editor.mts](verify-profile-editor.mts)
 - [verify-profile-preparation.mjs](verify-profile-preparation.mjs)
-- [verify-profile-units.mjs](verify-profile-units.mjs)
+- [verify-profile-units.mts](verify-profile-units.mts)
 
 ## Weather and snow
 
@@ -164,7 +164,7 @@ independent of the existing targets.
 - [verify-summit-cloud.mjs](verify-summit-cloud.mjs) — hidden Chrome/Firefox
   forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.
 - [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)
-- [verify-peak-weather-3d.mjs](verify-peak-weather-3d.mjs)
+- [verify-peak-weather-3d.mts](verify-peak-weather-3d.mts)
 - [verify-peak-weather-cases.mjs](verify-peak-weather-cases.mjs)
 - [verify-peak-weather-interactions.mts](verify-peak-weather-interactions.mts)
 - [verify-peak-weather-refresh.mjs](verify-peak-weather-refresh.mjs)
@@ -186,7 +186,7 @@ independent of the existing targets.
 - [render-showcase.mjs](render-showcase.mjs)
 - [report-table-selection.mjs](report-table-selection.mjs)
 - [verify-api-rate-limits.mts](verify-api-rate-limits.mts)
-- [verify-ascent-backup-lifecycle.mjs](verify-ascent-backup-lifecycle.mjs)
+- [verify-ascent-backup-lifecycle.mts](verify-ascent-backup-lifecycle.mts)
 - [verify-firefox-terrain.mts](verify-firefox-terrain.mts)
 - [verify-layout-stability.mts](verify-layout-stability.mts)
 - [verify-ascent-column-widths.mjs](verify-ascent-column-widths.mjs) — native peak/ascent metadata widths, nested map containment and card edge alignment, run by `layout-stability`.
@@ -195,7 +195,7 @@ independent of the existing targets.
 - [verify-photo-editor.mts](verify-photo-editor.mts)
 - [verify-photo-output.mts](verify-photo-output.mts)
 - [verify-popup-photo-entry.mts](verify-popup-photo-entry.mts)
-- [verify-photo-library-status.mjs](verify-photo-library-status.mjs)
+- [verify-photo-library-status.mts](verify-photo-library-status.mts)
 - [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
 - [verify-report-caption-stability.mts](verify-report-caption-stability.mts)
 - [verify-report-security.mts](verify-report-security.mts) — real response protection, hostile reports, native map scripts, Quick Search and Cloudflare exceptions in hidden Chrome/Firefox.

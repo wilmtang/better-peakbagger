@@ -550,7 +550,7 @@ reclaims focus moved to Search or another control while its reads were pending.
 Card status tags occupy one fixed-height row, so changing upload, report-use, or
 backup tags does not shift actions or add rows to the card. Full status text remains
 in the DOM and hover title if a constrained layout shortens a label.
-`node scripts/verify-photo-library-status.mjs` checks the shipped extension's
+`node scripts/verify-photo-library-status.mts` checks the shipped extension's
 card geometry and readable tags across status changes, light/dark themes, and
 320–1440px hidden Chrome viewports using synthetic device-local photos.
 
