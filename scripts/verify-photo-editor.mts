@@ -7,13 +7,11 @@
 // no live site, user browser, API key, or upload is involved.
 /* global document, DataTransfer, chrome, innerWidth, innerHeight, scrollX, scrollY, getComputedStyle, HTMLCanvasElement, FileReader, navigator, indexedDB */
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
-import type { BrowserContext } from 'playwright';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 type PageElement = HTMLElement & HTMLInputElement & HTMLImageElement & HTMLCanvasElement;
 interface PhotoProbes { photoClipboardBackup: ClipboardItems; photoClipboardWritten: string; photoVerificationExport: Blob | null }
@@ -21,15 +19,14 @@ interface PhotoProbes { photoClipboardBackup: ClipboardItems; photoClipboardWrit
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const screenshots = process.env.BPB_PHOTO_SCREENSHOTS;
-const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-photo-verification-'));
-let context: BrowserContext | undefined;
+const resources = createResourceStack();
+const profile = await createVerificationRoot(resources, 'bpb-photo-verification-', 'photo verification profile');
+let failure: unknown = null;
 try {
-    assertChromeLaunchAllowed();
-    context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium', headless: true,
+    const context = await launchVerificationChrome(resources, 'photo verification browser', profile, {
         viewport: { width: 1440, height: 1100 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
+        extension: dist,
     });
     const page = await context.newPage();
     const errors: string[] = [];
@@ -486,7 +483,5 @@ try {
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser()!.version(), renderer, hidden: true,
         viewports: ['1440×1100', '720×900', '390×844', '320×800', '390×760', '520×800', '1000×760'], profile, passed: true }));
-} finally {
-    await context?.close();
-    await rm(profile, { recursive: true, force: true });
-}
+} catch (error) { failure = error; }
+await resources.dispose(failure as null);

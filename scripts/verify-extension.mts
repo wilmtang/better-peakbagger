@@ -24,9 +24,8 @@
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
-import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdir, readFile, realpath } from 'node:fs/promises';
 import assert from 'node:assert/strict';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -129,9 +128,9 @@ const chromeBinary = process.env.CHROME_BIN
     : null;
 const buddyScreenshotDir = process.env.BPB_VERIFY_BUDDY_SCREENSHOTS_DIR
     ? path.resolve(process.env.BPB_VERIFY_BUDDY_SCREENSHOTS_DIR) : null;
-let chromium;
+let launcher: typeof import('./verification-launch.mts');
 try {
-    ({ chromium } = await import('playwright'));
+    launcher = await import('./verification-launch.mts');
 } catch {
     console.error('This check needs Playwright: npm install && npx playwright install chromium');
     process.exit(1);
@@ -142,9 +141,7 @@ let profile!: string;
 let fixture!: Awaited<ReturnType<typeof createBrowserFixtureServer>>;
 let setupError = null;
 try {
-    profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
-    resources.defer('Chrome verification profile', () =>
-        rm(profile, { recursive: true, force: true }));
+    profile = await launcher.createVerificationRoot(resources, 'better-peakbagger-extension-', 'Chrome verification profile');
     const capitolRegressionGpx =
         await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
     fixture = await createBrowserFixtureServer({
@@ -221,24 +218,18 @@ let requestEvidence;
 let primaryError = null;
 let chromeBfcacheResult = null;
 try {
-    assertChromeLaunchAllowed();
-    context = await chromium.launchPersistentContext(profile, {
-        ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
-        headless: true,
+    context = await launcher.launchVerificationChrome(resources, 'Chrome verification context', profile, {
+        chromeBinary: chromeBinary ?? undefined,
         // Playwright disables BFCache by default for test determinism. This
         // verifier explicitly exercises persisted pagehide/pageshow, so remove
         // only that default launch argument and diagnose any real exclusion.
         // Playwright also opts macOS into software WebGL fallback by default.
         ignoreDefaultArgs: ['--disable-back-forward-cache', '--enable-unsafe-swiftshader'],
         viewport: verificationViewport,
-        args: [
-            ...fixture!.chromeTrustArgs,
-            `--disable-extensions-except=${dist}`,
-            `--load-extension=${dist}`,
-            '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'
-        ]
+        trustArgs: fixture!.chromeTrustArgs,
+        extension: dist,
+        hosts: [launcher.PEAKBAGGER_HOST_RULE],
     });
-    resources.defer('Chrome verification context', () => context.close());
     console.log(`Verification browser: ${assertVerificationBrowser({
         name: context.browser()!.browserType().name(), version: context.browser()!.version(),
         expectedName: 'chromium', expectedVersion: process.env.BPB_EXPECT_CHROME_VERSION,

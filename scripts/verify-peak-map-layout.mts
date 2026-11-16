@@ -4,14 +4,12 @@
 // Hidden, real unpacked extension on a disposable HTTPS Peakbagger fixture.
 /* global chrome */
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
 import { createBrowserFixtureServer, readSunCalculatorGeometry } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { moonPhaseLabel } from '../src/sun/sun-position.js';
 
 // Page functions run in the fixture document; these type-only globals are erased.
@@ -26,22 +24,13 @@ const artifacts = process.env.BPB_VERIFY_PEAK_LAYOUT_ARTIFACTS;
 const resources = createResourceStack();
 let primaryError: unknown = null;
 try {
-    const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-peak-layout-'));
-    resources.defer('peak layout profile', () => rm(profile, { recursive: true, force: true }));
+    const profile = await createVerificationRoot(resources, 'bpb-peak-layout-', 'peak layout profile');
     const fixture = await createBrowserFixtureServer({ temporaryRoot: profile } as never);
     resources.defer('peak layout fixture', () => fixture.close());
-    assertChromeLaunchAllowed();
-    const context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium',
-        headless: true,
-        ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        viewport: { width: 1280, height: 1000 },
-        args: [...fixture.chromeTrustArgs,
-            `--disable-extensions-except=${path.join(root, 'dist')}`,
-            `--load-extension=${path.join(root, 'dist')}`,
-            '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
+    const context = await launchVerificationChrome(resources, 'peak layout browser', profile, {
+        ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], viewport: { width: 1280, height: 1000 },
+        trustArgs: fixture.chromeTrustArgs, extension: path.join(root, 'dist'), hosts: [PEAKBAGGER_HOST_RULE],
     });
-    resources.defer('peak layout browser', () => context.close());
     // Sun geometry and native map resizing are offline checks. Unrelated
     // default weather/catalog readers must not turn them into live probes.
     await context.route('**/*', route => {

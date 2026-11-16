@@ -7,14 +7,13 @@
 // bundle with fixture-owned settings APIs; neither submits a live account.
 /* global document, window, chrome, getComputedStyle, FormData, scrollX, scrollY, innerWidth */
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium, firefox } from 'playwright';
+import { firefox } from 'playwright';
 import type { BrowserContext, Page } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 declare global { interface Window { profileProbe: { submissions: Record<string, FormDataEntryValue>[] } } }
 type SettingsListener = (changes: { bpbSettings: { newValue: object } }, area: string) => void;
@@ -28,22 +27,16 @@ if (output) await mkdir(output, { recursive: true });
 const resources = createResourceStack();
 let failure: unknown = null;
 try {
-    const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-profile-editor-'));
-    resources.defer('profile editor test profile', () => rm(profile, { recursive: true, force: true }));
+    const profile = await createVerificationRoot(resources, 'bpb-profile-editor-', 'profile editor test profile');
     const fixture = await createBrowserFixtureServer({ temporaryRoot: profile } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
     resources.defer('profile editor HTTPS fixture', () => fixture.close());
     let context: BrowserContext;
     let settingsPage: Page | undefined;
     if (browserName === 'chrome') {
-        assertChromeLaunchAllowed();
-        context = await chromium.launchPersistentContext(profile, {
-            channel: 'chromium', headless: true,
-            viewport: { width: 1280, height: 900 },
-            args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${path.resolve('dist')}`,
-                `--load-extension=${path.resolve('dist')}`,
-                '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
+        context = await launchVerificationChrome(resources, 'profile editor Chrome', profile, {
+            viewport: { width: 1280, height: 900 }, trustArgs: fixture.chromeTrustArgs,
+            extension: path.resolve('dist'), hosts: [PEAKBAGGER_HOST_RULE],
         });
-        resources.defer('profile editor Chrome', () => context.close());
         const registry = await context.newPage();
         await registry.goto('chrome://extensions-internals/');
         const record = await registry.waitForFunction(() => {

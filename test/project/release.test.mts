@@ -587,7 +587,9 @@ test('Chrome verifier accepts an exact externally installed floor binary', async
         'utf8',
     );
     assert.match(verifier, /process\.env\.CHROME_BIN/);
-    assert.match(verifier, /chromeBinary \? \{ executablePath: chromeBinary \}/);
+    // The shared launcher turns an exact binary into executablePath; its own
+    // test pins that mapping.
+    assert.match(verifier, /chromeBinary: chromeBinary \?\? undefined/);
     assert.match(verifier, /const backgroundShortcut = process\.platform === 'darwin' \? 'Meta\+Enter' : 'Control\+Enter'/,
         'background-tab disposition must use a real modified keyboard activation in hidden Chrome');
     assert.match(verifier, /keyboard\.press\('Shift\+Enter'\)/,

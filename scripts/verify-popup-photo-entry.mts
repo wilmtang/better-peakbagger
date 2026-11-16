@@ -9,23 +9,22 @@
 // Window focus is what the browser reports; a hidden run shows no real window.
 /* global document, chrome, innerWidth, window */
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
-import type { BrowserContext, Page } from 'playwright';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import type { Page } from 'playwright';
+import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 declare global { interface Window { photoOpenReply?: (value: unknown) => void } }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const screenshots = process.env.BPB_POPUP_SCREENSHOTS;
-const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-popup-photo-verification-'));
+const resources = createResourceStack();
+const profile = await createVerificationRoot(resources, 'bpb-popup-photo-verification-', 'popup photo profile');
 const ENTRY = '#open-photo-editor', STATUS = '#photo-editor-status';
 const ANCHORS = [ENTRY, '#open-settings', '.brand', '#state'];
-let context: BrowserContext | undefined;
+let failure: unknown = null;
 
 const geometry = (page: Page) => page.evaluate(selectors => selectors.map(selector => {
     const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
@@ -33,11 +32,10 @@ const geometry = (page: Page) => page.evaluate(selectors => selectors.map(select
 }), ANCHORS);
 
 try {
-    assertChromeLaunchAllowed();
-    context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium', headless: true, viewport: { width: 390, height: 600 },
+    const context = await launchVerificationChrome(resources, 'popup photo browser', profile, {
+        viewport: { width: 390, height: 600 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
+        extension: dist,
     });
     const errors: string[] = [];
     context.on('page', opened => opened.on('pageerror', error => errors.push(String(error))));
@@ -198,7 +196,5 @@ try {
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser()?.version(), hidden: true, viewport: '390×600 at 100%/200% CSS zoom',
         cases: states.length, reused: true, boundTabSpared: true, nativePopup: nativeEntry, windowFocus: 'browser-reported in a hidden run', passed: true }));
-} finally {
-    await context?.close();
-    await rm(profile, { recursive: true, force: true });
-}
+} catch (error) { failure = error; }
+await resources.dispose(failure as null);

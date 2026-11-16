@@ -6,14 +6,12 @@
 /* global chrome, document, window, Image, requestAnimationFrame, mapsPlaceholder, nativeTiles, nativeRoute */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
 import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mjs';
 // Page-world shapes: Leaflet internals and what the fixtures leave on the page.
@@ -59,21 +57,15 @@ try {
         assert.equal(createHash('sha256').update(body).digest('base64'), hash, `pinned Leaflet ${extension}`);
         return body;
     }));
-    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-sentinel-verify-'));
-    resources.defer('Sentinel temporary profile', () => rm(temporaryRoot, { recursive: true, force: true }));
+    const temporaryRoot = await createVerificationRoot(resources, 'bpb-sentinel-verify-', 'Sentinel temporary profile');
     const fixture = await createBrowserFixtureServer({ temporaryRoot } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
     resources.defer('Sentinel HTTPS fixture', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const dist = path.join(root, 'dist');
-    assertChromeLaunchAllowed();
-    const context = await chromium.launchPersistentContext(temporaryRoot, {
-        channel: 'chromium', headless: true, viewport: { width: 1000, height: 700 },
-        ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : {}),
-        args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${dist}`, `--load-extension=${dist}`,
-            '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
+    const context = await launchVerificationChrome(resources, 'Sentinel Chrome context', temporaryRoot, {
+        viewport: { width: 1000, height: 700 }, ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
+        chromeBinary: process.env.CHROME_BIN, extension: dist, hosts: [PEAKBAGGER_HOST_RULE], trustArgs: fixture.chromeTrustArgs,
     });
-    resources.defer('Sentinel Chrome context', () => context.close());
     const page = await context.newPage(), errors: string[] = [], held: (() => void)[] = [];
     page.on('pageerror', error => errors.push(error.message));
     resources.defer('Sentinel held catalogs', () => held.splice(0).forEach(resolve => resolve()));

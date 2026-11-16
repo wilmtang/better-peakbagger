@@ -10,10 +10,10 @@
 /* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their serialized argument under its own name. */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { chromium, firefox } from 'playwright';
 import type { Browser, BrowserType, LaunchOptions, Page } from 'playwright';
 import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const popupHtml = await fs.readFile(new URL('../dist/popup/popup.html', import.meta.url), 'utf8');
@@ -96,19 +96,14 @@ const verifyNativeSizing = async () => {
     const resources = createResourceStack();
     let failure = null;
     try {
-        const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'bpb-capture-popup-'));
-        resources.defer('popup profile', () => fs.rm(profile, { recursive: true, force: true }));
+        const profile = await createVerificationRoot(resources, 'bpb-capture-popup-', 'popup profile');
         const dist = await fs.realpath(new URL('../dist', import.meta.url));
-        assertChromeLaunchAllowed();
-        const context = await chromium.launchPersistentContext(profile, {
-            channel: 'chromium',
-            headless: true,
+        const context = await launchVerificationChrome(resources, 'popup browser', profile, {
             // Do not assign a viewport: browser action autosizing is the test.
             viewport: null,
             ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-            args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
+            extension: dist,
         });
-        resources.defer('popup browser', () => context.close());
         const control = await context.newPage();
         await control.goto('chrome://extensions-internals/');
         const record = await control.waitForFunction(() => {

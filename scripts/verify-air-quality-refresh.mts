@@ -4,15 +4,13 @@
 // harness. Provider responses and time are stubbed; host markup and shipped CSS
 // are real. This tier does not prove manifest/permission or native AT behavior.
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { chromium, firefox } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { airQualityFixture } from '../test/helpers/air-quality-fixture.mjs';
 import type { createAirQualityView } from '../src/weather/air-quality-view.ts';
 
@@ -30,8 +28,7 @@ const reproduce = process.env.BPB_VERIFY_AIR_REGRESSION;
 if (reproduce && !['header', 'loaded'].includes(reproduce)) throw new Error(`Unknown AQI regression: ${reproduce}`);
 // Legacy JS inference omits its required, default-less temporaryRoot option.
 const createFixtures = createBrowserFixtureServer as (options: { temporaryRoot: string }) => ReturnType<typeof createBrowserFixtureServer>;
-const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-air-refresh-'));
-resources.defer('AQI fixture/profile', () => rm(temporaryRoot, { recursive: true, force: true }));
+const temporaryRoot = await createVerificationRoot(resources, 'bpb-air-refresh-', 'AQI fixture/profile');
 try {
     const fixture = await createFixtures({ temporaryRoot });
     resources.defer('AQI HTTPS server', () => fixture.close());
@@ -39,13 +36,11 @@ try {
     const html = (await readFile(path.join(root, 'test/fixtures/pages/peak-rainier.html'), 'utf8'))
         .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '');
     const built = await build({ entryPoints: [path.join(root, 'src/weather/air-quality-view.ts')], bundle: true, write: false, format: 'iife', globalName: 'AirModule' });
-    if (selection === 'chrome') assertChromeLaunchAllowed();
-    const context = await (selection === 'chrome' ? chromium : firefox).launchPersistentContext(path.join(temporaryRoot, 'profile'), {
-        ...(selection === 'chrome' ? { channel: 'chromium', ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] }
-            : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }),
-        headless: true, ignoreHTTPSErrors: true, viewport: { width: 1000, height: 1000 },
-    });
-    resources.defer('AQI hidden browser', () => context.close());
+    const profile = path.join(temporaryRoot, 'profile'), viewport = { width: 1000, height: 1000 };
+    const context = selection === 'chrome'
+        ? await launchVerificationChrome(resources, 'AQI hidden browser', profile, { ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
+            hosts: [PEAKBAGGER_HOST_RULE], trustArgs: fixture.chromeTrustArgs, ignoreHTTPSErrors: true, viewport })
+        : await launchVerificationFirefox(resources, 'AQI hidden browser', profile, { viewport });
     const now = Date.parse('2024-11-03T08:30:00Z'); // 01:30 PDT; next hour is 01:30 PST.
     await context.addInitScript(clock => { window.__airClock = clock; Date.now = () => window.__airClock; }, now);
     let requests = 0;

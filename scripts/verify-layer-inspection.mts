@@ -3,12 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium, firefox } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
@@ -20,18 +18,16 @@ assert.ok(['chrome', 'firefox'].includes(kind) && !args.length, 'Usage: node scr
 const resources = createResourceStack(), output = process.env.BPB_INSPECTION_SCREENSHOT_DIR;
 let failure: unknown;
 try {
-    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-layer-inspection-'));
+    const temporaryRoot = await createVerificationRoot(resources, 'bpb-layer-inspection-', 'inspection temporary files');
     console.log(`Layer inspection disposable root: ${temporaryRoot}`);
-    resources.defer('inspection temporary files', () => rm(temporaryRoot, {recursive: true, force: true}));
     // Preserve the required helper option despite its incomplete JS-inferred signature.
     const fixtureOptions = {temporaryRoot, inlineBuddies: false, masterMapDocument: await snowMapDocument()};
     const fixture = await createBrowserFixtureServer(fixtureOptions);
     resources.defer('inspection HTTPS fixture', () => fixture.close());
-    if (kind === 'chrome') assertChromeLaunchAllowed();
-    const context = await (kind === 'chrome' ? chromium : firefox).launchPersistentContext(path.join(temporaryRoot, 'profile'), kind === 'chrome' ? {
-        channel: 'chromium', headless: true, args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
-    } : {headless: true, ignoreHTTPSErrors: true, firefoxUserPrefs: {'network.dns.localDomains': 'www.peakbagger.com'}});
-    resources.defer('inspection browser', () => context.close());
+    const profile = path.join(temporaryRoot, 'profile');
+    const context = kind === 'chrome'
+        ? await launchVerificationChrome(resources, 'inspection browser', profile, {hosts: [PEAKBAGGER_HOST_RULE], trustArgs: fixture.chromeTrustArgs})
+        : await launchVerificationFirefox(resources, 'inspection browser', profile);
     const page = await context.newPage(), errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     const legend = JSON.parse(await readFile('test/fixtures/maps/snow-depth-legend.json', 'utf8'));
