@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createGarminBadge } from './garmin-badge.ts';
 import { createGarminStore, garminPublicSummary } from './garmin-store.js';
-import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.js';
+import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.ts';
 import { decodeGarminRecording } from './fit-activity.js';
 import { createPackagedPageMatcher } from '../background/sender-policy.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
@@ -73,7 +73,6 @@ export const GARMIN_ALARM = 'bpb-garmin-check';
 const MOUNTAIN_ACTIVITY_TYPES = ['hiking', 'walking', 'trail_running', 'mountaineering', 'rock_climbing', 'backcountry_skiing_snowboarding'];
 const DAY = 86400000;
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-export const validImportDate = Schema.validCalendarDate;
 export function importRange(settings: GarminPreferences, connectionDate: string | undefined, lastCheck: number, full: boolean, date = today()) {
     const start = (settings.garminHistoryStart || connectionDate) as string;
     const scope = start === 'all' ? '1970-01-01' : start;

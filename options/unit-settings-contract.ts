@@ -20,7 +20,6 @@ export type UnitSettingKey = 'units' | UnitOverrideKey;
 export type UnitSettings = { readonly units: UnitDefault } & { readonly [Key in UnitOverrideKey]: UnitOverride };
 export type UnitSettingsPatch = Partial<UnitSettings>;
 
-export const UNIT_MEASUREMENTS = Object.freeze(Object.keys(Schema.UNIT_KEYS) as UnitMeasurement[]);
 export const UNIT_SETTING_KEYS: readonly UnitSettingKey[] = Object.freeze(['units', ...Object.values(Schema.UNIT_KEYS)]);
 
 export const isUnitMeasurement = (value: unknown): value is UnitMeasurement =>

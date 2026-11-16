@@ -46,9 +46,9 @@ runtime 203). The largest clone pairs are `verify-terrain-lod.mts` with
 
 The five unreferenced exports: `UNIT_MEASUREMENTS`
 (`options/unit-settings-contract.ts`), `readFitUnsignedField`
-(`src/garmin/fit-message-reader.js`), `GARMIN_KEY_PAGE`
-(`src/garmin/garmin-api.js`), `validImportDate` (`src/garmin/garmin-imports.ts`)
-and `relayResource` (`src/maps/custom-overlay-private.js`).
+(`src/garmin/fit-message-reader.ts` (then `.js`)), `GARMIN_KEY_PAGE`
+(`src/garmin/garmin-api.ts` (then `.js`)), `validImportDate` (`src/garmin/garmin-imports.ts`)
+and `relayResource` (`src/maps/custom-overlay-private.ts` (then `.js`)).
 
 ## Boundaries
 
@@ -216,7 +216,14 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   `.mjs`) no longer scans the archive. Checks: project tests 537/537, lint,
   typecheck, TypeScript policy, and every permalink path and fragment checked
   with `git cat-file -e` and the heading list at the archive commit. The links
-  resolve on GitHub only once that commit is pushed.
+  resolve on GitHub only once that commit is pushed. A review fix dropped
+  `-diff` from `.gitattributes`, which made git treat the skill as binary.
+- Phase 4 step 1. The five unreferenced exports are removed, plus the
+  `FIT_UNSIGNED_SCALAR_BASE_TYPES` table only the removed reader used. The
+  three edited legacy modules (`fit-message-reader`, `garmin-api`,
+  `custom-overlay-private`) are converted to TypeScript under the policy; the
+  worker source list and its pin in `manifest-capture.test.mts` name the new
+  files. Checks: `npm test` (4,193 pass), typecheck, lint, TypeScript policy.
 
 ### Intentionally not changed
 
@@ -228,4 +235,4 @@ Nothing yet.
 
 ### Not started
 
-Phases 2–5.
+Phases 2, 3 and 5; phase 4 steps 2 and 3.

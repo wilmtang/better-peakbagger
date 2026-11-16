@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { readCustomSource, CUSTOM_LIMITS } from '../maps/custom-overlay-schema.js';
 import { resolveCustomSourceDocument } from '../maps/custom-overlay-source.js';
-import { PRIVATE_LIMITS, privateRequestUrl, publicPrivateSource, readPrivateParameters } from '../maps/custom-overlay-private.js';
+import { PRIVATE_LIMITS, privateRequestUrl, publicPrivateSource, readPrivateParameters } from '../maps/custom-overlay-private.ts';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';

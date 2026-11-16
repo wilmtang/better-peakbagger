@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import JSZip from 'jszip';
-import { readFitMessages, fitTimestampToUnixMilliseconds, readFitStringField } from './fit-message-reader.js';
+import { readFitMessages, fitTimestampToUnixMilliseconds, readFitStringField } from './fit-message-reader.ts';
 import { MAX_GPX_TRACK_POINTS, MAX_GPX_TRACK_SEGMENTS, MAX_GPX_WAYPOINTS } from '../capture/capture-resource-limits.js';
 
 export const FIT_MAX_BYTES = 8 * 1024 * 1024;

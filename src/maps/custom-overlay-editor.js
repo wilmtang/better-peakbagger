@@ -4,7 +4,7 @@ import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { readCustomSource, customUrl, readCustomRegistry } from './custom-overlay-schema.js';
 import { createCustomParser } from './custom-overlay-parser.js';
 import { createCustomClient, customFailure } from './custom-overlay-client.js';
-import { readPrivateParameters, RELAY_HOST } from './custom-overlay-private.js';
+import { readPrivateParameters, RELAY_HOST } from './custom-overlay-private.ts';
 import { inferCustomSourceUrl, defaultCustomRules } from './custom-overlay-source.js';
 
 const ext = globalThis.browser || globalThis.chrome, tag = '__bpbCustomOverlays';

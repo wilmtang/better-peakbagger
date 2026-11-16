@@ -4,7 +4,7 @@ import { readCustomRegistry, readCustomSource, readCustomSelection, CUSTOM_LIMIT
 import { createCustomClient, customPoolForWindow, customFailure } from './custom-overlay-client.js';
 import { probeCustomSource } from './custom-overlay-probe.js';
 import { createCustomRenderer } from './custom-overlay-render.js';
-import { PRIVATE_LIMITS } from './custom-overlay-private.js';
+import { PRIVATE_LIMITS } from './custom-overlay-private.ts';
 
 export function createCustomOverlayControl({ win, panel, onChange = () => {}, readView }) {
     const tag = '__bpbCustomOverlays', mapId = crypto.randomUUID(), selected = new Map(), reloads = {}, rows = new Map(), parseJobs = new Map();

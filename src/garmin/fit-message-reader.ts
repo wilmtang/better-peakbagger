@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Vendored from fit-file-parser 6.2.3, dist/raw-message-reader.js.
 // Copyright and license: third_party/fit-file-parser-LICENSE.txt.
-// Local changes: omitted-field compressed timestamps, streaming projection,
+// Local changes: TypeScript, omitted-field compressed timestamps, streaming projection,
 // record/CPU caps and selective field retention. No semantic profile tables.
 const FIT_EPOCH_MS = 631065600000;
-const FIT_BASE_TYPE_WIDTHS = new Map([
+const FIT_BASE_TYPE_WIDTHS = new Map<number, number>([
     [0, 1],
     [1, 1],
     [2, 1],
@@ -23,7 +23,6 @@ const FIT_BASE_TYPE_WIDTHS = new Map([
     [15, 8],
     [16, 8],
 ]);
-const FIT_UNSIGNED_SCALAR_BASE_TYPES = new Set([0, 2, 4, 6, 10, 11, 12, 13]);
 const CRC_TABLE = [
     0,
     0xCC01,
@@ -42,15 +41,45 @@ const CRC_TABLE = [
     0x8801,
     0x4400,
 ];
+type FieldDefinition = { fieldNumber: number, size: number, baseType: number };
+type DeveloperFieldDefinition = { fieldNumber: number, size: number, developerDataIndex: number };
+type MessageDefinition = {
+    globalMessageNumber: number,
+    littleEndian: boolean,
+    fields: FieldDefinition[],
+    developerFields: DeveloperFieldDefinition[],
+};
+export type FitField = FieldDefinition & { bytes: Uint8Array };
+export type FitDeveloperField = DeveloperFieldDefinition & { bytes: Uint8Array };
+export type FitMessage = {
+    globalMessageNumber: number,
+    messageIndex: number,
+    littleEndian: boolean,
+    timestamp?: number,
+    compressedTimestamp?: number,
+    fields: FitField[],
+    developerFields: FitDeveloperField[],
+};
+export type FitIssue = { code: 'invalid_timestamp', globalMessageNumber: number, messageIndex: number };
+export type FitReadOptions = {
+    maxInputBytes?: number,
+    messageNumbers?: number[],
+    /** Field numbers to retain per global message number; developer fields are then dropped. */
+    fields?: Record<number, readonly number[]>,
+    /** Streams each selected message instead of collecting it in `messages`. */
+    onMessage?: (message: FitMessage) => void,
+};
+
 /** Error thrown when the strict raw-message reader rejects a FIT input. */
 export class FitMessageReaderError extends Error {
-    constructor(code) {
+    code: string;
+    constructor(code: string) {
         super(code);
         this.name = 'FitMessageReaderError';
         this.code = code;
     }
 }
-function calculateCRC(bytes) {
+function calculateCRC(bytes: Uint8Array): number {
     let value = 0;
     for (const byte of bytes) {
         value = (value >>> 4) ^ CRC_TABLE[value & 15] ^ CRC_TABLE[byte & 15];
@@ -59,7 +88,7 @@ function calculateCRC(bytes) {
     return value;
 }
 /** Returns the five-bit FIT base-type identifier, or null for reserved/unknown values. */
-export function getFitBaseTypeId(baseType) {
+export function getFitBaseTypeId(baseType: number): number | null {
     if (!Number.isInteger(baseType) || baseType < 0 || baseType > 0xFF) {
         return null;
     }
@@ -69,7 +98,7 @@ export function getFitBaseTypeId(baseType) {
     const id = baseType & 0x1F;
     return FIT_BASE_TYPE_WIDTHS.has(id) ? id : null;
 }
-function isValidFieldDefinition(field) {
+function isValidFieldDefinition(field: FieldDefinition): boolean {
     const baseTypeId = getFitBaseTypeId(field.baseType);
     const width = baseTypeId === null
         ? undefined
@@ -78,45 +107,8 @@ function isValidFieldDefinition(field) {
         && field.size > 0
         && (baseTypeId === 7 || field.size % width === 0);
 }
-/** Reads an unsigned one-, two-, or four-byte raw FIT field. */
-export function readFitUnsignedField(field, expectedBaseType, size, littleEndian) {
-    if (!field) {
-        return undefined;
-    }
-    const expectedType = getFitBaseTypeId(expectedBaseType);
-    const actualType = getFitBaseTypeId(field.baseType);
-    const compatibleByte = size === 1
-        && expectedType !== null
-        && actualType !== null
-        && [0, 2, 13].includes(expectedType)
-        && [0, 2, 13].includes(actualType);
-    if (expectedType === null
-        || actualType === null
-        || !FIT_UNSIGNED_SCALAR_BASE_TYPES.has(expectedType)
-        || FIT_BASE_TYPE_WIDTHS.get(expectedType) !== size
-        || field.size !== size
-        || !(field.bytes instanceof Uint8Array)
-        || field.bytes.byteLength !== field.size
-        || (actualType !== expectedType && !compatibleByte)) {
-        throw new TypeError('FIT field does not match the expected unsigned type');
-    }
-    const view = new DataView(field.bytes.buffer, field.bytes.byteOffset, field.bytes.byteLength);
-    const value = size === 1
-        ? view.getUint8(0)
-        : size === 2
-            ? view.getUint16(0, littleEndian)
-            : view.getUint32(0, littleEndian);
-    const invalid = [10, 11, 12].includes(expectedType)
-        ? 0
-        : size === 1
-            ? 0xFF
-            : size === 2
-                ? 0xFFFF
-                : 0xFFFFFFFF;
-    return value === invalid ? undefined : value;
-}
 /** Reads UTF-8 bytes, removes trailing NUL padding, and preserves interior NUL separators. */
-export function readFitStringField(field) {
+export function readFitStringField(field: FitField | undefined): string | undefined {
     if (!field) {
         return undefined;
     }
@@ -132,19 +124,18 @@ export function readFitStringField(field) {
     }).decode(field.bytes).replace(/\0+$/, '');
     return value || undefined;
 }
-function readTimestamp(field, bytes, littleEndian) {
+function readTimestamp(field: FieldDefinition, bytes: Uint8Array, littleEndian: boolean): number | undefined {
     if (field.size !== 4 || (field.baseType & 0x1F) !== 6) {
         throw new FitMessageReaderError('invalid_structure');
     }
     const value = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, littleEndian);
     return value === 0xFFFFFFFF ? undefined : value;
 }
-function validateOptions(options) {
-    let _a;
+function validateOptions(options: FitReadOptions): { maxInputBytes: number, selectedMessages?: Set<number> } {
     if (!options || typeof options !== 'object' || Array.isArray(options)) {
         throw new FitMessageReaderError('invalid_input');
     }
-    const maxInputBytes = (_a = options.maxInputBytes) !== null && _a !== void 0 ? _a : Number.POSITIVE_INFINITY;
+    const maxInputBytes = options.maxInputBytes ?? Number.POSITIVE_INFINITY;
     if (maxInputBytes !== Number.POSITIVE_INFINITY
         && (!Number.isSafeInteger(maxInputBytes) || maxInputBytes < 0)) {
         throw new FitMessageReaderError('invalid_input');
@@ -155,7 +146,7 @@ function validateOptions(options) {
     if (!Array.isArray(options.messageNumbers)) {
         throw new FitMessageReaderError('invalid_input');
     }
-    const selectedMessages = new Set();
+    const selectedMessages = new Set<number>();
     for (const messageNumber of options.messageNumbers) {
         if (!Number.isSafeInteger(messageNumber)
             || messageNumber < 0
@@ -170,8 +161,7 @@ function validateOptions(options) {
  * Strictly validates a FIT file and retains raw fields for selected messages.
  * This entry point does not load the semantic FIT profile or format field values.
  */
-export function readFitMessages(input, options = {}) {
-    let _a;
+export function readFitMessages(input: ArrayBuffer | Uint8Array, options: FitReadOptions = {}) {
     const { maxInputBytes, selectedMessages } = validateOptions(options);
     if (!(input instanceof ArrayBuffer) && !(input instanceof Uint8Array)) {
         throw new FitMessageReaderError('invalid_input');
@@ -206,15 +196,15 @@ export function readFitMessages(input, options = {}) {
     if (calculateCRC(bytes.subarray(0, dataEnd)) !== view.getUint16(dataEnd, true)) {
         throw new FitMessageReaderError('invalid_crc');
     }
-    const definitions = new Map();
-    const messageIndexes = new Map();
-    const messages = [];
-    const issues = [];
+    const definitions = new Map<number, MessageDefinition>();
+    const messageIndexes = new Map<number, number>();
+    const messages: FitMessage[] = [];
+    const issues: FitIssue[] = [];
     let recordCount = 0;
     const started = performance.now();
     let cursor = headerSize;
-    let lastTimestamp;
-    const take = (size) => {
+    let lastTimestamp: number | undefined;
+    const take = (size: number): Uint8Array => {
         if (cursor + size > dataEnd) {
             throw new FitMessageReaderError('invalid_structure');
         }
@@ -246,9 +236,9 @@ export function readFitMessages(input, options = {}) {
                 : (definitionHeader[2] << 8) | definitionHeader[3];
             const selected = selectedMessages === undefined
                 || selectedMessages.has(globalMessageNumber);
-            const readFields = (count) => {
-                const fields = [];
-                const fieldNumbers = new Set();
+            const readFields = (count: number): FieldDefinition[] => {
+                const fields: FieldDefinition[] = [];
+                const fieldNumbers = new Set<number>();
                 for (let index = 0; index < count; index++) {
                     const raw = take(3);
                     const field = {
@@ -267,9 +257,9 @@ export function readFitMessages(input, options = {}) {
                 return fields;
             };
             const fields = readFields(definitionHeader[4]);
-            const developerFields = [];
+            const developerFields: DeveloperFieldDefinition[] = [];
             if ((recordHeader & 0x20) !== 0) {
-                const developerFieldKeys = new Set();
+                const developerFieldKeys = new Set<string>();
                 const count = take(1)[0];
                 for (let index = 0; index < count; index++) {
                     const raw = take(3);
@@ -300,12 +290,12 @@ export function readFitMessages(input, options = {}) {
         if (!definition) {
             throw new FitMessageReaderError('invalid_structure');
         }
-        const messageIndex = (_a = messageIndexes.get(definition.globalMessageNumber)) !== null && _a !== void 0 ? _a : 0;
+        const messageIndex = messageIndexes.get(definition.globalMessageNumber) ?? 0;
         messageIndexes.set(definition.globalMessageNumber, messageIndex + 1);
         const selected = selectedMessages === undefined
             || selectedMessages.has(definition.globalMessageNumber);
-        let timestamp;
-        let compressedTimestamp;
+        let timestamp: number | undefined;
+        let compressedTimestamp: number | undefined;
         if (compressed) {
             const timestampField = definition.fields[0];
             if ((timestampField?.fieldNumber === 253
@@ -324,7 +314,7 @@ export function readFitMessages(input, options = {}) {
             lastTimestamp = timestamp;
             compressedTimestamp = timestamp;
         }
-        const fields = [];
+        const fields: FitField[] = [];
         for (const field of definition.fields) {
             if (compressed && field.fieldNumber === 253) {
                 continue;
@@ -335,7 +325,7 @@ export function readFitMessages(input, options = {}) {
                     timestamp = readTimestamp(field, raw, definition.littleEndian);
                     lastTimestamp = timestamp;
                 }
-                catch (_b) {
+                catch {
                     lastTimestamp = undefined;
                     issues.push({
                         code: 'invalid_timestamp',
@@ -345,19 +335,26 @@ export function readFitMessages(input, options = {}) {
                 }
             }
             if (selected && (!options.fields || options.fields[definition.globalMessageNumber]?.includes(field.fieldNumber))) {
-                fields.push(Object.assign(Object.assign({}, field), { bytes: raw.slice() }));
+                fields.push({ ...field, bytes: raw.slice() });
             }
         }
-        const developerFields = [];
+        const developerFields: FitDeveloperField[] = [];
         for (const field of definition.developerFields) {
             const raw = take(field.size);
             if (selected && !options.fields) {
-                developerFields.push(Object.assign(Object.assign({}, field), { bytes: raw.slice() }));
+                developerFields.push({ ...field, bytes: raw.slice() });
             }
         }
         if (selected) {
-            const message = Object.assign(Object.assign(Object.assign({ globalMessageNumber: definition.globalMessageNumber, messageIndex, littleEndian: definition.littleEndian }, (timestamp === undefined ? {} : { timestamp })), (compressedTimestamp === undefined ? {} : { compressedTimestamp })), { fields,
-                developerFields });
+            const message: FitMessage = {
+                globalMessageNumber: definition.globalMessageNumber,
+                messageIndex,
+                littleEndian: definition.littleEndian,
+                ...(timestamp === undefined ? {} : { timestamp }),
+                ...(compressedTimestamp === undefined ? {} : { compressedTimestamp }),
+                fields,
+                developerFields,
+            };
             if (options.onMessage) options.onMessage(message);
             else messages.push(message);
         }
@@ -370,7 +367,7 @@ export function readFitMessages(input, options = {}) {
     };
 }
 /** Converts a native FIT timestamp to a JavaScript epoch millisecond value. */
-export function fitTimestampToUnixMilliseconds(timestamp) {
+export function fitTimestampToUnixMilliseconds(timestamp: number): number {
     if (!Number.isSafeInteger(timestamp) || timestamp < 0 || timestamp >= 0xFFFFFFFF) {
         throw new RangeError('FIT timestamp must be an integer between 0 and 4294967294');
     }

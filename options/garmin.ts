@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settings as Settings } from '../src/settings/settings.js';
-import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.js';
+import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.ts';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
 
 // Settings reads only these summary fields; GARMIN_SUMMARY carries them

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.js';
 import { createGarminImports, importRange } from '../../src/garmin/garmin-imports.ts';
-import { GarminError } from '../../src/garmin/garmin-api.js';
+import { GarminError } from '../../src/garmin/garmin-api.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 const sender = { id: 'test', url: 'chrome-extension://test/options/inbox.html', tab: { id: 1 }, frameId: 0 };
 async function setup(overrides = {}) {

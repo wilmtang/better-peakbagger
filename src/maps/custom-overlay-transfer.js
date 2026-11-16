@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { readCustomRegistry, readCustomSource } from './custom-overlay-schema.js';
-import { publicPrivateSource, readPrivateParameters } from './custom-overlay-private.js';
+import { publicPrivateSource, readPrivateParameters } from './custom-overlay-private.ts';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
 
 // Definitions and opacity travel; local revisions, selections and previews do not.

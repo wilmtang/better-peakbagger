@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settings as Settings } from '../src/settings/settings.js';
 import { matchReading } from '../src/capture/match-reading.ts';
-import { garminActivityLabel, positiveId } from '../src/garmin/garmin-api.js';
+import { garminActivityLabel, positiveId } from '../src/garmin/garmin-api.ts';
 
 interface InboxMatch { id: number; name: string; classification: string; confidence?: number }
 interface InboxItem {

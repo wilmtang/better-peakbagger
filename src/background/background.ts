@@ -60,7 +60,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 import { classifyResponse as classifyPeakbaggerResponse } from '../peakbagger/peakbagger-response.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { createGarminImports, GARMIN_ALARM } from '../garmin/garmin-imports.ts';
-import { GarminError } from '../garmin/garmin-api.js';
+import { GarminError } from '../garmin/garmin-api.ts';
 
 // ---- Session record shapes --------------------------------------------------
 // Everything below is JSON this worker wrote to storage.session or received in

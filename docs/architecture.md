@@ -1893,7 +1893,7 @@ and manual field/style overrides remain authoritative. There is no metadata
 endpoint search or tile-coverage crawl.
 
 `custom-private-store.js` owns extension-origin IndexedDB private definitions,
-query values and durable provider budgets. `custom-overlay-private.js` projects
+query values and durable provider budgets. `custom-overlay-private.ts` projects
 opaque public descriptors. The registry and ordinary/GitHub snapshots remain public;
 the exact Settings editor inside a verified options tab receives an
 `editSource` and private values. The exact-options-page manual file route requests

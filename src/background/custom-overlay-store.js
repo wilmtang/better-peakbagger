@@ -3,7 +3,7 @@
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry, readCustomSource, customId } from '../maps/custom-overlay-schema.js';
 import { customLayerBackup, readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
-import { readPrivateParameters, publicPrivateSource } from '../maps/custom-overlay-private.js';
+import { readPrivateParameters, publicPrivateSource } from '../maps/custom-overlay-private.ts';
 
 const CLEANUP_KEY = 'bpbCustomOverlayCleanup';
 

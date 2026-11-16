@@ -6,7 +6,7 @@ import { indexedDB } from 'fake-indexeddb';
 import { createCustomPrivateStore } from '../../src/background/custom-private-store.js';
 import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
 import { createCustomLayerRelay } from '../../src/background/custom-layer-relay.js';
-import { publicPrivateSource, privateRequestUrl, readPrivateParameters, readRelayResource, PRIVATE_LIMITS } from '../../src/maps/custom-overlay-private.js';
+import { publicPrivateSource, privateRequestUrl, readPrivateParameters, readRelayResource, PRIVATE_LIMITS } from '../../src/maps/custom-overlay-private.ts';
 import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.js';
 const id = 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1';
 const source = { id, revision: 1, name: 'Private topo', kind: 'raster',

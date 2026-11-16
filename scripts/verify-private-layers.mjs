@@ -13,7 +13,7 @@ import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
-import { PRIVATE_LIMITS } from '../src/maps/custom-overlay-private.js';
+import { PRIVATE_LIMITS } from '../src/maps/custom-overlay-private.ts';
 const [kind, ...args] = process.argv.slice(2);
 assert(['chrome', 'firefox'].includes(kind) && args.every(arg => arg.startsWith('--screenshots=')), 'Usage: node scripts/verify-private-layers.mjs chrome|firefox [--screenshots=PATH]');
 const shots = args.find(arg => arg.startsWith('--screenshots='))?.slice(14), secret = 'fixture_KEY+PRIVATE/123';

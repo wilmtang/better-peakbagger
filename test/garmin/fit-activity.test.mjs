@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import { fixtures, matches, crc } from '../../docs/plans/experiments/fit-decoders/fixtures.mjs';
-import { readFitMessages } from '../../src/garmin/fit-message-reader.js';
+import { readFitMessages } from '../../src/garmin/fit-message-reader.ts';
 import { projectRaw } from '../../docs/plans/experiments/fit-decoders/projection.mjs';
 import { decodeFitActivity, decodeGarminRecording } from '../../src/garmin/fit-activity.js';
 

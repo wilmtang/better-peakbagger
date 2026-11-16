@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore, GARMIN_DB } from '../../src/garmin/garmin-store.js';
-import { createGarminClient, garminActivityLabel } from '../../src/garmin/garmin-api.js';
+import { createGarminClient, garminActivityLabel } from '../../src/garmin/garmin-api.ts';
 const key = 'fictional-personal-key-for-tests';
 const jwt = () => `a.${btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600, garmin_guid: 'test-owner-guid' }))}.b`;
 test('mountain activity inbox labels distinguish climbing and backcountry sports', () => {

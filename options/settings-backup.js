@@ -11,7 +11,7 @@ import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { boundedText as BoundedText } from '../src/net/bounded-text.js';
 import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
-import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.js';
+import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.ts';
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry } from '../src/maps/custom-overlay-schema.js';
 import { customLayerBackup } from '../src/maps/custom-overlay-transfer.js';
 
