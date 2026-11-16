@@ -152,7 +152,7 @@ independent of the existing targets.
 - [verify-air-quality.mts](verify-air-quality.mts) — lazy AQI requests and refresh stability through the weather browser harness.
 - [verify-air-quality-refresh.mts](verify-air-quality-refresh.mts) — deterministic DST refresh, UTC viewport anchoring and equal-reading live announcements in hidden Chrome and Firefox; time/provider responses are stubbed beside native markup and shipped CSS.
 
-- [verify-ascent-weather.mjs](verify-ascent-weather.mjs)
+- [verify-ascent-weather.mts](verify-ascent-weather.mts)
 - [verify-custom-overlays.mts](verify-custom-overlays.mts) — real unpacked editor, 18 transition and 24 keyboard-help cases at asserted content widths/zoom, negative geometry checks, direct HTTPS/CORS tiles, packaged workers and hardware 2D/3D rendering. `--loading-only` explicitly excludes editor/help matrices; unknown or duplicate selections fail before launch.
 - [verify-custom-overlay-lifecycle.mts](verify-custom-overlay-lifecycle.mts) — `chrome|firefox startup|lifetime|cache`: real Leaflet and bundled renderer, fresh asynchronous startup, bounded canvas/listener ownership and real HTTP-cache revalidation with changed pixels, conditional responses and ordinary reuse at desktop/narrow widths; controlled providers, without the Settings editor or worker.
 - [verify-custom-overlay-replacement.mts](verify-custom-overlay-replacement.mts) — hidden hardware Chrome at 1000×760: real MapLibre raster pixels through held replacement, viewport cancellation, rendered acceptance and source/listener teardown; controlled HTTPS provider, without the Settings editor or worker.

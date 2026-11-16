@@ -330,7 +330,7 @@ jobs:
             *) echo "Unknown surface: $SURFACE" >&2; exit 1 ;;
           esac
           mkdir -p browser-evidence
-          node scripts/verify-ascent-weather.mjs --"$SURFACE" "${browser_args[@]}" 2>&1 | tee "browser-evidence/$SURFACE.log"
+          node scripts/verify-ascent-weather.mts --"$SURFACE" "${browser_args[@]}" 2>&1 | tee "browser-evidence/$SURFACE.log"
 
       - name: Retain peak surface failure evidence
         if: failure()
@@ -374,7 +374,7 @@ jobs:
             *) echo "Unknown browser: $BROWSER" >&2; exit 1 ;;
           esac
           npm run build
-          node scripts/verify-ascent-weather.mjs --snow-map "${browser_args[@]}" 2>&1 | tee browser-evidence/snow-map.log
+          node scripts/verify-ascent-weather.mts --snow-map "${browser_args[@]}" 2>&1 | tee browser-evidence/snow-map.log
 
       - name: Retain browser failure evidence
         if: failure()

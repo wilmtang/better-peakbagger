@@ -117,7 +117,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.ok(surfaces, 'the required layout path must execute the newer surface matrices');
     assert.equal(surfaces.if, undefined);
     assert.equal(surfaces['continue-on-error'], undefined);
-    assert.match(surfaces.run, /verify-ascent-weather\.mjs --"\$SURFACE"/);
+    assert.match(surfaces.run, /verify-ascent-weather\.mts --"\$SURFACE"/);
     assert.equal(surfaces.env.BROWSER, '${{ matrix.browser }}');
     assert.match(surfaces.run, /firefox\) browser_args=\(--firefox\)/);
     assert.match(surfaces.run, /Unknown browser/);
@@ -126,7 +126,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.equal(gpu.if, undefined, 'snow-map coverage must not wait for a dependency change');
     assert.deepEqual(gpu.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.equal(gpu.strategy['fail-fast'], false);
-    assert.ok(gpu.steps.some((step: WorkflowStep) => /verify-ascent-weather\.mjs --snow-map /.test(step.run || '')));
+    assert.ok(gpu.steps.some((step: WorkflowStep) => /verify-ascent-weather\.mts --snow-map /.test(step.run || '')));
     const setup = gpu.steps.find((step: WorkflowStep) => step.uses === './.github/actions/setup-verification');
     assert.equal(setup.with['chrome-version'], 'current');
     assert.equal(setup.with['firefox-version'], 'latest');
@@ -154,7 +154,7 @@ test('the CI surface step selects the requested engine and preserves each verifi
             const calls = (await readFile(commands, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);
             const valid = browser !== 'missing' && surface !== 'missing';
             assert.equal(result.status === 0, valid && !fail, result.stderr);
-            assert.deepEqual(calls, valid ? [`scripts/verify-ascent-weather.mjs --${surface}${browser === 'firefox' ? ' --firefox' : ''}`] : []);
+            assert.deepEqual(calls, valid ? [`scripts/verify-ascent-weather.mts --${surface}${browser === 'firefox' ? ' --firefox' : ''}`] : []);
         }
     } finally { await rm(directory, { recursive: true, force: true }); }
 });

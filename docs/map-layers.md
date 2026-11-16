@@ -457,7 +457,7 @@ pages do not poll. Changing the viewport, disabling the overlay, suspending the
 page or replacing the renderer cancels obsolete work. Fire styling never changes
 the native basemap, camera, routes or peak markers.
 
-Focused browser coverage: `node scripts/verify-ascent-weather.mjs --wildfire`
+Focused browser coverage: `node scripts/verify-ascent-weather.mts --wildfire`
 and the same command with `--firefox`; `BPB_VERIFY_FIRE_SCREENSHOT_DIR` retains
 screenshots. These load the real unpacked extension, Leaflet and hardware
 MapLibre over HTTPS Peakbagger fixtures. Controlled provider replies exercise

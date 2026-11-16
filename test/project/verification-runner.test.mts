@@ -35,16 +35,16 @@ test('verification targets preserve the existing checks and browser order with o
         [['onx'], [['verify-onx.mts', 'chrome'], ['verify-onx.mts', 'firefox']]],
         [['map-layers'], [['verify-map-layer-control.mts'], ['verify-map-layers.mts']]],
         [['settings-navigation'], [['verify-settings-fragments.mts', 'chrome'], ['verify-settings-fragments.mts', 'firefox']]],
-        [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
+        [['map-location'], [['verify-ascent-weather.mts', '--map-location'], ['verify-ascent-weather.mts', '--map-location', '--firefox']]],
         [['api-rate-limits'], [['verify-api-rate-limits.mts']]],
         [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mts']]],
         [['peak-map-layout'], [['verify-peak-map-layout.mts']]],
         [['weather-intervals'], [['verify-weather-intervals.mts']]],
-        [['weather', '--live'], [['verify-ascent-weather.mjs', '--live'], ['verify-ascent-weather.mjs', '--firefox', '--live']]],
-        [['peak-weather'], [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']]],
-        [['snow'], [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']]],
-        [['snow-map'], [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']]],
-        [['peak-card-placement'], [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']]],
+        [['weather', '--live'], [['verify-ascent-weather.mts', '--live'], ['verify-ascent-weather.mts', '--firefox', '--live']]],
+        [['peak-weather'], [['verify-ascent-weather.mts', '--peak'], ['verify-ascent-weather.mts', '--peak', '--firefox']]],
+        [['snow'], [['verify-ascent-weather.mts', '--snow'], ['verify-ascent-weather.mts', '--snow', '--firefox']]],
+        [['snow-map'], [['verify-ascent-weather.mts', '--snow-map'], ['verify-ascent-weather.mts', '--snow-map', '--firefox']]],
+        [['peak-card-placement'], [['verify-ascent-weather.mts', '--cards-placement'], ['verify-ascent-weather.mts', '--cards-placement', '--firefox']]],
         [['map-controls'], [['verify-map-controls.mts'], ['verify-map-controls.mts', '--firefox']]],
         [['terrain'], [['verify-terrain-visual.mts']]],
         [['terrain', 'chrome', '/tmp/terrain evidence'], [['verify-terrain-visual.mts', '/tmp/terrain evidence']]],
@@ -142,7 +142,7 @@ test('focused no-argument verifiers reject unknown selections before opening a b
 
 test('peak-card placement rejects unknown and conflicting selections before opening a browser', () => {
     for (const args of [['--cards-placement', '--unknown'], ['--cards-placement', '--cards'], ['--cards-placement', '--interactions']]) {
-        const result = spawnSync(process.execPath, [script('verify-ascent-weather.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        const result = spawnSync(process.execPath, [script('verify-ascent-weather.mts'), ...args], { encoding: 'utf8', timeout: 5000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Unsupported weather verification arguments/);
     }
