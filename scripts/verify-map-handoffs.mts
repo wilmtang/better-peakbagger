@@ -1,20 +1,24 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global chrome, document, window */
+/// <reference lib="dom" />
+/// <reference types="chrome" />
 
 import assert from 'node:assert/strict';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { createServer } from 'node:https';
-import { chromium } from 'playwright';
-import { createFixtureCertificate, waitForCondition } from './browser-verification-fixtures.mjs';
+import { createFixtureCertificate, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
 import { closeServer, createResourceStack, listenServer } from './resource-stack.mjs';
 import { prepareGaiaImport } from '../src/gaia/gaia-import.js';
 import { prepareOnxImport, probeOnxImporter } from '../src/onx/onx-import.js';
 import { prepareCaltopoImport } from '../src/caltopo/caltopo-import.js';
 import { prepareAlltrailsImport } from '../src/alltrails/alltrails-import.js';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
+
+const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => T | Promise<T>, options: { description: string; timeoutMs?: number; isReady?: (value: T) => unknown }) => Promise<NonNullable<T>>;
+// Provider fixture pages record what they received; callbacks cast in place.
+interface ProviderFixture { received: string; receivedName: string; handoffs: number; saves: number; imports: number; uploads: number }
 
 const root = path.resolve(import.meta.dirname, '..');
 const evidenceDir = path.join(root, 'web-ext-artifacts', 'map-handoff-evidence');
@@ -24,11 +28,10 @@ const payload = {
     gpx: '<?xml version="1.0"?><gpx version="1.1"><wpt lat="37" lon="-119"><name>Waypoint</name></wpt><trk><name>Saved ascent</name><trkseg><trkpt lat="37" lon="-119"><ele>100</ele></trkpt><trkpt lat="37.001" lon="-119.001"><ele>101</ele></trkpt></trkseg></trk></gpx>',
 };
 
-let failure;
+let failure: unknown = null;
 try {
     await mkdir(evidenceDir, { recursive: true });
-    const temporary = await mkdtemp(path.join(tmpdir(), 'bpb-map-handoff-'));
-    resources.defer('disposable map handoff verifier', () => rm(temporary, { recursive: true, force: true }));
+    const temporary = await createVerificationRoot(resources, 'bpb-map-handoff-', 'disposable map handoff verifier');
     const extensionDir = path.join(temporary, 'dist');
     await cp(path.join(root, 'dist'), extensionDir, { recursive: true });
 
@@ -42,7 +45,7 @@ try {
     const alltrailsOrigin = 'https://www.alltrails.com/*';
     manifest.host_permissions.push(gaiaOrigin, onxOrigin, alltrailsOrigin, caltopoOrigin);
     manifest.optional_host_permissions = manifest.optional_host_permissions.filter(
-        value => value !== gaiaOrigin && value !== onxOrigin && value !== alltrailsOrigin && value !== caltopoOrigin,
+        (value: string) => value !== gaiaOrigin && value !== onxOrigin && value !== alltrailsOrigin && value !== caltopoOrigin,
     );
     await writeFile(manifestPath, JSON.stringify(manifest));
 
@@ -111,7 +114,8 @@ try {
             };document.body.append(dialog);
         };
         </script></body></html>`;
-    const certificate = await createFixtureCertificate({ label: 'map-handoff' });
+    const certificate = await createFixtureCertificate({ label: 'map-handoff' } as never);
+    assert.ok(certificate);
     resources.defer('fixture certificate', () => certificate.remove());
     const server = createServer(certificate, (request, response) => {
         if (request.headers.host === 'caltopo.com') {
@@ -126,10 +130,10 @@ try {
         } else if (request.headers.host === 'www.alltrails.com') {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(alltrailsFixture());
-        } else if (request.url.startsWith('/climber/PeakAscents.aspx')) {
+        } else if (request.url!.startsWith('/climber/PeakAscents.aspx')) {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(betaHtml);
-        } else if (request.url.startsWith('/climber/GPXFile.aspx')) {
+        } else if (request.url!.startsWith('/climber/GPXFile.aspx')) {
             sourceReads++;
             response.setHeader('Content-Type', 'application/gpx+xml');
             response.end(payload.gpx);
@@ -140,32 +144,25 @@ try {
     });
     await listenServer(server, 0, '127.0.0.1');
     resources.defer('map handoff HTTPS fixture', () => closeServer(server));
-    const port = server.address().port;
+    const port = (server.address() as AddressInfo).port;
 
-    assertChromeLaunchAllowed();
-    const context = await chromium.launchPersistentContext(path.join(temporary, 'browser'), {
-        channel: 'chromium',
-        headless: true,
+    const context = await launchVerificationChrome(resources, 'hidden Chrome for Testing', path.join(temporary, 'browser'), {
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
         viewport: { width: 1000, height: 760 },
-        args: [
-            ...certificate.chromeTrustArgs,
-            `--disable-extensions-except=${extensionDir}`,
-            `--load-extension=${extensionDir}`,
-            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP backcountry.onxmaps.com 127.0.0.1:${port}, MAP www.alltrails.com 127.0.0.1:${port}, MAP caltopo.com 127.0.0.1:${port}`,
-        ],
+        trustArgs: certificate.chromeTrustArgs,
+        extension: extensionDir,
+        hosts: [PEAKBAGGER_HOST_RULE, ...['www.gaiagps.com', 'backcountry.onxmaps.com', 'www.alltrails.com', 'caltopo.com'].map(host => `${host} 127.0.0.1:${port}`)],
     });
-    resources.defer('hidden Chrome for Testing', () => context.close());
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const extensionId = new URL(worker.url()).host;
     // Capture injection failures in this disposable worker, without recording GPX.
     await worker.evaluate(() => {
-        globalThis.handoffInjectionErrors = [];
+        (globalThis as unknown as { handoffInjectionErrors: object[] }).handoffInjectionErrors = [];
         const execute = chrome.scripting.executeScript.bind(chrome.scripting);
         chrome.scripting.executeScript = async details => {
             try { return await execute(details); }
             catch (error) {
-                globalThis.handoffInjectionErrors.push({ tabId: details.target?.tabId, message: error.message });
+                (globalThis as unknown as { handoffInjectionErrors: object[] }).handoffInjectionErrors.push({ tabId: details.target?.tabId, message: (error as Error).message });
                 throw error;
             }
         };
@@ -193,8 +190,8 @@ try {
         previousHref: '/climber/GPXFile.aspx?aid=7654321&sep=1',
     });
     await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-button-light.png') });
-    const linkBox = await source.locator('#gpxlinks > a').first().boundingBox();
-    const controlsBox = await source.locator('.bpb-map-handoff-control').boundingBox();
+    const linkBox = (await source.locator('#gpxlinks > a').first().boundingBox())!;
+    const controlsBox = (await source.locator('.bpb-map-handoff-control').boundingBox())!;
     assert.ok(controlsBox.y >= linkBox.y, 'send controls follow the download in the current ascent column');
     assert.ok(controlsBox.width <= 1000, 'send controls remain within the viewport');
 
@@ -209,17 +206,17 @@ try {
         for (const theme of ['light', 'dark']) {
             await options.locator('#theme').selectOption(theme);
             await options.waitForFunction(value => document.documentElement.dataset.bpbTheme === value, theme);
-            await options.waitForFunction(() => !document.querySelector('#status').classList.contains('show'));
+            await options.waitForFunction(() => !document.querySelector<HTMLElement>('#status')!.classList.contains('show'));
             const layout = await options.evaluate(() => {
                 const orders = [...document.querySelectorAll('.order-setting-row')].map(row => {
-                    const label = row.querySelector('.label').getBoundingClientRect();
-                    const desc = row.querySelector('.desc').getBoundingClientRect();
-                    const list = row.querySelector('ol').getBoundingClientRect();
+                    const label = row.querySelector<HTMLElement>('.label')!.getBoundingClientRect();
+                    const desc = row.querySelector<HTMLElement>('.desc')!.getBoundingClientRect();
+                    const list = row.querySelector<HTMLElement>('ol')!.getBoundingClientRect();
                     return { labelWidth: label.width, descWidth: desc.width, descBottom: desc.bottom, listTop: list.top };
                 });
-                const row = document.querySelector('.viewport-setting-row');
-                const label = row.querySelector('.label').getBoundingClientRect();
-                const controls = row.querySelector('.control').getBoundingClientRect();
+                const row = document.querySelector<HTMLElement>('.viewport-setting-row')!;
+                const label = row.querySelector<HTMLElement>('.label')!.getBoundingClientRect();
+                const controls = row.querySelector<HTMLElement>('.control')!.getBoundingClientRect();
                 return { orders, labelTop: label.top, labelBottom: label.bottom, controlsTop: controls.top,
                     viewportFits: row.scrollWidth <= row.clientWidth,
                     stacked: window.getComputedStyle(row).flexDirection === 'column' };
@@ -240,14 +237,14 @@ try {
     await options.locator('#theme').selectOption('light');
 
     await providerList.getByRole('button', { name: 'Reorder onX Backcountry', exact: true }).press('ArrowUp');
-    await waitForCondition(async () => options.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Reorder onX Backcountry' && !document.activeElement.disabled), { description: 'keyboard focus preserved at the first position' });
+    await waitForCondition(async () => options.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Reorder onX Backcountry' && !(document.activeElement as HTMLButtonElement).disabled), { description: 'keyboard focus preserved at the first position' });
     await providerList.getByRole('button', { name: 'Reorder onX Backcountry', exact: true }).press('ArrowDown');
     await waitForCondition(async () => (await source.locator('.bpb-map-handoff-button').evaluateAll(items => items.map(item => item.dataset.provider))).join() === 'gaia,onx,alltrails,caltopo', { description: 'provider order restored before the transfer check' });
 
     const caltopoGrip = providerList.getByRole('button', { name: 'Reorder CalTopo', exact: true });
     await caltopoGrip.scrollIntoViewIfNeeded();
-    const gripBox = await caltopoGrip.boundingBox();
-    const targetBox = await providerList.locator('[data-order-item="alltrails"]').boundingBox();
+    const gripBox = (await caltopoGrip.boundingBox())!;
+    const targetBox = (await providerList.locator('[data-order-item="alltrails"]').boundingBox())!;
     await options.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
     await options.mouse.down();
     await options.mouse.move(gripBox.x + gripBox.width / 2, targetBox.y + targetBox.height / 2 - 8, { steps: 8 });
@@ -299,8 +296,8 @@ try {
     // Touch uses the same grip, with reduced motion and no checkbox side effect.
     await options.emulateMedia({ reducedMotion: 'reduce' });
     await providerList.scrollIntoViewIfNeeded();
-    const touchGrip = await providerList.getByRole('button', { name: 'Reorder CalTopo', exact: true }).boundingBox();
-    const firstRow = await providerList.locator('[data-order-item="gaia"]').boundingBox();
+    const touchGrip = (await providerList.getByRole('button', { name: 'Reorder CalTopo', exact: true }).boundingBox())!;
+    const firstRow = (await providerList.locator('[data-order-item="gaia"]').boundingBox())!;
     const touchSession = await context.newCDPSession(options);
     try {
         await touchSession.send('Emulation.setTouchEmulationEnabled', { enabled: true });
@@ -332,10 +329,10 @@ try {
         description: 'the Gaia import tab',
     });
     const received = await gaia.evaluate(() => ({
-        text: window.received,
-        name: window.receivedName,
-        handoffs: window.handoffs,
-        saves: window.saves,
+        text: (window as unknown as ProviderFixture).received,
+        name: (window as unknown as ProviderFixture).receivedName,
+        handoffs: (window as unknown as ProviderFixture).handoffs,
+        saves: (window as unknown as ProviderFixture).saves,
     }));
     assert.deepEqual(received, { text: payload.gpx, name: payload.filename, handoffs: 1, saves: 0 });
     assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the items and click Save/);
@@ -349,7 +346,7 @@ try {
         return /Ready in onX/.test(text) ? text : null;
     }, { description: 'the saved ascent to report onX ready', timeoutMs: 35_000 }).catch(async error => {
         error.message += `\nSource: ${await source.locator('.bpb-map-handoff-control').innerText()}`;
-        error.message += `\nTabs and injections: ${JSON.stringify(await worker.evaluate(async () => ({ tabs: await chrome.tabs.query({}), errors: globalThis.handoffInjectionErrors })))}`;
+        error.message += `\nTabs and injections: ${JSON.stringify(await worker.evaluate(async () => ({ tabs: await chrome.tabs.query({}), errors: (globalThis as unknown as { handoffInjectionErrors: object[] }).handoffInjectionErrors })))}`;
         for (const page of context.pages()) {
             if (page.url().startsWith('https://backcountry.onxmaps.com/')) {
                 error.message += `\nonX: ${page.url()} ${await page.locator('body').innerText()}`;
@@ -361,10 +358,10 @@ try {
         page => page.url().startsWith('https://backcountry.onxmaps.com/'),
     ) || null, { description: 'the onX import tab' });
     const onxReceived = await onx.evaluate(() => ({
-        text: window.received,
-        name: window.receivedName,
-        handoffs: window.handoffs,
-        imports: window.imports,
+        text: (window as unknown as ProviderFixture).received,
+        name: (window as unknown as ProviderFixture).receivedName,
+        handoffs: (window as unknown as ProviderFixture).handoffs,
+        imports: (window as unknown as ProviderFixture).imports,
     }));
     assert.deepEqual(onxReceived, { text: payload.gpx, name: payload.filename, handoffs: 1, imports: 0 });
     assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the file and click Import/);
@@ -379,15 +376,15 @@ try {
         const tabs = context.pages().filter(page => page.url().startsWith('https://backcountry.onxmaps.com/'));
         const fresh = tabs.find(page => !onxTabsBeforeRepeat.includes(page));
         if (!fresh) return null;
-        return await fresh.evaluate(() => window.handoffs === 1 ? true : null) ? fresh : null;
+        return await fresh.evaluate(() => (window as unknown as ProviderFixture).handoffs === 1 ? true : null) ? fresh : null;
     }, { description: 'a fresh onX tab for explicit retry', timeoutMs: 35_000 });
     const repeatedOnxReceived = await repeatedOnx.evaluate(() => ({
-        text: window.received,
-        name: window.receivedName,
-        imports: window.imports,
+        text: (window as unknown as ProviderFixture).received,
+        name: (window as unknown as ProviderFixture).receivedName,
+        imports: (window as unknown as ProviderFixture).imports,
     }));
     assert.deepEqual(repeatedOnxReceived, { text: payload.gpx, name: payload.filename, imports: 0 });
-    assert.equal(await onx.evaluate(() => window.imports), 0);
+    assert.equal(await onx.evaluate(() => (window as unknown as ProviderFixture).imports), 0);
     // File receipt precedes the worker's tab focus and source-page response.
     // Do not begin another trusted click while that workflow is still ending.
     await waitForCondition(async () => await onxButton.isEnabled()
@@ -412,10 +409,10 @@ try {
         page => page.url().startsWith('https://www.alltrails.com/'),
     ) || null, { description: 'the AllTrails upload tab' });
     const alltrailsReceived = await alltrails.evaluate(() => ({
-        text: window.received,
-        name: window.receivedName,
-        handoffs: window.handoffs,
-        uploads: window.uploads,
+        text: (window as unknown as ProviderFixture).received,
+        name: (window as unknown as ProviderFixture).receivedName,
+        handoffs: (window as unknown as ProviderFixture).handoffs,
+        uploads: (window as unknown as ProviderFixture).uploads,
     }));
     assert.deepEqual(alltrailsReceived, {
         text: payload.gpx, name: payload.filename, handoffs: 1, uploads: 0,
@@ -423,7 +420,7 @@ try {
     assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the route and click Upload/);
     assert.equal(await alltrailsButton.isDisabled(), false);
     assert.equal((await alltrailsButton.innerText()).trim(), 'Send to AllTrails again');
-    assert.equal(await alltrails.evaluate(() => window.uploads), 0);
+    assert.equal(await alltrails.evaluate(() => (window as unknown as ProviderFixture).uploads), 0);
 
     await caltopoButton.click();
     await waitForCondition(async () => /Ready in CalTopo/.test(
@@ -433,7 +430,7 @@ try {
     const caltopo = context.pages().find(page => page.url().startsWith('https://caltopo.com/map.html'));
     assert.ok(caltopo);
     assert.deepEqual(await caltopo.evaluate(() => ({
-        text: window.received, name: window.receivedName, handoffs: window.handoffs, imports: window.imports,
+        text: (window as unknown as ProviderFixture).received, name: (window as unknown as ProviderFixture).receivedName, handoffs: (window as unknown as ProviderFixture).handoffs, imports: (window as unknown as ProviderFixture).imports,
     })), { text: payload.gpx, name: payload.filename, handoffs: 1, imports: 0 });
     await caltopo.locator('.yui-panel').filter({ hasText: 'Import Data' }).screenshot({
         path: path.join(evidenceDir, 'caltopo-review.png'),
@@ -448,7 +445,7 @@ try {
     await access.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'light');
     const lightAccessColors = await access.evaluate(() => ({
         page: window.getComputedStyle(document.body).backgroundColor,
-        card: window.getComputedStyle(document.querySelector('.access-card')).backgroundColor,
+        card: window.getComputedStyle(document.querySelector('.access-card')!).backgroundColor,
     }));
     await access.screenshot({ path: path.join(evidenceDir, 'access-page-light.png') });
     await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: { theme: 'dark' } }));
@@ -456,7 +453,7 @@ try {
     await access.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
     const darkAccessColors = await access.evaluate(() => ({
         page: window.getComputedStyle(document.body).backgroundColor,
-        card: window.getComputedStyle(document.querySelector('.access-card')).backgroundColor,
+        card: window.getComputedStyle(document.querySelector('.access-card')!).backgroundColor,
     }));
     assert.notDeepEqual(darkAccessColors, lightAccessColors);
     await access.screenshot({ path: path.join(evidenceDir, 'access-page-dark.png') });
@@ -476,7 +473,7 @@ try {
     const session = await worker.evaluate(() => chrome.storage.session.get(null));
     assert.ok(!JSON.stringify(session).includes('<gpx'), 'saved GPX must not enter extension storage');
 
-    const adapterCheck = async (mode, timeoutMs = 500) => {
+    const adapterCheck = async (mode: string, timeoutMs = 500) => {
         gaiaMode = mode;
         const page = await context.newPage();
         await page.goto('https://www.gaiagps.com/map/');
@@ -484,7 +481,7 @@ try {
         return {
             page,
             outcome,
-            state: await page.evaluate(() => ({ handoffs: window.handoffs, saves: window.saves })),
+            state: await page.evaluate(() => ({ handoffs: (window as unknown as ProviderFixture).handoffs, saves: (window as unknown as ProviderFixture).saves })),
         };
     };
     const signedOut = await adapterCheck('signed-out');
@@ -495,17 +492,17 @@ try {
     assert.deepEqual(stalled.state, { handoffs: 1, saves: 0 });
     const duplicate = await stalled.page.evaluate(prepareGaiaImport, payload);
     assert.equal(duplicate.code, 'already-started');
-    const onxAdapterCheck = async (mode, timeoutMs = 500) => {
+    const onxAdapterCheck = async (mode: string, timeoutMs = 500) => {
         onxMode = mode;
         const page = await context.newPage();
         await page.goto('https://backcountry.onxmaps.com/backcountry/map/content/import');
         const args = { attemptId: 'adapter-check', expiresAt: Date.now() + timeoutMs };
         const ready = await page.evaluate(probeOnxImporter, args);
-        const outcome = ready.ok ? await page.evaluate(prepareOnxImport, { ...payload, ...args, documentNonce: ready.documentNonce }) : ready;
+        const outcome = ready.ok ? await page.evaluate(prepareOnxImport, { ...payload, ...args, documentNonce: (ready as { documentNonce?: string }).documentNonce }) : ready;
         return {
             page,
             outcome,
-            state: await page.evaluate(() => ({ handoffs: window.handoffs, imports: window.imports })),
+            state: await page.evaluate(() => ({ handoffs: (window as unknown as ProviderFixture).handoffs, imports: (window as unknown as ProviderFixture).imports })),
         };
     };
     const membership = await onxAdapterCheck('membership');
@@ -523,7 +520,7 @@ try {
         { ...payload, timeoutMs: 500 });
     assert.equal(stalledAlltrails.code, 'handoff-unconfirmed');
     assert.deepEqual(await stalledAlltrailsPage.evaluate(() => ({
-        handoffs: window.handoffs, uploads: window.uploads,
+        handoffs: (window as unknown as ProviderFixture).handoffs, uploads: (window as unknown as ProviderFixture).uploads,
     })), { handoffs: 1, uploads: 0 });
     const alltrailsDuplicate = await stalledAlltrailsPage.evaluate(prepareAlltrailsImport, payload);
     assert.equal(alltrailsDuplicate.code, 'existing-preview');
@@ -533,10 +530,10 @@ try {
     await stalledCaltopoPage.goto('https://caltopo.com/map.html');
     const stalledCaltopo = await stalledCaltopoPage.evaluate(prepareCaltopoImport, { ...payload, timeoutMs: 500 });
     assert.equal(stalledCaltopo.code, 'handoff-unconfirmed');
-    assert.deepEqual(await stalledCaltopoPage.evaluate(() => ({ handoffs: window.handoffs, imports: window.imports })),
+    assert.deepEqual(await stalledCaltopoPage.evaluate(() => ({ handoffs: (window as unknown as ProviderFixture).handoffs, imports: (window as unknown as ProviderFixture).imports })),
         { handoffs: 1, imports: 0 });
     const report = {
-        browser: context.browser().version(),
+        browser: context.browser()!.version(),
         viewport: { width: 1000, height: 760 },
         narrowViewport: { width: 430, height: 760 },
         mode: 'hidden masked HTTPS fixtures',
@@ -571,4 +568,4 @@ try {
 } catch (error) {
     failure = error;
 }
-await resources.dispose(failure);
+await resources.dispose(failure as null);

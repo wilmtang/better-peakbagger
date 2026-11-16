@@ -114,7 +114,7 @@ independent of the existing targets.
 - [verify-gpx-header.mts](verify-gpx-header.mts)
 - [verify-gpx-segments.mjs](verify-gpx-segments.mjs)
 - [verify-map-controls.mts](verify-map-controls.mts)
-- [verify-map-handoffs.mjs](verify-map-handoffs.mjs)
+- [verify-map-handoffs.mts](verify-map-handoffs.mts)
 - [verify-onx.mts](verify-onx.mts)
 - [verify-map-layer-control.mts](verify-map-layer-control.mts)
 - [verify-map-layers.mts](verify-map-layers.mts)
@@ -201,7 +201,7 @@ independent of the existing targets.
 - [verify-report-security.mts](verify-report-security.mts) — real response protection, hostile reports, native map scripts, Quick Search and Cloudflare exceptions in hidden Chrome/Firefox.
 - [verify-report-routes.mts](verify-report-routes.mts) — compiled-rule validation, encoded report/profile/editor routes, priority exclusions and native/encoded map children under the real report policy.
 - [generate-report-protection.mts](generate-report-protection.mts) — readable source for the generated report-response rules; use `--write` to regenerate or `--check` to reject drift.
-- [verify-instagram.mjs](verify-instagram.mjs) — packaged per-post grants, native captions, bounded player sizing, compact placeholders, consent, error/retry/cancel geometry and Rich paste in hidden Chrome/Firefox. Includes same-origin lazy-video playback and sandbox isolation. `npm run verify -- instagram`; `--live` checks public post/Reel samples and all slides plus decoded video playback in the reported mixed carousel. `--display` pregrants the optional host only in a disposable test copy, then checks native terminal navigation, identical pending/loaded viewport widths and live light/dark transitions with unchanged media colors/geometry. It does not prove the native permission prompt. `BPB_INSTAGRAM_LIVE_POST` adds one validated public sample.
+- [verify-instagram.mts](verify-instagram.mts) — packaged per-post grants, native captions, bounded player sizing, compact placeholders, consent, error/retry/cancel geometry and Rich paste in hidden Chrome/Firefox. Includes same-origin lazy-video playback and sandbox isolation. `npm run verify -- instagram`; `--live` checks public post/Reel samples and all slides plus decoded video playback in the reported mixed carousel. `--display` pregrants the optional host only in a disposable test copy, then checks native terminal navigation, identical pending/loaded viewport widths and live light/dark transitions with unchanged media colors/geometry. It does not prove the native permission prompt. `BPB_INSTAGRAM_LIVE_POST` adds one validated public sample.
 - [verify-report-image-help.mjs](verify-report-image-help.mjs) — image-popover Instagram help: hover, keyboard dismissal, tooltip bounds and stable geometry at desktop/narrow widths in both themes and enlarged text; invoked by the Instagram verifier.
 - [verify-report-draft-ownership.mts](verify-report-draft-ownership.mts)
 - [verify-report-photos.mts](verify-report-photos.mts)

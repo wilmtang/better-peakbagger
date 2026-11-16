@@ -324,7 +324,7 @@ reproduction. Three other exports are more aggressive:
 | Site | Link attached | Revocation | Existing download proof |
 | --- | --- | --- | --- |
 | `options/climber-files.js` lines 81–86 (list export) | No | Synchronously, in `finally` | Completed download with parsed bytes in hidden Chrome and Playwright Firefox (`scripts/verify-climber-files.mjs` lines 54–58) |
-| `options/settings-backup.js` lines 137–143 (settings export, optionally with credentials) | No | Synchronously after `click()` | Chrome only (`scripts/verify-extension.mts`, `verify-map-handoffs.mjs`) |
+| `options/settings-backup.js` lines 137–143 (settings export, optionally with credentials) | No | Synchronously after `click()` | Chrome only (`scripts/verify-extension.mts`, `verify-map-handoffs.mts`) |
 | `photos/photos.ts` lines 3338–3343 (project bundle including the original image) | No | After 1 second | None; `scripts/verify-firefox-extension.mts` skips it |
 
 **What is and is not established.** Small synchronous-revoke exports demonstrably
