@@ -99,7 +99,7 @@ independent of the existing targets.
 - [verify-garmin-ui.mts](verify-garmin-ui.mts) — Garmin connection, inbox and popup geometry, recovery and keyboard checks in hidden Chrome and Firefox.
 - [verify-connections.mjs](verify-connections.mjs) — Packaged Garmin, ImgBB and GitHub disconnect states, focus, duplicate activation and geometry in hidden Chrome and Firefox.
 - [jszip-csp-patch.mjs](jszip-csp-patch.mjs) — Version-checked removal of JSZip's legacy string-evaluation scheduler fallback.
-- [verify-capture-readiness.mjs](verify-capture-readiness.mjs)
+- [verify-capture-readiness.mts](verify-capture-readiness.mts)
 - [verify-draft-recovery.mjs](verify-draft-recovery.mjs)
 - [verify-multi-summit.mts](verify-multi-summit.mts)
 - [verify-provider-contracts.mjs](verify-provider-contracts.mjs)
@@ -170,7 +170,7 @@ independent of the existing targets.
 - [verify-peak-weather-refresh.mjs](verify-peak-weather-refresh.mjs)
 - [verify-snotel-options.mjs](verify-snotel-options.mjs)
 - [verify-snow-map-cases.mjs](verify-snow-map-cases.mjs)
-- [verify-snow-depth.mjs](verify-snow-depth.mjs) — Real-extension snow depth, opacity, keyboard recovery and enlarged layout.
+- [verify-snow-depth.mts](verify-snow-depth.mts) — Real-extension snow depth, opacity, keyboard recovery and enlarged layout.
 - [verify-snow-map-fixture.mjs](verify-snow-map-fixture.mjs)
 - [verify-weather-card-drag.mjs](verify-weather-card-drag.mjs)
 - [verify-weather-clouds.mjs](verify-weather-clouds.mjs)

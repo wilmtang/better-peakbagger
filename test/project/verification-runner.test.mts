@@ -28,7 +28,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['report-security'], [['verify-report-security.mts', 'chrome'], ['verify-report-security.mts', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
         [['inline-buddies'], [['verify-inline-buddies.mts'], ['verify-inline-buddies.mts', '--firefox']]],
         [['capture-flow'], [['verify-capture-flow.mts']]],
-        [['capture-readiness', 'firefox'], [['verify-capture-readiness.mjs', 'firefox']]],
+        [['capture-readiness', 'firefox'], [['verify-capture-readiness.mts', 'firefox']]],
         [['provider-contracts'], [['verify-provider-contracts.mjs']]],
         [['provider-performance'], [['verify-provider-performance.mjs']]],
         [['map-handoffs'], [['verify-map-handoffs.mjs']]],
