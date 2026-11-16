@@ -1,7 +1,7 @@
 # Active plans
 
 - [Codebase size and redundancy reduction](codebase-reduction-2026-11-13.md)
-  — phase 1 (archive removal) is done; phases 2–5 are in progress.
+  — phase 1 (archive removal) is done; phases 2–5 are not started.
 
 - [November 11 bugs, performance, engineering and UX audit](codebase-audit-2026-11-11.md)
   — 18 findings, remediated and reviewed except where its ledger says otherwise
@@ -52,7 +52,9 @@ executable experiments and their evidence moved to map-server.
 Once a plan is implemented or abandoned, update the maintained architecture or
 focused design note with the resulting runtime behavior, then delete the plan
 from the tree with its closure ledger intact in that final version. Add one line
-below linking the GitHub permalink of that final version, and carry anything it
+below linking the GitHub permalink of that final version: name the parent of the
+deleting commit, never the deleting commit itself, and never rebase that parent
+before it is on the pushed `main`, or every permalink to it breaks. Carry anything it
 left open to the [follow-up ledger](follow-ups.md). Plans are decision and
 execution records, never the source of truth for shipped code.
 

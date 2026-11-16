@@ -72,7 +72,7 @@ The first version of this plan was checked against the repository after it was
 committed. Its phase 2 and phase 3 savings were overstated by roughly ten times
 and several steps were wrong. The phases below are the corrected version.
 
-- `scripts/prototypes/` has no tracked files. The 11,100-line figure for
+- scripts/prototypes/ has no tracked files. The 11,100-line figure for
   experiments, evidence, mocks and prototypes counted PNG bytes as lines; the
   text is 5,560 lines.
 - `docs/plans/experiments/` is read by `test/garmin/fit-activity.test.mjs` and
