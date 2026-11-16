@@ -237,8 +237,25 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   `passive-settings-ownership.test.mjs`, `big-map.test.mjs` and
   `peak-map.test.mts` exercise both bridges unchanged. Checks: build, those
   tests plus the settings and project tests (662 pass), typecheck, lint.
+- Phase 4 step 2, one family. `OPTIONS_TAB_REGISTER`, `OPEN_BETA_SETTINGS`,
+  `OPEN_CUSTOM_LAYER_SETTINGS` and `OPEN_DRAFTS_MANAGER`, with the registered
+  Settings tab bookkeeping and their error constants, moved unchanged from
+  `background.ts` into `src/background/options-tab-routes.ts` (4,358 → 4,203
+  lines). The worker source list, its pin, and the Save-control source guard in
+  `manifest-capture.test.mts` include the new file. The bundled-worker tests in
+  `background-capture.test.mjs` exercise these routes. Checks: build, the
+  background, settings and project tests (1,102 pass), typecheck, lint.
 
 ### Intentionally not changed
+
+- The rest of phase 4 step 2. The capture, local-GPX, draft-opening and
+  Peakbagger helper code in `background.ts` is one transaction system: the
+  local-GPX family alone reads 38 closure internals (the job and draft maps,
+  lifecycle serialization and epochs, payload installers, helper leases and
+  the request scheduler). Moving it would mean a 38-field dependency object and
+  more lines, not a move along the `*-routes` pattern; AGENTS.md also names the
+  worker as the owner of exactly these jobs. The remaining small switch cases
+  (Buddy, Ignored, settings patch, favorites) already delegate to their stores.
 
 - `garmin-api.ts` `list()` accepts any `startTimeLocal` whose string form
   matches the date pattern (an array, for example), as the JavaScript did.
