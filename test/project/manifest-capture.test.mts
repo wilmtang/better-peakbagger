@@ -136,31 +136,19 @@ test('summit cloud loads before its shared layout owner without new network perm
     assert.ok(!manifest.host_permissions.some(pattern => /open-meteo/.test(pattern)));
 });
 
-test('ImgBB upload access is optional and scoped to its API origin', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://api.imgbb.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('imgbb.com')));
-});
-
-test('Gaia import access is optional and scoped to the Gaia web app', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://www.gaiagps.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('gaiagps.com')));
-});
-
-test('CalTopo import access is optional and scoped to its map host', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://caltopo.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('caltopo.com')));
-});
-
-test('AllTrails import access is optional and scoped to its web app', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://www.alltrails.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('alltrails.com')));
-});
-
-test('onX import access is optional and excludes its identity service', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://backcountry.onxmaps.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('onxmaps.com')));
-    assert.ok(!manifest.optional_host_permissions.some(pattern => pattern.includes('identity.onxmaps.com')));
-});
+for (const { name, origin, host, excludedOptional } of [
+    { name: 'ImgBB upload access is optional and scoped to its API origin', origin: 'https://api.imgbb.com/*', host: 'imgbb.com' },
+    { name: 'Gaia import access is optional and scoped to the Gaia web app', origin: 'https://www.gaiagps.com/*', host: 'gaiagps.com' },
+    { name: 'CalTopo import access is optional and scoped to its map host', origin: 'https://caltopo.com/*', host: 'caltopo.com' },
+    { name: 'AllTrails import access is optional and scoped to its web app', origin: 'https://www.alltrails.com/*', host: 'alltrails.com' },
+    { name: 'onX import access is optional and excludes its identity service', origin: 'https://backcountry.onxmaps.com/*', host: 'onxmaps.com', excludedOptional: 'identity.onxmaps.com' },
+]) {
+    test(name, () => {
+        assert.ok(manifest.optional_host_permissions.includes(origin));
+        assert.ok(!manifest.host_permissions.some(pattern => pattern.includes(host)));
+        if (excludedOptional) assert.ok(!manifest.optional_host_permissions.some(pattern => pattern.includes(excludedOptional)));
+    });
+}
 
 test('the canonical unpacked extension opens Chrome settings in a full tab', () => {
     assert.deepEqual(manifest.options_ui, {

@@ -306,6 +306,12 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   A `typeof` guard is a behavior change and belongs in its own fix.
 - `.agents/skills/ui-ux-pro-max` stays vendored; see Boundaries.
 
+- Phase 3, as recommended. The five optional-host-permission tests in
+  `manifest-capture.test.mts` are one table (36 executed tests before and
+  after; a deliberately wrong onX exclusion fails it). Candidates 1–3 stay:
+  none has a surviving check that catches the same defect, which Boundaries
+  requires before a removal, and the rest of the review proposes no removals.
+
 ### Changed but not fully proven
 
 - Phase 5. Incident narratives are cut to their rules: three in `AGENTS.md`
@@ -323,5 +329,4 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 Phase 2, and an optional follow-up: the eight repeated route-handler lookups
 in `background.ts` could become one ordered `Object.hasOwn` loop (about −12
 lines), but that changes how inherited names such as `constructor` resolve,
-so it needs its own commit. Phase 3 removals and the table-driven rewrite await the
-owner's choice on the proposal above.
+so it needs its own commit. 
